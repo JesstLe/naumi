@@ -1,6 +1,7 @@
 import {FLEET_BUSINESS_RESPONSE_MAX_BYTES,type BusinessSource,type FleetBusinessResponse} from './business-central-contracts';
 
 const encoder=new TextEncoder();
+/** Measure the UTF-8 size of a serialized JSON value for the envelope budget, including field names and delimiters. */
 const bytes=(value:unknown)=>encoder.encode(JSON.stringify(value)).byteLength;
 
 /** Budget the entire JSON envelope, including every site's terminal fallback.

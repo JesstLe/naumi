@@ -2,6 +2,7 @@ import {createHmac,timingSafeEqual} from 'node:crypto';
 import {z} from 'zod';
 
 const supportSchema=z.object({version:z.literal(1),instanceId:z.string().uuid(),nonce:z.string().uuid(),signature:z.string().regex(/^[a-f0-9]{64}$/)}).strict();
+/** Sign the protocol-support version, instance and exchange nonce with the instance token; this confirmation is not a release admission permit. */
 const signature=(instanceId:string,nonce:string,token:string)=>createHmac('sha256',token).update('fleet-business-support:v1:'+JSON.stringify([instanceId,nonce])).digest('hex');
 
 /** A successful authenticated poll confirms this central's protocol support.

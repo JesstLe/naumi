@@ -7,6 +7,7 @@ const entryViews: Record<BusinessEntry, BusinessView> = { usage: "usage", overvi
 const localFilters = ["from", "to", "tenantId", "sort", "size"];
 const localBiFilters = ["q", "accountType", "status", "period", "id", "source"];
 
+/** Map only recognized entry names to their business view; return null for native-only or unknown center sections. */
 export function businessEntryView(section: string): BusinessView | null {
   return Object.hasOwn(entryViews, section) ? entryViews[section as BusinessEntry] : null;
 }
@@ -24,6 +25,7 @@ export function businessLocalDetail(params: Parameters, center = false) {
     || center && Object.hasOwn(params, "email") && !Object.hasOwn(params, "view") && !Object.hasOwn(params, "site");
 }
 
+/** Derive navigation ownership, title and the explicit local-detail return link from the current business view and originating admin entry. */
 export function businessPresentation(view: BusinessView, entry: BusinessEntry) {
   const overview = view === "usage" && entry === "overview";
   const active: AdminSection = overview ? "overview" : view === "creations" ? "creations" : view;

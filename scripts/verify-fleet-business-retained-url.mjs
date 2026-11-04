@@ -20,6 +20,7 @@ const OUT=path.resolve(arg('--output-dir')||path.join(ROOT,'output/fleet-busines
 const require=createRequire(import.meta.url),{Client}=require('pg');
 const helper='scripts/lib/fleet-business-retained-fixture.ts',sourceSHA256={},sourceOrigins={};
 const hash=b=>createHash('sha256').update(b).digest('hex');
+/** Read the selected retained-row fixture source and record its original bytes, hash and baseline/copy origin. */
 async function source(file){
   const origin=sourceRoot?path.join(sourceRoot,file):path.join(ROOT,file);
   const data=baseline?execFileSync('git',['show',baseline+':'+file],{cwd:ROOT}):await readFile(origin);
@@ -39,7 +40,9 @@ const checks=[],cases=[],check=(v,name)=>checks.push({name,passed:Boolean(v)});
 function poolFor(url,physicalDatabase=new URL(url).pathname.slice(1)){
   const cp=new Client({connectionString:url}).connectionParameters;
   const state={connections:0,writes:0,releases:0,events:[],row:null,resolved:{host:cp.host,port:cp.port,database:cp.database}};
-  const tx={release(){state.releases++;},async query(sql,params=[]){
+  const tx={release(){state.releases++;},
+    /** Model physical-database checks and retained-command insert/collision reads while recording write attempts; reject unsupported SQL. */
+    async query(sql,params=[]){
     if(['BEGIN','COMMIT','ROLLBACK'].includes(sql)){state.events.push(sql);return{rows:[],rowCount:0};}
     if(sql==='SELECT current_database() AS database'){state.events.push('physical-database-check');return{rows:[{database:physicalDatabase}],rowCount:1};}
     if(sql.startsWith('INSERT INTO app_fleet_commands')){

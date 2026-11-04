@@ -205,6 +205,12 @@ def retire_one(tx,m,root,observe,task_proof,inspect_maps,final_references):
 
 
 def restore_one(tx,m,intent,probe,*,required_available_mib,database_identity=None):
+    """Restore one pinned stopped CID once, then verify its probe and restart policy.
+
+    Require locked identity, clear legacy-business state, unchanged intent/network
+    configuration, and memory headroom before start. Persist an unknown start result
+    without retrying; return the restoration receipt without gateway or data restore.
+    """
     check_manifest(m);old.require_binding_format(intent);require_lock(tx,m)
     require(database_identity is not None, 'FLEET_ROLLBACK_DATABASE_IDENTITY_REQUIRED')
     try: old.assert_legacy_fleet_rollback_clear(tx,database_identity)

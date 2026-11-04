@@ -23,12 +23,14 @@ if(baseline)assert.match(baseline,/^[a-zA-Z0-9_./-]+$/);
 for(const a of process.argv.slice(2))if(a.includes('='))assert.ok(a.split('=').slice(1).join('='));
 const server='src/lib/fleet/server.ts',contracts='src/lib/fleet/contracts.ts';
 const hash=b=>createHash('sha256').update(b).digest('hex'),sourceSHA256={},sourceOrigins={};
+/** Read the chosen Git baseline, independent copy or working source and record its hash and origin for admission evidence. */
 async function source(file){
   const origin=sourceRoot?path.join(sourceRoot,file):path.join(ROOT,file);
   const text=baseline?execFileSync('git',['show',baseline+':'+file],{cwd:ROOT,encoding:'utf8'}):await readFile(origin,'utf8');
   sourceSHA256[file]=hash(text);sourceOrigins[file]=baseline?'git:'+baseline:origin;return text;
 }
 const checks=[],cases=[];const check=(value,name)=>checks.push({name,passed:Boolean(value)});
+/** Extract the actual producer/admission code, run it against finite database boundaries and record whether business HOLD rejects before I/O while controls retain their behavior. */
 async function main(){
   const text=await source(server),tree=ts.createSourceFile(server,text,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS);
   const declarations=[];
@@ -41,9 +43,12 @@ async function main(){
   const producer=ts.transpileModule(declarations.join('\n')+'\nglobalThis.actualEnqueue=enqueueCommand;',{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;
   const built=await build({absWorkingDir:ROOT,stdin:{contents:`export {operationSchema,commandCapability,canonical,digest} from './${contracts}';`,resolveDir:ROOT,sourcefile:'admission-real-contract.ts'},bundle:true,write:false,format:'cjs',platform:'node',target:'node20',logLevel:'silent',plugins:[{name:'actual-contract',setup(p){p.onLoad({filter:/contracts\.ts$/},async args=>path.relative(ROOT,args.path).replaceAll('\\','/')===contracts?{contents:await source(contracts),loader:'ts',resolveDir:path.dirname(args.path)}:undefined);}}]});
   const module={exports:{}};new Function('require','module','exports',built.outputFiles[0].text)(createRequire(import.meta.url),module,module.exports);const real=module.exports;
+  /** Evaluate the real enqueue implementation in a VM whose finite transaction records schema, connection, authorization and write attempts. */
   function harness(existing=null){
     const state={schemaCalls:0,connections:0,writes:0,rows:existing?[structuredClone(existing)]:[],released:0,accessCalls:0};
-    const tx={release(){state.released++;},async query(sql,args=[]){
+    const tx={release(){state.released++;},
+      /** Serve only the transaction, instance, receipt and audit statements expected by the admission fixture; reject every unrecognized SQL path. */
+      async query(sql,args=[]){
       if(['BEGIN','COMMIT','ROLLBACK'].includes(sql)||sql.startsWith('SELECT pg_advisory_xact_lock'))return{rows:[],rowCount:0};
       if(sql.startsWith('SELECT enabled FROM app_fleet_instances'))return{rows:[{enabled:true}],rowCount:1};
       if(sql.startsWith('SELECT fingerprint,state FROM app_fleet_commands')){const r=state.rows.find(r=>r.id===args[0]);return{rows:r?[r]:[],rowCount:r?1:0};}

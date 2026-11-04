@@ -3,6 +3,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { fleetBusinessClientCases } from "./lib/fleet-business-client-cases";
 
+/** Load the client from the selected source root, execute finite streamed-response cases and optionally save their detailed pass/failure report. */
 async function main() {
   const source = path.resolve(process.argv[2] || ".");
   const actual = await import(pathToFileURL(path.join(source, "src/components/admin/business-data/client.ts")).href);

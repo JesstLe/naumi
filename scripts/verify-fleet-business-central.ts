@@ -21,12 +21,14 @@ let checks=0;const names:string[]=[];
 function check(value:unknown,message:string){assert.ok(value,message);checks++;names.push(message);}
 const env={DATABASE_URL:FIXTURE+CENTRAL,NAUMI_VERIFY_ISOLATED_DB:'1',SETTINGS_SECRET:'fleet-central-fixture-secret-20261104-unique-0001',VIDEO_WORKER_SECRET:'fleet-source-fixture-worker-20261104-unique-0002',FLEET_CONTROL_ENABLED:'1',FLEET_ISOLATED_TEST:'1',NAUMI_MULTI_USER:'1',NAUMI_VIDEO_WORKER:'0',PGPOOL_MAX:'1'};
 
+/** Run one source-tick or central-poll operation in a separate fixture process and return its JSON only after a successful exit. */
 async function worker(input:unknown,db:string){
   const child=spawn(process.execPath,['--import','tsx','--conditions','react-server','scripts/verify-fleet-business-worker.ts'],{cwd:process.cwd(),env:{...process.env,...env,DATABASE_URL:FIXTURE+db},stdio:['pipe','pipe','pipe']});
   let stdout='',stderr='';child.stdout.setEncoding('utf8').on('data',s=>stdout+=s);child.stderr.setEncoding('utf8').on('data',s=>stderr+=s);child.stdin.end(JSON.stringify(input));
   const status=await new Promise<number|null>((resolve,reject)=>{child.on('error',reject);child.on('exit',resolve);});
   assert.equal(status,0,stderr||stdout);return JSON.parse(stdout.trim());
 }
+/** Hash business rows and the public column catalog so the integration can detect data or schema changes. */
 async function fingerprint(pool:Pool){
   const result:Record<string,string>={};
   for(const table of ['app_users','app_ledger','app_credit_batches','app_billing_operations','app_orders','app_artworks'])
@@ -51,6 +53,7 @@ async function seedSource(pool:Pool){
     INSERT INTO app_artworks VALUES('artwork47','${EMAIL}','47 商品图',now()-interval '1 hour','project47','','completed',null,'https://private.invalid/image47');`);
 }
 
+/** Reset only the two named loopback fixture databases and exercise real authenticated central HTTP, retained-command ACKs and source reads; close the listener and database pools afterward. */
 async function main(){
   assert.equal(process.env.NAUMI_VERIFY_ISOLATED_DB,'1','explicit isolated database flag required');
   const supplied=new URL(process.env.DATABASE_URL||FIXTURE+CENTRAL);
@@ -79,6 +82,7 @@ async function main(){
     await central.query("INSERT INTO app_ledger(id,email,delta,kind,reason,created_at)VALUES('consume',$1,-7,'consume','图片生成',now()-interval '1 hour')",[EMAIL]);
     await central.query("INSERT INTO app_orders(id,email,kind,item_id,title,credits,amount,status,created_at,paid_at)VALUES('paid',$1,'pack','fixture','103 充值',20,600,'paid',now()-interval '1 day',now()-interval '23 hours')",[EMAIL]);
     await central.query("INSERT INTO app_artworks(id,email,title,category,prompt,image_url,gradient,created_at,group_id)VALUES('artwork103',$1,'103 商品图','image','fixture','https://private.invalid/image103','',now()-interval '1 hour','artwork103')",[EMAIL]);
+    /** Build a finite native-user cookie and optionally include the independently signed fixture administrator session. */
     const cookie=(email:string,admin=true)=>`${admin?'nv_admin='+signSession(Date.now(),passwordHash)+'; ':''}nv_user=${signUserSession(email,Date.now())}`;
     const rootCookie=cookie(ROOT),otherCookie=cookie(OTHER),userCookie=cookie('ordinary@fixture.test',false);
     const cookieFile=path.join(PRIVATE,'native-admin-cookie.txt');await writeFile(cookieFile,rootCookie,'utf8');
@@ -112,6 +116,7 @@ async function main(){
     const businessCount=async()=>Number((await central.query("SELECT count(*)::int n FROM app_fleet_commands WHERE operation->>'type'='business.query'")).rows[0].n);
     // Only these explicitly named retained-history helpers seed synthetic rows.
     // Ordinary post/start and every rejected or unauthorized request stay raw.
+    /** Require an actual UNKNOWN/HOLD response with zero new business rows before seeding its explicitly identified retained-history command. */
     const seedHeldHistory=async(held:FleetBusinessResponse,before:number,label:string)=>{
       const remotes=held.sources.filter(s=>s.id!=='local');
       check(remotes.length===1&&remotes[0].id===instance.id&&remotes.every(s=>s.status==='unknown'&&s.error===FLEET_BUSINESS_ADMISSION_HOLD&&!s.data),label+': public API reports UNKNOWN/preparation HOLD without data');
@@ -129,6 +134,7 @@ async function main(){
     };
     const request={site:'all',view:'usage',days:30,page:1,search:''};
     const status={source:'a'.repeat(40),version:'fixture',storage:'s3',nas:'unknown',connector:1};
+    /** Run the source connector fixture with an optional business-capability advertisement; this does not open central admission. */
     const tick=(advertise=true)=>worker({mode:'tick',options:{central:origin,instanceId:instance.id,token:instance.token,status:{...status,...(advertise?{business:1}:{})}}},SOURCE);
     const beforeCentral=await fingerprint(central),beforeSource=await fingerprint(source);
 

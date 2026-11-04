@@ -47,6 +47,7 @@ class RuntimeFixture(unittest.TestCase):
         with patch.object(r,'require_lock'),patch.object(r,'fresh_gateway_and_static'),patch.object(r.time,'sleep'),patch.object(r.time,'monotonic_ns',side_effect=[0,31_000_000_000]):
             return r.retire_one(tx,self.m,self.root,lambda *a:copy.deepcopy(self.obs),lambda *a:copy.deepcopy(self.proof),lambda *a:self.report_desc,lambda *a:copy.deepcopy(self.obs))
     def test_single_exact_cid_stop_and_restore_original_policy(self):
+        """Verify one exact-CID stop/restore preserves restart policy without a gateway reload."""
         tx=self.tx();result=self.retire(tx);self.assertTrue(result['stopped']);self.assertEqual([c for c in tx.commands if c[:2]==['docker','stop']],[['docker','stop','--time=-1',self.pin['id']]])
         intent=json.loads((self.root/r.journal_name(self.m,'intent')).read_text())
         with patch.object(r,'require_lock'),patch.object(r.old,'assert_legacy_fleet_rollback_clear',return_value={'businessRows':0}):
@@ -93,6 +94,7 @@ class RuntimeFixture(unittest.TestCase):
             with self.assertRaisesRegex(r.Hold,'POST_STOP_TASK'):r.retire_one(tx,self.m,self.root,lambda *a:copy.deepcopy(self.obs),proof,lambda *a:self.report_desc,lambda *a:copy.deepcopy(self.obs))
         self.assertTrue((self.root/r.journal_name(self.m,'intent')).is_file());self.assertFalse(tx.row['State']['Running'])
     def test_on_failure_policy_exact_and_start_unknown_no_repeat(self):
+        """Verify an unknown original-CID start is journaled and never retried on reconciliation."""
         tx=self.tx();tx.row['HostConfig']['RestartPolicy']={'Name':'on-failure','MaximumRetryCount':3};self.retire(tx)
         intent=json.loads((self.root/r.journal_name(self.m,'intent')).read_text());tx.fail='start'
         with patch.object(r,'require_lock'),patch.object(r.old,'assert_legacy_fleet_rollback_clear',return_value={'businessRows':0}):
@@ -100,6 +102,7 @@ class RuntimeFixture(unittest.TestCase):
             with self.assertRaisesRegex(r.Hold,'EXPLICIT_RECONCILIATION'):r.restore_one(tx,self.m,intent,lambda *a:{},required_available_mib=2048,database_identity={'fixture':'mocked-guard-only'})
         self.assertEqual(sum(c[:2]==['docker','start'] for c in tx.commands),1)
     def test_restore_runtime_endpoint_change_allowed_config_change_rejected(self):
+        """Allow runtime endpoint allocation drift but reject a changed network configuration."""
         for changed in (False,True):
             tx=self.tx();self.retire(tx)
             intent=json.loads((self.root/r.journal_name(self.m,'intent')).read_text())
@@ -136,6 +139,7 @@ class RuntimeFixture(unittest.TestCase):
             for path in self.root.glob('runtime-ui-*.json'):path.unlink()
 
     def test_original_on_failure_policy_successfully_restored(self):
+        """Verify successful restoration reinstates the exact on-failure retry-count policy."""
         tx=self.tx();tx.row['HostConfig']['RestartPolicy']={'Name':'on-failure','MaximumRetryCount':3};self.retire(tx)
         intent=json.loads((self.root/r.journal_name(self.m,'intent')).read_text())
         with patch.object(r,'require_lock'),patch.object(r.old,'assert_legacy_fleet_rollback_clear',return_value={'businessRows':0}):

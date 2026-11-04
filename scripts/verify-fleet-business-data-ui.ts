@@ -9,6 +9,7 @@ import type { BusinessResponse, BusinessSnapshot } from "../src/components/admin
 
 const remote = "47105059-0142-4000-8000-000000000047";
 const asOf = "2026-11-04T08:00:00.000Z";
+/** Create a typed usage snapshot with a configurable credit total and nullable wallet balance for UI/model contract assertions. */
 function data(credits: number, balance: number | null = 500): BusinessSnapshot {
   return {
     schemaVersion: 1, view: "usage", asOf, from: "2026-10-05T08:00:00.000Z", observedAt: asOf, timeZone: "Asia/Shanghai", scope: "site", page: 1, pageSize: 30, total: 1,
@@ -24,6 +25,7 @@ function full(): BusinessResponse {
     sources: [{ id: "local", name: "103 平台", kind: "local", status: "succeeded", data: data(7) }, { id: remote, name: "47 企业站", kind: "enterprise", status: "succeeded", data: data(42) }], complete: true,
   };
 }
+/** Verify actual URL/entry ownership, per-source identity and totals semantics, plus finite response parsing; this matrix does not exercise Next HTTP or production data. */
 async function main() {
   let assertions = 0;
   const check = (predicate: unknown, message: string) => { assert.ok(predicate, message); assertions++; };

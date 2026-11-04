@@ -5,6 +5,7 @@ import { build } from "esbuild";
 import { chromium } from "@playwright/test";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+/** Bundle the actual hook from the selected source root, execute the finite ReactDOM fixture in a network-blocked browser and record hook and console results. */
 async function main() {
   const sourceRoot = path.resolve(process.argv[2] || root), output = path.resolve(process.argv[3] || path.join(root, "output/fleet-business-data-hook-review"));
   await fs.mkdir(output, { recursive: true });

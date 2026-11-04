@@ -311,6 +311,12 @@ class Release(base.Release):
         return {'files':len(files),'bytes':total,'sourceRetained':True,'bothWritersStoppedDuringCopy':True,'acceptedTasksReplayed':False}
 
     def rollback(self):
+        """Resume only an unchanged pre-switch worker, not a post-switch program cutback.
+
+        An unexpected gateway records UNKNOWN and returns. The 103 resume additionally
+        requires a clear retained-business guard; all other outcomes retain cleanup debt
+        without database restoration or task replay.
+        """
         # Before a switch the old site remains authoritative and can resume.
         # After a switch, older code cannot enforce the new tenant policy.
         if not self.switched and self.worker_paused:

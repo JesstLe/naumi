@@ -20,6 +20,7 @@ export type FleetOperation = z.infer<typeof operationSchema>;
 export const fleetCapabilities = ['read','users','credits','features','release','creations','business'] as const;
 export type FleetCapability = typeof fleetCapabilities[number];
 export type FleetActor = { actor: string; root: boolean };
+/** Map each validated operation to the grant capability required by dispatch and enqueue checks; business reads remain separate from generic read access. */
 export function commandCapability(operation: FleetOperation): FleetCapability {
   if(operation.type==='business.query')return 'business';
   if(operation.type==='creations.list'||operation.type==='creations.media')return 'creations';

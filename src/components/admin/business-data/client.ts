@@ -6,6 +6,9 @@ export class BusinessReadError extends Error {
   constructor(message: string, readonly status?: number) { super(message); this.name = "BusinessReadError"; }
 }
 
+/** Validate the query envelope, unique source/site identities and successful snapshot scope before exposing data to the UI.
+ * Discard data attached to non-success states and reject contradictory completeness claims.
+ */
 function parseResponse(input: unknown): BusinessResponse {
   if (!input || typeof input !== "object") throw new BusinessReadError("站点数据格式异常");
   const body = input as BusinessResponse;
@@ -30,6 +33,7 @@ function parseResponse(input: unknown): BusinessResponse {
 
 /** Native administrator cookies only. Every request and body read share one bound. */
 export async function readBusinessResponse(url: string, signal: AbortSignal, input?: unknown): Promise<BusinessResponse> {
+  /** Relay cancellation from the caller to the request/body controller using the caller's original abort reason. */
   const controller = new AbortController(), abort = () => controller.abort(signal.reason);
   signal.addEventListener("abort", abort, { once: true });
   if (signal.aborted) abort();

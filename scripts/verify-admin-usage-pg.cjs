@@ -20,12 +20,14 @@ function assertReadOnlySql(sql) {
   const withoutLiterals = String(sql).replace(/'(?:''|[^'])*'/g, "''");
   assert.doesNotMatch(withoutLiterals, /\b(?:INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|TRUNCATE|COPY|GRANT|REVOKE|CALL|DO)\b/i, 'Analytics cannot mutate business or schema state');
 }
+/** Load and hash the real analytics modules through a cached TypeScript VM, with explicit test-client/schema boundaries and caller-supplied mocks. */
 function load(relative, mocks = {}) {
   const filename = path.resolve(root, relative), key = filename;
   if (cache.has(key)) return cache.get(key).exports;
   const source = fs.readFileSync(filename, 'utf8'), module = { exports: {} }; cache.set(key, module);
   loaded.push({ path: filename, sha256: createHash('sha256').update(source).digest('hex') });
   const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
+  /** Resolve supported analytics dependencies to the same fixture loader or explicit client guards before falling back to installed packages. */
   const localRequire = name => {
     if (name === 'server-only') return {};
     if (Object.hasOwn(mocks, name)) return mocks[name];
@@ -38,6 +40,7 @@ function load(relative, mocks = {}) {
   new vm.Script(`(function(require,module,exports){${code}\n})`, { filename }).runInThisContext()(localRequire, module, module.exports);
   return module.exports;
 }
+/** Create an isolated PostgreSQL schema, execute the actual usage modules against deterministic billing fixtures, record read-only semantics and optional scale plans, then drop the schema. */
 async function main() {
   fs.mkdirSync(out, { recursive: true });
   const pool = new Pool({ connectionString: url, max: 1 }), tx = await pool.connect();

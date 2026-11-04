@@ -6,6 +6,7 @@ import styles from "./business-data.module.css";
 
 const colors = ["#7055d9", "#d69046", "#4d83bf", "#6d9879", "#c96993"];
 
+/** Plot per-source daily consumption only after every source has returned successfully; show pending or empty states instead of a partial global trend. */
 export function BusinessTrend({ data }: { data: BusinessResponse | null }) {
   const id = useId().replaceAll(":", ""), width = 760, height = 214, left = 45, right = 18, top = 16, bottom = 31;
   const sources = data?.sources.filter(source => source.status === "succeeded" && source.data) || [];
@@ -13,7 +14,9 @@ export function BusinessTrend({ data }: { data: BusinessResponse | null }) {
   const dates = Array.from(new Set(sources.flatMap(source => source.data!.daily.map(point => point.date)))).sort();
   const max = Math.max(1, ...sources.flatMap(source => source.data!.daily.map(point => point.credits)));
   const start = dates.length ? Date.parse(dates[0] + "T00:00:00Z") : 0, end = dates.length ? Date.parse(dates.at(-1)! + "T00:00:00Z") : 0;
+  /** Project a UTC calendar date onto the chart time axis, centering the point when the series has a single date. */
   const x = (date: string) => left + (end === start ? .5 : (Date.parse(date + "T00:00:00Z") - start) / (end - start)) * (width - left - right);
+  /** Project consumption onto the chart value axis using the shared positive maximum and reserved plot margins. */
   const y = (value: number) => top + (1 - value / max) * (height - top - bottom);
   return <section className={styles.trend} aria-label="积分消耗趋势">
     <div className={styles.panelTitle}><h2>消费趋势</h2><span>积分</span></div>

@@ -7,6 +7,7 @@ const scope = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boo
 scope.IS_REACT_ACT_ENVIRONMENT = true;
 const asOf = "2026-11-04T08:00:00.000Z";
 type Request = BusinessFilter & { refresh: boolean };
+/** Build a deterministic local-source response from the hook filters and supplied credit total. */
 function reply(request: Request, credits = 42): BusinessResponse {
   return {
     requestId: "finite-hook-fixture", query: { type: "business.query", view: request.view, days: request.days, asOf, page: request.page, search: request.search, ...(request.email ? { email: request.email } : {}) },
@@ -19,6 +20,7 @@ function reply(request: Request, credits = 42): BusinessResponse {
   };
 }
 
+/** Model terminal omission, pending polling and finished response-budget states for the hook fixture. */
 function budgetReply(request: Request, phase: "terminal" | "pending" | "finished"): BusinessResponse {
   const value = reply(request), data = value.sources[0].data!;
   value.sites.push({ id: "remote-budget", name: "47 企业站", kind: "enterprise", enabled: true, lastSeen: asOf });
@@ -32,6 +34,7 @@ function budgetReply(request: Request, phase: "terminal" | "pending" | "finished
   return value;
 }
 
+/** Exercise the actual ReactDOM hook with finite fetch responses and publish refresh, authorization and stale-result assertions; no server or business database is used. */
 async function main() {
   const requests: Request[] = [], assertions: { name: string; passed: boolean; observed?: unknown }[] = [];
   let status = 200, delayed: (() => void) | undefined;
@@ -49,10 +52,12 @@ async function main() {
     if (request.search === "slow") return new Promise(resolve => { delayed = () => resolve(new Response(JSON.stringify(reply(request, 999)), { status: 200 })); });
     return new Response(status === 200 ? JSON.stringify(reply(request)) : status === 401 ? "<html>login</html>" : "null", { status });
   };
+  /** Record one hook assertion and include the optional observed value in the browser evidence. */
   const check = (name: string, passed: boolean, observed?: unknown) => assertions.push({ name, passed, ...(observed === undefined ? {} : { observed }) });
   const root = createRoot(document.getElementById("root")!);
   let current: ReturnType<typeof useBusinessData> | undefined;
   const props = { filter: { site: "all", view: "usage", days: 30, search: "", page: 1 } as BusinessFilter, identity: "admin-a@example.test", ready: false, revision: 0 };
+  /** Expose the current hook state to the fixture while rendering its credit total or the unknown placeholder. */
   function Probe() { current = useBusinessData(props.filter, props.identity, props.ready, props.revision); return createElement("output", null, String(current.data?.sources[0]?.data?.totals.credits ?? "unknown")); }
   async function render() { await act(async () => { root.render(createElement(Probe)); }); }
   await render(); check("not_ready_sends_no_request", requests.length === 0);

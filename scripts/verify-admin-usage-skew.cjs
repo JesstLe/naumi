@@ -46,6 +46,7 @@ for (const name of ['node:http', 'node:https']) {
   const mod = require(name);
   mod.request = mod.get = () => { report.externalNetworkCalls++; throw new Error('Unexpected application HTTP'); };
 }
+/** Load a module only inside the selected source root, record its source hash and evaluate transpiled code through the finite import allowlist. */
 function load(relative) {
   const filename = path.resolve(sourceRoot, relative);
   assert.ok(filename.startsWith(sourceRoot + path.sep), 'Module must remain in the selected source root');
@@ -56,6 +57,7 @@ function load(relative) {
   const code = ts.transpileModule(bytes.toString('utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
   }).outputText;
+  /** Resolve only the analytics dependencies needed by the skew fixture and reject unexpected application imports. */
   const req = name => {
     if (name === 'server-only') return {};
     if (name === '@/lib/db' || name === '@/platform/db/pool') return explicitPoolOnly;
@@ -77,6 +79,7 @@ function nodes(plan) {
   visit(plan); return output;
 }
 
+/** Require the named loopback usage fixture, measure real SQL semantics and skewed-data plans, persist evidence and verify cleanup of the disposable schema. */
 async function run() {
   fs.mkdirSync(outputRoot, { recursive: true });
   assert.ok(!fs.existsSync(path.join(outputRoot, 'RESULT.json')), 'Use a new output root; prior evidence is immutable');

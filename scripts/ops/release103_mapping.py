@@ -240,6 +240,12 @@ class Release(shared.Release):
         return {'launcherVerified': True, 'activationEnabled': True, 'sameImage': True}
 
     def rollback(self):
+        """Resume the original worker only on a known, unchanged pre-switch entry.
+
+        Require a clear retained-business guard before that resume. Preserve candidates
+        and record UNKNOWN, CLEANUP_PENDING, or ABORTED instead of inventing a gateway
+        cutback, database restore, or task replay.
+        """
         # Do not manufacture a rollback: after ingress changes the new Web may
         # have accepted work. Keep it and the original receipts for reconciliation.
         observed = sha(self.tx.run(['nginx', '-T']))

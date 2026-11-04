@@ -14,9 +14,11 @@ const columns: Record<BusinessView, string[]> = {
 const ledgerLabels: Record<string, string> = { consume: "消费", refund: "退回", purchase: "充值", grant: "发放", adjust: "调整" };
 const orderLabels: Record<string, string> = { paid: "已支付", fulfilled: "已到账", pending: "待支付", created: "待支付", cancelled: "已取消", closed: "已关闭", failed: "失败", refunded: "已退款" };
 const creationLabels: Record<string, string> = { image: "图片", video: "视频", unknown: "未知" };
+/** Render the account name when present, retain its email, and derive an avatar from the same visible identity. */
 function Account({ name, email }: { name?: string; email: string }) {
   return <div className={styles.account}><span className={styles.avatar}>{(name || email).slice(0, 1).toUpperCase()}</span><span><strong>{name || email}</strong>{name && <small>{email}</small>}</span></div>;
 }
+/** Render one source's confirmed rows for the selected view; failed, incomplete and empty sources keep explicit state rows instead of fabricated data. */
 function SourceRows({ source, view, drill }: { source: BusinessSource; view: BusinessView; drill: (site: string, email: string, view: BusinessView) => void }) {
   const data = source.data, span = columns[view].length;
   if (source.status !== "succeeded" || !data) return <tr><td colSpan={span}><div className={styles.sourceMessage} role="status">{source.error || statusLabels[source.status]}</div></td></tr>;
@@ -45,6 +47,7 @@ function SourceRows({ source, view, drill }: { source: BusinessSource; view: Bus
   return <>{rows.map(row => <tr key={source.id + ":" + row.id}><td><div className={styles.record}><FileImage size={17}/><span><strong>{row.title || "未命名作品"}</strong><small>{row.id}</small></span></div></td><td>{row.email}</td><td>{creationLabels[row.type] || "未知"}</td><td className={styles.reason} title={row.projectKey || ""}>{row.projectKey || "—"}</td><td className={styles.timestamp}>{localTime(row.createdAt)}</td></tr>)}</>;
 }
 
+/** Group detail rows by source and preserve per-source status, totals and pagination metadata while the selected query is loading. */
 export function BusinessTable({ response, view, drill, busy }: { response: BusinessResponse | null; view: BusinessView; drill: (site: string, email: string, view: BusinessView) => void; busy: boolean }) {
   const sources = response?.sources || [], headers = columns[view];
   return <section className={styles.tablePanel} aria-label={viewNames[view] + "明细"}>

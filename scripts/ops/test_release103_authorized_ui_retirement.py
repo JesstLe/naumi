@@ -14,6 +14,7 @@ def row(cid, port):
 
 class FakeTx:
     def __init__(self, *args):
+        """Create in-memory historical UI/DB rows and controllable retirement failures."""
         self.rows = {x['Id']: copy.deepcopy(x) for x in (row('a'*64, 13033), row('b'*64, 13037))}
         self.rows[module.DB] = row(module.DB, 5432)
         self.rows[module.DB]['Image'] = 'sha256:16bc17c64a573ef34162af9298258d1aec548232985b33ed7b1eac33ba35c229'
@@ -24,6 +25,7 @@ class FakeTx:
     def __exit__(self, *args): self.closed = True
     def inspect(self, cid): return copy.deepcopy(self.rows[cid])
     def pin(self, identity):
+        """Return a copied fixture row only when its complete public identity matches."""
         result = self.inspect(identity['id'])
         if module.public_identity(result) != identity: raise RuntimeError('Fixture identity changed')
         return result
@@ -32,6 +34,7 @@ class FakeTx:
         self.saved[name] = copy.deepcopy(value); return {'path': name, 'sha256': 'e'*64}
     def backup_database(self, identity): self.saved['backup'] = identity; return {'path': 'fixture.dump', 'sha256': 'e'*64}
     def run(self, args, **kwargs):
+        """Record finite Docker/psql calls and simulate policy, stop, and start outcomes."""
         self.commands.append(args)
         if args[1] == 'exec' and 'psql' in args:
             import json

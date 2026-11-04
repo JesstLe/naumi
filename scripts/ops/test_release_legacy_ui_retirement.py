@@ -75,6 +75,7 @@ class Fixture(unittest.TestCase):
         return Tx()
 
     def test_explicit_single_stop_and_single_original_cid_restore_fixture(self):
+        """Verify one graceful stop and exact-CID restore preserve policy without deletion or reload."""
         tx=self.tx()
         with patch.object(r,'require_lock'),patch.object(r.time,'sleep'),patch.object(r.time,'monotonic_ns',side_effect=[0,31_000_000_000]):
             result=r.retire_one(tx,self.manifest,self.root,lambda *a:copy.deepcopy(self.obs),lambda *a:copy.deepcopy(self.proof))

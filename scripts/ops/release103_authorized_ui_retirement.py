@@ -197,6 +197,13 @@ def restore_probe(original, port):
 
 
 def execute(plan):
+    """Retire only enough pinned historical UI containers to satisfy the plan.
+
+    Validate the explicit plan, hold the host transaction, and preserve readable
+    backup and durable intents before stopping any candidate. On failure, attempt
+    only guarded restoration of observed stopped CIDs and re-raise the original
+    error; never claim ordinary drain, restore database bytes, or replay tasks.
+    """
     require(plan['authorization'] == AUTHORIZATION and plan['target'] == '103.30.76.93', 'EXPLICIT_AUTHORIZATION_REQUIRED')
     require(plan['ordinaryDrainReceipt'] is None and plan['historicalVolatileStateAccepted'] is True, 'DO_NOT_CLAIM_COMPLETE_DRAIN')
     require(plan['requiredAvailableMiB'] == 5120, 'MEMORY_GATE_CHANGED')

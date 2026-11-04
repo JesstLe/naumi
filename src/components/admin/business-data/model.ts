@@ -11,6 +11,7 @@ export const businessViews: { id: BusinessView; label: string }[] = [
 export const viewNames = Object.fromEntries(businessViews.map(view => [view.id, view.label])) as Record<BusinessView, string>;
 const periods = [7, 30, 90, 365] as const;
 
+/** Parse URL selectors into bounded site, view, period, search and page values while retaining an optional account email. */
 export function businessFilter(params: URLSearchParams, initialView: BusinessView = "usage"): BusinessFilter {
   const view = params.get("view"), days = Number(params.get("days") || 30), page = Number(params.get("page") || 1);
   const site = params.get("site") || "all";
@@ -40,6 +41,7 @@ export function businessNavigation(params: URLSearchParams, patch: Partial<Busin
   return search;
 }
 
+/** Create an unambiguous display key from the source ID and email so equal emails on different sites remain distinct accounts. */
 export function accountIdentity(sourceId: string, email: string) {
   return JSON.stringify([sourceId, email]);
 }
@@ -67,10 +69,12 @@ export function combinedTotals(response: BusinessResponse | null): BusinessTotal
   return result;
 }
 
+/** Report whether any successfully returned source still has rows beyond its own current page; pending sources alone do not enable next-page navigation. */
 export function hasNextSourcePage(response: BusinessResponse | null) {
   return Boolean(response?.sources.some(source => source.status === "succeeded" && source.data && source.data.total > source.data.page * source.data.pageSize));
 }
 
+/** Return rows only from a successful source snapshot and attach source identity without mutating the cached rows. */
 export function sourceRows<K extends "users" | "orders" | "ledger" | "creations">(source: BusinessSource, key: K): Sourced<NonNullable<BusinessSource["data"]>[K][number]>[] {
   if (source.status !== "succeeded" || !source.data) return [];
   return source.data[key].map(row => ({ ...row, sourceId: source.id, sourceName: source.name }));
@@ -78,12 +82,15 @@ export function sourceRows<K extends "users" | "orders" | "ledger" | "creations"
 
 export const numberFormat = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 });
 const dateFormat = new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
+/** Format a finite numeric value with the shared locale formatter, preserving zero and rendering absent or non-finite values as unknown. */
 export function number(value: number | null | undefined) {
   return value === null || value === undefined || !Number.isFinite(value) ? "—" : numberFormat.format(value);
 }
+/** Format finite amounts stored in minor currency units as CNY; absent or non-finite amounts remain unknown. */
 export function money(value: number | null | undefined) {
   return value === null || value === undefined || !Number.isFinite(value) ? "—" : new Intl.NumberFormat("zh-CN", { style: "currency", currency: "CNY" }).format(value / 100);
 }
+/** Format a valid timestamp in Asia/Shanghai; absent or invalid dates remain unknown. */
 export function localTime(raw: string | null | undefined) {
   if (!raw) return "—";
   const date = new Date(raw);

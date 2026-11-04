@@ -23,11 +23,15 @@ export async function verifyFleetBusinessControlPriority(f:Fixture){
   fleetFixtureApplicationPool(f.central);
   fleetFixtureUrl(f.source.options.connectionString,'receipt');
   const liveService=await import('../src/lib/fleet/server');
-  const service={...liveService,enqueueCommand:(...args:Parameters<typeof liveService.enqueueCommand>)=>
+  const service={...liveService,
+    /** Route only synthetic business reads through retained-history seeding while leaving control commands on the actual enqueue implementation. */
+    enqueueCommand:(...args:Parameters<typeof liveService.enqueueCommand>)=>
     args[3].type==='business.query'?seedRetainedFleetBusinessCommand(f.central,...args):liveService.enqueueCommand(...args)};
   const failures:string[]=[],scenarios:Record<string,unknown>[]=[];let checks=0;
+  /** Count a control-priority assertion and collect its name on failure so later scenarios can still run. */
   const check=(value:unknown,name:string)=>{checks++;if(!value)failures.push(name);};
   const freshnessFailures:string[]=[];let freshnessChecks=0;
+  /** Track freshness-specific assertions independently from the wider control-priority matrix. */
   const freshCheck=(value:unknown,name:string)=>{freshnessChecks++;if(!value)freshnessFailures.push(name);};
   const readAt=(asOf=new Date().toISOString())=>({type:'business.query' as const,view:'usage' as const,days:30 as const,asOf,page:1,search:''});
   const row=async(id:string)=>(await f.central.query('SELECT state,result,lease_id,leased_until,operation,fingerprint FROM app_fleet_commands WHERE id=$1',[id])).rows[0];
@@ -47,6 +51,7 @@ export async function verifyFleetBusinessControlPriority(f:Fixture){
     request.on('error',reject);request.setTimeout(10000,()=>request.destroy(new Error('fixture HTTP timeout')));
     request.end(JSON.stringify({...input,nonce:randomUUID(),timestamp:Date.now()}));
   });
+  /** Return the command ID from a successful connector-process response, leaving failed ticks unidentified. */
   const tickId=(value:Tick)=>value.code===0?JSON.parse(value.stdout).commandId:undefined;
   const shiftedClock=async<T,>(milliseconds:number,work:()=>Promise<T>)=>{
     const original=Date.now;

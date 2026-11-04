@@ -15,6 +15,9 @@ import { businessPresentation, type BusinessEntry } from "./entry";
 import type { BusinessFilter, BusinessView } from "./types";
 import styles from "./business-data.module.css";
 
+/** Render URL-scoped business data and source-level states for the selected admin entry.
+ * Delegate polling to the hook and keep filtering, account drill-down and pagination in the URL.
+ */
 export function FleetBusinessDashboard({ initialView = "usage", entry = "usage" }: { initialView?: BusinessView; entry?: BusinessEntry }) {
   const params = useSearchParams();
   const parameterText = params.toString(), { user, ready } = useAuth();
@@ -29,13 +32,16 @@ export function FleetBusinessDashboard({ initialView = "usage", entry = "usage" 
   const sourceCount = data?.sources.length || 0;
   const unavailable = data?.sources.filter(source => ["failed", "offline", "unknown", "unavailable"].includes(source.status)) || [];
 
+  /** Merge a filter change into the latest browser URL synchronously so successive events retain earlier changes and explicit Fleet ownership. */
   function navigate(patch: Partial<BusinessFilter>) {
     const search = businessNavigation(new URLSearchParams(window.location.search), patch, initialView);
     // Next's native History integration updates useSearchParams. The URL write is
     // synchronous, so a second filter event merges the first before React renders.
     window.history.replaceState(null, "", window.location.pathname + (search.size ? "?" + search.toString() : ""));
   }
+  /** Submit the bounded search draft as a fresh first-page query and clear any account-specific drill-down. */
   function search(event: FormEvent) { event.preventDefault(); navigate({ search: draftSearch.trim().slice(0, 100), email: undefined, page: 1 }); }
+  /** Open a source-qualified account view, clearing free-text search and resetting pagination without merging identities across sites. */
   function drill(site: string, email: string, view: BusinessView) { setDraftSearch(""); navigate({ site, email, view, search: "", page: 1 }); }
   const selectedSite = data?.sites.find(site => site.id === filter.site);
 

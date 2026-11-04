@@ -13,6 +13,7 @@ let checks=0;
 function check(value:unknown,message:string){assert.ok(value,message);checks++;}
 const asOf='2026-11-04T08:00:00.000Z';
 const query=(view:'overview'|'usage'|'users'|'orders'|'ledger'|'creations'='usage',extra:Record<string,unknown>={})=>fleetBusinessQuerySchema.parse({type:'business.query',view,days:30,asOf,page:1,search:'',...extra});
+/** Use the named isolated PostgreSQL fixture to verify real query, receipt, signature and queue behavior, preserving public business HOLD and restoring transport/environment state afterward. */
 async function main(){
   const url=fleetFixtureUrl(process.env.DATABASE_URL,'protocol');
   process.env.DATABASE_URL=url.toString();
@@ -56,6 +57,7 @@ async function main(){
     await assert.rejects(()=>enqueueCommand('root',randomUUID(),randomUUID(),{...query(),asOf:new Date().toISOString()}),
       (error:unknown)=>error instanceof FleetError&&error.status===503&&error.message===FLEET_BUSINESS_ADMISSION_HOLD);checks++;
     check(await commandTable()===null,'actual business admission HOLD performs no command-schema bootstrap or insert');
+    /** Hash business rows and schema columns so the protocol matrix can detect unintended source mutations. */
     const fingerprint=async()=>{
       const result:Record<string,string>={};for(const table of ['app_users','app_ledger','app_credit_batches','app_billing_operations','app_orders','app_artworks'])
         result[table]=(await pool.query(`SELECT md5(COALESCE(string_agg(to_jsonb(t)::text,'' ORDER BY to_jsonb(t)::text),'')) hash FROM ${table} t`)).rows[0].hash;
@@ -130,6 +132,7 @@ async function main(){
     await pool.query('UPDATE app_fleet_instances SET enabled=true WHERE id=$1',[instance.id]);
     check(await fleetReadCommand({actor:'root',root:true},instance.id,randomUUID())===null,'missing command does not fabricate empty success');
     process.env.FLEET_CONTROL_ENABLED='1';process.env.SETTINGS_SECRET='fleet-protocol-fixture-012345678901234567890';
+    /** Construct a signed-instance fixture poll request with an optional business-capability advertisement and a fresh nonce/timestamp. */
     const poll=(business?:1)=>new Request('https://central.fixture/api/fleet/poll',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+instance.token,'x-naumi-instance':instance.id},body:JSON.stringify({nonce:randomUUID(),timestamp:Date.now(),status:{source:'a'.repeat(40),version:'1',storage:'s3',nas:'unknown',connector:1,...(business?{business}:{})}})});
     const oldPoll=await connectorExchange(poll());
     check('command' in oldPoll&&oldPoll.command===null&&(await pool.query('SELECT state FROM app_fleet_commands WHERE id=$1',[queuedId])).rows[0].state==='queued','old connector leaves business query queued and unleased');

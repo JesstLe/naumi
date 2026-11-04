@@ -11,6 +11,7 @@ import { chromium, expect } from "@playwright/test";
 const remote = "47105059-0142-4000-8000-000000000047";
 const sameEmail = "designer@example.test";
 const asOf = "2026-11-04T08:00:00.000Z";
+/** Create deterministic per-site business snapshots for each view, keeping same-email accounts and their local/remote totals distinct. */
 function snapshot(id, query) {
   const local = id === "local", credits = local ? 7 : 42, balance = local ? 93 : 458;
   const user = { email: sameEmail, name: local ? "林岚" : "周亦", role: "user", plan: "pro", banned: false, balance, creditsTotal: balance, creditsUsed: 0, credits, operations: local ? 1 : 6, lastUsedAt: asOf };
@@ -25,6 +26,7 @@ function snapshot(id, query) {
   };
 }
 
+/** Exercise a supplied loopback Next UI with finite business API snapshots, block unrelated writes and record desktop/mobile behavior, screenshots and browser errors. */
 async function main(file) {
   const config = JSON.parse(await fs.readFile(file, "utf8")), origin = new URL(config.origin);
   assert.ok(["127.0.0.1", "localhost"].includes(origin.hostname) && origin.protocol === "http:" && origin.port && origin.pathname === "/", "ISOLATED_LOOPBACK_ORIGIN_REQUIRED");
@@ -43,6 +45,7 @@ async function main(file) {
     }
     let mode = "pending", lastQuery, requests = 0;
     const sites = [{ id: "local", name: "103 平台", kind: "local", enabled: true, lastSeen: null }, { id: remote, name: "47 企业站", kind: "enterprise", enabled: true, lastSeen: asOf }];
+    /** Assemble the selected fixture sites into pending, unknown or completed responses without querying a business database. */
     const make = (query, selection, pending = false) => {
       const selected = sites.filter(site => selection === "all" || site.id === selection);
       return { requestId: "fixture-bound-request", query, sites, sources: selected.map(site => ({ id: site.id, name: site.name, kind: site.kind,

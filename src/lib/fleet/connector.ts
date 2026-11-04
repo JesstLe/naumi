@@ -106,6 +106,9 @@ export async function applyFleetCommand(input: FleetCommand, localInstanceId: st
 export async function connectorTick(options: {central: string; instanceId: string; token: string; status: unknown; isolated?: boolean; business?: boolean}) {
   const central=centralUrl(options.central,options.isolated),status=statusSchema.parse(options.status);
   if(!/^[A-Za-z0-9_-]{43}$/.test(options.token)) throw new Error('FLEET_INVALID_TOKEN');
+  /** Send one nonce-bound authenticated poll or ACK with a timeout and bounded response body.
+   * Expose explicit HTTP rejection status for the narrowly allowed legacy-shape retry.
+   */
   async function send(endpoint: string, data: unknown, probe=false) {
     const nonce=randomUUID();
     const response=await fleetFetch(central+'/api/fleet/'+endpoint,{method:'POST',redirect:'error',signal:AbortSignal.timeout(30000),headers:{'content-type':'application/json','authorization':'Bearer '+options.token,'x-naumi-instance':options.instanceId,...(probe?{'x-naumi-fleet-business-probe':'1'}:{})},body:JSON.stringify({nonce,timestamp:Date.now(),...data as object})});

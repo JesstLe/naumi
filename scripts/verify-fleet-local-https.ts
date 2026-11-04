@@ -16,6 +16,7 @@ async function run(command:string,args:string[],env:NodeJS.ProcessEnv=process.en
     child.on('error',reject);child.on('close',code=>resolve({code:code??-1,stdout,stderr}));
   });
 }
+/** Generate a disposable TLS fixture and exercise the native local-status transport across host, trust, redirect and size boundaries, or run one child probe. */
 async function main(){
   if(process.argv[2]==='probe'){
     globalThis.fetch=async()=>{throw Error('TLS_FIXTURE_NATIVE_TRANSPORT_REQUIRED');};
@@ -36,6 +37,7 @@ async function main(){
   });
   await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
   const port=(server.address() as {port:number}).port;
+  /** Launch a local-status child with the requested Host identity and optional fixture CA trust, returning JSON only on a successful exit. */
   const probe=async(host:string,trusted=true)=>{
     const env:NodeJS.ProcessEnv={...process.env,FLEET_SINGLE_APP_ORIGIN:`https://127.0.0.1:${port}`,FLEET_SINGLE_APP_HOST:host};
     delete env.NODE_EXTRA_CA_CERTS;if(trusted)env.NODE_EXTRA_CA_CERTS=certificate;

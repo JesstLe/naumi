@@ -109,6 +109,7 @@ export async function changeInstance(actor: string, instanceId: string, action: 
     await tx.query('INSERT INTO app_fleet_audit(instance_id,actor,action) VALUES($1,$2,$3)',[instanceId,actor,action]); await tx.query('COMMIT'); return token ? { token } : { ok:true };
   } catch(error) { await tx.query('ROLLBACK'); throw error; } finally { tx.release(); }
 }
+/** Return actor-scoped Fleet control history and registry metadata; exclude every business-query row before the command-history limit. */
 export async function fleetSnapshot(actor:FleetActor={actor:'internal',root:true}) {
   await ensureFleetSchema();
   const scope=actor.root?null:actor.actor;
@@ -128,6 +129,7 @@ export async function fleetBusinessInstances(actor:FleetActor){
   await ensureFleetSchema();
   return (await getPool().query(`SELECT i.id,i.name,i.kind,i.enabled,i.last_seen,i.status FROM app_fleet_instances i WHERE $1::text IS NULL OR EXISTS(SELECT 1 FROM app_fleet_grants g JOIN app_users u ON u.email=g.email WHERE g.instance_id=i.id AND g.email=$1 AND NOT u.banned AND g.allowed ? 'read' AND g.allowed ? 'business' AND (g.expires_at IS NULL OR g.expires_at>now())) ORDER BY i.created_at,i.id LIMIT 200`,[actor.root?null:actor.actor])).rows as {id:string;name:string;kind:'main'|'enterprise';enabled:boolean;last_seen:Date|null;status:Record<string,unknown>}[];
 }
+/** Recheck the enabled instance and current business grant before returning only the requested source-scoped business receipt. */
 export async function fleetReadCommand(actor:FleetActor,instanceId:string,id:string){
   z.string().uuid().parse(instanceId);z.string().uuid().parse(id);await ensureFleetSchema();
   const pool=getPool();const instance=(await pool.query('SELECT enabled FROM app_fleet_instances WHERE id=$1',[instanceId])).rows[0];
@@ -147,6 +149,9 @@ export async function saveGrant(actor:string,command:{instanceId:string;email:st
     await tx.query('INSERT INTO app_fleet_audit(instance_id,actor,action) VALUES($1,$2,$3)',[command.instanceId,actor,'grant:'+command.email+':'+command.allowed.join(',')]);await tx.query('COMMIT');return {version:command.expectedVersion+1};
   }catch(error){await tx.query('ROLLBACK');throw error;}finally{tx.release();}
 }
+/** Validate and authorize a command under its stable ID, preserving fingerprint-based idempotency in one transaction.
+ * Reject business queries at the hard admission boundary before schema initialization or database I/O.
+ */
 export async function enqueueCommand(actor: string, instanceId: string, id: string, raw: FleetOperation,authority:FleetActor={actor,root:true}) {
   const operation=operationSchema.parse(raw);
   requireFleetBusinessAdmission(operation);

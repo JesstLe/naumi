@@ -288,6 +288,7 @@ class LifecycleTests(unittest.TestCase):
 
     @patch.object(mapping, 'assert_legacy_fleet_rollback_clear', return_value={'businessRows': 0})
     def test_pre_switch_known_original_gateway_only_resumes_original_worker(self, guard):
+        """Verify that a known unchanged entry checks the DB guard before worker resume."""
         r = self.release(); r.worker_paused = True; r.tx.run.return_value = b'old gateway'
         r.db = row('fixture-db', '6')
         r.rollback()

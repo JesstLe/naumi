@@ -23,6 +23,7 @@ const adminPage='src/lib/admin-page.ts',adminNavigation='src/lib/admin-navigatio
 const fixtureKey='__naumiUsageEntryFixture',hash=b=>createHash('sha256').update(b).digest('hex');
 const blobs={},origins={},checks=[],cases=[];const beforeEnv=process.env.FLEET_CONTROL_ENABLED,beforeFixture=globalThis[fixtureKey];
 const check=(value,name)=>checks.push({name,passed:Boolean(value)});
+/** Execute actual center/usage pages and admin return-path modules with finite I/O/components, then verify explicit-query login round trips and native/Fleet ownership. */
 async function main(){
   const stub=`import {requireAdminPage as actualRequireAdminPage} from 'actual-admin-page';
 const f=()=>globalThis[${JSON.stringify(fixtureKey)}];
@@ -57,6 +58,7 @@ export function notFound(){f().notFound=true;throw new Error('fixture-not-found'
     }}]});
   const {AdminUsagePage,AdminCenterPage,businessNavigation,businessFilter,businessLocalDetail}=await import('data:text/javascript;base64,'+Buffer.from(built.outputFiles[0].text).toString('base64'));
   check(Object.keys(blobs).length===sources.length&&sources.every(name=>blobs[name]),'actual center/usage pages, entry/model/BI sections and real admin auth/navigation loaded');
+  /** Walk the finite React element tree and collect marked dashboard/shell owners with their actual props. */
   const owners=node=>!node||typeof node!=='object'?[]:[...(node.type?.entryView?[{owner:node.type.entryView,props:node.props}]:[]),...[node.props?.children].flat().flatMap(owners)];
   const inputs=[
     ['fleet-off-email','0',{email:'account@fixture.test'},'local'],

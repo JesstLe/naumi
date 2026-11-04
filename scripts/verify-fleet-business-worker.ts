@@ -3,6 +3,7 @@
 import {readFileSync} from 'node:fs';
 import {fleetFixtureUrl} from './lib/fleet-business-fixture-url';
 
+/** Require the named fixture database for the requested tick/poll mode, execute the real operation and close application database pools before exiting. */
 async function main(){
   const url=fleetFixtureUrl(process.env.DATABASE_URL,'worker');
   process.env.DATABASE_URL=url.toString();

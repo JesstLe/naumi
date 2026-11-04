@@ -311,6 +311,11 @@ class Release:
   self.tx.save('FINAL_STATUS.json',self.record)
 
  def rollback(self):
+  """Restore the retained UI entry only after the legacy-business guard passes.
+
+  Restart exact retired CIDs with their original policies, invert switched gateway
+  files, and drain owned candidates; this restores no database and replays no task.
+  """
   assert_legacy_fleet_rollback_clear(self.tx,public_identity(self.db))
   # Start retained exact old UI containers before re-exposing their origins.
   for old in self.retired:

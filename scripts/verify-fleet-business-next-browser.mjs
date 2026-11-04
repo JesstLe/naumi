@@ -23,6 +23,7 @@ const HOLD='跨站业务查询仍处于兼容准备阶段',DAYS=90;
 const central=new Pool({connectionString:fixture.central,max:1});
 const commandIds=async()=>(await central.query("SELECT id FROM app_fleet_commands WHERE operation->>'type'='business.query' ORDER BY id")).rows.map(r=>r.id);
 const record={layer:'isolated-real-Next-UI-API-admission-HOLD-central-PG-connector',publicBusinessAdmission:'HOLD',positiveRemoteData:'not supplied or seeded by this runner',sourceDatabaseQueried:false,result:'RUNNING',checks:[],pageErrors:[],screenshots:[],ticks:0,businessWrites:0,paidCalls:0};
+/** Run a real connector tick in the named source-fixture process and record its successful JSON result without changing public admission. */
 async function tick(){
   const child=spawn(process.execPath,['--import','tsx','--conditions','react-server','scripts/verify-fleet-business-worker.ts'],{cwd:process.cwd(),env:{...process.env,...fixture.env,DATABASE_URL:fixture.source},stdio:['pipe','pipe','pipe']});
   let out='',err='';child.stdout.on('data',x=>out+=x);child.stderr.on('data',x=>err+=x);
@@ -40,6 +41,7 @@ try{
   await context.addCookies(cookie.split(';').map(v=>v.trim()).filter(Boolean).map(v=>{const at=v.indexOf('=');return{name:v.slice(0,at),value:v.slice(at+1),url:origin.origin,httpOnly:true,sameSite:'Lax'}}));
   const page=await context.newPage();page.on('pageerror',error=>record.pageErrors.push(error.message));
   const responses=[];page.on('response',async response=>{if(response.url().includes('/api/admin/business')){const body=await response.json().catch(()=>null);responses.push({status:response.status(),body});}});
+  /** Wait for the actual UI/API to expose the expected remote HOLD and unknown metric, with no remote account rows or fabricated total. */
   async function held(view,selection='all'){
     await expect.poll(async()=>{
       const latest=responses.filter(r=>r.body?.query?.view===view).at(-1);

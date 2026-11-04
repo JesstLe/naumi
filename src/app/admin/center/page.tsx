@@ -10,6 +10,9 @@ import { businessEntryView, businessExplicitEntry, businessLocalDetail, type Bus
 export const dynamic = "force-dynamic";
 export const metadata = { title: "管理中心 — Naumi", robots: { index: false, follow: false } };
 
+/** Authenticate the requested center URL before choosing its native or explicit Fleet owner.
+ * Preserve every explicit query value in the login return target; bare entries stay native.
+ */
 export default async function AdminCenterPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const query = await searchParams;
   const explicitSection = BI_SECTIONS.includes(query.section as BiSection);

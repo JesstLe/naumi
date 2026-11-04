@@ -33,6 +33,7 @@ LEGACY_FLEET_BUSINESS_SQL = legacy_fleet_business_sql()
 
 
 def _unique_object(pairs):
+    """Decode one JSON object while rejecting repeated keys instead of overwriting them."""
     result = {}
     for key, value in pairs:
         if key in result:
@@ -59,6 +60,7 @@ def parse_legacy_fleet_business_result(raw, database, *, schema='public'):
 
 
 def require_no_retained_fleet_business(result):
+    """Raise Hold unless the parsed retained business-command count is exactly zero."""
     require(result['businessRows'] == 0, 'FLEET_BUSINESS_ROWS_BLOCK_LEGACY_ROLLBACK')
 
 

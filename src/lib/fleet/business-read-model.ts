@@ -4,14 +4,19 @@ import {ADMIN_CREDIT_ADJUSTMENT_FEATURE,administrativeDebitPredicate} from '@/li
 import {fleetBusinessQuerySchema,parseFleetBusinessSnapshot,type FleetBusinessQuery,type FleetBusinessSnapshot} from './business-contracts';
 
 const PAGE_SIZE=30;
+/** Convert a database numeric value only when finite and within the safe magnitude bound; reject non-finite or out-of-range observations. */
 function number(value:unknown):number {
   const result=Number(value);if(!Number.isFinite(result)||Math.abs(result)>Number.MAX_SAFE_INTEGER)throw new Error('FLEET_BUSINESS_NUMBER_UNAVAILABLE');return result;
 }
+/** Normalize a database date or timestamp-like value to ISO text; invalid timestamps propagate as read failures. */
 const iso=(value:unknown)=>(value instanceof Date?value:new Date(String(value))).toISOString();
+/** Preserve null or absent database timestamps while normalizing present values to ISO text. */
 const nullableIso=(value:unknown)=>value===null||value===undefined?null:iso(value);
 /** Account filters are parameterized and shared across all facts, including deleted-account ledger history. */
 const filter=(alias:string)=>`($3::text='' OR position(lower($3) in lower(${alias}.email||' '||COALESCE((SELECT fu.name FROM app_users fu WHERE fu.email=${alias}.email),'')))>0) AND ($4::text IS NULL OR ${alias}.email=$4)`;
+/** Build the shared half-open timestamp predicate for a trusted table alias using the query's bound start and end parameters. */
 const range=(alias:string)=>`${alias}.created_at >= $1::timestamptz AND ${alias}.created_at < $2::timestamptz`;
+/** Compose the read-side wallet and ledger CTEs, separating provenance-backed administrative debits from actual customer consumption. */
 function ledgerCtes(){
   const adjustmentKeys=`SELECT DISTINCT o.email,o.ledger_id FROM app_billing_operations o JOIN candidate_ledger l ON l.email=o.email AND l.id=o.ledger_id WHERE o.feature='${ADMIN_CREDIT_ADJUSTMENT_FEATURE}'`;
   return `wallets AS MATERIALIZED (SELECT email,sum(remaining::bigint) principal FROM app_credit_batches WHERE expires_at>CURRENT_TIMESTAMP AND remaining>0 GROUP BY email),
@@ -71,6 +76,7 @@ export async function readFleetBusinessQueryInTransaction(tx:ReadClient,input:Fl
   return parseFleetBusinessSnapshot(snapshot);
 }
 
+/** Run the business snapshot in a bounded repeatable-read, read-only transaction; roll back on errors and always release the pooled client. */
 export async function readFleetBusinessQuery(pool:Pool,input:FleetBusinessQuery):Promise<FleetBusinessSnapshot> {
   const tx=await pool.connect();
   try{await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');await tx.query("SET LOCAL statement_timeout='8s'; SET LOCAL lock_timeout='1s'");

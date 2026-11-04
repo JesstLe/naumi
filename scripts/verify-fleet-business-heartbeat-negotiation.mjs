@@ -29,6 +29,7 @@ assert.ok(!sourceRoot||sourceRoot!==ROOT);assert.ok(!process.argv.includes('--ex
 const connector='src/lib/fleet/connector.ts',server='src/lib/fleet/server.ts',local='src/lib/fleet/local-status.ts',support='src/lib/fleet/business-support.ts',contracts='src/lib/fleet/contracts.ts';
 const hash=b=>createHash('sha256').update(b).digest('hex');
 const sourceSHA256={},sourceOrigins={},sourceRoles={},loaded=new Map();
+/** Load and hash the selected heartbeat source, labeling the narrowly permitted baseline-helper or unchanged-contract fallbacks separately from tested code. */
 async function source(file){
   if(loaded.has(file))return loaded.get(file);
   let text,origin,role='system-under-test';
@@ -56,6 +57,7 @@ function extract(text,names,file){
 }
 const transpile=text=>ts.transpileModule(text,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;
 
+/** Execute real heartbeat schemas, signatures and extracted connector/server paths with finite I/O, covering capability negotiation, legacy fallback and stored-status ownership. */
 async function main(){
   const connectorText=await source(connector),localText=await source(local),serverText=await source(server);
   await source(contracts);await source(support);
@@ -85,6 +87,7 @@ async function main(){
     const context=vm.createContext({exports:{},Buffer,AbortSignal,Response,Date,URL,Error,JSON,randomUUID,
       centralUrl:real.centralUrl,statusSchema:real.statusSchema,verifyCommand:real.verifyCommand,
       verifyFleetBusinessSupport:real.verifyFleetBusinessSupport,
+      /** Validate and record authenticated poll/ACK envelopes, fresh nonces and request options before returning the selected finite transport response. */
       fleetFetch:async(url,init)=>{
         const data=JSON.parse(init.body),endpoint=new URL(url).pathname.split('/').at(-1);
         nonces.push(data.nonce);state.requests.push({endpoint,nonce:data.nonce,probe:new Headers(init.headers).get('x-naumi-fleet-business-probe'),...(data.status?{status:{...data.status}}:{}),...(data.commandId?{commandId:data.commandId,leaseId:data.leaseId,result:data.result}:{})});
@@ -212,7 +215,9 @@ async function main(){
   ];
   for(const[name,previous,next,probe,expected]of metadataCases){
     const c=control(),state={stored:null,dispatchBusiness:null,committed:false,released:false};
-    const tx={release(){state.released=true;},async query(sql,values=[]){
+    const tx={release(){state.released=true;},
+      /** Model the exact central heartbeat transaction statements while recording stored metadata, business dispatch permission and commit state; reject unexpected SQL. */
+      async query(sql,values=[]){
       if(sql==='BEGIN'||sql==='ROLLBACK')return{rows:[],rowCount:0};
       if(sql==='COMMIT'){state.committed=true;return{rows:[],rowCount:0};}
       if(sql.startsWith('SELECT token_hash,enabled'))return{rows:[{token_hash:real.digest(token),enabled:true,...(sql.includes('enabled,status')?{status:previous}:{})}],rowCount:1};
@@ -244,6 +249,7 @@ async function main(){
     const env=mode==='invalid-slots'?{FLEET_ACTIVE_SLOTS_FILE:path.resolve('fixture-invalid-active-slots.json')}:{FLEET_SINGLE_APP_ORIGIN:'http://127.0.0.1:3000'};
     const sandbox=vm.createContext({exports:{},Error,URL,Buffer,AbortSignal,process:{env,platform:process.platform},path,statusSchema:real.statusSchema,
       constants:{O_RDONLY:0,O_NOFOLLOW:0},open:async()=>{throw Error('fixture-invalid-slots');},
+      /** Return a finite local version or simulate an offline version probe so local-status paths never imply unconfirmed business support. */
       fetch:async()=>{if(mode==='unknown-version')throw Error('fixture-local-offline');return Response.json({commit:'a'.repeat(40),version:123});},
     });
     vm.runInContext(localSource,sandbox,{timeout:2000});const value=await sandbox.actualLocalStatus('s3');

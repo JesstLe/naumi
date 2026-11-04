@@ -15,6 +15,7 @@ from release47_host import Hold, public_identity, sha
 
 
 def database_row():
+    """Return a running database identity with fixture-only PostgreSQL context."""
     return {'Id': 'd' * 64, 'Name': '/fleet-guard-fixture-db',
             'Image': 'sha256:' + 'e' * 64,
             'State': {'Running': True, 'StartedAt': '2026-11-05T00:00:00Z'},
@@ -23,6 +24,7 @@ def database_row():
 
 
 def psql_output(count=0, **changed):
+    """Encode a guard result row, allowing deliberate count or metadata mutations."""
     value = {'database': 'fleet_guard_fixture', 'readOnly': 'on', 'isolation': 'repeatable read',
              'schema': 'public', 'table': 'app_fleet_commands', 'businessRows': count}
     value.update(changed)
@@ -33,17 +35,20 @@ class FiniteTx:
     target = '103.30.76.93'
 
     def __init__(self, output=None):
+        """Initialize pinned database state and configurable finite psql output or error."""
         self.database = database_row()
         self.output = psql_output() if output is None else output
         self.commands, self.pins = [], []
 
     def pin(self, identity):
+        """Record identity pins and reject a caller binding that differs from the DB row."""
         self.pins.append(copy.deepcopy(identity))
         if identity != public_identity(self.database):
             raise Hold('FINITE_DB_IDENTITY_CHANGED')
         return copy.deepcopy(self.database)
 
     def run(self, argv, **kwargs):
+        """Record commands and return finite gateway/psql output, rejecting unexpected I/O."""
         self.commands.append((argv, kwargs))
         if argv == ['nginx', '-T']:
             return b'original gateway'
@@ -62,6 +67,7 @@ def attach_database(tx, count):
     tx.pin = lambda identity: copy.deepcopy(database) if identity == public_identity(database) else None
 
     def run(argv, **kwargs):
+        """Answer guard psql reads locally and delegate other commands to the fixture."""
         if 'psql' in argv:
             tx.commands.append(argv)
             return psql_output(count)
@@ -72,9 +78,11 @@ def attach_database(tx, count):
 
 class ReadOnlyGuardTests(unittest.TestCase):
     def check(self, tx, **kwargs):
+        """Invoke the real guard with the finite database identity and optional selectors."""
         return guard.assert_legacy_fleet_rollback_clear(tx, public_identity(tx.database), **kwargs)
 
     def test_zero_rows_runs_pinned_read_only_psql_without_any_host_mutation(self):
+        """Verify pinned read-only psql arguments and a zero-row receipt without live claims."""
         tx = FiniteTx()
         result = self.check(tx)
         self.assertEqual(tx.pins, [public_identity(tx.database)])
@@ -87,6 +95,7 @@ class ReadOnlyGuardTests(unittest.TestCase):
         self.assertFalse(result['externalProducersFrozen'] or result['liveCutbackExecuted'])
 
     def test_every_retained_state_blocks_and_sql_has_no_state_filter(self):
+        """Verify that any retained business row blocks rollback, independent of command state."""
         sql = guard.LEGACY_FLEET_BUSINESS_SQL.decode()
         self.assertIn('REPEATABLE READ READ ONLY', sql)
         self.assertIn('FROM "public"."app_fleet_commands"', sql)
@@ -98,12 +107,14 @@ class ReadOnlyGuardTests(unittest.TestCase):
                     self.check(FiniteTx(psql_output(1)))
 
     def test_timeout_missing_table_and_transport_errors_never_become_zero(self):
+        """Verify that finite timeout, relation, and transport failures remain unverified."""
         for error in (TimeoutError('finite timeout'), RuntimeError('finite missing relation'), ValueError('finite transport')):
             with self.subTest(error=type(error).__name__):
                 with self.assertRaisesRegex(Hold, '^FLEET_LEGACY_ROLLBACK_STATE_UNVERIFIED$'):
                     self.check(FiniteTx(error))
 
     def test_unknown_output_and_metadata_fail_closed(self):
+        """Reject malformed, duplicate, oversized, mistyped, or incorrectly bound guard output."""
         invalid = [b'', b'null\n', b'[]\n', b'{}\n', b'not-json\n', b'\xff',
                    psql_output() + psql_output(), psql_output() + b'NOTICE\n', b' ' * 4097,
                    psql_output(-1), psql_output(True), psql_output(0.0), psql_output('0'),
@@ -118,6 +129,7 @@ class ReadOnlyGuardTests(unittest.TestCase):
                     self.check(FiniteTx(raw))
 
     def test_database_pin_and_context_are_not_caller_supplied_clear_flags(self):
+        """Reject changed DB identity, missing PostgreSQL context, or the wrong target before I/O."""
         tx = FiniteTx(); changed = public_identity(tx.database); changed['startedAt'] = 'other'
         with self.assertRaises(Hold): guard.assert_legacy_fleet_rollback_clear(tx, changed)
         self.assertEqual(tx.commands, [])
@@ -129,6 +141,7 @@ class ReadOnlyGuardTests(unittest.TestCase):
         self.assertEqual(tx.commands, [])
 
     def test_schema_binding_rejects_injection_and_exports_real_pg_sql(self):
+        """Reject unsafe schema selectors while preserving a valid isolated SQL binding."""
         for schema in ('', 'public;DROP SCHEMA public', 'other.schema', "public'", None):
             with self.subTest(schema=schema):
                 with self.assertRaises(Hold): guard.legacy_fleet_business_sql(schema)
@@ -138,6 +151,7 @@ class ReadOnlyGuardTests(unittest.TestCase):
 
 class RollbackEntryTests(unittest.TestCase):
     def fixture(self, cls, output=None):
+        """Construct a finite release object with retained rows and mocked mutation hooks."""
         release = cls.__new__(cls)
         release.tx = FiniteTx(psql_output(1) if output is None else output)
         release.db = release.tx.database
@@ -149,6 +163,7 @@ class RollbackEntryTests(unittest.TestCase):
         return release
 
     def test_refactor_blocks_before_new_drain_old_start_policy_route_or_resume(self):
+        """Verify retained or unverified state blocks refactor rollback before mutation hooks."""
         for output in (psql_output(1), RuntimeError('finite unavailable')):
             release = self.fixture(refactor.Release, output)
             release.new = {'would-drain': None}; release.switched = True
@@ -158,12 +173,14 @@ class RollbackEntryTests(unittest.TestCase):
             self.assertTrue(all('psql' in argv for argv, _ in release.tx.commands))
 
     def test_direct_inverse_gateway_is_guarded_before_gateway_writes(self):
+        """Verify direct inverse gateway switching checks retained state before bundle writes."""
         release = self.fixture(refactor.Release)
         with patch.object(refactor.controls, 'switch_gateway_bundle') as switch:
             with self.assertRaisesRegex(Hold, 'ROWS_BLOCK_LEGACY'): release.gateway(False)
         switch.assert_not_called()
 
     def test_staged_blocks_before_old_restart_or_inverse_route(self):
+        """Verify staged rollback blocks before restarting old UI or inverting gateway routes."""
         release = self.fixture(staged.Release)
         release.retired = [None]; release.switched = True
         with patch.object(staged.controls, 'switch_gateway_bundle') as switch:
@@ -172,6 +189,7 @@ class RollbackEntryTests(unittest.TestCase):
         self.assertTrue(all('psql' in argv for argv, _ in release.tx.commands))
 
     def test_mapping_and_shared_pre_switch_do_not_resume_on_retained_or_unknown(self):
+        """Verify mapping and shared pre-switch paths keep the worker paused on uncertain state."""
         for cls in (mapping.Release, shared.Release):
             for output in (psql_output(1), TimeoutError('finite timeout')):
                 with self.subTest(cls=cls.__module__, output=type(output).__name__):
@@ -180,12 +198,14 @@ class RollbackEntryTests(unittest.TestCase):
                     release.worker.assert_not_called(); release.op.assert_not_called()
 
     def test_mapping_clear_resumes_only_existing_pre_switch_path(self):
+        """Verify a clear guard admits only the existing original-worker resume operation."""
         release = self.fixture(mapping.Release, psql_output())
         release.rollback()
         self.assertEqual(release.op.call_args.args[0], 'resume-original-worker')
         self.assertEqual(len([argv for argv, _ in release.tx.commands if 'psql' in argv]), 1)
 
     def test_shared_47_semantics_and_post_switch_no_cutback_remain(self):
+        """Preserve the 47 pre-switch path and prohibit worker resume after either switch."""
         release = self.fixture(shared.Release)
         release.c['target'] = '47.105.59.142'; del release.db
         release.rollback(); release.worker.assert_called_once_with(release.old['worker'], 'resume')
@@ -195,11 +215,13 @@ class RollbackEntryTests(unittest.TestCase):
             release.rollback(); release.worker.assert_not_called(); release.op.assert_not_called()
 
     def test_authorized_retirement_preserves_original_failure_without_restore_start(self):
+        """Verify retained business rows block recovery start without replacing the original failure."""
         import test_release103_authorized_ui_retirement as existing
         fixture = existing.Tests('test_stop_minimum_and_preserve'); fixture.setUp()
         fixture.tx.business_rows = 1
         calls = 0
         def health(*_):
+            """Fail the third finite health observation to exercise retirement recovery."""
             nonlocal calls
             calls += 1
             if calls == 3: raise RuntimeError('Original finite health failure')
@@ -211,6 +233,7 @@ class RollbackEntryTests(unittest.TestCase):
         self.assertFalse(any(name.startswith('restore-intent-') for name in fixture.tx.saved))
 
     def test_both_historical_restore_libraries_require_db_and_block_retained(self):
+        """Verify both historical restore libraries require DB binding and reject retained rows."""
         import test_release_legacy_ui_retirement as legacy_existing
         import test_release_runtime_ui_retirement as runtime_existing
         for module, case_class, manifest_name in ((legacy, legacy_existing.Fixture, 'manifest'),
@@ -229,6 +252,7 @@ class RollbackEntryTests(unittest.TestCase):
                 self.assertFalse(any(argv[:2] in (['docker', 'start'], ['docker', 'update']) for argv in tx.commands))
 
     def test_runtime_restore_zero_state_uses_real_guard_then_preserves_original_policy(self):
+        """Verify clear-state runtime restoration uses the real guard and restores the exact policy."""
         import test_release_runtime_ui_retirement as existing
         fixture = existing.RuntimeFixture(); fixture.setUp(); self.addCleanup(fixture.tearDown)
         tx = fixture.tx(); fixture.retire(tx)
@@ -244,6 +268,7 @@ class RollbackEntryTests(unittest.TestCase):
         self.assertEqual(tx.row['HostConfig']['RestartPolicy'], intent['originalRestartPolicy'])
 
     def test_legacy_47_restore_does_not_require_or_invoke_103_database_guard(self):
+        """Verify legacy 47 restoration keeps its existing path without invoking the 103 guard."""
         import test_release_legacy_ui_retirement as existing
         fixture = existing.Fixture(); fixture.setUp(); self.addCleanup(fixture.tearDown)
         tx = fixture.tx(); tx.row['State']['Running'] = False

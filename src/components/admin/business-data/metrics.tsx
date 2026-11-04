@@ -3,6 +3,7 @@ import { money, number } from "./model";
 import type { BusinessTotals, BusinessView } from "./types";
 import styles from "./business-data.module.css";
 
+/** Render view-specific summary cards from confirmed aggregate totals; format unavailable values as unknown rather than zero. */
 export function BusinessMetrics({ totals, view }: { totals: BusinessTotals | null; view: BusinessView }) {
   const cards = view === "orders" ? [
     { label: "订单实付", value: money(totals?.paidAmount), Icon: Wallet },

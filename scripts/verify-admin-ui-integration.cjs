@@ -2,6 +2,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
 const {build}=require('esbuild'),{chromium}=require('playwright');
 const args=process.argv.slice(2),arg=(key,fallback)=>args.includes(key)?args[args.indexOf(key)+1]:fallback,workspace=path.resolve(__dirname,'..'),root=path.resolve(arg('--source-root',workspace)),out=path.resolve(arg('--output-root',process.env.ADMIN_SHELL_EVIDENCE||path.join(workspace,'output/admin-ui-integration-tests'))),baseline=args.includes('--baseline');
 const report={sourceRoot:root,baseline,cases:[],pageErrors:[],externalRequests:[],loaded:[]};
+/** Bundle the actual admin shell with finite navigation/fetch boundaries, exercise it in a browser and save request, accessibility and rendering assertions. */
 async function main(){fs.mkdirSync(out,{recursive:true});
  const entry=`import React from 'react';import {createRoot} from 'react-dom/client';import {AdminCenterShell} from './src/components/admin/center-shell';
  window.fetch=async(url,init)=>{window.__requests.push({url:String(url),method:init?.method||'GET'});if(String(url).includes('release-notes'))return Response.json({version:'1793098906',entries:[]});if(String(url).includes('/api/version'))return Response.json({version:'1793098906'});if(String(url).includes('/api/admin/login'))return new Response('{}',{status:503});return Response.json({enabled:window.__fleetEnabled});};

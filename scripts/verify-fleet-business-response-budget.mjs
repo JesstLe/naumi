@@ -31,6 +31,7 @@ const requiredCopyFiles=new Set(['src/lib/fleet/business-central.ts','src/lib/fl
   ...(!baselineMode?['src/lib/fleet/business-response.ts']:[])]);
 let api,activeFixture,streamFetches=0;
 const bytes=value=>Buffer.byteLength(JSON.stringify(value),'utf8');
+/** Fingerprint either exact text or serialized fixture data for source and immutability evidence. */
 const hash=value=>createHash('sha256').update(typeof value==='string'?value:JSON.stringify(value)).digest('hex');
 function check(value,name){assert.ok(value,name);checks.push(name);}
 function same(actual,expected,name){assert.deepEqual(actual,expected,name);checks.push(name);}
@@ -57,6 +58,7 @@ export async function fleetReadCommand(actor,id,commandId){
 export async function enqueueCommand(){current().calls.enqueue++;throw new Error('UNEXPECTED_FIXTURE_ENQUEUE');}
 `;
 
+/** Bundle the actual central/contracts/client/model sources with finite I/O, preserving baseline/copy origins and checking the shared response limit. */
 async function bundle(){
   const entry=`export * from './src/lib/fleet/business-central.ts';
 export * from './src/lib/fleet/business-contracts.ts';
@@ -97,6 +99,7 @@ ${baselineMode?'':"export * from './src/lib/fleet/business-response.ts';"}`;
   if(!baselineMode)same(api.FLEET_BUSINESS_RESPONSE_MAX_BYTES,LIMIT,'shared response bound remains exactly 2 MiB');
 }
 
+/** Create and validate a legal small or near-maximum escaped UTF-8 site snapshot within the per-site receipt bound. */
 function makeSnapshot(query,large){
   const snapshot={schemaVersion:1,view:query.view,asOf:query.asOf,from:new Date(Date.parse(query.asOf)-query.days*86400000).toISOString(),observedAt:query.asOf,
     timeZone:'Asia/Shanghai',scope:'site',page:query.page,pageSize:30,total:large?30:1,
@@ -126,6 +129,7 @@ function shrinkSnapshot(snapshot,remaining){
   return touched;
 }
 
+/** Install a deterministic directory, snapshots and requested source states in finite I/O, resetting call counters and the local cache for each scenario. */
 function fixture(remoteCount,{large=false,states={},longNames=false,allOffline=false}={}){
   const request={site:'all',view:'ledger',days:30,page:1,search:'查"\\\n询',refresh:true};
   const query=api.businessQuerySchema.parse({type:'business.query',view:request.view,days:request.days,asOf:new Date(NOW).toISOString(),page:request.page,search:request.search});
@@ -143,13 +147,16 @@ function unchanged(f,name){same(hash(f.snapshot),f.snapshotHash,name);same(f.cal
 
 async function clientRead(body){
   const payload=new TextEncoder().encode(JSON.stringify(body));let offset=0;
-  globalThis.fetch=async()=>{streamFetches++;return new Response(new ReadableStream({pull(controller){
+  globalThis.fetch=async()=>{streamFetches++;return new Response(new ReadableStream({
+    /** Stream the serialized response in bounded byte chunks and close only after the entire fixture payload is consumed. */
+    pull(controller){
     if(offset===payload.length){controller.close();return;}
     const next=Math.min(offset+8191,payload.length);controller.enqueue(payload.slice(offset,next));offset=next;
   }}),{status:200,headers:{'content-type':'application/json'}});};
   return api.readBusinessResponse('https://finite-fixture.invalid/api/admin/business',new AbortController().signal);
 }
 
+/** Verify complete two-site aggregation, real HMAC token identity/ownership checks and unchanged snapshot inputs through the actual client reader. */
 async function smallAndIdentity(){
   const f=fixture(1),response=await start(f),parsed=await clientRead(response);
   check(response.complete&&response.sources.length===2&&response.sources.every(source=>source.status==='succeeded'),'small two-site response is complete and untruncated');
@@ -166,6 +173,7 @@ async function smallAndIdentity(){
   scenarios.push({name:'small-two-sites-and-real-token',sites:2,bytes:bytes(response),complete:response.complete,calls:f.calls});
 }
 
+/** Assemble 201 selected sources, reproduce baseline overflow or verify bounded omission and single-site recovery through the actual central/client code. */
 async function largeCollection(){
   const f=fixture(200,{large:true}),response=await start(f),responseBytes=bytes(response);
   same(response.sites.length,201,'full local plus 200 remote site directory remains present');
@@ -205,6 +213,7 @@ async function largeCollection(){
   return response;
 }
 
+/** Verify response budgeting preserves pending/offline/failed/unknown receipts and rejects mismatched operations or snapshots without complete totals. */
 async function mixedStates(){
   const f=fixture(200,{large:true,states:{197:'pending',198:'offline',199:'failed',200:'unknown'}}),response=await start(f),parsed=await clientRead(response);
   for(const [index,status]of [[197,'pending'],[198,'offline'],[199,'failed'],[200,'unknown']]){
@@ -222,6 +231,7 @@ async function mixedStates(){
   check(!mismatched.complete&&api.combinedTotals(mismatched)===null,'mismatched receipt is unknown, not a zero or complete total');
 }
 
+/** Construct exact-limit and one-byte-over UTF-8 envelopes to verify pure budgeting boundaries, source omission and input immutability. */
 async function pureBoundaries(){
   check(typeof api.boundFleetBusinessResponse==='function','actual pure response budget helper is exported');
   const f=fixture(49,{large:true}),raw=await start(f);
@@ -246,6 +256,7 @@ async function pureBoundaries(){
   scenarios.push({name:'exact-utf8-envelope-boundaries',exactBytes:LIMIT,plusOneBytes:LIMIT+1,sourceArrayBytes:bytes(over.sources),boundedBytes:bytes(bounded),inputUnchanged:true});
 }
 
+/** Verify an oversized directory alone produces the documented 503 instead of returning an unbounded response or mutating fixture inputs. */
 async function metadataOverflow(){
   const f=fixture(6000,{longNames:true,allOffline:true});
   const sites=[{id:'local',name:'103平台',kind:'local',enabled:true,lastSeen:null},...f.rows.map(row=>({id:row.id,name:row.name,kind:row.kind,enabled:row.enabled,lastSeen:row.last_seen}))];
@@ -260,6 +271,7 @@ async function metadataOverflow(){
   scenarios.push({name:'metadata-only-overflow',sites:6001,metadataOnlyBytes:bytes(metadataOnly),central:{status:error.status,error:error.message,responseReturned:false},calls:f.calls});
 }
 
+/** Run the finite response-budget scenarios, save source hashes and reopened evidence, and distinguish reproduced baseline failure from modified-code acceptance. */
 async function main(){
   process.env.SETTINGS_SECRET='finite-budget-fixture-secret-20261105-no-real-network';
   await bundle();await smallAndIdentity();await largeCollection();

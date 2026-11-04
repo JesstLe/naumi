@@ -19,12 +19,16 @@ const files=['scripts/verify-fleet-business-control-priority.ts','scripts/verify
 const sha=b=>createHash('sha256').update(b).digest('hex'),sourceSHA256={},sourceOrigins={},sources=[];
 for(const file of files){const origin=copy?path.join(copy,file):path.join(ROOT,file);const text=baseline?execFileSync('git',['show',baseline+':'+file],{cwd:ROOT,encoding:'utf8'}):await readFile(origin,'utf8');sourceSHA256[file]=sha(text);sourceOrigins[file]=baseline?'git:'+baseline:origin;sources.push(ts.createSourceFile(origin,text,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS));}
 const checks=[],normal=[],explicit=[];const check=(passed,name)=>checks.push({name,passed:Boolean(passed)});
-function find(root,predicate){const values=[];function visit(node){if(predicate(node))values.push(node);ts.forEachChild(node,visit);}visit(root);return values;}
+function find(root,predicate){const values=[];
+  /** Visit each AST node and collect those matching the enclosing lookup predicate. */
+  function visit(node){if(predicate(node))values.push(node);ts.forEachChild(node,visit);}visit(root);return values;}
 const [source,caller]=sources,fn=find(source,n=>ts.isFunctionDeclaration(n)&&n.name?.text==='verifyFleetBusinessControlPriority')[0];assert.ok(fn);
 const producers=find(fn,n=>ts.isVariableDeclaration(n)&&ts.isIdentifier(n.name)&&['read','readAt'].includes(n.name.text));assert.equal(producers.length,1);
 const producer=producers[0],name=producer.name.text;assert.ok(producer.initializer);
 const calls=find(fn,n=>ts.isCallExpression(n)&&ts.isPropertyAccessExpression(n.expression)&&n.expression.expression.getText(source)==='service'&&n.expression.name.text==='enqueueCommand');
+/** Recognize identifier references to the timestamp-producing variable selected from the actual verifier AST. */
 const references=node=>ts.isIdentifier(node)&&node.text===name;
+/** Recognize calls to the selected timestamp factory so implicit fresh inputs remain distinct from explicit expiry inputs. */
 const factoryCall=node=>ts.isCallExpression(node)&&references(node.expression);
 for(const call of calls){const argument=call.arguments[3];if(!argument)continue;
  if(references(argument)||factoryCall(argument)&&argument.arguments.length===0)normal.push(argument);

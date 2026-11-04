@@ -4,6 +4,7 @@ import { centralUrl } from '../src/lib/fleet/contracts';
 import {relayRelease} from '../src/lib/fleet/release-relay';
 import {localFleetStatus} from '../src/lib/fleet/local-status';
 let stopping=false;process.on('SIGINT',()=>{stopping=true;});process.on('SIGTERM',()=>{stopping=true;});
+/** Validate connector settings, run command/status ticks and the optional release relay, and stop after --once or a shutdown signal. */
 async function main() {
   if(process.env.FLEET_CONNECTOR_ENABLED!=='1') throw new Error('FLEET_CONNECTOR_DISABLED');
   const central=process.env.FLEET_CENTRAL_URL||'',instanceId=process.env.FLEET_INSTANCE_ID||'',token=process.env.FLEET_INSTANCE_TOKEN||'';

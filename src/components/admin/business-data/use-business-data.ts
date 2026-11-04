@@ -4,12 +4,17 @@ import { BusinessReadError, readBusinessResponse } from "./client";
 import type { BusinessFilter, BusinessResponse } from "./types";
 
 type State = { key: string; data: BusinessResponse | null; busy: boolean; error: string };
+/** Wait between polls with abortable timer cleanup so superseded queries do not keep polling. */
 const wait = (ms: number, signal: AbortSignal) => new Promise<void>((resolve, reject) => {
+  /** Cancel the pending poll delay, detach its abort listener and reject with the original cancellation reason. */
   const abort = () => { clearTimeout(timer); signal.removeEventListener("abort", abort); reject(signal.reason); };
   const timer = setTimeout(() => { signal.removeEventListener("abort", abort); resolve(); }, ms);
   signal.addEventListener("abort", abort, { once: true }); if (signal.aborted) abort();
 });
 
+/** Load and poll business snapshots keyed by administrator identity and filters, aborting superseded effects.
+ * Keep timed-out sources unknown and discard retained data on access errors rather than showing stale authorized results.
+ */
 export function useBusinessData(filter: BusinessFilter, identity: string, ready: boolean, revision: number) {
   const filterKey = JSON.stringify(filter), key = identity + "\0" + filterKey;
   const [state, setState] = useState<State>({ key: "", data: null, busy: true, error: "" });
@@ -17,6 +22,7 @@ export function useBusinessData(filter: BusinessFilter, identity: string, ready:
   useEffect(() => {
     const controller = new AbortController(); let current = true;
     if (!ready) return () => controller.abort();
+    /** Publish state only while this query effect remains current and its abort signal is still active. */
     const update = (data: BusinessResponse | null, busy: boolean, error = "") => {
       if (current && !controller.signal.aborted) setState({ key, data, busy, error });
     };

@@ -6,6 +6,7 @@ import {request as httpsRequest} from 'node:https';
 import {checkServerIdentity} from 'node:tls';
 import {isIP} from 'node:net';
 import {statusSchema} from './contracts';
+/** Accept only an HTTP(S) origin on the fixed same-host/container allowlist, rejecting credentials and all path/query/fragment overrides. */
 export function localAppOrigin(raw:string){const url=new URL(raw);if(!['http:','https:'].includes(url.protocol)||url.username||url.password||url.search||url.hash||url.pathname!=='/'||!['127.0.0.1','localhost','[::1]','app','naumi-app','host.docker.internal'].includes(url.hostname))throw Error('FLEET_LOCAL_APP_REQUIRED');return url.origin;}
 /** Host selection stays on the already allowlisted local transport; no URL,
  * port, credentials, control characters or metadata-host shortcut is accepted. */
@@ -36,6 +37,9 @@ async function localVersionText(origin:string,host?:string):Promise<string>{
   if(!response.ok)throw Error('LOCAL_UNHEALTHY');
   return response.text();
 }
+/** Observe configured local app versions and return a shared source/version only when every selected slot agrees.
+ * Invalid files, untrusted endpoints or failed observations retain unknown status rather than inferred readiness.
+ */
 export async function localFleetStatus(storage:'local'|'r2'|'s3'){
   const single=process.env.FLEET_SINGLE_APP_ORIGIN;
   let origins=single?[single]:[process.env.FLEET_APP_ORIGIN,process.env.FLEET_DESKTOP_ORIGIN,process.env.FLEET_ENTERPRISE_ORIGIN];
