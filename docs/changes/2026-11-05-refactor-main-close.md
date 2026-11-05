@@ -25,6 +25,8 @@ main 独有两提交新增文本记事本与图片提示词复用；唯一文本
 
 实际 Next + Chromium：正文/提示词复用 17、后台任务 10、像素 Dock 18、缩放 14、紧凑 Dock 24、文字 UX 17，合计 100 checks 通过。实际图片已解码，页面错误 0；HTTP/报价/保存/供应商回执为明确本地 fixture。首轮 fixture 使用旧单体恢复按钮及旧 history 无 canonical artwork receipt，已按真实重构任务恢复与服务端回执契约适配，保留失败记录；没有删除业务断言或据此更改产品。
 
+补充验收记录：`407e381` 的完整本地 gateway 工作流 43 步全部通过（生产 build/seal、billing 18、billing browser 16、11 model gates、business production browser）；同提交 core 在 161 个入口通过后发现 local-node-history 旧 fixture 未声明新的准备状态端口。只适配该测试 helper，并增加“文字准备期间 pending 不被删除”断言；产品代码未改变。随后剩余 86 个非 native 入口集中诊断全部通过（明确 PARTIAL，不冒充完整 core）。最终 fixed-source core/image/SDK 结果以外部证据记录为准。
+
 正式 core catalogue 加入 4 个新主线检查，现为 255 cases；正式同源构建/core 和 verify 仍需在固定候选上执行，以下 artifact 记录最终结果。
 
 最终命令、literal 输出、回滚副本与远端合并回执保存在工作树 `output/refactor-main-close/`，封存四份产物为 `MODIFIED_FILE.zip`、`DIFF_FILE.patch`、`VERIFICATION.txt`、`ROLLBACK.sh`。本文件为候选实施记录，不预先宣称这些验收全部通过或远端已经合并。
