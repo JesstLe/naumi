@@ -34,6 +34,10 @@ import { stableArtworkPositions, canvasNodePosition, readPlacementCache, type Ca
 import { canvasTextEditPatch } from "@/lib/canvas/text-edit-history";
 import { canvasTextContent, nextCanvasTextTimestamp, CANVAS_TEXT_CONTENT_LIMIT, CANVAS_TEXT_INSTRUCTION_LIMIT } from "@/lib/canvas/text-content";
 import { useTextNodeAutosave } from "./use-text-node-autosave";
+import { resolveCanvasTextInstruction } from "@/lib/canvas/text-generation-input";
+import { resolveLinkedImageText, type LinkedImageTextResult } from "@/lib/canvas/linked-image-text";
+import { prepareLinkedImageText } from "@/lib/canvas/prepare-linked-image-text";
+import { LinkedTextInput } from "./linked-text-input";
 import { smartLayout } from "@/lib/canvas/smart-layout";
 import { SurfaceAppearanceProvider } from "@/components/ui/surface-appearance";
 import { CanvasComposerShell, CanvasComposerFooter, CanvasComposerOptions } from "./composer-shell";
@@ -3723,6 +3727,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     () => pendNodes.find((p) => p.id === selectedPendId) ?? null,
     [pendNodes, selectedPendId]
   );
+  const linkedImageText = resolveLinkedImageText({
+    nodes: textNodes.map(node => ({...node, busy: textSubmissionIds.has(node.id)})),
+    targetId: selectedPend?.id || selectedId || "", projectKey: activeKey || "workspace",
+    explicitTextIds: selectedPend ? [selectedPend.parentId, ...selectedPend.inputs].filter((id): id is string => !!id?.startsWith("text-")) : [],
+    draft: editPrompt,
+  });
   const selectedText = useMemo(
     () => textNodes.find((node) => node.id === selectedTextId) ?? null,
     [textNodes, selectedTextId]
@@ -5097,6 +5107,20 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     return response;
   }
 
+  // Save acknowledgements precede input freezing. Derived text never becomes the image draft.
+  function prepareImageText(targetId: string, project: string | null, draft: string, isCurrent: () => boolean, explicitTextIds: readonly string[] = [], fallback = "") {
+    return prepareLinkedImageText({
+      read: () => resolveLinkedImageText({
+        nodes: textNodesRef.current.map(node => ({...node, busy: generationOperationRef.current.has(`text:${node.id}`)})),
+        targetId, projectKey: project || "workspace", explicitTextIds, draft, fallback,
+      }),
+      flush: ids => Promise.all(ids.map(id => textAutosave.flush(id))),
+      wait: ids => Promise.all(ids.map(id => textSaveQueuesRef.current.get(id))),
+      isUnsaved: id => unsavedTextRef.current.has(id) || textAutosave.hasPending(id) || textSaveQueuesRef.current.has(id),
+      isCurrent,
+    });
+  }
+
   // One image updates in place; multi-image requests branch into independent children.
   async function generateSelectedImage(onSubmitted?: () => void) {
     if (!selected) return;
@@ -5107,17 +5131,23 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     setImageSubmissionEpoch(value=>value+1);
     try {
     try{await flushImagePrompts();}catch(error){setGenError(error instanceof Error?error.message:'提示词尚未保存');return;}
-    if(account!==canvasAccountRef.current||workspace!==currentWorkspace()||project!==(activeProjectRef.current?.key||null)||epoch!==canvasContextEpochRef.current)return;
+    const current = () => account===canvasAccountRef.current && workspace===currentWorkspace() && project===(activeProjectRef.current?.key||null) && epoch===canvasContextEpochRef.current;
+    if(!current())return;
+    let linked: LinkedImageTextResult;
+    try { linked = await prepareImageText(selected.id, project, editPrompt, current); }
+    catch(error) { if(current())setGenError(error instanceof Error ? error.message : "关联文字尚未保存"); return; }
+    if(!current())return;
+    if (nodeDeletingRef.current || historyBusyRef.current || isNodeLocked(selected.id) || !worksRef.current?.some(art => art.id === selected.id)) return;
     if (dockReferenceState.error) { setGenError(dockReferenceState.error); return; }
     if (referenceError) { setGenError(referenceError); return; }
     if (visibleDockRefs.length + extraFiles.length > MAX_TOTAL_IMAGES) { setGenError(`一次最多使用 ${MAX_TOTAL_IMAGES} 张图片，请移除多余引用`); return; }
     if (generationMode === "detail") {
       const references = visibleDockRefs.length ? visibleDockRefs : [selected];
-      await generateDetailSequence(selected, references, editPrompt.trim(), extraFiles, undefined, composerReferences);
+      await generateDetailSequence(selected, references, linked.prompt, extraFiles, undefined, composerReferences);
       return;
     }
     if (generationMode === "triptych") {
-      const feedback = editPrompt.trim();
+      const feedback = linked.prompt;
       const result = await runGen(
         selected,
         `${VIEW_CONSISTENCY_RULES} 在同一张横向画布中制作正面、侧面、背面三个等宽分区，按从左到右顺序排列并完整露出；三个分区中的产品必须是同一件产品，背景与尺度统一。${
@@ -5141,11 +5171,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if (generationMode === "split") {
       if(!composerReferences.length){setGenError("请先选择一张编辑目标，再生成三视图");return;}
       if(composerReferences.length>=MAX_TOTAL_IMAGES){setGenError("分图需要为生成的正面锚点预留一张参考图位置");return;}
-      await generateSplitViews(selected, editPrompt.trim(), composerReferences);
+      await generateSplitViews(selected, linked.prompt, composerReferences);
       return;
     }
     const text =
-      editPrompt.trim() || inheritableImagePrompt(selected.prompt) || FAITHFUL_REGEN_PROMPT;
+      linked.prompt || inheritableImagePrompt(selected.prompt) || FAITHFUL_REGEN_PROMPT;
     const destination = canvasGenerationDestination(genCount);
     // A multi-image action keeps its one frozen request/quote but never overwrites the source.
     // 参考图 = dock 里可见的全部引用图(用户所见即所用,多图全送、不丢图)。
@@ -6468,7 +6498,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       // here is not cancellation and would let a later result recreate them.
       if (textNodesRef.current.find(node => node.id === id)?.status === "generating" || generationOperationRef.current.has(`text:${id}`)) return false;
       const pending = pendNodesRef.current.find(node => node.id === id);
-      if (pending) return !pending.generating && !pending.uploading && !pending.needsAttention;
+      if (pending) return !generationOperationRef.current.has(`prepare-pend:${id}`) && !pending.generating && !pending.uploading && !pending.needsAttention;
       const task = generationTasksRef.current.find(node => node.id === id);
       if (task) return !!task.failure && !task.replaceNode;
       return !id.startsWith("pend-") && !id.startsWith("task-");
@@ -6699,8 +6729,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       }) ?? current);
     }
     if(act.kind==="image-version"){
-      const fresh=await mergeWorks([act.id],()=>account===canvasAccountRef.current&&historyScope===historyScopeRef.current&&workspaceRevision===currentWorkspaceRevision());
-      if(account===canvasAccountRef.current&&historyScope===historyScopeRef.current&&workspaceRevision===currentWorkspaceRevision()){const node=fresh.find(art=>art.id===act.id);if(node)imageDraft.seed(act.id,{prompt:inheritableImagePrompt(node.prompt)});}
+      // Version provenance is immutable history, not the user's reusable prompt draft.
+      await mergeWorks([act.id],()=>account===canvasAccountRef.current&&historyScope===historyScopeRef.current&&workspaceRevision===currentWorkspaceRevision());
     }
     if(operations.some(op=>op.type==="video-patch"||op.type==="video-visibility"||op.type==="video-result"))await videoNodesStore.refresh();
     if(operations.some(op=>op.type==="director-patch"||op.type==="director-visibility"))await directorNodesStore.refresh();
@@ -7194,7 +7224,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
     // 连到空白占位节点 → 加为它的输入(客户端)
     if (target.startsWith("pend-")) {
-      if (pendNodesRef.current.some(node => node.id === target && (node.generating || node.uploading))) return;
+      if (generationOperationRef.current.has(`prepare-pend:${target}`) || pendNodesRef.current.some(node => node.id === target && (node.generating || node.uploading))) return;
       setPendNodes((prev) =>
         prev.map((p) =>
           p.id === target
@@ -7312,7 +7342,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   async function cutEdge(edge: { id: string; source: string; target: string }) {
     if (readOnly || !user || historyBusyRef.current || cuttingEdgesRef.current.has(edge.id)) return;
     const pending = pendNodesRef.current.find(node => node.id === edge.target);
-    if (edge.source.startsWith("task-") || edge.target.startsWith("task-") || pending?.generating || pending?.uploading) return;
+    if (edge.source.startsWith("task-") || edge.target.startsWith("task-") || generationOperationRef.current.has(`prepare-pend:${edge.target}`) || pending?.generating || pending?.uploading) return;
     if (!rfEdges.some(current => current.id === edge.id)) return;
     cuttingEdgesRef.current.add(edge.id);
     edgeHoverHintRef.current?.clear();
@@ -7412,8 +7442,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       onPendUpload(pend.id);
     } else {
       // 「图片」:落点建好节点后,把光标落进提示词框,写"改什么"→点生成出衍生(img2img)
-      const textSource = textNodes.find((node) => node.id === sourceId);
-      imageDraft.seed(pend.id, { prompt: textSource ? canvasTextContent(textSource) : "" });
+      // The edge supplies live text; the editor holds only additional instructions.
+      imageDraft.seed(pend.id, { prompt: "" });
       wantFocusPendPrompt.current = true;
     }
   }
@@ -7948,6 +7978,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       progress: 0,
       inputs: linked && parentId ? [parentId] : [],
     };
+    pendNodesRef.current = [...pendNodesRef.current, pend];
     setPendNodes((prev) => [...prev, pend]);
     pushUndo({ kind: "pending-add", records: [pend] });
     setGenerationMode("standard");
@@ -8280,9 +8311,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     textNodesRef.current = textNodesRef.current.map(item => item.id === node.id ? updated : item);
     setTextNodes(textNodesRef.current); textAutosave.schedule(node.id, textEditContext());
   }
-  async function generateTextNode(options?: { node: CanvasTextNode; prompt: string; silent?: boolean }): Promise<boolean> {
+  async function generateTextNode(options?: { node: CanvasTextNode; prompt: string; silent?: boolean; intent?: "polish" }): Promise<boolean> {
     const id = options?.node.id ?? selectedTextId;
-    const target = textNodesRef.current.find(node => node.id === id), prompt = (options?.prompt ?? textPrompt).trim();
+    const target = textNodesRef.current.find(node => node.id === id);
+    const instruction = options?.intent === "polish" ? "" : (options?.prompt ?? textPrompt).trim();
+    const prompt = resolveCanvasTextInstruction(instruction, target ? canvasTextContent(target) : "");
+    // Polishing the body must not erase a separately edited AI-writing instruction.
+    const storedInstruction = options?.intent === "polish" ? target?.prompt || "" : instruction;
     if (!target || readOnly || !nodeSettingsReady || nodeDeletingRef.current || historyBusyRef.current || isNodeLocked(target.id) || !prompt || target.status === "generating" || generationOperationRef.current.has(`text:${target.id}`)) return false;
     generationOperationRef.current.add(`text:${target.id}`);
     setTextSubmissionIds(current => new Set([...current, target.id]));
@@ -8293,7 +8328,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const pending: CanvasTextNode = {
       ...target,
       content: canvasTextContent(target),
-      prompt,
+      prompt: storedInstruction,
       title: target.title || L("文字", "Text"),
       status: "generating",
       error: "",
@@ -8326,7 +8361,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       if (!isCurrent() || !latest) return false;
       const completed: CanvasTextNode = {
         ...latest,
-        prompt,
+        prompt: storedInstruction,
         content: String(data.text),
         status: "completed",
         error: "",
@@ -8349,7 +8384,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       if (!latest) return false;
       const failed: CanvasTextNode = {
         ...latest,
-        prompt,
+        prompt: storedInstruction,
         status: "failed",
         error: message.slice(0, 2000),
         updatedAt: nextCanvasTextTimestamp(latest.updatedAt),
@@ -8710,7 +8745,16 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const current = () => textImageScopeCurrent(menu);
     textImageSubmittingRef.current = true; setTextImageSubmitting(true);
     try {
+      // The dialog resolves a richer, explicit recipe. Save all its text inputs
+      // before freezing that recipe, then keep it out of direct-edge composition.
+      const preview = textImageRequests(menu, mode, options);
+      const ids = [...new Set(preview.flatMap(request => request.textNodeIds))];
+      await Promise.all(ids.map(id => textAutosave.flush(id)));
+      await Promise.all(ids.map(id => textSaveQueuesRef.current.get(id)));
+      if (!current()) return;
+      if (ids.some(id => unsavedTextRef.current.has(id) || textAutosave.hasPending(id) || textSaveQueuesRef.current.has(id))) throw new Error("关联的文字尚未保存，请稍后重试");
       const requests = textImageRequests(menu, mode, options);
+      if (requests.some(request => request.textNodeIds.some(id => !ids.includes(id)))) throw new Error("文字连线已变更，请重新确认生成");
       if (!requests.length) return;
       if (requests.some(request => request.textNodeIds.some(isNodeLocked))) {setGenImageMenu(null);flashTip(L("引用的文字节点已锁定", "A referenced text node is locked"));return;}
       // Validate every input before adding any placeholders or starting a billable request.
@@ -8726,8 +8770,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           y: Math.round(position.y), parentId: request.imageIds[0] || node.id, linked: true,
           label: `${t("canvas.imageNode")} ${seq}`, uploading: false, progress: 0,
           inputs: [...request.imageIds, ...request.textNodeIds]};
+        pendNodesRef.current = [...pendNodesRef.current, pend];
         setPendNodes(previous => current() ? [...previous, pend] : previous);
-        const succeeded = await generatePend({pend, prompt: request.prompt, forceStandard: true, isCurrent: current});
+        const succeeded = await generatePend({pend, prompt: request.prompt, frozenTextPrompt: request.prompt, forceStandard: true, isCurrent: current});
         // A cancellation, pending/unknown receipt or failure never starts the next purchase.
         if (!succeeded || !current()) return;
       }
@@ -8797,7 +8842,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     } finally { release(); }
   }
 
-  async function generatePend(opts?: {
+  type PendingImageGenerationOptions = {
+    // Only the explicit text-to-image dialog supplies a fully composed recipe.
+    frozenTextPrompt?: string;
     pend?: Pend;
     prompt?: string;
     ratio?: string;
@@ -8805,7 +8852,32 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     referenceInputs?: CanvasImageReference[];
     isCurrent?: () => boolean;
     onSubmitted?: () => void;
-  }): Promise<boolean> {
+  };
+  async function generatePend(opts?: PendingImageGenerationOptions): Promise<boolean> {
+    if (readOnly || !user) return false;
+    const pend = opts?.pend ?? pendNodesRef.current.find(node => node.id === selectedPendId);
+    if (!pend || pend.generating || pend.uploading || pend.needsAttention) return false;
+    const key = `prepare-pend:${pend.id}`;
+    if (generationOperationRef.current.has(key)) return false;
+    generationOperationRef.current.add(key);
+    const account = canvasAccountRef.current, project = activeProjectRef.current?.key || null;
+    const workspace = currentWorkspace(), epoch = canvasContextEpochRef.current;
+    const current = () => account === canvasAccountRef.current && project === (activeProjectRef.current?.key || null) && workspace === currentWorkspace() && epoch === canvasContextEpochRef.current && (opts?.isCurrent?.() ?? true);
+    try {
+      const ids = [pend.parentId, ...pend.inputs].filter((id): id is string => !!id?.startsWith("text-"));
+      const linked = await prepareImageText(pend.id, project, opts?.prompt ?? editPrompt, current, ids);
+      if (!current()) return false;
+      const live = pendNodesRef.current.find(node => node.id === pend.id);
+      if (!live || live.uploading || live.generating || live.needsAttention || nodeDeletingRef.current || historyBusyRef.current || isNodeLocked(pend.id) || JSON.stringify([live.parentId,live.inputs]) !== JSON.stringify([pend.parentId,pend.inputs])) {
+        throw new Error("图片节点或连线已变更，请重新确认生成");
+      }
+      return await generatePreparedPend({...opts, pend: {...live}, isCurrent: current, linked: opts?.frozenTextPrompt === undefined ? linked : {...linked, prompt: opts.frozenTextPrompt}});
+    } catch(error) {
+      if(current())setGenError(error instanceof Error ? error.message : "关联文字尚未保存");
+      return false;
+    } finally { generationOperationRef.current.delete(key); }
+  }
+  async function generatePreparedPend(opts: PendingImageGenerationOptions & { linked: LinkedImageTextResult }): Promise<boolean> {
     if (readOnly || !user) return false;
     // 可传入指定的空白节点(拉线「生成衍生图」用,避免依赖尚未刷新的 state)
     const pend = opts?.pend ?? pendNodes.find((p) => p.id === selectedPendId);
@@ -8820,25 +8892,16 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       if(issue){setGenError(issue);return false;}
       if(pend.inputs.some(id=>!id.startsWith("text-")&&!inputArts.some(art=>art.id===id&&art.image&&!art.videoUrl))){setGenError("已连接的参考图片尚未载入，请同步图片后重试");return false;}
     }
-    const inputTextNodeIds = Array.from(
-      new Set(
-        [pend.parentId, ...pend.inputs].filter(
-          (id): id is string => Boolean(id?.startsWith("text-"))
-        )
-      )
-    );
-    const inputTextNodes = inputTextNodeIds
-      .map((id) => textNodes.find((node) => node.id === id))
-      .filter(Boolean) as CanvasTextNode[];
+    const inputTextNodes = opts.linked.sources.map(source => textNodesRef.current.find(node => node.id === source.id)).filter((node): node is CanvasTextNode => !!node);
     if (generationMode === "detail" && !opts?.forceStandard) {
       if (!inputArts.length) {
         flashTip(t("canvas.detailNeedRefs"));
         return false;
       }
-      await generateDetailSequence(inputArts[0], inputArts, text, [], pend, referenceInputs);
+      await generateDetailSequence(inputArts[0], inputArts, opts.linked.prompt, [], pend, referenceInputs);
       return false;
     }
-    if (!text && !pend.inputs.length) {
+    if (!opts.linked.prompt && !pend.inputs.some(id => !id.startsWith("text-"))) {
       flashTip(t("canvas.pendNeedPrompt"));
       return false;
     }
@@ -8849,11 +8912,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     // (那会让输出莫名其妙变样,还被存成节点提示词)。改为沿用主输入图自身的
     // 提示词(延续它的配方);没有则用"保持主体/构图/风格"的中性词。
     const promptToUse =
-      text ||
-      inputTextNodes
-        .map((node) => canvasTextContent(node).trim())
-        .filter(Boolean)
-        .join("\n\n") ||
+      opts.linked.prompt ||
       inheritableImagePrompt(inputArts[0]?.prompt) ||
       FAITHFUL_REGEN_PROMPT;
     setGenError(null);
@@ -9052,7 +9111,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     }
   }
   // 占位节点里选了图片 → 带进度上传 → 完成后移除占位、刷新出真节点
-  type PendUploadReceipt = { artworkId: string; account: string; workspace: string; revision: number; scope: typeof importScopeRef.current; focus?: boolean };
+  type PendUploadReceipt = { artworkId: string; account: string; workspace: string; revision: number; scope: typeof importScopeRef.current; focus?: boolean; draftScope: string | null; draftProject: string | null };
   const pendUploadReceiptsRef = useRef(new Map<string, PendUploadReceipt>());
   async function synchronizePendUpload(pendId: string, receipt: PendUploadReceipt) {
     const current = () => receipt.account === canvasAccountRef.current && receipt.workspace === currentWorkspace() && receipt.revision === currentWorkspaceRevision();
@@ -9062,6 +9121,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       const fresh = await synchronizeCanvasArtworks([receipt.artworkId], () => mergeWorks([receipt.artworkId], current), current);
       if (!current()) return;
       if (importScopeRef.current === receipt.scope) {
+        const artwork = fresh.find(art => art.id === receipt.artworkId);
+        if (artwork) {
+          const destinationProject = receipt.draftProject || projectKey(artwork,new Map([...(worksRef.current || []),...fresh].map(art => [art.id,art])));
+          const destinationScope = imageDraftScope(user?.email,targetEmail,destinationProject,receipt.workspace);
+          imageDraft.seed(artwork.id,{...imageDraft.read(pendId,receipt.draftScope),...imageDraft.read(artwork.id,destinationScope)},destinationScope);
+          referenceDraft.copyTo(imageDraftKey(destinationScope,artwork.id),imageDraftKey(receipt.draftScope,pendId));
+        }
         consumePendingNodeHistory(pendId);
         setPendNodes(nodes => nodes.filter(node => node.id !== pendId));
         setSelectedPendId(id => id === pendId ? null : id);
@@ -9079,7 +9145,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   async function uploadPendingFile(pend: Pend, file: File, root: {id:string|null}, capturedScope: typeof importScopeRef.current, focus = true) {
     if(!user)return;
     const pendId=pend.id;
-    const receipt: PendUploadReceipt = { artworkId: "", account: canvasAccountRef.current, workspace: currentWorkspace(), revision: currentWorkspaceRevision(), scope: capturedScope, focus };
+    const receipt: PendUploadReceipt = { artworkId: "", account: canvasAccountRef.current, workspace: currentWorkspace(), revision: currentWorkspaceRevision(), scope: capturedScope, focus, draftScope: imageDraftScope(user.email,targetEmail,activeKey,currentWorkspace()), draftProject: activeKey };
     const currentUploadOwner = () => receipt.account === canvasAccountRef.current && receipt.workspace === currentWorkspace() && receipt.revision === currentWorkspaceRevision();
     const info = `${file.name} · ${Math.round(file.size / 1024)}KB`;
     setPendNodes((prev) =>
@@ -9128,6 +9194,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if (!pend || pend.uploading || pend.generating) return;
     const retained = pendUploadReceiptsRef.current.get(pendId);
     if (retained) { await synchronizePendUpload(pendId, retained); return; }
+    if (generationOperationRef.current.has(`prepare-pend:${pendId}`)) return;
     const lock=`upload:${pendId}`;
     if(generationOperationRef.current.has(lock))return;
     generationOperationRef.current.add(lock);
@@ -12355,6 +12422,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 </>} kind="image" compact expanded={mediaComposerExpanded} onToggleExpand={()=>setMediaComposerExpanded(value=>!value)} heading={selected.title || L("图片生成", "Image generation")} onDismiss={() => setSelectedId(null)} closeLabel={L("关闭创作栏", "Close composer")}>
               {/* dbody:风格/标记/聚焦 chips + 引用图 + 提示词(对齐原型 .cz-dock .dbody) */}
               <div data-composer-body="true" className="min-h-0 overflow-y-auto px-4 pb-1.5 pt-3.5">
+                <LinkedTextInput sources={linkedImageText.sources} error={linkedImageText.error} english={locale === "en"} />
                 <ImageReferenceComposer compact key={imageDraft.key || imageDraftNodeId} references={composerReferences} prompt={editPrompt} onPrompt={setEditPrompt}
                   onRole={(key,role)=>imageDraft.setReferenceBindings(changeImageReferenceRole(imageReferenceState.bindings,key,role))}
                   onRemove={removeComposerReference} onPreview={ref=>setLightbox({src:ref.url,alt:ref.title})}
@@ -12504,6 +12572,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   onOptimize={(prompt, signal) => optimizeCanvasPrompt("canvas-image", prompt, signal)} onApply={setEditPrompt}/>
 </>} kind="image" compact expanded={mediaComposerExpanded} onToggleExpand={()=>setMediaComposerExpanded(value=>!value)} heading={L("图片生成", "Image generation")} onDismiss={() => setSelectedPendId(null)} closeLabel={L("关闭创作栏", "Close composer")}>
               <div data-composer-body="true" className="min-h-0 overflow-y-auto px-4 pb-1.5 pt-3.5">
+                <LinkedTextInput sources={linkedImageText.sources} error={linkedImageText.error} english={locale === "en"} />
                 <ImageReferenceComposer compact key={imageDraft.key || imageDraftNodeId} references={composerReferences} prompt={editPrompt} onPrompt={setEditPrompt}
                   onRole={(key,role)=>imageDraft.setReferenceBindings(changeImageReferenceRole(imageReferenceState.bindings,key,role))}
                   onRemove={removeComposerReference} onPreview={ref=>setLightbox({src:ref.url,alt:ref.title})}
@@ -12837,15 +12906,15 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   {t("canvas.genImages")}
                 </button></FeatureVisible>
                  </>} actions={<>
-                {textComposerMode === "write" && <button
-                  data-text-primary="true" type="button" onClick={() => void generateTextNode()}
-                  disabled={!nodeSettingsReady || historySaving || textSubmissionIds.has(selectedText.id) || !textPrompt.trim() || selectedText.status === "generating"}
-                  aria-label={L("生成文字", "Generate text")}
-                  title={L("生成文字 · Ctrl/⌘ + Enter", "Generate text · Ctrl/⌘ + Enter")}
+                <button
+                  data-text-primary="true" type="button" onClick={() => void generateTextNode(textComposerMode === "content" ? {node: selectedText, prompt: "", intent: "polish"} : undefined)}
+                  disabled={!nodeSettingsReady || historySaving || textSubmissionIds.has(selectedText.id) || !resolveCanvasTextInstruction(textComposerMode === "write" ? textPrompt : "", canvasTextContent(selectedText)) || selectedText.status === "generating" || isNodeLocked(selectedText.id)}
+                  aria-label={textComposerMode === "content" ? L("润色文字", "Polish text") : L("生成文字", "Generate text")}
+                  title={textComposerMode === "content" ? L("润色文字", "Polish text") : L("生成文字 · Ctrl/⌘ + Enter", "Generate text · Ctrl/⌘ + Enter")}
                   className="canvas-ui-primary flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 text-xs font-semibold disabled:opacity-45">
                   {selectedText.status === "generating" ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp aria-hidden="true" className="h-4 w-4" />}
-                  {L("生成文字", "Generate text")}
-                </button>}
+                  {textComposerMode === "content" ? L("润色文字", "Polish text") : L("生成文字", "Generate text")}
+                </button>
 
                </>}/>
             </CanvasComposerShell>

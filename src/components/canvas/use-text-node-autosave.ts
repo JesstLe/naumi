@@ -52,5 +52,5 @@ export function useTextNodeAutosave<T extends { id: string }, C extends { isCurr
     };
   }, [flushAll]);
 
-  return { schedule, flush, flushAll, cancel };
+  return { schedule, flush, flushAll, cancel, hasPending: (id: string) => pending.current.has(id) };
 }

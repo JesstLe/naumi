@@ -26,6 +26,8 @@ const full=new ImageNodeDraftStore(()=>({getItem:()=>null,setItem:()=>{throw Err
 for(const dpr of [1,1.25,1.5,2,3,4])for(const pixels of [512,513,1600,1601])check(canvasMediaVariant(pixels/dpr,dpr),pixels<=512?'thumbnail':pixels<=1600?'preview':'original');
 check(canvasMediaVariant(600,3),'original');check(canvasMediaVariant(600,2),'preview');check(canvasMediaVariant(1800,NaN),'original');
 const client=readFileSync('src/components/canvas/canvas-client.tsx','utf8');
-for(const token of ['JSON.stringify([n.data.inspectOriginal,n.data.image', 'const imageDraft = useImageNodeDraft(','const imageDraftNodeId = selectedPendId || selectedId','forceOriginal={forceOriginal || !!d.inspectOriginal}','inspectOriginal: n.id === selectedId && multiSel.length <= 1','imageDraft.seed(pend.id, { prompt: textSource','imageDraft.seed(id, { prompt: "", ratio: "auto" })']){assert.ok(client.includes(token),token);checks++;}
+for(const token of ['JSON.stringify([n.data.inspectOriginal,n.data.image', 'const imageDraft = useImageNodeDraft(','const imageDraftNodeId = selectedPendId || selectedId','forceOriginal={forceOriginal || !!d.inspectOriginal}','inspectOriginal: n.id === selectedId && multiSel.length <= 1','imageDraft.seed(pend.id, { prompt: "" });','imageDraft.seed(id, { prompt: "", ratio: "auto" })']){assert.ok(client.includes(token),token);checks++;}
 assert.ok(!client.includes('setEditPrompt(carried ?? selected?.prompt'));checks++;
+// Direct text references remain live inputs, not stale copies of the body.
+assert.ok(!client.includes('imageDraft.seed(pend.id, { prompt: textSource'));checks++;
 console.log(`PASS CANVAS_NODE_DRAFTS CHECKS=${checks} NODE_ACCOUNT_PROJECT_ISOLATION=YES EMPTY_DRAFT=YES REMOUNT=YES STORAGE_FAILURE=YES REAL_DPR=YES SUPPLIER_CALLS=0`);
