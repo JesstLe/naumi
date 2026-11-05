@@ -26,6 +26,8 @@ const [smtpFrom, setSmtpFrom] = useState("");
 const [ownerEmail, setOwnerEmail] = useState<string | null>(null);
 const [ownerEmailInput, setOwnerEmailInput] = useState("");
 const [ownerPwInput, setOwnerPwInput] = useState("");
+const [ownerReauthRequired, setOwnerReauthRequired] = useState(false);
+const [ownerAdminPwInput, setOwnerAdminPwInput] = useState("");
 const [alipayAppid, setAlipayAppid] = useState("");
 const [alipayPublicKey, setAlipayPublicKey] = useState("");
 const [alipayPrivateKeyInput, setAlipayPrivateKeyInput] = useState("");
@@ -49,7 +51,7 @@ const [wxpayCertInput, setWxpayCertInput] = useState("");
  useEffect(()=>{setWxpayMchid(view.wxpayMchid??"");},[view.wxpayMchid]);
  useEffect(()=>{setWxpayAppid(view.wxpayAppid??"");},[view.wxpayAppid]);
  useEffect(()=>{setWxpayCertSerial(view.wxpayCertSerial??"");},[view.wxpayCertSerial]);
- useEffect(()=>{const abort=new AbortController();void fetch("/api/admin/owner-account",{headers:{Authorization:`Bearer ${token}`},signal:abort.signal}).then(async response=>{const data=await response.json().catch(()=>null);if(!abort.signal.aborted&&response.ok)setOwnerEmail(data?.ownerEmail||null);}).catch(()=>{});return()=>abort.abort();},[token]);
+ useEffect(()=>{const abort=new AbortController();void fetch("/api/admin/owner-account",{headers:{Authorization:`Bearer ${token}`},signal:abort.signal}).then(async response=>{const data=await response.json().catch(()=>null);if(!abort.signal.aborted&&response.ok){setOwnerEmail(data?.ownerEmail||null);setOwnerReauthRequired(data?.reauthRequired===true);}}).catch(()=>{});return()=>abort.abort();},[token]);
 async function saveWechatLogin() {
     await postSettings(
       {
@@ -164,11 +166,20 @@ return <>
               onChange={(e) => setOwnerPwInput(e.target.value)}
               placeholder="登录密码(至少 6 位)"
             />
+            {ownerReauthRequired && (
+              <Input
+                type="password"
+                autoComplete="current-password"
+                value={ownerAdminPwInput}
+                onChange={(e) => setOwnerAdminPwInput(e.target.value)}
+                placeholder="当前后台访问密码(确认身份)"
+              />
+            )}
           </div>
           <Button
             variant="outline"
             size="sm"
-            disabled={busy || !ownerEmailInput.trim() || ownerPwInput.length < 6}
+            disabled={busy || !ownerEmailInput.trim() || ownerPwInput.length < 6 || (ownerReauthRequired && !ownerAdminPwInput)}
             onClick={async () => {
               await mutation(async actor=>{
                 const res = await fetch("/api/admin/owner-account", {
@@ -180,11 +191,12 @@ return <>
                   body: JSON.stringify({
                     email: ownerEmailInput.trim(),
                     password: ownerPwInput,
+                    ...(ownerReauthRequired ? { adminPassword: ownerAdminPwInput } : {}),
                   }),
                 }).catch(()=>{throw Error("网络错误,请重试")});
                 const d = await res.json().catch(() => null);
                 if(!res.ok||!d?.ok)throw Error(d?.error||"设置失败");return d;
-              },d=>{setOwnerEmail(String(d.ownerEmail||ownerEmailInput.trim()));setOwnerEmailInput("");setOwnerPwInput("");},"站长邮箱账号已设置,现在可以用邮箱+密码从登录框登录了");
+              },d=>{setOwnerEmail(String(d.ownerEmail||ownerEmailInput.trim()));setOwnerEmailInput("");setOwnerPwInput("");setOwnerAdminPwInput("");},"站长邮箱账号已设置,现在可以用邮箱+密码从登录框登录了");
             }}
           >
             {busy && <Loader2 className="h-4 w-4 animate-spin" />}

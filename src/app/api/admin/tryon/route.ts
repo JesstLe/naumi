@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { dbEnabled } from "@/platform/db/pool";
 import { requireAdmin } from "@/lib/admin-auth";
+import { authorizeAdminMutation } from "@/lib/admin-mutation";
 import { storageEnabled, deleteImageByUrl } from "@/lib/object-storage/runtime";
 import { uploadImage } from "@/lib/media-upload";
 import { getTryonLibrary, setTryonLibrary } from "@/lib/tryon-store";
@@ -33,6 +34,8 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const blocked = await guard(req);
   if (blocked) return blocked;
+  const mutation = await authorizeAdminMutation(req, "tryon");
+  if (mutation instanceof Response) return mutation;
 
   const ct = req.headers.get("content-type") || "";
   try {

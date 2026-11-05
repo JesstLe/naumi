@@ -5,6 +5,9 @@ import {dbEnabled} from "@/platform/db/pool";
 import {listAllArtworks, getArtworkById, deleteArtwork, importedArtworkIds} from "@/lib/artworks/administration";
 import {setUserBanned, bannedEmailsAmong} from "@/lib/accounts/repository";
 import { requireAdmin } from "@/lib/admin-auth";
+import { authorizeAdminMutation } from "@/lib/admin-mutation";
+import { AccountChangeError, assertAccountChangeAllowed } from "@/lib/accounts/change-policy";
+import { appendManagementLogAfterChange } from "@/lib/bi/management-log";
 import { CATEGORY_LABELS, type Category } from "@/lib/mock-data";
 
 export const runtime = "nodejs";
@@ -80,6 +83,9 @@ function makeDescription(prompt: string): string {
 export async function POST(req: Request) {
   const blocked = await guard(req);
   if (blocked) return blocked;
+  const mutation = await authorizeAdminMutation(req, "artworks");
+  if (mutation instanceof Response) return mutation;
+  const { actor } = mutation;
 
   let body: {
     action?: string;
@@ -138,6 +144,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "缺少 artworkId" }, { status: 400 });
       }
       const ok = await deleteArtwork(artworkId);
+      if (ok) await appendManagementLogAfterChange({ actor, subject: `artwork:${artworkId}`, action: "artwork-delete", changes: { artworkId } });
       return NextResponse.json({ ok });
     }
 
@@ -147,12 +154,15 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "缺少 email" }, { status: 400 });
       }
       const banned = body.banned === true;
+      await assertAccountChangeAllowed(actor, email, { kind: "ban", banned });
       await setUserBanned(email, banned);
+      await appendManagementLogAfterChange({ actor, subject: email, action: "ban", changes: { banned, source: "artworks" } });
       return NextResponse.json({ ok: true, banned });
     }
 
     return NextResponse.json({ error: "未知操作" }, { status: 400 });
   } catch (e) {
+    if (e instanceof AccountChangeError) return NextResponse.json({ error: e.message }, { status: e.status });
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "操作失败" },
       { status: 500 }

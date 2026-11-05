@@ -1,4 +1,5 @@
 import "server-only";
+import { isSameOriginRequest } from "@/lib/request-origin";
 import { NextResponse } from "next/server";
 import { requireAdmin, resolveUserEmail, adminPasswordState } from "@/lib/admin-auth";
 import { dbEnabled } from "@/platform/db/pool";
@@ -28,15 +29,7 @@ export async function teamAuthorize(request: Request, adminOnly = false) {
   if (!rateLimitResult) return teamJson({ error: "操作过于频繁" }, 429);
   return actor;
 }
-export function teamMutationOrigin(request: Request) {
-  if (request.headers.get("sec-fetch-site") === "cross-site") return false;
-  const origin = request.headers.get("origin");
-  if (!origin) return true;
-  try {
-    const source = new URL(origin), url = new URL(request.url);
-    return source.host === (request.headers.get("host") || url.host) && source.protocol === `${request.headers.get("x-forwarded-proto") || url.protocol.replace(":", "")}:`;
-  } catch { return false; }
-}
+export function teamMutationOrigin(request: Request) { return isSameOriginRequest(request); }
 export function teamFailure(error: unknown) {
   const unavailable = rateLimitFailureResponse(error);
   if (unavailable) return unavailable;

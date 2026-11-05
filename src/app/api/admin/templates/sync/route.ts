@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin-auth";
+import { authorizeAdminMutation } from "@/lib/admin-mutation";
 import {importTemplates} from "@/lib/templates/import";
 import {dbEnabled} from "@/platform/db/pool";
 import { TEMPLATES } from "@/lib/templates-data";
@@ -10,7 +10,8 @@ export const dynamic = "force-dynamic";
 // Sync the template library shipped with this release, preserving local edits.
 export async function POST(req: Request) {
   if (!dbEnabled) return NextResponse.json({ error: "未配置数据库" }, { status: 503 });
-  if (!(await requireAdmin(req))) return NextResponse.json({ error: "需要管理员身份" }, { status: 403 });
+  const mutation = await authorizeAdminMutation(req, "template-sync");
+  if (mutation instanceof Response) return mutation;
   const body = await req.json().catch(() => ({})) as { page?: number };
   const page = Math.max(1, Math.floor(Number(body.page) || 1));
   const offset = (page - 1) * 200;

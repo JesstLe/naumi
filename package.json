@@ -54,6 +54,7 @@
     "verify:private-bi": "tsx --conditions react-server scripts/verify-private-bi.ts",
     "verify:bi-management": "tsx --conditions react-server scripts/verify-bi-management.ts",
     "verify:admin-access": "tsx --conditions react-server scripts/verify-admin-access.ts",
+    "verify:admin-route-hardening": "tsx --conditions react-server scripts/verify-admin-route-hardening.ts",
     "verify:single-product": "tsx --conditions react-server scripts/verify-single-product.ts",
     "verify:pricing-proposal": "tsx --conditions react-server scripts/verify-pricing-proposal.ts",
     "verify:pricing-access": "node scripts/verify-pricing-access.mjs",

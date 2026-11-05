@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { dbEnabled } from "@/platform/db/pool";
 import { getPromptConfigAdminView, savePromptConfig } from "@/lib/prompt-config";
 import { requireAdmin } from "@/lib/admin-auth";
+import { authorizeAdminMutation } from "@/lib/admin-mutation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,6 +26,8 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const blocked = await guard(req);
   if (blocked) return blocked;
+  const mutation = await authorizeAdminMutation(req, "prompts");
+  if (mutation instanceof Response) return mutation;
   let body: {
     styles?: Record<string, string> | null;
     suiteSystem?: string | null;
