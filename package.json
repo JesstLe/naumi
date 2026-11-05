@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "verify:admin-settings-hardening": "tsx --conditions react-server scripts/verify-admin-settings-hardening.ts",
     "verify:refactor": "node scripts/verify-refactor.mjs",
     "verify:refactor-runner": "node scripts/verify-refactor-runner.mjs",
     "verify:refactor-runtime": "python scripts/verify-refactor-runtime.py",

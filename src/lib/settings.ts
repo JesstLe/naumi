@@ -126,8 +126,10 @@ export async function getPublicKeyPem(): Promise<string> {
  * 长字段(支付宝/微信应用私钥·证书)超过 RSA-OAEP 单块上限,浏览器分块加密后用 "|" 拼接;
  * 短字段无 "|",按单块解密,向后兼容。
  */
-export async function decryptFromClient(b64: string): Promise<string> {
-  const { privatePem } = await ensureKeypair();
+export async function decryptFromClient(b64: string, existingOnly = false): Promise<string> {
+  // Mutation validation must never create persisted RSA keys on invalid input.
+  const privatePem = existingOnly ? await getSetting(RSA_PRIV) : (await ensureKeypair()).privatePem;
+  if (!privatePem) throw new Error("RSA key unavailable");
   const parts = b64.includes("|") ? b64.split("|") : [b64];
   const bufs = parts.map((p) =>
     crypto.privateDecrypt(
@@ -231,25 +233,27 @@ export async function getOpenAISettings(): Promise<OpenAISettings> {
   return getLegacyOpenAISettings();
 }
 
-export async function saveOpenAIKey(plain: string): Promise<void> {
-  await setSetting(OAI_KEY_ENC, encryptAtRest(plain.trim()));
+// The optional write port lets a caller prepare a complete normalized/encrypted
+// plan before committing it. Existing callers retain immediate persistence.
+export async function saveOpenAIKey(plain: string, write: typeof setSetting = setSetting): Promise<void> {
+  await write(OAI_KEY_ENC, encryptAtRest(plain.trim()));
 }
 
-export async function saveOpenAIModel(model: string): Promise<void> {
-  await setSetting(OAI_MODEL, model.trim());
+export async function saveOpenAIModel(model: string, write: typeof setSetting = setSetting): Promise<void> {
+  await write(OAI_MODEL, model.trim());
 }
 
-export async function saveOpenAIModels(models: string[]): Promise<void> {
+export async function saveOpenAIModels(models: string[], write: typeof setSetting = setSetting): Promise<void> {
   const clean = normalizeImageModels(models);
-  await setSetting(OAI_MODELS, clean.length ? JSON.stringify(clean) : "");
+  await write(OAI_MODELS, clean.length ? JSON.stringify(clean) : "");
 }
 
 // AI 模型接口地址(OpenAI 兼容 baseURL)。**加密落库**(保护海外域名/服务器,
 // 地址里可能含 token 凭证)。空串=清除→回退 env/直连。同时清掉可能残留的历史明文。
-export async function saveOpenAIBaseUrl(url: string): Promise<void> {
+export async function saveOpenAIBaseUrl(url: string, write: typeof setSetting = setSetting): Promise<void> {
   const v = url.trim();
-  await setSetting("openai_base_url_enc", v ? encryptAtRest(v) : "");
-  await setSetting("openai_base_url", ""); // 抹掉旧明文,避免明文残留
+  await write("openai_base_url_enc", v ? encryptAtRest(v) : "");
+  await write("openai_base_url", ""); // 抹掉旧明文,避免明文残留
 }
 
 // 读当前接口地址明文:优先密文解密,兼容历史明文(下次保存即转成密文)。仅服务端内部用。
@@ -263,8 +267,8 @@ export async function readOpenAIBaseUrlPlain(): Promise<string> {
   return legacy || "";
 }
 
-export async function saveCutoutModel(model: string): Promise<void> {
-  await setSetting(OAI_CUTOUT_MODEL, model.trim());
+export async function saveCutoutModel(model: string, write: typeof setSetting = setSetting): Promise<void> {
+  await write(OAI_CUTOUT_MODEL, model.trim());
 }
 
 // ---------------------------------------------------------------------------
@@ -311,19 +315,19 @@ export async function getCutoutSettings(): Promise<CutoutSettings> {
   return { backend, openaiModel, replicateToken, replicateModel };
 }
 
-export async function saveCutoutBackend(backend: string): Promise<void> {
+export async function saveCutoutBackend(backend: string, write: typeof setSetting = setSetting): Promise<void> {
   const b: CutoutBackend = backend.trim() === "openai" ? "openai" : "replicate";
-  await setSetting(CUTOUT_BACKEND, b);
+  await write(CUTOUT_BACKEND, b);
 }
 
 /** 保存 Replicate API Token(浏览器 RSA 解密后的明文 → AES 加密存储)。 */
-export async function saveReplicateToken(plain: string): Promise<void> {
-  await setSetting(REPLICATE_TOKEN_ENC, encryptAtRest(plain.trim()));
+export async function saveReplicateToken(plain: string, write: typeof setSetting = setSetting): Promise<void> {
+  await write(REPLICATE_TOKEN_ENC, encryptAtRest(plain.trim()));
 }
 
 /** 保存 Replicate 抠图模型 slug。 */
-export async function saveReplicateModel(model: string): Promise<void> {
-  await setSetting(REPLICATE_MODEL, model.trim());
+export async function saveReplicateModel(model: string, write: typeof setSetting = setSetting): Promise<void> {
+  await write(REPLICATE_MODEL, model.trim());
 }
 
 // ---------------------------------------------------------------------------
@@ -375,21 +379,21 @@ export async function saveWechatLogin(opts: {
   appid?: string;
   token?: string;
   emailDomain?: string;
-}): Promise<void> {
+}, write: typeof setSetting = setSetting): Promise<void> {
   if (typeof opts.appid === "string" && opts.appid.trim()) {
-    await setSetting(WECHAT_APPID, opts.appid.trim());
+    await write(WECHAT_APPID, opts.appid.trim());
   }
   if (typeof opts.token === "string" && opts.token.trim()) {
-    await setSetting(WECHAT_TOKEN, opts.token.trim());
+    await write(WECHAT_TOKEN, opts.token.trim());
   }
   if (typeof opts.emailDomain === "string" && opts.emailDomain.trim()) {
-    await setSetting(WECHAT_EMAIL_DOMAIN, opts.emailDomain.trim());
+    await write(WECHAT_EMAIL_DOMAIN, opts.emailDomain.trim());
   }
 }
 
 /** 保存微信 AppSecret(浏览器 RSA 解密后的明文 → AES 加密存储)。 */
-export async function saveWechatSecret(plain: string): Promise<void> {
-  await setSetting(WECHAT_SECRET_ENC, encryptAtRest(plain.trim()));
+export async function saveWechatSecret(plain: string, write: typeof setSetting = setSetting): Promise<void> {
+  await write(WECHAT_SECRET_ENC, encryptAtRest(plain.trim()));
 }
 
 /**
@@ -400,12 +404,12 @@ export async function saveWechatSecret(plain: string): Promise<void> {
 export async function saveBrand(opts: {
   name?: string;
   logo?: string;
-}): Promise<void> {
+}, write: typeof setSetting = setSetting): Promise<void> {
   if (typeof opts.name === "string") {
-    await setSetting(SITE_NAME_SETTING, opts.name.trim().slice(0, 80));
+    await write(SITE_NAME_SETTING, opts.name.trim().slice(0, 80));
   }
   if (typeof opts.logo === "string") {
-    await setSetting(BRAND_LOGO_SETTING, opts.logo.trim().slice(0, 500));
+    await write(BRAND_LOGO_SETTING, opts.logo.trim().slice(0, 500));
   }
 }
 
@@ -417,18 +421,18 @@ export async function saveSitePages(opts: {
   about?: string;
   contact?: string;
   plans?: string;
-}): Promise<void> {
+}, write: typeof setSetting = setSetting): Promise<void> {
   if (typeof opts.about === "string")
-    await setSetting(PAGE_ABOUT_SETTING, opts.about.slice(0, 8000));
+    await write(PAGE_ABOUT_SETTING, opts.about.slice(0, 8000));
   if (typeof opts.contact === "string")
-    await setSetting(PAGE_CONTACT_SETTING, opts.contact.slice(0, 8000));
+    await write(PAGE_CONTACT_SETTING, opts.contact.slice(0, 8000));
   if (typeof opts.plans === "string")
-    await setSetting(PAGE_PLANS_SETTING, opts.plans.slice(0, 8000));
+    await write(PAGE_PLANS_SETTING, opts.plans.slice(0, 8000));
 }
 
 /** 保存「原生多用户」开关(Pro 多用户模式:开启访客注册/登录 + 按量计费)。 */
-export async function saveMultiUser(on: boolean): Promise<void> {
-  await setSetting(MULTI_USER_SETTING, on ? "1" : "0");
+export async function saveMultiUser(on: boolean, write: typeof setSetting = setSetting): Promise<void> {
+  await write(MULTI_USER_SETTING, on ? "1" : "0");
 }
 
 /** 保存「积分计费」开关(开启后生图按积分扣,单用户也扣;站长后台自行加积分)。 */
@@ -474,14 +478,14 @@ export async function saveSmtp(opts: {
   user?: string;
   pass?: string;
   from?: string;
-}): Promise<void> {
-  if (typeof opts.host === "string") await setSetting(SMTP_HOST, opts.host.trim());
-  if (typeof opts.user === "string") await setSetting(SMTP_USER, opts.user.trim());
-  if (typeof opts.from === "string") await setSetting(SMTP_FROM, opts.from.trim());
+}, write: typeof setSetting = setSetting): Promise<void> {
+  if (typeof opts.host === "string") await write(SMTP_HOST, opts.host.trim());
+  if (typeof opts.user === "string") await write(SMTP_USER, opts.user.trim());
+  if (typeof opts.from === "string") await write(SMTP_FROM, opts.from.trim());
   if (typeof opts.port === "number" && opts.port > 0)
-    await setSetting(SMTP_PORT, String(Math.trunc(opts.port)));
+    await write(SMTP_PORT, String(Math.trunc(opts.port)));
   if (typeof opts.pass === "string" && opts.pass)
-    await setSetting(SMTP_PASS_ENC, encryptAtRest(opts.pass));
+    await write(SMTP_PASS_ENC, encryptAtRest(opts.pass));
 }
 
 /** 读某个自定义页面的内容(供 /about /contact /plans 页面渲染);无则空串。 */
@@ -608,45 +612,45 @@ export async function getPaymentStatus(): Promise<{
 export async function saveAlipay(opts: {
   appid?: string;
   publicKey?: string;
-}): Promise<void> {
+}, write: typeof setSetting = setSetting): Promise<void> {
   if (typeof opts.appid === "string" && opts.appid.trim()) {
-    await setSetting(ALIPAY_APPID, opts.appid.trim());
+    await write(ALIPAY_APPID, opts.appid.trim());
   }
   if (typeof opts.publicKey === "string" && opts.publicKey.trim()) {
-    await setSetting(ALIPAY_PUBLIC_KEY, opts.publicKey.trim());
+    await write(ALIPAY_PUBLIC_KEY, opts.publicKey.trim());
   }
 }
 
 /** 保存支付宝应用私钥(明文 → AES 加密存储)。 */
-export async function saveAlipayPrivateKey(plain: string): Promise<void> {
-  await setSetting(ALIPAY_PRIVATE_KEY_ENC, encryptAtRest(plain.trim()));
+export async function saveAlipayPrivateKey(plain: string, write: typeof setSetting = setSetting): Promise<void> {
+  await write(ALIPAY_PRIVATE_KEY_ENC, encryptAtRest(plain.trim()));
 }
 
 /** 保存微信支付商户明文字段(商户号)。空串跳过。 */
-export async function saveWxpay(opts: { mchid?: string }): Promise<void> {
+export async function saveWxpay(opts: { mchid?: string }, write: typeof setSetting = setSetting): Promise<void> {
   if (typeof opts.mchid === "string" && opts.mchid.trim()) {
-    await setSetting(WXPAY_MCHID, opts.mchid.trim());
+    await write(WXPAY_MCHID, opts.mchid.trim());
   }
 }
 
 /** 保存微信支付 APIv3 Key(明文 → AES 加密存储)。 */
-export async function saveWxpayApiv3(plain: string): Promise<void> {
-  await setSetting(WXPAY_APIV3_ENC, encryptAtRest(plain.trim()));
+export async function saveWxpayApiv3(plain: string, write: typeof setSetting = setSetting): Promise<void> {
+  await write(WXPAY_APIV3_ENC, encryptAtRest(plain.trim()));
 }
 
 /** 保存微信支付「商户 API 私钥 apiclient_key.pem」(PEM 文本 → AES 加密存储)。 */
-export async function saveWxpayCert(plain: string): Promise<void> {
-  await setSetting(WXPAY_CERT_ENC, encryptAtRest(plain.trim()));
+export async function saveWxpayCert(plain: string, write: typeof setSetting = setSetting): Promise<void> {
+  await write(WXPAY_CERT_ENC, encryptAtRest(plain.trim()));
 }
 
 /** 保存微信支付商户证书序列号(明文)。 */
-export async function saveWxpayCertSerial(serial: string): Promise<void> {
-  await setSetting(WXPAY_CERT_SERIAL, serial.trim());
+export async function saveWxpayCertSerial(serial: string, write: typeof setSetting = setSetting): Promise<void> {
+  await write(WXPAY_CERT_SERIAL, serial.trim());
 }
 
 /** 保存微信支付 Native 下单绑定的 appid(明文)。 */
-export async function saveWxpayAppid(appid: string): Promise<void> {
-  await setSetting(WXPAY_APPID, appid.trim());
+export async function saveWxpayAppid(appid: string, write: typeof setSetting = setSetting): Promise<void> {
+  await write(WXPAY_APPID, appid.trim());
 }
 
 /**

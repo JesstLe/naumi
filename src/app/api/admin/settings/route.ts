@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import {dbEnabled} from "@/platform/db/pool";
-import {setSignupBonus} from "@/lib/billing/signup";
 import {
   decryptFromClient,
   getAdminView,
@@ -14,7 +13,6 @@ import {
   saveReplicateModel,
   saveWechatLogin,
   saveWechatSecret,
-  savePayEnabled,
   saveAlipay,
   saveAlipayPrivateKey,
   saveWxpay,
@@ -25,11 +23,14 @@ import {
   saveBrand,
   saveSitePages,
   saveMultiUser,
-  saveCreditsMetering,
   saveSmtp,
 } from "@/lib/settings";
-import { requireAdmin, resolveUserEmail } from "@/lib/admin-auth";
-import {sameSiteBillingMutation} from "@/lib/billing/access";
+import { requireAdmin } from "@/lib/admin-auth";
+import { authorizeAdminMutation } from "@/lib/admin-mutation";
+import { appendManagementLogAfterChange } from "@/lib/bi/management-log";
+import { setSettingsAtomically } from "@/lib/settings/repository";
+import { updateBillingCompatibility } from "@/lib/billing/runtime";
+import { settingsMutationSchema } from "@/lib/settings/mutation-schema";
 import { modelConfigurationEnabled } from "@/lib/model-config/availability";
 import { ModelConfigError } from "@/lib/model-config/types";
 
@@ -60,67 +61,21 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const blocked = await guard(req);
-  if (blocked) return blocked;
-  if (!sameSiteBillingMutation(req)) return NextResponse.json({error:"请求来源无效"},{status:403});
-  const actor = await resolveUserEmail(req) || "local-admin";
+  const authorization = await authorizeAdminMutation(req, "settings", 30);
+  if (authorization instanceof Response) return authorization;
+  if (!dbEnabled) return NextResponse.json({ error: "未配置数据库" }, { status: 503 });
+  const { actor } = authorization;
+  let rawBody: unknown;
 
-  let body: {
-    model?: string;
-    models?: string[];
-    cutoutModel?: string;
-    cutoutBackend?: string;
-    replicateModel?: string;
-    encryptedBaseUrl?: string; // AI 模型接口地址(RSA 加密传输)
-    baseUrlPlain?: string; // HTTP 无 crypto.subtle 时的明文兜底(服务端仍加密落库)
-    baseUrlClear?: boolean; // 清除接口地址→回退直连
-    encryptedKey?: string;
-    keyPlain?: string; // HTTP 无 crypto.subtle 时的明文兜底(服务端仍加密落库)
-    encryptedReplicateToken?: string;
-    signupBonus?: number;
-    // 微信登录(明文)
-    wechatAppid?: string;
-    wechatToken?: string;
-    wechatEmailDomain?: string;
-    // 支付(明文)
-    alipayAppid?: string;
-    alipayPublicKey?: string;
-    wxpayMchid?: string;
-    wxpayCertSerial?: string;
-    wxpayAppid?: string;
-    payEnabled?: boolean;
-
-    brandName?: string;
-    brandLogo?: string;
-    // 站长自定义页面(基础能力,开源版也可改;纯文本)
-    pageAbout?: string;
-    pageContact?: string;
-    pagePlans?: string;
-
-    multiUserEnabled?: boolean;
-    // 积分计费开关(基础能力,单用户也可开)
-    creditsMetering?: boolean;
-
-    smtpHost?: string;
-    smtpPort?: number;
-    smtpUser?: string;
-    smtpPass?: string;
-    smtpFrom?: string;
-    // 加密类(浏览器 RSA 密文)
-    encryptedWechatSecret?: string;
-    encryptedAlipayPrivateKey?: string;
-    encryptedWxpayApiv3?: string;
-    encryptedWxpayCert?: string;
-  };
   try {
-    body = await req.json();
+    rawBody = await req.json();
   } catch {
     return NextResponse.json({ error: "请求体无效" }, { status: 400 });
   }
 
-  if (!body || typeof body !== "object" || Array.isArray(body)) return NextResponse.json({ error: "请求体无效" }, { status: 400 });
+  if (!rawBody || typeof rawBody !== "object" || Array.isArray(rawBody)) return NextResponse.json({ error: "请求体无效" }, { status: 400 });
 
-  if (["model", "models", "cutoutModel", "cutoutBackend", "encryptedBaseUrl", "baseUrlPlain", "baseUrlClear", "encryptedKey", "keyPlain"].some(key => Object.prototype.hasOwnProperty.call(body, key))) {
+  if (["model", "models", "cutoutModel", "cutoutBackend", "encryptedBaseUrl", "baseUrlPlain", "baseUrlClear", "encryptedKey", "keyPlain"].some(key => Object.prototype.hasOwnProperty.call(rawBody, key))) {
     try {
       if (await modelConfigurationEnabled()) return NextResponse.json({ error: "模型配置已由模型配置中心管理，请在那里修改并发布", code: "MODEL_CONFIG_MANAGED", managementPath: "/admin/bi/models" }, { status: 409 });
     } catch (error) {
@@ -129,86 +84,105 @@ export async function POST(req: Request) {
   }
 
   // 解出浏览器 RSA 密文 → 明文;解密失败/为空回 null,调用方据此回 400。
+  // Preserve the legacy managed-model 409 before validating obsolete payloads.
+  const parsed = settingsMutationSchema.safeParse(rawBody);
+  if (!parsed.success) return NextResponse.json({ error: "请求体无效" }, { status: 400 });
+  const body = parsed.data;
+  // Setters prepare normalized/encrypted values through an explicit port.
+  // Nothing is persisted until every field has passed validation below.
+  const entries: [string, string][] = [];
+  const write = async (key: string, value: string): Promise<void> => { entries.push([key, value]); };
+  const decrypted = new Map<string, string>();
   async function decryptField(b64: unknown): Promise<string | null> {
     if (typeof b64 !== "string" || !b64.trim()) return null;
+    if (decrypted.has(b64)) return decrypted.get(b64)!;
     try {
-      const plain = await decryptFromClient(b64);
+      const plain = await decryptFromClient(b64, true);
+      if (plain?.trim()) decrypted.set(b64, plain);
       return plain && plain.trim() ? plain : null;
     } catch {
       return null;
     }
   }
 
+  // Validate even a supplied value shadowed by clear/encrypted precedence.
+  for (const field of ["encryptedBaseUrl", "encryptedKey", "encryptedReplicateToken", "encryptedWechatSecret", "encryptedAlipayPrivateKey", "encryptedWxpayApiv3", "encryptedWxpayCert"] as const) {
+    const value = body[field];
+    if (!value?.trim()) continue;
+    const plain = await decryptField(value);
+    if (!plain || ((field === "encryptedKey" || field === "encryptedReplicateToken") && plain.length < 8)) {
+      return NextResponse.json({ error: "加密设置无效" }, { status: 400 });
+    }
+  }
+  if (body.keyPlain?.trim() && body.keyPlain.trim().length < 8) return NextResponse.json({ error: "key 无效" }, { status: 400 });
+
   try {
     if (typeof body.model === "string" && body.model.trim()) {
-      await saveOpenAIModel(body.model);
+      await saveOpenAIModel(body.model, write);
     }
     if (Array.isArray(body.models)) {
-      await saveOpenAIModels(body.models);
+      await saveOpenAIModels(body.models, write);
     }
     // AI 模型接口地址:RSA 加密传输、加密落库(保护海外域名/凭证,不走明文)。
     // baseUrlClear=清除→回退直连;否则解密后保存(saveOpenAIBaseUrl 内部再 AES 落库)。
     if (body.baseUrlClear === true) {
-      await saveOpenAIBaseUrl("");
+      await saveOpenAIBaseUrl("", write);
     } else if (
       typeof body.encryptedBaseUrl === "string" &&
       body.encryptedBaseUrl.trim()
     ) {
-      const plain = await decryptFromClient(body.encryptedBaseUrl);
+      const plain = await decryptField(body.encryptedBaseUrl);
       if (!plain || !plain.trim()) {
         return NextResponse.json(
           { error: "解密后的接口地址无效" },
           { status: 400 }
         );
       }
-      await saveOpenAIBaseUrl(plain.trim());
+      await saveOpenAIBaseUrl(plain.trim(), write);
     } else if (
       typeof body.baseUrlPlain === "string" &&
       body.baseUrlPlain.trim()
     ) {
       // HTTP 自托管(无 crypto.subtle)兜底:明文传入,saveOpenAIBaseUrl 内部 AES 落库。
-      await saveOpenAIBaseUrl(body.baseUrlPlain.trim());
+      await saveOpenAIBaseUrl(body.baseUrlPlain.trim(), write);
     }
     if (typeof body.cutoutModel === "string" && body.cutoutModel.trim()) {
-      await saveCutoutModel(body.cutoutModel);
+      await saveCutoutModel(body.cutoutModel, write);
     }
     if (
       typeof body.cutoutBackend === "string" &&
       body.cutoutBackend.trim()
     ) {
-      await saveCutoutBackend(body.cutoutBackend);
+      await saveCutoutBackend(body.cutoutBackend, write);
     }
     if (typeof body.replicateModel === "string" && body.replicateModel.trim()) {
-      await saveReplicateModel(body.replicateModel);
-    }
-    if (typeof body.signupBonus === "number" && Number.isFinite(body.signupBonus)) {
-      await setSignupBonus(body.signupBonus, actor);
+      await saveReplicateModel(body.replicateModel, write);
     }
     if (body.encryptedKey) {
-      const plain = await decryptFromClient(body.encryptedKey);
+      const plain = await decryptField(body.encryptedKey);
       if (!plain || plain.length < 8) {
         return NextResponse.json(
           { error: "解密后的 key 无效" },
           { status: 400 }
         );
       }
-      await saveOpenAIKey(plain);
+      await saveOpenAIKey(plain, write);
     } else if (typeof body.keyPlain === "string" && body.keyPlain.trim()) {
       // HTTP 自托管(无 crypto.subtle)兜底:明文 key,saveOpenAIKey 内部 AES 落库。
       if (body.keyPlain.trim().length < 8) {
         return NextResponse.json({ error: "key 无效" }, { status: 400 });
       }
-      await saveOpenAIKey(body.keyPlain.trim());
+      await saveOpenAIKey(body.keyPlain.trim(), write);
     }
     if (body.encryptedReplicateToken) {
-      const plain = await decryptFromClient(body.encryptedReplicateToken);
+      const plain = await decryptField(body.encryptedReplicateToken);
       if (!plain || plain.length < 8) {
         return NextResponse.json(
           { error: "解密后的 Replicate Token 无效" },
           { status: 400 }
         );
       }
-      await saveReplicateToken(plain);
+      await saveReplicateToken(plain, write);
     }
 
     // ---- 微信登录:明文字段(空串自动跳过) ----
@@ -222,7 +196,7 @@ export async function POST(req: Request) {
         appid: body.wechatAppid,
         token: body.wechatToken,
         emailDomain: body.wechatEmailDomain,
-      });
+      }, write);
     }
     // 微信 AppSecret(加密)
     if (typeof body.encryptedWechatSecret === "string" && body.encryptedWechatSecret.trim()) {
@@ -233,13 +207,10 @@ export async function POST(req: Request) {
           { status: 400 }
         );
       }
-      await saveWechatSecret(plain);
+      await saveWechatSecret(plain, write);
     }
 
     // ---- 支付:明文字段 ----
-    if (typeof body.payEnabled === "boolean") {
-      await savePayEnabled(body.payEnabled, actor);
-    }
     if (
       (typeof body.alipayAppid === "string" && body.alipayAppid.trim()) ||
       (typeof body.alipayPublicKey === "string" && body.alipayPublicKey.trim())
@@ -247,16 +218,16 @@ export async function POST(req: Request) {
       await saveAlipay({
         appid: body.alipayAppid,
         publicKey: body.alipayPublicKey,
-      });
+      }, write);
     }
     if (typeof body.wxpayMchid === "string" && body.wxpayMchid.trim()) {
-      await saveWxpay({ mchid: body.wxpayMchid });
+      await saveWxpay({ mchid: body.wxpayMchid }, write);
     }
     if (typeof body.wxpayCertSerial === "string" && body.wxpayCertSerial.trim()) {
-      await saveWxpayCertSerial(body.wxpayCertSerial);
+      await saveWxpayCertSerial(body.wxpayCertSerial, write);
     }
     if (typeof body.wxpayAppid === "string" && body.wxpayAppid.trim()) {
-      await saveWxpayAppid(body.wxpayAppid);
+      await saveWxpayAppid(body.wxpayAppid, write);
     }
     // 支付加密字段
     if (typeof body.encryptedAlipayPrivateKey === "string" && body.encryptedAlipayPrivateKey.trim()) {
@@ -267,7 +238,7 @@ export async function POST(req: Request) {
           { status: 400 }
         );
       }
-      await saveAlipayPrivateKey(plain);
+      await saveAlipayPrivateKey(plain, write);
     }
     if (typeof body.encryptedWxpayApiv3 === "string" && body.encryptedWxpayApiv3.trim()) {
       const plain = await decryptField(body.encryptedWxpayApiv3);
@@ -277,7 +248,7 @@ export async function POST(req: Request) {
           { status: 400 }
         );
       }
-      await saveWxpayApiv3(plain);
+      await saveWxpayApiv3(plain, write);
     }
     if (typeof body.encryptedWxpayCert === "string" && body.encryptedWxpayCert.trim()) {
       const plain = await decryptField(body.encryptedWxpayCert);
@@ -287,12 +258,12 @@ export async function POST(req: Request) {
           { status: 400 }
         );
       }
-      await saveWxpayCert(plain);
+      await saveWxpayCert(plain, write);
     }
 
     // 注意:用 typeof 判断「字段是否出现」,空串也要写入(=清除),不能用真值跳过。
     if (typeof body.brandName === "string" || typeof body.brandLogo === "string") {
-      await saveBrand({ name: body.brandName, logo: body.brandLogo });
+      await saveBrand({ name: body.brandName, logo: body.brandLogo }, write);
     }
 
     // ---- 站长自定义页面(关于/联系/定价):基础能力,开源版也可改 ----
@@ -305,17 +276,14 @@ export async function POST(req: Request) {
         about: body.pageAbout,
         contact: body.pageContact,
         plans: body.pagePlans,
-      });
+      }, write);
     }
 
     if (typeof body.multiUserEnabled === "boolean") {
-      await saveMultiUser(body.multiUserEnabled);
+      await saveMultiUser(body.multiUserEnabled, write);
     }
 
     // ---- 积分计费开关(基础,单用户也可开)----
-    if (typeof body.creditsMetering === "boolean") {
-      await saveCreditsMetering(body.creditsMetering, actor);
-    }
 
     if (
       typeof body.smtpHost === "string" ||
@@ -330,12 +298,26 @@ export async function POST(req: Request) {
         from: body.smtpFrom,
         pass: body.smtpPass,
         port: body.smtpPort,
+      }, write);
+    }
+    // All schema checks, RSA decryption and AES encryption have finished.
+    await setSettingsAtomically(entries);
+    // Billing owns version publication/CAS and opens its own transaction. It
+    // cannot join app_settings here. Group the compatibility fields in one
+    // publication. Runtime/CAS failures can leave ordinary settings committed;
+    // validation failures (400) always occur before either write boundary.
+    if (body.signupBonus !== undefined || body.payEnabled !== undefined || body.creditsMetering !== undefined) {
+      await updateBillingCompatibility(actor, "更新系统计费设置", config => {
+        if (body.signupBonus !== undefined) config.credits.signup.amount = Math.min(Math.max(0, Math.trunc(body.signupBonus)), 100000);
+        if (body.payEnabled !== undefined) config.switches.recharge = body.payEnabled;
+        if (body.creditsMetering !== undefined) config.switches.metering = body.creditsMetering ? "on" : "off";
       });
     }
+    await appendManagementLogAfterChange({ actor, subject: "settings:system", action: "settings-update", changes: { fields: Object.keys(body).sort() } });
     return NextResponse.json(await getAdminView());
-  } catch (e) {
+  } catch {
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : "保存失败" },
+      { error: "保存失败" },
       { status: 500 }
     );
   }
