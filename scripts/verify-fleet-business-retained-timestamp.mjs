@@ -122,6 +122,43 @@ async function main(){
       check(JSON.stringify(controlRow.operation)===JSON.stringify(control),label+': control operation remains exact');
       scenarios.push({name:label,status:response.status,controlDispatched:controlRow.state==='leased',retainedUnchanged:JSON.stringify(await row(invalidId))===snapshot});
     }
+    // PG accepts relative/nonfinite/offset/relaxed spellings that the actual
+    // business command schema rejects. They must not become a permanent head
+    // in front of an otherwise valid retained business read after controls ACK.
+    const future=new Date(now+180000).toISOString();
+    const protocolInvalid=[['now','now'],['infinity','infinity'],['tomorrow','tomorrow'],['today','today'],['yesterday','yesterday'],['epoch','epoch'],['negative-infinity','-infinity'],
+      ['minute-only',future.slice(0,16)+'Z'],['offset',future.replace(/Z$/,'+00:00')],['lowercase',future.toLowerCase()],['space-separator',future.replace('T',' ')],['leading-space',' '+future],['trailing-space',future+' '],['date-only',future.slice(0,10)],['newline',future+'\n'],['future-date-only',new Date(now+86400000).toISOString().slice(0,10)]];
+    for(const[name,asOf]of protocolInvalid)for(const state of ['queued','leased']){
+      const label='protocol-'+name+'/'+state,instance=await service.createInstance('root',label,'enterprise'),operation=read(asOf);
+      check(!real.operationSchema.safeParse(operation).success,label+': actual business format rejects the PG spelling');
+      check((await pool.query("SELECT pg_input_is_valid($1,'timestamp with time zone') valid",[asOf])).rows[0].valid===true,label+': spelling is genuinely PostgreSQL-valid');
+      const poison=await seed(instance,operation,state),valid=await seed(instance,read()),control=randomUUID();
+      await pool.query('UPDATE app_fleet_commands SET created_at=$2 WHERE id=$1',[poison,new Date(now-1200000)]);const snapshot=JSON.stringify(await row(poison));
+      await service.enqueueCommand('root',instance.id,control,{type:'users.ban',email:'target@fixture.test',banned:true,expectedBanned:false});
+      const first=await poll(instance);check(first.status===200&&commandId(first,instance)===control,label+': control dispatch remains first');
+      const ack=await exchange(instance,true,{commandId:control,leaseId:first.body.leaseId??randomUUID(),result:{status:'succeeded',data:{email:'target@fixture.test',banned:true}}});
+      check(ack.status===200,label+': original control ACK completes');const next=await poll(instance);
+      check(next.status===200,label+': next business-capable poll does not fail signing');
+      check(commandId(next,instance)===valid,label+': later valid business read bypasses malformed head');
+      check((await row(valid)).state==='leased',label+': valid business lease commits');
+      check(JSON.stringify(await row(poison))===snapshot,label+': malformed retained state/identity/lease/result stay intact');
+      scenarios.push({name:label,controlStatus:first.status,readStatus:next.status,validDispatched:commandId(next,instance)===valid,retainedUnchanged:JSON.stringify(await row(poison))===snapshot});
+    }
+    for(const asOf of ['now','infinity']){
+      const instance=await service.createInstance('root','legacy-'+asOf,'enterprise'),poison=await seed(instance,read(asOf)),valid=await seed(instance,read()),control=randomUUID(),snapshot=JSON.stringify(await row(poison));
+      await service.enqueueCommand('root',instance.id,control,{type:'users.ban',email:'target@fixture.test',banned:true,expectedBanned:false});const first=await poll(instance,false);
+      check(first.status===200&&commandId(first,instance)===control,'legacy '+asOf+': control still dispatches');
+      check((await exchange(instance,true,{commandId:control,leaseId:first.body.leaseId??randomUUID(),result:{status:'succeeded',data:{email:'target@fixture.test',banned:true}}})).status===200,'legacy '+asOf+': control ACK still completes');
+      const next=await poll(instance,false);check(next.status===200&&next.body.command===null&&(await row(valid)).state==='queued','legacy '+asOf+': no business capability is inferred');
+      check(JSON.stringify(await row(poison))===snapshot,'legacy '+asOf+': malformed head stays intact');
+    }
+    const validFormats=[['seconds',future.replace(/\.\d{3}Z$/,'Z')],['fraction-one',future.replace(/\.\d{3}Z$/,'.1Z')],['fraction-nine',future.replace(/\.\d{3}Z$/,'.123456789Z')],['year9999','9999-12-31T23:59:59Z'],['year0001','0001-01-01T00:00:00Z'],['leap2000','2000-02-29T00:00:00Z']];
+    for(const[name,asOf]of validFormats){
+      check(real.operationSchema.safeParse(read(asOf)).success,'format '+name+': actual business schema accepts the spelling');
+      const instance=await service.createInstance('root','format-'+name,'enterprise'),id=await seed(instance,read(asOf)),response=await poll(instance),expected=Date.parse(asOf)>now-real.FLEET_BUSINESS_QUERY_MAX_AGE_MS;
+      check(response.status===200,'format '+name+': poll remains available');check((commandId(response,instance)===id)===expected,'format '+name+': original freshness and supported precision retained');
+      check((await row(id)).state===(expected?'leased':'queued'),'format '+name+': only fresh valid rows leased');
+    }
     for(const[name,asOf,expected]of [['fresh',new Date(now-1000).toISOString(),true],['near-boundary',new Date(now-real.FLEET_BUSINESS_QUERY_MAX_AGE_MS+1).toISOString(),true],['boundary',new Date(now-real.FLEET_BUSINESS_QUERY_MAX_AGE_MS).toISOString(),false],['stale',new Date(now-real.FLEET_BUSINESS_QUERY_MAX_AGE_MS-1).toISOString(),false],['future',new Date(now+5000).toISOString(),true],['valid-ancient-leap','0004-02-29T00:00:00Z',false]]){
       const instance=await service.createInstance('root','valid-'+name,'enterprise'),id=await seed(instance,read(asOf)),response=await poll(instance);
       check(response.status===200,'valid '+name+': poll stays available');check((commandId(response,instance)===id)===expected,'valid '+name+': original strict freshness comparison retained');

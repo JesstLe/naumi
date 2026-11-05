@@ -204,13 +204,16 @@ export async function connectorExchange(request: Request, ack = false) {
       &&previous?.business===1&&previous.source===body.status.source&&previous.version===body.status.version;
     const storedStatus=retainBusiness?{...body.status,business:1}:body.status;
     await tx.query('UPDATE app_fleet_instances SET last_seen=now(),status=$2 WHERE id=$1',[instanceId,JSON.stringify(storedStatus)]);
+    // Match datetime()'s UTC spelling (required seconds, optional fraction),
+    // then let PostgreSQL validate its calendar/range before entering the cast.
+    const businessAsOfFormat='^[0-9]{4}-[0-9]{2}-[0-9]{2}T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]+)?Z$';
     // CASE protects the cast even when PostgreSQL reorders other predicates.
-    // Retained malformed rows stay intact and cannot block control dispatch.
+    // Retained malformed rows stay intact and cannot block control or read dispatch.
     const pending = await tx.query(`SELECT * FROM app_fleet_commands WHERE instance_id=$1 AND state IN ('queued','leased')
       AND (operation->>'type'<>'business.query' OR CASE
-        WHEN $2::boolean AND pg_input_is_valid(operation->>'asOf','timestamp with time zone')
+        WHEN $2::boolean AND (operation->>'asOf') ~ $4::text AND pg_input_is_valid(operation->>'asOf','timestamp with time zone')
         THEN (operation->>'asOf')::timestamptz > $3::timestamptz ELSE false END)
-      ORDER BY (COALESCE(operation->>'type','')='business.query'),created_at,id LIMIT 1 FOR UPDATE`,[instanceId,body.status.business===1,new Date(Date.now()-FLEET_BUSINESS_QUERY_MAX_AGE_MS).toISOString()]);
+      ORDER BY (COALESCE(operation->>'type','')='business.query'),created_at,id LIMIT 1 FOR UPDATE`,[instanceId,body.status.business===1,new Date(Date.now()-FLEET_BUSINESS_QUERY_MAX_AGE_MS).toISOString(),businessAsOfFormat]);
     let command = null, leaseId: string | null = null;
     const row = pending.rows[0];
     if(row&&!row.requested_by_root&&(row.state==='queued'||new Date(row.leased_until).getTime()<=Date.now())){
