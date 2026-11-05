@@ -18,7 +18,11 @@ function load(file,ports={}){
  const loadedModule={exports:{}},box={module:loadedModule,exports:loadedModule.exports,Error,Map,Set,Date:class extends Date{static now(){return 1793318400000;}},console,require:name=>{if(name in ports)return ports[name];throw Error('unexpected runtime dependency '+name);}};vm.createContext(box);vm.runInContext(output,box,{filename:file});return loadedModule.exports;
 }
 const inputs=load('src/lib/canvas/text-image-inputs.ts'),media=load('src/lib/media-url.ts');
-const ownerModule=baseline?null:load('src/lib/canvas/text-image-runs.ts');
+const ownerSource=arg('--owner-source');
+const ownerModule=baseline?null:ownerSource?(()=>{
+ const loadedModule={exports:{}},box={module:loadedModule,exports:loadedModule.exports,Error,Map,Set,Date,console,require:name=>name==='../media-url'?media:name==='./text-image-inputs'?inputs:(()=>{throw Error('unexpected original owner dependency '+name);})()};
+ vm.createContext(box);vm.runInContext(transpile(fs.readFileSync(path.resolve(ownerSource),'utf8')),box,{filename:ownerSource});return loadedModule.exports;
+})():load('src/lib/canvas/text-image-runs.ts');
 const node=(id='text-a',content='一只白鹭站在雨后的石桥上',extra={})=>({id,content,prompt:'',projectKey:'tree:project-a',title:id,sourceIds:[],productIds:[],status:'completed',canvasX:20.4,canvasY:30.6,width:380,...extra});
 const art=(id,extra={})=>({id,image:'/media/'+id+'.png',source:'upload',...extra});
 function deferred(){let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};}
@@ -38,7 +42,8 @@ function harness(options={}){
   setPendNodes:updater=>{c.pendSetterCalls++;if(options.deferPending)c.pendingUpdaters.push(updater);else c.pending=updater(c.pending);},
   generatePend:async opts=>{c.calls.push(opts);return options.generatePend?options.generatePend(opts,c,c.calls.length):true;},...inputs,
   textBusy:new Set(options.busy||[]),textTasks:{state:id=>({busy:c.textBusy.has(id)})},
-  canvasTextDocument:{getSnapshot:()=>({nodes:c.textNodesRef.current})},
+  canvasTextDocument:{getSnapshot:()=>({nodes:c.textNodesRef.current}),flush:async()=>{},hasUnsaved:()=>false},
+  textAutosave:{flush:async()=>{},hasPending:()=>false},
  };
  const scopes=load('src/lib/canvas/document-scope.ts',{'../supabase':{authHeader:()=>({})},'../saas/workspace-client':{currentWorkspace:()=>c.workspace,currentWorkspaceRevision:()=>c.workspaceRevision}}).createCanvasDocumentContext();
  const owner=ownerModule?.createCanvasTextImageRuns();let lastView,lastScope,unsubscribe;
@@ -54,14 +59,45 @@ function harness(options={}){
   flush(){for(const updater of c.pendingUpdaters.splice(0))c.pending=updater(c.pending);},
   move(nextProject,nextTexts=[]){c.activeProjectRef.current=nextProject;c.textNodesRef.current=nextTexts;c.canvasContextEpochRef.current++;return h.render();},
   snapshot(){h.render();return baseline?{menu:c.genImageMenu,submitting:c.textImageSubmitting}:lastView.getSnapshot();},
+  async afterAcknowledgements(){for(let i=0;i<16;i++)await Promise.resolve();},
  };
  h.render();return h;
 }
 async function test(name,fn,trace=true){const h=await fn();if(trace&&h)rows.push({name,calls:h.c.calls.map(call=>({pend:call.pend,prompt:call.prompt,forceStandard:call.forceStandard})),pending:h.c.pending,tips:h.c.tips});cases++;console.log('CASE='+name+' PASS');}
 function blocked(h,tip){eq(h.c.calls.length,0,'no generation');eq(h.c.pendSetterCalls,0,'whole batch validated before placeholders');eq(h.c.textImageSubmittingRef.current,false,'busy released');if(tip)ok(h.c.tips.some(t=>tip.test(t)),h.c.tips.join('|'));}
+
+/** Execute the real owner with save-ACK ports. No component, network, PG or
+ * provider is substituted for these ordering and immutable-recipe assertions. */
+async function runAckContract(){
+ function fixture(options={}){
+  const state={current:true,writable:true,nodes:options.nodes||[node()],calls:[],pending:[],flushes:[],unsaved:new Set(),locked:new Set(),errors:[],notices:0,sequence:0};
+  const scope={account:'account-a',workspace:'workspace-a',project:'tree:project-a',key:'ack-fixture',documentCurrent:()=>state.current,viewCurrent:()=>state.current,assertView:()=>{assert.ok(state.current);}};
+  const ctx={scope,current:()=>state.current,writable:()=>state.writable,canGenerate:true,ready:true,project:()=>({key:scope.project,members:options.members||[]}),texts:()=>state.nodes,locked:id=>state.locked.has(id),draft:{id:null,text:''},
+   flushTexts:async ids=>{state.flushes.push([...ids]);if(options.flush)await options.flush(ids,state);},textUnsaved:id=>state.unsaved.has(id),positions:()=>new Map(),nextSequence:()=>++state.sequence,gap:90,textWidth:380,imageLabel:'image',maxImages:16,
+   pending:change=>{state.pending=change(state.pending);},generate:async opts=>{state.calls.push(opts);return true;},lockedNotice:()=>state.notices++,error:error=>state.errors.push(String(error.message||error))};
+  const view=ownerModule.createCanvasTextImageRuns().bind(scope);view.open(options.ids||['text-a'],[],ctx);
+  return {state,view,ctx,run:(mode='general',settings={})=>view.run(mode,{combine:true,useReferences:true,...settings},ctx)};
+ }
+ async function ackTest(name,work){await work();cases++;console.log('CASE=ack-'+name+' PASS');}
+ await ackTest('wait-before-placeholder-and-freeze-current-recipe',async()=>{
+  const gate=deferred(),f=fixture({nodes:[node('text-a','old',{sourceIds:['text-b']}),node('text-b','upstream')],flush:()=>gate.promise}),run=f.run();
+  eq(f.state.flushes,[['text-a','text-b']],'every preview source waits for ACK exactly once');eq(f.state.calls,[],'no generation before ACK');eq(f.state.pending,[],'no placeholder before ACK');eq(f.view.getSnapshot().submitting,true);
+  f.state.nodes=[node('text-a','ACKed body',{sourceIds:['text-b']}),node('text-b','ACKed upstream')];gate.resolve();await run;
+  eq(f.state.calls.length,1);eq(f.state.calls[0].prompt,'ACKed body\n\nACKed upstream');eq(f.state.calls[0].frozenTextPrompt,f.state.calls[0].prompt,'explicit recipe bypasses direct-edge recomposition');eq(f.state.calls[0].pend.inputs,['text-a','text-b']);eq(f.view.getSnapshot().submitting,false);
+ });
+ await ackTest('deduplicated-batch-source-ack',async()=>{const f=fixture({nodes:[node('text-a','A',{sourceIds:['text-c']}),node('text-b','B',{sourceIds:['text-c']}),node('text-c','C')],ids:['text-a','text-b']});await f.run('general',{combine:false});eq(f.state.flushes,[['text-a','text-c','text-b']]);eq(f.state.calls.length,2);for(const call of f.state.calls)eq(call.frozenTextPrompt,call.prompt);});
+ for(const failure of ['rejected','unsaved'])await ackTest(failure+'-save-stops-all-purchases',async()=>{const f=fixture({flush:(_ids,state)=>{if(failure==='rejected')throw Error('save rejected');state.unsaved.add('text-a');}});await f.run();eq(f.state.pending,[]);eq(f.state.calls,[]);eq(f.state.errors.length,1);eq(f.view.getSnapshot().submitting,false);});
+ for(const stale of ['scope','readonly'])await ackTest(stale+'-during-ack',async()=>{const gate=deferred(),f=fixture({flush:()=>gate.promise}),run=f.run();if(stale==='scope')f.state.current=false;else f.state.writable=false;gate.resolve();await run;eq(f.state.pending,[]);eq(f.state.calls,[]);eq(f.state.errors,[]);eq(f.view.getSnapshot().submitting,false);});
+ await ackTest('new-source-after-ack-requires-reconfirmation',async()=>{const gate=deferred(),f=fixture({nodes:[node(),node('text-b','new source')],flush:()=>gate.promise}),run=f.run();f.state.nodes=[node('text-a','changed',{sourceIds:['text-b']}),node('text-b','new source')];gate.resolve();await run;eq(f.state.flushes,[['text-a']]);eq(f.state.pending,[]);eq(f.state.calls,[]);ok(f.state.errors.some(error=>error.includes('连线已变更')));});
+ await ackTest('removed-source-replans-current-recipe',async()=>{const gate=deferred(),f=fixture({nodes:[node('text-a','A',{sourceIds:['text-b']}),node('text-b','B')],flush:()=>gate.promise}),run=f.run();f.state.nodes=[node('text-a','new A'),node('text-b','B')];gate.resolve();await run;eq(f.state.calls.length,1);eq(f.state.calls[0].prompt,'new A');eq(f.state.calls[0].pend.inputs,['text-a']);});
+ for(const invalid of ['busy','locked'])await ackTest(invalid+'-source-after-ack',async()=>{const gate=deferred(),f=fixture({flush:()=>gate.promise}),run=f.run();if(invalid==='busy')f.state.nodes[0]={...f.state.nodes[0],status:'generating'};else f.state.locked.add('text-a');gate.resolve();await run;eq(f.state.pending,[]);eq(f.state.calls,[]);eq(invalid==='busy'?f.state.errors.length:f.state.notices,1);});
+ for(const mode of ['pure','replicate'])await ackTest(mode+'-recipe-remains-frozen',async()=>{const f=fixture({nodes:[node('text-a','@product\nbody',{productIds:['product'],sourceIds:['reference']})],members:[art('product'),art('reference')]});await f.run(mode);eq(f.state.calls.length,1);eq(f.state.calls[0].frozenTextPrompt,f.state.calls[0].prompt);if(mode==='replicate')ok(f.state.calls[0].prompt.includes('产品必须完全取自第一张参考图'));else eq(f.state.calls[0].prompt,'body');});
+}
+
 async function run(){
  const originalFetch=global.fetch;global.fetch=()=>{network++;throw Error('no network in application fixture');};
  try{
+ if(!baseline)await runAckContract();
  await test('actual-entry-boundary',()=>{
   const count=name=>{let n=0;(function visit(x){if(ts.isCallExpression(x)&&x.expression.getText(ast)===name)n++;ts.forEachChild(x,visit);})(ast);return n;};
   eq(count('openTextImageMenu'),5,'all five real UI openers');eq(count('buildTextImageRequests'),baseline?1:0,'planning leaves component');
@@ -80,7 +116,7 @@ async function run(){
   ['position',{graph:[{id:'text-a',position:{x:100.25,y:200.75}}]},['text-a'],[],'general',{}],
   ['max-prompt',{nodes:[node('text-a','字'.repeat(6000))]},['text-a'],[],'general',{}],
   ['max-references',{members:Array.from({length:16},(_,i)=>art('image-'+i))},['text-a'],Array.from({length:16},(_,i)=>'image-'+i),'general',{}],
- ])await test(name,async()=>{const h=harness(options),before=JSON.stringify([h.c.textNodesRef.current,h.c.activeProjectRef.current]);h.open(ids,images);ok(h.c.genImageMenu);await h.submit(mode,settings);eq(h.c.calls.length,settings.combine===false?2:1);eq(JSON.stringify([h.c.textNodesRef.current,h.c.activeProjectRef.current]),before,'inputs immutable');eq(h.c.textImageSubmittingRef.current,false);return h;});
+ ])await test(name,async()=>{const h=harness(options),before=JSON.stringify([h.c.textNodesRef.current,h.c.activeProjectRef.current]);h.open(ids,images);ok(h.c.genImageMenu);await h.submit(mode,settings);eq(h.c.calls.length,settings.combine===false?2:1);if(!baseline)for(const call of h.c.calls)eq(call.frozenTextPrompt,call.prompt,'explicit composed recipe remains frozen');eq(JSON.stringify([h.c.textNodesRef.current,h.c.activeProjectRef.current]),before,'inputs immutable');eq(h.c.textImageSubmittingRef.current,false);return h;});
  for(const [name,content,draft,prompt,expected,status] of [['draft','','saved draft','',baseline?'saved draft':null,'completed'],['output','output','draft','old','output','completed'],['prompt','','','saved prompt','saved prompt','idle'],...(!baseline?[['completed-empty','','AI draft','old instruction',null,'completed']]:[])])await test(name,async()=>{const h=harness({nodes:[node('text-a',content,{prompt,status})]});h.c.selectedTextId='text-a';h.c.textPrompt=draft;h.open();h.c.textPrompt='later draft';await h.submit();if(expected===null)blocked(h,/先输入/);else eq(h.c.calls[0].prompt,expected);return h;});
  for(const [name,nodes,members,ids,images,settings,tip] of [
   ['empty',[node('text-a','')],[],['text-a'],[],{},/先输入/],
@@ -97,22 +133,22 @@ async function run(){
  for(const [name,change] of [['readonly',c=>c.readOnly=true],['feature',c=>c.allowed=false],['not-ready',c=>c.nodeSettingsReady=false],['locked',c=>c.locked.add('text-a')]])await test('submit-'+name,async()=>{const h=harness();h.open();change(h.c);await h.submit();blocked(h);return h;});
  await test('upstream-locked',async()=>{const h=harness({nodes:[node('text-a','主',{sourceIds:['text-b']}),node('text-b','upstream')]});h.open();h.c.locked.add('text-b');await h.submit();blocked(h,/已锁定/);return h;});
  for(const stop of ['false','undefined','throw'])await test('stop-'+stop,async()=>{const h=harness({nodes:[node(),node('text-b','乙')],generatePend:()=>{if(stop==='throw')throw Error('fixture failure');return stop==='false'?false:undefined;}});h.open(['text-a','text-b']);await h.submit('general',{combine:false});eq(h.c.calls.length,1);eq(h.c.pending.length,1);eq(h.c.textImageSubmittingRef.current,false);return h;});
- await test('serial-await-and-double-click',async()=>{const gate=deferred(),h=harness({nodes:[node(),node('text-b','乙')],generatePend:(_o,_c,i)=>i===1?gate.promise:true});h.open(['text-a','text-b']);const render=h.render(),run=render.generateImagesFromTextNodes('general',{combine:false,useReferences:true});await render.generateImagesFromTextNodes('general',{combine:false,useReferences:true});eq(h.c.calls.length,1);gate.resolve(true);await run;eq(h.c.calls.length,2);return h;});
- for(const kind of ['account','project','workspace','unmount','epoch'])await test('stale-'+kind,async()=>{const gate=deferred(),h=harness({nodes:[node(),node('text-b','乙')],deferPending:true,generatePend:()=>gate.promise});h.open(['text-a','text-b']);const run=h.submit('general',{combine:false});if(kind==='account')h.c.canvasAccountRef.current='account-b';if(kind==='project')h.move({key:'tree:b',members:[]});if(kind==='workspace'){h.c.workspace='workspace-b';h.c.workspaceRevision++;}if(kind==='unmount')h.c.batchRunMountedRef.current=false;if(kind==='epoch')h.c.canvasContextEpochRef.current++;h.render();h.flush();gate.reject(Error('late stale failure'));await run;eq(h.c.calls.length,1);eq(h.c.pending,[]);eq(h.c.tips,[]);return h;});
+ await test('serial-await-and-double-click',async()=>{const gate=deferred(),h=harness({nodes:[node(),node('text-b','乙')],generatePend:(_o,_c,i)=>i===1?gate.promise:true});h.open(['text-a','text-b']);const render=h.render(),run=render.generateImagesFromTextNodes('general',{combine:false,useReferences:true});await render.generateImagesFromTextNodes('general',{combine:false,useReferences:true});await h.afterAcknowledgements();eq(h.c.calls.length,1);gate.resolve(true);await run;eq(h.c.calls.length,2);return h;});
+ for(const kind of ['account','project','workspace','unmount','epoch'])await test('stale-'+kind,async()=>{const gate=deferred(),h=harness({nodes:[node(),node('text-b','乙')],deferPending:true,generatePend:()=>gate.promise});h.open(['text-a','text-b']);const run=h.submit('general',{combine:false});await h.afterAcknowledgements();if(kind==='account')h.c.canvasAccountRef.current='account-b';if(kind==='project')h.move({key:'tree:b',members:[]});if(kind==='workspace'){h.c.workspace='workspace-b';h.c.workspaceRevision++;}if(kind==='unmount')h.c.batchRunMountedRef.current=false;if(kind==='epoch')h.c.canvasContextEpochRef.current++;h.render();h.flush();gate.reject(Error('late stale failure'));await run;eq(h.c.calls.length,1);eq(h.c.pending,[]);eq(h.c.tips,[]);return h;});
  for(const kind of ['account','project','workspace'])await test('aba-'+kind,async()=>{const h=harness();h.open();const old=h.render(),project=h.c.activeProjectRef.current;if(kind==='account')h.c.canvasAccountRef.current='account-b';if(kind==='project')h.c.activeProjectRef.current={key:'tree:b',members:[]};if(kind==='workspace'){h.c.workspace='workspace-b';h.c.workspaceRevision++;}h.render();h.c.canvasAccountRef.current='account-a';h.c.activeProjectRef.current=project;if(kind==='workspace'){h.c.workspace='workspace-a';h.c.workspaceRevision++;}h.render();h.open();const menu=h.c.genImageMenu;await old.generateImagesFromTextNodes('general',{combine:true,useReferences:true});eq(h.c.calls.length,0);eq(h.c.genImageMenu,menu);await h.submit();eq(h.c.calls.length,1);return h;});
  await test('deferred-valid-pending',async()=>{const h=harness({deferPending:true});h.c.pending=[{id:'existing'}];h.open();await h.submit();eq(h.c.pending.length,1);h.flush();eq(h.c.pending.length,2);eq(h.c.pending[0].id,'existing');return h;});
  await test('reference-inventory-not-validation',()=>{const h=harness({nodes:[node('text-a','',{sourceIds:['text-b','gone','text-deleted'],productIds:['product']}),node('text-b','',{sourceIds:['text-a','gone']})]});h.open(['text-a'],['selected','selected']);eq(h.references(),3);return h;});
  const scopeProbe={};
  await test('scope-owned-busy-and-late-finally',async()=>{
-  const a=deferred(),b=deferred(),h=harness({nodes:[node(),node('text-a2','A second')],generatePend:(_o,_c,i)=>i===1?a.promise:b.promise});h.open(['text-a','text-a2']);const runA=h.submit('general',{combine:false});eq(h.c.calls.length,1);
+  const a=deferred(),b=deferred(),h=harness({nodes:[node(),node('text-a2','A second')],generatePend:(_o,_c,i)=>i===1?a.promise:b.promise});h.open(['text-a','text-a2']);const runA=h.submit('general',{combine:false});await h.afterAcknowledgements();eq(h.c.calls.length,1);
   h.move({key:'tree:b',members:[]},[node('text-b','B',{projectKey:'tree:b'})]);h.open(['text-b']);scopeProbe.crossProjectBlocked=!h.c.genImageMenu;
   if(baseline){eq(h.c.genImageMenu,null,'reproduce original global lock');a.resolve(true);await runA;eq(h.c.calls.length,1);scopeProbe.oldFinallyClearsGlobal=true;}
-  else{ok(h.c.genImageMenu,'B can open while A in flight');eq(h.snapshot().submitting,false);const runB=h.submit();eq(h.c.calls.length,2);eq(h.snapshot().submitting,true);a.reject(Error('late A failure'));await runA;eq(h.snapshot().submitting,true,'A finally cannot clear B busy');eq(h.c.tips,[]);b.resolve(true);await runB;eq(h.snapshot().submitting,false);eq(h.c.calls.length,2,'no A continuation or replay');scopeProbe.oldFinallyClearsGlobal=false;}
+  else{ok(h.c.genImageMenu,'B can open while A in flight');eq(h.snapshot().submitting,false);const runB=h.submit();await h.afterAcknowledgements();eq(h.c.calls.length,2);eq(h.snapshot().submitting,true);a.reject(Error('late A failure'));await runA;eq(h.snapshot().submitting,true,'A finally cannot clear B busy');eq(h.c.tips,[]);b.resolve(true);await runB;eq(h.snapshot().submitting,false);eq(h.c.calls.length,2,'no A continuation or replay');scopeProbe.oldFinallyClearsGlobal=false;}
  },false);
- if(!baseline)await test('late-finally-preserves-other-menu',async()=>{const gate=deferred(),h=harness({generatePend:()=>gate.promise});h.open();const run=h.submit();h.move({key:'tree:b',members:[]},[node('text-b','B',{projectKey:'tree:b'})]);h.open(['text-b']);const menu=h.c.genImageMenu;gate.resolve(true);await run;eq(h.snapshot().menu,menu);eq(h.snapshot().submitting,false);eq(h.c.calls.length,1);},false);
+ if(!baseline)await test('late-finally-preserves-other-menu',async()=>{const gate=deferred(),h=harness({generatePend:()=>gate.promise});h.open();const run=h.submit();await h.afterAcknowledgements();h.move({key:'tree:b',members:[]},[node('text-b','B',{projectKey:'tree:b'})]);h.open(['text-b']);const menu=h.c.genImageMenu;gate.resolve(true);await run;eq(h.snapshot().menu,menu);eq(h.snapshot().submitting,false);eq(h.c.calls.length,1);},false);
  if(!baseline)await test('inflight-aba-preserves-original-busy-without-replay',async()=>{
   const gate=deferred(),texts=[node(),node('text-a2','second')],h=harness({nodes:texts,generatePend:()=>gate.promise}),project=h.c.activeProjectRef.current;
-  h.open(['text-a','text-a2']);const old=h.render(),run=h.submit('general',{combine:false});
+  h.open(['text-a','text-a2']);const old=h.render(),run=h.submit('general',{combine:false});await h.afterAcknowledgements();
   h.move({key:'tree:b',members:[]},[node('text-b','B',{projectKey:'tree:b'})]);h.open(['text-b']);ok(h.snapshot().menu);eq(h.snapshot().submitting,false);
   h.move(project,texts);eq(h.snapshot().submitting,true,'same project retains original in-flight busy');h.open(['text-a']);await h.submit();await old.generateImagesFromTextNodes('general',{combine:false,useReferences:true});eq(h.c.calls.length,1,'no new paid call on return');
   gate.resolve(true);await run;eq(h.snapshot().submitting,false);eq(h.c.calls.length,1,'old serial batch does not resume after ABA');
@@ -123,4 +159,4 @@ async function run(){
  console.log(`CANVAS_TEXT_IMAGE_RUNS=${baseline?'BASELINE_REPRODUCED':'PASS'} CASES=${cases} COMMON=${rows.length} CHECKS=${checks} ORIGINAL_TRACE=${report.trace} CROSS_PROJECT_BLOCKED=${Number(scopeProbe.crossProjectBlocked)} ACTUAL_CANVAS=1 ACTUAL_OWNER=${Number(!baseline)} GENERATE_PEND=INTERCEPTED PG=0 NETWORK=${network}`);
  }finally{global.fetch=originalFetch;}
 }
-run().catch(error=>{fs.writeFileSync(path.join(out,'FAILURE.json'),JSON.stringify({error:error.stack,cases,checks},null,2));console.error(error);process.exitCode=1;});
+(process.argv.includes('--ack-only')?(async()=>{await runAckContract();const report={status:'PASS',cases,checks,ownerSource:ownerSource||'src/lib/canvas/text-image-runs.ts',actualOwner:true,actualCanvas:false,network};fs.writeFileSync(path.join(out,'RESULT.json'),JSON.stringify(report,null,2)+'\n');console.log(`TEXT_IMAGE_ACK_CONTRACT=PASS CASES=${cases} CHECKS=${checks} NETWORK=${network}`);})():run()).catch(error=>{fs.writeFileSync(path.join(out,'FAILURE.json'),JSON.stringify({error:error.stack,cases,checks},null,2));console.error(error);process.exitCode=1;});

@@ -15,7 +15,7 @@ let blankSource='canvas-client';
 if(!blank&&fs.existsSync(path.join(root,'src/lib/canvas/image-runs.ts'))){
  const owner=read('src/lib/canvas/image-runs.ts'),ownerAst=ts.createSourceFile('image-runs.ts',owner,99,true);
  const fn=ownerAst.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text==='runCanvasBlankImage');assert.ok(fn);
- const initializers=[];(function visit(n){if(ts.isVariableDeclaration(n)&&n.name.getText(ownerAst)==='prompt'&&n.initializer&&ts.isCallExpression(n.initializer)&&n.initializer.expression.getText(ownerAst)==='canvasBlankImagePrompt')initializers.push(n.initializer.getText(ownerAst));ts.forEachChild(n,visit);})(fn);
+ const initializers=[];(function visit(n){if(ts.isVariableDeclaration(n)&&n.name.getText(ownerAst)==='prompt'&&n.initializer&&n.initializer.getText(ownerAst).includes('canvasBlankImagePrompt'))initializers.push(n.initializer.getText(ownerAst));ts.forEachChild(n,visit);})(fn);
  assert.equal(initializers.length,1,'blank application must use the original prompt owner exactly once');blank=initializers[0];blankSource='canvas/image-runs';
 }
 const primary=fns.generateSelectedImage?'generateSelectedImage':'generateChild',hasRedo=!!fns.retrySelected;assert.ok(blank&&fns[primary]&&fns.genFromAssistant);assert.equal(!!fns.generateSplitViews,baseline);
@@ -39,6 +39,7 @@ function fixture(code,options={}){
   selected:source,active:{members:[source,parent]},assistantArtworkId:'source',editPrompt:'  用户要求  ',generationMode:'standard',genRatio:'3:4',genStyle:'当前风格',genCount:2,genResolution:'4K',visibleDockRefs:[source],extraFiles:[],composerReferences:[ref],dockReferenceState:{error:null},referenceError:null,
   user:{email:'owner@fixture.test'},canvasAccountRef:{current:'owner@fixture.test'},activeProjectRef:{current:{key:'tree:source'}},canvasContextEpochRef:{current:0},batchRunMountedRef:{current:true},imageSubmissionRef:{current:new Map()},setImageSubmissionEpoch:()=>{},flushImagePrompts:async()=>{},errors:[],calls:[],renames:[],details:[],pending:[],MAX_TOTAL_IMAGES:16,
  };
+ c.prepareImageText=async(_id,_project,draft)=>({sources:[],prompt:draft,error:null});c.textWriteBarrierRef={current:0};c.historyBusyRef={current:false};c.isNodeLocked=()=>false;c.canvasArtworkDocument={scope:{viewCurrent:()=>c.__workspace.revision===0&&c.batchRunMountedRef.current},getSnapshot:()=>({nodes:[source,parent]})};
  c.exports=c.module.exports;vm.createContext(c);vm.runInContext(code,c);Object.assign(c,c.module.exports);c.currentWorkspace=()=>c.__workspace.value;
  const entered=deferred(),release=deferred();let used=false;
  c.runGen=(art,prompt,opts)=>{
@@ -47,7 +48,7 @@ function fixture(code,options={}){
  };
  c.renameGeneratedArtwork=async(id,title)=>{c.renames.push([id,title]);if(options.hold==='rename'&&!used){used=true;entered.resolve();await release.promise;}};
  c.generateDetailSequence=async(...values)=>{c.details.push(await plain(values));};c.setGenError=error=>{c.errors.push(error);};
- vm.runInContext(transpile(constants.join('\n')+'\n'+Object.values(fns).join('\n')+`\nfunction blankPrompt(text,inputTextNodes,inputArts){const texts=inputTextNodes,inputs=inputArts;return ${blank};}\nglobalThis.entries={generateChild:${primary},${hasRedo?'retrySelected,':''}genFromAssistant,blankPrompt};`),c);
+ vm.runInContext(transpile(constants.join('\n')+'\n'+Object.values(fns).join('\n')+`\nfunction blankPrompt(text,inputTextNodes,inputArts){const texts=inputTextNodes,inputs=inputArts,input={linked:undefined};return ${blank};}\nglobalThis.entries={generateChild:${primary},${hasRedo?'retrySelected,':''}genFromAssistant,blankPrompt};`),c);
  const snapshot=async()=>({calls:await plain(c.calls),renames:await plain(c.renames),details:await plain(c.details),errors:await plain(c.errors)});
  const run=async(kind='dock')=>{await (kind==='retry'?c.entries.retrySelected():kind==='assistant'?c.entries.genFromAssistant(c.editPrompt):c.entries.generateChild());await Promise.all(c.pending);await Promise.resolve();return snapshot();};
  return {c,source,parent,ref,file,run,snapshot,entered:entered.promise,release:release.resolve,switch(kind){
@@ -88,6 +89,12 @@ async function main(){
   const follows=result.calls.length-1;eq(follows,baseline||kind==='selection'?2:0,'follow-up after '+kind);races.push({kind,followupCalls:follows,renames:result.renames});
  }
  for(const action of hasRedo?['dock','retry']:['dock']){const f=fixture(code,{hold:'generate'});f.c.generationMode='triptych';const work=f.run(action);await f.entered;f.switch('project');f.release();const result=await work;eq(result.renames.length,baseline?1:0,'stale final title '+action);races.push({kind:'final-title-'+action,renames:result.renames.length});}
+ if(!baseline)for(const kind of ['project-aba','account','workspace-aba','unmount']){
+  const f=fixture(code),gate=deferred(),entered=deferred();
+  f.c.prepareImageText=async()=>{entered.resolve();await gate.promise;return {sources:[],prompt:'saved linked input',error:null};};
+  const work=f.run();await entered.promise;f.switch(kind);gate.resolve();const result=await work;
+  eq(result.calls.length,0,'ACK preparation never submits after '+kind);eq(result.details.length,0,'ACK preparation never starts detail after '+kind);races.push({kind:'prepare-'+kind,submitted:0});
+ }
  const priorPath=arg('--baseline-report');if(priorPath){const prior=JSON.parse(fs.readFileSync(priorPath,'utf8'));const legacy=items=>JSON.parse(JSON.stringify(items),(key,value)=>key==='operationKey'&&typeof value==='string'&&/^node:source:attempt:/.test(value)?undefined:value);eq(legacy(common),legacy(prior.common),'all original creative instructions/options/file bytes/order/lineage; explicit purchase attempt identity checked separately');}
  const report={status:'PASS',mode:baseline?'BASELINE':'MODIFIED',checks,common,races,primary,blankSource,retiredRedo:!hasRedo,scope:'ACTUAL_CANVAS_ADAPTERS_AND_APPLICATION_WITH_TASK_PORTS',supplier:0,network:0,pg:false};
  fs.writeFileSync(path.join(out,'RESULT.json'),JSON.stringify(report,null,2)+'\n');

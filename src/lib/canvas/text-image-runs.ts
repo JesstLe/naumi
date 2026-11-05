@@ -14,6 +14,7 @@ export type CanvasTextImageContext={
   scope:CanvasDocumentScope;current:()=>boolean;writable:()=>boolean;canGenerate:boolean;ready:boolean;
   project:()=>{key:string;members:Artwork[]}|null;
   texts:()=>CanvasTextNode[];locked:(id:string)=>boolean;draft:{id:string|null;text:string};
+  flushTexts:(ids:readonly string[])=>Promise<unknown>;textUnsaved:(id:string)=>boolean;
   positions:()=>ReadonlyMap<string,CanvasPoint>;nextSequence:()=>number;gap:number;textWidth:number;imageLabel:string;maxImages:number;
   pending:(change:(nodes:CanvasPendingNode[])=>CanvasPendingNode[])=>void;
   generate:(options:CanvasBlankImageOptions)=>Promise<boolean>;
@@ -58,7 +59,16 @@ export function createCanvasTextImageRuns(){
         const menu=state.snapshot.menu;if(!menu||!isCurrent(menu,ctx)||!ctx.canGenerate||!ctx.ready||state.snapshot.submitting)return;
         const current=()=>isCurrent(menu,ctx);publish({submitting:true});
         try{
-          const planned=requests(menu,mode,options,ctx);if(!planned.length)return;
+          // The explicit recipe owns all transitive text inputs. Await their save
+          // acknowledgements before freezing it; direct-edge composition must not
+          // later append those bodies a second time in the blank-image flow.
+          const preview=requests(menu,mode,options,ctx);if(!preview.length)return;
+          const ids=[...new Set(preview.flatMap(request=>request.textNodeIds))];
+          await ctx.flushTexts(ids);if(!current())return;
+          if(ids.some(ctx.textUnsaved))throw new Error("关联的文字尚未保存，请稍后重试");
+          const planned=requests(menu,mode,options,ctx);
+          if(planned.some(request=>request.textNodeIds.some(id=>!ids.includes(id))))throw new Error("文字连线已变更，请重新确认生成");
+          if(!planned.length)return;
           if(planned.some(request=>request.textNodeIds.some(ctx.locked))){publish({menu:null});ctx.lockedNotice();return;}
           // Validate the whole plan before creating any placeholder or purchase.
           publish({menu:null});const graph=ctx.positions();
@@ -69,7 +79,7 @@ export function createCanvasTextImageRuns(){
             const pend:CanvasPendingNode={id:`pend-${Date.now()}-${seq}`,x:Math.round(point.x+(node.width||ctx.textWidth)+ctx.gap),y:Math.round(point.y),
               parentId:request.imageIds[0]||node.id,linked:true,label:`${ctx.imageLabel} ${seq}`,uploading:false,progress:0,inputs:[...request.imageIds,...request.textNodeIds]};
             ctx.pending(previous=>current()?[...previous,pend]:previous);
-            const succeeded=await ctx.generate({pend,prompt:request.prompt,forceStandard:true,isCurrent:current});
+            const succeeded=await ctx.generate({pend,prompt:request.prompt,frozenTextPrompt:request.prompt,forceStandard:true,isCurrent:current});
             // False, unknown, cancellation and failure never buy the next item.
             if(!succeeded||!current())return;
           }

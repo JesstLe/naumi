@@ -25,7 +25,7 @@ export type CanvasImageImportContext={
   reveal:(id:string)=>void;t:(key:string)=>string;locale:string;
 };
 type Scope={rootId:string|null;queue:Promise<void>;rects:{x:number;y:number;width:number;height:number;owner:number;index:number}[]};
-type SavedImport={context:CanvasImageImportContext;scope:Scope;historyRecorded:boolean;pendingId?:string;attached?:()=>void;reveal?:boolean};
+type SavedImport={context:CanvasImageImportContext;scope:Scope;historyRecorded:boolean;pendingId?:string;attached?:(rows:Artwork[])=>void;attachmentApplied?:boolean;reveal?:boolean};
 const newScope=():Scope=>({rootId:null,queue:Promise.resolve(),rects:[]});
 const EMPTY:CanvasImageImportBatch[]=[];
 
@@ -70,11 +70,16 @@ export function createCanvasImageImports(){
     resync.add(id);update(id,{finished:false,phase:"sync"});
     try{
       const rows=await synchronizeCanvasArtworks(batch.nodeIds,()=>context.merge(batch.nodeIds!),()=>context.documentCurrent()&&extra());
-      if((importScopeRef.current===record.scope||context.viewCurrent()&&context.project===record.context.project)&&!record.historyRecorded){
-        context.history(batch.nodeIds,rows);record.historyRecorded=true;record.attached?.();
-        // Artwork reads complete before publishing a navigation target. An
-        // unrelated project refresh must not consume an ID absent from state.
-        if(record.reveal&&context.viewCurrent())context.reveal(batch.nodeIds[0]);
+      if(importScopeRef.current===record.scope||context.viewCurrent()&&context.project===record.context.project){
+        if(!record.historyRecorded){context.history(batch.nodeIds,rows);record.historyRecorded=true;}
+        if(!record.attachmentApplied){
+          // The receipt supplies authoritative rows to the draft owner before
+          // the placeholder is consumed. A local attachment failure retries
+          // only this step, without a second upload or duplicate history.
+          record.attached?.(rows);record.attachmentApplied=true;
+          // Artwork reads complete before publishing a navigation target.
+          if(record.reveal&&context.viewCurrent())context.reveal(batch.nodeIds[0]);
+        }
       }
       update(id,{finished:true,phase:"done",errors:batch.errors.filter(error=>error.name!==context.t("canvas.importSync"))});
       return rows;
@@ -214,7 +219,7 @@ export function createCanvasImageImports(){
       return [];
     });scope.queue=result.then(()=>{});return result;
   }
-  async function runPending(file:File,point:CanvasImportPoint&{linked:boolean;pendingId:string},context:CanvasImageImportContext,callbacks:{progress:(percent:number)=>void;attached:(id:string)=>void},preparedInput?:PreparedUpload){
+  async function runPending(file:File,point:CanvasImportPoint&{linked:boolean;pendingId:string},context:CanvasImageImportContext,callbacks:{progress:(percent:number)=>void;attached:(id:string,rows:Artwork[])=>void},preparedInput?:PreparedUpload){
     const previous=pendingBatch(point.pendingId,context);
     if(previous?.nodeIds?.length){await synchronize(previous.id,context);return previous.nodeIds[0];}
     if(!context.documentCurrent())throw Error("账号或工作空间已切换");
@@ -229,7 +234,7 @@ export function createCanvasImageImports(){
         if(importScopeRef.current===scope&&context.documentCurrent())callbacks.progress(total?sent/total*100:0);
       });
       if(!response.id)throw Error(response.error||t("canvas.genFail"));const nodeId=response.id;
-      saved.get(id)!.attached=()=>callbacks.attached(nodeId);
+      saved.get(id)!.attached=rows=>callbacks.attached(nodeId,rows);
       update(id,{done:1,success:1,nodeIds:[nodeId],phase:"sync",uploadedBytes:file.size});
       await synchronize(id,context);return nodeId;
     }catch(error){
@@ -250,7 +255,7 @@ export function createCanvasImageImports(){
    * successful save establishes a shared root before concurrent followers. */
   async function uploadPendingFiles(picked:File[],pendingId:string,parentId:string|null,context:CanvasImageImportContext,ports:{
     pending:ReturnType<ReturnType<typeof createCanvasPendingPresentation>["bind"]>;
-    newId:()=>string;history:(nodes:CanvasPendingNode[])=>void;attached:(pendingId:string,artworkId:string)=>void;error:(message:string)=>void;
+    newId:()=>string;history:(nodes:CanvasPendingNode[])=>void;attached:(pendingId:string,artworkId:string,rows:Artwork[])=>void;error:(message:string)=>void;
   }){
     const pend=ports.pending.get(pendingId),previous=pendingBatch(pendingId,context);
     if(previous?.nodeIds?.length){await synchronize(previous.id,context);return;}
@@ -276,7 +281,7 @@ export function createCanvasImageImports(){
         try{
           const id=await uploadPending(item.file,{pendingId:node.id,parentId:root.id,linked:!!pend.inputs.length,x:node.x,y:node.y},context,{
             progress:progress=>{if(current())ports.pending.set(nodes=>nodes.map(n=>n.id===node.id?{...n,progress}:n));},
-            attached:id=>{ports.pending.set(nodes=>nodes.filter(n=>n.id!==node.id));ports.attached(node.id,id);},
+            attached:(id,rows)=>{ports.attached(node.id,id,rows);ports.pending.set(nodes=>nodes.filter(n=>n.id!==node.id));},
           },item);
           uploaded[index]=id;if(!root.id)root.id=id;
         }catch(error){

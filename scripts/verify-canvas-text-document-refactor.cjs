@@ -27,7 +27,7 @@ function setup(built,storageMap=new Map()){
   loadAccountSnapshot:async()=>({artworks:[]}),TEXT_NODE_DEFAULT_W:380,TEXT_NODE_DEFAULT_H:240,
   setTextNodes:f=>{state.texts=typeof f==='function'?f(state.texts):f;c.textNodesRef.current=state.texts;},setUnsavedTextCount:v=>state.count=v,flashTip:s=>state.notices.push(s),t:k=>k,L:s=>s,
   expectJsonOk:async r=>{const body=await r.json();if(!r.ok)throw Error(body.error);return body;},authHeader:()=>ports.auth(),
-  canvasSelection:{patch(){}},canvasArtworkDocument:{getSnapshot:()=>({nodes:[]}),merge:async()=>[]},videoNodesStore:{allNodes:[],accept(){},flush:async()=>{},getNode:()=>undefined,refresh:async()=>{}},browserRandomUUID:()=>crypto.randomUUID(),
+  preparingPendingImagesRef:{current:new Set()},canvasSelection:{patch(){}},canvasArtworkDocument:{getSnapshot:()=>({nodes:[]}),merge:async()=>[]},videoNodesStore:{allNodes:[],accept(){},flush:async()=>{},getNode:()=>undefined,refresh:async()=>{}},browserRandomUUID:()=>crypto.randomUUID(),
  };
  c.fetch=async(url,init={})=>{
   const body=init.body?JSON.parse(init.body):undefined;state.requests.push({url,body,headers:Object.fromEntries(new Headers(init.headers))});
@@ -61,6 +61,17 @@ function setup(built,storageMap=new Map()){
 async function main(){
  const built=await bundle(),payloads=[];
  await test('actual-save-payload',async()=>{const f=setup(built),changed={...node(),content:'normal'};f.update([changed]);await f.render().persistTextNode(changed);eq(f.state.server[0].content,'normal');eq(f.state.count,0);payloads.push(f.state.requests[0].body);});
+ if(!baseline)await test('scoped-save-barrier-keeps-unrelated-drafts-and-later-edits',async()=>{
+  const f=setup(built),hold=deferred(),entered=deferred(),a=node('text-a','first'),b=node('text-b','unrelated');
+  f.update([a,b]);f.state.post=async n=>{if(n.id==='text-a'){entered.resolve();await hold.promise;}};
+  const saving=f.binding().save(a);await entered.promise;
+  eq(f.binding().hasUnsaved('text-a'),true);eq(f.binding().hasUnsaved('text-b'),true);eq(f.binding().hasUnsaved('text-missing'),false);
+  await f.binding().flush(['text-b']);eq(f.state.requests.length,1,'scoped wait never saves unrelated drafts');
+  let done=false;const ack=f.binding().flush(['text-a']).then(()=>done=true);await tick();eq(done,false);
+  f.update([{...a,content:'later'},b]);hold.resolve();await Promise.all([saving,ack]);
+  eq(done,true);eq(f.binding().hasUnsaved('text-a'),true,'ACK does not bless a later edit');eq(f.binding().hasUnsaved('text-b'),true);
+  f.state.post=async()=>{};await f.binding().save(f.state.texts.find(n=>n.id==='text-a'));eq(f.binding().hasUnsaved('text-a'),false);eq(f.binding().hasUnsaved('text-b'),true);
+ });
  await test('same-node-serial-different-node-concurrent',async()=>{const f=setup(built),gate=deferred(),entered=deferred();f.state.post=async n=>{if(n.content==='one'){entered.resolve();await gate.promise;}};const one={...node(),content:'one'},two={...node(),content:'two'},other=node('text-b','other');f.update([one]);const first=f.render().persistTextNode(one);await entered.promise;f.update([two,other]);const second=f.render().persistTextNode(two),third=f.render().persistTextNode(other);await third;eq(f.state.events.includes('save:two:start'),false);gate.resolve();await Promise.all([first,second]);eq(f.state.server.find(n=>n.id==='text-a').content,'two');eq(f.state.count,0);});
  for(const kind of ['account','workspace'])await test('auth-'+kind+'-ABA',async()=>{const f=setup(built),gate=deferred(),entered=deferred(),n=node('text-a','queued');f.state.auth=()=>{entered.resolve();return gate.promise};f.update([n]);const pending=f.render().persistTextNode(n);await entered.promise;if(kind==='account'){f.render('tree:A','b@test');f.render('tree:A','a@test');}else{f.ports.workspace='tenant';f.ports.revision++;f.ports.workspace='personal';f.ports.revision++;}gate.resolve();await pending;eq(f.state.requests.length,baseline?1:0);});
  await test('project-switch-keeps-own-draft-write',async()=>{const f=setup(built),gate=deferred(),entered=deferred();f.state.auth=()=>{entered.resolve();return gate.promise};const pending=f.render().persistTextNode(node('text-a','saved-A'));await entered.promise;f.render('tree:B');gate.resolve();await pending;eq(f.state.requests.length,1);if(!baseline)eq(f.state.requests[0].headers['x-naumi-project-context'],'tree:A');});

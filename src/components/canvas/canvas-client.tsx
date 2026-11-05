@@ -8,7 +8,7 @@ import {newCanvasImageAttempt,forkPendingImageDraft,projectCanvasImageAttempts,c
 import {imageDraftKey} from "@/lib/canvas/image-node-drafts";
 import type {CanvasGenerationTask} from "@/lib/canvas/scene-types";
 import {generationPlaceholderSize,placeGenerationPreview} from "@/lib/canvas/generation-feedback";
-import {carryCompletedCanvasImageDraft} from "@/lib/canvas/image-draft-completion";
+import {carryCompletedCanvasImageDraft,carryUploadedCanvasImageDraft} from "@/lib/canvas/image-draft-completion";
 import {useCanvasNativeEditors} from "./use-canvas-native-editors";
 import {CanvasNativeEditors} from "./native-editors";
 import {CanvasArtworkPicker} from "./artwork-picker";
@@ -106,6 +106,9 @@ import {CanvasProjectMenu,CanvasProjectTitle} from "./project-chrome";
 import { canvasGenerationReferences,canvasRegenerationReferences, explicitCanvasParent } from "@/lib/canvas/input-references";
 import { readPlacementCache, type CanvasPoint } from "@/lib/canvas/stable-placement";
 import { useCanvasTextDocument } from "./use-canvas-text-document";
+import {resolveCanvasTextInstruction} from "@/lib/canvas/text-generation-input";
+import {resolveLinkedImageText,type LinkedImageTextResult} from "@/lib/canvas/linked-image-text";
+import {prepareLinkedImageText} from "@/lib/canvas/prepare-linked-image-text";
 import {canvasTextContent} from "@/lib/canvas/text-content";
 import {useTextNodeAutosave} from "./use-text-node-autosave";
 import {CanvasTextConflicts} from "./text-conflicts";
@@ -503,6 +506,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   taskDocumentRef.current={merge:mergeWorks,history:pushAddUndoMany};
   const [canvasImageTaskRefreshKey, setCanvasImageTaskRefreshKey] = useState(0);
   const pendSeqRef = useRef(1);
+  const preparingPendingImagesRef=useRef(new Set<string>());
   const canvasTextDocument = useCanvasTextDocument({account:canvasAccountRef.current,actor:user?.email||"",owner:targetEmail||user?.email||"",
     project:activeKey,enabled:ready&&!!user&&!!targetEmail,readOnly,notice:flashTip});
   const {nodes:textNodes,set:setTextNodes,ready:textNodesReady,unsaved:unsavedTextCount} = canvasTextDocument;
@@ -697,7 +701,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const canvasNodeOperations=useCanvasNodeOperations(canvasHistory.scope,{
     writable:()=>!!user&&!readOnly,
     native:nativeDocuments,
-    snapshot:()=>({artworks:canvasArtworkDocument.getSnapshot().nodes||[],textNodes:canvasTextDocument.getSnapshot().nodes.map(node=>textTasks.state(node.id).busy?{...node,status:"generating" as const}:node),videoNodes:[],...nativeDocuments.snapshot(),pendingNodes:pendingPresentation.getSnapshot(),generationTasks:[...generationPresentation.getSnapshot().tasks]}),
+    snapshot:()=>({artworks:canvasArtworkDocument.getSnapshot().nodes||[],textNodes:canvasTextDocument.getSnapshot().nodes.map(node=>textTasks.state(node.id).busy?{...node,status:"generating" as const}:node),videoNodes:[],...nativeDocuments.snapshot(),pendingNodes:pendingPresentation.getSnapshot().map(node=>preparingPendingImagesRef.current.has(node.id)?{...node,generating:true}:node),generationTasks:[...generationPresentation.getSnapshot().tasks]}),
     history:canvasHistory,artworks:ids=>canvasArtworkDocument.merge(ids),
   });
   const workflowDocument=useCanvasWorkflowDocument(canvasArtworkDocument.scope,targetEmail||user?.email||"",{writable:()=>!!user&&!readOnly,merge:canvasArtworkDocument.merge,history:canvasHistory});
@@ -1137,6 +1141,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     setTextComposerExpanded(false);
     setTextPrompt(selectedTextId?textInstructionDrafts.current.get(selectedTextId)??textNodesRef.current.find(node=>node.id===selectedTextId)?.prompt??"":"");
   }, [selectedTextId,selectedText?.id,canvasOwner]);
+  const linkedImageText=resolveLinkedImageText({
+    nodes:textNodes.map(node=>({...node,busy:textTasks.state(node.id).busy})),
+    targetId:selectedPend?.id||selectedId||"",projectKey:activeKey||"workspace",
+    explicitTextIds:selectedPend?[selectedPend.parentId,...selectedPend.inputs].filter((id):id is string=>!!id?.startsWith("text-")):[],draft:editPrompt,
+  });
   const selectedPendGenerating = !!selectedPend?.generating;
   // 选中空白节点时的输入图(参考图)
   const pendInputArts = useMemo(
@@ -1343,17 +1352,31 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       detail:input=>generateDetailSequence(input.source,input.references,input.prompt,input.files,undefined,input.referenceInputs)};
   }
 
+  // The document remains the sole persistence owner; prepare only direct inputs.
+  function prepareImageText(targetId:string,project:string|null,draft:string,isCurrent:()=>boolean,explicitTextIds:readonly string[]=[]){
+    return prepareLinkedImageText({
+      read:()=>resolveLinkedImageText({nodes:canvasTextDocument.getSnapshot().nodes.map(node=>({...node,busy:textTasks.state(node.id).busy})),targetId,projectKey:project||"workspace",explicitTextIds,draft}),
+      flush:ids=>Promise.all(ids.map(id=>textAutosave.flush(id))),wait:ids=>canvasTextDocument.flush(ids),
+      isUnsaved:id=>canvasTextDocument.hasUnsaved(id)||textAutosave.hasPending(id),isCurrent,
+    });
+  }
+
   // 面板「生成」:用编辑框提示词 + 参数 + 追加参考图(留空=按这张图再生成一张)
   async function generateSelectedImage(onSubmitted?:()=>void){
     if(!selected)return;
+    const scope=canvasArtworkDocument.scope;
     const account=canvasAccountRef.current,workspace=currentWorkspace(),project=activeProjectRef.current?.key||null,epoch=canvasContextEpochRef.current;
     const unlock=beginCanvasImageSubmission(imageSubmissionRef.current,canvasImageSubmissionKey(account,workspace,project,selected.id));if(!unlock)return;
     const release=()=>{if(unlock())setImageSubmissionEpoch(value=>value+1);};setImageSubmissionEpoch(value=>value+1);
     try{
       try{await flushImagePrompts();}catch(error){setGenError(error instanceof Error?error.message:"提示词尚未保存");return;}
-      if(account!==canvasAccountRef.current||workspace!==currentWorkspace()||project!==(activeProjectRef.current?.key||null)||epoch!==canvasContextEpochRef.current)return;
-      const services=canvasImageCreationServices();
-      const issue=await executeCanvasImageCreation({source:selected,prompt:editPrompt,mode:generationMode,parameters:{ratio:genRatio,style:genStyle,count:genCount,resolution:genResolution},references:visibleDockRefs,files:extraFiles,referenceInputs:composerReferences,referenceError:dockReferenceState.error||referenceError,
+      const current=()=>scope.viewCurrent()&&account===canvasAccountRef.current&&workspace===currentWorkspace()&&project===(activeProjectRef.current?.key||null)&&epoch===canvasContextEpochRef.current;
+      if(!current())return;
+      let linked:LinkedImageTextResult;
+      try{linked=await prepareImageText(selected.id,project,editPrompt,current);}catch(error){if(current())setGenError(error instanceof Error?error.message:"关联文字尚未保存");return;}
+      if(!current()||textWriteBarrierRef.current||historyBusyRef.current||isNodeLocked(selected.id)||!canvasArtworkDocument.getSnapshot().nodes?.some(node=>node.id===selected.id))return;
+      const captured=canvasImageCreationServices(),services={...captured,isCurrent:()=>current()&&captured.isCurrent()};
+      const issue=await executeCanvasImageCreation({source:selected,prompt:linked.prompt,mode:generationMode,parameters:{ratio:genRatio,style:genStyle,count:genCount,resolution:genResolution},references:visibleDockRefs,files:extraFiles,referenceInputs:composerReferences,referenceError:dockReferenceState.error||referenceError,
         operationKey:generationMode==="standard"?newCanvasImageAttempt(selected.id):undefined,onSubmitted:()=>{release();onSubmitted?.();}},services);
       if(issue&&services.isCurrent())setGenError(issue);
     }finally{release();}
@@ -1681,7 +1704,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 真正执行删除(确认后)。文字节点与作品必须分流到各自 API，
   // 混合选择仍只记一条 undo，避免用户需要撤销两次才能恢复。
   async function runDelete(ids:string[]) {
-    if(!user||readOnly||historyBusyRef.current)return;
+    if(!user||readOnly||historyBusyRef.current||ids.some(id=>preparingPendingImagesRef.current.has(id)))return;
     if(!nodeSettingsReady||ids.some(isNodeLocked)){flashTip(L("请先解锁选中的节点","Unlock selected nodes first"));return;}
     const scope=canvasHistory.scope;
     try {
@@ -1716,7 +1739,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
   function applyHistorySettings(update:(current:Record<string,CanvasNodeSettings>)=>Record<string,CanvasNodeSettings>,persisted:boolean){nodePreferences.apply(update,persisted);}
   function onHistoryApplied({action:act,undo}: HistoryCommit) {
-    if(act.kind==="image-version"){const node=canvasArtworkDocument.getSnapshot().nodes?.find(node=>node.id===act.id);if(node)imageDraft.seed(act.id,{prompt:inheritableImagePrompt(node.prompt)});}
+    // Version provenance never overwrites the independently editable image draft.
     const insertion=canvasHistoryInsertionView(act,undo,active);
     if(insertion){if(undo&&insertion.empty)projectNavigation.empty();if(!undo){projectNavigation.open(insertion.project);}}
 
@@ -1771,7 +1794,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 批量删除选中的多个节点(框选 + Del)
   function batchDelete(ids: string[]) {
     if (readOnly || !user) return;
-    const real = canvasDeletableIds(ids,{textNodes:canvasTextDocument.getSnapshot().nodes,pendingNodes:pendingPresentation.getSnapshot(),generationTasks:[...generationPresentation.getSnapshot().tasks]});
+    const real = canvasDeletableIds(ids.filter(id=>!preparingPendingImagesRef.current.has(id)),{textNodes:canvasTextDocument.getSnapshot().nodes,pendingNodes:pendingPresentation.getSnapshot(),generationTasks:[...generationPresentation.getSnapshot().tasks]});
     if (!real.length) return;
     setConfirmModal({
       title: t("canvas.deleteNodeTitle"),
@@ -1853,7 +1876,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     setLinking(true);
   }
   async function submitCanvasLink(intent:CanvasLinkIntent) {
-    if(readOnly||!user)return false;
+    if(readOnly||!user||preparingPendingImagesRef.current.has(intent.target))return false;
     const scope=canvasHistory.scope;
     // Drain current drafts before snapshotting link fields. The history owner
     // serializes the command and retains an unknown response's original body.
@@ -1864,7 +1887,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         return {
         project:scope.project,artworks:(canvasArtworkDocument.getSnapshot().nodes||[]).filter(node=>memberIds.has(node.id)),texts:canvasTextDocument.getSnapshot().nodes,
         videos:videoNodesStore.nodes.map(node=>videoNodesStore.getNode(node.id)||node),directors:directorNodesStore.nodes.map(node=>directorNodesStore.getNode(node.id)||node),characters:characterNodesStore.nodes.map(node=>characterNodesStore.getNode(node.id)||node),scenes:sceneNodesStore.nodes.map(node=>sceneNodesStore.getNode(node.id)||node),audios:audioNodesStore.nodes.map(node=>audioNodesStore.getNode(node.id)||node),timelines:timelineNodesStore.nodes.map(node=>timelineNodesStore.getNode(node.id)||node),pending:pendNodesRef.current,selected:multiSel,choices:videoInputChoices,
-        locked:isNodeLocked,productTitle:t("canvas.productNode"),referenceLimit:t("canvas.textReferenceLimit"),cycleMessage:t("canvas.linkCycle"),productMention:withProductMention,
+        locked:(id:string)=>isNodeLocked(id)||preparingPendingImagesRef.current.has(id),productTitle:t("canvas.productNode"),referenceLimit:t("canvas.textReferenceLimit"),cycleMessage:t("canvas.linkCycle"),productMention:withProductMention,
       };};
       const timelineMaterials=intent.add&&timelineNodesStore.getNode(intent.target)?await timelineActions.inspect(intent.target,[canvasLinkMediaSource(snapshot(),intent.source)]):[];scope.assertView();
       return await canvasHistory.submit(scope,()=>compileCanvasLink({...snapshot(),timelineMaterials},intent));
@@ -1922,8 +1945,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       onPendUpload(pend.id);
     } else {
       // 「图片」:落点建好节点后,把光标落进提示词框,写"改什么"→点生成出衍生(img2img)
-      const textSource = textNodes.find((node) => node.id === sourceId);
-      imageDraft.seed(pend.id, { prompt: textSource ? canvasTextContent(textSource) : "" });
+      // Direct edges resolve live content; the draft is only additional input.
+      imageDraft.seed(pend.id, { prompt: "" });
       wantFocusPendPrompt.current = true;
     }
   }
@@ -2103,12 +2126,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   function changeTextInstruction(value:string){if(!selectedTextId||textTasks.state(selectedTextId).busy||textWriteBarrierRef.current||historyBusyRef.current)return;
     textInstructionDrafts.current.set(selectedTextId,value);setTextPrompt(value);textEditing.instruction(selectedTextId,value);
   }
-  async function generateTextNode(options?:{node:CanvasTextNode;prompt:string;silent?:boolean}):Promise<boolean>{
+  async function generateTextNode(options?:{node:CanvasTextNode;prompt:string;silent?:boolean;intent?:"polish"}):Promise<boolean>{
     const target=textNodesRef.current.find(node=>node.id===(options?.node.id??selectedTextId)),prompt=(options?.prompt??textPrompt).trim();
     if(!target||readOnly||!nodeSettingsReady||textWriteBarrierRef.current||historyBusyRef.current||isNodeLocked(target.id)||textTasks.state(target.id).busy)return false;
     if(target.status==="generating"&&textTasks.state(target.id).phase==="idle")return false;
-    if(!prompt&&!textTasks.retryable(target.id))return false;
-    const ok=textTasks.retryable(target.id)?await textTasks.resume(target.id):await textTasks.run(generalTextTask(target,prompt,t("canvas.textGenerate")));
+    if(!resolveCanvasTextInstruction(options?.intent==="polish"?"":prompt,canvasTextContent(target))&&!textTasks.retryable(target.id))return false;
+    const ok=textTasks.retryable(target.id)?await textTasks.resume(target.id):await textTasks.run(generalTextTask(target,prompt,t("canvas.textGenerate"),options?.intent));
     return ok;
   }
 
@@ -2203,6 +2226,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       project:()=>activeProjectRef.current,texts:()=>canvasTextDocument.getSnapshot().nodes.map(node=>textTasks.state(node.id).busy?{...node,status:"generating" as const}:node),locked:isNodeLocked,draft:{id:null,text:""},
       positions:()=>new Map((rfRef.current?.getNodes()||[]).map(node=>[node.id,node.position])),nextSequence:()=>pendSeqRef.current++,
       gap:X_GAP,textWidth:TEXT_NODE_DEFAULT_W,imageLabel:t("canvas.imageNode"),maxImages:MAX_TOTAL_IMAGES,pending:setPendNodes,generate:generatePend,
+      flushTexts:async ids=>{await Promise.all(ids.map(id=>textAutosave.flush(id)));await canvasTextDocument.flush(ids);},
+      textUnsaved:id=>canvasTextDocument.hasUnsaved(id)||textAutosave.hasPending(id),
       lockedNotice:()=>flashTip(L("引用的文字节点已锁定","A referenced text node is locked")),
       error:error=>{
         const code=(error as {code?:string})?.code,messages:Record<string,string>={
@@ -2227,6 +2252,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     openHistoryPicker(c.x, c.y);
   }
   function onPendUpload(id: string) {
+    if(preparingPendingImagesRef.current.has(id))return;
     const context=user?canvasImportContext():null,saved=context?imageImportOwner.pendingBatch(id,context):null;
     if(saved?.nodeIds?.length){void retryImportSynchronization(saved.id);return;}
     pendUploadTargetRef.current = id;
@@ -2259,11 +2285,28 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
   async function generatePend(opts?:CanvasBlankImageOptions):Promise<boolean> {
     if(readOnly||!user)return false;
+    const node=opts?.pend??pendingPresentation.getSnapshot().find(item=>item.id===selectedPendId);
+    if(!node||node.generating||node.uploading||node.needsAttention||preparingPendingImagesRef.current.has(node.id))return false;
+    const pend={...node,inputs:[...node.inputs]},scope=canvasArtworkDocument.scope,account=canvasAccountRef.current,epoch=canvasContextEpochRef.current;
+    const current=()=>scope.viewCurrent()&&account===canvasAccountRef.current&&epoch===canvasContextEpochRef.current&&(opts?.isCurrent?.()??true);
+    preparingPendingImagesRef.current.add(pend.id);
+    try{
+      const ids=[pend.parentId,...pend.inputs].filter((id):id is string=>!!id?.startsWith("text-"));
+      const linked=await prepareImageText(pend.id,scope.project,opts?.prompt??editPrompt,current,ids);
+      if(!current())return false;
+      const live=pendingPresentation.getSnapshot().find(item=>item.id===pend.id);
+      if(!live||live.uploading||live.generating||live.needsAttention||textWriteBarrierRef.current||historyBusyRef.current||isNodeLocked(pend.id)||JSON.stringify([live.parentId,live.inputs])!==JSON.stringify([pend.parentId,pend.inputs]))throw new Error("图片节点或连线已变更，请重新确认生成");
+      return await generatePreparedPend({...opts,pend:{...live},isCurrent:current,linked:opts?.frozenTextPrompt===undefined?linked:{...linked,prompt:opts.frozenTextPrompt}});
+    }catch(error){if(current())setGenError(error instanceof Error?error.message:"关联文字尚未保存");return false;}
+    finally{preparingPendingImagesRef.current.delete(pend.id);}
+  }
+  async function generatePreparedPend(opts:CanvasBlankImageOptions&{linked:LinkedImageTextResult}):Promise<boolean> {
+    if(readOnly||!user)return false;
     const pend=opts?.pend??pendNodes.find(node=>node.id===selectedPendId);if(!pend)return false;
     const requestOwner=user.email,requestProject=activeKey,requestWorkspace=currentWorkspace(),requestTarget=targetEmail;
-    return runCanvasBlankImage({pend,prompt:opts?.prompt??editPrompt,onSubmitted:opts?.onSubmitted,
+    return runCanvasBlankImage({pend,prompt:opts?.prompt??editPrompt,linked:opts.linked,onSubmitted:opts?.onSubmitted,
       settings:{ratio:opts?.ratio||genRatio,resolution:genResolution,style:genStyle,count:genCount,quality:genQuality,model:genModel},
-      members:active?.members||[],textNodes,detail:generationMode==="detail"&&!opts?.forceStandard,
+      members:activeProjectRef.current?.members||[],textNodes:canvasTextDocument.getSnapshot().nodes,detail:generationMode==="detail"&&!opts?.forceStandard,
       referenceInputs:opts?.referenceInputs||(!opts?.forceStandard&&pend.id===selectedPendId?composerReferences:undefined),
       invalid:setGenError,needReferences:t("canvas.detailNeedRefs"),needPrompt:t("canvas.pendNeedPrompt"),
       runDetail:(source,inputs,prompt,node,refs)=>generateDetailSequence(source,inputs,prompt,[],node,refs),
@@ -2283,12 +2326,16 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   async function doUploadPend(files:FileList|null){
     const pendId=pendUploadTargetRef.current;pendUploadTargetRef.current=null;
     const picked=Array.from(files??[]);if(pendUploadRef.current)pendUploadRef.current.value="";
-    if(!pendId||!picked.length||!user||readOnly)return;
+    if(!pendId||!picked.length||!user||readOnly||preparingPendingImagesRef.current.has(pendId))return;
     const context=canvasImportContext(),scope=canvasArtworkDocument.scope;
+    const draftOwner=user.email,draftTarget=targetEmail,draftProject=activeKey,draftWorkspace=scope.workspace;
     try{await imageImportOwner.uploadPendingFiles(picked,pendId,activeRootId(),context,{
       pending:pendingPresentation,newId:()=>`pend-${Date.now()}-${pendSeqRef.current++}`,
       history:records=>pushUndo({kind:"pending-add",records}),
-      attached:(id)=>{canvasHistory.consumePending(id);if(scope.viewCurrent())setSelectedPendId(current=>current===id?null:current);},
+      attached:(id,artworkId,rows)=>{
+        carryUploadedCanvasImageDraft({owner:draftOwner,target:draftTarget,project:draftProject,workspace:draftWorkspace,pendingId:id,resultId:artworkId,artworks:rows,currentArtworks:worksRef.current||[]},{draft:imageDraft,references:referenceDraft});
+        canvasHistory.consumePending(id);if(scope.viewCurrent())setSelectedPendId(current=>current===id?null:current);
+      },
       error:message=>{if(scope.viewCurrent())setGenError(message);},
     });}catch(error){if(scope.viewCurrent())setGenError(error instanceof Error?error.message:t("canvas.genFail"));}
   }
@@ -3954,7 +4001,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             readOnly={readOnly||!nodeSettingsReady||isNodeLocked(selected.id)} canGenerate={canFeature("video")}
             onProcess={action=>extractVideoToCanvas(selected.id,action)} onContinue={()=>void openVideoNodeFromSelection()}/>}
           {canFeature("generate") && selected && !selected.videoUrl && selectedBatchArts.length <= 1 && !propertiesOpen && (
-            <CanvasImageComposer key={`dock-${imageDraft.key||selected.id}`} pending={false} title={selected.title}
+            <CanvasImageComposer linkedText={linkedImageText} key={`dock-${imageDraft.key||selected.id}`} pending={false} title={selected.title}
               dockRef={panelRef} style={dockStyle} expanded={mediaComposerExpanded} onToggleExpand={()=>setMediaComposerExpanded(value=>!value)} readOnly={readOnly} optimizationDisabled={!nodeSettingsReady||isNodeLocked(selected.id)} onDismiss={()=>setSelectedId(null)}
               referenceEditor={{...imageComposerReferences,textareaRef:promptAreaRef,placeholder:t("canvas.promptPlaceholder"),readOnly:readOnly||!promptSync.ready||referenceUploading||isNodeLocked(selected.id)}}
               promptRecovery={promptSync.error?{error:promptSync.error,retry:promptSync.retry,reload:()=>void promptSync.reloadSaved().catch(error=>setGenError(error instanceof Error?error.message:"读取失败"))}:undefined}
@@ -3967,7 +4014,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               generation={{ariaLabel:L("生成","Generate"),allowBackground:generationMode==="standard",generating:generationMode==="standard"?selectedImageSubmitting:selectedGenerating,failure:generationMode==="standard"?undefined:selectedGenerationFailure,onGenerate:generateSelectedImage}}/>
           )}
           {canFeature("generate") && selectedPend && !readOnly && (
-            <CanvasImageComposer key={`pdock-${imageDraft.key||selectedPend.id}`} pending dockRef={panelRef} style={dockStyle} expanded={mediaComposerExpanded} onToggleExpand={()=>setMediaComposerExpanded(value=>!value)} optimizationDisabled={!nodeSettingsReady||isNodeLocked(selectedPend.id)}
+            <CanvasImageComposer linkedText={linkedImageText} key={`pdock-${imageDraft.key||selectedPend.id}`} pending dockRef={panelRef} style={dockStyle} expanded={mediaComposerExpanded} onToggleExpand={()=>setMediaComposerExpanded(value=>!value)} optimizationDisabled={!nodeSettingsReady||isNodeLocked(selectedPend.id)}
               onDismiss={()=>setSelectedPendId(null)} controls={imageComposerControls} error={genError}
               referenceEditor={{...imageComposerReferences,textareaRef:pendPromptRef,placeholder:t("canvas.pendPromptPlaceholder")}}
               generation={{generating:selectedPendingSubmitting||(generationMode==="standard"?selectedPendGenerating&&!selectedPend.generationSubmitted:selectedPendGenerating),allowBackground:generationMode==="standard",failure:generationMode==="standard"?undefined:selectedPend.generationFailure,onGenerate:generatePendingImage}}/>
@@ -3975,7 +4022,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           {selectedText && selectedTextBatchNodes.length <= 1 && !readOnly && !propertiesOpen && !isNodeLocked(selectedText.id) && (
             <CanvasTextComposer focusRevision={textComposerFocusRevision} key={`tdock-${canvasOwnerEpochRef.current.revision}-${selectedText.id}`} node={selectedText} members={active?.members??[]} light={lightCanvas} optimization={{contextKey:JSON.stringify([user?.email,targetEmail,activeKey,selectedText.id]),disabled:readOnly||!nodeSettingsReady||isNodeLocked(selectedText.id)}}
               draft={{prompt:textPrompt,onChange:changeTextInstruction}}
-              content={{onChange:value=>changeTextNodeContent(selectedText.id,value),onCommit:(value,initial)=>commitTextNodeContent(selectedText.id,value,initial),onFlush:()=>textAutosave.flush(selectedText.id)}} task={{state:textTasks.state(selectedText.id),retryable:textTasks.retryable(selectedText.id),onGenerate:()=>generateTextNode()}}
+              content={{onChange:value=>changeTextNodeContent(selectedText.id,value),onCommit:(value,initial)=>commitTextNodeContent(selectedText.id,value,initial),onFlush:()=>textAutosave.flush(selectedText.id)}} task={{state:textTasks.state(selectedText.id),retryable:textTasks.retryable(selectedText.id),onGenerate:intent=>generateTextNode(intent?{node:selectedText,prompt:"",intent}:undefined)}}
               layout={{dockRef:textComposerDockRef,style:dockStyle,safeArea:overlaySafeArea,canvasSize,expanded:textComposerExpanded,onExpandedChange:setTextComposerExpanded}}
               onDismiss={()=>setSelectedTextId(null)} onReference={(id,enabled)=>updateTextReference(selectedText.id,id,enabled)} onMenuOpenChange={setTextComposerMenuOpen}
               storyboard={canFeature("agent")&&canFeature("video")?{disabled:!nodeSettingsReady||assistantBusy||assistantUploading||isNodeLocked(selectedText.id)||selectedText.status!=="completed"||!selectedText.content.trim(),onPlan:()=>planTextStoryboard(selectedText)}:undefined}

@@ -1,5 +1,6 @@
 "use client";
 import {canvasTextContent,CANVAS_TEXT_CONTENT_LIMIT,CANVAS_TEXT_INSTRUCTION_LIMIT} from "@/lib/canvas/text-content";
+import {resolveCanvasTextInstruction} from "@/lib/canvas/text-generation-input";
 import {useEffect,useLayoutEffect,useMemo,useRef,useState,type RefObject,type Dispatch,type SetStateAction} from "react";
 import {ArrowUp,Image as ImageIcon,Loader2,PenLine,Plus,X} from "lucide-react";
 import {CanvasPromptOptimizer} from "./prompt-optimizer";
@@ -26,7 +27,7 @@ export type CanvasTextComposerProps={
   draft:{prompt:string;onChange:(value:string)=>void};
   content:{onChange:(value:string)=>void;onCommit:(value:string,initial?:string)=>void;onFlush:()=>unknown};
   optimization?:{contextKey:string|null;disabled:boolean};
-  task:{state:CanvasTextTaskState;retryable:boolean;onGenerate:()=>unknown};
+  task:{state:CanvasTextTaskState;retryable:boolean;onGenerate:(intent?:"polish")=>unknown};
   layout:{dockRef:RefObject<HTMLDivElement|null>;style?:DockPlacement;safeArea:SafeArea;canvasSize:CanvasSize;expanded:boolean;onExpandedChange:Dispatch<SetStateAction<boolean>>};
   focusRevision?:number;onDismiss:()=>void;onReference:(id:string,enabled:boolean)=>unknown;onMenuOpenChange:(open:boolean)=>void;
   assist:{busy:boolean;onPickProduct:()=>void};image:{disabled:boolean;onGenerate:()=>void};
@@ -366,13 +367,13 @@ export function CanvasTextComposer({node:selectedText,members,light:lightCanvas,
                   {t("canvas.genImages")}
                 </button></FeatureVisible>
                  </>} actions={<>
-                {mode==="write"&&<button data-text-primary="true" type="button" onClick={()=>void task.onGenerate()}
-                  disabled={optimization?.disabled||(!textPrompt.trim()&&!task.retryable)||task.state.busy||selectedText.status==="generating"&&task.state.phase==="idle"}
-                  title={task.retryable?L("继续原任务","Resume original task"):L("生成文字 · Ctrl/⌘ + Enter","Generate text · Ctrl/⌘ + Enter")}
-                  aria-label={task.retryable?L("继续原任务","Resume original task"):L("生成文字","Generate text")}
+                <button data-text-primary="true" type="button" onClick={()=>void task.onGenerate(mode==="content"?"polish":undefined)}
+                  disabled={optimization?.disabled||(!resolveCanvasTextInstruction(mode==="write"?textPrompt:"",canvasTextContent(selectedText))&&!task.retryable)||task.state.busy||selectedText.status==="generating"&&task.state.phase==="idle"}
+                  title={task.retryable?L("继续原任务","Resume original task"):mode==="content"?L("润色文字","Polish text"):L("生成文字 · Ctrl/⌘ + Enter","Generate text · Ctrl/⌘ + Enter")}
+                  aria-label={task.retryable?L("继续原任务","Resume original task"):mode==="content"?L("润色文字","Polish text"):L("生成文字","Generate text")}
                   className="canvas-ui-primary flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 text-xs font-semibold disabled:opacity-45">
-                  {task.state.busy?<Loader2 className="h-4 w-4 animate-spin"/>:<ArrowUp aria-hidden="true" className="h-4 w-4"/>}{task.retryable?L("继续原任务","Resume original task"):L("生成文字","Generate text")}
-                </button>}
+                  {task.state.busy?<Loader2 className="h-4 w-4 animate-spin"/>:<ArrowUp aria-hidden="true" className="h-4 w-4"/>}{task.retryable?L("继续原任务","Resume original task"):mode==="content"?L("润色文字","Polish text"):L("生成文字","Generate text")}
+                </button>
 
                </>}/>
             </CanvasComposerShell>

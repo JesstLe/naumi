@@ -22,5 +22,39 @@ await test('account change while preparation/auth pending never borrows later id
 await test('workspace change retains frozen endpoint headers and rejects late request',async()=>{const{state:s,controller:c}=fixture();s.authGate=gate();const promise=c.upload([image()],at);await sleep(10);s.workspace='team-b';s.authGate.release();await promise;eq(s.posts.length,baseline?1:0)});
 await test('placeholder retains original ID after read failure then syncs without POST',async()=>{const{state:s,controller:c}=fixture();s.failRead=true;await c.pending(image());eq(s.posts.length,1);if(baseline){eq(s.pend.length,0);eq(c.snapshot().length,0);eq(s.histories.length,0)}else{eq(s.pend.length,1);eq(c.pendingBatch().nodeIds,['uploaded-1']);eq(c.pendingBatch().phase,'sync');c.raw.dismiss(c.pendingBatch().id);eq(c.pendingBatch().nodeIds,['uploaded-1']);s.failRead=false;await c.pending(image('picked-again.png'));eq(s.posts.length,1);eq(s.pend.length,0);eq(s.histories.length,1);eq(c.snapshot()[0].phase,'done')}eq(s.posts[0].fields,{email:'owner@fixture.test',image:undefined,parentId:'root',linked:'1',x:'31',y:'43',...(!baseline?{title:'image.png'}:{})})});
 if(!baseline){await test('only the same project saved receipt owns the global error presentation',async()=>{const match=source.match(/const importSynchronizationVisible=([^;]+);/);ok(match);const visible=new Function('imageImports','user','activeKey','return '+match[1]),rows=[{owner:'owner@fixture.test',workspace:'team-a',project:'tree:root',phase:'sync',nodeIds:['saved']}];eq(visible(rows,{email:'owner@fixture.test'},'tree:root'),true);eq(visible(rows,{email:'owner@fixture.test'},'tree:elsewhere'),false);eq(visible(rows,{email:'foreign@fixture.test'},'tree:root'),false)});await test('workspace queue/root ownership is not inherited by another workspace',async()=>{const{state:s,controller:c,context}=fixture();await c.upload([image()],{...at,parentId:null});s.workspace='team-b';await c.raw.upload([image('new-team.png')],{...at,parentId:null},context());eq(s.posts.map(p=>p.fields.parentId??null),[null,null]);eq(s.posts.at(-1).headers['x-naumi-workspace'],'team-b')});await test('same pending node concurrent calls share one transport',async()=>{const{state:s,controller:c}=fixture();s.hold=gate();const a=c.pending(image()),b=c.pending(image('second.png'));await sleep(10);eq(s.posts.length,1);s.hold.release();await Promise.all([a,b]);eq(s.posts.length,1);eq(s.histories.length,1)});await test('foreign account/workspace cannot synchronize saved import',async()=>{const{state:s,controller:c}=fixture();s.failRead=true;await c.upload([image()],at);s.failRead=false;s.account='other';await c.sync(1);eq(s.histories.length,0);s.account='owner-view';s.workspace='team-b';await c.sync(1);eq(s.histories.length,0);eq(s.posts.length,1)});await test('dismiss leaves unrelated batches and subscribers see stable snapshot',async()=>{const{state:s,controller:c}=fixture();s.failNames.add('fail.png');await c.upload([image('fail.png')],at);await c.upload([image('good.png')],at);eq(c.snapshot().length,2);const snap=c.snapshot();eq(c.snapshot()===snap,true);c.raw.dismiss(1);eq(c.snapshot().length,1);eq(c.snapshot()[0].id,2)});}
+if(!baseline){
+const pendingPorts=(s,attached)=>({pending:{get:id=>s.pend.find(node=>node.id===id),set:fn=>s.pend=fn(s.pend)},newId:()=>`pend-extra-${s.pend.length}`,history:()=>{},attached,error:message=>s.errors.push(message)});
+await test('pending attachment receives synchronized rows before placeholder removal',async()=>{
+  const{state:s,controller:c,context}=fixture(),attachments=[];
+  await c.raw.uploadPendingFiles([image()],'pend-a','root',context(),pendingPorts(s,(pendingId,id,rows)=>{
+    eq(s.pend.some(node=>node.id===pendingId),true);eq(rows.find(row=>row.id===id).image,'/fixture/uploaded-1.png');
+    attachments.push({pendingId,id,rows});
+  }));
+  eq(attachments.length,1);eq(attachments[0].pendingId,'pend-a');eq(attachments[0].id,'uploaded-1');
+  eq(s.pend.length,0);eq(s.posts.length,1);eq(s.histories.length,1);eq('prompt' in s.posts[0].fields,false);eq('prompt' in s.works[0],false);
+});
+await test('saved pending retry passes original rows without reupload or duplicate attachment',async()=>{
+  const{state:s,controller:c,context}=fixture(),attachments=[],ports=pendingPorts(s,(pendingId,id,rows)=>attachments.push({pendingId,id,rows}));
+  s.failRead=true;await c.raw.uploadPendingFiles([image()],'pend-a','root',context(),ports);
+  eq(attachments.length,0);eq(s.pend.length,1);eq(s.posts.length,1);
+  s.failRead=false;await c.raw.uploadPendingFiles([image('retry.png')],'pend-a','root',context(),ports);
+  eq(attachments.length,1);eq(attachments[0].id,'uploaded-1');eq(attachments[0].rows[0].id,'uploaded-1');eq(s.pend.length,0);eq(s.histories.length,1);eq(s.posts.length,1);
+  await c.raw.synchronize(c.snapshot()[0].id,context());eq(attachments.length,1);eq(s.histories.length,1);
+});
+await test('draft attachment failure retains pending receipt and retries only attachment',async()=>{
+  const{state:s,controller:c,context}=fixture();let calls=0,fail=true;
+  const ports=pendingPorts(s,(pendingId,id,rows)=>{calls++;eq(s.pend.some(node=>node.id===pendingId),true);eq(rows[0].id,id);if(fail)throw Error('draft-copy-failed');});
+  await c.raw.uploadPendingFiles([image()],'pend-a','root',context(),ports);
+  eq(calls,1);eq(s.pend.length,1);eq(s.posts.length,1);eq(s.histories.length,1);eq(c.snapshot()[0].phase,'sync');
+  fail=false;await c.raw.uploadPendingFiles([image('ignored-retry.png')],'pend-a','root',context(),ports);
+  eq(calls,2);eq(s.pend.length,0);eq(s.posts.length,1);eq(s.histories.length,1);eq(c.snapshot()[0].phase,'done');
+});
+await test('foreign workspace cannot receive a retained pending draft attachment',async()=>{
+  const{state:s,controller:c,context}=fixture();let calls=0;
+  s.failRead=true;await c.raw.uploadPendingFiles([image()],'pend-a','root',context(),pendingPorts(s,()=>calls++));
+  s.failRead=false;s.workspace='team-b';await assert.rejects(()=>c.raw.synchronize(c.snapshot()[0].id,context()),/账号或工作空间/);
+  eq(calls,0);eq(s.pend.length,1);eq(s.histories.length,0);eq(s.posts.length,1);
+});
+}
 fs.writeFileSync(path.join(out,label+'_RESULT.json'),JSON.stringify({status:'PASS',mode:label,cases,checks,casesOut,scope:'actual functions/owner; fixture prepare/transport; real layout/synchronize',supplier:0,network:0},null,2));console.log(`CANVAS_IMAGE_IMPORTS=PASS mode=${label} cases=${cases} checks=${checks} ORIGINAL_BYTES=RETAINED CONCURRENCY=2 SAVED_READ_ONLY=1 ACCOUNT_LATE_POSTS=${baseline?1:0} WORKSPACE_LATE_POSTS=${baseline?1:0} PENDING_SAVED_ID=${baseline?'LOST':'RETAINED'} SUPPLIER=0 NETWORK=0`);
 })().catch(e=>{console.error(e);process.exitCode=1});

@@ -4,7 +4,8 @@ import type {CanvasPendingNode} from './scene-types';
 import type {CanvasImageReference} from './image-references';
 import {imageReferenceManifest} from './image-references';
 import {referenceManifestError} from '../imagegen/reference-labels';
-import {canvasBlankImagePrompt} from './image-creation';
+import type {LinkedImageTextResult} from './linked-image-text';
+import {canvasInheritedImagePrompt,canvasBlankImagePrompt} from './image-creation';
 import {createCanvasImageTask,type CanvasGeneratedImage} from './image-task-controller';
 import {prepareCanvasImageTask,type CanvasImageGenerationOptions,type CanvasImageModelOption} from './image-task-request';
 import type {CanvasImageTaskScope} from './image-task-scope';
@@ -26,7 +27,7 @@ export type CanvasImageRunContext=Pick<CanvasGenerationRunContext,'generation'|'
   attachTextImages:(sourceIds:string[],images:CanvasGeneratedImage[])=>Promise<void>;
   clearError:()=>void;errorText:string;saveErrorText:string;pendingLabel:string;resultGap:number;
 };
-export type CanvasBlankImageOptions={pend?:CanvasPendingNode;prompt?:string;ratio?:string;forceStandard?:boolean;referenceInputs?:CanvasImageReference[];isCurrent?:()=>boolean;onSubmitted?:()=>void};
+export type CanvasBlankImageOptions={frozenTextPrompt?:string;pend?:CanvasPendingNode;prompt?:string;ratio?:string;forceStandard?:boolean;referenceInputs?:CanvasImageReference[];isCurrent?:()=>boolean;onSubmitted?:()=>void};
 
 /** Derived/replacement application flow; request and recovery stay in the
  * original image-task request/controller, including explicit attachment retry. */
@@ -90,23 +91,23 @@ export async function runCanvasDerivedImage(input:{source:Artwork;prompt:string;
 
 /** Blank/text-linked application flow. The text document owns target links;
  * this owner composes inputs, placeholder projection and the original task. */
-export async function runCanvasBlankImage(input:{pend:CanvasPendingNode;prompt:string;settings:Settings;members:Artwork[];textNodes:CanvasTextNode[];
+export async function runCanvasBlankImage(input:{pend:CanvasPendingNode;prompt:string;linked?:LinkedImageTextResult;settings:Settings;members:Artwork[];textNodes:CanvasTextNode[];
   detail:boolean;referenceInputs?:CanvasImageReference[];invalid:(message:string)=>void;needReferences:string;needPrompt:string;
   runDetail:(source:Artwork,inputs:Artwork[],prompt:string,pend:CanvasPendingNode,refs?:CanvasImageReference[])=>Promise<unknown>;
   failed:(failure:GenerationFailure)=>void;attached:(images:CanvasGeneratedImage[],artworks:Artwork[])=>void;completed:()=>void;onSubmitted?:()=>void;
 },ctx:CanvasImageRunContext):Promise<boolean>{
   const {pend,referenceInputs,settings}=input;
   if(pend.generating||pend.uploading||pend.needsAttention)return false;
-  const text=input.prompt.trim(),inputs=pend.inputs.map(id=>input.members.find(art=>art.id===id)).filter((art):art is Artwork=>!!art);
+  const text=(input.linked?.prompt??input.prompt).trim(),inputs=pend.inputs.map(id=>input.members.find(art=>art.id===id)).filter((art):art is Artwork=>!!art);
   if(referenceInputs){
     const issue=referenceManifestError(text,imageReferenceManifest(referenceInputs));if(issue){input.invalid(issue);return false;}
     if(pend.inputs.some(id=>!id.startsWith('text-')&&!inputs.some(art=>art.id===id&&art.image&&!art.videoUrl))){input.invalid('已连接的参考图片尚未载入，请同步图片后重试');return false;}
   }
-  const textIds=new Set([pend.parentId,...pend.inputs].filter((id):id is string=>!!id?.startsWith('text-'))),texts=[...textIds].map(id=>input.textNodes.find(node=>node.id===id)).filter((node):node is CanvasTextNode=>!!node);
+  const textIds=new Set(input.linked?input.linked.sources.map(source=>source.id):[pend.parentId,...pend.inputs].filter((id):id is string=>!!id?.startsWith('text-'))),texts=[...textIds].map(id=>input.textNodes.find(node=>node.id===id)).filter((node):node is CanvasTextNode=>!!node);
   if(input.detail){if(!inputs.length){ctx.notice(input.needReferences);return false;}await input.runDetail(inputs[0],inputs,text,pend,referenceInputs);return false;}
-  if(!text&&!pend.inputs.length){ctx.notice(input.needPrompt);return false;}
+  if(!text&&!(input.linked?pend.inputs.some(id=>!id.startsWith('text-')):pend.inputs.length)){ctx.notice(input.needPrompt);return false;}
   const operationKey=`pend:${pend.id}`,view=ctx.generation,pending=ctx.pending;if(view.busy(operationKey))return false;
-  const prompt=canvasBlankImagePrompt(text,texts,inputs);ctx.clearError();
+  const prompt=input.linked?text||canvasInheritedImagePrompt(inputs[0]?.prompt):canvasBlankImagePrompt(text,texts,inputs);ctx.clearError();
   const size=generationPlaceholderSize(settings.ratio),live=ctx.geometry.position(pend.id,pend),position=generationPositionForTask(live,live,size,[]);
   pending.set(nodes=>nodes.map(node=>node.id===pend.id?{...node,generationFailure:undefined,onGenerationRetry:undefined,generating:true,generationSubmitted:false,generationStage:'preparing',generationStartedAt:Date.now(),...position,generationSize:size,generationCount:normalizeCanvasCount(settings.count)}:node));
   const scope=ctx.capture(),task=createCanvasImageTask({scope,

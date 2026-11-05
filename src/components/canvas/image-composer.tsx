@@ -1,4 +1,6 @@
 "use client";
+import {LinkedTextInput} from "./linked-text-input";
+import type {LinkedImageTextResult} from "@/lib/canvas/linked-image-text";
 import {ImageVersionControl} from "./image-version-control";
 import {SelectMenu} from "@/components/ui/select-menu";
 import type {CanvasGenerationTask} from "@/lib/canvas/scene-types";
@@ -16,6 +18,7 @@ import {GenerationSubmitAction} from "./generation-submit-action";
 import {CanvasImageGenerationControls,type CanvasImageGenerationControlsProps} from "./image-generation-controls";
 
 export type CanvasImageComposerProps={
+  linkedText?:LinkedImageTextResult;
   versions?:ComponentProps<typeof ImageVersionControl>;
   pending:boolean;title?:string;readOnly?:boolean;optimizationDisabled?:boolean;style?:CSSProperties;dockRef:RefObject<HTMLDivElement|null>;onDismiss:()=>void;
   expanded?:boolean;onToggleExpand?:()=>void;
@@ -30,7 +33,7 @@ export type CanvasImageComposerProps={
 };
 /** Existing and blank image nodes share one draft/reference/control presentation.
  * No task, billing or document state is created here. */
-export function CanvasImageComposer({versions,pending,title,readOnly=false,optimizationDisabled=false,style,dockRef,onDismiss,expanded,onToggleExpand,referenceEditor,upload,promptRecovery,recovery,restoreReferences,controls,imageActions,generation,error}:CanvasImageComposerProps){
+export function CanvasImageComposer({linkedText,versions,pending,title,readOnly=false,optimizationDisabled=false,style,dockRef,onDismiss,expanded,onToggleExpand,referenceEditor,upload,promptRecovery,recovery,restoreReferences,controls,imageActions,generation,error}:CanvasImageComposerProps){
   const {locale,t}=useI18n(),L=(zh:string,en:string)=>locale==="en"?en:zh;
   const {identity,...references}=referenceEditor;
   return <CanvasComposerShell data-testid={pending?"pending-node-dock":"image-node-dock"} ref={dockRef}
@@ -40,6 +43,7 @@ export function CanvasImageComposer({versions,pending,title,readOnly=false,optim
       {versions&&<ImageVersionControl iconOnly {...versions}/>}
     </>} kind="image" compact expanded={expanded} onToggleExpand={onToggleExpand} heading={title||L("图片生成","Image generation")} onDismiss={onDismiss} closeLabel={L("关闭创作栏","Close composer")}>
     <div data-composer-body="true" className="min-h-0 overflow-y-auto px-4 pb-1.5 pt-3.5">
+      {linkedText&&<LinkedTextInput sources={linkedText.sources} error={linkedText.error} english={locale==="en"}/>}
       <ImageReferenceComposer compact key={identity} {...references}>
         {!readOnly&&upload&&<>
           <input ref={upload.inputRef} type="file" accept="image/png,image/jpeg,image/webp" multiple className="hidden" onChange={event=>upload.onFiles(event.target.files)}/>

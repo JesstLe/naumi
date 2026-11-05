@@ -28,6 +28,26 @@ function setup(c,request){
  await test('lost-response-retains-original-price-operation',async()=>{const f=setup(c);f.state.lost=true;eq(await f.run(),false);f.state.currentPrice=99;eq(await f.run(),true);eq(f.state.posts.map(p=>p.price),baseline?[3,99]:[3,3]);eq(f.state.quotes,baseline?2:1);eq(f.state.posts.length,2);eq(f.state.posts[0].id===f.state.posts[1].id,true);eq(f.state.supplier,1);});
  await test('completed-response-after-project-switch-is-saved',async()=>{const f=setup(c),g=gate(),entered=gate();f.state.beforeReply=()=>{entered.resolve();return g.promise};const running=f.run();await entered.promise;f.context.render('user','tree:B');if(baseline)c.canvasContextEpochRef.current++;g.resolve();eq(await running,!baseline);eq(f.state.saveCalls,baseline?0:1);eq(f.state.models,[]);});
  if(!baseline){
+  await test('general-writing-request-keeps-explicit-instruction-and-body-separate',()=>{
+    const original={...node(),prompt:'saved old instruction',content:'  latest body\nwith detail  ',sourceIds:['text-source']},request=c.generalTextTask(original,'  explicit new instruction  ','Text');
+    eq(request.payload.prompt,'explicit new instruction');eq(request.node.prompt,'explicit new instruction');eq(request.payload.content,original.content);eq(request.node.content,original.content);eq(request.payload.sourceIds,['text-source']);eq(original.prompt,'saved old instruction');
+  });
+  await test('body-polish-ignores-supplied-old-instruction-preserves-writing-draft',()=>{
+    const original={...node(),prompt:'saved writing instruction',content:'latest body'},request=c.generalTextTask(original,'must not leak into polish','Text','polish');
+    ok(request.payload.prompt.startsWith('润色当前正文'));ok(!request.payload.prompt.includes('must not leak'));eq(request.node.prompt,'saved writing instruction');eq(request.payload.content,'latest body');eq(original.prompt,'saved writing instruction');
+    const implicit=c.generalTextTask(original,'  ','Text');eq(implicit.payload.prompt,request.payload.prompt);eq(implicit.node.prompt,'');
+    const empty=c.generalTextTask({...original,content:'',status:'completed'},'old input','Text','polish');eq(empty.payload.prompt,'');eq(empty.node.prompt,'saved writing instruction');
+  });
+  await test('polish-task-success-and-history-preserve-saved-writing-instruction',async()=>{
+    const original={...node(),prompt:'keep this writing instruction',content:'polish this body'},request=c.generalTextTask(original,'ignored','Text','polish'),f=setup(c,request),history=[];
+    f.state.nodes=[original];f.ports.historyEdit=(before,after)=>history.push({before,after});
+    eq(await f.run(),true);eq(f.state.nodes[0].prompt,original.prompt);eq(f.state.nodes[0].content,'generated answer');eq(f.state.posts[0].body.prompt,request.payload.prompt);eq(history.length,1);eq(history[0].before.prompt,original.prompt);eq(history[0].after.prompt,original.prompt);eq(history[0].before.content,original.content);
+  });
+  await test('polish-unknown-failure-retains-body-draft-and-original-resume',async()=>{
+    const original={...node(),prompt:'keep saved instruction',content:'original body'},request=c.generalTextTask(original,'ignored','Text','polish'),f=setup(c,request);
+    f.state.nodes=[original];f.state.lost=true;eq(await f.run(),false);eq(f.state.nodes[0].content,original.content);eq(f.state.nodes[0].prompt,original.prompt);
+    f.state.nodes=[{...f.state.nodes[0],prompt:'newer manual instruction'}];eq(await f.run(),true);eq(f.state.nodes[0].prompt,'newer manual instruction');eq(f.state.posts.length,2);eq(f.state.posts[1].body,f.state.posts[0].body);eq(f.state.posts[1].id,f.state.posts[0].id);eq(f.state.supplier,1);
+  });
   await test('same-task-double-click-one-flight',async()=>{const f=setup(c),g=gate(),entered=gate();f.state.beforeReply=()=>{entered.resolve();return g.promise};const one=f.run();await entered.promise;const two=f.run();g.resolve();await Promise.all([one,two]);eq(f.state.posts.length,1);eq(f.state.saveCalls,1);});
   for(const kind of ['account','workspace','project'])await test('before-dispatch-'+kind+'-ABA',async()=>{const f=setup(c),g=gate(),entered=gate();f.state.beforeSubmit=()=>{entered.resolve();return g.promise};const pending=f.run();await entered.promise;if(kind==='account'){f.context.render('other','tree:A');f.context.render('user','tree:A')}else if(kind==='project'){f.context.render('user','tree:B');f.context.render('user','tree:A')}else{c.__workspace.name='tenant';c.__workspace.revision++;c.__workspace.name='personal';c.__workspace.revision++;}g.resolve();eq(await pending,false);eq(f.state.posts.length,0);});
   await test('known-answer-survives-account-switch-explicit-resume',async()=>{const f=setup(c),g=gate(),entered=gate();f.state.beforeReply=()=>{entered.resolve();return g.promise};const pending=f.run();await entered.promise;f.context.render('other','tree:A');g.resolve();eq(await pending,false);eq(f.state.saveCalls,0);const current=f.context.render('user','tree:A');const doc={...f.ports.document,set:update=>{f.state.nodes=update(f.state.nodes)}};eq(await f.task.run(current,{...f.ports,document:doc}),true);eq(f.state.posts.length,1);eq(f.state.saveCalls,1);});

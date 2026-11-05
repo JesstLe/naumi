@@ -73,6 +73,21 @@ function deferred(){let resolve;const promise=new Promise(r=>resolve=r);return {
   c.carryCompletedCanvasImageDraft({owner,project:null,workspace:'personal',pendingId:'pending',prompt:'frozen',ratio:'auto',resultId:'result',artworks:[{id:'result',batchId:'suite-real',image:'/result.png'}],currentArtworks:[]},{draft:{read:(id,scope)=>store.read(c.imageDraftKey(scope,id)),seed:(id,patch,scope)=>store.write(c.imageDraftKey(scope,id),patch)},references:{copyTo:(...args)=>copies.push(args)}});
   eq(store.read(c.imageDraftKey(destination,'result')).prompt,'destination edited','later destination edits win over pending draft');eq(copies[0][0],c.imageDraftKey(destination,'result'),'suite result uses actual batch identity');rows.push({name:'suite-project-and-destination-edit',status:'PASS'});
  }
+ // Uploaded originals never inherit generation defaults or rewrite provenance.
+ for(const project of ['tree:source',null]){
+  const f=setup('blank','done',built),c=f.c,store=new c.ImageNodeDraftStore(),owner=c.user.email,copies=[];
+  const original=c.imageDraftScope(owner,null,project,'personal'),destination=c.imageDraftScope(owner,null,project||'batch:suite-uploaded','personal');
+  const artwork=Object.freeze({id:'uploaded',image:'/original.png',batchId:'suite-uploaded',prompt:'immutable provenance'}),before=JSON.stringify(artwork);
+  const input={owner,project,workspace:'personal',pendingId:'pending-upload',resultId:'uploaded',artworks:[artwork],currentArtworks:[]};
+  const ports={draft:{read:(id,scope)=>store.read(c.imageDraftKey(scope,id)),seed:(id,patch,scope)=>store.write(c.imageDraftKey(scope,id),patch)},references:{copyTo:(...args)=>copies.push(args)}};
+  c.carryUploadedCanvasImageDraft(input,ports);eq(store.read(c.imageDraftKey(destination,'uploaded')),{},'untouched upload creates no prompt or ratio defaults');
+  store.write(c.imageDraftKey(original,'pending-upload'),{prompt:'pending edit',ratio:'3:4',hiddenReferenceIds:['ref-hidden']});
+  store.write(c.imageDraftKey(destination,'uploaded'),{prompt:'newer destination edit'});c.carryUploadedCanvasImageDraft(input,ports);
+  eq(store.read(c.imageDraftKey(destination,'uploaded')),{prompt:'newer destination edit',ratio:'3:4',hiddenReferenceIds:['ref-hidden']},'upload carries edits with destination fields winning');
+  eq(copies.at(-1),[c.imageDraftKey(destination,'uploaded'),c.imageDraftKey(original,'pending-upload')],'references follow actual project identity');eq(JSON.stringify(artwork),before,'uploaded provenance stays immutable');
+  const copied=copies.length;eq(c.carryUploadedCanvasImageDraft({...input,resultId:'missing'},ports),undefined);eq(copies.length,copied,'missing synchronized row never migrates');
+  rows.push({name:'uploaded-draft-'+(project?'existing-project':'new-suite-project'),status:'PASS'});
+ }
  const inputs=['src/components/canvas/canvas-client.tsx','src/lib/canvas/image-runs.ts','src/lib/canvas/image-creation.ts','src/lib/canvas/image-task-controller.ts','src/lib/canvas/generation-presentation.ts','src/lib/canvas/image-draft-completion.ts','src/lib/canvas/project-catalog.ts'];
  const result={status:'PASS',cases:rows.length,checks,actualOwners:inputs.map(p=>({path:p,sha256:crypto.createHash('sha256').update(fs.readFileSync(path.join(root,p))).digest('hex')})),rows,supplierRequests:0,serverDatabase:false,transport:'fixture'};
  fs.writeFileSync(path.join(out,'RESULT.json'),JSON.stringify(result,null,2)+'\n');console.log(`MAIN_SYNC_CANVAS_OWNERS=PASS CASES=${rows.length} CHECKS=${checks} ACTUAL_RUNS=1 ORIGINAL_POSTS=2 ACK_RELEASE=1 BLANK_FORK=1 LIVE_DRAFT=1 ORIGINAL_RECEIPT=RETAINED SUPPLIER=0`);

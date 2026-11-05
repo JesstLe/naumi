@@ -22,7 +22,7 @@ import {withBillingRequest} from "@/lib/billing/synchronous";
 import {configuredToolCost} from "@/lib/billing/synchronous-operation";
 import { CANVAS_TEXT_OUTPUT_INSTRUCTION, canvasTextInput, canvasAnswerText, canvasTextFailure, reportCanvasTextFailure } from "@/lib/canvas-text-output";
 import { currentModelExecution } from "@/lib/model-config/context";
-import { CanvasTextContentError, canvasTextGenerationInput, parseCanvasTextContent } from "@/lib/canvas/text-generation-input";
+import { CanvasTextContentError, canvasTextGenerationInput, parseCanvasTextContent, resolveCanvasTextInstruction } from "@/lib/canvas/text-generation-input";
 import { CanvasTextReferenceError, canvasTextReferenceContext, splitCanvasTextReferences } from "@/lib/canvas/text-generation-references";
 
 export const runtime = "nodejs";
@@ -163,7 +163,10 @@ async function handleObservedPost(request: Request) {
     }
     return NextResponse.json({ error: "请求格式不正确" }, { status: 400 });
   }
-  // reverse(竞品图反推提示词)可以不带用户指令;其余模式要求 prompt。
+  // Only an explicit general request may use the current body as a polish action.
+  // Parsing and input limits above still apply; product recipe modes stay unchanged.
+  if (mode === "general") prompt = resolveCanvasTextInstruction(prompt, content);
+  // reverse(竞品图反推提示词)可以不带用户指令；general 空正文仍需明确写作要求。
   if (!prompt && mode !== "reverse") {
     return NextResponse.json({ error: "请输入要生成的文字内容" }, { status: 400 });
   }

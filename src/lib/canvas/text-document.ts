@@ -186,7 +186,8 @@ export function createCanvasTextDocument(options:Options) {
       } catch(error){if(scope.documentCurrent()&&version===state.loadVersion)publish(state,{phase:"error",error:error instanceof Error?error.message:"文字节点加载失败"});return false;}
     };
     return {getSnapshot:()=>state.snapshot,subscribe:(listener:()=>void)=>{state.listeners.add(listener);return()=>{state.listeners.delete(listener);};},set,accept,save,load,attachImageResults,refreshSaved,
-      resolve,flush:()=>Promise.all(Array.from(state.queues.values())),retry:()=>Promise.all(Array.from(state.drafts.values(),save)),history};
+      resolve,hasUnsaved:(id:string)=>state.drafts.has(id)||state.pending.has(id)||state.queues.has(id)||state.scheduled.has(id),
+      flush:(ids?:readonly string[])=>Promise.all(ids?ids.map(id=>state.queues.get(id)):Array.from(state.queues.values())),retry:()=>Promise.all(Array.from(state.drafts.values(),save)),history};
   }
   return {bind,history};
 }
