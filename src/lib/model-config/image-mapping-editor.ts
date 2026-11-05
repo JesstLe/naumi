@@ -4,7 +4,7 @@ import {qualityPolicySchema} from './quality-policy';
 import {resolutionPolicySchema} from './resolution-policy';
 import {ModelConfigError,type ModelConfig} from './types';
 import {PARAMETER_CONTRACTS,conventionalContract} from './parameter-contract';
-export const imageMappingEditorSchema=z.strictObject({qualities:z.array(z.enum(['low','medium','high','xhigh','max'])).min(1).max(5),resolutions:z.array(z.enum(['1K','2K','4K'])).min(1).max(3),routes:z.array(z.strictObject({upstreamId:z.string().max(100),quality:qualityPolicySchema,resolution:resolutionPolicySchema,contract:z.enum(PARAMETER_CONTRACTS).nullable().optional()})).min(1).max(100)});
+export const imageMappingEditorSchema=z.strictObject({qualities:z.array(z.enum(['low','medium','high','xhigh','max'])).min(1).max(5),resolutions:z.array(z.enum(['1K','2K','4K'])).min(1).max(3),routes:z.array(z.strictObject({upstreamId:z.string().max(100),quality:qualityPolicySchema,resolution:resolutionPolicySchema.nullable(),contract:z.enum(PARAMETER_CONTRACTS).nullable().optional()})).min(1).max(100)});
 export type ImageMappingEditorInput=z.infer<typeof imageMappingEditorSchema>;
 export function applyImageMappingEditor(config:ModelConfig,publicIds:string[],upstreamIds:string[],input:ImageMappingEditorInput){
  const value=imageMappingEditorSchema.parse(input),ids=new Set(upstreamIds);
@@ -14,7 +14,9 @@ export function applyImageMappingEditor(config:ModelConfig,publicIds:string[],up
  for(const route of value.routes){
   if(route.quality.choices.length!==value.qualities.length||value.qualities.some(id=>!route.quality.choices.some(c=>c.id===id)))throw new ModelConfigError('IMAGE_MAPPING_INVALID','显示质量与通道映射不一致',422);
   const source=next.upstreamModels.find(u=>u.id===route.upstreamId)!;
-  source.parameterMap.qualityPolicy=route.quality;source.parameterMap.resolutionPolicy=route.resolution;
+  source.parameterMap.qualityPolicy=route.quality;
+  // null keeps the protocol's own size fields (no resolution override published).
+  if(route.resolution===null)delete source.parameterMap.resolutionPolicy;else source.parameterMap.resolutionPolicy=route.resolution;
   // undefined keeps the published contract; null returns the channel to the strict default.
   if(route.contract===null)delete source.parameterMap.parameterContract;else if(route.contract)source.parameterMap.parameterContract=route.contract;
   if(route.quality.mode==='map'&&!conventionalContract(source.parameterMap)&&route.quality.choices.some(c=>!c.value))throw new ModelConfigError('IMAGE_MAPPING_INVALID','每个显示档位需要填写上游值',422);
