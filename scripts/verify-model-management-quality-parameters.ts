@@ -83,7 +83,21 @@ async function main(){
   const form=new FormData();form.set("model","image-a");form.set("quality","high");form.set("prompt","multipart mapping");form.set("image",new Blob([new Uint8Array(png)],{type:"image/png"}),"mock.png");assert.equal((await executionFetch(scope,{trustedOrigins:[f.origin]})(f.origin+"/v1/images/edits",{method:"POST",body:form})).status,200);assert.equal(wire.at(-1).quality,"high");assert.equal(wire.at(-1).imageFiles,1);
   const update=async(mode:string,values=parameters.routes[0].values)=>{const current=await admin.repo.current();const r=await handler(request({...body,id:randomUUID(),expectedVersion:current.version,parameters:{choices,routes:[{...parameters.routes[0],mode,values}]}}));assert.equal(r.status,200,await r.clone().text());return admin.repo.current();};
   await update("map",{...parameters.routes[0].values,max:"low"});const old=await executor.clientFor(frozen);await old.client.images.generate({model:"image-a",prompt:"frozen mapping",quality:"high",n:1});assert.equal(wire.at(-1).quality,"high","accepted execution retains old mapping after new publication");
-  const omitted=await update("omit"),omittedFrozen=await executor.resolve({...frozen,binding:"image.generate",requestedModelId:"image-a",snapshot:omitted,billing:priceBefore,facts:frozen.facts} as any),omitScope=await executor.describe(omittedFrozen);
+  const omitted=await update("omit");
+  // A new publication is a new request, not an old execution with a new snapshot.
+  // Retaining its frozen plans must still fail the execution integrity check.
+  const mixed=await executor.resolve({...frozen,binding:"image.generate",requestedModelId:"image-a",snapshot:omitted,billing:priceBefore,facts:frozen.facts});
+  await assert.rejects(executor.describe(mixed),{code:"EXECUTION_MISMATCH",message:"冻结参数映射与原配置不符"});
+  const omittedFrozen=await executor.resolve({feature:"image.generate",binding:"image.generate",requestedModelId:"image-a",snapshot:omitted,billing:priceBefore,facts:frozen.facts});
+  const before=frozen.imageParameterPlans!.u1,after=omittedFrozen.imageParameterPlans!.u1;
+  assert.equal(before.wire.quality,"high");assert.equal(before.effective.quality,"high");
+  assert.equal(after.wire.quality,undefined);assert.equal(after.effective.quality,undefined);
+  assert.equal(before.modelVersion,mapped.version);assert.equal(after.modelVersion,omitted.version);
+  console.log("FROZEN_PLAN_MISMATCH="+JSON.stringify({before,after}));
+  // Reopen the original serialized execution after publication, as recovery does.
+  const recovered=await executor.describe(JSON.parse(JSON.stringify(frozen)));
+  assert.deepEqual(recovered.frozen.imageParameterPlans,frozen.imageParameterPlans);
+  const omitScope=await executor.describe(omittedFrozen);
   const omitForm=new FormData();omitForm.set("model","image-a");omitForm.set("quality","max");omitForm.set("prompt","omit multipart");omitForm.set("image",new Blob([new Uint8Array(png)],{type:"image/png"}),"mock.png");await executionFetch(omitScope,{trustedOrigins:[f.origin]})(f.origin+"/v1/images/edits",{method:"POST",body:omitForm});assert.ok(!("quality" in wire.at(-1)));assert.equal(wire.at(-1).imageFiles,1);
   const oq=await(await quoteApi.POST(req("/api/billing/quote",{feature:"image.generate",modelId:"image-a",quality:"max",resolution:"1K",quantity:1}))).json();assert.equal(oq.credits,q.credits);assert.equal(oq.effectiveParameters.quality,"auto");
   // Each independent adapter variant starts a draft at the current publication.
