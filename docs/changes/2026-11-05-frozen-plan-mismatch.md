@@ -128,7 +128,7 @@ exit=0（无输出）
 此次未改产品代码，条件性门禁本不触发，仍主动执行。PowerShell 命令中的路径变量：
 
 ```powershell
-$g='C:/Users/ADMINI~1/AppData/Local/Temp/claude/d747dcc19fc0f21f/f7a054ad-871c-4023-9005-b5f209e9d040/scratchpad/golden'
+$g='<只读导出目录，不在仓库内>'
 npx tsx --conditions react-server scripts/verify-image-parameter-golden.ts 'C:/Users/Administrator/.t3/worktrees/naumi/t3-c4901f63' "$g/model-103-v117.json" "$g/billing-103.json" "$g/frozen-plan-c4901f63.json"
 npx tsx scripts/verify-image-parameter-golden.ts --compare "$g/baseline.json" "$g/frozen-plan-c4901f63.json"
 ```
@@ -141,3 +141,9 @@ compare EXIT=0
 ```
 
 `git diff --check` exit=0（无输出）。fetch 后 origin/main 为 a753214572f893886b18d34e73efe76965693320；按用户指定基线执行，不合入新主线。本地提交仅包含测试脚本和本记录。
+
+## 主线程复核（2026-11-05）
+
+- 生产路径不会把旧计划和新配置混用：有报价单时，`src/lib/model-config/requests.ts:105-107` 按报价单记录的 `modelVersion` / `configVersion` 读取快照，传给 `executor.resolve` 的计划与快照属于同一版本。所以本用例中的"旧计划 + 新配置"在生产中不会出现，结论 (a) 成立。
+- 在合入 main `a7532145`（含 management-access 拆分）之后复跑本脚本，结果为 `MODEL_MANAGEMENT_PARAMETERS=PASS`；`tsc` 0 错误。
+
