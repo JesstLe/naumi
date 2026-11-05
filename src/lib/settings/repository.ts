@@ -38,3 +38,21 @@ export async function getSettings(keys: readonly string[]): Promise<Record<strin
   for (const row of rows) values[row.k] = row.v;
   return values;
 }
+
+/** Commit a fully prepared settings plan on one connection; no partial field writes. */
+export async function setSettingsAtomically(entries: readonly (readonly [string, string])[]): Promise<void> {
+  if (!entries.length) return;
+  await ensureSchema();
+  const tx = await getPool().connect();
+  try {
+    await tx.query("BEGIN");
+    for (const [key, value] of entries) {
+      await tx.query(`INSERT INTO app_settings(k,v,updated_at) VALUES($1,$2,now())
+        ON CONFLICT(k) DO UPDATE SET v=EXCLUDED.v,updated_at=now()`, [key,value]);
+    }
+    await tx.query("COMMIT");
+  } catch (error) {
+    await tx.query("ROLLBACK");
+    throw error;
+  } finally { tx.release(); }
+}

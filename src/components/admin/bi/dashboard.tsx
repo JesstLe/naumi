@@ -271,6 +271,7 @@ Object.assign(names, {
   note: "修改备注",
   "ban-ip": "封禁 IP",
   "unban-ip": "解除 IP 封禁",
+  "settings-update": "系统设置更新",
   "owner-account": "站长账号设置",
   "artwork-delete": "删除作品",
 });
