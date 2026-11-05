@@ -14,7 +14,7 @@ from release47_host import environment, public_identity, require, sha
 from release47_controls import _atomic_private
 import release47_maintenance as authorization
 
-CAPS = {'SYS_CHROOT', 'SETUID', 'SETGID', 'CHOWN', 'DAC_OVERRIDE', 'FOWNER'}
+CAPS = {'SYS_CHROOT', 'SETUID', 'SETGID', 'CHOWN', 'DAC_OVERRIDE', 'FOWNER', 'KILL'}
 FORBIDDEN = {'DATABASE_URL', 'SETTINGS_SECRET', 'VIDEO_WORKER_SECRET', 'R2_SECRET_ACCESS_KEY',
              'S3_SECRET_ACCESS_KEY', 'OPENAI_API_KEY', 'VIDEO_API_KEY'}
 REMOTE = r"""

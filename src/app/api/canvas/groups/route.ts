@@ -1,10 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import {
-  dbEnabled,
-  setArtworkCanvasGroups,
-  type CanvasGroupAssignment,
-} from "@/lib/db";
+import {dbEnabled} from "@/platform/db/pool";
+import {setArtworkCanvasGroups, type CanvasGroupAssignment} from "@/lib/canvas/artwork-repository";
 import { authenticatedEmail } from "@/lib/request-auth";
 
 export const runtime = "nodejs";

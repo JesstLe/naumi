@@ -25,15 +25,15 @@ function createHarness(sourceRoot=process.cwd()){
  }};
  const c={console,Request,Response,Headers,FormData,File,Blob,URL,structuredClone,Date,JSON,Map,Set,BigInt,process:{env:{}},randomUUID:crypto.randomUUID,dbEnabled:true,ensureSchema:async()=>{},getPool:()=>db,
   resolveUserEmail:async req=>req.headers.get('x-fixture-owner'),getSetting:async()=>null,totalPaidCents:async()=>0,
-  billingSnapshot:async()=>structuredClone(state.billing),getBillingRuntime:async()=>({config:{current:async()=>structuredClone(state.billing)}}),
+  billingSnapshot:async()=>structuredClone(state.billing),meteringFor:async()=>true,getBillingRuntime:async()=>({config:{current:async()=>structuredClone(state.billing)}}),
   getModelAdministration:async()=>({repo:{current:async()=>structuredClone(state.models),byVersion:async v=>{assert.equal(v,state.models.version);return structuredClone(state.models)}}}),
-  modelConfigurationEnabled:async()=>true,currentCreationContext:()=>creation.getStore(),
+  readManagedModelSnapshot:async()=>structuredClone(state.models),ensureImageBillingQuotes:async()=>{},modelConfigurationEnabled:async()=>true,currentCreationContext:()=>creation.getStore(),
   withCreationRoute:(req,fn)=>creation.run({scopeKind:req.headers.get('x-fixture-workspace')?'tenant':'personal',tenantId:req.headers.get('x-fixture-workspace')||null},fn),
   getUserImageProvider:async()=>null,upstreamUserImageModel:x=>x,supabaseEnabled:false,multiUserEnabled:async()=>true,
   seed:load('src/lib/billing/bootstrap.json'),...load('src/lib/model-config/context.ts'),...load('src/lib/imagegen/context.ts'),
-  ...load('src/lib/model-config/types.ts'),...load('src/lib/billing/types.ts'),...load('src/lib/billing/quote.ts'),...load('src/lib/billing/rules/registry.ts'),
+  ...load('src/lib/model-config/types.ts'),...load('src/lib/billing/types.ts'),...load('src/lib/billing/failure.ts'),...load('src/lib/billing/quote.ts'),...load('src/lib/billing/rules/registry.ts'),
   ...load('src/lib/model-config/selection-policy.ts'),...load('src/lib/model-config/cutout-quality.ts'),...load('src/lib/billing/canvas-defaults.ts'),
-  ...load('src/lib/model-config/business.ts'),...load('src/lib/model-config/image-preset.ts'),...load('src/lib/model-config/resolution-fallback.ts'),
+  ...load('src/lib/model-config/model-selection.ts'),...load('src/lib/model-config/image-quality-selection.ts'),...load('src/lib/model-config/business.ts'),...load('src/lib/model-config/image-preset.ts'),...load('src/lib/model-config/resolution-fallback.ts'),
   ...load('src/lib/model-config/resolution-options.ts'),...load('src/lib/model-config/credit-overrides.ts'),...load('src/lib/model-config/quality-policy.ts'),
   ...load('src/lib/model-config/image-parameter-plan.ts'),...load('src/lib/model-config/channel-policy.ts'),...load('src/lib/billing/api-cost.ts'),...load('src/lib/billing/money.ts'),
   ...load('src/lib/billing/validation.ts'),...load('src/lib/billing/image-quote-policy.ts'),PRIVATE_HEADERS:load('src/lib/billing/access.ts').PRIVATE_HEADERS,z:require('zod').z};
@@ -50,10 +50,11 @@ function createHarness(sourceRoot=process.cwd()){
  const body='let ready;\n'+[
   declarations('src/lib/billing/access.ts',['billingJson','sameSiteBillingMutation']),
   declarations('src/lib/billing/request.ts',['billingErrorResponse']),
-  declarations('src/lib/model-config/billing-model.ts',['managedBillingModel']),
-  declarations('src/lib/billing/image-quotes.ts',['scopeKey','ensureImageBillingQuotes','issueImageBillingQuote','imageBillingQuoteForRequest','assertImageBillingSelection']),
-  declarations('src/lib/model-config/business-billing.ts',['freezeImagePresetQuote','originalBusinessBillingSnapshot','businessBillingSnapshot','freezeBusinessQuote']),
-  declarations('src/lib/billing/server.ts',['compatibleQuote','meteringFor','resolveBillingFacts','quoteForRequest']),
+  declarations('src/lib/model-config/billing-model.ts',['managedBillingModel','managedBillingSelection']),
+  declarations('src/lib/billing/image-quotes.ts',['scopeKey','issueImageBillingQuote','imageBillingQuoteForRequest','assertImageBillingSelection']),
+  declarations('src/lib/model-config/business-billing.ts',['freezeImagePresetQuote','originalBusinessBillingSnapshot','businessBillingSnapshot','freezeBusinessQuote','freezeBusinessQuoteForModel']),
+  declarations('src/lib/billing/quotation.ts',['compatibleQuote','billingFactsForSelection','quoteForImagegenStep','prepareActorQuote']),
+  declarations('src/lib/billing/server.ts',['requestSelection','resolveBillingFacts','quoteForRequest']),
   declarations('src/app/api/billing/quote/route.ts',['handlePost','POST']),
  ].join('\n');
  c.billingBinding=f=>c.FEATURE_BINDINGS[f];Object.assign(c,load('src/lib/model-config/bindings.ts'),load('src/lib/model-config/tool-scope.ts'));

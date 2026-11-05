@@ -1,5 +1,5 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),{pathToFileURL}=require('node:url'),esbuild=require('esbuild'),{chromium,expect}=require('@playwright/test');
-const root=path.resolve(process.argv[2]||'.'),out=path.resolve(process.argv[3]||'output/audio-native-ui'),sound=path.resolve(process.argv[4]||'output/audio-native-rules/original.wav'),abs=f=>JSON.stringify(path.join(root,f).replaceAll('\\','/'));
+const root=path.resolve(process.argv[2]||'.'),out=path.resolve(process.argv[3]||process.env.AUDIO_UI_EVIDENCE||'output/audio-native-ui'),sound=path.resolve(process.argv[4]||process.env.AUDIO_SOURCE_WAV||'output/audio-native-rules/original.wav'),abs=f=>JSON.stringify(path.join(root,f).replaceAll('\\','/'));
 async function main(){
  fs.mkdirSync(out,{recursive:true});const data='data:audio/wav;base64,'+fs.readFileSync(sound).toString('base64');
  const source=`import React,{useRef,useState} from 'react';import {createRoot} from 'react-dom/client';import {AudioEditor} from ${abs('src/components/canvas/audio/audio-editor.tsx')};import {withAudioSource} from ${abs('src/lib/audio/project.ts')};

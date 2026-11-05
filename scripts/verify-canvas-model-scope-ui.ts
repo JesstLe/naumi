@@ -4,7 +4,7 @@ import {readFile,mkdir} from 'node:fs/promises';
 import {chromium,expect} from '@playwright/test';
 async function main(){
  if(process.env.NAUMI_VERIFY_ISOLATED_DB!=='1')throw Error('Requires isolated fixture');
- const origin='http://127.0.0.1:54989',out='output/canvas-scope-fix-20261009';await mkdir(out,{recursive:true});
+ const origin=(process.env.NAUMI_MODEL_UI_BASE_URL||'http://127.0.0.1:54989'),out='output/canvas-scope-fix-20261009';await mkdir(out,{recursive:true});
  const fixture=JSON.parse(await readFile('output/model-management-fixture/fixture.json','utf8'));
  const browser=await chromium.launch({channel:process.platform==='win32'?'msedge':undefined,headless:true}),context=await browser.newContext({viewport:{width:1440,height:1000}});
  let blocked=0;const errors:string[]=[];

@@ -7,7 +7,7 @@ import { getServerLocale } from "@/lib/i18n/server-locale";
 import { BRAND } from "@/lib/brand";
 import { betaPreviewEnabled } from "@/lib/commerce";
 import { IMAGE_QUALITY_IDS } from "@/lib/image-quality";
-import {billingSnapshot} from "@/lib/billing/server";
+import {billingSnapshot} from "@/lib/billing/runtime";
 import {quote} from "@/lib/billing/quote";
 import {
   PRICING_PACKAGES,

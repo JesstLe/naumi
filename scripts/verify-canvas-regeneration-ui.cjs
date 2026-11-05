@@ -80,7 +80,7 @@ const serverSourceSnapshot=['src/components/canvas/canvas-client.tsx','src/compo
       const generating=await snapshot(id);assert.deepEqual({...generating,src:undefined},{...before,src:undefined});geometries.push({id,before,preparing,generating});
       if(id==='placement-second')await page.screenshot({path:path.join(out,'portrait-regeneration.png')});
       if(id==='placement-root')await page.screenshot({path:path.join(out,'landscape-regeneration.png')});
-      const target=arts.find(a=>a.id===id);job.previous=target.image;const next=target.image.replace('.png',`-v${submissions.length}.png`);bytes.set(next,bytes.get(target.image));target.image=next;target.canvasImageRevision=(target.canvasImageRevision||0)+1;job.phase='done';
+      const target=arts.find(a=>a.id===id);job.previous=target.image;const next=target.image.replace('.png',`-v${submissions.length}.png`);bytes.set(next,bytes.get(target.image));target.image=next;target.canvasImageRevision=(target.canvasImageRevision||0)+1;target.canvasImageVersionId='v'+target.canvasImageRevision;job.phase='done';
       await n.locator('[data-stage=saving]').waitFor({timeout:20000});assert.deepEqual({...await snapshot(id),src:undefined},{...before,src:undefined});
       await waitFor(()=>!!saveRelease);saveRelease();await n.getByTestId('regeneration-progress').waitFor({state:'detached',timeout:20000});
       await page.waitForFunction(id=>{const i=document.querySelector(`.react-flow__node[data-id="${id}"] img`);return i?.complete&&i.naturalWidth>0},id);

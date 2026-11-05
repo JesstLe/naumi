@@ -1,7 +1,7 @@
-import {withBiRequest} from "@/lib/bi/model-observer";
+import {withBiRequest} from "@/lib/bi/request";
 import {resolveUserEmail} from "@/lib/admin-auth";
 import {sameSiteBillingMutation} from "@/lib/billing/access";
-import {imageWorkerAuthorized} from "@/lib/durable-image-jobs";
+import { imageWorkerAuthorized } from "@/lib/worker/authorization";
 import {imagegenRequestSchema} from "@/lib/imagegen/schema";
 import {submitImagegen,getImagegenResult,resumeImagegen,readImagegenReceipt} from "@/lib/imagegen/dispatch";
 import {submitImagegenBatch,readImagegenBatchReceipt} from "@/lib/imagegen/batch";
@@ -13,11 +13,11 @@ import {ImagegenScopeError} from "@/lib/imagegen/creation-scope";
 export const runtime="nodejs";
 export const maxDuration=300;
 const acceptedReceipt=(operationId:string,owner:string)=>readImagegenReceipt(operationId,owner).then(async result=>result||await readImagegenBatchReceipt(operationId,owner));
-async function handlePost(request:Request){
+async function handlePost(request:Request,authenticatedActor?:string|null){
  if(!sameSiteBillingMutation(request)&&!imageWorkerAuthorized(request))return Response.json({error:"请求来源无效"},{status:403});
  const body=await readImagegenJson(request).catch(()=>null);
  if(body?.workerJobId){if(!imageWorkerAuthorized(request))return Response.json({error:"无权执行"},{status:403});await resumeImagegen(String(body.workerJobId));return Response.json({ok:true});}
- const owner=await resolveUserEmail(request);if(!owner)return Response.json({error:"请先登录"},{status:401});
+ const owner=authenticatedActor===undefined?await resolveUserEmail(request):authenticatedActor;if(!owner)return Response.json({error:"请先登录"},{status:401});
  let {confirmation,...value}=body||{};
  if(body?.quoteId!==undefined){
   try{
@@ -41,11 +41,11 @@ async function handlePost(request:Request){
  try{return Response.json(parsed.data.mode==="batch"?await submitImagegenBatch(parsed.data,owner,confirmation):await submitImagegen(parsed.data,owner,confirmation));}
  catch(error){let accepted:boolean|undefined;try{accepted=!!(parsed.data.mode==="batch"?await readImagegenBatchReceipt(parsed.data.operationId,owner):await readImagegenReceipt(parsed.data.operationId,owner));}catch{/* Cannot prove absence while the database is unavailable. */}return Response.json({error:error instanceof Error?error.message:"无法提交图像任务",accepted,...(error instanceof ImagegenConfirmationChanged||error instanceof ImagegenQuoteError||error instanceof ImagegenScopeError?{code:error.code}:{})},{status:error instanceof ImagegenConfirmationChanged||error instanceof ImagegenScopeError?error.status:400});}
 }
-async function handleGet(request:Request){
- const owner=await resolveUserEmail(request);if(!owner)return Response.json({error:"请先登录"},{status:401});
+async function handleGet(request:Request,authenticatedActor?:string|null){
+ const owner=authenticatedActor===undefined?await resolveUserEmail(request):authenticatedActor;if(!owner)return Response.json({error:"请先登录"},{status:401});
  const id=new URL(request.url).searchParams.get("operationId")||"";if(!/^[a-f0-9-]{36}$/i.test(id))return Response.json({error:"操作编号无效"},{status:400});
  const result=await getImagegenResult(id,owner);return result?Response.json(result):Response.json({error:"任务不存在或无权访问"},{status:404});
 }
 
-export async function GET(request:Request){return withCreationReceiptRoute(request,()=>handleGet(request));}
-export async function POST(request:Request){return withCreationReceiptRoute(request,()=>withBiRequest(request,()=>handlePost(request)));}
+export async function GET(request:Request){return withCreationReceiptRoute(request,actor=>handleGet(request,actor));}
+export async function POST(request:Request){return withCreationReceiptRoute(request,actor=>withBiRequest(request,()=>handlePost(request,actor),actor));}

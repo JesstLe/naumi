@@ -1,9 +1,9 @@
 import "server-only";
 import type {PoolClient} from "pg";
-import {getPool} from "../db";
+import {getPool} from "@/platform/db/pool";
 import {ModelConfigError} from "../model-config/types";
 import {assertCreationInputsTx} from "../saas/creation-writer";
-import {storageKeyFromManagedUrl} from "../storage";
+import {storageKeyFromManagedUrl} from "../object-storage/runtime";
 import {verifiedOwnedMedia,inspectedOwnedMediaTx} from "../video/media-inspection";
 import type {TimelineMaterial} from "./timeline-node-schema";
 

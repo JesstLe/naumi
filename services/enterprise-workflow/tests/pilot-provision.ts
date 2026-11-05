@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import pg,{type Pool} from 'pg';
-import {inspectSource} from '../../../scripts/lib/enterprise-source-audit.mjs';
-import {preparePilot} from '../../../scripts/lib/enterprise-pilot-plan.mjs';
+import {inspectSource} from '../src/source-onboarding/audit.mjs';
+import {preparePilot} from '../src/source-onboarding/pilot-plan.mjs';
 import {PeopleStore} from '../src/people-store';
 import {resolveDatabaseActor} from '../src/identity';
 import {sourceAccountSubject} from '../src/contracts';

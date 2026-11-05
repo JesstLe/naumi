@@ -1,7 +1,7 @@
 import 'server-only';
 import { z } from 'zod';
 import type { TeamActor } from '@/lib/teams/grants';
-import { TeamError } from '@/lib/teams/server';
+import { TeamError } from "@/lib/teams/errors";
 import { CATEGORY_FEATURES } from '@/lib/billing/feature-map';
 import { excludeImportedHistory } from '@/lib/staging-history';
 import { enterpriseRead } from './server';

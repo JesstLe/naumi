@@ -64,12 +64,17 @@ const { createBillingService, withBillingTransaction } = load('src/lib/billing/s
 const { BillingError } = load('src/lib/billing/types');
 const service = createBillingService();
 function legacy() {
-  const file = path.join(source, 'src/lib/db.ts'), text = fs.readFileSync(file, 'utf8');
-  const ast = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
-  const names = ['expireDueBatches', 'liveBatchBalance', 'refreshBalance', 'deductPrincipalFIFO'];
-  const functions = ast.statements.filter(n => ts.isFunctionDeclaration(n) && names.includes(n.name?.text));
+  // Follow the compatibility exports to the refactored wallet owners. Keep
+  // the actual legacy entry names and every SQL/lock/performance assertion.
+  const files=fs.existsSync(path.join(source,'src/lib/billing/wallet-balance.ts'))
+    ? ['src/lib/billing/wallet-balance.ts'] : ['src/lib/db.ts'];
+  const names = ['expireDueBatches', 'refreshBalance', 'deductPrincipalFIFO'];
+  const functions=files.flatMap(relative=>{
+    const file=path.join(source,relative),ast=ts.createSourceFile(file,fs.readFileSync(file,'utf8'),ts.ScriptTarget.Latest,true);
+    return ast.statements.filter(n=>ts.isFunctionDeclaration(n)&&names.includes(n.name?.text)).map(n=>({getText:()=>n.getText(ast)}));
+  });
   assert.equal(functions.length, names.length);
-  const body = functions.map(n => n.getText(ast).replace(/^export\s+/, '')).join('\n');
+  const body = functions.map(n => n.getText().replace(/^export\s+/, '')).join('\n');
   const js = ts.transpileModule(body, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
   return new Function('getPool', 'withBillingTransaction', 'BillingError', 'debitTx', js + '\nreturn {' + names.join(',') + '};')(() => pool, withBillingTransaction, BillingError, repository.debitTx);
 }

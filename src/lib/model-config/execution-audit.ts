@@ -1,36 +1,23 @@
+import {ensureExecutionAuditSchema} from "@/lib/model-config/execution-audit-schema";
+export {ensureExecutionAuditSchema};
 import {executionImageParameterPlan} from './image-plan-runtime';
 import "server-only";
-import { randomUUID } from "node:crypto";
-import { dbEnabled, getPool } from "../db";
-import { currentSynchronousBilling } from "../billing/synchronous";
-import { currentImageOperationId } from "../image-gateway";
-import type { ModelExecutionScope } from "./context";
-import { procurementCny } from "./business";
-import { ModelConfigError } from "./types";
-import type { Pool } from "pg";
-import { stageCost } from "./stage-cost";
-const ready = new WeakMap<Pool, Promise<unknown>>();
-export async function ensureExecutionAuditSchema(pool: Pool) {
-  let p = ready.get(pool);
-  if (!p) {
-    p = pool.query(`CREATE TABLE IF NOT EXISTS app_model_execution_stages(
-      id uuid PRIMARY KEY,operation_id text NOT NULL,feature text NOT NULL,public_model_id text NOT NULL,
-      model_version bigint NOT NULL,billing_version bigint NOT NULL,provider_id text NOT NULL,wire_model text NOT NULL,
-      matched_rule_id text,phase text NOT NULL,state text NOT NULL,attempt int NOT NULL,status int,
-      estimated_cost_cny_micros numeric(30,0),cost_source text,usage jsonb,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now());
-      CREATE INDEX IF NOT EXISTS app_model_execution_stages_operation ON app_model_execution_stages(operation_id,created_at);
-      ALTER TABLE app_model_execution_stages ADD COLUMN IF NOT EXISTS procurement jsonb;
-      ALTER TABLE app_model_execution_stages ADD COLUMN IF NOT EXISTS cost_cny_micros numeric(30,0);
-      ALTER TABLE app_model_execution_stages ADD COLUMN IF NOT EXISTS cost_status text NOT NULL DEFAULT 'unknown';`).catch(e => { ready.delete(pool); throw e; });
-    ready.set(pool, p);
-  }
-  await p;
-}
+import {randomUUID} from "node:crypto";
+import {dbEnabled,getPool} from "@/platform/db/pool";
+import {currentSynchronousBilling} from "@/lib/billing/synchronous-operation";
+import {currentImageOperationId} from "../image-gateway";
+import type {ModelExecutionScope} from "./context";
+import {procurementCny} from "./business";
+import {ModelConfigError} from "./types";
+
+import {stageCost} from "./stage-cost";
+
+
 export async function beginExecutionStage(scope: ModelExecutionScope, attempt: number, ruleId?: string) {
   const id = randomUUID();
   if (!dbEnabled) return id;
   const pool = getPool(); await ensureExecutionAuditSchema(pool);
-  const { currentBiOperationId } = await import("../bi/model-observer");
+  const {currentBiOperationId} = await import("@/lib/bi/context");
   const operation = currentSynchronousBilling()?.id || currentBiOperationId() || currentImageOperationId() || id;
   const cost = procurementCny(scope.procurement);
   const tx = await pool.connect();
@@ -45,8 +32,8 @@ export async function beginExecutionStage(scope: ModelExecutionScope, attempt: n
     }
     await tx.query("INSERT INTO app_model_execution_stages(id,operation_id,feature,public_model_id,model_version,billing_version,provider_id,wire_model,matched_rule_id,phase,state,attempt,estimated_cost_cny_micros,cost_source) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$13,'submitted',$10,$11,$12)", [id,operation,scope.frozen.feature || scope.frozen.binding,scope.frozen.publicModelId,scope.frozen.modelVersion,scope.frozen.billingVersion,scope.connection.providerId,scope.connection.wireModel,ruleId || null,attempt,cost?.basis !== "tokens" ? cost?.amountMicros ?? null : null,cost ? `${cost.source};${cost.updatedAt}` : "unknown",scope.frozen.modality === "text" ? "text" : scope.frozen.binding === "image.edit" ? "edit" : "generation"]);
     await tx.query("UPDATE app_model_execution_stages SET procurement=$2::jsonb WHERE id=$1", [id, scope.procurement ? JSON.stringify(scope.procurement) : null]);
-    const parameterPlan=executionImageParameterPlan(scope);
-    if(parameterPlan)await tx.query("UPDATE app_model_execution_stages SET usage=$2::jsonb WHERE id=$1",[id,JSON.stringify({parameterPlan})]);
+    const parameterPlan=executionImageParameterPlan(scope),imageOperationId=scope.frozen.modality==="image"?currentImageOperationId():null;
+    if(parameterPlan||imageOperationId)await tx.query("UPDATE app_model_execution_stages SET usage=$2::jsonb WHERE id=$1",[id,JSON.stringify({...(parameterPlan?{parameterPlan}:{}),...(imageOperationId?{imageOperationId}:{})})]);
     await tx.query("COMMIT"); return id;
   } catch (e) { await tx.query("ROLLBACK"); throw e; } finally { tx.release(); }
 }

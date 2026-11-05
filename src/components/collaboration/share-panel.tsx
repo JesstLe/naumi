@@ -2,7 +2,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ArrowUpRight, Check, Share2, X } from "lucide-react";
-import { useCollaborationState } from "./collaboration-provider";
+import { useCollaborationState } from "./collaboration-context";
 import { ShareCover, shareStatus } from "./message-content";
 import { isAbort } from "./transport";
 import type { CanvasShare } from "@/lib/collaboration/contracts";

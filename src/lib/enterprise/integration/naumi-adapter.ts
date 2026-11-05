@@ -1,9 +1,11 @@
 import 'server-only';
 import type { TeamActor } from '@/lib/teams/grants';
-import { TeamError } from '@/lib/teams/server';
+import { TeamError } from "@/lib/teams/errors";
 import { enterpriseList,enterpriseSnapshot,enterpriseRead } from '../server';
 import { enterpriseAnalytics,analyticsQuerySchema } from '../analytics';
-import { ensureBiSchema,queryBi,queryEnterpriseOperations } from '@/lib/bi/repository';
+import {queryBi,queryEnterpriseOperations} from "@/lib/bi/repository";
+import {ensureBiSchema} from "@/lib/bi/schema";
+
 import { parseBiQuery } from '@/lib/bi/contracts';
 import type { BiRow } from '@/lib/bi/contracts';
 import type { DeploymentPolicy,EnterpriseDataPort,IntegrationPage,RecordQuery } from './contracts';

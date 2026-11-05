@@ -35,9 +35,9 @@ function option(name, fallback) {
 const baseline = args.includes('--baseline');
 const beforeRoot = path.join(taskDir, 'before');
 const sourceRoot = option('--source-root', baseline ? beforeRoot : workspace);
-const outputRoot = option('--output-root', path.join(taskDir, 'tests'));
+const outputRoot = option('--output-root', process.env.IMAGEGEN_PARENT_COMPLETION_EVIDENCE || path.join(taskDir, 'tests'));
 const changedFiles = new Set([
-  'src/lib/durable-image-jobs.ts',
+  'src/lib/image-jobs/runtime.ts',
   'src/lib/imagegen/dispatch.ts',
   'src/lib/release-runtime/background-activity.ts',
 ]);
@@ -105,7 +105,7 @@ function fixture({runtime = true} = {}) {
   class Clock extends Date {constructor(...values) {super(...(values.length ? values : [f.clock]));} static now() {return f.clock;}}
   const timers = {setInterval: () => {const h = {unref() {}}; f.handles.add(h); return h;},
     clearInterval: h => f.handles.delete(h),
-    setTimeout: fail('unexpected-product-timer'), clearTimeout: () => {}};
+    setTimeout: () => {const h={unref(){}};f.handles.add(h);return h;}, clearTimeout: h => f.handles.delete(h)};
   class DurableALS extends AsyncLocalStorage {constructor() {super(); f.executionALS = this;}}
   const identity = {releaseRuntimeEnabled: () => f.runtime,
     releaseIdentity: () => ({instanceId: 'fixture-instance', bootId: 'fixture-boot'}),
@@ -143,7 +143,7 @@ function fixture({runtime = true} = {}) {
   const billing = {createBillingService: () => new Proxy({}, {get: (_t, name) => (..._args) => {
     f.metrics.settleCalls++; throw new ForbiddenBusinessEntry(`FORBIDDEN_BILLING_SERVICE:${String(name)}`);
   }})};
-  const pool = {query: (...values) => query(...values), connect: async () => ({query: (...values) => query(...values), release() {}})};
+  const pool = {query: (...values) => query(...values), connect: async () => ({query: (...values) => query(...values),on(){},removeListener(){},release() {}})};
   function notificationContext(id, kind) {
     const execution = f.executionALS?.getStore();
     const background = processFixture[Symbol.for('naumi.release.background-context.v1')]?.getStore();
@@ -203,10 +203,13 @@ function fixture({runtime = true} = {}) {
       row.lease_token = p[2]; row.lease_until = f.clock + 120000; f.metrics.claims++;
       f.event('claim', {id: row.id, token: p[2]}); return result([copy(row)]);
     }
+    if(sql.startsWith('SELECT id FROM app_image_jobs WHERE id=$1')){const row=f.rows.get(p[0]);return result(row&&(!sql.includes('snapshot=$2::jsonb')||jsonEqual(row.snapshot,JSON.parse(p[1])))?[{id:row.id}]:[]);}
+    if(sql.startsWith('SELECT 1 FROM app_image_jobs WHERE id=$1')){const row=f.rows.get(p[0]);return result(row&&(p[1]!=null?row.lease_token===p[1]&&row.lease_until>f.clock:row.lease_token===null&&(row.lease_until===null||row.lease_until<f.clock))?[{'?column?':1}]:[]);}
+    if(sql.startsWith("UPDATE app_image_jobs SET snapshot=snapshot-'creationEvidencePending'")){const row=f.rows.get(p[0]);if(row&&jsonEqual(row.snapshot,JSON.parse(p[1])))delete row.snapshot.creationEvidencePending;return result([]);}
     if (sql.startsWith('UPDATE app_image_jobs SET snapshot=$2::jsonb,updated_at=now()')) {
       const row = f.rows.get(p[0]), snapshot = JSON.parse(p[1]);
       if (f.hooks.beforeSave) await f.hooks.beforeSave(row, snapshot);
-      if (!row || !(p[2] !== null ? row.lease_token === p[2] && row.lease_until > f.clock : row.lease_until === null || row.lease_until < f.clock)) return result([]);
+      if (!row || p.length>2&&!(p[2] !== null ? row.lease_token === p[2] && row.lease_until > f.clock : row.lease_until === null || row.lease_until < f.clock)) return result([]);
       row.snapshot = snapshot; f.event('snapshot-saved', {id: row.id, status: snapshot.status, token: p[2]});
       if (f.hooks.afterSave) await f.hooks.afterSave(row, snapshot);
       return result([{id: row.id}]);
@@ -233,6 +236,10 @@ function fixture({runtime = true} = {}) {
     if (sql.includes("payload->'creationScope' AS scope")) {
       const row = f.rows.get(p[0]); return result(row?.email === p[1] && row.kind === 'imagegen' ? [{scope: copy(row.payload.creationScope)}] : []);
     }
+    if (sql.includes('COALESCE((SELECT -sum(l.delta)') && sql.includes('FROM app_image_jobs j')) {
+      return result(p[0].map(id=>f.rows.get(id)).filter(row=>row?.email===p[1]).map(row=>({id:row.id,billing_settled:row.billing_settled,legacy_charge:'0'})));
+    }
+    if (sql.startsWith('SELECT id,state,charged_credits FROM app_billing_operations')) return result(f.ledger.filter(row=>row.email===p[0]&&p[1].includes(row.id)));
     if (sql.startsWith('SELECT COALESCE(sum(charged_credits),0)::int AS n')) {
       const ids = new Set([...p[1], ...p[2]]); return result([{n: f.ledger.filter(x => x.email === p[0] && ids.has(x.id)).reduce((n, x) => n + x.charged_credits, 0)}]);
     }
@@ -245,6 +252,10 @@ function fixture({runtime = true} = {}) {
     }
     if (sql.startsWith('INSERT INTO app_creation_events')) {
       const k = `${p[1]}:${p[2]}`; if (!f.events.has(k)) f.events.set(k, {id: p[0], creation_id: p[1], event_key: p[2], status: p[4]}); return result([]);
+    }
+    if (sql === 'SELECT image_url,video_url,canvas_image_version FROM app_artworks WHERE id=$1 AND email=$2 FOR SHARE') {
+      const row = f.works.get(p[0]);
+      return result(row?.email === p[1] ? [{image_url: row.image_url ?? row.image, video_url: row.video_url ?? null, canvas_image_version: row.canvas_image_version ?? null}] : []);
     }
     if (sql.startsWith('SELECT 1 FROM app_artworks WHERE id=$1 AND email=$2')) {
       const row = f.works.get(p[0]); return result(row?.email === p[1] ? [{'?column?': 1}] : []);
@@ -261,55 +272,56 @@ function fixture({runtime = true} = {}) {
     }
     if (sql === "SELECT to_regclass('app_media_assets') AS name") return result([{name: null}]);
     if (sql.startsWith('INSERT INTO app_creation_assets')) {
-      const a = {id: p[0], creation_id: p[1], actor_email: p[2], direction: p[3], role: p[4], position: p[5], variant: p[6], storage_ref: p[7]};
+      const a = {id: p[0], creation_id: p[1], actor_email: p[2], direction: p[3], role: p[4], position: p[5], variant: p[6], storage_ref: p[7], storage_snapshot: p[16]};
       const k = JSON.stringify([a.creation_id, a.direction, a.role, a.position, a.variant]); if (!f.assets.has(k)) f.assets.set(k, a); return result([]);
     }
     if (/^(UPDATE|INSERT|DELETE).*app_(billing|ledger|gen_reservations)/.test(sql)) {f.metrics.billingWrites++; throw new ForbiddenBusinessEntry(`BILLING_WRITE:${sql}`);}
     throw new FixtureBoundaryError(`UNHANDLED_SQL:${sql}`);
   }
   const dependencies = {
-    'src/lib/durable-image-jobs.ts': {
-      './saas/creation-context': () => load('src/lib/saas/creation-context.ts'),
+    'src/lib/image-jobs/runtime.ts': {
+      '@/lib/saas/creation-scope': () => load('src/lib/saas/creation-scope.ts'),
       '@/lib/release-runtime/background-activity': () => load('src/lib/release-runtime/background-activity.ts'),
-      '@/lib/release-runtime/identity': identity, '@/lib/db': db, './staging-history': {assertMutableStagingTask: async () => {}},
+      '@/lib/release-runtime/identity': identity, '@/platform/db/pool': db, '@/lib/staging-history': {assertMutableStagingTask: async () => {}},
       '@/lib/storage': {uploadImage: fail('unexpected-upload'), readManagedObject: fail('unexpected-managed-object')},
       '@/lib/settings-secret': {workerSecret: fail('worker-secret')},
       '@/lib/image-job-repository': () => load('src/lib/image-job-repository.ts'),
       '@/lib/image-gateway': {ImageOperationPending: Pending, ImageOperationDeferred: Deferred,
         isImageGatewayModel: () => false, withImageOperation: fail('supplier-paid-operation'), withImageIndexCheckpoint: fail('supplier-index')},
+      '@/lib/image-quality': () => load('src/lib/image-quality.ts'),
       './image-job-queue': () => load('src/lib/image-job-queue.ts'), '@/lib/settings': {getOpenAISettings: fail('supplier-settings')},
       '@/lib/openai-base': {getOpenAIBaseUrl: fail('supplier-origin')},
-      '@/lib/bi/model-observer': {withBiModelContext: async (_owner, _kind, _id, run) => run()},
+      '@/lib/bi/context': {withBiModelContext: async (_owner, _kind, _id, run) => run()},
       '@/lib/model-config/context': modelContext, '@/lib/model-config/execution': {withFrozenExecutionBundle: async (_bundle, run) => run()},
       '@/lib/model-config/channel-availability': {acceptedImageOperationIdentities: fail('supplier-accepted-identities'), withAcceptedImageRead: fail('supplier-accepted-read')},
-      './image-job-failure': () => load('src/lib/image-job-failure.ts'),
+      '@/lib/image-job-failure': () => load('src/lib/image-job-failure.ts'),
       './imagegen/dispatch': () => load('src/lib/imagegen/dispatch.ts'),
     },
     'src/lib/image-job-repository.ts': {
-      './saas/creation-context': () => load('src/lib/saas/creation-context.ts'),
+      '@/lib/saas/creation-scope': () => load('src/lib/saas/creation-scope.ts'),
       './saas/creation-writer': () => load('src/lib/saas/creation-writer.ts'), './image-job-queue': () => load('src/lib/image-job-queue.ts'),
-      '@/lib/db': db, '@/lib/billing/service': billing, './image-job-failure': () => load('src/lib/image-job-failure.ts'),
+      '@/platform/db/pool': db, '@/lib/billing/service': billing, '@/lib/image-job-failure': () => load('src/lib/image-job-failure.ts'),
       './billing/repository': {lockWallet: fail('wallet-lock'), syncBalanceTx: fail('wallet-sync')},
-      './staging-history': {assertMutableStagingTask: async () => {}, excludeImportedHistory: () => '', isImportedHistory: async () => false},
+      '@/lib/staging-history': {assertMutableStagingTask: async () => {}, excludeImportedHistory: () => '', isImportedHistory: async () => false},
     },
-    'src/lib/saas/creation-context.ts': {
-      '@/lib/db': db, '@/lib/enterprise/server': {enterpriseCreationRead: fail('enterprise-read')},
+    'src/lib/saas/creation-scope.ts': {
+      '@/platform/db/pool': db, '@/lib/enterprise/server': {enterpriseCreationRead: fail('enterprise-read')},
       '@/lib/teams/server': {TeamError}, './creation-schema': {ensureCreationSchema: async () => {}},
       '@/lib/settings-secret': {settingsSecret: fail('settings-secret')},
       '@/lib/feature-access/catalog': {}, '@/lib/feature-access/server': {},
     },
     'src/lib/saas/creation-writer.ts': {
-      './creation-context': () => load('src/lib/saas/creation-context.ts'), './creation-contracts': () => load('src/lib/saas/creation-contracts.ts'),
-      '@/lib/model-config/context': modelContext, '@/lib/db': db, './creation-schema': {ensureCreationSchema: async () => {}},
+      './creation-scope': () => load('src/lib/saas/creation-scope.ts'), './creation-contracts': () => load('src/lib/saas/creation-contracts.ts'),
+      '@/lib/model-config/context': modelContext, '@/platform/db/pool': db, './creation-schema': {ensureCreationSchema: async () => {}},
       '@/lib/storage': {uploadImage: fail('creation-upload')}, '@/lib/bi/call-scope': {currentObservedCallId: () => undefined}, '@/lib/teams/server': {TeamError},
     },
     'src/lib/release-runtime/background-activity.ts': {
       './identity': identity, './accepted-context': {currentAcceptedParent: () => undefined}, './store': store,
     },
-    'src/lib/imagegen/creation-scope.ts': {'../saas/creation-context': () => load('src/lib/saas/creation-context.ts')},
-    'src/lib/imagegen/output-advisory.ts': {'./request-size': {imageRatioMismatch: fail('unused-ratio-comparison')}},
+    'src/lib/imagegen/creation-scope.ts': {'@/lib/saas/creation-scope': () => load('src/lib/saas/creation-scope.ts')},
+    'src/lib/imagegen/output-advisory.ts': {'./request-size': {imageRatioMismatch: fail('unused-ratio-comparison')}, './notice-visibility': () => load('src/lib/imagegen/notice-visibility.ts')},
     'src/lib/imagegen/dispatch.ts': {
-      '../durable-image-jobs': () => load('src/lib/durable-image-jobs.ts'), '../db': db,
+      '@/lib/image-jobs/runtime': () => load('src/lib/image-jobs/runtime.ts'), '@/platform/db/pool': db,
       '../canvas-image-input': {readCanvasOutput: async url => {
         assert.ok([...f.works.values()].some(w => w.image === url), 'media fixture serves only saved artworks');
         return {buffer: Buffer.from('fixture-pixels'), mimeType: 'image/png'};
@@ -327,52 +339,133 @@ function fixture({runtime = true} = {}) {
       '../image-job-review': {storedImageReview: async () => null, IMAGE_REVIEW_MESSAGE: 'fixture-review'},
       './stored-delivery': {storedDeliveryState: async () => null, recoverStoredDelivery: fail('unexpected-recovery')},
       './completed-parent-receipt': {finalizeCompletedParent:async()=>false},
-      '../saas/creation-context': () => load('src/lib/saas/creation-context.ts'), './creation-scope': () => load('src/lib/imagegen/creation-scope.ts'),
+      '@/lib/saas/creation-scope': () => load('src/lib/saas/creation-scope.ts'), './creation-scope': () => load('src/lib/imagegen/creation-scope.ts'),
     },
     'src/lib/imagegen/generation-core.ts': {
       '../native-auth': {signUserSession: fail('generation-auth'), USER_COOKIE: 'fixture'},
       '../model-config/accepted-context': {signAcceptedModelContext: fail('generation-context')},
       './inputs': {readImagegenInputs: fail('generation-inputs')}, './prompt': {compileImagegenPrompt: fail('generation-prompt')},
-      './context': {withImagegenStep: fail('generation-step')}, '../db': db,
-      '../saas/creation-context': () => load('src/lib/saas/creation-context.ts'),
+      './context': {withImagegenStep: fail('generation-step')}, '@/platform/db/pool': db,
+      '@/lib/saas/creation-scope': () => load('src/lib/saas/creation-scope.ts'),
     },
     'src/lib/imagegen/cancel.ts': {
       './coordination-pool': {imageCoordinationPool: () => pool},
       '../image-job-repository': () => load('src/lib/image-job-repository.ts'), './creation-scope': () => load('src/lib/imagegen/creation-scope.ts'),
     },
   };
+
+  // Execute the existing attachment owner: without canvasTarget it must return
+  // before schema/DB/history effects, rather than a sentinel rejecting success.
+  dependencies['src/lib/imagegen/dispatch.ts']['../canvas/image-version-store']=()=>load('src/lib/canvas/image-version-store.ts');
+  dependencies['src/lib/canvas/image-version-store.ts']={
+    '../persistence/schema':{ensureSchema:fail('unexpected-canvas-schema')},
+    './storage-schema':{ensureCanvasSettingsSchema:fail('unexpected-canvas-schema'),ensureCanvasImageVersionSchema:fail('unexpected-canvas-schema')},
+    '../saas/creation-access':{assertCreationProjectInput:fail('unexpected-canvas-access')},
+    '../saas/creation-scope':()=>load('src/lib/saas/creation-scope.ts'),
+    '../saas/creation-schema':{ensureCreationSchema:fail('unexpected-canvas-schema')},
+    './image-versions':()=>load('src/lib/canvas/image-versions.ts'),
+  };
+  dependencies['src/lib/imagegen/dispatch.ts']['./task-diagnostics']=()=>load('src/lib/imagegen/task-diagnostics.ts');
+  dependencies['src/lib/imagegen/dispatch.ts']['./delivery-billing']=()=>load('src/lib/imagegen/delivery-billing.ts');
+  dependencies['src/lib/imagegen/delivery-billing.ts']={'@/platform/db/pool':db};
+  // Follow the scheduling owner,not the retired repository function bodies.
+  dependencies['src/lib/image-job-repository.ts']['./image-jobs/scheduling']=()=>load('src/lib/image-jobs/scheduling.ts');
+  dependencies['src/lib/image-jobs/runtime.ts']['./scheduling']=()=>load('src/lib/image-jobs/scheduling.ts');
+  dependencies['src/lib/image-jobs/scheduling.ts']={
+    '@/platform/db/pool':db,'@/lib/persistence/schema':{ensureSchema:async()=>{}},
+    '../image-job-queue':()=>load('src/lib/image-job-queue.ts'),'../image-job-lease':()=>load('src/lib/image-job-lease.ts'),
+    '../staging-history':dependencies['src/lib/image-job-repository.ts']['@/lib/staging-history'],
+  };
+  dependencies['src/lib/image-jobs/runtime.ts']['../image-job-codec']=()=>load('src/lib/image-job-codec.ts');
+  dependencies['src/lib/image-jobs/runtime.ts']['../image-job-lease']=()=>load('src/lib/image-job-lease.ts');
+  dependencies['src/lib/image-job-codec.ts']={
+    './object-storage/runtime':{dataUrlToBytes:fail('unexpected-byte-input')},
+    './media-upload':{uploadImage:fail('unexpected-byte-upload')},
+    './object-storage/managed-read':{readManagedObject:fail('unexpected-byte-read')},
+    './image-jobs/result-storage':{writeImageJobResult:fail('unexpected-byte-result'),readImageJobResult:fail('unexpected-byte-result-read')},
+  };
+  dependencies['src/lib/image-job-repository.ts']['./image-job-lease']=()=>load('src/lib/image-job-lease.ts');
+  // Ownership-only aliases: execute the same fixture boundaries after the refactor.
+  for (const deps of Object.values(dependencies)) {
+    if (deps['@/lib/storage']) {deps['@/lib/media-upload']=deps['@/lib/storage'];deps['@/lib/object-storage/managed-read']=deps['@/lib/storage'];deps['@/lib/object-storage/runtime']=deps['@/lib/storage'];}
+    if (deps['@/lib/teams/server']) deps['@/lib/teams/errors']=deps['@/lib/teams/server'];
+  }
+  dependencies['src/lib/image-jobs/runtime.ts']['@/lib/application/task-execution']={deferApplicationTask:async()=>false};
+  dependencies['src/lib/image-jobs/runtime.ts']['@/lib/worker/inflight']=()=>load('src/lib/worker/inflight.ts');
+  dependencies['src/lib/image-job-repository.ts']['@/lib/saas/creation-scope']=()=>load('src/lib/saas/creation-scope.ts');
+  dependencies['src/lib/image-job-repository.ts']['@/lib/persistence/schema']={ensureSchema:async()=>{}};
+  dependencies['src/lib/image-job-repository.ts']['@/lib/billing/wallet-balance']={deductPrincipalFIFO:fail('wallet-deduct'),refreshBalance:fail('wallet-refresh'),expireDueBatches:fail('wallet-expire')};
+  // Follow the actual billing-owned implementation; unexpected paid effects
+  // remain throwing boundary sentinels, not replacements for task functions.
+  dependencies['src/lib/image-job-repository.ts']['@/lib/billing/task-settlement']=()=>load('src/lib/billing/task-settlement.ts');
+  dependencies['src/lib/billing/task-settlement.ts']={
+    './service':billing,
+    './wallet-balance':dependencies['src/lib/image-job-repository.ts']['@/lib/billing/wallet-balance'],
+    './repository':{lockWallet:fail('wallet-lock'),syncBalanceTx:fail('wallet-sync')},
+  };
+  dependencies['src/lib/image-job-repository.ts']['@/lib/billing/runtime']={creditMeteringEnabled:async()=>true};
+  dependencies['src/lib/image-job-repository.ts']['./image-job-failure']=()=>load('src/lib/image-job-failure.ts');
+  dependencies['src/lib/image-job-repository.ts']['./staging-history']=dependencies['src/lib/image-job-repository.ts']['@/lib/staging-history'];
+  dependencies['src/lib/saas/creation-writer.ts']['./creation-outcome-policy']=()=>load('src/lib/saas/creation-outcome-policy.ts');
+  dependencies['src/lib/release-runtime/background-activity.ts']['../worker/inflight']=()=>load('src/lib/worker/inflight.ts');
+  dependencies['src/lib/imagegen/generation-core.ts']['./operation-id']=()=>load('src/lib/imagegen/operation-id.ts');
+  dependencies['src/lib/imagegen/generation-core.ts']['./step-intent']=()=>load('src/lib/imagegen/step-intent.ts');
+  dependencies['src/lib/imagegen/generation-core.ts']['./generation-operation']={submitGenerationOperation:fail('generation-business-entry')};
+  dependencies['src/lib/imagegen/generation-core.ts']['../billing/submission-identity']={multipartFieldText:value=>value};
+  dependencies['src/lib/imagegen/generation-core.ts']['@/lib/artworks/repository']={listArtworksByIds:async()=>[]};
+  dependencies['src/lib/imagegen/generation-core.ts']['@/lib/saas/creation-access']={assertCreationProjectInput:fail('generation-project')};
+  dependencies['src/lib/imagegen/creation-scope.ts']['@/lib/saas/creation-scope']=()=>load('src/lib/saas/creation-scope.ts');
+  dependencies['src/lib/imagegen/dispatch.ts']['@/lib/artworks/repository']={listArtworksByIds:async(owner,ids)=>ids.map(id=>f.works.get(id)).filter(w=>w?.email===owner)};
+  dependencies['src/lib/imagegen/dispatch.ts']['@/lib/artworks/writer']={addArtworks:fail('unexpected-artwork-write')};
+  dependencies['src/lib/imagegen/dispatch.ts']['./retry-eligibility']=()=>load('src/lib/imagegen/retry-eligibility.ts');
+  dependencies['src/lib/imagegen/retry-eligibility.ts']={'@/platform/db/pool':db,'../model-config/image-rejection-evidence':()=>load('src/lib/model-config/image-rejection-evidence.ts'),'../image-job-failure':()=>load('src/lib/image-job-failure.ts'),'./creation-scope':()=>load('src/lib/imagegen/creation-scope.ts'),'./delivery-billing':()=>load('src/lib/imagegen/delivery-billing.ts')};
+  dependencies['src/lib/model-config/image-rejection-evidence.ts']={'@/platform/db/pool':db,'./image-rejection-policy':()=>load('src/lib/model-config/image-rejection-policy.ts')};
+  dependencies['src/lib/imagegen/dispatch.ts']['./delivery-billing']=()=>load('src/lib/imagegen/delivery-billing.ts');
+  dependencies['src/lib/imagegen/delivery-billing.ts']={'@/platform/db/pool':db,'./operation-id':()=>load('src/lib/imagegen/operation-id.ts')};
+
   function load(relative) {
     if (f.modules.has(relative)) return f.modules.get(relative).exports;
-    const {selected, code} = readSource(relative), module = {exports: {}}; f.modules.set(relative, module);
+    const {selected, code} = readSource(relative), loadedModule = {exports: {}}; f.modules.set(relative, loadedModule);
     const imports = specifier => {
       if (specifier === 'server-only') return {};
       if (specifier === 'zod') return require('zod');
       if (specifier === 'node:process') return processFixture;
       if (specifier === 'node:crypto') return crypto;
-      if (specifier === 'node:async_hooks') return {AsyncLocalStorage: relative === 'src/lib/durable-image-jobs.ts' ? DurableALS : AsyncLocalStorage};
-      if ((specifier==='./task-diagnostics' && relative==='src/lib/imagegen/dispatch.ts') || (specifier==='./imagegen/task-diagnostics' && ['src/lib/durable-image-jobs.ts','src/lib/image-job-repository.ts'].includes(relative))) return load('src/lib/imagegen/task-diagnostics.ts');
+      if (specifier === 'node:async_hooks') return {AsyncLocalStorage: relative === 'src/lib/image-jobs/runtime.ts' ? DurableALS : AsyncLocalStorage};
+      if(specifier==='../image-job-cleanup'||specifier==='./image-job-cleanup')return load('src/lib/image-job-cleanup.ts');
+      if(relative==='src/lib/image-job-cleanup.ts'&&specifier==='./imagegen/task-diagnostics')return load('src/lib/imagegen/task-diagnostics.ts');
+      const ownedPorts={
+        '@/platform/db/pool':db,
+        '@/lib/saas/creation-scope':()=>load('src/lib/saas/creation-scope.ts'),
+        '@/lib/saas/creation-access':{bindActualCreationProject:fail('unexpected-project-bind')},
+        '@/platform/db/transaction':()=>load('src/platform/db/transaction.ts'),
+        '@/lib/persistence/schema':{ensureSchema:async()=>{}},
+      };
+      if(Object.hasOwn(ownedPorts,specifier))return typeof ownedPorts[specifier]==='function'?ownedPorts[specifier]():ownedPorts[specifier];
+      if ((specifier==='./task-diagnostics' && relative==='src/lib/imagegen/dispatch.ts') || (specifier==='./imagegen/task-diagnostics' && ['src/lib/image-job-repository.ts'].includes(relative))) return load('src/lib/imagegen/task-diagnostics.ts');
+      if(relative==='src/lib/image-jobs/runtime.ts' && specifier==='../imagegen/task-diagnostics')return load('src/lib/imagegen/task-diagnostics.ts');
       if(relative==='src/lib/imagegen/task-diagnostics.ts' && specifier==='./failure-evidence')return load('src/lib/imagegen/failure-evidence.ts');
       if(relative==='src/lib/image-job-queue.ts' && specifier==='./runtime/positive-integer')return load('src/lib/runtime/positive-integer.ts');
       const map = dependencies[relative] || {};
       if (!Object.hasOwn(map, specifier)) throw new FixtureBoundaryError(`UNMOCKED_IMPORT:${relative}:${specifier}`);
       return typeof map[specifier] === 'function' ? map[specifier]() : map[specifier];
     };
-    vm.runInNewContext(code, {module, exports: module.exports, require: imports, Buffer, structuredClone,
-      URL, Request, Response, Headers, AbortSignal, Date: Clock, process: processFixture,
+    vm.runInNewContext(code, {module:loadedModule, exports: loadedModule.exports, require: imports, Buffer, structuredClone,
+      URL, Request, Response, Headers, AbortSignal, Date: Clock, performance:{now:()=>f.clock},process: processFixture,
       console: {error: (...v) => f.logs.push(v.map(String).join(' ')), log: (...v) => f.logs.push(v.map(String).join(' '))},
       fetch: (..._v) => {f.metrics.network++; f.metrics.supplierPosts++; throw new ForbiddenBusinessEntry('FORBIDDEN_NETWORK');},
       ...timers}, {filename: selected, timeout: 10000});
     if (relative === 'src/lib/image-job-repository.ts') {
-      const settle = module.exports.settleImageJob;
-      module.exports.settleImageJob = (...v) => {f.metrics.settleCalls++; return settle(...v);};
+      const settle = loadedModule.exports.settleImageJob;
+      loadedModule.exports.settleImageJob = (...v) => {f.metrics.settleCalls++; return settle(...v);};
     }
-    return module.exports;
+    return loadedModule.exports;
   }
   f.load = load;
   f.api = load('src/lib/imagegen/dispatch.ts');
   f.repository = load('src/lib/image-job-repository.ts');
   f.background = load('src/lib/release-runtime/background-activity.ts');
-  f.childJobs = new (load('src/lib/durable-image-jobs.ts').DurableImageJobs)('generate');
+  f.childJobs = new (load('src/lib/image-jobs/runtime.ts').DurableImageJobs)('generate', f.api.notifyImagegenJobReleased);
   f.scope = id => ({actorEmail: OWNER, scopeKind: 'personal', tenantId: null, creationId: id});
   f.plan = {request: {version: 1, operationId: OP, entry: 'canvas', mode: 'generate', prompt: 'fixture',
     inputs: [], output: {format: 'png'}, parameters: {}, variants: 1},
@@ -562,7 +655,7 @@ async function modifiedRun() {
     const f = fixture(); f.hooks.notifyError = true; await f.completeChild(); await drain(f);
     assert.equal(f.child().snapshot.status, 'done'); assert.equal(f.child().billing_settled, true);
     assert.equal(f.parent().snapshot.status, 'pending'); assert.equal(f.creations.get('creation-parent').status, 'queued');
-    assert.ok(f.logs.some(s => s.includes('parent notification failed')));
+    assert.ok(f.logs.some(s => s.includes('[image-job-cleanup] stage=parent-notify')));
     assert.ok(f.logs.every(s => !s.includes('DO_NOT_LOG_SECRET')), 'notification failure logs fixed text, not raw DB error');
   });
   await caseRun('snapshot CAS rejects changed snapshot or newly acquired lease', async () => {

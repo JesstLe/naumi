@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
-import { dbEnabled, createOrder } from "@/lib/db";
+import {createOrder} from "@/lib/payments/orders";
+import {dbEnabled} from "@/platform/db/pool";
 import { resolveItem } from "@/lib/payments";
 import { getPaymentSettings, getPaymentStatus } from "@/lib/settings";
 import { alipayPrecreate } from "@/lib/pay/alipay";
 import { wechatNativePrecreate } from "@/lib/pay/wechatpay";
 import { publicCommerceEnabled } from "@/lib/commerce";
-import { billingSwitches } from "@/lib/billing/server";
+import {billingSwitches} from "@/lib/billing/runtime";
 import { billingErrorResponse } from "@/lib/billing/request";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { ZodError } from "zod";
 import { BillingError } from "../billing/types";
 import { ModelConfigError } from "../model-config/types";
-import { FeatureAccessError } from "../feature-access/server";
+import {FeatureAccessError} from "@/lib/feature-access/repository";
 import { ExactImageSizeError } from "../imagegen/request-size";
 import { ImagegenPlanError } from "../imagegen/plan-error";
 import { WorkbenchError } from "./contract";

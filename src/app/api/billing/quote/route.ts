@@ -7,14 +7,14 @@ import {issueImageBillingQuote} from "@/lib/billing/image-quotes";
 import {imageBillingFeature} from "@/lib/billing/image-quote-policy";
 import {withCreationRoute} from "@/lib/saas/creation-context";
 export const runtime = "nodejs", dynamic = "force-dynamic";
-async function handlePost(request: Request) { if (!sameSiteBillingMutation(request))
+async function handlePost(request: Request,authenticatedActor?:string|null) { if (!sameSiteBillingMutation(request))
     return billingJson({ error: "请求来源无效" }, 403); try {
     const selection=publicFactsSchema.parse(await request.json());
     const unresolvedFrame=imageBillingFeature(selection.feature)&&selection.ratio==="auto";
-    const q = await quoteForRequest(request, selection, undefined, {deferImageFrame:unresolvedFrame});
+    const q = await quoteForRequest(request, selection, undefined, {deferImageFrame:unresolvedFrame},authenticatedActor);
     // A display price is not an executable quote for a guessed frame. Canvas
     // resolves its real inputs before requesting the final, immutable quote.
-    const quote=unresolvedFrame?undefined:await issueImageBillingQuote(request,q);
+    const quote=unresolvedFrame?undefined:await issueImageBillingQuote(request,q,authenticatedActor);
     return billingJson({ ...(quote?{quote,selection}:{}),version: q.configVersion, modelVersion: q.modelVersion, modelId: q.facts.modelId, mode: q.tariff.pricing.mode, authorization: ["usage","api-cost-plus"].includes(q.tariff.pricing.mode), credits: q.requestedCredits, authorizedCredits:q.authorizedCredits, reserveCredits: q.reserveCredits, costStatus:q.tariff.pricing.mode==="api-cost-plus"?"estimated":undefined, requestedParameters:q.requestedParameters,effectiveParameters:q.effectiveParameters, feature: q.facts.feature, quantity: q.facts.quantity });
 }
 catch (e) {
@@ -22,4 +22,4 @@ catch (e) {
         return billingJson({ error: "报价参数无效" }, 400);
     return billingErrorResponse(e);
 } }
-export async function POST(request:Request){return withCreationRoute(request,()=>handlePost(request));}
+export async function POST(request:Request){return withCreationRoute(request,actor=>handlePost(request,actor));}

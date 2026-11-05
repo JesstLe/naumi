@@ -80,4 +80,3 @@
 关键回执：POSTFLIGHT.json、live-evidence/FINAL_ACCEPTANCE.json、FINAL_LOCKS_RELEASED.json、CONTINUITY_SUMMARY.json、PUBLIC_ACCEPTANCE_AGGREGATE.json、PUBLIC_NOTES_POLICY.json、local-verification/FINAL.json。
 
 本文为发布后记录；后续文档提交不改变线上固定commit6eddec90。
-

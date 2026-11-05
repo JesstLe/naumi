@@ -1,4 +1,4 @@
-import {registerVideoWireProfile} from "../wire";
+import {registerVideoWireProfile} from "../wire-registry";
 import {arkCodec} from "./ark";
 import {geminiCodec} from "./gemini";
 import {minimaxCodec} from "./minimax";

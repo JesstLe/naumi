@@ -3,7 +3,8 @@ import { createHash, randomUUID } from "node:crypto";
 import type { Pool } from "pg";
 import type { ChannelPolicy } from "./channel-policy";
 import type { ModelExecutionScope } from "./context";
-import { ensureModelSchema } from "./schema";
+import {ensureModelSchema} from "@/lib/model-config/storage-schema";
+
 import { createProviderCapacity } from "./capacity";
 import { ModelConfigError } from "./types";
 import { imageModelDisplayId } from "../image-model-routing";

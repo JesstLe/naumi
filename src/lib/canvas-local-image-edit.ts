@@ -2,13 +2,16 @@ import "server-only";
 import sharp from "sharp";
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { getPool, listArtworksByIds } from "@/lib/db";
-import { uploadImage } from "@/lib/storage";
+import {getPool} from "@/platform/db/pool";
+import {listArtworksByIds} from "@/lib/artworks/repository";
+import { uploadImage } from "@/lib/media-upload";
 import { readCanvasOutput } from "@/lib/canvas-image-input";
 import { IMAGEGEN_OUTPUT_MAX_BYTES } from "./imagegen/image-limits";
-import { ensureCanvasSettingsSchema } from "@/lib/canvas-node-settings-store";
+import {ensureCanvasSettingsSchema} from "@/lib/canvas/storage-schema";
+
 import { cropSchema, pixelCrop, type CanvasCrop } from "@/lib/canvas/node-settings";
-import { adaptiveCanvasImageSize } from "@/lib/mock-data";
+import { adaptiveCanvasImageSize } from "@/lib/canvas/image-size";
+import {canvasLocalImageEditResultId} from './canvas/local-image-edit-id';
 import {imagegenOutputSchema,imagegenChromaSchema} from "./imagegen/schema";
 import {processImagegenPixels} from "./imagegen/postprocess";
 
@@ -47,7 +50,7 @@ export async function saveCanvasLocalEdit(email: string, value: z.infer<typeof l
   const generatedOutput = input.mode !== "replace" || provenance?.generatedOutput === true;
   const edited = input.mode==="process"?await processImagegenPixels(bytes,input):await editCanvasPixels(bytes,input.mode === "crop" ? input.crop : undefined,generatedOutput);
   if (edited.bytes.length > IMAGEGEN_OUTPUT_MAX_BYTES) throw new Error("编辑结果超出64MiB处理限制");
-  const id = `art-local-${input.operationId}`;
+  const id = canvasLocalImageEditResultId(input.operationId);
   const mime="mime" in edited&&typeof edited.mime==="string"?edited.mime:"image/png",extension=mime==="image/jpeg"?"jpg":mime==="image/webp"?"webp":"png";
   const transparentPixels="transparentPixels" in edited&&typeof edited.transparentPixels==="number"?edited.transparentPixels:undefined;
   const totalPixels="totalPixels" in edited&&typeof edited.totalPixels==="number"?edited.totalPixels:undefined;

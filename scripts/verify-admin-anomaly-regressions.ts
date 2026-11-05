@@ -23,18 +23,22 @@ async function main(){
   const fakeRequire=(name:string):any=>{
    if(name.includes('background-activity'))return background;
    if(name.includes('release-runtime/identity'))return {releaseRuntimeEnabled:()=>true};
-   if(name==='@/lib/db')return {dbEnabled:true};
-   if(name==='@/lib/image-job-repository')return {dueImageJobs:async()=>{reads++;return [{id:'eligible',kind:'generate'},{id:'held',kind:'generate'}];}};
-   if(name==='./image-job-queue')return {dispatchImageQueue:async(items:any[],send:any)=>{let n=0;for(const item of items)if(await send(item))n++;return n;}};
-   if(name==='./imagegen/batch')return {recoverImagegenBatches:async()=>{if(batchFails){batchFails=false;throw Error('fixture-batch-read-failed');}return 0;}};
-   if(name==='./imagegen/stored-delivery')return {recoverStoredDeliveries:async()=>0};
+   if(name==='@/lib/db'||name==='@/platform/db/pool')return {dbEnabled:true};
+   if(name==='../application/task-execution')return {deferApplicationTask:async()=>false};
+   if(name==='@/lib/image-job-repository'||name==='../image-job-repository')return {dueImageJobs:async()=>{reads++;return [{id:'eligible',kind:'generate'},{id:'held',kind:'generate'}];}};
+   if(name==='../image-job-queue')return {dispatchImageQueue:async(items:any[],send:any)=>{let n=0;for(const item of items)if(await send(item))n++;return n;}};
+   if(name==='../imagegen/batch')return {recoverImagegenBatches:async()=>{if(batchFails){batchFails=false;throw Error('fixture-batch-read-failed');}return 0;}};
+   if(name==='../imagegen/stored-delivery')return {recoverStoredDeliveries:async()=>0};
    if(name==='server-only')return {};
    if(name.startsWith('node:'))return native(name);
    return stub;
   };
-  const exports:any={},file=resolve(sourceRoot,'src/lib/durable-image-jobs.ts');
+  const runSaved=async(id:string)=>{dispatches++;await background.withBackgroundActivity('durable-image','generate:'+id,'claim',async()=>{if(id==='held')paidPosts++;return 1;},()=>0);};
+  const oldRequire=fakeRequire;
+  const imageRequire=(name:string):any=>name==='../imagegen/generation-runtime'?{kickGeneration:runSaved}:name==='../imagegen/dispatch'?{notifyImagegenJobReleased:async()=>{}}:oldRequire(name);
+  const exports:any={},file=resolve(sourceRoot,'src/lib/worker/image-recovery.ts');
   const compiled=ts.transpileModule(readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
-  const scope={exports,module:{exports},require:fakeRequire,process,console:{error:()=>{}},Buffer,AbortSignal,setInterval,clearInterval,setTimeout,clearTimeout,
+  const scope={exports,module:{exports},require:imageRequire,process,console:{error:()=>{}},Buffer,AbortSignal,setInterval,clearInterval,setTimeout,clearTimeout,
    fetch:async(_url:string,options:any)=>{dispatches++;const id=JSON.parse(options.body).workerJobId;await background.withBackgroundActivity('durable-image','generate:'+id,'claim',async()=>{if(id==='held')paidPosts++;return 1;},()=>0);return {ok:true};}};
   vm.runInNewContext(compiled,scope,{filename:file});
   await assert.rejects(background.withBackgroundActivity('durable-image','generate:held','claim',async()=>{throw Error('accepted-unknown');},()=>0));

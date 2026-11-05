@@ -1,11 +1,12 @@
 import "server-only";
-import { getPool, listArtworksByIds } from "../db";
+import { getPool } from "@/platform/db/pool";
+import { listArtworksByIds } from "../artworks/repository";
 import { ModelConfigError } from "../model-config/types";
-import { bindActualCreationProject, assertCreationProjectInput } from "../saas/creation-context";
+import { bindActualCreationProject, assertCreationProjectInput } from "../saas/creation-access";
 import { assertCreationObjectRefs, assertCreationInputsTx } from "../saas/creation-writer";
-import { storageKeyFromManagedUrl } from "../storage";
+import { storageKeyFromManagedUrl } from "../object-storage/runtime";
 import { verifiedOwnedMedia } from "../video/media-inspection";
-import { authorizeVideoProject } from "./video-node-service";
+import { authorizeVideoProject } from "./project-access";
 import { directorNodeWriteSchema, directorOutputSchema, type DirectorNodeWrite } from "./director-node-schema";
 import { directorOperationTx, findDirectorOperation, ensureDirectorNodeSchema, getDirectorNode, mapDirectorNode, saveDirectorNodeTx } from "./director-node-repository";
 import {resolveDirectorSceneProject} from "./scene-references";

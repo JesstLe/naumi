@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { dbEnabled, creditMeteringEnabled } from "@/lib/db";
-import { storageEnabled } from "@/lib/storage";
+import {creditMeteringEnabled} from "@/lib/billing/runtime";
+import {dbEnabled} from "@/platform/db/pool";
+import { storageEnabled } from "@/lib/object-storage/runtime";
 import { authMode } from "@/lib/auth-mode";
-import { multiUserEnabled } from "@/lib/native-auth";
+import {multiUserEnabled} from "@/lib/accounts/mode";
 import { smtpConfigured } from "@/lib/mailer";
 import { getOpenAISettings } from "@/lib/settings";
 import {
@@ -12,8 +13,9 @@ import {
 import { imageQualityCapable } from "@/lib/image-quality";
 import { authenticatedEmail } from "@/lib/request-auth";
 import { betaPreviewEnabled } from "@/lib/commerce";
-import { modelConfigurationEnabled } from "@/lib/model-config/requests";
-import { getModelRuntime } from "@/lib/model-config/server";
+import { modelConfigurationEnabled } from "@/lib/model-config/availability";
+import {readPublishedModelSnapshot} from "@/lib/model-config/published";
+import {readPublishedModelCatalog} from "@/lib/model-config/catalog-query";
 import { frontendImageCatalog } from "@/lib/frontend-image-models";
 
 export const runtime = "nodejs";
@@ -25,11 +27,10 @@ export async function GET(request: Request) {
   const multiUser = await multiUserEnabled();
   const email = dbEnabled ? await authenticatedEmail(request) : null;
   // Share one snapshot inside this request, never a stale cross-request pointer.
-  const modelRuntime = await modelConfigurationEnabled() ? await getModelRuntime() : null;
-  const modelSnapshot = modelRuntime ? await modelRuntime.current() : undefined;
+  const modelSnapshot = await modelConfigurationEnabled() ? await readPublishedModelSnapshot() : undefined;
   const imageModels = await getImageModelCatalog(email, modelSnapshot);
-  const managed = modelRuntime ? await modelRuntime.publicCatalog("image", undefined, modelSnapshot) : null;
-  const featureCatalog = modelRuntime ? await modelRuntime.publicCatalog("image", "image.generate", modelSnapshot) : null;
+  const managed = modelSnapshot ? await readPublishedModelCatalog("image", undefined, modelSnapshot) : null;
+  const featureCatalog = modelSnapshot ? await readPublishedModelCatalog("image", "image.generate", modelSnapshot) : null;
   const defaultModel = featureCatalog?.defaultModelId || managed?.bindings["image.generate"] || managed?.models[0]?.id || (await getOpenAISettings()).model;
   const userDefaultModel = await getUserDefaultImageModel(email);
   const presentation = frontendImageCatalog({

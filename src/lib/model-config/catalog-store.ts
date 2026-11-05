@@ -1,19 +1,19 @@
+import {PROVIDER_CATALOG_SQL} from "@/lib/model-config/catalog-schema";
+export {PROVIDER_CATALOG_SQL};
+import {ensureProviderCatalogSchema as ensure} from "@/lib/model-config/catalog-schema";
 import "server-only";
-import { createHash } from "node:crypto";
-import type { Pool } from "pg";
-import { discoverProviderCatalog, type ProviderCatalogResult } from "./catalog";
-import type { ModelProvider } from "./types";
-import type { createCredentialStore } from "./credentials";
+import {createHash} from "node:crypto";
+import type {Pool} from "pg";
+import {discoverProviderCatalog,type ProviderCatalogResult} from "./catalog";
+import type {ModelProvider} from "./types";
+import type {createCredentialStore} from "./credentials";
 import {ingestSupplierSources} from "../supplier-models/repository";
 import {discoverPublicSupplierDirectory} from "../supplier-models/discovery";
 
-export const PROVIDER_CATALOG_SQL = `CREATE TABLE IF NOT EXISTS app_model_provider_catalog(
- fingerprint text PRIMARY KEY,provider_id text NOT NULL,result jsonb NOT NULL,last_success_at timestamptz,
- updated_at timestamptz NOT NULL DEFAULT now()
-);`;
+
 export type CatalogEntry = ProviderCatalogResult & { cached: boolean; stale: boolean; lastSuccessAt?: string; refreshing?: boolean; metadataSaved?:boolean };
-const ready = new WeakMap<Pool,Promise<unknown>>();
-async function ensure(pool:Pool){let p=ready.get(pool);if(!p){p=(async()=>{const tx=await pool.connect();try{await tx.query('BEGIN');await tx.query("SELECT pg_advisory_xact_lock(hashtextextended('model-provider-catalog-schema',0))");await tx.query(PROVIDER_CATALOG_SQL);await tx.query('COMMIT')}catch(e){await tx.query('ROLLBACK');throw e}finally{tx.release()}})().catch(e=>{ready.delete(pool);throw e});ready.set(pool,p)}await p;}
+
+
 const fingerprint=(p:ModelProvider)=>createHash('sha256').update(JSON.stringify([p.id,p.baseUrl,p.protocol,p.credentialRef||null])).digest('hex');
 function entry(row:any,p:ModelProvider):CatalogEntry{
   const result=row?.result as ProviderCatalogResult|undefined;

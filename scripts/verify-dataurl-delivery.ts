@@ -10,8 +10,8 @@ import {createModelFixture} from "./model-config-fixture";
 
 async function main() {
   const args = process.argv.slice(2);
-  const option = (name: string) => { const i = args.indexOf(name); assert.ok(i >= 0 && args[i + 1], `${name} required`); return resolve(args[i + 1]); };
-  const out = option("--output-root"), pngFile = option("--png");
+  const option = (name: string, fallback?:string) => { const i = args.indexOf(name); const value=i>=0?args[i+1]:fallback;assert.ok(value, `${name} required`); return resolve(value); };
+  const out = option("--output-root",process.env.DATAURL_EVIDENCE), pngFile = option("--png",process.env.DATAURL_PNG);
   await mkdir(out, {recursive: true});
   const reportFile = join(out, "RESULT.json");
   await assert.rejects(readFile(reportFile), (e: NodeJS.ErrnoException) => e.code === "ENOENT", "Use a new output root");

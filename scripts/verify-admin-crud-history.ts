@@ -1,12 +1,16 @@
 import assert from 'node:assert/strict';
-import {randomUUID} from 'node:crypto';
-import {mkdirSync,writeFileSync,readFileSync,unlinkSync} from 'node:fs';
+import {createHash,randomUUID} from 'node:crypto';
+import {mkdirSync,readFileSync,writeFileSync} from 'node:fs';
 import {resolve} from 'node:path';
-import {pathToFileURL} from 'node:url';
-import {execFileSync} from 'node:child_process';
+import ts from 'typescript';
+import * as zod from 'zod';
+import historicalSource from './fixtures/admin-crud-history-before.json';
 
 async function main(){
  assert.equal(process.env.NAUMI_VERIFY_ISOLATED_DB,'1');assert.equal(new URL(process.env.DATABASE_URL!).hostname,'127.0.0.1');
+ const oldBytes=readFileSync(new URL('./fixtures/admin-crud-history-before.ts.txt',import.meta.url));
+ assert.equal(createHash('sha256').update(oldBytes).digest('hex'),historicalSource.sha256,'Pinned historical fixture changed');
+ const oldSource=oldBytes.toString('utf8');
  const {Pool}=await import('pg');const bootstrap=new Pool({connectionString:process.env.DATABASE_URL});const schema='crud_'+randomUUID().replaceAll('-','');await bootstrap.query(`CREATE SCHEMA ${schema}`);process.env.PGOPTIONS=`-c search_path=${schema}`;
  process.env.SETTINGS_SECRET='admin-crud-local-fixture-012345678901234567890123456789';process.env.NAUMI_MULTI_USER='1';
  const tenant=randomUUID(),otherTenant=randomUUID(),role=randomUUID();process.env.NAUMI_ENTERPRISE_DEPLOYMENT_MODE='dedicated';process.env.NAUMI_ENTERPRISE_SOURCE_INSTANCE_ID='local-crud-fixture';process.env.NAUMI_ENTERPRISE_ALLOWED_IDS=tenant;
@@ -14,7 +18,7 @@ async function main(){
  const bi=await import('../src/lib/bi/repository'),contracts=await import('../src/lib/bi/contracts'),native=await import('../src/lib/native-auth'),pw=await import('../src/lib/pw');
  const api=await import('../src/app/api/enterprise/members/route'),{accountIdentifierSchema}=await import('../src/lib/account-identity-schema');
  const out=resolve(process.env.CRUD_EVIDENCE_ROOT||'output/admin-crud-history');mkdirSync(out,{recursive:true});
- const checks:string[]=[],oldFile=resolve(`src/lib/bi/.crud-baseline-${randomUUID()}.ts`);let supplierCalls=0;const originalFetch=globalThis.fetch;globalThis.fetch=async()=>{supplierCalls++;throw Error('External calls forbidden in CRUD fixture');};
+ const checks:string[]=[];let supplierCalls=0;const originalFetch=globalThis.fetch;globalThis.fetch=async()=>{supplierCalls++;throw Error('External calls forbidden in CRUD fixture');};
  const owner='owner@crud.fixture',outsider='outsider@crud.fixture',admin='admin@crud.fixture',email='尺素测试@username.naumi.local';const actor={email:owner,admin:false};const pool=db.getPool();
  const command=(action:string,values:Record<string,unknown>={})=>service.enterpriseMemberCommandSchema.parse({id:randomUUID(),enterpriseId:tenant,email,action,reason:'隔离账号维护回归',...values});
  const request=(who:string,body:unknown,origin='http://fixture.test')=>new Request('http://fixture.test/api/enterprise/members',{method:'POST',headers:{origin,'Content-Type':'application/json',...(who?{cookie:'nv_user='+native.signUserSession(who,Date.now())}:{})},body:JSON.stringify(body)});
@@ -24,7 +28,7 @@ async function main(){
   await pool.query('INSERT INTO app_enterprise_settings(team_id) VALUES($1)',[tenant]);
   await pool.query("INSERT INTO app_team_access_grants(email,scope,created_by,updated_by) VALUES($1,'owned','fixture','fixture')",[owner]);
   await pool.query("INSERT INTO app_enterprise_roles(enterprise_id,id,name,level,manage_members,view_records) VALUES($1,$2,'正式员工',100,false,false)",[tenant,role]);
-  writeFileSync(oldFile,execFileSync('git',['show','cb1d2f4932e402a75511485173027ed049ed342e:src/lib/bi/user-management.ts']));const old=await import(pathToFileURL(oldFile).href);
+  const oldModule={exports:{} as {userCommandSchema:typeof biUserSchema}};const {userCommandSchema:biUserSchema}=await import('../src/lib/bi/user-management');new Function('require','module','exports',ts.transpileModule(oldSource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText)((name:string)=>name==='zod'?zod:{},oldModule,oldModule.exports);const old=oldModule.exports;
   const oldInput={id:randomUUID(),email,action:'create',reason:'原版花名基线',name:'尺素测试',password:'fixture-password-123',initialCredits:0};assert.equal(old.userCommandSchema.safeParse(oldInput).success,false);assert.equal(accountIdentifierSchema.parse('尺素测试'),email);assert.equal(accountIdentifierSchema.parse(email),email);assert.equal(accountIdentifierSchema.safeParse('bad@address').success,false);checks.push('BASELINE_NATIVE_ALIAS_REJECTION_REPRODUCED_AND_FIXED');
   const create=command('create',{name:'尺素测试',phone:'',note:'尺素测试-天地合测试-测试人员',password:'fixture-password-123',initialCredits:99999,months:24,roleId:role,supervisorEmail:owner,employment:'permanent',expiresAt:null});
   assert.equal((await api.POST(request('',create))).status,401);assert.equal((await api.POST(request(outsider,create))).status,403);assert.equal((await api.POST(request(owner,create,'https://foreign.test'))).status,403);checks.push('ANONYMOUS_OUTSIDER_AND_CROSS_SITE_DENIED');
@@ -54,8 +58,8 @@ async function main(){
   const adminCreate=command('create',{name:'管理员新建成员',phone:'',note:'',password:'fixture-only-789',initialCredits:0,roleId:role,supervisorEmail:owner,employment:'permanent',expiresAt:null});await service.manageEnterpriseMember({email:admin,admin:false},{...adminCreate,email:'site-admin-created@crud.fixture'});checks.push('DEDICATED_SITE_ADMIN_USES_SAME_MEMBER_MAINTENANCE');
   process.env.NAUMI_ENTERPRISE_DEPLOYMENT_MODE='shared';await assert.rejects(service.manageEnterpriseMember(actor,create),/本站独立企业/);checks.push('SHARED_TENANT_CANNOT_MODIFY_GLOBAL_ACCOUNT');
   assert.equal(supplierCalls,0);checks.push('NO_SUPPLIER_NETWORK');
-  const report={result:'PASS',checks,realPostgres:true,supplierCalls,baseline:'cb1d2f4932e402a75511485173027ed049ed342e',database:'isolated crud_fixture schema',exit:0};writeFileSync(resolve(out,'RESULT.json'),JSON.stringify(report,null,2));console.log(`ADMIN_CRUD_HISTORY=PASS CHECKS=${checks.length} REAL_PG=1 SUPPLIER_CALLS=0 EXIT=0`);
- }finally{globalThis.fetch=originalFetch;try{unlinkSync(oldFile);}catch{}await pool.end();await bootstrap.query(`DROP SCHEMA ${schema} CASCADE`);await bootstrap.end();}
+  const report={result:'PASS',checks,realPostgres:true,supplierCalls,baseline:historicalSource.commit,baselineSourcePath:historicalSource.path,baselineSourceSha256:historicalSource.sha256,gitHistoryRequired:false,database:'isolated crud_fixture schema',exit:0};writeFileSync(resolve(out,'RESULT.json'),JSON.stringify(report,null,2));console.log(`ADMIN_CRUD_HISTORY=PASS CHECKS=${checks.length} REAL_PG=1 SUPPLIER_CALLS=0 EXIT=0`);
+ }finally{globalThis.fetch=originalFetch;await pool.end();await bootstrap.query(`DROP SCHEMA ${schema} CASCADE`);await bootstrap.end();}
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});
 

@@ -1,7 +1,7 @@
 "use client";
 import { useRef, useState } from "react";
 import { AtSign, Bold, Italic, Link, List, Paperclip, Pause, Play, Send, Smile, X } from "lucide-react";
-import { useCollaborationState } from "./collaboration-provider";
+import { useCollaborationState } from "./collaboration-context";
 import { sizeText } from "./message-content";
 
 export function MessageComposer({ conversationId }: { conversationId: string }) {

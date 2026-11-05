@@ -1,36 +1,22 @@
-import {cutoutImageQuality} from "./cutout-quality";
-import {resolveImageResolution} from "./resolution-fallback";
 import {currentImagegenStep} from "../imagegen/context";
-import {legacyImagegenIntent} from "../imagegen/legacy-intent";
-import {publicUpstreamIds} from "./channel-policy";
-import {assertDisplayResolution} from "./resolution-options";
 import { featureForRequest } from "./feature-path";
 import {imageBillingQuoteForRequest} from "../billing/image-quotes";
 import { requestedFeatureModel, assertPlatformImageSelection } from "./selection-policy";
-import {qualityPresentation} from "./quality-policy";
-import { selectedBusinessOption, FEATURE_BINDINGS } from "./business";
 import "server-only";
-import { dbEnabled, getPool } from "../db";
-import { getModelAdministration } from "./server";
+import {getModelExecutionServices} from "./execution-services";
+import {featureDefaultModel} from "./feature-model-policy";
 import { getModelExecutor } from "./execution";
-import { legacyModelExecutionActive, type ExecutionBundle } from "./context";
-import { ModelConfigError, type ModelFacts } from "./types";
+import { type ExecutionBundle } from "./context";
+import { ModelConfigError } from "./types";
+import {prepareImageOperation} from "./image-preparation";
+import {validatePreparedImage} from "./prepared-image-contract";
 import type { ModelBinding } from "./bindings";
-import { resolutionForLongSide } from "../mock-data";
 import { acceptedModelVersions } from "./accepted-context";
-import { DISPLAY_QUALITIES, effectiveImageParameters, selectedImagePreset, presetPublicId } from "./image-preset";
-import { routeImageModel } from "../image-model-routing";
-import { featureDefaultModel } from "./tool-scope";
-import { IMAGE_QUALITY_IDS } from "../image-quality";
 import {canvasSourceFrameEdit,canvasSourceFrameRatio} from "../canvas/generation-parameters";
 
-export async function modelConfigurationEnabled() {
-  if (!dbEnabled || legacyModelExecutionActive()) return false;
-  if (process.env.NAUMI_ROUTER_MANAGEMENT_URL) return true;
-  const table = (await getPool().query("SELECT to_regclass('app_model_config_state') AS name")).rows[0]?.name;
-  if (table && (await getPool().query("SELECT 1 FROM app_model_config_state WHERE singleton=true")).rowCount) throw new ModelConfigError("CONFIG_UNAVAILABLE", "模型配置连接丢失，请联系管理员核对", 503);
-  return false;
-}
+import {modelConfigurationEnabled} from "./availability";
+export {modelConfigurationEnabled} from "./availability";
+
 async function requestFacts(request: Request) {
   let body: Record<string, any> = {}, references = 0;
   if (!["POST", "PUT"].includes(request.method)) return { body, references };
@@ -61,7 +47,6 @@ async function requestFacts(request: Request) {
   // original pixels locally. User-supplied masks in other routes stay required.
   return { body, references: Math.min(32, references) };
 }
-function imageRatio(width:number,height:number) { const gcd=(a:number,b:number):number=>b?gcd(b,a%b):a; const g=gcd(Math.round(width),Math.round(height)); return `${Math.round(width)/g}:${Math.round(height)/g}`; }
 function purposeFor(path: string): { image?: ModelBinding; text?: ModelBinding; vision?: ModelBinding; video?: ModelBinding; primary: "image" | "text" | "vision" | "video" } {
   if (path === "/api/packaging-strategy") return { text: "text.generate", primary: "text" };
   if (path === "/api/video/generate") return { video: "video.generate", primary: "video" };
@@ -74,7 +59,7 @@ function purposeFor(path: string): { image?: ModelBinding; text?: ModelBinding; 
   if (path.includes("suite") || path.includes("aplus")) return { image: "image.generate", text: "text.generate", vision: "vision.reference", primary: "image" };
   return { image: path.includes("cutout") ? "image.cutout" : path.includes("generate-image") ? "image.generate" : "image.edit", primary: "image" };
 }
-export async function withModelRequest<T>(request: Request, run: () => Promise<T>): Promise<T> {
+export async function withModelRequest<T>(request: Request, run: () => Promise<T>, authenticatedActor?:string|null): Promise<T> {
   const domainPath=new URL(request.url).pathname;
   // Imagegen owns nested parameters, input authorization, planning and frozen
   // execution. A generic image scope here reads top-level defaults (1K/1:1)
@@ -90,9 +75,9 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
     // Expand inherits the owned artwork's resolution in its handler. Freeze
     // that same selection before channel admission and price confirmation.
     const {resolveUserEmail} = await import("../admin-auth");
-    const email = await resolveUserEmail(request);
+    const email = authenticatedActor===undefined?await resolveUserEmail(request):authenticatedActor;
     if (email) {
-      const {listArtworksByIds} = await import("../db");
+      const {listArtworksByIds} = await import("@/lib/artworks/repository");
       const artwork = (await listArtworksByIds(email, [parsed.body.artworkId]))[0];
       if (artwork) {
         parsed.body.resolution = artwork.resolution || "1K";
@@ -100,13 +85,28 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
       }
     }
   }
-  const admin = await getModelAdministration();
-  const quotedImage=await imageBillingQuoteForRequest(request);
-  const accepted = await acceptedModelVersions(request) || (quotedImage?.modelVersion?{modelVersion:quotedImage.modelVersion,billingVersion:quotedImage.configVersion}:null);
-  if (new URL(request.url).pathname === "/api/aplus" && parsed.body.jobId && ["approve_source", "redo_source", "generate"].includes(parsed.body.action)) return run();
-  const [snapshot, billing] = await Promise.all([accepted ? admin.repo.byVersion(accepted.modelVersion) : admin.repo.current(), accepted ? admin.billing.byVersion(accepted.billingVersion) : admin.billing.current()]);
-  const feature = featureForRequest(new URL(request.url).pathname, parsed.body);
-  const purpose = purposeFor(new URL(request.url).pathname), executor = await getModelExecutor();
+  return runModelOperation({path:domainPath,body:parsed.body,references:parsed.references,
+    featureModel:request.headers.get("x-naumi-feature-model"),quality:request.headers.get("x-naumi-image-quality"),textModel:request.headers.get("x-naumi-text-model"),
+    quote:await imageBillingQuoteForRequest(request,authenticatedActor),versions:await acceptedModelVersions(request,authenticatedActor)},run);
+}
+
+/** Trusted operation facts, already authenticated by the owning entry. Never accepts HTTP-supplied snapshots. */
+export type ModelOperationInput={path:string;body:Record<string,any>;references:number;featureModel?:string|null;quality?:string|null;textModel?:string|null;
+  preparedImage?:import("./image-preparation").PreparedImageOperation;quote?:import("../billing/types").BillingQuote;versions?:{modelVersion:number;billingVersion:number}|null};
+export async function withModelOperation<T>(input:ModelOperationInput,run:()=>Promise<T>):Promise<T>{
+  assertPlatformImageSelection(input.body.model,input.body.modelId,input.featureModel);
+  if(!await modelConfigurationEnabled())return run();
+  return runModelOperation(input,run);
+}
+async function runModelOperation<T>(input:ModelOperationInput,run:()=>Promise<T>):Promise<T>{
+  const parsed={body:input.body,references:input.references};
+  const services=getModelExecutionServices();
+  const quotedImage=input.quote;
+  const accepted = input.versions || (quotedImage?.modelVersion?{modelVersion:quotedImage.modelVersion,billingVersion:quotedImage.configVersion}:null);
+  if (input.path === "/api/aplus" && parsed.body.jobId && ["approve_source", "redo_source", "generate"].includes(parsed.body.action)) return run();
+  const [snapshot,billing]=await Promise.all([accepted?services.models.byVersion(accepted.modelVersion):services.models.current(),accepted?services.billing.byVersion(accepted.billingVersion):services.billing.current()]);
+  const feature = featureForRequest(input.path, parsed.body);
+  const purpose = purposeFor(input.path), executor = await getModelExecutor();
   if (feature === "canvas.image") {
     const step = currentImagegenStep();
     const hasReferences = step ? step.request.inputs.some(input => input.role !== "mask") : parsed.references > 0;
@@ -122,89 +122,31 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
     standaloneSegmentation = cutout.backend !== "openai" && !!cutout.replicateToken;
   }
   if (purpose.image && !standaloneSegmentation) {
-    const selected = String(parsed.body.model || parsed.body.modelId || "").trim();
-    const explicit = request.headers.get("x-naumi-feature-model") || selected || "";
-    const explicitModelId = requestedFeatureModel(mainFeature, explicit.startsWith("byok:") ? undefined : explicit || undefined);
-    const featureDefault = featureDefaultModel(snapshot.config,mainFeature,purpose.image);
-    const configuredModelId = quotedImage?.facts.modelId || explicitModelId || featureDefault || snapshot.config.bindings[purpose.image];
-    const outputResolution = quotedImage?.effectiveParameters?.resolution || quotedImage?.requestedParameters?.resolution || quotedImage?.facts.resolution || (Number(parsed.body.targetWidth) > 0 && Number(parsed.body.targetHeight) > 0 ? resolutionForLongSide(Math.max(Number(parsed.body.targetWidth), Number(parsed.body.targetHeight))) : String(parsed.body.resolution || "1K"));
-    // The internal imagegen step already owns a frozen frame, including a
-    // published native-auto contract. Do not turn that auto into square here.
-    const ratio = currentImagegenStep()?.request.parameters.ratio || quotedImage?.facts.ratio || (/^\d+:\d+$/.test(String(parsed.body.ratio||parsed.body.size||"")) ? String(parsed.body.ratio||parsed.body.size) : Number(parsed.body.targetWidth)>0&&Number(parsed.body.targetHeight)>0 ? imageRatio(Number(parsed.body.targetWidth),Number(parsed.body.targetHeight)) : "1:1");
-    // Server-owned browser quotes and imagegen steps already fixed their public
-    // model identity. Directional aliases are selected only before that quote;
-    // an execution-time frame must not silently select another priced model.
-    const routedModelId = quotedImage || currentImagegenStep()?.billing ? configuredModelId : routeImageModel(
-      configuredModelId,
-      ratio,
-      snapshot.config.publicModels.filter(model => model.enabled && model.modality === "image"),
-    );
-    const requestedModelId = requestedFeatureModel(mainFeature, (quotedImage || explicitModelId || featureDefault || routedModelId !== configuredModelId) ? routedModelId : undefined);
-    const preset = selectedImagePreset(snapshot.config, mainFeature, requestedModelId, purpose.image);
-    const option = selectedBusinessOption(snapshot.config, mainFeature, requestedModelId);
-    if (option?.parameters?.inputTypes && ((parsed.references > 0 && !option.parameters.inputTypes.includes("image")) || (parsed.body.needsMask && !option.parameters.inputTypes.includes("mask")))) throw new ModelConfigError("MODEL_INCOMPATIBLE", "本功能模型未开放该输入类型", 400);
-    const model = snapshot.config.publicModels.find(m => m.id === (preset ? presetPublicId(preset,requestedModelId) : option?.modelId || requestedModelId || featureDefaultModel(snapshot.config,mainFeature,purpose.image)));
-
-    const ids=model?publicUpstreamIds(snapshot.config,model):[];
-    const upstreams=snapshot.config.upstreamModels.filter(u=>ids.includes(u.id)&&u.enabled&&snapshot.config.providers.some(p=>p.id===u.providerId&&p.enabled));
-    const presentation = qualityPresentation(upstreams);
-    const qualities = preset ? [...DISPLAY_QUALITIES] : presentation?.qualities || option?.parameters?.qualities || Array.from(new Set(upstreams.flatMap(u => u.capabilities.qualities)));
-    if (option?.parameters?.ratios?.length && !option.parameters.ratios.includes(ratio)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型未开放该比例", 400);
-    const rawQuality = String(quotedImage?.requestedParameters?.quality || quotedImage?.facts.quality || parsed.body.quality || request.headers.get("x-naumi-image-quality") || "").trim().toLowerCase();
-    const explicitQuality = purpose.image === "image.cutout" ? cutoutImageQuality(rawQuality) || "" : rawQuality;
-    // An unrecognized quality value (e.g. a client sending a display label like
-    // "standard") falls back to the model default with an audit note; it never
-    // blocks a paid creation the user explicitly requested.
-    const qualityMalformed = !!explicitQuality && ![...IMAGE_QUALITY_IDS, "auto"].includes(explicitQuality as any);
-    if (qualityMalformed) console.warn("[image-quality-fallback] unknown quality value, falling back:", explicitQuality);
-    const environmentQuality = String(process.env.OPENAI_IMAGE_QUALITY || "medium").trim().toLowerCase();
-    const defaultQuality = qualities.includes(environmentQuality as any) ? environmentQuality : qualities[0] || "medium";
-    // Malformed values and tiers the model does not offer both execute at the
-    // model default; the original request value is kept for audit only.
-    const qualityUnsupported = !!explicitQuality && !qualityMalformed && !!qualities.length && !qualities.includes(explicitQuality as any);
-    const requestedQuality = !explicitQuality || qualityMalformed || qualityUnsupported ? defaultQuality : explicitQuality;
-    const qualityFallbackReason = !explicitQuality ? null : qualityMalformed ? "malformed-quality-value" : qualityUnsupported ? "channel-unsupported" : null;
-    if (qualityFallbackReason) console.warn("[image-quality-fallback]", qualityFallbackReason, explicitQuality, "->", requestedQuality);
-    const presetParams = preset ? effectiveImageParameters(preset, { quality: requestedQuality, resolution: outputResolution, ratio }) : null;
-    const canvasRequest = parsed.body.origin === "canvas" || new URL(request.url).pathname.startsWith("/api/canvas/");
-
-    const effectiveQuality = presetParams?.effective.quality || requestedQuality;
-
-    const native = presetParams ? presetParams.nativeResolution : !upstreams.some(u=>u.parameterMap.resolutionPolicy) && ["1K", "2K", "4K"].includes(outputResolution) && upstreams.some(u => u.capabilities.nativeResolutions.includes(outputResolution as "1K" | "2K" | "4K"));
-    const needsEdit = purpose.image === "image.edit" || purpose.image === "image.cutout" || parsed.references > 0;
-    const needsText = new URL(request.url).pathname.includes("/canvas/image-tasks");
-    const task = String(parsed.body.taskType || parsed.body.task || "");
-    const facts: ModelFacts = { task: ["draft", "product", "detail", "layout"].includes(task) ? task as ModelFacts["task"] : needsText ? "layout" : "product", quality: effectiveQuality, resolution: native ? outputResolution : "1K", requestedResolution:outputResolution, ratio, needsEdit, preserveIdentity: needsEdit, needsText, nativeResolution: native && outputResolution !== "1K", references: parsed.references, quantity: 1, inputLength: String(parsed.body.prompt || parsed.body.text || "").length };
+    if(input.preparedImage){
+      const expected=input.path==="/api/cutout"?"image.cutout":input.path==="/api/generate-image"?(input.references>0?"image.edit":"image.generate"):purpose.image;
+      if(input.preparedImage.binding!==expected)throw new ModelConfigError("EXECUTION_MISMATCH","准备方案与输入用途不一致",503);
+    }
     const advanced=currentImagegenStep();
-    const inferred=advanced?.intent||legacyImagegenIntent(parsed.body,parsed.references);
-    if(advanced||inferred?.background||inferred?.conflicts.length)facts.imagegenRequirements=advanced?.intent||inferred!;
-    facts.needsMask = !!parsed.body.needsMask || new URL(request.url).pathname.includes("/canvas/image-tasks");
-    if (presetParams) { facts.quality = requestedQuality; facts.resolution = outputResolution; }
-    const allowResolutionFallback = !accepted && !(Number(parsed.body.targetWidth)>0 && Number(parsed.body.targetHeight)>0);
-    const choice=allowResolutionFallback ? resolveImageResolution(snapshot.config,model?.id,outputResolution,mainFeature,ratio,{snapshot,billing,facts,options:{trustedOrigins:(process.env.MODEL_CONFIG_TRUSTED_ORIGINS||"").split(/[\s,]+/).filter(Boolean)}}) : undefined;
-    const effectiveResolution=choice?.effective||outputResolution;
-    assertDisplayResolution(model,effectiveResolution);
-    if (!model?.displayResolutions && option?.parameters?.resolutions?.length && !option.parameters.resolutions.includes(effectiveResolution as any)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型未开放该尺寸", 400);
-    const effectivePreset=preset?effectiveImageParameters(preset,{quality:requestedQuality,resolution:effectiveResolution,ratio}):null;
-    if (canvasRequest && effectivePreset && parsed.body.resolution && (!effectivePreset.nativeResolution||!effectivePreset.nativeRatio))throw new ModelConfigError("MODEL_INCOMPATIBLE","所选模型未核验该尺寸与比例组合，请选择已开放参数",400);
-    bundle.image = await executor.resolve({ imageParameterPlanVersion:advanced?.billing?.quote.imageParameterPlanVersion ?? quotedImage?.imageParameterPlanVersion ?? (accepted?0:1), imageParameterPlans:advanced?.billing?.quote.imageParameterPlans ?? quotedImage?.imageParameterPlans, allowResolutionFallback, imageUpstreamIds:advanced?.eligibleUpstreamIds, requestedParameters:advanced?.requestedParameters || (quotedImage?.requestedParameters?{...quotedImage.requestedParameters,ratio}:undefined), scopeSystem:parsed.body.origin==="canvas"?"canvas":undefined, feature: mainFeature, binding: purpose.image, requestedModelId, snapshot, billing, facts });
+    const prepared=input.preparedImage?validatePreparedImage(input.preparedImage,snapshot,billing,mainFeature,input.preparedImage.binding):prepareImageOperation({...input,feature:mainFeature,binding:purpose.image,accepted:!!accepted,advanced,...(advanced?{resolvedFrame:{ratio:advanced.request.parameters.ratio,preserveModelIdentity:!!advanced.billing}}:{})},snapshot,billing);
+    bundle.image=await executor.resolve({imageParameterPlanVersion:advanced?.billing?.quote.imageParameterPlanVersion??quotedImage?.imageParameterPlanVersion??(accepted?0:1),imageParameterPlans:advanced?.billing?.quote.imageParameterPlans??quotedImage?.imageParameterPlans,preparedImage:prepared,feature:mainFeature,binding:prepared.binding,requestedModelId:prepared.modelId,snapshot,billing,scopeSystem:parsed.body.origin==="canvas"?"canvas":undefined});
   }
-  const requestedTextModelId = requestedFeatureModel(mainFeature, purpose.primary === "text" || purpose.primary === "vision" ? request.headers.get("x-naumi-feature-model")?.trim() || request.headers.get("x-naumi-text-model")?.trim() || String(parsed.body.modelId || parsed.body.model || "").trim() || undefined : undefined);
-  if (purpose.video) bundle.video = await executor.resolve({ feature, binding: purpose.video, requestedModelId: request.headers.get("x-naumi-feature-model")?.trim() || parsed.body.modelId || undefined, snapshot, billing });
+
+  const requestedTextModelId = requestedFeatureModel(mainFeature, purpose.primary === "text" || purpose.primary === "vision" ? input.featureModel?.trim() || input.textModel?.trim() || String(parsed.body.modelId || parsed.body.model || "").trim() || undefined : undefined);
+  if (purpose.video) bundle.video = await executor.resolve({ feature, binding: purpose.video, requestedModelId: input.featureModel?.trim() || parsed.body.modelId || undefined, snapshot, billing });
   if (purpose.text && (requestedTextModelId || snapshot.config.bindings[purpose.text] || purpose.primary === "text" && mainFeature && snapshot.config.business?.[mainFeature])) bundle.text = await executor.resolve({ ...(purpose.primary === "text" ? { feature: mainFeature } : {}), binding: purpose.text, requestedModelId: requestedTextModelId, snapshot, billing, facts: { task: "product", quality: "medium", resolution: "1K", needsEdit: false, needsText: false, preserveIdentity: false, nativeResolution: false, references: parsed.references, inputLength: JSON.stringify(parsed.body.messages || parsed.body.prompt || "").length } });
   if (purpose.primary === "text" && purpose.text && mainFeature && snapshot.config.business?.[mainFeature] && bundle.text) {
     const scope = await executor.describe(bundle.text);
     if (parsed.references && scope.businessOption?.parameters?.inputTypes && !scope.businessOption.parameters.inputTypes.includes("image")) throw new ModelConfigError("MODEL_INCOMPATIBLE", "本功能未开放图片输入", 400);
     if (scope.capabilities.vision) bundle.vision = bundle.text;
-    else if (parsed.references || (domainPath !== "/api/canvas/text-generate" && Array.isArray(parsed.body.sourceIds) && parsed.body.sourceIds.length) || parsed.body.anchorId) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选功能模型不支持图片输入", 400);
+    else if (parsed.references || (input.path !== "/api/canvas/text-generate" && Array.isArray(parsed.body.sourceIds) && parsed.body.sourceIds.length) || parsed.body.anchorId) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选功能模型不支持图片输入", 400);
   }
   // A visible, explicitly selected OCR model does not require an additional
   // legacy default binding. resolve still enforces vision capability/tool scope.
   if (!bundle.vision && purpose.vision && (snapshot.config.bindings[purpose.vision] || purpose.primary === "vision" && (requestedTextModelId || featureDefaultModel(snapshot.config, feature, purpose.vision)))) bundle.vision = await executor.resolve({ ...(purpose.primary === "vision" ? { feature, requestedModelId: requestedTextModelId } : {}), binding: purpose.vision, snapshot, billing });
   if (purpose.primary === "vision" && !bundle.vision || purpose.primary === "text" && !bundle.text || purpose.primary === "video" && !bundle.video) throw new ModelConfigError("MODEL_UNAVAILABLE", "当前用途没有可用模型绑定，请联系管理员配置", 503);
-  if (new URL(request.url).pathname === "/api/agent" && parsed.references > 0) {
+  if (input.path === "/api/agent" && parsed.references > 0) {
     if (!bundle.vision) throw new ModelConfigError("MODEL_INCOMPATIBLE", "Agent 视觉用途尚未配置，请联系管理员", 400);
     bundle.primary = "vision"; bundle.text = bundle.vision;
   }
-  return executor.runBundle(bundle, billing, run);
+  return executor.runBundle(bundle, billing, run, snapshot);
 }

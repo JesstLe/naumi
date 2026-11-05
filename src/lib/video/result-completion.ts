@@ -1,5 +1,8 @@
 import "server-only";
-import {completeVideoTask,listArtworksByIds,type ArtworkRecord,type VideoTaskRow} from "../db";
+import {completeVideoTask} from "@/lib/video/task-transitions";
+import {type VideoTaskRow} from "@/lib/video/task-types";
+import {listArtworksByIds} from "@/lib/artworks/repository";
+import {type ArtworkRecord} from "@/lib/artworks/types";
 import {collectVideoResultAssets,resultMetadataWarnings} from "./result-assets";
 import type {VideoProviderAdapter,VideoProviderPollResult,VideoTaskSnapshot} from "./types";
 

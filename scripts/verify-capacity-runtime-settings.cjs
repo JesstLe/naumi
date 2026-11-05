@@ -64,11 +64,12 @@ function workerFixture(env = {}, override = {}) {
     setInterval: (fn, ms) => timer(intervals, fn, ms), clearInterval: t => intervals.delete(t),
   }, mocks: {
     '@/lib/release-runtime/background-activity': { withBackgroundActivity: async (_a, _b, _c, run) => run() },
-    '@/lib/db': { dbEnabled: true },
-    '@/lib/video/service': { recoverDueVideoTasks: async n => { calls.push(['video', n]); return override.video ? override.video(n) : n; } },
+    '@/platform/db/pool': { dbEnabled: true },
+    '@/lib/video/runtime': { recoverDueVideoTasks: async n => { calls.push(['video', n]); return override.video ? override.video(n) : n; } },
     './workflow': { recoverVideoWorkflows: async n => { calls.push(['workflow', n]); return override.workflow ? override.workflow(n) : n; } },
-    '@/lib/durable-image-jobs': { recoverDurableImageJobs: async () => { calls.push(['image']); return override.image?.(); } },
+    '@/lib/worker/image-recovery': { recoverDurableImageJobs: async () => { calls.push(['image']); return override.image?.(); } },
     '@/lib/supplier-cost/worker': { scanSupplierCostsOnce: async () => { calls.push(['cost']); return override.cost?.(); } },
+    '../application/task-execution': {applicationTasksRunHere:()=>true,deferApplicationTask:async()=>false},
     '../reference-workbench/service': { recoverReferenceWorkbench: async () => { calls.push(['reference']); return override.reference?.(); } },
   } });
   return { ...l, calls, timeouts, intervals, worker: l.load('src/lib/video/worker.ts') };
@@ -217,26 +218,32 @@ async function main() {
     const fn = ast.statements.find(s => ts.isFunctionDeclaration(s) && s.name?.text === 'recoverVideoWorkflows');
     assert.ok(fn); const visited = [], logs = [];
     const code = ts.transpileModule(fn.getText(ast), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
-    const context = { exports: {}, ensureWorkflowSchema: async () => {}, getPool: () => ({ query: async () => ({ rows: [{ id: 'a' }, { id: 'b' }, { id: 'c' }] }) }),
+    const context = { exports: {}, process:{env:{}},deferApplicationTask:async()=>false,recoveringVideoWorkflows:new Set(),ensureWorkflowSchema: async () => {}, getPool: () => ({ query: async () => ({ rows: [{ id: 'a' }, { id: 'b' }, { id: 'c' }] }) }),
       resumeVideoWorkflow: async id => { visited.push(id); if (id === 'a') throw Error('fixture'); }, console: { error: s => logs.push(s) } };
     vm.runInNewContext(code, context); assert.equal(await context.exports.recoverVideoWorkflows(3), 2); assert.deepEqual(visited, ['a', 'b', 'c']);
   });
   await test('image-lane-fairness-and-paid-lease-guards-remain-in-source', async () => {
-    const repository = read('src/lib/image-job-repository.ts');
+    const repository = read(fs.existsSync(path.join(root,'src/lib/image-jobs/scheduling.ts'))?'src/lib/image-jobs/scheduling.ts':'src/lib/image-job-repository.ts');
     assert.match(repository, /row_number\(\) OVER\(PARTITION BY kind ORDER BY updated_at,id\)/);
     assert.match(repository, /ORDER BY w\.lane_rank,w\.updated_at,w\.id/);
     assert.match(repository, /b\.capacity-COALESCE\(a\.n,0\)/);
     assert.match(repository, /lease_token=\$2/);
-    const recovery = read('src/lib/durable-image-jobs.ts');
+    const recovery = read('src/lib/worker/image-recovery.ts');
     assert.match(recovery, /if\(!recoveryScan\)recoveryScan=/);
-    assert.match(recovery, /AbortSignal\.timeout\(10_000\)/);
-    assert.match(recovery, /workerJobId: job.id/);
+    assert.match(recovery,/resumeImageJob/);
+    assert.match(recovery,/dispatchImageQueue\(jobs,resumeImageJob/);
+    assert.match(recovery,/undefined,options/);
+    assert.match(recovery,/import\("\.\.\/imagegen\/generation-runtime"\)/);
+    assert.doesNotMatch(recovery,/fetch\(/);
   });
   await test('bootstrap-first-only-preserves-admin-zero-false-and-explicit-values', async () => {
     const mocks = { zod: require('zod'), '../video/capabilities': { configuredVideoCapability: () => ({ maxReferenceImages: 0 }) } };
     const l = loader({ mocks });
     const schema = l.load('src/lib/model-config/schema.ts');
-    mocks['./schema'] = { ...schema, ensureModelSchema: async () => {} };
+    mocks['./schema'] = schema;
+    mocks['@/lib/model-config/storage-schema']={ensureModelSchema:async()=>{}};
+    mocks['@/lib/video/model-defaults-schema']={ensureVideoDefaultsSchema:async()=>{}};
+    mocks['@/lib/supplier-models/video-schema']={ensureSupplierVideoSchema:async()=>{}};
     mocks['../settings-secret'] = { settingsSecret: () => 'synthetic-not-used' };
     mocks['./capacity'] = { registerProviderCapacities: async () => {} };
     mocks['../video/frozen-capability'] = { ensureVideoDefaultsSchema: async () => {}, freezeManagedVideoCapability: async () => {} };

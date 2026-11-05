@@ -93,12 +93,16 @@ export async function uploadFormData<T>(
   onProgress?: (loaded: number, total: number) => void,
   timeoutMs = 120_000,
   assertCurrent?: () => void,
-  transport?: { headers?: HeadersInit; request?: typeof fetch },
+  transport?: Record<string,string> | {headers?:HeadersInit;request?:typeof fetch},
 ): Promise<T> {
-  // A multi-stage owner must freeze its authentication/workspace before any
-  // asynchronous preparation. Existing callers retain their original behavior.
-  const headers = Object.fromEntries(new Headers(transport?.headers ?? await authHeader()).entries());
-  const request = transport?.request ?? fetch;
+  // Existing import callers supply extra headers. Multi-stage upload callers
+  // supply frozen authentication/workspace and their bound transport instead.
+  const frozen=transport&&("headers" in transport||"request" in transport)
+    ? transport as {headers?:HeadersInit;request?:typeof fetch}:undefined;
+  const headers = frozen
+    ? Object.fromEntries(new Headers(frozen.headers??await authHeader()).entries())
+    : {...await authHeader(),...transport as Record<string,string>|undefined};
+  const request=frozen?.request??fetch;
   assertCurrent?.();
   const file=form.get('image');
   const previews=file instanceof File?originalPreviews.get(file):undefined;
@@ -132,7 +136,7 @@ export async function uploadFormData<T>(
       const data=await response.json();if(!response.ok)throw new Error(data.error||'素材保存失败');return data as T;
     }
   }
-  if (transport?.request) {
+  if (frozen?.request) {
     assertCurrent?.();
     const response = await request(url, { method: "POST", headers, body: form, signal: AbortSignal.timeout(timeoutMs) });
     const data = await response.json();

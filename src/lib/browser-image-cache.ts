@@ -257,7 +257,7 @@ async function imageBlob(source:string,signal?:AbortSignal,options?:BrowserImage
     const response=await fetch(target.href,{credentials:target.origin===location.origin?'same-origin':'omit',headers:target.origin===location.origin?await authHeader():{},cache:'no-store',signal:downloadSignal});
     if([401,403,404].includes(response.status))throw new ImageCacheDenied('素材已不可用');
     if(!response.ok||response.type==='opaque'||!/^image\/(png|jpeg|webp|avif|gif)(;|$)/.test(response.headers.get('content-type')||''))throw new Error('素材响应无效');
-    const reader=response.body?.getReader();if(!reader)throw new Error('素材响应为空');const parts:Uint8Array[]=[];let total=0;
+    const reader=response.body?.getReader();if(!reader)throw new Error('素材响应为空');const parts:Uint8Array<ArrayBuffer>[]=[];let total=0;
     for(;;){const chunk=await reader.read();if(chunk.done)break;total+=chunk.value.length;if(total>MAX_IMAGE){await reader.cancel();throw new Error('素材超过缓存上限');}parts.push(new Uint8Array(chunk.value));}
     const blob=new Blob(parts,{type:info.contentType});if(!blob.size||(info.bytes>0&&blob.size!==info.bytes))throw new Error('素材版本已改变');
     if(/^[a-f0-9]{64}$/.test(info.version) && bytesToHex(sha256(new Uint8Array(await blob.arrayBuffer())))!==info.version)throw new Error('素材版本校验失败');
@@ -295,7 +295,7 @@ export async function acquireBrowserImage(raw:string,signal?:AbortSignal,options
     if(!valid(owner,generation))throw new ImageCacheDenied('登录状态已改变');
     const response=await fetch(source,{cache:'no-store',headers:await authHeader(),credentials:'same-origin',signal});
     if(!response.ok||response.type==='opaque'||!/^image\/(png|jpeg|webp|avif|gif)(;|$)/.test(response.headers.get('content-type')||''))throw new ImageCacheDenied('素材暂时不可用');
-    const reader=response.body?.getReader();if(!reader)throw new Error('素材响应为空');const parts:Uint8Array[]=[];let size=0;
+    const reader=response.body?.getReader();if(!reader)throw new Error('素材响应为空');const parts:Uint8Array<ArrayBuffer>[]=[];let size=0;
     for(;;){const chunk=await reader.read();if(chunk.done)break;size+=chunk.value.length;if(size>MAX_IMAGE){await reader.cancel();throw new Error('素材超过浏览器缓存上限');}parts.push(new Uint8Array(chunk.value));}
     result={blob:new Blob(parts,{type:response.headers.get('content-type')!}),owner,generation};
     }finally{releaseSlot();}
@@ -304,7 +304,7 @@ export async function acquireBrowserImage(raw:string,signal?:AbortSignal,options
   const url=URL.createObjectURL(result.blob);objects.add(url);
   return trackDisplayed(url,source,result.owner,()=>{if(objects.delete(url))URL.revokeObjectURL(url);});
 }
-export async function cachedImageBlob(raw:string){const source=imageCacheSource(raw);if(!source)throw new Error('非托管图片');return(await imageBlob(source)).blob;}
+export async function cachedImageBlob(raw:string,signal?:AbortSignal){const source=imageCacheSource(raw);if(!source)throw new Error('非托管图片');return(await imageBlob(source,signal)).blob;}
 /** Editing/import needs original bytes, not a thumbnail or a fresh model call. */
 export async function readBrowserImage(raw:string,signal?:AbortSignal):Promise<Blob>{
   if(raw.startsWith('data:')||raw.startsWith('blob:'))return(await fetch(raw,{signal})).blob();

@@ -86,7 +86,7 @@ async function main() {
     await db.getOrCreateUser(owner, "Import owner"); await db.getOrCreateUser(other, "Other owner");
     const { signUserSession } = await import("../src/lib/native-auth");
     const request = (file: Uint8Array = bytes(markdown), name = "SKILL.md", email = owner) => {
-      const form = new FormData(); form.set("file", new Blob([file]), name); form.set("email", other); form.set("owner", other);
+      const form = new FormData(); form.set("file", new Blob([Uint8Array.from(file)]), name); form.set("email", other); form.set("owner", other);
       return new Request(f.origin + "/api/image-skills/import", { method: "POST", headers: { cookie: `nv_user=${signUserSession(email, Date.now())}` }, body: form });
     };
     ok((await route.POST(new Request(f.origin + "/api/image-skills/import", { method: "POST" }))).status === 401);

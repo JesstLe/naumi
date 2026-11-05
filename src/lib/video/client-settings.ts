@@ -13,7 +13,8 @@ import {previewCanvasInputs} from "../canvas/input-preview";
 
 export type VideoNodeConfig=CanvasVideoNode["config"];
 export type VideoCatalogModel=VideoModelCapability&{isDefault?:boolean};
-export type VideoInputChoice={id:string;nodeId:string;kind:OrderedInput["kind"];title:string;value:string;thumbnail?:string;available:boolean;category?:"character"|"scene";referenceArtworkIds?:readonly string[]};
+import type {VideoInputChoice} from "./input-choice";
+export type {VideoInputChoice} from "./input-choice";
 export function resolveVideoTextInputs(inputs:readonly OrderedInput[],choices:readonly VideoInputChoice[]):OrderedInput[]{
   return inputs.map(input=>{
     if(input.kind!=="text"||input.nodeId.startsWith("inline:"))return input;

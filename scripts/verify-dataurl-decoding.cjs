@@ -16,8 +16,8 @@ function option(name, fallback) {
   return path.resolve(args[i + 1]);
 }
 const root = path.resolve(__dirname, '..');
-const sourceFile = option('--source-file', path.join(root, 'src/lib/storage.ts'));
-const out = option('--output-root', path.join(root, 'output/dataurl-decoding'));
+const sourceFile = option('--source-file', path.join(root, 'src/lib/object-storage/runtime.ts'));
+const out = option('--output-root', process.env.DATAURL_EVIDENCE || path.join(root, 'output/dataurl-decoding'));
 const baseline = args.includes('--baseline');
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const loaded = [], cases = [];
@@ -50,17 +50,18 @@ function load(filename, dependencies) {
   return exports;
 }
 const storage = load(sourceFile, {
+  './local-mirror': {createStoredMirrorVerifier: () => forbidden},
   'fs/promises': {readFile: forbidden, stat: forbidden, statfs: forbidden, mkdir: forbidden},
   'node:fs': {createReadStream: forbidden},
-  './object-storage/config': {storageConfiguration: () => ({driver: 'local', enabled: true,
+  './config': {storageConfiguration: () => ({driver: 'local', enabled: true,
     mediaDir: '/fixture', privateMedia: true, accessMode: 'proxy', publicBase: ''})},
-  './object-storage/adapter': {createObjectStorage: () => ({put: forbidden, get: forbidden,
+  './adapter': {createObjectStorage: () => ({put: forbidden, get: forbidden,
     exists: forbidden, delete: forbidden}), safeStorageKey: value => value},
-  './image-upload-policy': {ORIGINAL_IMAGE_MAX_BYTES: 64 * 1024 * 1024},
+  '../image-upload-policy': {ORIGINAL_IMAGE_MAX_BYTES: 64 * 1024 * 1024},
 });
 const limits = load(path.join(root, 'src/lib/imagegen/image-limits.ts'), {});
 const canvas = load(path.join(root, 'src/lib/canvas-image-input.ts'), {
-  '@/lib/storage': storage, '@/lib/media-assets': {canReadMedia: forbidden},
+  '@/lib/object-storage/runtime': storage, '@/lib/object-storage/managed-read': {readManagedObject:forbidden}, '@/lib/storage': storage, '@/lib/media-assets': {canReadMedia: forbidden},
   './imagegen/image-limits': limits,
 });
 async function check(name, action, kind = 'positive') {

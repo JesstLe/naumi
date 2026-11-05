@@ -1,14 +1,16 @@
 import { resolveConfiguredImageQuality } from "@/lib/model-config/image-quality";
 import { currentModelExecution } from "./model-config/context";
 import "server-only";
-import { dbEnabled, creditMeteringEnabled, addLedgerEntry, recordImageCostAudit } from "@/lib/db";
+import {addLedgerEntry} from "@/lib/billing/legacy-ledger";
+import {creditMeteringEnabled} from "@/lib/billing/runtime";
+import {recordImageCostAudit} from "@/lib/billing/cost-audit-repository";
 import { imageBillCredits, qualityCostAudit } from "@/lib/billing/legacy";
 import seed from "@/lib/billing/bootstrap.json";
 import type {BillingConfig} from "@/lib/billing/types";
 import { randomUUID } from "node:crypto";
 import { resolveImageQuality, isQualityUnsupportedError, type ResolvedImageQuality, type ExecutedQuality } from "@/lib/image-quality";
-import {synchronousCost,settleSynchronous,currentSynchronousBilling} from "@/lib/billing/synchronous";
-import {getPool} from "@/lib/db";
+import {synchronousCost, settleSynchronous, currentSynchronousBilling} from "@/lib/billing/synchronous-operation";
+import {dbEnabled,getPool} from "@/platform/db/pool";
 import {frozenCostAudit} from "@/lib/billing/audit";
 import type {BillingQuote,BillingResult} from "@/lib/billing/types";
 

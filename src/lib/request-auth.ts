@@ -2,8 +2,9 @@ import "server-only";
 import { requireAdmin, resolveUserEmail } from "@/lib/admin-auth";
 
 /** 当前请求的真实登录邮箱。写接口必须使用它，不能信任客户端提交的 email。 */
-export async function authenticatedEmail(request: Request): Promise<string | null> {
-  const email = await resolveUserEmail(request);
+export async function authenticatedEmail(request: Request, authenticatedActor?: string | null): Promise<string | null> {
+  // Undefined retains unresolved/no-DB ingress; null is already-known anonymous.
+  const email = authenticatedActor === undefined ? await resolveUserEmail(request) : authenticatedActor;
   return email?.trim().toLowerCase() || null;
 }
 
@@ -13,9 +14,10 @@ export async function authenticatedEmail(request: Request): Promise<string | nul
 export async function authorizedTargetEmail(
   request: Request,
   requested: string | null | undefined,
-  allowAdmin = false
+  allowAdmin = false,
+  authenticatedActor?: string | null
 ): Promise<string | null> {
-  const actor = await authenticatedEmail(request);
+  const actor = await authenticatedEmail(request, authenticatedActor);
   if (!actor) return null;
   const target = (requested ?? "").trim().toLowerCase();
   if (!target || target === actor) return actor;

@@ -2,7 +2,7 @@ import {workflowSameOrigin} from '@/lib/enterprise/workflow-origin';
 import {sign} from 'node:crypto';
 import {z} from 'zod';
 import {teamJson,teamFailure} from '@/lib/teams/access';
-import {TeamError} from '@/lib/teams/server';
+import { TeamError } from "@/lib/teams/errors";
 import {rateLimit} from '@/lib/rate-limit';
 import {workflowBridgeConfig,workflowSourceIdentity,workflowIdentityToken} from '@/lib/enterprise/workflow-identity';
 import {deploymentPolicy,IntegrationError} from '@/lib/enterprise/integration/policy';

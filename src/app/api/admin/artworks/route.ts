@@ -1,15 +1,9 @@
 import { isHostedImageUrl } from "@/lib/media-url";
 import { NextResponse } from "next/server";
-import {
-  dbEnabled,
-  listAllArtworks,
-  getArtworkById,
-  createTemplate,
-  deleteArtwork,
-  importedArtworkIds,
-  setUserBanned,
-  bannedEmailsAmong,
-} from "@/lib/db";
+import {createTemplate} from "@/lib/templates/repository";
+import {dbEnabled} from "@/platform/db/pool";
+import {listAllArtworks, getArtworkById, deleteArtwork, importedArtworkIds} from "@/lib/artworks/administration";
+import {setUserBanned, bannedEmailsAmong} from "@/lib/accounts/repository";
 import { requireAdmin } from "@/lib/admin-auth";
 import { CATEGORY_LABELS, type Category } from "@/lib/mock-data";
 

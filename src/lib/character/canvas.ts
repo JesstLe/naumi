@@ -1,5 +1,5 @@
 import type { CanvasCharacterNode } from "../canvas/character-node-schema";
-import type { VideoInputChoice } from "../video/client-settings";
+import type { VideoInputChoice } from "../video/input-choice";
 import { characterInputIdentity, characterReferenceText } from "./project";
 
 /** A role appearance is one ordinary named input; media expansion stays server-side. */

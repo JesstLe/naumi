@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Check,
   Cloud,
@@ -17,11 +17,12 @@ import {
 import { authHeader } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import type { Artwork } from "@/lib/mock-data";
+import type {ComfyRunPayload,ComfyRunResult} from "@/lib/comfyui/run-contract";
 
 // ---------------------------------------------------------------------------
 // 画布 ComfyUI 工作流面板(BYOC 一期):端点管理 + 工作流导入/缺件预检 + 参数运行。
 // 自包含所有交互;执行与产物落地由画布侧回调完成(血缘挂树/占位进度在那边),
-// 面板负责展示视频产物(画布视频节点属后续里程碑)。
+// 面板展示同步产物或持久视频任务的受理状态，不把 202 当作完成。
 // ---------------------------------------------------------------------------
 
 type EndpointView = {
@@ -56,18 +57,6 @@ type MarketItem = {
   updatedAt: string;
 };
 
-export type ComfyRunPayload = {
-  workflowId: string;
-  texts: Record<string, string>;
-  seeds: Record<string, number>;
-  numerics: Record<string, Record<string, number>>;
-};
-
-export type ComfyRunResult = {
-  images?: { id: string; url: string }[];
-  videos?: { url: string; mime: string }[];
-};
-
 export function CanvasComfyDialog({
   open,
   onClose,
@@ -90,6 +79,8 @@ export function CanvasComfyDialog({
   const [seeds, setSeeds] = useState<Record<string, number>>({});
   const [numerics, setNumerics] = useState<Record<string, Record<string, number>>>({});
   const [running, setRunning] = useState(false);
+  const view=useRef(0);
+  useEffect(()=>()=>{view.current++;},[]);
   const [result, setResult] = useState<ComfyRunResult | null>(null);
   const [error, setError] = useState("");
   // 端点表单
@@ -301,16 +292,17 @@ export function CanvasComfyDialog({
 
   async function run() {
     if (!workflowId || running) return;
+    const original=view.current;
     setRunning(true);
     setError("");
     setResult(null);
     try {
       const res = await onRun({ workflowId, texts, seeds, numerics });
-      setResult(res);
+      if(original===view.current&&res.state!=="stale")setResult(res);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "执行失败");
+      if(original===view.current)setError(e instanceof Error ? e.message : "执行失败");
     } finally {
-      setRunning(false);
+      if(original===view.current)setRunning(false);
     }
   }
 
@@ -597,12 +589,14 @@ export function CanvasComfyDialog({
               <button type="button" onClick={() => void run()} disabled={!workflowId || !activeEndpoint || running || !source}
                 className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl canvas-ui-primary text-[13px] font-bold text-white shadow-btn transition-all hover:opacity-90 disabled:opacity-50">
                 {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                {running ? "正在执行,视频任务可能需要几分钟…" : "运行工作流"}
+                {running ? "正在执行…" : result?.state==="needs_review"||result?.state==="partial" ? "检查原任务" : "运行工作流"}
               </button>
 
               {result && (
                 <div className="space-y-2 rounded-xl border border-[var(--canvas-ui-border)] bg-[var(--canvas-ui-soft)] p-3">
-                  {(result.images?.length ?? 0) > 0 && (
+                  {result.state==="submitted"&&<p className="text-[12px] text-[var(--canvas-ui-text)]">视频任务已提交</p>}
+                  {(result.state==="needs_review"||result.state==="partial"||result.state==="failed")&&<p role="status" className="text-[12px] text-[var(--canvas-ui-text)]">{result.message||"原任务尚未全部完成"}</p>}
+                  {result.state==="completed"&&(result.images?.length ?? 0) > 0 && (
                     <p className="text-[12px] text-[var(--canvas-ui-text)]">✓ {result.images!.length} 张图片已生成在原图右侧</p>
                   )}
                   {(result.videos?.length ?? 0) > 0 && (

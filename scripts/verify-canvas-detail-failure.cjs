@@ -1,32 +1,6 @@
-require('tsx/cjs');
-const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path'),assert=require('node:assert/strict'),ts=require('typescript'),{createRequire}=require('node:module');
-const root=process.cwd(),sourceRoot=path.resolve(process.argv[2]||root);
-const file=path.join(root,'scripts/verify-canvas-generation-failure.cjs');
-const h={require:createRequire(file),process:{cwd:()=>root,argv:['node','test',sourceRoot],env:{}},console,AbortSignal,Response,File,FormData,Blob,setTimeout};
-vm.createContext(h);vm.runInContext(fs.readFileSync(file,'utf8').split('(async()=>{let cases=0;')[0]+';globalThis.setup=setup;',h);
-const source=fs.readFileSync(sourceRoot+'/src/components/canvas/canvas-client.tsx','utf8'),ast=ts.createSourceFile('canvas.tsx',source,99,true,4);let detail='';
-function walk(n){if(ts.isFunctionDeclaration(n)&&['generateDetailSequence','livePendingPosition'].includes(n.name?.text))detail+=n.getText(ast)+'\n';ts.forEachChild(n,walk)}walk(ast);assert.ok(detail);
-const code=ts.transpileModule(detail,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
-async function main(){let cases=0;
-for(const pending of [false,true])for(const scenario of ['reference-fails','rejected','submit-unknown','poll-unknown','terminal','review','partial','sync-missing','position-fails','done']){
- const {c,state}=h.setup(scenario);let posts=0,queries=0,recovered=false;const urls=[],positions=[];
- Object.assign(c,{Error,MAX_GENERATION_COUNT:4,MAX_TOTAL_IMAGES:6,DETAIL_MODULE_ORDER:['hero'],fmt:v=>v,NODE_W:320,artworkNodeSize:()=>({height:512})});
- const result=()=>scenario==='review'&&!recovered?{status:'error',operationStatus:'needs_attention',reviewRequired:true,error:'fixture review'}:scenario==='terminal'&&!recovered?{status:'error',operationStatus:'error',error:'fixture failure'}:{status:scenario==='partial'?'error':'done',error:scenario==='partial'?'partial result':undefined,shots:[{id:'result',status:'done',url:'/media/result.png',height:512}],operationStatus:'done'};
- c.privateFetch=async(url,opts)=>{urls.push(url);if(opts?.method==='POST'){posts++;if(scenario==='rejected')return Response.json({error:'fixture rejected'},{status:400});if(scenario==='submit-unknown')throw Error('unknown POST');return Response.json({jobId:'aplus-fixture'})}queries++;if(scenario==='poll-unknown'&&!recovered)throw Error('query offline');return Response.json(result())};
- c.fetch=async url=>{urls.push(url);queries++;return Response.json(result())};
- c.privateFetchRaw=async(url,options)=>{if(url==='/api/artworks/position')positions.push(JSON.parse(options.body));if(url==='/api/artworks/position'&&scenario==='position-fails'&&!recovered)return Response.json({error:'fixture position'},{status:503});return Response.json({artworks:state.artifacts,ok:true})};
- c.mergeWorks=async()=>scenario==='sync-missing'&&!recovered?[c.source]:state.artifacts;
- vm.runInContext(code,c);
- await c.generateDetailSequence(c.source,[c.source],'fixture',[],pending?c.pend:undefined);
- const item=()=>pending?c.pendNodes[0]:c.generationTasks[0],failure=()=>pending?item()?.generationFailure:item()?.failure;
- if(scenario==='done'){assert.equal(c.generationTasks.length,0);if(pending)assert.equal(c.pendNodes.length,0);assert.equal(c.generationOperationRef.current.size,0)}
- else {
-  assert.ok(failure());assert.equal(c.generationOperationRef.current.size,0);
-  const retry=pending?item().onGenerationRetry:item().onRetry;assert.equal(typeof retry,'function');
-  if(['submit-unknown','review'].includes(scenario)){const before=posts;await retry();assert.equal(posts,before+1);}
- }
- cases++;
-}
-console.log(`DETAIL_FAILURE=PASS CASES=${cases} RECHECK_POSTS=0 UNKNOWN_REPLAY=0 SOURCE_REUSABLE=1 SUPPLIER_CALLS=0`);
-}
-main().catch(e=>{console.error(e);process.exitCode=1});
+// Compatibility CLI: run the actual Canvas entries and their extracted owners.
+// Historical closure-only assertions are retained in the fixed baseline archive.
+const path=require('node:path'),{spawnSync}=require('node:child_process');
+const source=process.argv.slice(2).find(arg=>!arg.startsWith('--'))||process.env.TASK_SOURCE_ROOT||process.cwd();
+const result=spawnSync(process.execPath,[path.join(__dirname,'verify-canvas-task-boundaries.cjs'),...(process.argv.includes('--baseline')?['--baseline']:[])],{cwd:process.cwd(),env:{...process.env,TASK_SOURCE_ROOT:path.resolve(source)},stdio:'inherit'});
+if(result.error)throw result.error;process.exit(result.status??1);

@@ -1,5 +1,5 @@
 import "server-only";
-import { dbEnabled, getPool } from "./db";
+import { dbEnabled, getPool } from "@/platform/db/pool";
 export const IMAGE_REVIEW_MESSAGE="本次任务已暂停核查，暂未取得可交付图片；请联系管理员，不会重新生成或重复扣费";
 /** Stored evidence only. A receipt read never queries/restarts a supplier. */
 export async function storedImageReview(id:string,owner:string):Promise<boolean>{

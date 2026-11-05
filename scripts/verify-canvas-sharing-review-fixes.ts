@@ -153,4 +153,3 @@ async function main(){
  console.log(`CANVAS_SHARING_REVIEW_FIXES phase=${expectFixed?"MODIFIED":"BASELINE"} checks=${checks} failures=${failures} findings=4 real_scope=1 real_login=1 supplier_calls=${outbound}`);if(failures)process.exitCode=1;
 }
 main().catch(e=>{console.error(e);process.exitCode=1;}).finally(async()=>{await writeFile(path.join(process.env.REVIEW_OUTPUT!,'OBSERVATIONS.json'),JSON.stringify(evidence,null,2));await writeFile(path.join(process.env.REVIEW_OUTPUT!,'HTTP_TRACE.json'),JSON.stringify(httpTrace,null,2));await closeDatabasePools();console.log('DATABASE_POOLS=CLOSED');});
-

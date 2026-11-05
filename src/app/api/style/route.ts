@@ -1,21 +1,21 @@
 import { modelAwareOpenAI } from "@/lib/model-config/clients";
-import {withBillingRequest,configuredToolCost,synchronousChargedCredits} from "@/lib/billing/synchronous";
-import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
+import {withBillingRequest} from "@/lib/billing/synchronous";
+import {configuredToolCost, synchronousChargedCredits} from "@/lib/billing/synchronous-operation";
+import {observeOpenAI} from "@/lib/bi/model-calls";
+import {withBiRequest} from "@/lib/bi/request";
 import { requestImageQuality, imageQualityCost, withQualityFallback, sdkImageQuality, settleToolImage } from "@/lib/image-quality-request";
 import type { ResolvedImageQuality } from "@/lib/image-quality";
 import { NextResponse } from "next/server";
 import OpenAI, { toFile } from "openai";
-import {
-  dbEnabled,
-  reserveCredits,
-  refundCredits,
-  addArtworks,
-  getUser,
-  isBanned,
-} from "@/lib/db";
+import {reserveCredits, refundCredits} from "@/lib/billing/legacy-credit-reservation";
+import {dbEnabled} from "@/platform/db/pool";
+import {addArtworks} from "@/lib/artworks/writer";
+import {getUser} from "@/lib/accounts/session";
+import {isBanned} from "@/lib/accounts/repository";
 import { clientIp } from "@/lib/ip";
 import { resolveUserEmail } from "@/lib/admin-auth";
-import { storageEnabled, uploadImage } from "@/lib/storage";
+import { storageEnabled } from "@/lib/object-storage/runtime";
+import { uploadImage } from "@/lib/media-upload";
 import { getOpenAISettings } from "@/lib/settings";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
 import { safeError } from "@/lib/api-error";
@@ -70,7 +70,7 @@ async function parseInput(request: Request): Promise<StyleInput | null> {
 async function toPng(buf: Buffer): Promise<Buffer> {
   try {
     const mod = (await import("sharp")) as unknown as {
-      default?: typeof import("sharp");
+      default?: typeof import("sharp").default;
     } & typeof import("sharp");
     const sharp = mod.default ?? mod;
     return await sharp(buf).rotate().png().toBuffer();

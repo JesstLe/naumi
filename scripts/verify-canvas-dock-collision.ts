@@ -14,10 +14,12 @@ if (baseline) {
 } else {
   const layout = readFileSync("src/lib/canvas/dock-layout.ts", "utf8");
   assert.ok(original.includes("separateCanvasDocks({") || layout.includes("separateCanvasDocks({"));
-  assert.ok(original.includes("new ResizeObserver(measure)"));
-  assert.ok(original.includes("[docksReady, canvasSize.width, canvasSize.height,"));
-  assert.ok(original.includes("toolbarWidth: toolbar.offsetWidth"));
-  assert.ok(original.includes("minHeight: Math.min(218, dockStyle?.maxHeight ?? 218)"));
+  const owner = original.includes("useCanvasOverlayLayout") ? readFileSync("src/components/canvas/use-canvas-overlay-layout.ts", "utf8") : original;
+  assert.ok(owner.includes("new ResizeObserver(measure)"));
+  assert.ok(owner.includes("[docksReady, canvasSize.width, canvasSize.height,") || owner.includes("[docksReady,size.width,size.height,"));
+  assert.ok(owner.includes("toolbarWidth: toolbar.offsetWidth") || owner.includes("toolbarWidth:toolbar.offsetWidth"));
+  const textComposer=original.includes("<CanvasTextComposer")?readFileSync("src/components/canvas/text-composer.tsx","utf8"):original;
+  assert.ok(textComposer.includes("minHeight: Math.min(218, dockStyle?.maxHeight ?? 218)"));
   assert.ok(original.includes("const maxHeight = Math.min(preferredHeight, aboveSpace)") || layout.includes("const maxHeight = Math.min(preferredHeight, aboveSpace)"));
   let cases = 0;
   for (const [safeTop,safeBottom] of [[64,356],[64,530],[64,684],[108,716],[64,916]]) {

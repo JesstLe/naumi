@@ -11,11 +11,11 @@ const load=rel=>{
  if(cache.has(rel))return cache.get(rel);
  const module={exports:{}};cache.set(rel,module.exports);
  const mocks={
-  './object-storage/config':{storageConfiguration:()=>({driver:'local',enabled:true,privateMedia:true,mediaDir:'/fixture',accessMode:'proxy'})},
+  '@/platform/db/pool':{dbEnabled:false},'../media-assets':{registerMediaAsset:async()=>{}},'./object-storage/config':{storageConfiguration:()=>({driver:'local',enabled:true,privateMedia:true,mediaDir:'/fixture',accessMode:'proxy'})},
   './object-storage/adapter':{createObjectStorage:()=>({}),safeStorageKey:k=>{if(k.includes('..'))throw Error('key');return k}},
   'fs/promises':{stat:async f=>{reads++;const b=objects.get(f.replaceAll('\\','/').replace(/^.*?\/fixture\//,''));if(!b)throw Object.assign(Error('MISSING'),{code:'ENOENT'});return {isFile:()=>true,size:b.length}},readFile:async f=>objects.get(f.replaceAll('\\','/').replace(/^.*?\/fixture\//,'')),mkdir:async()=>{}},
  };
- const req=s=>s==='server-only'?{}:mocks[s]||(s.startsWith('.')?load(path.posix.normalize(path.posix.join(path.posix.dirname(rel),s))+'.ts'):require(s));
+ const req=s=>s==='server-only'?{}:s==='../object-storage/runtime'?load('src/lib/object-storage/runtime.ts'):s==='./config'&&rel==='src/lib/object-storage/runtime.ts'?mocks['./object-storage/config']:s==='./adapter'&&rel==='src/lib/object-storage/runtime.ts'?mocks['./object-storage/adapter']:mocks[s]||(s.startsWith('.')?load(path.posix.normalize(path.posix.join(path.posix.dirname(rel),s))+'.ts'):require(s));
  const code=ts.transpileModule(text(rel),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;
  vm.runInNewContext('(function(require,module,exports){'+code+'\n})',{Buffer,process:{env:{}},URL,console,setTimeout,clearTimeout},{filename:rel})(req,module,module.exports);
  cache.set(rel,module.exports);return module.exports;
@@ -36,7 +36,7 @@ async function selectedRead(snapshot){
  const begin=source.indexOf('  const selected=')>=0?source.indexOf('  const selected='):source.indexOf('  const checkpoint=storedDeliveryCheckpoint(');
  const end=source.indexOf('  const plan=',begin);assert.ok(begin>=0&&end>begin);
  const body='async function run(child){'+source.slice(begin,end)+'return checkpoint;} module.exports=run;';
- const module={exports:{}};vm.runInNewContext(ts.transpileModule(body,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{module,decodeImageJobValue:codec.decodeImageJobValue,...delivery});return module.exports({id:job,snapshot});
+ const module={exports:{}};vm.runInNewContext(ts.transpileModule(body,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{module,decodeImageJobValue:codec.decodeImageJobValue,applicationTasksRunHere:()=>true,pool:{query:async()=>{}},parent:{id:'fixture'},owner:'fixture',...delivery});return module.exports({id:job,snapshot});
 }
 (async()=>{
  const parse=actualParse();let checks=0;

@@ -1,3 +1,5 @@
+import {videoProjectKeySchema} from "./project-key";
+export {videoProjectKeySchema} from "./project-key";
 import {z} from "zod";
 import {videoInputSchema} from "../video/contract";
 import {orderedInputSchema} from "../video/references";
@@ -5,7 +7,7 @@ import {videoWorkflowManifestSchema} from "../video/workflow-schema";
 import {videoCameraSchema} from "../video/camera";
 import {videoByocOverridesSchema} from "../video/byoc-settings";
 export const videoNodeIdSchema=z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/);
-export const videoProjectKeySchema=z.string().regex(/^(?:tree|batch):[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/);
+
 export const videoNodeConfigSchema=videoInputSchema.omit({orderedInputs:true}).partial().extend({
   batchCount:z.union([z.literal(1),z.literal(2),z.literal(4)]).optional(),
   modelId:videoNodeIdSchema.optional(),providerId:videoNodeIdSchema.optional(),comfyWorkflowId:videoNodeIdSchema.optional(),workflowTaskId:videoNodeIdSchema.optional(),

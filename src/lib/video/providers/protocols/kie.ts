@@ -1,4 +1,5 @@
-import {createdResult,field,jsonObjectString,polled,rejectAdvanced,selectWireOptions,unsupportedWire,wireReferences,type VideoWireContext,type VideoWireRequest,type VideoWireCodec} from "../wire";
+import {createdResult,field,jsonObjectString,polled,rejectAdvanced,selectWireOptions,unsupportedWire,wireReferences} from "../wire-helpers";
+import type {VideoWireContext,VideoWireRequest,VideoWireCodec} from "../wire-contracts";
 // Wire adaptation: IC 68b37db handler/kie_video.go and web/src/services/api/video.ts (AGPL-3.0).
 const options={seed:"seed",mode:"mode",characterOrientation:"character_orientation",character_orientation:"character_orientation",keepOriginalSound:"keep_original_sound",smartShots:"prefer_multi_shots",cfgScale:"cfg_scale",returnLastFrame:"return_last_frame"};
 export function buildKIECreate(context:VideoWireContext):VideoWireRequest{

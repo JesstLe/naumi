@@ -1,8 +1,11 @@
+import {hasProvenImagegenRejection} from './retry-eligibility';
+import {attachCanvasImageVersions,assertCanvasRegeneration} from "../canvas/image-version-store";
 import {taskFailureDiagnostic,type TaskFailureDiagnostic} from "./task-diagnostics";
 import "server-only";
-import {attachCanvasImageVersions,assertCanvasRegeneration} from "../canvas/image-version-store";
-import {DurableImageJobs} from "../durable-image-jobs";
-import {getPool,listArtworksByIds,addArtworks,dbEnabled} from "../db";
+import { DurableImageJobs } from "@/lib/image-jobs/runtime";
+import {getPool, dbEnabled} from "@/platform/db/pool";
+import {listArtworksByIds} from "@/lib/artworks/repository";
+import {addArtworks} from "@/lib/artworks/writer";
 import {readCanvasOutput} from "../canvas-image-input";
 import {inspectImagegenPixels} from "./postprocess";
 import {saveCanvasLocalEdit} from "../canvas-local-image-edit";
@@ -20,7 +23,8 @@ import { imageOutputNotice, presentImagegenOutput, legacyRatioWarning } from "./
 import { plainGeneratedOutput } from "./receipt-policy";
 import { storedImageReview, IMAGE_REVIEW_MESSAGE } from "../image-job-review";
 import { storedDeliveryState, recoverStoredDelivery } from "./stored-delivery";
-import {currentCreationContext} from "../saas/creation-context";
+import {readImagegenBilling} from "./delivery-billing";
+import {currentCreationContext} from "@/lib/saas/creation-scope";
 import {assertImagegenCreationScope,assertAcceptedImagegenCreationScope,imagegenCreationScopeKey,ImagegenScopeError} from "./creation-scope";
 type Parent={failureDiagnostic?:TaskFailureDiagnostic;status:string;result:ImagegenResult;fingerprint:string;children:Record<string,{state:"starting"|"submitted"|"done";jobId?:string;ids?:string[]}>};
 const jobs=new DurableImageJobs<Parent>("imagegen");
@@ -39,19 +43,17 @@ async function artifacts(ids:string[],owner:string){
  for(const id of ids){const w=works.find(w=>w.id===id);if(!w?.image)throw new Error("任务产物不存在或无权访问");const input=await readCanvasOutput(w.image,"http://internal",owner),pixels=await inspectImagegenPixels(input.buffer);results.push({artworkId:id,url:w.image,mime:input.mimeType,...pixels});}
  return results;
 }
-async function childCharges(owner:string,children:Parent["children"],plan:ImagegenPlan){
- return Number((await getPool().query("SELECT COALESCE(sum(charged_credits),0)::int AS n FROM app_billing_operations WHERE email=$1 AND (id=ANY($2::text[]) OR id=ANY($3::text[]))",[owner,Object.values(children).map(c=>c.jobId).filter(Boolean),plan.steps.map(s=>`tool-${imagegenStepId(plan.request.operationId,s.key)}`)])).rows[0].n);
-}
 async function runParent(id:string,payload:Record<string,unknown>,snapshot:Parent){
  const plan=payload.plan as ImagegenPlan,owner=await jobs.owner(id);if(!owner)return;
- let ids:string[]=[],baseIds:string[]=[],cutoutIds:string[]=[],state=snapshot;
+ let ids:string[]=[],baseIds:string[]=[],cutoutIds:string[]=[],state=snapshot,deliveryComplete=true;
  const warnings = new Set(snapshot.result.warnings || []);
  const checkChildOutput = async (jobId?: string) => {
   if(!jobId)return;
-  const row=(await getPool().query("SELECT snapshot->>'imagegenOutputError' AS error,snapshot->>'imagegenOutputWarning' AS warning,jsonb_array_length(CASE WHEN jsonb_typeof(snapshot->'images')='array' THEN snapshot->'images' ELSE '[]'::jsonb END) AS images FROM app_image_jobs WHERE id=$1 AND email=$2",[jobId,owner])).rows[0];
+  const row=(await getPool().query("SELECT snapshot->>'deliveryComplete' AS complete,snapshot->>'imagegenOutputError' AS error,snapshot->>'imagegenOutputWarning' AS warning,jsonb_array_length(CASE WHEN jsonb_typeof(snapshot->'images')='array' THEN snapshot->'images' ELSE '[]'::jsonb END) AS images FROM app_image_jobs WHERE id=$1 AND email=$2",[jobId,owner])).rows[0];
   const notice=imageOutputNotice(row?.error,row?.warning,Number(row?.images)>0);
   if(notice.error)throw new Error(notice.error);
   if(notice.warning)warnings.add(notice.warning);
+  if(row?.complete==="false")deliveryComplete=false;
  };
  const update=async(patch:Partial<Parent>,result:Partial<ImagegenResult>={})=>{state={...state,...patch,result:{...state.result,...result}};await jobs.set(id,state);};
  try{
@@ -73,8 +75,8 @@ async function runParent(id:string,payload:Record<string,unknown>,snapshot:Paren
     if(!child){child={state:"starting"};await update({status:"running",children:{...state.children,[step.key]:child}},{status:"running",stage:step.operation==="cutout"?"postprocessing":step.operation==="edit"?"editing":"generating"});}
     const effective=step.operation==="cutout"&&baseIds.length?{...plan,request:{...plan.request,inputs:[{artworkId:baseIds[Number(step.key.split("-")[1])||0],role:"edit-target" as const}]}}:plan;
     return executeImagegenStep(effective,step.key,owner);
-    },wasStarting),body=await response.json();
-    if(!response.ok){
+    },wasStarting),body=response.body;
+    if(response.status<200||response.status>=300){
      if(body.code==="OPERATION_PENDING"||response.status>=500){await update({status:"error"},{status:"failed",error:{code:"SUBMISSION_UNKNOWN",message:"本次生成未完成，请重试"}});return;}
      throw new NotAccepted(body.error||"执行步骤被拒绝");
     }
@@ -87,12 +89,11 @@ async function runParent(id:string,payload:Record<string,unknown>,snapshot:Paren
     if(row.snapshot.status==="needs_attention"){
      // A review state does not erase a charge already settled by this child.
      // Only project the existing ledger; this path never settles it again.
-     const charge=await childCharges(owner,state.children,plan);
-     await update({status:"error"},{status:"failed",chargedCredits:charge,billingStatus:"confirmed",error:{code:"CHILD_PENDING",message:row.snapshot.error||"本次未取得图片，请重试"}});return;
+     const billing=await readImagegenBilling(owner,state.children,plan);
+     await update({status:"error"},{status:"failed",chargedCredits:billing.chargedCredits,billingStatus:billing.confirmed?"confirmed":"unavailable",error:{code:"CHILD_PENDING",message:row.snapshot.error||"本次未取得图片，请重试"}});return;
     }
     if(row.snapshot.status==="error"){
-     const attempts=Object.values(row.snapshot.paidOperations||{}) as {state:string}[];
-     if(attempts.length&&attempts.every(a=>a.state==="rejected"))throw new NotAccepted(row.snapshot.error||"供应商明确未受理");
+     if(await hasProvenImagegenRejection(row.snapshot.paidOperations))throw new NotAccepted(row.snapshot.error||"供应商明确未受理");
      throw new Error(row.snapshot.error||"生成失败");
     }
     if(row.snapshot.status!=="done"){await update({status:"pending"},{status:row.snapshot.queueState?"queued":"pending"});return;}
@@ -125,21 +126,21 @@ async function runParent(id:string,payload:Record<string,unknown>,snapshot:Paren
   }
   const result=await artifacts(ids,owner);
   if(plan.intent.background==="transparent"&&result.some(a=>a.transparentPixels===0||a.visiblePixels===0))throw new Error("结果没有有效透明主体；原生成版本已保留，请调整模型能力或抠图设置");
-  const charge=await childCharges(owner,state.children,plan);
-  const canvasAttachment=await attachCanvasImageVersions(owner,plan.request,ids);
-  if(canvasAttachment&&!canvasAttachment.applied)warnings.add("节点已更新或锁定，新结果已保存在历史版本，未覆盖当前图片");
-  await update({status:"done"},{status:"succeeded",stage:"done",artifacts:result,canvasAttachment,chargedCredits:charge,billingStatus:"confirmed",warnings:[...warnings],error:undefined});
+  const canvasAttachment=await attachCanvasImageVersions(owner,plan.request,ids,deliveryComplete&&result.length===plan.request.variants);
+  if(canvasAttachment&&!canvasAttachment.applied)warnings.add(deliveryComplete?"节点已更新或锁定，新结果已保存在历史版本，未覆盖当前图片":"已保留生成结果，当前图片保持不变，请检查原任务");
+  const billing=await readImagegenBilling(owner,state.children,plan);
+  await update({status:"done"},{status:deliveryComplete&&result.length===plan.request.variants?"succeeded":"partial",stage:"done",artifacts:result,canvasAttachment,chargedCredits:billing.chargedCredits,billingStatus:billing.confirmed?"confirmed":"unavailable",warnings:[...warnings],error:undefined});
  }catch(error){
   let kept:ImagegenResult["artifacts"]=[],charged=state.result.chargedCredits,chargeKnown=false;
   // Read actual settlement independently: an unreadable image must not turn a paid result into a zero-credit receipt.
-  try{charged=await childCharges(owner,state.children,plan);chargeKnown=true;}catch{warnings.add("积分结算信息暂未同步，请查看积分记录");}
+  try{const billing=await readImagegenBilling(owner,state.children,plan);charged=billing.chargedCredits;chargeKnown=billing.confirmed;}catch{warnings.add("积分结算信息暂未同步，请查看积分记录");}
   for(const id of new Set(baseIds.length?baseIds:ids))try{kept.push(...await artifacts([id],owner));}catch{/* Other retained outputs remain recoverable; do not discard them. */}
   let canvasAttachment:ImagegenResult["canvasAttachment"];
   if(kept.length)try{canvasAttachment=await attachCanvasImageVersions(owner,plan.request,kept.map(a=>a.artworkId),false);}catch{warnings.add("已保留生成结果，节点历史待同步");}
   const safeToRestart=chargeKnown&&charged===0&&!kept.length&&!Object.values(state.children).some(c=>c.state==="done");
   await update({status:error instanceof ImagegenStopped?"done":"error",...(error instanceof ImagegenStopped?{}:{failureDiagnostic:taskFailureDiagnostic(error,state.result.stage==="postprocessing"?"parent-finalize":"execute")})},{status:error instanceof ImagegenStopped?"cancelled":"failed",artifacts:kept,canvasAttachment,chargedCredits:charged,billingStatus:chargeKnown?"confirmed":"unavailable",warnings:[...warnings],error:error instanceof ImagegenStopped?undefined:{code:error instanceof NotAccepted?(safeToRestart?"NOT_ACCEPTED":"PARTIAL_EXECUTION_REJECTED"):"EXECUTION_FAILED",message:error instanceof Error?error.message:"图像处理失败"}});}
 }
-export async function resumeImagegen(id:string,recheckEmptyClaim=true){await jobs.kick(id,(payload,snapshot)=>runParent(id,payload,snapshot),recheckEmptyClaim);}
+export async function resumeImagegen(id:string,recheckEmptyClaim=true){await jobs.kick(id,(payload,snapshot)=>runParent(id,payload,snapshot),recheckEmptyClaim,notifyImagegenJobReleased);}
 /** Reconcile only an already-submitted terminal child through the frozen parent
  * plan. Called outside execution ALS after either side has released its lease. */
 export async function notifyImagegenJobReleased(id:string,kind:"generate"|"imagegen"):Promise<void>{
@@ -179,14 +180,19 @@ async function presentPendingReview(id:string,owner:string,snapshot:Parent):Prom
 }
 /** Receipt lookup cannot claim work or depend on successful scheduling. */
 async function presentParentOutput(id:string,owner:string,result:ImagegenResult):Promise<ImagegenResult>{
- if(!dbEnabled||!["failed","needs_attention"].includes(result.status))return result;
+ if(!dbEnabled)return result;
+ if(["succeeded","partial","failed","needs_attention","cancelled"].includes(result.status))try{
+  const row=(await getPool().query("SELECT payload->'plan' plan,snapshot->'children' children FROM app_image_jobs WHERE id=$1 AND email=$2 AND kind='imagegen'",[id,owner.toLowerCase()])).rows[0];
+  if(row){const billing=await readImagegenBilling(owner,row.children||{},row.plan);result={...result,chargedCredits:billing.chargedCredits,billingStatus:billing.confirmed?"confirmed":"unavailable"};}
+ }catch{result={...result,billingStatus:"unavailable"};}
+ if(!["failed","needs_attention"].includes(result.status))return result;
  const recovery=await storedDeliveryState(id,owner);
  if(recovery?.ids){try{
   const resultArtifacts=await artifacts(recovery.ids,owner);
   const row=(await getPool().query("SELECT payload->'plan' plan,snapshot->'children' children FROM app_image_jobs WHERE id=$1 AND email=$2 AND kind='imagegen'",[id,owner.toLowerCase()])).rows[0];
   if(!row)return result;
-  const charged=await childCharges(owner,row.children,row.plan);
-  return {...result,artifacts:resultArtifacts,chargedCredits:charged,billingStatus:"confirmed",recoveryAvailable:false,status:recovery.complete?"succeeded":"needs_attention",stage:recovery.complete?"done":result.stage,error:recovery.complete?undefined:{code:"OUTPUT_PROCESSING_INCOMPLETE",message:"原始生成图片已恢复，其余处理仍待核查；不会重新生成"},warnings:[...new Set([...(result.warnings||[]),"已从保存的原始结果恢复，没有重新生成或重复扣费"])]};
+  const billing=await readImagegenBilling(owner,row.children,row.plan);
+  return {...result,artifacts:resultArtifacts,chargedCredits:billing.chargedCredits,billingStatus:billing.confirmed?"confirmed":"unavailable",recoveryAvailable:false,status:recovery.complete?"succeeded":"needs_attention",stage:recovery.complete?"done":result.stage,error:recovery.complete?undefined:{code:"OUTPUT_PROCESSING_INCOMPLETE",message:"原始生成图片已恢复，其余处理仍待核查；不会重新生成"},warnings:[...new Set([...(result.warnings||[]),"已从保存的原始结果恢复，没有重新生成或重复扣费"])]};
  }catch{return {...result,billingStatus:"unavailable"};}}
  if(recovery?.available)return {...result,recoveryAvailable:true,error:{code:"STORED_OUTPUT_AVAILABLE",message:"已有原始生成图片待恢复，点击检查原任务可恢复；不会重新生成或重复扣费"}};
  const legacyRatio=legacyRatioWarning(result.error?.message),oversize=result.error?.code==="EXECUTION_FAILED"&&result.error.message==="对象超过大小限制";
@@ -203,8 +209,8 @@ async function presentParentOutput(id:string,owner:string,result:ImagegenResult)
  const ids=(saved.images||[]).map((image:{id?:string})=>image.id).filter(Boolean) as string[];
  if(!ids.length||ids.length>4||ids.length!==(child.ids||[]).length||ids.some(id=>!child.ids?.includes(id)))return result;
  try{
-  const restored=await artifacts(ids,owner),charge=await childCharges(owner,children,plan);
-  return {...result,status:"succeeded",stage:"done",artifacts:restored,chargedCredits:charge,billingStatus:"confirmed",error:undefined,warnings:[...new Set([...(result.warnings||[]),"已恢复原生成图片，积分以实际结算记录为准"])]};
+  const restored=await artifacts(ids,owner),billing=await readImagegenBilling(owner,children,plan);
+  return {...result,status:"succeeded",stage:"done",artifacts:restored,chargedCredits:billing.chargedCredits,billingStatus:billing.confirmed?"confirmed":"unavailable",error:undefined,warnings:[...new Set([...(result.warnings||[]),"已恢复原生成图片，积分以实际结算记录为准"])]};
  }catch{return {...result,billingStatus:"unavailable"};}
 }
 export async function readImagegenReceipt(operationId:string,owner:string):Promise<ImagegenResult|null>{

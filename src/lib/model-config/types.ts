@@ -23,7 +23,8 @@ export interface ModelConfigRepository {
   stageRestore(input: RestoreInput): Promise<ModelPublication>;
   publication(id: string): Promise<ModelPublication>;
   history(limit: number): Promise<ModelVersionSummary[]>;
-  markApplied(id: string, digest: string): Promise<ModelSnapshot>;
+  /** Only the publish use case supplies its staged draft; restore leaves it absent. */
+  markApplied(id: string, digest: string, publishedDraftId?: string): Promise<ModelSnapshot>;
   setPhase(id: string, phase: Exclude<PublicationPhase, "applied">, errorCode?: string): Promise<ModelPublication>;
 }
 export class ModelConfigError extends Error {

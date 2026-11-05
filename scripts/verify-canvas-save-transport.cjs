@@ -6,14 +6,14 @@ const {createServer} = require('node:http'), {spawnSync} = require('node:child_p
 const crypto = require('node:crypto'), assert = require('node:assert/strict');
 const root = process.cwd(), mode = process.argv[2] || 'MODIFIED';
 const hook = path.resolve(process.argv[3] || 'src/components/canvas/video/use-video-nodes.ts');
-const out = path.resolve(process.argv[4] || `output/capacity-canvas-transport/${mode}`);
+const out = path.resolve(process.argv[4] || process.env.CANVAS_SAVE_TRANSPORT_EVIDENCE || `output/capacity-canvas-transport/${mode}`);
 fs.mkdirSync(out, {recursive:true});
 function shell(command,args) { const p=spawnSync(command,args,{encoding:'utf8',windowsHide:true}); if(p.status!==0)throw Error(p.stderr||p.stdout); return p.stdout.trim(); }
 function load(file, overrides={}) {
   const filename=path.resolve(file), m={exports:{}};
   const code=require('typescript').transpileModule(fs.readFileSync(filename,'utf8'),{compilerOptions:{module:1,target:9}}).outputText;
   vm.runInThisContext(require('node:module').wrap(code),{filename})(m.exports, name=>{
-    if(name in overrides)return overrides[name]; if(name==='server-only')return {};
+    if(name in overrides)return overrides[name]; if(name==='server-only')return {};if(name.startsWith('@/'))return load(path.resolve(root,'src',name.slice(2))+'.ts');
     if(name.startsWith('.'))return load(path.resolve(path.dirname(filename),name+'.ts'));
     return require(name);
   },m,filename,path.dirname(filename));return m.exports;
@@ -21,23 +21,24 @@ function load(file, overrides={}) {
 async function child() {
   const {Pool}=require('pg'), {build}=require('esbuild'), {chromium}=require('playwright');
   const pool=new Pool({connectionString:process.env.DATABASE_URL,max:5});
-  const canonicalText=fs.readFileSync('src/lib/model-config/repository.ts','utf8').match(/export function canonicalConfig[\s\S]*?\n}/)[0];
-  const canonicalConfig=vm.runInThisContext(require('typescript').transpileModule(canonicalText.replace('export ',''),{compilerOptions:{target:9}}).outputText+'\ncanonicalConfig;');
-  const repo=load('src/lib/canvas/video-node-repository.ts',{'../db':{getPool:()=>pool,ensureSchema:async()=>{}},'../model-config/repository':{canonicalConfig}});
+  const schemaModule=load('src/lib/canvas/storage-schema.ts',{'@/platform/db/pool':{getPool:()=>pool},'@/platform/db/schema-readiness':{databaseSchemaReadiness:()=>({})},'@/lib/persistence/schema':{ensureSchema:async()=>{}}});
+  const canonicalText=fs.readFileSync('src/lib/model-config/snapshot-value.ts','utf8').match(/export function canonicalConfig[\s\S]*?\n}/)[0];const canonicalConfig=vm.runInThisContext(require('typescript').transpileModule(canonicalText.replace('export ',''),{compilerOptions:{target:9}}).outputText+'\ncanonicalConfig;');
+  const repo=load('src/lib/canvas/video-node-repository.ts',{'@/platform/db/pool':{getPool:()=>pool},'@/lib/canvas/storage-schema':schemaModule,'@/lib/model-config/snapshot-value':{canonicalConfig}});
   await repo.ensureVideoNodeSchema();
   const actor='canvas-fixture@example.test', key='tree:fixture', id='vnode-fixture';
   async function save(owner,input) {const c=await pool.connect();try{await c.query('BEGIN');const node=await repo.saveVideoNodeTx(c,owner,input,input.projectKey||key);await c.query('COMMIT');return node;}catch(e){await c.query('ROLLBACK');throw e;}finally{c.release();}}
   let controls={},requests=[],pending=0,maxPending=0,reads=0;
   const clientPath=path.resolve(path.dirname(hook),'../canvas-client.tsx');
   const clientSource=fs.readFileSync(fs.existsSync(clientPath)?clientPath:'src/components/canvas/canvas-client.tsx','utf8');
-  const patchCaller=clientSource.slice(clientSource.indexOf('  async function patchVideoNode('),clientSource.indexOf('  async function saveVideoDraft('));
+  const start=clientSource.search(/  (?:async )?function patchVideoNode\(/);assert.ok(start>=0);
+  const patchCaller=clientSource.slice(start,clientSource.indexOf('  async function saveVideoDraft(',start));
   const alertStart=clientSource.indexOf('      {(unsavedTextCount>0||videoNodesStore.unsavedCount>0)');
   const alertJsx=alertStart<0?'':clientSource.slice(alertStart,clientSource.indexOf('</div>}',alertStart)+7);
-  const bundle=await build({stdin:{contents:`import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {useVideoNodes} from ${JSON.stringify(hook.replaceAll('\\','/'))};import {selectWorkspace} from './src/lib/saas/workspace-client';window.switchWorkspace=selectWorkspace;
+  const bundle=await build({stdin:{contents:`import React,{useRef,useSyncExternalStore} from 'react';import {createCanvasDocumentContext} from './src/lib/canvas/document-scope';import {createCanvasVideoNodeActions} from './src/lib/canvas/video-node-actions';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {useVideoNodes} from ${JSON.stringify(hook.replaceAll('\\','/'))};import {selectWorkspace,currentWorkspaceRevision,WORKSPACE_SELECTION} from './src/lib/saas/workspace-client';window.switchWorkspace=selectWorkspace;
     const stringify=JSON.stringify;window.serialization={calls:0,bytes:0};JSON.stringify=function(...args){const value=stringify.apply(JSON,args);if(typeof value==='string'&&value.includes('x'.repeat(100))) {window.serialization.calls++;window.serialization.bytes+=new TextEncoder().encode(value).length;}return value;};
-    let options={email:${JSON.stringify(actor)},readOnly:false};const request=(url,init={})=>fetch(url,{...init,headers:{...Object.fromEntries(new Headers(init.headers)), 'x-fixture-actor':options.email}});
-    const root=createRoot(document.getElementById('root'));function App(){const videoNodesStore=useVideoNodes({...options,request});window.store=videoNodesStore;const pushUndo=(value)=>{};${patchCaller}window.patchVideoNode=patchVideoNode;const unsavedTextCount=0,unsavedTextRef={current:new Map()},persistTextNode=async n=>n,t=k=>k,flashTip=msg=>{window.tip=msg;};return <div>{window.store.nodes.length}${alertJsx}</div>;}
-    window.mount=(next={})=>{options={...options,...next};flushSync(()=>root.render(React.createElement(App)));};window.detach=()=>flushSync(()=>root.render(null));window.mount();`,resolveDir:root,loader:'tsx'},bundle:true,write:false,platform:'browser',define:{'process.env.NODE_ENV':'"production"'},tsconfig:path.join(root,'tsconfig.json'),plugins:[{name:'copied-save-module',setup(build){build.onResolve({filter:/^@\/lib\/canvas\/video-node-save-queue$/},()=>{const copy=path.resolve(path.dirname(hook),'../../../lib/canvas/video-node-save-queue.ts');return fs.existsSync(copy)?{path:copy}:undefined;});build.onResolve({filter:/^\./},args=>{const sourceRoot=path.resolve(path.dirname(hook),'../../../..');if(sourceRoot===root||!args.importer.startsWith(sourceRoot+path.sep))return;const candidate=path.resolve(path.dirname(args.importer),args.path);if(['','.ts','.tsx'].some(ext=>fs.existsSync(candidate+ext)))return;const fallback=path.resolve(root,path.relative(sourceRoot,path.dirname(args.importer)),args.path);for(const ext of ['','.ts','.tsx'])if(fs.existsSync(fallback+ext))return {path:fallback+ext};});}}]});
+    window.__fixtureActor=${JSON.stringify(actor)};let options={email:${JSON.stringify(actor)},readOnly:false};const request=(url,init={})=>fetch(url,{...init,headers:{...Object.fromEntries(new Headers(init.headers)), 'x-fixture-actor':options.email}});
+    const root=createRoot(document.getElementById('root'));function App(){window.__fixtureActor=options.email;useSyncExternalStore(cb=>{window.addEventListener(WORKSPACE_SELECTION,cb);return()=>window.removeEventListener(WORKSPACE_SELECTION,cb)},currentWorkspaceRevision,()=>0);const ctx=useRef(createCanvasDocumentContext()),scope=ctx.current.render(options.email,'tree:fixture');const videoNodesStore=useVideoNodes({...options,scope,request});window.store=videoNodesStore;const pushUndo=(value)=>{};const videoNodeActions=createCanvasVideoNodeActions().bind(scope,{store:videoNodesStore,history:pushUndo});${patchCaller}window.patchVideoNode=patchVideoNode;const canvasTextDocument={retry:async()=>{}},unsavedTextCount=0,unsavedTextRef={current:new Map()},persistTextNode=async n=>n,t=k=>k,flashTip=msg=>{window.tip=msg;};return <div>{window.store.nodes.length}${alertJsx}</div>;}
+    window.mount=(next={})=>{options={...options,...next};flushSync(()=>root.render(React.createElement(App)));};window.detach=()=>flushSync(()=>root.render(null));window.mount();`,resolveDir:root,loader:'tsx'},bundle:true,write:false,platform:'browser',define:{'process.env.NODE_ENV':'"production"'},tsconfig:path.join(root,'tsconfig.json'),plugins:[{name:'copied-save-module',setup(build){build.onResolve({filter:/supabase$/},()=>({path:'auth',namespace:'fixture-auth'}));build.onLoad({filter:/.*/,namespace:'fixture-auth'},()=>({contents:"export const authHeader=async()=>({'x-fixture-actor':window.__fixtureActor});",loader:'js'}));build.onResolve({filter:/^@\/lib\/canvas\/video-node-save-queue$/},()=>{const copy=path.resolve(path.dirname(hook),'../../../lib/canvas/video-node-save-queue.ts');return fs.existsSync(copy)?{path:copy}:undefined;});build.onResolve({filter:/^\./},args=>{const sourceRoot=path.resolve(path.dirname(hook),'../../../..');if(sourceRoot===root||!args.importer.startsWith(sourceRoot+path.sep))return;const candidate=path.resolve(path.dirname(args.importer),args.path);if(['','.ts','.tsx'].some(ext=>fs.existsSync(candidate+ext)))return;const fallback=path.resolve(root,path.relative(sourceRoot,path.dirname(args.importer)),args.path);for(const ext of ['','.ts','.tsx'])if(fs.existsSync(fallback+ext))return {path:fallback+ext};});}}]});
   const server=createServer(async(req,res)=>{
     try {
       const url=new URL(req.url,'http://127.0.0.1');

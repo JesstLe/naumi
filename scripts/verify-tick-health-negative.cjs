@@ -9,11 +9,11 @@ function load(file,bindings={}){const module={exports:{}};const code=transformSy
  const name='naumi-health-negative-'+randomUUID(),label='tick-health-negative',password=randomUUID();
  container=run('docker',['run','-d','--rm','--name',name,'--label','naumi.task='+label,'--memory','256m','--cpus','1','--tmpfs','/var/lib/postgresql/data','-p','127.0.0.1::5432','-e','POSTGRES_PASSWORD='+password,'-e','POSTGRES_DB=tick_health_fixture','postgres:16-alpine']);
  try{
-  let ready=false;for(let n=0;n<50;n++){if(spawnSync('docker',['exec',container,'pg_isready','-U','postgres']).status===0){ready=true;break;}await new Promise(r=>setTimeout(r,100));}assert.ok(ready);
+  let ready=false;for(let n=0;n<50;n++){if(spawnSync('docker',['exec',container,'pg_isready','-h','127.0.0.1','-U','postgres']).status===0){ready=true;break;}await new Promise(r=>setTimeout(r,100));}assert.ok(ready);
   const port=run('docker',['port',container,'5432/tcp']).split(':').at(-1),pool=new Pool({connectionString:`postgresql://postgres:${password}@127.0.0.1:${port}/tick_health_fixture`,max:2});
   try{
    await pool.query('CREATE TABLE app_image_jobs(email text,created_at timestamptz,snapshot jsonb); CREATE TABLE app_canvas_image_tasks(email text,created_at timestamptz,status text); CREATE TABLE app_video_tasks(email text,created_at timestamptz,status text)');
-   const health=load('src/lib/enterprise/health.ts',{'@/lib/teams/server':{TeamError:Error},'./server':{enterpriseRead:async(_a,_id,cb)=>cb(pool,{owner:true,manageMembers:true,visible:[],team:{owner_email:'fixture@local.test'}})}});
+   const health=load('src/lib/enterprise/health.ts',{'../platform/db/pool':{dbEnabled:true,getPool:()=>pool},'@/platform/db/pool':{dbEnabled:true,getPool:()=>pool},'@/lib/teams/server':{TeamError:Error},'./server':{enterpriseRead:async(_a,_id,cb)=>cb(pool,{owner:true,manageMembers:true,visible:[],team:{owner_email:'fixture@local.test'}})}});
    const current=process.cwd();const receiptFile=path.join(current,'src/lib/release-runtime/worker-tick-receipts.ts');
    const receiptSource=transformSync(fs.readFileSync(receiptFile,'utf8'),{loader:'ts',format:'cjs'}).code,module={exports:{}};
    vm.runInThisContext('(function(require,module,exports){'+receiptSource+'\n})')(s=>s==='server-only'?{}:require(s),module,module.exports);

@@ -1,5 +1,5 @@
 import "server-only";
-import { getSetting, setSetting } from "@/lib/db";
+import {getSetting,setSetting} from "@/lib/settings/repository";
 
 // ---------------------------------------------------------------------------
 // 后台可管理的"程序附加提示词"配置。

@@ -4,7 +4,7 @@ import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
 import { useEffect, useRef, useState } from "react";
 import { Settings2, Video, Lock, Loader2,Info } from "lucide-react";
 import type { CanvasVideoNode } from "@/lib/canvas/video-node-schema";
-import type { PublicVideoTaskView } from "@/lib/video/service";
+import {type PublicVideoTaskView} from "@/lib/video/queries";
 import { videoButtonClass } from "./form-controls";
 import { VideoPlayer, type VideoPlayerAction } from "./player";
 export type VideoGenerationNodeData = {

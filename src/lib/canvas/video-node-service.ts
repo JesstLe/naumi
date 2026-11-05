@@ -1,27 +1,34 @@
+import {resolveCanvasTimelineInputs} from "./timeline-references";
+import {resolveCanvasAudioInputs} from "./audio-references";
+import {authorizeSceneInputs} from "./scene-references";
+import {authorizeCharacterInputs} from "./character-references";
+import {authorizeVideoProject,mayCreateCanvasRoot as mayCreateOwnRoot} from "./project-access";
+export {authorizeVideoProject} from "./project-access";
 import "server-only";
-import {bindActualCreationProject,assertCreationProjectInput,currentCreationContext} from "../saas/creation-context";
+import {bindActualCreationProject,assertCreationProjectInput} from "@/lib/saas/creation-access";
+import {currentCreationContext} from "@/lib/saas/creation-scope";
 import {assertCreationObjectRefs,acceptCreationTx,creationLinkTx,completeCreationTx} from "../saas/creation-writer";
 import {createHash} from "node:crypto";
-import {getPool,listArtworksByIds,getVideoTask,type ArtworkRecord} from "../db";
-import {canonicalConfig} from "../model-config/repository";
+import {getVideoTask} from "@/lib/video/task-repository";
+import {getPool} from "@/platform/db/pool";
+import {listArtworksByIds} from "@/lib/artworks/repository";
+import {type ArtworkRecord} from "@/lib/artworks/types";
+import {canonicalConfig} from "@/lib/model-config/snapshot-value";
 import {publicVideoTaskSnapshot} from "../video/task-snapshot";
 import {importVideoAsset} from "../video/assets";
-import {storageKeyFromManagedUrl} from "../storage";
+import { storageKeyFromManagedUrl } from "../object-storage/runtime";
 import type {OrderedInput} from "../video/references";
 import {ownedVideoWorkflowSource} from "../video/workflow-source";
 import {verifiedOwnedMedia} from "../video/media-inspection";
-import {adaptiveCanvasImageSize} from "../mock-data";
+import {adaptiveCanvasImageSize} from "./image-size";
 import {ModelConfigError} from "../model-config/types";
 import {authorizeVideoReferences} from "../video/reference-materialization";
-import {videoNodeWriteSchema,videoNodeConfigSchema,type CanvasVideoNode,type VideoNodeWrite} from "./video-node-schema";
-import {ensureVideoNodeSchema,getVideoNode,listVideoNodes,saveVideoNodeTx,associateVideoTaskTx,completeVideoNodeTx} from "./video-node-repository";
+import { videoNodeWriteSchema, videoNodeConfigSchema, type CanvasVideoNode, type VideoNodeWrite } from "./video-node-schema";
+import {getVideoNode,listVideoNodes,saveVideoNodeTx,associateVideoTaskTx,completeVideoNodeTx} from "./video-node-repository";
+import {ensureVideoNodeSchema} from "@/lib/canvas/storage-schema";
+
 export {getVideoNode,listVideoNodes};
-import {authorizeCanvasProject as authorizeVideoProject,mayCreateCanvasRoot as mayCreateOwnRoot} from "./project-access";
-export {authorizeVideoProject};
-import {authorizeSceneInputs} from "./scene-references";
-import {resolveCanvasTimelineInputs} from "./timeline-references";
-import {resolveCanvasAudioInputs} from "./audio-references";
-import {authorizeCharacterInputs} from "./character-references";
+
 
 export async function authorizeNodeInputs(actor:string,input:VideoNodeWrite){
   const config=input.config;

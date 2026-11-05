@@ -99,6 +99,7 @@ const entry = `
     const triggerUpload = (...args) => record('upload', ...args);
     const openHistoryPicker = (...args) => record('history', ...args);
     const doUndo = () => record('undo'), doRedo = () => record('redo'), pasteNode = () => record('paste');
+    const clipboard = {paste: () => record('paste')};
     const Sep = () => <div role="separator" className="canvas-ui-divider my-1 h-px" />;
     ${createNode}
     window.__configure = ({readonly = false, video = true, busy = false} = {}) => {setReadOnly(readonly);setVideoAllowed(video);setVideoBusy(busy);setCtxMenu(null);setNodeTypeMenu(null);setAddMenuOpen(false);};

@@ -6,7 +6,7 @@ import { mkdtemp, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { sourceSite, sourceBridge, inspectSource, probeSource } from '../lib/enterprise-source-audit.mjs';
+import { sourceSite, sourceBridge, inspectSource, probeSource } from '../../services/enterprise-workflow/src/source-onboarding/audit.mjs';
 
 const id = '1095114e-6b57-429e-a954-7d663907e0c9';
 const site = { version: 1, adminUrl: 'https://source.example/admin', enterpriseId: id, expectedEnterpriseName: 'Synthetic enterprise' };

@@ -5,10 +5,10 @@ import { resolveImageSkill } from "@/lib/image-skills/server";
 import { SkillError } from "@/lib/image-skills/catalog";
 import {randomUUID} from "node:crypto";
 import { NextResponse } from "next/server";
-import { withBiRequest } from "@/lib/bi/model-observer";
+import {withBiRequest} from "@/lib/bi/request";
 import { resolveUserEmail } from "@/lib/admin-auth";
-import { dbEnabled } from "@/lib/db";
-import { checkRateLimit } from "@/lib/rate-limit-http";
+import { dbEnabled } from "@/platform/db/pool";
+import {checkRateLimit} from "@/lib/rate-limit-http";
 import { getOpenAISettings } from "@/lib/settings";
 import {
   appendSessionEvent,

@@ -3,7 +3,7 @@ import {createHash,randomUUID} from "node:crypto";
 import {mkdir,writeFile,readFile,lstat,statfs} from "node:fs/promises";
 import path from "node:path";
 import type {MediaProbe,MediaJobRequest} from "./media-job-schema";
-import {validateMediaAuxiliaryText,safeMediaName} from "../../../scripts/video-fusion/media-engine.mjs";
+import {validateMediaAuxiliaryText,safeMediaName} from "../../modules/media/contract.mjs";
 
 export const MEDIA_JOB_DIR=path.resolve(process.env.MEDIA_JOB_DIR||"./data/media-jobs");
 export type WorkerInput={name:string;bytes:number;sha256:string};

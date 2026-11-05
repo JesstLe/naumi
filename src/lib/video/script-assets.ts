@@ -1,13 +1,17 @@
+import {ensureVideoScriptSchema as ensureScriptSchema} from "@/lib/video/storage-schema";
 import {canvasTextContent} from "../canvas/text-content";
 import "server-only";
 import {createHash} from "node:crypto";
 import {z} from "zod";
-import {ensureSchema,getPool} from "../db";
-import {authorizeVideoProject} from "../canvas/video-node-service";
-import {ensureVideoNodeSchema} from "../canvas/video-node-repository";
-import {videoNodeIdSchema,videoProjectKeySchema} from "../canvas/video-node-schema";
+
+import {getPool} from "@/platform/db/pool";
+import { authorizeVideoProject } from "../canvas/project-access";
+
+
+import { videoNodeIdSchema } from "../canvas/video-node-schema";
+import { videoProjectKeySchema } from "../canvas/project-key";
 import {ModelConfigError} from "../model-config/types";
-import {adaptiveCanvasImageSize} from "../mock-data";
+import {adaptiveCanvasImageSize} from "../canvas/image-size";
 
 export const videoScriptAssetSchema=z.strictObject({
   operationId:z.uuid(),projectKey:videoProjectKeySchema,title:z.string().trim().min(1).max(200),
@@ -20,15 +24,8 @@ export const videoScriptAssetSchema=z.strictObject({
   if(slice ? value.content!==undefined||value.referenceNodeId!==undefined||value.start===undefined||value.end===undefined||value.start>=value.end : value.content===undefined||value.start!==undefined||value.end!==undefined||value.expectedSourceSha256!==undefined&&!value.referenceNodeId)
     ctx.addIssue({code:"custom",message:"保存完整原稿或指定实际来源及连续起止位置"});
 });
-let ready:Promise<void>|undefined;
-async function ensureScriptSchema(){
-  await ensureSchema();await ensureVideoNodeSchema();
-  ready??=getPool().query(`CREATE TABLE IF NOT EXISTS app_video_script_operations (
-    email text NOT NULL,operation_id uuid NOT NULL,request_fingerprint text NOT NULL,node_id text NOT NULL,
-    source_node_id text,source_sha256 text,source_start integer,source_end integer,created_at timestamptz NOT NULL DEFAULT now(),
-    PRIMARY KEY(email,operation_id),UNIQUE(node_id))`).then(()=>undefined).catch(error=>{ready=undefined;throw error;});
-  await ready;
-}
+
+
 const hash=(value:string)=>createHash("sha256").update(value).digest("hex");
 const view=(row:any)=>({id:row.id,projectKey:row.project_key,title:row.title,content:row.content,status:row.status,x:Number(row.canvas_x),y:Number(row.canvas_y),width:Number(row.canvas_width),height:Number(row.canvas_height)});
 function dividesSurrogate(text:string,index:number){return index>0&&index<text.length&&text.charCodeAt(index-1)>=0xd800&&text.charCodeAt(index-1)<=0xdbff&&text.charCodeAt(index)>=0xdc00&&text.charCodeAt(index)<=0xdfff;}

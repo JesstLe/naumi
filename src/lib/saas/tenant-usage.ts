@@ -1,8 +1,8 @@
 import 'server-only';
 import type { Pool, PoolClient } from 'pg';
-import { getPool } from '@/lib/db';
+import { getPool } from "@/platform/db/pool";
 import { enterpriseRead } from '@/lib/enterprise/server';
-import { TeamError } from '@/lib/teams/server';
+import { TeamError } from "@/lib/teams/errors";
 import type { TeamActor } from '@/lib/teams/grants';
 import { tenantDates } from './tenants';
 import type { TenantUsage, TenantUsageQuery } from './tenant-usage-contracts';

@@ -4,6 +4,14 @@ const args=process.argv.slice(2),arg=(k,d)=>args.includes(k)?args[args.indexOf(k
 fs.mkdirSync(out,{recursive:true});const file=path.join(root,'src/components/canvas/canvas-client.tsx'),text=fs.readFileSync(file,'utf8');
 const ast=ts.createSourceFile(file,text,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX),functions={};let pendingEffect;
 function visit(n){if(ts.isFunctionDeclaration(n)&&n.name)functions[n.name.text]=n.getText(ast);if(ts.isCallExpression(n)&&n.expression.getText(ast)==='useEffect'&&n.arguments[0]&&ts.isArrowFunction(n.arguments[0])&&n.arguments[0].getText(ast).includes('const node = pendingNodeRef.current;'))pendingEffect=n.arguments[0].getText(ast);ts.forEachChild(n,visit)}visit(ast);
+if(!baseline&&text.includes('useCanvasTextTasks')){
+ const {spawnSync}=require('node:child_process');let exit=0;
+ for(const [file,args]of [['scripts/verify-canvas-text-tasks.cjs',[]],['scripts/verify-canvas-image-imports.cjs',['--source-root',root,'--output',path.join(out,'imports')]]]){
+  const r=spawnSync(process.execPath,[path.join(root,file),...args],{cwd:root,env:{...process.env,TEXT_TASK_SOURCE_ROOT:root,TEXT_TASK_EVIDENCE:path.join(out,'text-tasks')},encoding:'utf8'});
+  fs.writeFileSync(path.join(out,path.basename(file)+'.log'),r.stdout+r.stderr);process.stdout.write(r.stdout||'');process.stderr.write(r.stderr||'');if(r.status!==0)exit=1;
+ }
+ console.log(`CANVAS_UPLOAD_REVERSE=${exit?'FAIL':'PASS'} ACTUAL_TASK_IMPORT_OWNERS=1 SUPPLIER_CALLS=0 EXIT=${exit}`);process.exitCode=exit;return;
+}
 assert.ok(functions.uploadRoot&&functions.reversePromptsForSelection&&pendingEffect);
 const loaded=[{path:file,sha256:crypto.createHash('sha256').update(text).digest('hex')}],checks=[],failures=[];
 const transpile=s=>ts.transpileModule(s,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;

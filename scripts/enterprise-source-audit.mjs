@@ -2,7 +2,7 @@ import { readFile, mkdir, writeFile, lstat } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import pg from 'pg';
-import { sourceSite, inspectSource, probeSource, SourceAuditError } from './lib/enterprise-source-audit.mjs';
+import { sourceSite, inspectSource, probeSource, SourceAuditError } from '../services/enterprise-workflow/src/source-onboarding/audit.mjs';
 
 try {
   const [mode, ...args] = process.argv.slice(2), options = {};

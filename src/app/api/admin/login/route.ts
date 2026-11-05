@@ -9,7 +9,7 @@ import { checkRateLimit } from "@/lib/rate-limit-http";
 import { clientIp } from "@/lib/ip";
 import { supabaseEnabled } from "@/lib/auth-mode";
 import { activeNativeUserEmail } from "@/lib/native-auth";
-import { getUserRole } from "@/lib/db";
+import {getUserRole} from "@/lib/accounts/repository";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

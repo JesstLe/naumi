@@ -4,7 +4,7 @@ import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import { Download, File, Play, X } from "lucide-react";
 import type { CanvasShare, CollaborationAttachment, CollaborationMessage } from "@/lib/collaboration/contracts";
-import { useCollaborationState } from "./collaboration-provider";
+import { useCollaborationState } from "./collaboration-context";
 import { errorText, isAbort, safeLink } from "./transport";
 
 export function MessageMarkdown({ body }: { body: string }) {

@@ -102,15 +102,15 @@ async function main() {
     return Response.json({ jobId: "imagegen-" + id, operationId: id, status: "succeeded", chargedCredits: entry?.credits ?? saved().authorizedCredits, artifacts: [] });
   }
   function load(): Record<string, any> {
-    const module = { exports: {} }, events = new EventTarget();
+    const loadedModule = { exports: {} }, events = new EventTarget();
     vm.runInNewContext(bundle.outputFiles[0].text, {
-      module, exports: module.exports, console, fetch: fixtureFetch, sessionStorage: storage,
+      module: loadedModule, exports: loadedModule.exports, console, fetch: fixtureFetch, sessionStorage: storage,
       window: { localStorage, confirm: () => { confirms++; return true; },
         addEventListener: events.addEventListener.bind(events), removeEventListener: events.removeEventListener.bind(events), dispatchEvent: events.dispatchEvent.bind(events) },
       Event, CustomEvent, Response, Request, Headers, FormData, File, Blob, URL, AbortSignal, TextEncoder, Uint8Array, DOMException,
       crypto: webcrypto, setTimeout, clearTimeout,
     });
-    return module.exports;
+    return loadedModule.exports;
   }
   let client = load();
   const scope = { owner: "requote-fixture@example.test", project: "tree:fixture-node" };

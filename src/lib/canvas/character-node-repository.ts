@@ -1,34 +1,14 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import type { PoolClient } from "pg";
-import { getPool } from "../db";
-import { canonicalConfig } from "../model-config/repository";
+import { getPool } from "@/platform/db/pool";
+import { canonicalConfig } from "../model-config/snapshot-value";
 import { ModelConfigError } from "../model-config/types";
 import { newCharacterProject } from "../character/project";
-import { ensureVideoNodeSchema } from "./video-node-repository";
 import type { CanvasCharacterNode, CharacterNodeWrite } from "./character-node-schema";
 
-let ready: Promise<void> | undefined;
-export async function ensureCharacterNodeSchema() {
-  ready ||= ensureVideoNodeSchema().then(() => getPool().query(`
-    CREATE TABLE IF NOT EXISTS app_canvas_character_nodes (
-      email text NOT NULL, id text NOT NULL, project_key text NOT NULL,
-      revision bigint NOT NULL DEFAULT 1, title text NOT NULL DEFAULT '角色',
-      x double precision NOT NULL DEFAULT 0, y double precision NOT NULL DEFAULT 0,
-      width double precision NOT NULL DEFAULT 320, height double precision NOT NULL DEFAULT 300,
-      character jsonb NOT NULL, deleted_at timestamptz,
-      created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
-      PRIMARY KEY(email,id)
-    );
-    CREATE INDEX IF NOT EXISTS app_canvas_character_nodes_project_idx
-      ON app_canvas_character_nodes(email,project_key,updated_at DESC);
-    CREATE TABLE IF NOT EXISTS app_canvas_character_operations (
-      email text NOT NULL, operation_id uuid NOT NULL, input_digest text NOT NULL,
-      result jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(email,operation_id)
-    );
-  `)).then(() => undefined).catch(error => { ready = undefined; throw error; });
-  await ready;
-}
+import {ensureCharacterNodeSchema} from "./storage-schema";
+export {ensureCharacterNodeSchema};
 export function mapCharacterNode(row: Record<string, any>): CanvasCharacterNode {
   return {
     id: String(row.id), projectKey: String(row.project_key), revision: Number(row.revision), title: String(row.title),

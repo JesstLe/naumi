@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ArrowLeft, BellOff, Maximize2, MessageCircle, Minimize2, Pin, Plus, Share2, Users, X } from "lucide-react";
-import { useCollaborationState } from "./collaboration-provider";
+import { useCollaborationState } from "./collaboration-context";
 import { MembersPanel, MemberAvatar } from "./members-panel";
 import { SharePanel } from "./share-panel";
 import { ChatThread } from "./chat-thread";

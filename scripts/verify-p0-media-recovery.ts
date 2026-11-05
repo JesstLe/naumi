@@ -4,6 +4,8 @@ import {readFile} from 'node:fs/promises';
 async function main(){
 const route=await readFile('src/app/api/video/worker/tick/route.ts','utf8');
 assert.ok(!/await recoverMediaMirrors\(/.test(route),'P0: a slow media mirror still blocks the generation tick');
+const scan=await readFile('src/lib/worker/scan.ts','utf8');
+assert.ok(scan.includes('scheduleMediaRecovery()')&&!/await recoverMedia(?:Mirrors|Jobs)\(/.test(scan),'the actual shared scan must admit detached media lanes');
 const {createMediaRecoveryScheduler}=await import('../src/lib/worker/media-recovery');
 const gate=()=>{let resolve!:(value:number)=>void;return {promise:new Promise<number>(r=>resolve=r),resolve:(n:number)=>resolve(n)};};
 const mirrors=gate(),jobs=gate();let mirrorRuns=0,jobRuns=0,allow=true,registrations=0,leases=0;

@@ -3,14 +3,7 @@ import "server-only";
 import { isIP } from "node:net";
 import { lookup } from "node:dns/promises";
 
-import {
-  activateUserImageProviderRecord,
-  countUserImageProviderRecords,
-  deleteUserImageProviderRecord,
-  getUserImageProviderRecordById,
-  listUserImageProviderRecords,
-  upsertUserImageProviderRecord,
-} from "@/lib/db";
+import {activateUserImageProviderRecord, countUserImageProviderRecords, deleteUserImageProviderRecord, getUserImageProviderRecordById, listUserImageProviderRecords, upsertUserImageProviderRecord} from "@/lib/user-image-provider/repository";
 import { decryptAtRest, encryptAtRest, maskKey } from "@/lib/settings";
 
 export type UserImageProviderProtocol = "openai-images" | "chat-completions";

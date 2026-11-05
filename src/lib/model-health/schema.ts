@@ -1,8 +1,10 @@
+import {databaseSchemaReadiness} from "@/platform/db/schema-readiness";
 import "server-only";
 import type { Pool } from "pg";
-const ready = new WeakMap<Pool, Promise<void>>();
+
 export async function ensureHealthSchema(pool: Pool) {
-  let pending = ready.get(pool);
+ const state=databaseSchemaReadiness(pool,"model-health");
+  let pending = state.pending;
   if (!pending) {
     pending = (async () => {
       const tx = await pool.connect();
@@ -32,8 +34,8 @@ export async function ensureHealthSchema(pool: Pool) {
         await tx.query(`CREATE TABLE IF NOT EXISTS app_model_health_reconciliations(id bigserial PRIMARY KEY,key text NOT NULL,observed_at timestamptz NOT NULL,actor text NOT NULL,resolution text NOT NULL,created_at timestamptz NOT NULL DEFAULT now())`);
         await tx.query("COMMIT");
       } catch (error) { await tx.query("ROLLBACK"); throw error; } finally { tx.release(); }
-    })().catch(error => { ready.delete(pool); throw error; });
-    ready.set(pool, pending);
+    })().catch(error => { state.pending=undefined; throw error; });
+    state.pending=pending;
   }
   await pending;
 }

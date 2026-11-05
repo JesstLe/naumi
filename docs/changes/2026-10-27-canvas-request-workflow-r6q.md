@@ -1,0 +1,79 @@
+# R6Q：Canvas 创作请求与自备工作流边界
+
+## 目标与本轮基线
+
+继续整体重构，不合 main、不部署、不接发布锁。用户要求的独立长期重构分支仍保留；本分支已超过 48 小时，原因是用户明确要求独立交付完整重构版本。
+
+- 原树：`ec7cfa5eeab089544a5d29df374d379c2630af32`，4642 个原文件和 SHA256 已保存到 `output/refactor-r6q-20261027/BASELINE.json`，完整归档已回读。
+- 普通整合最新 main：`fb5dfe80810ed1d796c6050e5487b92e6fa02c1d`，原生视频引用、提示词和参数控件的 16 文件增量，保留已有真实 owner。
+
+## 调研结果
+
+1. Canvas `privateFetch` 同时处理页面状态捕获、路径与功能映射、画幅选择、参考图编译、模型选择和账务提交。独立工具修改仍须读懂大页面；页面闭包不是请求规则的合适 owner。
+2. ComfyUI 面板反向拥有共享执行类型；Canvas 负责执行、定位和落图，还将视频 202 当作空产物完成。
+3. Comfy 图片沿现有同步 route 执行；视频已经进入 BYOC 的持久任务与 Worker。不能把图片同步执行说成已有 Worker，也不另造任务系统。
+4. 现有创作记录拥有原 operation 和输出作品链接；需要通过该 owner 读取原回执，而不是未知受理后再次 POST。
+5. 原 Comfy Canvas 执行没有捕获 account/project/workspace/epoch；晚到响应可能投射到另一张画布。结果定位失败也没有本地续交 owner。
+
+## 职责与依赖方向
+
+- Canvas 仅捕获不可变请求事实，组装现有 billing、frame、document/history 能力并展示阶段。
+- `canvas/creation-request` 负责 Canvas→既有图像/工具/账务入口的请求适配，不拥有价格或另建报价缓存。
+- `comfyui` 拥有共享运行合同、同步图片执行和原回执查询；route 仅处理 HTTP 入口与响应映射。
+- `canvas/comfy-workflow` 拥有一次原意图的提交/查回执/结果同步，复用原 scope 和结果 attachment；视频受理后交回现有视频任务 owner。
+- 作品、创作记录、视频任务和账务仍由原模块写入。保留原价、余额、输入权限、幂等和 UNKNOWN 不重提。
+
+## 实施状态
+
+已经实现请求适配 owner、Comfy 共享合同/服务端应用、创作原回执读取、Canvas 单次意图控制器与原结果续交。页面只组装能力、占位和提示，面板准确区分完成、已受理、部分结果、原任务待核查和明确失败。原报价仍交原 BillingProvider/retained submission；本轮没有新增计费 owner、数据表、任务引擎或人工确认。
+
+- Canvas 主文件 `5688 → 5586` 行；151 个其他原函数 AST 保持。同步图片 route `257 → 34` 行。
+- 10 处实际上传、覆盖、排队、轮询、保存和视频提交调用参数与原源码一致。
+- 排除本轮 4 个既有生产文件和主线 16 文件增量后，1863 个原产品/服务文件 hash 保持。
+- 请求/控制器基线 27 类、37 检查，新版 39 类、87 检查（含实际 Canvas 组合的明确未受理后改参、UNKNOWN 原回执）。含实际 retained billing owner 的原请求/12 积分/原 operation 复用；UNKNOWN 和 404 不重 POST。
+- 完整旧/新源实际 HTTP、原生身份、真实隔离 PG：8 类/31 检查与 9 类/46 检查通过。包括 4 并发同 operation 一次执行、原图字节/血缘、部分输出原回执、缺件明确失败、视频原任务 202、账号/工作空间负例和用户扣款 0。
+- 全项目 tsc exit 0；受影响文件 lint 0 errors / 7 个既有 Canvas hooks warnings。
+- 固定源码与完整产品集中结果如下；四产物、独立副本回滚、最终 Git/清理回执见本轮 `DELIVERY.json` 和 `VERIFICATION.txt`。
+
+集中 PG 基线实测纠正：`artworks/writer` 已经在作品事务中保存部分输出的创作链接（证据写入仍按原 savepoint 语义降为待核查）。本轮不再增加逐产物的重复 checkpoint；新回执读取原 owner 已有的输出，不能把这项既有能力说成新增修复。首次错误预期和实际 `1 !== 0` 日志原样保留。
+
+## 未完成边界
+
+整个项目重构仍继续；此切片不等于真实供应商质量、线上、容量或整个产品验收。Comfy 图片的供应端进程重启续跑不在已有同步 route 能力内；查询原产物与重新执行必须区分。
+
+
+### 封版自查与验收器效率
+
+首次固定 `50585483e88a32a0c494811e28427cac3aa12878` 的 core **43/43** 和完整 Linux 包通过。之后自查补正：明确 `accepted:false` 结束原 controller，并在 Canvas `finally` 仅移除该 controller，用户修正工作流后创建新意图；UNKNOWN 不释放、不换参、不重 POST。面板按源节点分实例，选择另一节点不取消原任务，但旧面板不把迟到结果显示成新节点的结果。
+
+集中运行暴露出全树来源检查的大量串行文件 I/O。验收器改为最多 8 路有限并发，仍在**每个边界读取全部原始字节**并按原文件顺序计算同一 digest；没有 hash cache、mtime 代替哈希或减少最终检查。实际临时 Git 仓库 13 检查验证 digest 一致、每次全读、同长度/恢复 mtime 的改动、tracked 删除及 untracked 新增；此项纳入 core，最终完整入口变为 44 项。最终固定版本的集中结果另记，前述 43 项不冒充后续版本通过。
+
+
+## 最终固定源码集中验收
+
+固定业务与 core 输入：`ed0450be547fdcc48e48290981eafa647c3d4d9a`；源码 digest `70181d133bc73ec2332017d3aa633c0e1ad3f4ae8de3bc0aa2dac5ef3cf6dabc`。
+固定完整 Linux 镜像：`sha256:5d6f9b875dbd241ba513d03a99dec31fe3ff6b2ffe9fe948672ee7b06980e5bf`。Web、Worker 和原生媒体包均来自同一镜像；没有运行时替换业务源码。
+
+| 层次 | 本轮实际结果 |
+|---|---|
+| 完整 core | **44/44 PASS，exit 0**，0 fail / 0 not-run；请求/工作流与 full-byte identity 已是 required cases |
+| 请求与时序 | **39 类 / 87 检查 PASS**，原请求合同、文件字节、冻结报价、账号/项目/workspace ABA、明确未受理改参及 UNKNOWN GET-only |
+| Comfy 双版本真实 PG / HTTP | baseline **8 类 / 31 检查**，modified **9 类 / 46 检查**，均 exit 0；不靠替代业务依赖 |
+| 同镜像完整 runtime | **125 检查 PASS**，原生登录、持久任务、直接 Worker、冻结 6/current 17、原回执、账务、画布 CAS、原生 FFmpeg、UNKNOWN 不重放及 drain |
+| 同镜像真实产品浏览器 | **36 检查 PASS**，2 个原生登录上下文，60 秒混合读；route mocks 0 / page errors 0 / confirm dialogs 0 |
+| 本轮新增工作流控件验收 | 实际 Canvas 菜单→Comfy 参数→POST→真实 PG/媒体→2 张图→40px 斜向落图→原回执 GET→重载；**4 检查 PASS、2 张结果、客户扣款 0** |
+| 原图片创作兼容 | 全套仍为 7 笔 / 42 fixture 积分；本轮 BYOC 两张不增加 consume；上一轮三视图/重做/合成 5 项实测保留 |
+| 主线 16 文件增量 | 原生视频 UI、120 排列 reference、真实应用/DB/Worker/存储/账务、4 事务 PostgreSQL 回归均 PASS |
+| 类型与依赖 | 全项目 tsc exit 0；lint 0 errors / 7 原 hooks warnings；静态/全 import 及 emitted 两类 SCC 均 0 |
+
+验收器运行的观察数据为 995.442 秒（旧串行哈希、43 项）和 209.009 秒（新有限并发哈希、44 项）。环境/缓存和测试集合不同，不作单因素性能归因；这是本地回归耗时记录，不是产品延迟或容量承诺。
+
+### 失败及修正原始证据
+
+所有失败日志未改写：新增 VM verifier 漏声明 zod；新 fixture 的作品缺 image 字段；先把原 writer 的部分结果链接误预计为 0；忽略原生 signup grants 误预计 billing 表为空；跨 workspace 原回执为 404 而非 403；receipt query 返回顺序需按原 IDs 显式重排；首轮 tsc 的可选 storage/fixture response 类型；手录 expected SHA 错误导致 core 在执行前拒绝；新验证器对 `undefined` 做 JSON coercion 的观察器错误。已分别修正 fixture/类型/原回执顺序，原业务缺陷与测试准备问题分开记录。中间 `50585483` 的通过不冒充最终 `ed0450be`，最终 core/build/runtime/browser 均重新绑定后者。
+
+## 后续
+
+此业务切片完成后，整体重构目标继续 active。下一切片优先处理 Canvas 剩余视频提交与批次编排、后续外围 UI/应用边界，继续原任务/报价/血缘/账务 owner；不引入通用 manager、额外积分门槛、自动付费重放或平行任务系统。Comfy 同步图片供应端进程重启续跑仍不是本轮能力；原产物回执恢复与再次执行继续严格区分。
+
+本轮未合 main、未部署、未 SSH、未接发布锁。独立分支保留以持续整体交付。

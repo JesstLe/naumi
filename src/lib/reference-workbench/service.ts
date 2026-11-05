@@ -3,29 +3,36 @@ import { releaseRuntimeEnabled } from "@/lib/release-runtime/identity";
 import "server-only";
 import {excludeImportedHistory,isImportedHistory} from '../staging-history';
 import {randomUUID} from "node:crypto";
-import {getPool,listArtworksByIds,isBanned} from "../db";
+import {getPool} from "@/platform/db/pool";
+import {listArtworksByIds} from "@/lib/artworks/repository";
+import {isBanned} from "@/lib/accounts/repository";
 import {saveImagegenInput,readImagegenInputAsset} from "../imagegen/input-assets";
 import {readCanvasImage,readCanvasOutput} from "../canvas-image-input";
 import {planImagegen,imagegenFingerprint} from "../imagegen/plan";
 import {submitAcceptedImagegenBatch,readImagegenBatch,runImagegenBatchTick} from "../imagegen/batch";
+import {deferApplicationTask} from "../application/task-execution";
 import type {ImagegenPlan,ImagegenRequest} from "../imagegen/types";
 import {getModelAdministration} from "../model-config/server";
 import {workbenchModelOptions} from "./model-options";
-import {modelAllowedForFeature,featureDefaultModel} from "../model-config/tool-scope";
+import { modelAllowedForFeature, featureDefaultModel } from "../model-config/feature-model-policy";
 import {quoteForRequest} from "../billing/server";
-import {withBillingRequest,configuredToolCost} from "../billing/synchronous";
+import {withBillingRequest} from "../billing/synchronous";
+import {configuredToolCost} from "@/lib/billing/synchronous-operation";
 import {signUserSession,USER_COOKIE} from "../native-auth";
 import {signAcceptedModelContext} from "../model-config/accepted-context";
-import {observeOpenAI,withBiRequest} from "../bi/model-observer";
+import {observeOpenAI} from "@/lib/bi/model-calls";
+import {withBiRequest} from "@/lib/bi/request";
 import {modelAwareOpenAI} from "../model-config/clients";
 import {requestedTextModel} from "../text-models";
 import {toVisionDataUrl} from "../vision-image";
 import {getOpenAISettings} from "../settings";
-import {dataUrlToBytes} from "../storage";
+import { dataUrlToBytes } from "../object-storage/runtime";
 import {DEFAULT_PROMPT,DEFAULT_INSTRUCTION,MODES,LABELS,settings,relativePath,classify,imageUrl,ratio,geometryMatches,stableId,requestId,digest,WorkbenchError,type Asset,type Project,type Settings} from "./contract";
 import {chatPlanInstruction,parseChatPlan,textFailureState,type TextFailureStage} from "./chat-plan";
 export {parseChatPlan} from "./chat-plan";
-import {ensureWorkbench,document,putDocument,documents,transaction,operation,operations,type Operation} from "./repository";
+import {document,putDocument,documents,transaction,operation,operations,type Operation} from "./repository";
+import {ensureWorkbench} from "@/lib/reference-workbench/schema";
+
 
 export async function ownedAsset(owner:string,id:string):Promise<Asset>{
  if(id.startsWith("asset-")){const a=await readImagegenInputAsset(id,owner).catch(()=>{throw new WorkbenchError("素材不存在或无权访问",404);});const saved=await document<Asset>(owner,"asset",id).catch(()=>null);if(saved)return saved;const sharp=(await import("sharp")).default,m=await sharp(a.buffer).metadata();return {artworkId:id,url:a.url,width:m.width!,height:m.height!,relative:id};}
@@ -221,8 +228,10 @@ export async function chatState(owner:string,sid:string){
 async function recoverReferenceWorkbenchLocal(){await ensureWorkbench();const ops=(await getPool().query<Operation>(`SELECT * FROM app_reference_operations WHERE state='accepted' ${excludeImportedHistory('app_reference_operations')} ORDER BY created_at LIMIT 10`)).rows;for(const op of ops)await synchronize(op);}
 
 export async function synchronize(op:Operation) {
+  if(op.state!=="accepted"||await deferApplicationTask())return;
   return withBackgroundActivity("reference-sync", op.id, "continuation", () => synchronizeLocal(op), () => undefined);
 }
 export async function recoverReferenceWorkbench() {
+  if(await deferApplicationTask())return;
   return withBackgroundActivity("reference-sync", "reference-recovery-scan", "claim", () => recoverReferenceWorkbenchLocal(), () => undefined);
 }

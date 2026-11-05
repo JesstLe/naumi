@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { dbEnabled, getOrder, ensureProLicenseForOrder } from "@/lib/db";
+import {getOrder, ensureProLicenseForOrder} from "@/lib/payments/orders";
+import {dbEnabled} from "@/platform/db/pool";
 import { publicCommerceEnabled } from "@/lib/commerce";
 
 export const runtime = "nodejs";

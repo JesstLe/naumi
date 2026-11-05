@@ -14,6 +14,7 @@ import { supabaseEnabled } from "@/lib/auth-mode";
 import { activateBrowserData, invalidateBrowserData, installBrowserDataObserver } from "@/lib/browser-data-cache";
 import { activateBrowserImages, clearBrowserImages, configureBrowserImageCache } from "@/lib/browser-image-cache";
 import { authHeader } from "@/lib/supabase";
+import { activateFeatureCatalogIdentity } from "@/lib/model-config/feature-catalog-browser";
 
 // ---------------------------------------------------------------------------
 // Session + membership state.
@@ -118,6 +119,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const externalSignOut = useRef<(() => void) | null>(null);
 
   const persist = useCallback((next: SessionUser | null) => {
+    activateFeatureCatalogIdentity(next?.email ?? null, next === null);
     currentEmail.current = next?.email.toLowerCase() || null;
     setUser(next);
     try {
@@ -178,7 +180,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         lastEmail = localStorage.getItem(LAST_KEY);
         if (lastEmail) {
           const cached = loadUser(lastEmail);
-          if (cached && current()) setUser(cached);
+          if (cached && current()) { activateFeatureCatalogIdentity(cached.email); setUser(cached); }
         }
       } catch {
         /* ignore */
@@ -202,6 +204,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               else {
                 // 会话无效 → 清掉可能残留的本地态
                 activateBrowserData(null); activateBrowserImages(null);
+                activateFeatureCatalogIdentity(null, true);
                 setUser(null);
                 try {
                   localStorage.removeItem(LAST_KEY);
@@ -259,6 +262,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     (name: string, email: string) => {
       const requestEpoch = ++identityEpoch.current;
       activateBrowserData(null); activateBrowserImages(null);
+      activateFeatureCatalogIdentity(null, true);
       setReady(true);
       // Optimistic local session for instant UI.
       const existing = loadUser(email);
@@ -292,6 +296,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!identity || !identity.email) {
         identityEpoch.current++;
         activateBrowserData(null); activateBrowserImages(null);
+        activateFeatureCatalogIdentity(null, true);
         setUser(null);
         currentEmail.current = null;
         try {
@@ -307,6 +312,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const signOut = useCallback(() => {
+    activateFeatureCatalogIdentity(null, true);
     clearBrowserImages();
     identityEpoch.current++;
     invalidateBrowserData(undefined, true);
@@ -342,7 +348,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Only the login form may establish a new identity. A late generation or
       // balance response after logout/switch must not resurrect the old account.
       if (!establishSession && next.email.toLowerCase() !== currentEmail.current) return;
-      if (establishSession) { identityEpoch.current++; setReady(true); }
+      if (establishSession) { identityEpoch.current++; activateFeatureCatalogIdentity(next.email, true); setReady(true); }
       invalidateBrowserData(next.email);
       verifiedPersist(next);
     },

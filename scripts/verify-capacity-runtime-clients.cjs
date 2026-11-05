@@ -29,7 +29,8 @@ async function probe(name, root, database) {
   const url = new URL(database);
   assert.equal(url.hostname, '127.0.0.1'); assert.equal(url.pathname, '/runtime_clients_fixture');
   process.env.DATABASE_URL = database;
-  const connection = load(root, 'src/lib/db/connection.ts'), pool = connection.getPool();
+  const owner=fs.existsSync(path.join(root,'src/platform/db/pool.ts'))?'src/platform/db/pool.ts':'src/lib/db/connection.ts';
+  const connection = load(root, owner), pool = connection.getPool();
   assert.equal(pool.options.max, 5);
   const memory = process.memoryUsage();
   console.log('RUNTIME node=' + process.version + ' rss=' + memory.rss + ' heapUsed=' + memory.heapUsed + ' external=' + memory.external + ' heapLimit=' + require('node:v8').getHeapStatistics().heap_size_limit);
@@ -44,6 +45,10 @@ async function probe(name, root, database) {
   function repository() {
     return load(root, 'src/lib/reference-workbench/repository.ts', {
       '../db': { getPool: connection.getPool, ensureSchema: async () => {} },
+      '@/platform/db/pool': {getPool:connection.getPool},
+      '@/lib/persistence/schema': {ensureSchema:async()=>{}},
+      '@/lib/reference-workbench/schema':load(root,'src/lib/reference-workbench/schema.ts',{'@/platform/db/pool':connection,'@/lib/persistence/schema':{ensureSchema:async()=>{}},'@/platform/db/schema-readiness':load(root,'src/platform/db/schema-readiness.ts')}),
+
       './contract': { WorkbenchError: class WorkbenchError extends Error {} },
     });
   }
@@ -133,7 +138,7 @@ async function probe(name, root, database) {
     } else if (name === 'concurrent-reload-late-close') {
       const held = await Promise.all(Array.from({ length: 5 }, () => pool.connect()));
       const originalListeners = held.map(c => c.listenerCount('error'));
-      for (let n = 0; n < 25; n++) assert.equal(load(root, 'src/lib/db/connection.ts').getPool(), pool);
+      for (let n = 0; n < 25; n++) assert.equal(load(root, owner).getPool(), pool);
       held.forEach((c, n) => assert.equal(c.listenerCount('error'), originalListeners[n]));
       let late = false;
       const pending = pool.connect().then(client => { late = true; client.release(); });

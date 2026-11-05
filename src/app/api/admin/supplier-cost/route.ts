@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { billingAuthorize, billingJson } from "@/lib/billing/access";
 import { createSupplierLedger } from "@/lib/supplier-cost/repository";
-import { getPool } from "@/lib/db";
+import { getPool } from "@/platform/db/pool";
 import { costsSummary, accountOverview } from "@/lib/supplier-cost/admin";
 export const runtime = "nodejs", dynamic = "force-dynamic";
 const text=z.string().max(254).optional();

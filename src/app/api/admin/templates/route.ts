@@ -1,18 +1,12 @@
 import { NextResponse } from "next/server";
-import {
-  dbEnabled,
-  getTemplate,
-  listTemplates,
-  setTemplateImageCacheSuccess,
-  updateTemplate,
-} from "@/lib/db";
+import {getTemplate, listTemplates, updateTemplate} from "@/lib/templates/repository";
+import {setTemplateImageCacheSuccess} from "@/lib/templates/cache-repository";
+import {dbEnabled} from "@/platform/db/pool";
 import { requireAdmin } from "@/lib/admin-auth";
-import { storageEnabled, uploadImage } from "@/lib/storage";
-import {
-  persistTemplateImage,
-  remoteTemplateImageSource,
-  templateImageDeliveryUrl,
-} from "@/lib/template-image-cache";
+import { storageEnabled } from "@/lib/object-storage/runtime";
+import { uploadImage } from "@/lib/media-upload";
+import {persistTemplateImage} from "@/lib/template-image-cache";
+import {remoteTemplateImageSource, templateImageDeliveryUrl} from "@/lib/templates/image-source";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

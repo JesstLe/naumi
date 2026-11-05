@@ -39,6 +39,20 @@ const fixtures={
  '../saas/creation-context':{currentCreationContext:scope,withFrozenCreation:(_s,action)=>action(),withCreationRequest:(_r,_e,action)=>action()},
  '../saas/creation-writer':{startCreation:async(feature,id,email)=>{const creation='creation-'+id;await pool.query('INSERT INTO app_creation_records VALUES($1,$2,$3,$4,$5,$6)',[creation,email,feature,id,state.scopeKind,state.tenantId]);return creation;},finishCreation:async()=>{},prepareOriginalCreationInput:async()=>{}},'../teams/server':{TeamError},
 };
+// Resolve the refactored owners at the same mocked IO boundaries. The actual
+// HTTP adapter, typed operation owner, policy and receipt modules all execute.
+Object.assign(fixtures,{
+ '@/platform/db/pool':fixtures['@/lib/db'],
+ '@/lib/persistence/schema':fixtures['@/lib/db'],
+ '@/lib/accounts/repository':fixtures['@/lib/db'],
+ '@/lib/accounts/session':fixtures['@/lib/db'],
+ '@/lib/billing/runtime':fixtures['./server'],
+ '../admin-auth':fixtures['@/lib/admin-auth'],
+ '@/lib/saas/creation-scope':fixtures['../saas/creation-context'],
+ '../model-config/context':fixtures['@/lib/model-config/context'],
+ '../teams/errors':{TeamError},
+});
+fixtures['../saas/creation-writer'].claimCreation=async(...args)=>({id:await fixtures['../saas/creation-writer'].startCreation(...args)});
 function load(rel){const file=path.join(source,rel);if(cache.has(file))return cache.get(file).exports;const mod={exports:{}};cache.set(file,mod);const bytes=fs.readFileSync(file);loaded.push({path:file,sha256:crypto.createHash('sha256').update(bytes).digest('hex')});
  const req=name=>Object.hasOwn(fixtures,name)?fixtures[name]:name.startsWith('@/')?load('src/'+name.slice(2)+'.ts'):name.startsWith('.')?load(path.relative(source,path.resolve(source,path.dirname(rel),name+'.ts'))):require(name);
  vm.runInThisContext('(function(require,module,exports){'+transformSync(bytes.toString(),{loader:'ts',format:'cjs',target:'es2022'}).code+'\n})',{filename:file})(req,mod,mod.exports);return mod.exports;
@@ -90,6 +104,14 @@ global.fetch=async()=>{state.network++;throw Error('EXTERNAL_NETWORK_FORBIDDEN')
  const png=await require('sharp')({create:{width:8,height:8,channels:4,background:{r:120,g:100,b:50,alpha:0.5}}}).png().toBuffer();
  Object.assign(fixtures['@/lib/db'],{reserveCredits:async()=>true,refundCredits:async()=>{},getUser:async()=>({email:state.owner}),addArtworks:async(_email,items)=>{if(state.failArtwork)throw Error('fixture-artwork-write-failed');await insertArtwork(sync.currentSynchronousBilling().id,items[0].id,{image:items[0].image});}});
  Object.assign(fixtures,{'@/lib/image-quality-request':{requestImageQuality:()=>({requested:'medium',executed:'medium'}),imageQualityCost:()=>sync.synchronousCost(),withQualityFallback:(_q,run)=>run('medium'),sdkImageQuality:q=>q,settleToolImage:()=>sync.settleSynchronous('fixture-route-settle')},'@/lib/model-config/clients':{modelAwareOpenAI:()=>({images:{edit:async()=>{state.mockSupplierCalls++;sync.markBillingUpstream('succeeded');return {data:[{b64_json:png.toString('base64')}]};}}})},'@/lib/bi/model-observer':{observeOpenAI:x=>x,withBiRequest:(_r,run)=>run()},'next/server':{NextResponse:{json:(value,options)=>json(value,options?.status||200)}},'@/lib/ip':{clientIp:()=>''},'@/lib/storage':{storageEnabled:false},'@/lib/settings':{getOpenAISettings:async()=>({apiKey:'fixture-not-key',model:'fixture'}),getCutoutSettings:async()=>({openaiModel:'fixture'})},'@/lib/openai-base':{getOpenAIBaseUrl:async()=>null},'@/lib/api-error':{safeError:(_e,message)=>message},'@/lib/commerce':{insufficientCreditsMessage:'fixture-insufficient'}});
+ Object.assign(fixtures,{
+  '@/lib/bi/model-calls':fixtures['@/lib/bi/model-observer'],
+  '@/lib/bi/request':fixtures['@/lib/bi/model-observer'],
+  '@/lib/billing/legacy-credit-reservation':fixtures['@/lib/db'],
+  '@/lib/artworks/writer':fixtures['@/lib/db'],
+  '@/lib/object-storage/runtime':fixtures['@/lib/storage'],
+  '@/lib/media-upload':{uploadImage:async()=>{throw Error('UNEXPECTED_MEDIA_UPLOAD')}},
+ });
  const route=load('src/app/api/dewatermark/route.ts');
  const routeRequest=key=>{const form=new FormData();form.set('image',new File([png],'image.png',{type:'image/png'}));return new Request('http://fixture.local/api/dewatermark',{method:'POST',headers:{'x-naumi-billing-operation-id':key},body:form});};
  await check('complete-dewatermark-route-response-loss',async()=>{const key='actual-route-lost-0001';state.loseResponse=true;const first=await route.POST(routeRequest(key));assert.equal(first.status,500);const before=state.mockSupplierCalls;const second=await route.POST(routeRequest(key));assert.equal(second.status,baseline?409:200);assert.equal(state.mockSupplierCalls,before);});

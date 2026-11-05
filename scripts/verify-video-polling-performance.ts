@@ -20,11 +20,11 @@ assert.equal(sameVideoSnapshot({ a: null }, { a: undefined }), false);
 assert.equal(sameVideoSnapshot({ a: false, b: 0 }, { b: 0, a: false }), true);
 assert.equal(sameVideoSnapshot(node.config.references, [...node.config.references!].reverse()), false);
 const nodesHook = readFileSync('src/components/canvas/video/use-video-nodes.ts', 'utf8');
-// Identity now includes read-only and workspace epochs. Actual late response /
-// unmount / owner-switch behavior is exercised by verify-canvas-save-transport.cjs.
-assert.match(nodesHook, /identity.current.epoch===epoch&&currentWorkspaceRevision\(\)===workspaceRevision/);
-assert.match(nodesHook, /if\(!current\(\)\)return/);
-assert.match(nodesHook, /setTimeout\(run,6000\)/);
+assert.match(nodesHook, /useCanvasNativeNodeDocument\("video",input,makeError\)/);
+const nativeHook = readFileSync('src/components/canvas/use-canvas-native-node-document.ts', 'utf8');
+assert.match(nativeHook, /input.scope.documentCurrent\(\)/);
+assert.match(nativeHook, /setTimeout\(load,6000\)/);
+// The shared native document owns account/workspace/read-only epochs.
 const tasksHook = readFileSync('src/components/canvas/video/use-video-tasks.ts', 'utf8');
 assert.match(tasksHook, /contextRef.current!==context/); assert.match(tasksHook, /setTimeout\(run,4000\)/);
 assert.match(tasksHook, /onCompletedRef.current\(task,projectKey\)/);

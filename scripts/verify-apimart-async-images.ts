@@ -128,7 +128,7 @@ async function main() {
     const lossKey=channelOperationKey(family,"bad-lost")!;await f.sql.query("DELETE FROM app_model_channel_operations WHERE operation_key=$1",[lossKey]);assert.ok(await recoverableChannelIdentity(f.sql,family,"bad-lost"));await pending(()=>run(family,"bad-lost","lost"));checks++;
     // Definite not-charged responses alone may release the pin and choose backup.
     const rejected=await run(family,"not-charged","reject");assert.equal(rejected.status,200);assert.equal(direct.length,1);assert.equal((await row("not-charged"))[0].amount_micros,"0");checks++;
-    const forms=(image:Buffer,mask?:Buffer)=>{const form=new FormData();form.set("prompt","success:edit");form.set("image",new File([image],"input.png",{type:"image/png"}));if(mask)form.set("mask",new File([mask],"mask.png",{type:"image/png"}));return form;};
+    const forms=(image:Buffer,mask?:Buffer)=>{const form=new FormData();form.set("prompt","success:edit");form.set("image",new File([Uint8Array.from(image)],"input.png",{type:"image/png"}));if(mask)form.set("mask",new File([Uint8Array.from(mask)],"mask.png",{type:"image/png"}));return form;};
     const edit=(unit:string,form:FormData)=>runModelExecution(scope,()=>withImageOperation("image-a",{id:unit},()=>executionFetch(scope,{trustedOrigins:[origin]})(`${origin}/v1/images/edits`,{method:"POST",body:form})));
     const uploadStart=uploads;assert.equal((await edit("valid-edit",forms(png,png))).status,200);assert.equal(uploads,uploadStart+1);assert.ok(posts.at(-1).mask_url.startsWith("data:image/png;base64,"));checks++;
     assert.equal((await edit("bad-input",forms(Buffer.from("bad")))).status,400);assert.equal((await edit("bad-mask",forms(png,wrongPixels))).status,400);assert.equal(uploads,uploadStart+1);checks++;

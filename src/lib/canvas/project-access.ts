@@ -1,8 +1,8 @@
 import "server-only";
-import { getPool } from "../db";
+import { getPool } from "@/platform/db/pool";
 import { ModelConfigError } from "../model-config/types";
-import { ensureVideoNodeSchema } from "./video-node-repository";
-import { videoProjectKeySchema } from "./video-node-schema";
+import { ensureVideoNodeSchema } from "./storage-schema";
+import { videoProjectKeySchema } from "./project-key";
 
 /** Shared mixed-canvas project registry; its historical table name is retained. */
 export async function authorizeCanvasProject(actor: string, rawKey: string) {
@@ -23,3 +23,5 @@ export async function mayCreateCanvasRoot(actor: string, input: { id: string }, 
     UNION ALL SELECT 1 FROM app_artworks WHERE email<>$2 AND (group_id=$3 OR id=$3) LIMIT 1`, [key, actor, input.id])).rowCount;
   return !other;
 }
+
+export {authorizeCanvasProject as authorizeVideoProject};

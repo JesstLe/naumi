@@ -1,15 +1,9 @@
 import { forwardLegacyAgentSession } from "@/lib/agent/legacy-runtime";
 import { NextResponse } from "next/server";
 import { resolveUserEmail } from "@/lib/admin-auth";
-import { dbEnabled } from "@/lib/db";
+import { dbEnabled } from "@/platform/db/pool";
 import { readHarnessBody, harnessErrorResponse, validateHarnessHistory, AgentHarness } from "@/lib/agent/harness";
-import {
-  saveAgentSession,
-  getAgentSession,
-  listAgentSessions,
-  deleteAgentSession,
-  renameAgentSession,
-} from "@/lib/db";
+import {saveAgentSession, getAgentSession, listAgentSessions, deleteAgentSession, renameAgentSession} from "@/lib/agent/session-repository";
 import {
   getSession,
   removeRuntimeSession,

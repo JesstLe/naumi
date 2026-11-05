@@ -12,6 +12,7 @@ function ast(relative,names){const text=fs.readFileSync(path.join(root,relative)
 const storeSource=ast('src/lib/release-runtime/store.ts',['transaction','finishActivity','unknownActivity']);
 const bgSource=fs.readFileSync(path.join(root,'src/lib/release-runtime/background-activity.ts'),'utf8');
 const compile=source=>ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;
+const inflight={};vm.runInNewContext(compile(fs.readFileSync(path.join(root,'src/lib/worker/inflight.ts'),'utf8')),{exports:inflight});
 async function fixture(fault){
  await pool.query('TRUNCATE app_release_activities,app_release_session_owners');
  const id=randomUUID(),logs=[],events=[],metrics={actions:0,cleanup:0,settled:0};
@@ -30,7 +31,7 @@ async function fixture(fault){
  const wrapped={query:(sql,v)=>query(pool,sql,v),connect:async()=>{const c=await pool.connect();return {query:(sql,v)=>query(c,sql,v),release:()=>c.release()};}};
  const store={};vm.runInNewContext(compile(storeSource),{exports:store,ensureReleaseSchema:async()=>{},releasePool:()=>wrapped,releaseIdentity:()=>identity,ReleaseRuntimeError,console:{warn:(...v)=>logs.push(v.join(' ')),error:(...v)=>logs.push(v.join(' '))}});
  Object.assign(store,{OBSERVED_BACKGROUND_SCOPES:['durable-image'],beginBackgroundActivity:async()=>{const r=(await pool.query('SELECT state FROM app_release_activities WHERE id=$1',[id])).rows[0];return r.state==='unknown'?null:id;},heartbeatActivity:async()=>{},bindBackgroundActivity:async()=>{}});
- const bg={},processFixture={env:{}};vm.runInNewContext(compile(bgSource),{exports:bg,require:n=>n==='node:async_hooks'?{AsyncLocalStorage}:n==='node:process'?processFixture:n==='./identity'?{releaseIdentity:()=>identity,releaseRuntimeEnabled:()=>true}:n==='./accepted-context'?{currentAcceptedParent:()=>undefined}:n==='./store'?store:(()=>{throw Error(n);})(),setInterval:()=>({unref(){}}),clearInterval:()=>{},console:{error:(...v)=>logs.push(v.join(' ')),warn:(...v)=>logs.push(v.join(' '))}});
+ const bg={},processFixture={env:{}};vm.runInNewContext(compile(bgSource),{exports:bg,require:n=>n==='node:async_hooks'?{AsyncLocalStorage}:n==='node:process'?processFixture:n==='./identity'?{releaseIdentity:()=>identity,releaseRuntimeEnabled:()=>true}:n==='./accepted-context'?{currentAcceptedParent:()=>undefined}:n==='./store'?store:n==='../worker/inflight'?inflight:(()=>{throw Error(n);})(),setInterval:()=>({unref(){}}),clearInterval:()=>{},console:{error:(...v)=>logs.push(v.join(' ')),warn:(...v)=>logs.push(v.join(' '))}});
  return {id,bg,store,logs,events,metrics,row:async()=>(await pool.query("SELECT a.state,s.state session FROM app_release_activities a JOIN app_release_session_owners s ON s.run_id=a.id WHERE a.id=$1",[id])).rows[0]};
 }
 async function step(name,body){await body();checks++;console.log('PASS '+name);}

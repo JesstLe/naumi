@@ -73,8 +73,11 @@ const large=Array.from({length:400},(_,i)=>({id:`large-${i}`,width:300,height:40
 check(large,large.slice(1).map((node,i)=>({source:`large-${Math.floor(i/3)}`,target:node.id})));
 const elapsed=Math.round(performance.now()-start);
 const tidy=client.slice(client.indexOf("async function tidyLayout("),client.indexOf("// 下载单张图"));
-for(const token of ["smartLayout", "textIds", "getEdges", "fixed:", "await applyHistory(act, false)", "pushUndo(act)", "unsavedTextRef", "moves.length > 400"]) assert.ok(tidy.includes(token),token);
-assert.ok(!tidy.includes("/api/artworks/position"),"no fire-and-forget per-node writes");
+// Follow the real arrangement owner; retain the original geometry/stress cases.
+const application=fs.readFileSync(path.join(root,"src/lib/canvas/arrange.ts"),"utf8");
+for(const token of ["smartLayout", "flowNodeSize", "scene.edges", "fixed:", "await ports.history.apply(action)", "ports.history.record(action)", "ports.text.flush()", "moves.length>400"]) assert.ok(application.includes(token),token);
+assert.ok(tidy.includes("arrangeCanvasDocument(canvasHistory.scope"));
+assert.ok(!application.includes("/api/artworks/position"),"no fire-and-forget per-node writes");
 const baselineArg=process.argv.indexOf("--business-baseline");
 if(baselineArg>=0){
   const baseline=fs.readFileSync(path.join(process.argv[baselineArg+1],"src/components/canvas/canvas-client.tsx"),"utf8");

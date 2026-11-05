@@ -1,5 +1,5 @@
 import { modelAwareOpenAI } from "@/lib/model-config/clients";
-import { observeOpenAI } from "@/lib/bi/model-observer";
+import {observeOpenAI} from "@/lib/bi/model-calls";
 import "server-only";
 import { adminConfiguredFeature } from "./model-config/selection-policy";
 import { featureForPath } from "./model-config/feature-path";
@@ -8,8 +8,8 @@ import OpenAI from "openai";
 import { getOpenAIBaseUrl } from "./openai-base";
 import { getOpenAISettings } from "./settings";
 import { currentModelExecution } from "./model-config/context";
-import { modelConfigurationEnabled } from "./model-config/requests";
-import { getModelRuntime } from "./model-config/server";
+import { modelConfigurationEnabled } from "./model-config/availability";
+import {readPublishedModelCatalog} from "./model-config/catalog-query";
 
 const DEFAULT_TEXT_MODEL =
   process.env.OPENAI_TEXT_MODEL || process.env.AGENT_MODEL || "gpt-5.6-luna";
@@ -58,10 +58,14 @@ function looksLikeTextModel(id: string): boolean {
 }
 
 export function requestedTextModel(request: Request, fallback = DEFAULT_TEXT_MODEL): string {
+  return selectedTextModel({path:new URL(request.url).pathname,textModel:request.headers.get("x-naumi-text-model")},fallback);
+}
+/** The same text selection for HTTP and trusted typed billing callers. */
+export function selectedTextModel(selection:{path?:string;textModel?:string|null},fallback=DEFAULT_TEXT_MODEL):string{
   const scope = currentModelExecution("text") || currentModelExecution("vision");
   if (scope) return scope.frozen.publicModelId;
-  if (adminConfiguredFeature(featureForPath(new URL(request.url).pathname))) return fallback;
-  const requested = (request.headers.get("x-naumi-text-model") || "").trim();
+  if (adminConfiguredFeature(featureForPath(selection.path||"/api/billing/quote"))) return fallback;
+  const requested = (selection.textModel || "").trim();
   if (!MODEL_ID.test(requested)) return fallback;
   // 假名 → 真实模型 id(请求转发永远用真实 id)
   return TEXT_MODEL_ALIASES.get(requested) ?? requested;
@@ -74,7 +78,7 @@ export async function textModelCatalog(): Promise<{
   version?: number;
 }> {
   if (await modelConfigurationEnabled()) {
-    const catalog = await (await getModelRuntime()).publicCatalog("text");
+    const catalog = await readPublishedModelCatalog("text");
     return { version: catalog.version, defaultModel: catalog.bindings["text.generate"] || catalog.models[0]?.id || "", models: catalog.models.map(m => m.id), discovery: "configured" };
   }
   // 白名单模式:目录即别名/清单本身,不做上游发现(对外隔离上游真实模型名)
@@ -124,4 +128,3 @@ export async function textModelCatalog(): Promise<{
     discovery: discovered.length ? "provider" : "configured",
   };
 }
-

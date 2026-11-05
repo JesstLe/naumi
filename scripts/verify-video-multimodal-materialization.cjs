@@ -20,7 +20,7 @@ const tx={query:async(sql,p=[])=>{
   throw Error('Unexpected fixture SQL: '+sql);
 },release:()=>{}};
 const db={ensureSchema:async()=>{},getPool:()=>({...tx,connect:async()=>tx}),listArtworksByIds:async(actor,ids)=>ids.flatMap(id=>{const row=state.artworks.get(id);return row?._owner===actor?[structuredClone(row)]:[]}),addArtworksTx:async(_tx,actor,arts)=>{for(const art of arts)state.artworks.set(art.id,{...art,_owner:actor,createdAt:new Date().toISOString()});}};
-const mediaAssets={ensureMediaSchema:async()=>{},getMediaAsset:async key=>assetAt(key),getMediaAssetTx:async(_tx,key)=>assetAt(key),importLegacyMedia:async key=>assetAt(key),canReadMedia:async(key,actor)=>{const asset=state.assets.get(key);return !!asset&&(asset.public||asset.owner===actor);}};
+const mediaAssets={ensureMediaSchema:async()=>{},getMediaAsset:async key=>assetAt(key),getMediaAssetTx:async(_tx,key)=>assetAt(key),importLegacyMedia:async key=>assetAt(key),canReadMedia:async(key,actor)=>{const asset=state.assets.get(key);return !!asset&&(asset.public||asset.owner===actor);},updateMediaDimensionsTx:async(client,key,sha256,width,height)=>client.query('UPDATE app_media_assets SET width=$3,height=$4 WHERE key=$1 AND sha256=$2',[key,sha256,width,height])};
 const storage={MEDIA_DIR:mediaDir,storageDriver:'local',privateMedia:true,remoteMediaAccess:'proxy',storageKeyFromManagedUrl:keyFromUrl,
  readManagedObject:async(url,max)=>{state.reads++;const key=keyFromUrl(url);assert.ok(key);const bytes=fs.readFileSync(path.join(mediaDir,key));assert.ok(bytes.length<=max);return {bytes,size:bytes.length,contentType:state.assets.get(key).content_type};},
  writeStoredObject:async()=>{state.uploads++;throw Error('Existing input must not be uploaded again')},presignStoredObject:async()=>{throw Error('Proxy fixture must not call object presigner')},fetchStoredObject:async()=>{throw Error('Local media must use the verified local reader')}};
@@ -31,9 +31,14 @@ function decode(bytes,extension){state.decodes++;const file=path.join(samples,'d
  return {formatName:info.format.format_name,videoCodec:video?.codec_name||null,audioCodecs:audios.map(s=>s.codec_name),width:video?.width||0,height:video?.height||0,durationSeconds:Number(info.format.duration||video?.duration||audios[0]?.duration||0),frameRate:video?fraction[0]/fraction[1]||null:null};
 }
 const boundaries={
+ 'src/platform/db/pool.ts':db,'src/lib/artworks/repository.ts':db,'src/lib/artworks/writer.ts':db,'src/lib/media-assets-reader.ts':mediaAssets,
+ 'src/lib/media-assets-schema.ts':mediaAssets,
+ 'src/lib/persistence/schema.ts':db,'src/platform/db/transaction.ts':{withTransaction:async(pool,run)=>run(await pool.connect())},
+ 'src/lib/object-storage/runtime.ts':storage,'src/lib/object-storage/managed-read.ts':storage,
  'src/lib/db.ts':db,'src/lib/media-assets.ts':mediaAssets,'src/lib/storage.ts':storage,
  'src/lib/settings-secret.ts':{settingsSecret:()=>secret},
  'src/lib/canvas/video-node-service.ts':{authorizeVideoProject:async()=>{}},
+ 'src/lib/canvas/project-access.ts':{authorizeVideoProject:async()=>{}},
  'src/lib/video/media.ts':{probeMedia:async(bytes,extension)=>decode(bytes,extension)},
 };
 function load(relative){if(boundaries[relative])return boundaries[relative];if(cache.has(relative))return cache.get(relative).exports;const m={exports:{}};cache.set(relative,m);

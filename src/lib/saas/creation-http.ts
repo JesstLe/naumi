@@ -1,19 +1,19 @@
+import {streamManagedMedia} from "../enterprise/media-stream";
+import {enterpriseHistory,enterpriseHistoryDetail,enterpriseHistoryAsset} from '@/lib/enterprise/creation-history';
 import 'server-only';
 import {NextResponse} from 'next/server';
 import {tenantAuthorize} from './tenants';
 import {enterpriseAuthorize} from '@/lib/enterprise/access';
-import {teamJson} from '@/lib/teams/access';
-import {TeamError} from '@/lib/teams/server';
+import {teamJson,PRIVATE_HEADERS} from '@/lib/teams/access';
+import { TeamError } from "@/lib/teams/errors";
 import {creationFiltersSchema} from './creation-contracts';
 import {listCreations,creationDetail,creationAsset,type CreationReader} from './creations';
-import {streamManagedMedia} from '@/lib/enterprise/media-stream';
 import {enterpriseMediaResponse} from '@/lib/enterprise/media-response';
 import {z} from 'zod';
 import {listLegacyCreations,legacyCreationDetail,legacyCreationAsset} from './legacy-creations';
 import {creationPlaybackToken,readCreationPlaybackToken,platformPlaybackToken,platformPlaybackAllowed} from './creation-playback';
-import {userFeaturePolicy} from '@/lib/feature-access/server';
+import {userFeaturePolicy} from "@/lib/feature-access/repository";
 import {allows} from '@/lib/feature-access/catalog';
-import {enterpriseHistory,enterpriseHistoryDetail,enterpriseHistoryAsset} from '@/lib/enterprise/creation-history';
 function creationFailure(error:unknown){return error instanceof TeamError?teamJson({error:error.message,code:`CREATION_${error.status}`},error.status):teamJson({error:'创作证据暂不可读取，请重试',code:'CREATION_UNAVAILABLE'},503);}
 export async function creationReader(request:Request,enterprise:boolean):Promise<CreationReader|NextResponse>{
  if(!enterprise){const auth=await tenantAuthorize(request);return auth instanceof NextResponse?auth:{platform:true};}
@@ -28,11 +28,7 @@ export async function creationListRoute(request:Request,enterprise=false){
  if(query.source==='legacy'&&!query.from&&!query.to&&!query.period)query.period='all';
  const today=new Date(Date.now()+8*3600000).toISOString().slice(0,10);if(!query.from&&!query.to&&query.period!=='all'){query.to=today;query.from=new Date(Date.parse(today)-6*86400000).toISOString().slice(0,10);}
  const parsed=creationFiltersSchema.safeParse(query);if(!parsed.success)return teamJson({error:'创作筛选参数无效'},400);
- if(parsed.data.source==='legacy'){
-   if(!reader.platform)return teamJson(await enterpriseHistory(reader.actor,reader.tenantId,parsed.data));
-   if(parsed.data.tenantId)return teamJson({error:'历史归属未确认，请使用受授权的成员历史入口'},400);
-   return teamJson(await listLegacyCreations(parsed.data));
- }
+ if(parsed.data.source==='legacy'){if(!reader.platform)return teamJson(await enterpriseHistory(reader.actor,reader.tenantId,parsed.data));if(parsed.data.tenantId)return teamJson({error:'历史记录没有企业归属，不能用于此筛选'},400);return teamJson(await listLegacyCreations(parsed.data));}
  return teamJson(await listCreations(reader,parsed.data));}catch(e){return creationFailure(e);}
 }
 export async function creationDetailRoute(request:Request,id:string,enterprise=false){try{

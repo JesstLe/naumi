@@ -1,5 +1,5 @@
 import type {CanvasAudioNode} from "../canvas/audio-node-schema";
-import type {VideoInputChoice} from "../video/client-settings";
+import type {VideoInputChoice} from "../video/input-choice";
 import {audioInputIdentity,parseAudioInputIdentity} from "./project";
 import type {OrderedInput} from "../video/references";
 

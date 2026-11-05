@@ -1,18 +1,10 @@
-import {publicUpstreamIds} from "./channel-policy";
-import type { ModelConfig, ModelFacts, UpstreamModel } from "./types";
+import type { ModelConfig, ModelFacts } from "./types";
 import { ModelConfigError } from "./types";
 import type { FeatureId } from "../billing/rules/registry";
 import type { BusinessOption, BusinessRouting, Procurement } from "./business-schema";
-import { MODEL_BINDINGS, type ModelBinding } from "./bindings";
-import { featureDefaultModel } from "./tool-scope";
+import { FEATURE_BINDINGS, featureDefaultModel } from "./feature-model-policy";
+export { FEATURE_BINDINGS, upstreamSupportsFeature, compatiblePublicModels } from "./feature-model-policy";
 
-export const FEATURE_BINDINGS: Partial<Record<FeatureId, ModelBinding>> = {
-  "image.generate": "image.generate", "image.suite": "image.generate", "image.aplus": "image.generate",
-  "tool.cutout": "image.cutout", "tool.ipcheck": "text.competitor", "competitor.action": "image.edit",
-  "canvas.text-generate": "text.generate", "canvas.assistant": "text.generate", "canvas.ocr": "vision.ocr",
-  ...Object.fromEntries(["tool.garment", "tool.avatar", "tool.dewrinkle", "tool.dewatermark", "tool.style", "tool.tryon", "tool.retouch", "tool.recolor", "tool.replicate", "tool.inpaint", "tool.extract", "tool.garment3d", "tool.packaging3d", "canvas.image", "canvas.expand", "canvas.text-edit", "canvas.annotate"].map(id => [id, "image.edit"])),
-  "video.generate": "video.generate",
-};
 export function selectedBusinessOption(config: ModelConfig, feature?: string, selected?: string): BusinessOption | undefined {
   if (feature && config.business?.[feature as FeatureId]?.enabled === false) throw new ModelConfigError("FEATURE_DISABLED", "该功能已停用", 409);
   const preset = config.defaultImagePreset, binding = FEATURE_BINDINGS[feature as FeatureId];
@@ -48,17 +40,4 @@ export function procurementCny(p?: Procurement): Procurement | undefined {
   for (const key of ["amountMicros", "inputMicrosPerMillion", "outputMicrosPerMillion", "cachedInputMicrosPerMillion", "imageInputMicrosPerMillion"] as const)
     if (p[key] !== undefined) out[key] = ((BigInt(p[key]!) * BigInt(p.cnyPerUnitMicros) + BigInt(999999)) / BigInt(1000000)).toString();
   return out;
-}
-export function upstreamSupportsFeature(capabilities: UpstreamModel["capabilities"], binding: ModelBinding, feature?: string) {
-  // Canvas admits both plain generation and reference editing. The concrete
-  // request still resolves its own binding and compatible supplier subset.
-  return feature === "canvas.image" ? capabilities.generate || capabilities.edit : capabilities[MODEL_BINDINGS[binding].capability];
-}
-export function compatiblePublicModels(config: ModelConfig, binding: ModelBinding, feature?: string) {
-  const purpose = MODEL_BINDINGS[binding];
-  return config.publicModels.filter(m => m.enabled && m.visible && m.modality === purpose.modality &&
-    publicUpstreamIds(config,m).some(id => {
-      const u = config.upstreamModels.find(u => u.id === id);
-      return u?.enabled && upstreamSupportsFeature(u.capabilities, binding, feature) && config.providers.some(p => p.id === u.providerId && p.enabled);
-    }));
 }

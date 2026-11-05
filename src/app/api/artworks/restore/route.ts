@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
-import { dbEnabled, addArtworks, setArtworkPosition } from "@/lib/db";
-import type { ArtworkRecord } from "@/lib/db";
+import {dbEnabled} from "@/platform/db/pool";
+import {addArtworks} from "@/lib/artworks/writer";
+import {setArtworkPosition} from "@/lib/canvas/artwork-repository";
+import type {ArtworkRecord} from "@/lib/artworks/types";
 import { authenticatedEmail } from "@/lib/request-auth";
 
 export const runtime = "nodejs";

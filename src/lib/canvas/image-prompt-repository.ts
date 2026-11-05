@@ -1,8 +1,8 @@
 import "server-only";
 import type { PoolClient } from "pg";
-import { getPool } from "../db";
+import { getPool } from "@/platform/db/pool";
 import { ensureCreationSchema } from "../saas/creation-schema";
-import { ensureCanvasSettingsSchema } from "../canvas-node-settings-store";
+import { ensureCanvasSettingsSchema } from "./storage-schema";
 import { imagePromptDocumentSchema, type ImagePromptDocument, type ImagePromptState } from "./image-prompt-schema";
 
 let ready: Promise<void> | undefined;

@@ -28,15 +28,16 @@ function load(rel){if(moduleCache.has(rel))return moduleCache.get(rel).exports;c
  const localRequire=id=>{
   if(id==='server-only')return {};
   if(id==='next/server')return {NextResponse:Response};
-  if(id==='@/lib/db'||id==='../db')return {dbEnabled:true,ensureSchema:async()=>{},getPool:()=>db};
+  if(id==='@/lib/db'||id==='../db'||id==='@/platform/db/pool')return {dbEnabled:true,ensureSchema:async()=>{},getPool:()=>db};
   if(id==='@/lib/admin-auth'||id==='../admin-auth')return {resolveUserEmail:async request=>request.headers.get('x-fixture-owner')||actor};
   if(id==='@/lib/site-control/identity')return {enterpriseSiteIdentity:()=>dedicated?{enterpriseId:TENANT}:null};
   if(id==='@/lib/enterprise/server')return {enterpriseCreationRead:async(email,tenant,run)=>{if(email!==OWNER||tenant!==TENANT)throw new TeamError('企业不存在或无权访问');return run(db,{team:{id:tenant},entitlement:{featurePolicy:{}}})}};
-  if(id==='@/lib/teams/server')return {TeamError};
+  if(id==='@/lib/teams/server'||id==='@/lib/teams/errors')return {TeamError};
+  if(id==='@/lib/persistence/schema')return {ensureSchema:async()=>{}};
   if(id==='./creation-schema')return {ensureCreationSchema:async()=>{}};
   if(id==='@/lib/settings-secret')return {settingsSecret:()=> 'fixture-key-not-a-production-secret'};
   if(id==='@/lib/feature-access/catalog')return {requestRequirement:()=>null,TOOL_ACCESS:{},allows:()=>true};
-  if(id==='@/lib/feature-access/server')return {userFeaturePolicy:async()=>({})};
+  if(id==='@/lib/feature-access/server'||id==='@/lib/feature-access/repository')return {userFeaturePolicy:async()=>({})};
   if(id==='@/lib/billing/server')return {quoteForRequest:async(_request,facts)=>({configVersion:7,modelVersion:8,facts,requestedCredits:6,reserveCredits:6,authorizedCredits:6,tariff:{pricing:{mode:'fixed'}},requestedParameters:{quality:'medium',resolution:'1K',ratio:'1:1'},effectiveParameters:{quality:'medium',resolution:'1K',ratio:'1:1'}})};
   if(id==='@/lib/billing/request')return {billingErrorResponse:error=>Response.json({error:error.message,code:error.code},{status:error.status||500})};
   let relPath;if(id.startsWith('@/'))relPath='src/'+id.slice(2);else if(id.startsWith('.'))relPath=path.posix.normalize(path.posix.join(path.posix.dirname(rel),id));else return realRequire(id);
@@ -76,20 +77,20 @@ async function main(){
  reset({dedicated:false});project('tree:personal');const positive=await submit('/api/canvas/expand','canvas.expand');assert.equal(positive.status,200);checks.push('SHARED_PERSONAL_POSITIVE_CONTROL');
  if(!baseline){
   reset();project('tree:legacy',null,OWNER,false);let response=await submit('/api/canvas/expand','canvas.expand','tree:legacy');assert.equal(response.status,200);assert.equal((await response.json()).scope.scopeKind,'personal');checks.push('DEDICATED_UNBOUND_OWNED_LEGACY_PERSONAL_PROJECT');
-  reset();project('tree:personal');project('tree:company',TENANT);await submit('/api/canvas/expand','canvas.expand');response=await submit('/api/canvas/expand','canvas.expand','tree:company');assert.equal(response.status,200);assert.equal((await response.json()).scope.tenantId,TENANT);assert.equal(calls.filter(c=>c.url==='/api/billing/quote').length,2);checks.push('PROJECT_CHANGE_HAS_DISTINCT_QUOTE_CACHE_KEY');
+  reset();project('tree:personal');project('tree:company',TENANT);await submit('/api/canvas/expand','canvas.expand');workspace=TENANT;response=await submit('/api/canvas/expand','canvas.expand','tree:company');assert.equal(response.status,200);assert.equal((await response.json()).scope.tenantId,TENANT);assert.equal(calls.filter(c=>c.url==='/api/billing/quote').length,2);checks.push('PROJECT_CHANGE_HAS_DISTINCT_QUOTE_CACHE_KEY');
   await submit('/api/canvas/expand','canvas.expand','tree:company');assert.equal(calls.filter(c=>c.url==='/api/billing/quote').length,2);checks.push('SAME_SCOPE_QUOTE_CACHE_REUSED');
-  project('tree:personal-b');await submit('/api/canvas/expand','canvas.expand','tree:personal-b');assert.equal(calls.filter(c=>c.url==='/api/billing/quote').length,3);checks.push('SAME_WORKSPACE_DIFFERENT_PROJECT_GETS_DISTINCT_QUOTE');
+  project('tree:personal-b',TENANT);await submit('/api/canvas/expand','canvas.expand','tree:personal-b');assert.equal(calls.filter(c=>c.url==='/api/billing/quote').length,3);checks.push('SAME_WORKSPACE_DIFFERENT_PROJECT_GETS_DISTINCT_QUOTE');
   const personalRow=[...rows.values()].find(r=>r.scope_key==='["personal",null]');
   const fake=new Request('http://fixture/api/canvas/expand',{method:'POST',headers:{'content-type':'application/json','x-naumi-image-quote':personalRow.id,'x-fixture-owner':OWNER},body:'{}'});
   await assert.rejects(creation.withFrozenCreation({actorEmail:OWNER,scopeKind:'tenant',tenantId:TENANT},()=>quotes.imageBillingQuoteForRequest(fake)),e=>e.code==='IMAGE_QUOTE_INVALID');checks.push('SERVER_REJECTS_PERSONAL_QUOTE_IN_TENANT');
   const stolen=new Request(fake,{headers:{'x-naumi-image-quote':personalRow.id,'x-fixture-owner':OTHER}});
   await assert.rejects(creation.withFrozenCreation({actorEmail:OTHER,scopeKind:'personal',tenantId:null},()=>quotes.imageBillingQuoteForRequest(stolen)),e=>e.code==='IMAGE_QUOTE_INVALID');checks.push('SERVER_REJECTS_OTHER_OWNER_QUOTE');
-  reset();project('tree:foreign',TENANT2);await assert.rejects(submit('/api/canvas/expand','canvas.expand','tree:foreign'),/企业不存在或无权访问/);assert.equal(paidEntries,0);assert.equal(calls.filter(c=>c.url!=='/api/billing/quote').length,0);checks.push('FOREIGN_TENANT_DENIED_BEFORE_SUBMISSION');
+  reset({dedicated:false});workspace=TENANT2;project('tree:foreign',TENANT2);await assert.rejects(submit('/api/canvas/expand','canvas.expand','tree:foreign'),/企业不存在或无权访问/);assert.equal(paidEntries,0);assert.equal(calls.filter(c=>c.url!=='/api/billing/quote').length,0);checks.push('FOREIGN_TENANT_DENIED_BEFORE_SUBMISSION');
   reset();project('tree:absent',null,OTHER);await assert.rejects(submit('/api/canvas/expand','canvas.expand','tree:absent'),/画布项目不存在或无权访问/);assert.equal(paidEntries,0);checks.push('FOREIGN_PROJECT_DENIED_BEFORE_SUBMISSION');
   for(const when of ['auth','quote-response','hash']){reset();project('tree:personal');let active=true;const guard=()=>{if(!active)throw Error('project switched')};if(when==='auth')clientContext.authHook=async()=>{workspace=TENANT;workspaceRevision++};if(when==='quote-response')quoteHook=()=>{active=false};const promise=submit('/api/canvas/expand','canvas.expand','tree:personal',guard);if(when==='hash'){const old=clientContext.crypto;clientContext.crypto={...old,subtle:{digest:async(...a)=>{active=false;return webcrypto.subtle.digest(...a)}},randomUUID:()=>webcrypto.randomUUID()};}
    await assert.rejects(promise,/创作空间已切换|project switched/);assert.equal(paidEntries,0);checks.push('STALE_CONTEXT_STOPS_BEFORE_PAID_POST_'+when);clientContext.crypto=webcrypto;
   }
-  reset();project('tree:personal');workspace=TENANT;workspaceRevision++;await submit('/api/canvas/expand','canvas.expand');assert.equal(calls[0].headers['x-naumi-workspace'],TENANT);checks.push('CURRENT_WORKSPACE_CAPTURED_EXPLICITLY');
+  reset();project('tree:company',TENANT);workspace=TENANT;workspaceRevision++;await submit('/api/canvas/expand','canvas.expand','tree:company');assert.equal(calls[0].headers['x-naumi-workspace'],TENANT);checks.push('CURRENT_WORKSPACE_CAPTURED_EXPLICITLY');
   reset();project('tree:personal');const form=new FormData();form.set('image',new File([new Uint8Array([1,2,3])],'fixture.png',{type:'image/png'}));form.set('ratio','1:1');
   response=await api.quoteAndSubmit('/api/cutout',{method:'POST',headers:{'x-naumi-workspace':'personal','x-naumi-project-context':'tree:personal'},body:form},input('tool.cutout'));assert.equal(response.status,200);assert.equal(calls[0].headers['x-naumi-project-context'],'tree:personal');assert.equal(calls[1].body,'<multipart>');checks.push('MULTIPART_TOOL_KEEPS_PROJECT_WITHOUT_COPYING_BODY_INTO_QUOTE');
   reset();project('tree:personal');await assert.rejects(api.quoteAndSubmit('/api/canvas/expand',{method:'POST',headers:{'content-type':'application/json','x-naumi-workspace':TENANT,'x-naumi-project-context':'tree:personal'},body:'{}'},input('canvas.expand')),/创作空间已切换/);assert.equal(calls.length,0);checks.push('STALE_EXPLICIT_WORKSPACE_REJECTED_BEFORE_QUOTE');

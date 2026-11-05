@@ -119,6 +119,6 @@ async function main(){
   check((await durable.get(patchId))?.status==="done");
   check(calls===1);
   console.log(`MODIFIED=PASS CHECKS=${checks} RAW_2K=2048 RAW_4K=4096 PARTIAL_RESUMED=YES PARENT_CHILD=DONE BILLING=ONCE UNKNOWN_POST=0 SUPPLIER_POSTS=${calls} REAL_SUPPLIER_CALLS=0`);
- }finally{app.closeAllConnections();await new Promise<void>(r=>app.close(()=>r()));await db.getPool().end();await f.cleanup();}
+ }finally{app.closeAllConnections();await new Promise<void>(r=>app.close(()=>r()));await(await import("../src/lib/imagegen/coordination-pool")).closeImageCoordinationPool();await db.getPool().end();await f.cleanup();}
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

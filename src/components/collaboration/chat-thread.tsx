@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { BellOff, Check, ChevronDown, File, MoreHorizontal, Pin, Reply, Search, Users, X } from "lucide-react";
 import type { CollaborationConversation, CollaborationMessage, CollaborationPage } from "@/lib/collaboration/contracts";
-import { useCollaborationState } from "./collaboration-provider";
+import { useCollaborationState } from "./collaboration-context";
 import { MessageContent } from "./message-content";
 import { MessageComposer } from "./message-composer";
 import { MemberAvatar } from "./members-panel";

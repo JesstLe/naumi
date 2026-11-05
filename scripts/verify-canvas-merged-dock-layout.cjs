@@ -6,13 +6,16 @@ function load(ref){const cache={};function get(file){
  assert.equal((code.diagnostics||[]).filter(x=>x.category===1).length,0);
  vm.runInThisContext('(function(require,module,exports){'+code.outputText+'\n})')(id=>get(path.posix.join(path.posix.dirname(file),id)+'.ts'),m,m.exports);return m.exports;
 }return get('src/lib/canvas/dock-layout.ts');}
-const merged=load(),main=load('3ac639d95b6dd0ae6983cb55c1dce3e43092fd44'),mapping=load('9d687bf07c244050c0b5423e36282225ac717654');
+const merged=load(),main=load('3ac639d95b6dd0ae6983cb55c1dce3e43092fd44'),mapping=load('9d687bf07c244050c0b5423e36282225ac717654'),refactor=load('64ff0b81a90827a9ba9beb2a8874d8e482e2053f');
 let sameMain=0,sameMapping=0,expanded=0;
 for(const width of [390,768,1024,1438])for(const height of [480,659,844,1000])for(const zoom of [.5,1,2])for(const top of [150,300,403,600]){
  const input={nodeScreen:{left:30,cx:170,top,bottom:top+200*zoom},canvasSize:{width,height},dockMetrics:{dockHeight:310,toolbarHeight:49.5,toolbarWidth:1384,dockMinimumHeight:178},selectedTextId:null,textComposerExpanded:false,readOnly:false};
- assert.deepEqual(merged.canvasDockLayout({...input,mediaComposerExpanded:true}),main.canvasDockLayout({...input,mediaComposerExpanded:true}));sameMain++;
+ assert.deepEqual(merged.canvasDockLayout({...input,mediaComposerExpanded:true}),main.canvasDockLayout({...input,mediaComposerExpanded:true}),'expanded-main '+JSON.stringify({width,height,zoom,top}));sameMain++;
  const protectedInput={...input,nodeTitleHeight:38*zoom,protectNodeTitle:true};
- assert.deepEqual(merged.canvasDockLayout(protectedInput),mapping.canvasDockLayout(protectedInput));sameMapping++;
+ // The refactor's readOnly/narrow-dock policy predates main's opt-in title clearance.
+ // Preserve the actual base owner exactly, not main's older seventh-argument ABI.
+ assert.deepEqual(merged.canvasDockLayout(input),refactor.canvasDockLayout(input),'collapsed-refactor '+JSON.stringify({width,height,zoom,top}));
+ assert.equal(merged.canvasImageTitleInset(zoom),mapping.canvasImageTitleInset(zoom));sameMapping++;
  const result=merged.canvasDockLayout({...protectedInput,mediaComposerExpanded:true}),safe=merged.canvasOverlaySafeArea(input.canvasSize),titleTop=top-38*zoom,titleBottom=top;
  const above=Math.max(0,Math.min(height-safe.bottom,titleTop-12)-safe.top),below=Math.max(0,height-safe.bottom-Math.max(safe.top,titleBottom+12));
  const capacity=Math.max(above-49.5-12,below-49.5-12,above>=49.5?below:0,below>=49.5?above:0);
@@ -25,4 +28,4 @@ for(const width of [390,768,1024,1438])for(const height of [480,659,844,1000])fo
   assert.deepEqual(result,merged.canvasDockLayout({...protectedInput,dockMetrics:{...input.dockMetrics,dockHeight:result.dock.height},mediaComposerExpanded:true}),'resize must not oscillate');expanded++;
  }
 }
-console.log('MERGED_DOCK_COMPOSITION=PASS UNPROTECTED_MAIN_EXACT='+sameMain+' COLLAPSED_MAPPING_EXACT='+sameMapping+' EXPANDED_TITLE_CASES='+expanded+' MEASUREMENT_STABLE=YES');
+console.log('MERGED_DOCK_COMPOSITION=PASS UNPROTECTED_MAIN_EXACT='+sameMain+' COLLAPSED_REFACTOR_EXACT='+sameMapping+' EXPANDED_TITLE_CASES='+expanded+' MEASUREMENT_STABLE=YES');

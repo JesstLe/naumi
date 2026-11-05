@@ -2,7 +2,7 @@ import { applicationAPIMartImages } from "./apimart-image-policy";
 import "server-only";
 import { createHash } from "node:crypto";
 import type { ConfigSnapshot, CostRate } from "../billing/types";
-import { canonicalConfig } from "./repository";
+import {canonicalConfig} from "@/lib/model-config/snapshot-value";
 import { validateModelConfig, type ValidationOptions } from "./schema";
 import { ModelConfigError, type ModelSnapshot, type UpstreamModel } from "./types";
 

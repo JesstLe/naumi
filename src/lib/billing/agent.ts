@@ -1,13 +1,18 @@
 import "server-only";
 import {prepareCanvasVideoWorkflow,type PreparedCanvasVideoWorkflow} from "../video/canvas-workflow";
-import {getVideoWorkflow,ensureVideoWorkflowSchema} from "../video/workflow";
+import {getVideoWorkflow} from "../video/workflow";
+import {ensureVideoWorkflowSchema} from "@/lib/video/storage-schema";
+
 import {videoAgentOperationId} from "../agent/canvas-video-tools";
 import {getVideoNode} from "../canvas/video-node-repository";
 import {mediaBillingQuote} from "../video/media-billing";
 import { CREATIVE_TOOL_FEATURES } from "../agent/creative-tool-catalog";
-import { getBillingRuntime, quoteForRequest } from "./server";
+import {quoteForActor} from "./quotation";
+import {getBillingRuntime} from "@/lib/billing/runtime";
 import type { BillingQuote, FeatureId } from "./types";
-import { dbEnabled, getUser,getVideoTaskByIdempotencyKey } from "@/lib/db";
+import {getVideoTaskByIdempotencyKey} from "@/lib/video/task-repository";
+import {dbEnabled} from "@/platform/db/pool";
+import {getUser} from "@/lib/accounts/session";
 import { fingerprint } from "./fingerprint";
 import { getImageJob } from "@/lib/image-job-repository";
 import { currentModelBillingSnapshot } from "../model-config/context";
@@ -62,8 +67,7 @@ export async function agentQuote(name: string, args: Record<string, any>, email:
         return { quote: { configVersion: 0, requestedCredits: Number(job.snapshot.cost || 0) }, label: entry.label, threshold };
     }
     const quantity = name === "generate_aplus" ? (Array.isArray(args.modules) && args.modules.length ? args.modules.length : 4) : ["generate_image","generate_variations","fuse_images"].includes(name) ? Math.min(4, Math.max(1, Number(args.count) || 1)) : name === "generate_suite" ? (args.structure === "custom" && Array.isArray(args.shots) ? Math.max(1, Math.min(20, args.shots.length)) : 13) : 1;
-    const request = new Request("http://internal/api/billing/quote", { headers: { cookie: cred.cookie, authorization: cred.authorization, "x-naumi-image-quality": cred.imageQuality || "medium" } });
-    return { quote: await quoteForRequest(request, { feature: entry.feature, quantity, quality: args.quality || canvas?.quality || cred.imageQuality || "medium", resolution: videoTool?args.resolution:args.resolution || canvas?.resolution || "1K", modelId: args.model || args.modelId || args.model_id || (CANVAS_IMAGE_TOOLS.has(name) ? canvas?.imageModelId : undefined), providerId: args.providerId || args.provider_id, ratio: videoTool?args.aspectRatio:args.ratio || canvas?.ratio },snapshot), label: entry.label, threshold };
+    return { quote: await quoteForActor(email, { feature: entry.feature, quantity, quality: args.quality || canvas?.quality || cred.imageQuality || "medium", resolution: videoTool?args.resolution:args.resolution || canvas?.resolution || "1K", modelId: args.model || args.modelId || args.model_id || (CANVAS_IMAGE_TOOLS.has(name) ? canvas?.imageModelId : undefined), providerId: args.providerId || args.provider_id, ratio: videoTool?args.aspectRatio:args.ratio || canvas?.ratio },undefined,snapshot), label: entry.label, threshold };
 }
 export type AgentBillingSession = {
     email: string;

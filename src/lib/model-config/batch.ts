@@ -2,7 +2,7 @@ import type { ModelConfig } from "./types";
 import type { BusinessOption } from "./business-schema";
 import { businessOptionSchema } from "./business-schema";
 import { FEATURE_IDS, type FeatureId } from "../billing/rules/registry";
-import { FEATURE_BINDINGS, compatiblePublicModels, upstreamSupportsFeature } from "./business";
+import { FEATURE_BINDINGS, compatiblePublicModels, upstreamSupportsFeature } from "./feature-model-policy";
 import { MODEL_BINDINGS } from "./bindings";
 import { cnyCredits } from "../billing/money";
 

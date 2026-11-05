@@ -242,7 +242,7 @@ async function localDriverRegression(root:string){
 async function isolatedLocalDriverRegression(root:string){
   const env:NodeJS.ProcessEnv={NODE_ENV:"test",STORAGE_DRIVER:"local",MEDIA_PRIVATE:"1",MEDIA_DIR:root,DATABASE_URL:""};
   for(const key of ["PATH","Path","SystemRoot","WINDIR","TEMP","TMP","HOME","USERPROFILE","NODE_PATH"])if(process.env[key])env[key]=process.env[key];
-  const child=spawnSync(process.execPath,["--conditions=react-server",process.argv[1],"--local-driver-fixture",root],{env,encoding:"utf8",timeout:15_000,windowsHide:true});
+  const child=spawnSync(process.execPath,["--import","tsx","--conditions=react-server",process.argv[1],"--local-driver-fixture",root],{env,encoding:"utf8",timeout:15_000,windowsHide:true});
   equal(child.status,0,`Fresh local driver integration completes: ${child.stderr}`);assert.match(child.stdout,/VIDEO_REFERENCE_LOCAL_DRIVER=PASS/);assertions++;
 }
 async function main(){

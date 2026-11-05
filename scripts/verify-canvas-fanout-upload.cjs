@@ -1,3 +1,7 @@
+// Keep the original monolith fixture for its historical source; current owners
+// are verified through their real application entrypoints, not copied functions.
+const ownerPath=require('node:path').resolve(process.argv.includes('--source-root')?process.argv[process.argv.indexOf('--source-root')+1]:'.','src/lib/canvas/image-runs.ts');
+if(require('node:fs').existsSync(ownerPath))require('./verify-canvas-fanout-owners.cjs');else{
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),assert=require('node:assert/strict'),crypto=require('node:crypto'),ts=require('typescript');
 const args=process.argv.slice(2),arg=(name,otherwise)=>args.includes(name)?args[args.indexOf(name)+1]:otherwise;
 const root=path.resolve(arg('--source-root','.')),fallback=process.cwd(),out=path.resolve(arg('--output-root','output/canvas-fanout-upload')),baseline=args.includes('--baseline');
@@ -67,3 +71,5 @@ async function upload({switchScope=false,failedSync=false,queued=false}={}){
  }catch(e){errors.push(e.stack)}
  const status=errors.length?'FAIL':baseline?'REPRODUCED':'PASS',exit=errors.length||baseline?1:0,stdout=`CANVAS_FANOUT_UPLOAD=${status} CHECKS=${checks.length} FAILED=${errors.length} SUPPLIER_CALLS=0 EXIT=${exit}`;fs.writeFileSync(path.join(out,baseline?'BASELINE.json':'MODIFIED.json'),JSON.stringify({status,checks,errors,loaded,stdout,exit,evidence:'Real source functions and full helper modules; HTTP/React state boundaries fixture'},null,2));console.log(stdout);if(errors.length)console.error(errors.join('\n'));process.exitCode=exit;
 })();
+
+}

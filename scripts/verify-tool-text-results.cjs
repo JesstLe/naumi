@@ -26,18 +26,18 @@ function source(relative) {
 }
 function evaluate(relative, stubs, cache = new Map(), globals = {}) {
   if (cache.has(relative)) return cache.get(relative).exports;
-  const text = source(relative), module = {exports: {}};
-  cache.set(relative, module);
+  const text = source(relative), loadedModule = {exports: {}};
+  cache.set(relative, loadedModule);
   const output = ts.transpileModule(text, {fileName: relative, compilerOptions: {target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true}}).outputText;
   const requireSource = id => {
     if (Object.hasOwn(stubs, id)) return stubs[id] && Object.hasOwn(stubs[id], '__realModule') ? evaluate(stubs[id].__realModule, stubs, cache, globals) : stubs[id];
     if (id === '@/lib/tool-text-results') return evaluate('src/lib/tool-text-results.ts', stubs, cache, globals);
     throw new Error('UNMOCKED_DEPENDENCY:' + id);
   };
-  const context = {module, exports: module.exports, require: requireSource, console, Buffer, process: {env: {}}, Request, Response, Headers, FormData, File, Blob, URL,
+  const context = {module: loadedModule, exports: loadedModule.exports, require: requireSource, console, Buffer, process: {env: {}}, Request, Response, Headers, FormData, File, Blob, URL,
     fetch: () => {throw new Error('FORBIDDEN_NETWORK');}, setTimeout, clearTimeout, ...globals};
   vm.runInNewContext(output, context, {filename: path.join(sourceRoot, relative)});
-  return module.exports;
+  return loadedModule.exports;
 }
 async function route(kind, raw) {
   const seen = {modelCalls: 0, reserves: 0, ledgerWrites: 0, refunds: 0, creationStarts: 0, finishes: []};
@@ -66,11 +66,11 @@ async function route(kind, raw) {
       finishCreation: async (_id, _email, state, data) => {seen.finishes.push({state, data});}, prepareOriginalCreationInput: async () => {}},
     '@/lib/billing/request': {operationIdFor: () => 'fixture-operation'},
   };
-  const module = evaluate(`src/app/api/${kind}/route.ts`, stubs);
+  const loadedModule = evaluate(`src/app/api/${kind}/route.ts`, stubs);
   const form = new FormData();
   form.append('image', new File([png], 'fixture.png', {type: 'image/png'}));
   form.append('idea', 'fixture product'); form.append('email', 'fixture@example.test');
-  const response = await module.POST(new Request('http://fixture.invalid/api/' + kind, {method: 'POST', body: form}));
+  const response = await loadedModule.POST(new Request('http://fixture.invalid/api/' + kind, {method: 'POST', body: form}));
   const result = {status: response.status, body: await response.json(), seen};
   assert.equal(seen.modelCalls, 1, 'one fixture completion, never a repeated generation');
   return result;
@@ -116,11 +116,11 @@ async function titleClient({withFile = false, managed = true, available = true, 
       imagePresent: init.body instanceof FormData && init.body.get('image') instanceof File});
     return Response.json(validTitle);
   };
-  const module = evaluate('src/components/titles/title-gen-client.tsx', stubs, new Map(), {
+  const loadedModule = evaluate('src/components/titles/title-gen-client.tsx', stubs, new Map(), {
     window: {localStorage, dispatchEvent: () => {}, addEventListener: () => {}, removeEventListener: () => {}},
     localStorage, Event, fetch: mockedFetch,
   });
-  const tree = module.TitleGenClient();
+  const tree = loadedModule.TitleGenClient();
   const find = (node, type) => {
     if (!node || typeof node !== 'object') return null;
     if (Array.isArray(node)) {for (const item of node) {const found = find(item, type); if (found) return found;} return null;}

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { dbEnabled } from "@/lib/db";
-import { getWorkerTickPool } from "@/lib/db/connection";
-import { scanWorkerTick } from "@/lib/worker/tick-scan";
+import {dbEnabled,getWorkerTickPool} from "@/platform/db/pool";
+import {applicationTasksRunHere} from "@/lib/application/task-execution";
+import {scanApplicationWorkerOnce as scanWorkerTick} from "@/lib/worker/scan";
 import { createWorkerTickReceiptStore, runFencedWorkerTick, WorkerTickReceiptError, type WorkerTickReceiptStore } from "@/lib/release-runtime/worker-tick-receipts";
 import { fencedTickIdentity, tickProtocolCapability, tickProtocolAuthorized } from "@/lib/release-runtime/worker-tick-protocol";
 
@@ -42,6 +42,7 @@ export async function POST(request:Request) {
       const receipt=await store().proveNotAccepted(input,web);
       return NextResponse.json({ok:true,receipt,server:web},{headers});
     }
+    if(!applicationTasksRunHere())throw new WorkerTickReceiptError("APPLICATION_TASKS_ASSIGNED_TO_WORKER",409);
     const result=await runFencedWorkerTick(store(),input,web,scanWorkerTick),phase=result.receipt.phase;
     return NextResponse.json({ok:phase==="completed",...result,server:web},{status:phase==="completed"?200:phase==="not_accepted"?409:202,headers});
   }catch(error){return failure(error);}

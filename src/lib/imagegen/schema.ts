@@ -23,7 +23,9 @@ export const imagegenRequestSchema=z.strictObject({
   useCase:z.enum(IMAGEGEN_USE_CASES.map(x=>x.id) as [typeof IMAGEGEN_USE_CASES[number]["id"],...typeof IMAGEGEN_USE_CASES[number]["id"][]]).optional(),
   skill:z.strictObject({id:z.string().regex(/^(official:[a-z-]+|personal:[a-f0-9-]{36})$/),revision:z.number().int().positive()}).optional(),
   augment:z.boolean().default(false),modelId:resourceId.optional(),sourceNodeId:resourceId.optional(),
-  canvasTarget:z.strictObject({nodeId:resourceId,expectedRevision:z.number().int().nonnegative(),expectedImage:z.string().min(1).max(4096)}).optional(),
+  // This is the persisted media identity (including existing inline Data URLs),
+  // not a new user-entered URL. A URL-length cap breaks valid legacy nodes.
+  canvasTarget:z.strictObject({nodeId:resourceId,expectedRevision:z.number().int().nonnegative(),expectedImage:z.string().min(1)}).optional(),
   inputs:z.array(z.strictObject({artworkId:resourceId,role:z.enum(["edit-target","reference","insert","style","mask"]),reference:referenceLabelSchema.optional(),originalArtworkId:resourceId.optional(),inputVariant:z.enum(['original','processed']).optional()})).max(32).default([]),
   frameSourceId:resourceId.optional(),
   framePolicy:z.literal("all-inputs").optional(),

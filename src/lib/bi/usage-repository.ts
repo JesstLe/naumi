@@ -1,7 +1,7 @@
 import "server-only";
 import type { PoolClient } from "pg";
-import { getPool } from "@/lib/db";
-import { ensureBiSchema } from "./repository";
+import { getPool } from "@/platform/db/pool";
+import { ensureBiSchema } from "./schema";
 import { USAGE_DEFINITIONS, type UsageMetrics, type UsageQuery, type UsageResponse, type UsageUser } from "./usage-contracts";
 
 type ReadClient = Pick<PoolClient, "query">;

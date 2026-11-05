@@ -12,7 +12,7 @@ const { chromium } = require('@playwright/test');
 
 const root = path.resolve(__dirname, '..');
 const arg = (name, fallback) => process.argv.includes(name) ? process.argv[process.argv.indexOf(name) + 1] : fallback;
-const out = path.resolve(arg('--output-root', path.join(root, 'output/canvas-text-autosave')));
+const out = path.resolve(arg('--output-root', process.env.CANVAS_TEXT_AUTOSAVE_EVIDENCE || path.join(root, 'output/canvas-text-autosave')));
 const source = path.resolve(arg('--source-root', root));
 const hookFile = path.join(source, 'src/components/canvas/use-text-node-autosave.ts');
 const origin = 'http://127.0.0.1:15893';

@@ -33,3 +33,10 @@ python -m pytest tests -q
 - 旧单图和聊天生图已复制为本站 `/single`、`/chat-image`，保留原UI交互，使用同一账号/渠道/持久任务队列；详见 `docs/changes/2026-10-14-workbench-extra-pages.md`。
 
 完整阶段与实际验证见 `docs/changes/2026-10-13-reference-workbench-47.md`；Mock测试与真实TDH验证分别记录。
+
+
+## 共用UI资产边界（2026-10-27）
+
+三个页面、history、ZIP与`static/workbench-environment.js`是独立服务和Naumi Web唯一共用的页面源码。Naumi predev/prebuild只按原字节复制到ignored public目录并打包native鉴权桥；不要恢复全局字符串替换或手改生成文件。
+
+页面通过`WorkbenchEnvironment`显式访问API、存储、模型控件和导航。独立服务沿原`/api/`、原localStorage/IndexedDB和登录；Naumi沿原账号隔离存储/native API，desktop只切明确路径前缀。新共用脚本URL`/reference-workbench/{白名单资产名}`沿原用户鉴权；旧根history/ZIPURL继续兼容。部署包仍包含本目录static，无额外跨仓拷贝或新服务依赖。本轮未发布独立服务，未更改任务/账务/渠道/SQLite模型。

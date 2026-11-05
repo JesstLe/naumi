@@ -66,7 +66,7 @@ async function main() {
       await assert.rejects(capacity.acquire({ providerId: "shared-account-b", baseUrl: `${f.origin}/another-protocol`, maxConcurrent: 4, timeoutMs: 5000 }), (e: any) => e.code === "PROVIDER_BUSY", "Duplicating a supplier account under another provider ID cannot bypass its concurrency limit");
       assert.equal((await providerCapacitySummary(f.sql, sharedConfig))["shared-account-b"].inFlight, 1);
     } finally { await sharedLease.release(); }
-    f.config.upstreamModels[0].parameterMap = { quality: { high: "hd" }, resolution: { "2K": "2048x2048" } };
+    f.config.upstreamModels[0].parameterMap = { quality: { low: "standard", medium: "standard", high: "hd" }, resolution: { "2K": "2048x2048" } };
     f.config.upstreamModels[0].capabilities.preserveIdentity = true;
     f.config.upstreamModels[0].capabilities.textAccuracy = true;
     const textKey = await f.credentials.importPlain({ providerId: "text-provider", plain: "fixture-text-account", actor: "fixture" });
@@ -84,6 +84,7 @@ async function main() {
     f.config.upstreamModels.push({ ...structuredClone(f.config.upstreamModels.at(-1)!), id: "video-openai-u1", providerId: "video-openai" });
     f.config.publicModels.push({ id: "video-openai-a", label: "视频协议测试", modality: "video", enabled: true, visible: true, target: { type: "upstream", id: "video-openai-u1" } });
     const first = await f.repo.current();
+    const staleActor="fixture-unpublished-admin",staleDraft=await f.repo.draft(staleActor);
     const { publicModelCatalog } = await import("../src/lib/model-config/runtime");
     const hiddenConfig = structuredClone(first.config);
     hiddenConfig.upstreamModels.push({ ...structuredClone(hiddenConfig.upstreamModels[0]), id: "hidden-editor-wire", capabilities: { ...structuredClone(hiddenConfig.upstreamModels[0].capabilities), qualities: ["medium"] } });
@@ -111,8 +112,11 @@ async function main() {
     config.upstreamModels.find(m => m.id === "video-u1")!.model = "wire-video-two";
     const saved = await f.repo.saveDraft({ id: draft.id, expectedRevision: draft.revision, config, actor: "fixture-admin" });
     const staged = await f.repo.stage({ id: randomUUID(), draftId: saved.id, expectedRevision: saved.revision, expectedVersion: first.version, reason: "执行快照验收", actor: "fixture-admin" });
-    await f.repo.markApplied(staged.id, staged.digest);
+    await f.repo.markApplied(staged.id, staged.digest, saved.id);
     const second = await f.repo.current();
+    const publishedOwnDraft = await f.repo.draft("fixture-admin");
+    assert.equal(publishedOwnDraft.basedOnVersion, second.version, "Publishing continues the exact staged draft");
+    assert.equal(publishedOwnDraft.revision, saved.revision + 1, "Publishing advances the staged draft CAS revision once");
     const { client: oldClient, wireModel: oldWire } = await executor.clientFor(oldTask);
     await oldClient.images.generate({ model: oldWire, prompt: "fixture product", quality: "high", size: "1024x1024", n: 1 });
     const newTask = await executor.resolve({ binding: "image.generate", requestedModelId: "image-a", snapshot: second, billing, facts });
@@ -196,21 +200,29 @@ async function main() {
     const created = await videoService.createVideoGeneration(email, input);
     const stored = await globalDb.getVideoTask(email, created.taskId);
     assert.ok(stored?.upstreamId); assert.equal((stored.parameters.modelExecutions as any).modelVersion, second.version);
+    assert.equal(stored.model, "wire-video-two", "Supplier transport keeps its frozen wire model");
+    assert.equal(stored.billingQuote?.facts.modelId, "video-a", "Customer pricing uses the frozen public alias, not the supplier wire model");
     assert.equal(videoService.publicVideoTaskView(stored).model, "video-a", "Public task polling must retain the selected alias without disclosing the supplier wire model");
     assert.equal(videoService.publicVideoTaskView(stored).providerId, "managed-video");
     assert.ok(!JSON.stringify(stored).includes("fixture-video-rotated"));
     const beforeReplay = calls.length;
     assert.equal((await videoService.createVideoGeneration(email, input)).taskId, created.taskId);
     assert.equal(calls.length, beforeReplay, "Replaying an accepted durable intent cannot submit another paid task");
-    const finalDraft = await f.repo.draft("fixture-admin");
+    // Publishing advances only that actor's unchanged draft and its CAS revision.
+    // An old tab revision and another actor's unpublished old base stay distinct.
+    await assert.rejects(f.repo.stage({ id: randomUUID(), draftId: saved.id, expectedRevision: saved.revision, expectedVersion: second.version, reason: "旧页面修订不能覆盖已发布草稿", actor: "fixture-admin" }), (error: any) => error.code === "DRAFT_CONFLICT");
+    await assert.rejects(f.repo.stage({ id: randomUUID(), draftId: staleDraft.id, expectedRevision: staleDraft.revision, expectedVersion: second.version, reason: "旧草稿不能覆盖当前版本", actor: staleActor }), (error: any) => error.code === "PUBLISH_STALE_DRAFT_BASE");
+    const finalActor = "fixture-admin-video";
+    const finalDraft = await f.repo.draft(finalActor);
+    assert.equal(finalDraft.basedOnVersion, second.version);
     const finalConfig = structuredClone(finalDraft.config);
     finalConfig.upstreamModels.find(u => u.id === "text-u1")!.capabilities.vision = true;
     finalConfig.bindings["vision.reference"] = "text-a";
     finalConfig.bindings["text.competitor"] = "text-a";
     finalConfig.providers.find(p => p.id === "video-provider")!.credentialRef = (await f.credentials.importPlain({ providerId: "video-provider", plain: "fixture-video-final-key", actor: "fixture" })).id;
-    const finalSaved = await f.repo.saveDraft({ id: finalDraft.id, expectedRevision: finalDraft.revision, config: finalConfig, actor: "fixture-admin" });
-    const finalStaged = await f.repo.stage({ id: randomUUID(), draftId: finalSaved.id, expectedRevision: finalSaved.revision, expectedVersion: second.version, reason: "视频接单后轮换", actor: "fixture-admin" });
-    await f.repo.markApplied(finalStaged.id, finalStaged.digest);
+    const finalSaved = await f.repo.saveDraft({ id: finalDraft.id, expectedRevision: finalDraft.revision, config: finalConfig, actor: finalActor });
+    const finalStaged = await f.repo.stage({ id: randomUUID(), draftId: finalSaved.id, expectedRevision: finalSaved.revision, expectedVersion: second.version, reason: "视频接单后轮换", actor: finalActor });
+    await f.repo.markApplied(finalStaged.id, finalStaged.digest, finalSaved.id);
     const afterRotation = calls.length;
     assert.equal((await videoService.createVideoGeneration(email, input)).taskId, created.taskId);
     assert.equal(calls.length, afterRotation);
@@ -233,11 +245,13 @@ async function main() {
     const canvasService = await import("../src/lib/canvas-image-tasks");
     const canvasTask = await canvasService.enqueueTextEditTask(email, { artworkId: "fixture-source-image", oldText: "旧商品名", newText: "新商品名", quality: "high", box: { x: 20, y: 20, width: 200, height: 80 }, operationId: "fixture-canvas-edit" });
     assert.equal((canvasTask.parameters.modelExecutions as any).modelVersion, finalStaged.version);
-    const rotateDraft = await f.repo.draft("fixture-admin"); const rotateConfig = structuredClone(rotateDraft.config);
+    const rotateActor = "fixture-admin-canvas";
+    const rotateDraft = await f.repo.draft(rotateActor); const rotateConfig = structuredClone(rotateDraft.config);
+    assert.equal(rotateDraft.basedOnVersion, finalStaged.version);
     rotateConfig.providers[0].credentialRef = (await f.credentials.importPlain({ providerId: "p1", plain: "fixture-image-final-key", actor: "fixture" })).id;
-    const rotateSaved = await f.repo.saveDraft({ id: rotateDraft.id, expectedRevision: rotateDraft.revision, config: rotateConfig, actor: "fixture-admin" });
-    const rotateStaged = await f.repo.stage({ id: randomUUID(), draftId: rotateSaved.id, expectedRevision: rotateSaved.revision, expectedVersion: finalStaged.version, reason: "画布排队后轮换", actor: "fixture-admin" });
-    await f.repo.markApplied(rotateStaged.id, rotateStaged.digest);
+    const rotateSaved = await f.repo.saveDraft({ id: rotateDraft.id, expectedRevision: rotateDraft.revision, config: rotateConfig, actor: rotateActor });
+    const rotateStaged = await f.repo.stage({ id: randomUUID(), draftId: rotateSaved.id, expectedRevision: rotateSaved.revision, expectedVersion: finalStaged.version, reason: "画布排队后轮换", actor: rotateActor });
+    await f.repo.markApplied(rotateStaged.id, rotateStaged.digest, rotateSaved.id);
     const claimedCanvas = await globalDb.claimNextCanvasImageTask(); assert.ok(claimedCanvas);
     await canvasService.processCanvasImageTask(claimedCanvas);
     assert.equal((await globalDb.getCanvasImageTask(email, canvasTask.id))!.status, "completed");
@@ -265,7 +279,10 @@ async function main() {
       assert.equal(q.facts.providerId, "p1");
     });
     assert.equal(calls.length, beforeQuotes, "Quotes must not call any supplier");
-    await assert.rejects(quoteForRequest(new Request("http://fixture.test/api/billing/quote", { headers: { cookie, "x-naumi-model-version": String(first.version) } }), { feature: "image.generate", quantity: 1 }), (e: any) => e.code === "MODEL_CHANGED");
+    const refreshedQuote = await quoteForRequest(new Request("http://fixture.test/api/billing/quote", { headers: { cookie, "x-naumi-model-version": String(first.version) } }), { feature: "image.generate", quantity: 1 });
+    assert.equal(refreshedQuote.modelVersion, rotateStaged.version, "A stale image client header does not restore a MODEL_CHANGED confirmation gate");
+    assert.equal(refreshedQuote.facts.modelId, "image-a");
+    assert.equal(calls.length, beforeQuotes, "Refreshing the server quote does not submit generation");
     const { signAcceptedModelContext } = await import("../src/lib/model-config/accepted-context");
     const { withModelRequest } = await import("../src/lib/model-config/requests");
     const { currentModelExecution } = await import("../src/lib/model-config/context");
@@ -320,15 +337,18 @@ async function main() {
     await globalDb.getPool().query("UPDATE app_video_tasks SET poll_lock_until=NULL,next_poll_at=now() WHERE id=$1", [uncertain.taskId]);
     await videoService.pollAndSettle(email, uncertain.taskId);
     assert.equal(calls.length, beforeUnknown + 1, "Unknown video acceptance cannot automatically repeat the paid POST");
-    const reducedDraft = await f.repo.draft("fixture-admin");
+    const reducedActor = "fixture-admin-capacity";
+    const reducedDraft = await f.repo.draft(reducedActor);
+    const reducedVersion = (await f.repo.current()).version;
+    assert.equal(reducedDraft.basedOnVersion, reducedVersion);
     const reducedConfig = structuredClone(reducedDraft.config); reducedConfig.providers[0].maxConcurrent = 1;
-    const reducedSaved = await f.repo.saveDraft({ id: reducedDraft.id, expectedRevision: reducedDraft.revision, config: reducedConfig, actor: "fixture-admin" });
-    const reduced = await f.repo.stage({ id: randomUUID(), draftId: reducedSaved.id, expectedRevision: reducedSaved.revision, expectedVersion: (await f.repo.current()).version, reason: "配置降低并发", actor: "fixture-admin" });
-    await f.repo.markApplied(reduced.id, reduced.digest);
+    const reducedSaved = await f.repo.saveDraft({ id: reducedDraft.id, expectedRevision: reducedDraft.revision, config: reducedConfig, actor: reducedActor });
+    const reduced = await f.repo.stage({ id: randomUUID(), draftId: reducedSaved.id, expectedRevision: reducedSaved.revision, expectedVersion: reducedVersion, reason: "配置降低并发", actor: reducedActor });
+    await f.repo.markApplied(reduced.id, reduced.digest, reducedSaved.id);
     const retainedLease = await capacity.acquire({ providerId: "p1", baseUrl: `${f.origin}/v1`, maxConcurrent: 4, timeoutMs: 5000 });
     try { await assert.rejects(capacity.acquire({ providerId: "p1", baseUrl: `${f.origin}/v1`, maxConcurrent: 4, timeoutMs: 5000 }), (e: any) => e.code === "PROVIDER_BUSY", "An old task must observe a newly published lower limit before any new-version supplier call"); }
     finally { await retainedLease.release(); }
-    console.log("PASS frozen image/text/video execution, durable credential rotation and replay, private public catalogs, compressed responses and zero uncertain paid retries");
+    console.log("PASS frozen image/text/video execution, durable credential rotation and replay, private public catalogs, compressed responses and zero uncertain paid retries CURRENT_DRAFTS=PASS STALE_DRAFT_REJECTED=PASS HEADLESS_CANVAS=PASS");
   } finally { await globalDb?.getPool().end(); await f.cleanup(); await rm(mediaDirectory, { recursive: true, force: true }); }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

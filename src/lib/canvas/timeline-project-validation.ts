@@ -1,6 +1,6 @@
 import "server-only";
 import type {PoolClient} from "pg";
-import {canonicalConfig} from "../model-config/repository";
+import {canonicalConfig} from "../model-config/snapshot-value";
 import {ModelConfigError} from "../model-config/types";
 import {planTimeline,type TimelineProject} from "../timeline/project";
 import {readMediaJobEvidence} from "../video/media-jobs";

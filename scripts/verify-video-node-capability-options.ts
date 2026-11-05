@@ -23,7 +23,7 @@ type Item={providerId:string;model:string;publicId:string;profile:VideoWireProfi
 type Proposal={model:string;definition:VideoModelDefinition;sourceSHA256?:string};
 const items=documented.items as Item[];
 const prompt="An orange ceramic cube rotates on a white table.";
-const output=path.resolve("output/video-node-capabilities-20261023");
+const output=path.resolve(process.env.VIDEO_OPTIONS_EVIDENCE||"output/video-node-capabilities-20261023");
 const failures:{label:string;error:string;stack?:string}[]=[];
 const coverage:{provider:string;model:string;mode:VideoMode;duration:number;resolution:string;ratio?:string}[]=[];
 let assertions=0,cases=0,passed=0,httpCalls=0;
@@ -109,8 +109,8 @@ function exercise(item:Item,mode:VideoMode,duration:number,resolution:string,rat
 
 test("32-model identity and independent research coverage",()=>{
   eq(items.length,32,"32 active documented models");eq(new Set(items.map(row=>row.publicId)).size,32,"unique public identities");
-  const apib=JSON.parse(fs.readFileSync(path.join(output,"apib-research.json"),"utf8")) as {proposals:Proposal[]};
-  const geek=JSON.parse(fs.readFileSync(path.join(output,"geek-research.json"),"utf8")) as {proposals:Proposal[]};
+  const research=JSON.parse(fs.readFileSync("scripts/fixtures/video-node-research.json","utf8")) as {apib:{proposals:Proposal[]};geek:{proposals:Proposal[]}};
+  const {apib,geek}=research;
   eq(sorted(items.map(row=>`${row.providerId}/${row.model}`)),sorted([...apib.proposals.filter(row=>row.model!=="wan2.7-videoedit").map(row=>`apib-video/${row.model}`),...geek.proposals.map(row=>`${row.model==="MiniMax-H3"?"geeknow-video-h3":"geeknow-video"}/${row.model}`)]),"exact research model set minus disabled edit SKU");
   for(const item of items){const research=(item.providerId==="apib-video"?apib:geek).proposals.find(row=>row.model===item.model)!;
     eq(item.definition.durationResolutionMap,research.definition.durationResolutionMap,`${item.model}: full documented map, not smoke-only values`);

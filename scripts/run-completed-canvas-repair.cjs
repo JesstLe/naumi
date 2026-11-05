@@ -6,7 +6,7 @@ let planPlacement,fingerprint;
 const EXPECTED='b15d4761b938428c449531e2d8744401a38a2ec7';
 const file=process.argv[2],apply=process.argv.includes('--apply'),stage=process.argv.includes('--placement-only')?'placement':'status';
 const sha=b=>crypto.createHash('sha256').update(b).digest('hex');
-function load(source,deps){const exports={},module={exports};vm.runInNewContext(source,{module,exports,Buffer,Date,Set,Map,console,require:n=>n==='server-only'?{}:n.startsWith('node:')?require(n):deps[n]});return module.exports;}
+function load(source,deps){const exports={},moduleBox={exports};vm.runInNewContext(source,{module:moduleBox,exports,Buffer,Date,Set,Map,console,require:n=>n==='server-only'?{}:n.startsWith('node:')?require(n):deps[n]});return moduleBox.exports;}
 async function main(){
  const input=JSON.parse(fs.readFileSync(file,'utf8'));assert.equal(input.sourceCommit,EXPECTED);assert.equal(process.env.SOURCE_COMMIT,EXPECTED);
  let content='';for await(const b of process.stdin)content+=b;const modules=JSON.parse(content);
@@ -31,7 +31,7 @@ async function main(){
   }
   const result=await c.query(q,args);if(recorded&&q==='COMMIT')audit('transaction-committed',{target:current.id});return result;
  }}}};
- const original=load(modules.receipt,{'../db':{dbEnabled:true,getPool:()=>tracked},'../staging-history':{assertMutableStagingTask:history.VI},'../saas/creation-writer':{recordImageStateTx:writer.oU},'../canvas-image-input':{readCanvasOutput:media.M},'./postprocess':{inspectImagegenPixels:pixels.R},'./receipt-policy':{plainGeneratedOutput:policy.F},'./output-advisory':load(modules.ratio,{})});
+ const original=load(modules.receipt,{'../db':{dbEnabled:true,getPool:()=>tracked},'@/platform/db/pool':{dbEnabled:true,getPool:()=>tracked},'../staging-history':{assertMutableStagingTask:history.VI},'../saas/creation-writer':{recordImageStateTx:writer.oU},'../canvas-image-input':{readCanvasOutput:media.M},'./postprocess':{inspectImagegenPixels:pixels.R},'./receipt-policy':{plainGeneratedOutput:policy.F},'./output-advisory':load(modules.ratio,{})});
  const summaries=[];
  if(stage==='status')for(const t of input.statusTargets){
   current=t;assert(t.id.startsWith('imagegen-')&&t.childIds.length===1);const cid=t.childIds[0];

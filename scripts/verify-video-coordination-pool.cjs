@@ -76,16 +76,16 @@ function transpile(source, filename) {
   }).outputText;
 }
 function execute(source, filename, locals, imports = {}) {
-  const module = { exports: {} };
+  const fixtureModule = { exports: {} };
   const context = vm.createContext({
-    ...locals, module, exports: module.exports, Error, console,
+    ...locals, module:fixtureModule, exports: fixtureModule.exports, Error, console,
     require(name) {
       check(Object.prototype.hasOwnProperty.call(imports, name), 'unexpected dependency requested by isolated source');
       return imports[name];
     },
   });
   new vm.Script(source, { filename }).runInContext(context, { timeout: 1500 });
-  return module.exports;
+  return fixtureModule.exports;
 }
 
 // Extract the original declaration verbatim. Only a separate export statement
@@ -189,10 +189,7 @@ function resources(connectionString) {
       }
     }
     const api = execute(helperSource, 'real-video-coordination-pool.cjs', {}, {
-      'server-only': {}, 'node:process': runtime, pg: { Pool: ObservedPool }, '../db': { getPool: () => business },
-      // This fixture deliberately exercises the compatible two-slot layout;
-      // configurable/frozen aggregate budgets have their own runtime suite.
-      '../db/connection': { videoCoordinationPoolLimit: () => 2 },
+      'server-only': {}, 'node:process': runtime, pg: { Pool: ObservedPool }, '@/platform/db/pool': { getPool: () => business, videoCoordinationPoolLimit: () => 2 },
     });
     return { ...api, control, runtime };
   }

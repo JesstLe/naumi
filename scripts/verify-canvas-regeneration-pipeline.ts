@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import {randomUUID} from "node:crypto";
-import {mkdtemp} from "node:fs/promises";
+import {mkdtemp,rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import sharp from "sharp";
@@ -67,6 +67,6 @@ async function main(){
    assert.ok(unknown&&['failed','needs_attention'].includes(unknown.status));assert.equal(calls,2);assert.equal((await db.listArtworksByIds(owner,[nodeId]))[0].image,fresh.image);
    await run(()=>submitImagegen(uncertain,owner));await run(()=>getImagegenResult(uncertain.operationId,owner));assert.equal(calls,2);
    console.log('PIPELINE=PASS SAME_NODE=1 IMMUTABLE_ORIGINAL=1 HTTP_RECEIPT=1 SETTLED_OPERATIONS=1 UNKNOWN_REPLAY_POSTS=0 LOCAL_SUPPLIER_CALLS=2 REAL_SUPPLIER_CALLS=0');
- }finally{await db.getPool().end();await f.cleanup();}
+ }finally{const {closeImageCoordinationPool}=await import('../src/lib/imagegen/coordination-pool');await closeImageCoordinationPool();await db.getPool().end();await f.cleanup();await rm(process.env.MEDIA_DIR!,{recursive:true,force:true});console.log('PIPELINE_CLEANUP=PASS ownSchemaDropped=true poolsClosed=true fixtureClosed=true temporaryMediaRemoved=true');}
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});

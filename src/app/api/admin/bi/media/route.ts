@@ -3,13 +3,10 @@ import sharp from "sharp";
 import { ARTWORK_INPUT_COLUMNS, ARTWORK_INPUT_JOINS, artworkInputs } from "@/lib/bi/artwork-inputs";
 import { readImagegenInputAsset } from "@/lib/imagegen/input-assets";
 import { biAuthorize, biJson, BI_PRIVATE_HEADERS } from "@/lib/bi/access";
-import { getPool } from "@/lib/db";
+import { getPool } from "@/platform/db/pool";
 import { logBiAccess } from "@/lib/bi/repository";
-import {
-  dataUrlToBytes,
-  isManagedImageUrl,
-  readManagedObject,
-} from "@/lib/storage";
+import { dataUrlToBytes, isManagedImageUrl } from "@/lib/object-storage/runtime";
+import { readManagedObject } from "@/lib/object-storage/managed-read";
 import {
   parseDownloadSource,
   fetchDownloadSource,

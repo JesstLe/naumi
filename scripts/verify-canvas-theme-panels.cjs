@@ -4,7 +4,7 @@
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),crypto=require('node:crypto'),assert=require('node:assert/strict');
 const esbuild=require('esbuild'),postcss=require('postcss'),tailwind=require('tailwindcss'),{chromium,expect}=require('@playwright/test');
 const args=process.argv.slice(2),arg=(name,fallback)=>args.includes(name)?args[args.indexOf(name)+1]:fallback;
-const root=path.resolve(arg('--source-root','.')),out=path.resolve(arg('--output-root','output/canvas-theme-panels')),baseline=args.includes('--baseline');
+const root=path.resolve(arg('--source-root','.')),out=path.resolve(arg('--output-root',process.env.CANVAS_THEME_PANELS_EVIDENCE||'output/canvas-theme-panels')),baseline=args.includes('--baseline');
 fs.mkdirSync(out,{recursive:true});
 const relative=['composer-shell.tsx','composer-shell.module.css','prompt-optimizer.tsx','image-version-control.tsx','text-image-generation-dialog.tsx','frame-ratio-dialog.tsx'].map(name=>'src/components/canvas/'+name);
 const loaded=[...relative,'src/components/canvas/canvas-action-menu.tsx','src/app/globals.css','tailwind.config.ts','src/components/ui/surface-appearance.tsx'].filter(f=>fs.existsSync(path.join(root,f))).map(file=>({file:path.join(root,file),sha256:crypto.createHash('sha256').update(fs.readFileSync(path.join(root,file))).digest('hex')}));

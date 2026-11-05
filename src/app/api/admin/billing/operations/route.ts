@@ -1,11 +1,11 @@
 import { z } from "zod";
 import { billingAuthorize, billingJson } from "@/lib/billing/access";
 import { billingErrorResponse } from "@/lib/billing/request";
-import { getBillingRuntime } from "@/lib/billing/server";
-import { getPool } from "@/lib/db";
-import { withBillingTransaction } from "@/lib/billing/service";
+import {getBillingRuntime} from "@/lib/billing/runtime";
+import { getPool } from "@/platform/db/pool";
+import {reconcileTaskBilling} from "@/lib/application/billing-task-recovery";
 import { resultSchema } from "@/lib/billing/validation";
-import { exposeAbandonedBillingOperations } from "@/lib/billing/synchronous";
+import {exposeAbandonedBillingOperations} from "@/lib/billing/synchronous-operation";
 export const runtime = "nodejs", dynamic = "force-dynamic";
 export async function GET(request: Request) { const auth = await billingAuthorize(request); if (auth instanceof Response)
     return auth; try {
@@ -24,9 +24,8 @@ catch (e) {
 const command = z.object({ id: z.uuid(), operationId: z.string().min(1).max(200), reason: z.string().trim().min(3).max(500), proof: z.string().trim().min(3).max(2000), result: resultSchema.refine(r => r.state !== "unknown" && !r.items.some(i => i.state === "unknown"), "请先确认结果后核对账务") }).strict();
 export async function POST(request: Request) { const auth = await billingAuthorize(request, true); if (auth instanceof Response)
     return auth; try {
-    const input = command.parse(await request.json()), service = (await getBillingRuntime()).service;
-    const result=await withBillingTransaction(getPool(), tx => service.reconcileTx(tx, { ...input, actor: auth.actor }));
-    if(input.result.state==="succeeded")await getPool().query("UPDATE app_canvas_image_tasks SET status='queued',attempts=0,lease_until=NULL,error='',updated_at=now() WHERE id=$1 AND status='needs_attention' AND parameters->>'upstreamResult' IS NOT NULL",[input.operationId]);
+    const input=command.parse(await request.json());
+    const result=await reconcileTaskBilling({...input,actor:auth.actor});
     return billingJson(result);
 }
 catch (e) {

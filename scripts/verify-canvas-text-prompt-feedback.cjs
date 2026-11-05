@@ -2,7 +2,7 @@
 // Only auth/config/DB/observability/media boundaries are isolated fixtures.
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),http=require('node:http'),assert=require('node:assert/strict'),crypto=require('node:crypto'),ts=require('typescript');
 const root=path.resolve(__dirname,'..'),args=process.argv.slice(2),arg=(key,fallback)=>args.includes(key)?args[args.indexOf(key)+1]:fallback;
-const source=path.resolve(arg('--source-root',root)),out=path.resolve(arg('--output-root',path.join(root,'output/canvas-text-prompt-feedback'))),baseline=args.includes('--baseline');
+const source=path.resolve(arg('--source-root',root)),out=path.resolve(arg('--output-root',process.env.CANVAS_TEXT_PROMPT_EVIDENCE||path.join(root,'output/canvas-text-prompt-feedback'))),baseline=args.includes('--baseline');
 fs.mkdirSync(out,{recursive:true});
 const loaded=new Map(),cache=new Map(),checks=[],calls=[],state={mode:'sse',body:null,key:'fixture',scope:null,managed:false,terminal:'stop',catalogCalls:0,costCalls:0,dbEnabled:true,textNodes:[],textReads:[],imageReads:[]};
 let origin='';
@@ -46,11 +46,26 @@ const boundaries={
  'src/lib/image-model-routing.ts':{compactImageModelOptions:x=>x,imageModelDisplayId:x=>x},
  'src/lib/supabase.ts':{authHeader:async()=>({})},
 };
+Object.assign(boundaries,{
+ 'src/lib/billing/synchronous-operation.ts':boundaries['src/lib/billing/synchronous.ts'],
+ 'src/lib/bi/request.ts':{withBiRequest:(_r,run)=>run()},
+ 'src/lib/bi/model-calls.ts':{observeOpenAI:x=>x,observeModelCall:(_m,run)=>run(),modelExecutionTelemetry:()=>null},
+ 'src/lib/object-storage/runtime.ts':boundaries['src/lib/storage.ts'],
+ 'src/lib/object-storage/managed-read.ts':boundaries['src/lib/storage.ts'],
+ 'src/lib/model-config/availability.ts':boundaries['src/lib/model-config/requests.ts'],
+ 'src/lib/model-config/stage-routing-policy.ts':{createStageRoutingFetch:forbidden('stage')},
+ 'src/lib/model-config/channel-routing.ts':{createChannelRoutingFetch:boundaries['src/lib/model-config/channel-fetch.ts'].channelRoutingFetch},
+ 'src/platform/db/pool.ts':boundaries['src/lib/db.ts'],
+ 'src/lib/artworks/repository.ts':boundaries['src/lib/db.ts'],
+ 'src/lib/canvas/text-node-repository.ts':boundaries['src/lib/db.ts'],
+ 'src/lib/saas/creation-access.ts':{withCreationRoute:(_r,run)=>run()},
+});
+
 function load(rel){
  if(boundaries[rel])return boundaries[rel];if(cache.has(rel))return cache.get(rel).exports;
  const file=path.join(source,rel),bytes=fs.readFileSync(file),mod={exports:{}};cache.set(rel,mod);loaded.set(rel,{file,sha256:crypto.createHash('sha256').update(bytes).digest('hex')});
  const code=ts.transpileModule(bytes.toString('utf8'),{fileName:rel,compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true,jsx:ts.JsxEmit.ReactJSX}}).outputText;
- const requireLocal=id=>{if(id==='server-only')return {};if(id==='next/server')return{NextResponse:{json:(data,options)=>Response.json(data,options)}};let base=id.startsWith('@/')?'src/'+id.slice(2):id.startsWith('.')?path.posix.normalize(path.posix.join(path.posix.dirname(rel),id)):null;if(!base)return require(id);for(const ext of ['', '.ts','.tsx','.json','/index.ts'])if(boundaries[base+ext]||fs.statSync(path.join(source,base+ext),{throwIfNoEntry:false})?.isFile())return load(base+ext);throw Error('Missing '+base)};
+ const requireLocal=id=>{if(id==='server-only')return {};if(id==='lucide-react')return new Proxy({},{get:()=>()=>null});if(id==='next/server')return{NextResponse:{json:(data,options)=>Response.json(data,options)}};let base=id.startsWith('@/')?'src/'+id.slice(2):id.startsWith('.')?path.posix.normalize(path.posix.join(path.posix.dirname(rel),id)):null;if(!base)return require(id);for(const ext of ['', '.ts','.tsx','.json','/index.ts'])if(boundaries[base+ext]||fs.statSync(path.join(source,base+ext),{throwIfNoEntry:false})?.isFile())return load(base+ext);throw Error('Missing '+base)};
  vm.runInThisContext('(function(require,module,exports){'+code+'\n})',{filename:file})(requireLocal,mod,mod.exports);return mod.exports;
 }
 function chunk(delta,finish_reason=null,extra={}){return {id:'fixture-chat',object:'chat.completion.chunk',model:'fixture-wire',choices:[{index:0,delta,finish_reason}],...extra};}
@@ -188,9 +203,9 @@ async function main(){
    response=await text(request());assert.equal(response.status,200);assert.equal(state.body.model,'fixture-wire');check('MANAGED_TEXT_WITHOUT_LEGACY_KEY_USES_FROZEN_CONNECTION');
    state.scope.supplierRouting={targets:[{scope:state.scope}]};state.mode='content-type';response=await text(request());assert.equal(response.status,200);check('MANAGED_CHANNEL_RESPONSE_PREPARATION_THEN_SDK_NORMALIZATION');
    state.scope=null;state.key='fixture';state.managed=false;
-   const priorWindow=global.window,priorLocal=global.localStorage,storage=new Map();global.window=new EventTarget();global.localStorage={getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)};
+   const priorWindow=global.window,priorDocument=global.document,priorLocal=global.localStorage,storage=new Map();global.window=new EventTarget();global.document=Object.assign(new EventTarget(),{visibilityState:'visible'});global.localStorage={getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)};
    global.fetch=async()=>{state.catalogCalls++;await Promise.resolve();return Response.json({managed:true,models:[{id:'published-vision',label:'Vision',modality:'text',supportsEdit:false}],defaultModelId:'missing-default'})};
-   try{const feature=load('src/lib/model-config/feature-client.ts');assert.equal(feature.chosenFeatureModel('canvas.ocr'),undefined);const ids=await Promise.all([feature.ensureFeatureModelSelection('canvas.ocr'),feature.ensureFeatureModelSelection('canvas.ocr')]);assert.deepEqual(ids,['published-vision','published-vision']);assert.equal(state.catalogCalls,1);check('OCR_IMMEDIATE_ACTION_AWAITS_ONE_CATALOG_AND_VALID_SELECTION');global.fetch=async()=>Response.json({managed:true,models:[],defaultModelId:'stale'});await assert.rejects(feature.ensureFeatureModelSelection('canvas.text-generate'),/没有启用模型/);check('EMPTY_CATALOG_REJECTS_STALE_DEFAULT');}finally{global.window=priorWindow;global.localStorage=priorLocal;}
+   try{const feature=load('src/lib/model-config/feature-client.ts');assert.equal(feature.chosenFeatureModel('canvas.ocr'),undefined);const ids=await Promise.all([feature.ensureFeatureModelSelection('canvas.ocr'),feature.ensureFeatureModelSelection('canvas.ocr')]);assert.deepEqual(ids,['published-vision','published-vision']);assert.equal(state.catalogCalls,1);check('OCR_IMMEDIATE_ACTION_AWAITS_ONE_CATALOG_AND_VALID_SELECTION');global.fetch=async()=>Response.json({managed:true,models:[],defaultModelId:'stale'});await assert.rejects(feature.ensureFeatureModelSelection('canvas.text-generate'),/没有启用模型/);check('EMPTY_CATALOG_REJECTS_STALE_DEFAULT');}finally{global.window=priorWindow;global.document=priorDocument;global.localStorage=priorLocal;}
   }
   const result=baseline?'REPRODUCED':'PASS',exit=baseline?1:0;
   fs.writeFileSync(path.join(out,baseline?'BASELINE.json':'MODIFIED.json'),JSON.stringify({result,checks,loaded:[...loaded].map(([file,meta])=>({file,...meta})),localHttpPosts:calls.length,realSupplierCalls:0,productionWrites:0,exit},null,2));

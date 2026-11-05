@@ -83,7 +83,7 @@ const mocks = {
     acceptCreationTx: async () => null, creationLinkTx: async () => {}, attachBillingCreationTx: async () => {},
     recordImageStateTx: async (tx, id, snapshot) => {
       if (evidenceFault === true) await tx.query('SELECT 1/0');
-      const recorded = nativeEvidence ? await load('src/lib/saas/creation-writer.ts').recordImageStateTx(tx, id, snapshot) : undefined;
+      let recorded;try{recorded=nativeEvidence?await load('src/lib/saas/creation-writer.ts').recordImageStateTx(tx,id,snapshot):undefined;}catch(error){console.log('NATIVE_WRITER_FIXTURE_DIAGNOSTIC='+String(error.message));throw error;}
       if (evidenceFault === 'after-write') await tx.query('SELECT 1/0');
       return recorded;
     },
@@ -108,6 +108,15 @@ const mocks = {
   'model-config/channel-availability': { acceptedImageOperationIdentities: async () => ({}), withAcceptedImageRead: (_id, fn) => fn() },
   'model-config/apimart-image-policy': { queryableImageScope: () => false },
 };
+Object.assign(mocks,{
+ 'persistence/schema':{ensureSchema:db.ensureSchema},
+ 'saas/creation-scope':mocks['saas/creation-context'],
+ 'saas/creation-access':{bindActualCreationProject:async()=>{}},
+ 'bi/context':mocks['bi/model-observer'],
+ 'billing/runtime':{creditMeteringEnabled:db.creditMeteringEnabled},
+ 'application/task-execution':{deferApplicationTask:async()=>false},
+ 'worker/inflight':{trackBackgroundWork:promise=>promise},
+});
 const cache = new Map();
 const context = vm.createContext({ console: rawConsole, process: { env: {} }, Buffer, URL, Request, AbortController, AbortSignal, structuredClone,
   performance: { now: () => clock }, Date, Error, setImmediate,
@@ -121,6 +130,9 @@ function load(relative) {
   const code = esbuild.transformSync(fs.readFileSync(file, 'utf8'), { loader: 'ts', format: 'cjs', target: 'node20', supported: { 'dynamic-import': false } }).code;
   const req = spec => {
     if (spec === 'server-only') return {};
+    if(spec==='lucide-react')return new Proxy({},{get:()=>()=>null});
+    if(spec==='@/platform/db/pool')return db;
+    if(spec.startsWith('@/platform/'))return load('src/'+spec.slice(2)+'.ts');
     let p;
     if (spec.startsWith('@/lib/')) p = spec.slice(6);
     else if (spec.startsWith('.')) p = path.posix.normalize(path.posix.join(path.posix.dirname(relative), spec)).replace(/^src\/lib\//, '');
@@ -191,7 +203,7 @@ async function main() {
       INSERT INTO app_ledger(id,email,delta,reason,kind) VALUES('original-paid-ledger','fixture@example.test',-6,'original-result','consume');
     `);
     repo = load('src/lib/image-job-repository.ts'); lease = load('src/lib/image-job-lease.ts');
-    jobs = new (load('src/lib/durable-image-jobs.ts').DurableImageJobs)('suite');
+    jobs = new (load('src/lib/image-jobs/runtime.ts').DurableImageJobs)('suite');
     await step('release SQL failure retains committed success and original paid identity', async () => {
       await create('success'); const before = await invariant('success'); await setReleaseFault(true);
       const result = await jobs.kick('success', async () => { metrics.runs++; await jobs.patch('success', { status: 'done' }); });

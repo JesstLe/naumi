@@ -1,116 +1,33 @@
-'use strict';
-// Execute the real Canvas entrypoints and receipt-first submission adapter.
-// Only transport/React commit timing are controlled; no provider or paid calls.
-process.env.NEXT_PUBLIC_SUPABASE_URL='';process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY='';
-require('tsx/cjs');
-const fs=require('node:fs'),path=require('node:path'),Module=require('node:module'),assert=require('node:assert/strict');
-const root=process.cwd(),out=path.resolve(process.env.CANVAS_TEST_OUT||'output/canvas-result-placement-20261028');
-const fixturePath=path.join(root,'scripts/verify-imagegen-frozen-quote-canvas.cjs');
-const fixtureText=fs.readFileSync(fixturePath,'utf8'),entry=fixtureText.indexOf('(async()=>{fs.mkdirSync');
-assert.ok(entry>0,'existing scoped Canvas fixture entry');
-const fixture=new Module(fixturePath,module);fixture.filename=fixturePath;fixture.paths=Module._nodeModulePaths(path.dirname(fixturePath));
-fixture._compile(fixtureText.slice(0,entry)+'\nmodule.exports={setup};\n',fixturePath);
-const {setup}=fixture.exports;
-const {submitCanvasImagegen}=require(root+'/src/lib/imagegen/canvas-client.ts');
-const {pendingAttemptKey,readPendingAttempt}=require(root+'/src/lib/imagegen/client-recovery.ts');
-const workspace=require(root+'/src/lib/saas/workspace-client.ts');
-const original={fetch:global.fetch,window:global.window,storage:global.sessionStorage,workspace:workspace.currentWorkspace()};
-const results=[];
-function fixtureCase(){
- const f=setup('runGen','deferred-merge');f.state.entries.clear();
- global.window={localStorage:{getItem:()=>null,setItem:()=>{},removeItem:()=>{}},dispatchEvent:()=>{}};
- workspace.selectWorkspace(f.state.workspace);
- const plans=new Map(),jobs=new Map(),artworks=new Map([[f.c.source.id,{...f.c.source,canvasX:20,canvasY:30}]]),positions=[],savedReceipts=new Map();
- let posts=0,originalChecks=0,serial=0,missingResult=false,partial=false,hold;
- const operationFromJob=id=>id.replace(/^imagegen-/,'');
- global.fetch=async(input,init={})=>{
-  const url=String(input);
-  if(url==='/api/imagegen/plan'){
-   const request=JSON.parse(init.body);plans.set(request.operationId,request);
-   return Response.json({request,steps:[{operation:'generate'}],intent:{background:'opaque'},warnings:[],totalCredits:6,billingVersion:8,modelVersion:152,confirmationRequired:false,quote:{id:request.operationId}});
-  }
-  if(url==='/api/imagegen'&&init.method==='POST'){
-   const body=JSON.parse(init.body),request=plans.get(body.operationId);assert.ok(request);
-   posts++;const id='result-'+(++serial);jobs.set(body.operationId,{request,id});
-   artworks.set(id,{id,image:'/media/'+id+'.png',canvasX:null,canvasY:null});
-   return Response.json({operationId:body.operationId,jobId:'imagegen-'+body.operationId,status:'queued'});
-  }
-  if(url.startsWith('/api/imagegen?operationId=')){
-   originalChecks++;const operationId=new URL(url,'http://fixture').searchParams.get('operationId'),job=jobs.get(operationId);assert.ok(job);
-   return Response.json({operationId,jobId:'imagegen-'+operationId,status:'succeeded',artifacts:[{artworkId:job.id}]});
-  }
-  throw Error('Unexpected network request '+url);
+// Actual shared task/result/receipt owners. Transport and deferred React view
+// are explicit ports; the existing caller regression separately runs Canvas adapters.
+const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),assert=require('node:assert/strict'),crypto=require('node:crypto'),{build}=require('esbuild');
+const root=path.resolve(process.env.CANVAS_SOURCE_ROOT||'.'),out=path.resolve(process.env.CANVAS_TEST_OUT||'output/canvas-result-placement');
+let built;const ready=build({stdin:{contents:['src/lib/canvas/image-task-controller.ts','src/lib/canvas/result-attachment.ts','src/lib/imagegen/client-recovery.ts'].map(f=>`export * from ${JSON.stringify(path.join(root,f).replaceAll('\\','/'))};`).join('\n'),resolveDir:root,loader:'ts'},bundle:true,write:false,format:'cjs',platform:'node',nodePaths:[path.resolve('node_modules')],tsconfig:path.join(root,'tsconfig.json'),plugins:[{name:'auth',setup(b){b.onResolve({filter:/supabase$/},()=>({path:'auth',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:'export const authHeader=async()=>({});',loader:'js'}));}}]}).then(result=>{built=result.outputFiles[0].text;});
+function setup(){
+ const entries=new Map(),artworks=new Map(),positions=[],history=[],tasks=new Map(),storage={getItem:k=>entries.get(k)||null,setItem:(k,v)=>entries.set(k,v),removeItem:k=>entries.delete(k),get length(){return entries.size},key:i=>[...entries.keys()][i]};
+ let posts=0,polls=0,serial=0,missing=false,partial=false,hold,view=[];
+ const owner='fixture@example.test',project='tree:source',scope={owner,project,workspace:'personal',assertCurrent(){},isCurrent:()=>true};
+ const m={exports:{}},c=vm.createContext({module:m,exports:m.exports,require,console,Headers,Request,Response,URL,AbortSignal,AbortController,FormData,File,Blob,Map,Set,TextEncoder,crypto:globalThis.crypto,Date,Promise,structuredClone,sessionStorage:storage,setTimeout:(f,ms)=>{if(ms===30000)return setTimeout(f,10);queueMicrotask(f);return 1},clearTimeout:token=>{if(typeof token!=="number")clearTimeout(token)},fetch:async(url,init={})=>{
+  if(String(url).startsWith('/api/generate-image?job=')){polls++;const id=new URL(url,'http://fixture').searchParams.get('job'),t=tasks.get(id);assert.ok(t);if(hold&&hold.job===id)await hold.promise;return Response.json({status:'done',operationStatus:partial?'partial':'succeeded',images:[{id:t.result,url:'/media/'+t.result+'.png',width:320,height:320}]});}
+  assert.equal(url,'/api/artworks/position');const p=JSON.parse(init.body),a=artworks.get(p.id);assert.ok(a);positions.push(p);if(p.mode!=='initialize'||a.canvasX==null&&a.canvasY==null){a.canvasX=p.x;a.canvasY=p.y;}return Response.json({ok:true});
+ }});vm.runInContext(built,c);const api=m.exports;
+ const create=()=>{
+  const op=crypto.randomUUID(),jobId='imagegen-'+op,result='result-'+(++serial),key=api.pendingAttemptKey(owner,'personal',project,'node:'+serial);tasks.set(jobId,{result});artworks.set(result,{id:result,image:'/media/'+result+'.png',canvasX:null,canvasY:null});
+  const receipt={version:1,owner,workspace:'personal',project,actionKey:'node:'+serial,operationId:op,request:{operationId:op},authorizedCredits:6,confirmationRequired:false,accepted:'accepted',jobId,context:{workspace:'personal',projectContext:project}};
+  const options={scope,prepare:async()=>new FormData(),submit:async()=>{posts++;api.savePendingAttempt(key,receipt);return Response.json({jobId});},position:()=>({x:500+serial*450,y:200}),merge:async ids=>missing?[]:ids.map(id=>({...artworks.get(id)})),history:ids=>history.push([...ids]),stage(){},user(){},notice(){},errorText:'Generate failed',saveErrorText:'Save failed',resultGap:40};
+  return {task:api.createCanvasImageTask(options),options,result,jobId,key,receipt};
  };
- f.c.submitCanvasImagegen=submitCanvasImagegen;
- f.c.fetch=async url=>{
-  const jobId=new URL(url,'http://fixture').searchParams.get('job'),operationId=operationFromJob(jobId),job=jobs.get(operationId);assert.ok(job);
-  if(hold&&job.request.sourceNodeId===hold.source)await hold.promise;
-  for(const [key,raw]of f.state.entries){const a=readPendingAttempt(key);if(a?.operationId===operationId)savedReceipts.set(key,raw);}
-  return Response.json({status:'done',...(partial?{operationStatus:'partial',reviewRequired:true}:{}),images:[{id:job.id,url:'/media/'+job.id+'.png',width:320,height:320}]});
- };
- f.c.privateFetchRaw=async(url,init)=>{
-  assert.equal(url,'/api/artworks/position');const body=JSON.parse(init.body),art=artworks.get(body.id);assert.ok(art);
-  positions.push(body);
-  if(body.mode!=='initialize'||art.canvasX===null&&art.canvasY===null){art.canvasX=body.x;art.canvasY=body.y;}
-  return Response.json({ok:true});
- };
- f.c.mergeWorks=async ids=>{
-  f.state.merges++;const rows=[...artworks.values()].map(a=>({...a}));
-  return missingResult?rows.filter(a=>!ids.includes(a.id)):rows;
- };
- f.c.reserveGenerationPosition=(id)=>{const p={x:500+positions.length*450,y:200};f.c.generationTaskPosRef.current[id]=p;return p;};
- const invoke=(source=f.c.source,prompt='fixture prompt')=>f.c.runGen(source,prompt,{ratio:'3:4',referenceInputs:[],isCurrent:()=>true});
- return {f,invoke,artworks,positions,savedReceipts,jobs,plans,flush(){f.c.worksRef.current=[...artworks.values()].map(a=>({...a}));},stats:()=>({posts,originalChecks,receipts:f.state.entries.size}),missing(value){missingResult=value;},partial(value){partial=value;},hold(source){let release;const promise=new Promise(r=>release=r);hold={source,promise};return release;}};
+ return {api,scope,create,entries,artworks,positions,history,stats:()=>({posts,polls,receipts:entries.size}),view:()=>view,flush(){view=[...artworks.values()].map(a=>({...a}));},missing:v=>missing=v,partial:v=>partial=v,hold(job){let release;const promise=new Promise(r=>release=r);hold={job,promise};return release;}};
 }
-async function check(name,action){try{const details=await action();results.push({name,pass:true,...details});console.log('PASS '+name);}catch(error){results.push({name,pass:false,error:error.message});console.error('FAIL '+name+': '+error.message);}}
+const results=[];async function test(name,run){await run();results.push({name,pass:true});console.log('PASS '+name);}
 (async()=>{
- fs.mkdirSync(out,{recursive:true});
- try{
-  await check('consecutive_generate_uses_new_operation_without_moving_first',async()=>{
-   const x=fixtureCase(),first=await x.invoke();assert.equal(first.length,1);
-   const firstId=first[0].id,before={...x.artworks.get(firstId)};
-   const receiptAfterDeferredCommit=x.stats().receipts;
-   assert.equal(x.f.c.worksRef.current.some(a=>a.id===firstId),false,'React ref is deliberately not committed yet');
-   x.flush();const second=await x.invoke(x.f.c.source,'second prompt');
-   const stats=x.stats(),details={...stats,receiptAfterDeferredCommit,firstId,secondId:second[0]?.id,firstPositionPreserved:JSON.stringify(x.artworks.get(firstId))===JSON.stringify(before)};
-   assert.equal(stats.posts,2,JSON.stringify(details));
-   assert.notEqual(second[0]?.id,firstId);assert.deepEqual(x.artworks.get(firstId),before);
-   assert.equal(receiptAfterDeferredCommit,0);assert.equal(stats.receipts,0);
-   return details;
-  });
-  await check('retained_completed_receipt_recovers_original_without_relocating_it',async()=>{
-   const x=fixtureCase(),first=await x.invoke();x.flush();
-   const firstId=first[0].id,before={...x.artworks.get(firstId)};
-   for(const [key,raw]of x.savedReceipts)x.f.state.entries.set(key,raw);
-   const recovered=await x.invoke();
-   assert.equal(x.stats().posts,1,'recovery does not create another paid operation');assert.equal(recovered[0]?.id,firstId);
-   assert.deepEqual(x.artworks.get(firstId),before,'original positioned result must not move to the new placeholder');
-   assert.ok(x.positions.every(p=>p.mode==='initialize'));
-   return {...x.stats(),firstId,position:before};
-  });
-  await check('reverse_order_completions_keep_other_node_and_draft',async()=>{
-   const x=fixtureCase(),b={...x.f.c.source,id:'source-B',title:'B'};x.artworks.set(b.id,{...b,canvasX:1000,canvasY:30});
-   x.f.c.selectedIdRef.current=b.id;x.f.c.editPrompt='B next draft';
-   const release=x.hold(x.f.c.source.id),aPromise=x.invoke(),bResult=await x.invoke(b,'B prompt');release();const aResult=await aPromise;
-   assert.equal(x.stats().posts,2);assert.notEqual(aResult[0]?.id,bResult[0]?.id);
-   assert.equal(x.f.c.selectedIdRef.current,b.id);assert.equal(x.f.c.editPrompt,'B next draft');
-   assert.equal(x.stats().receipts,0,'both completed operations retire their own receipts despite deferred React commits');
-   assert.deepEqual([x.artworks.get('source').canvasX,x.artworks.get(b.id).canvasX],[20,1000]);
-   return {...x.stats(),selection:x.f.c.selectedIdRef.current,draft:x.f.c.editPrompt};
-  });
-  await check('missing_result_retains_receipt_and_retry_only_attaches',async()=>{
-   const x=fixtureCase();x.missing(true);const first=await x.invoke();assert.equal(first.length,0);assert.equal(x.stats().receipts,1);
-   const task=x.f.c.generationTasks.find(t=>t.onRetry);assert.ok(task);x.missing(false);await task.onRetry();
-   assert.equal(x.stats().posts,1);assert.equal(x.stats().receipts,0);return x.stats();
-  });
-  await check('partial_delivery_keeps_original_receipt',async()=>{
-   const x=fixtureCase();x.partial(true);const images=await x.invoke();assert.equal(images.length,1);
-   assert.equal(x.stats().posts,1);assert.equal(x.stats().receipts,1,'partial/needs-review is not complete delivery');return x.stats();
-  });
- }finally{global.fetch=original.fetch;global.window=original.window;global.sessionStorage=original.storage;workspace.selectWorkspace(original.workspace);}
- const failed=results.filter(r=>!r.pass).length;
- const report={sourceRoot:path.resolve(process.env.CANVAS_SOURCE_ROOT||root),results,passed:results.length-failed,failed,supplierCalls:0,evidenceTier:'real AST-extracted Canvas entrypoints plus actual receipt/submission modules; controlled transport and deferred React commit; not a browser or production run'};
- fs.writeFileSync(path.join(out,'RESULT_PLACEMENT.json'),JSON.stringify(report,null,2)+'\n');
- console.log(`CANVAS_RESULT_PLACEMENT=${failed?'FAIL':'PASS'} CASES=${results.length} PASSED=${results.length-failed} FAILED=${failed} SUPPLIER_CALLS=0`);
- if(failed)process.exitCode=1;
-})().catch(error=>{console.error(error);process.exitCode=1});
+ fs.mkdirSync(out,{recursive:true});await ready;
+ await test('consecutive_generate_uses_new_operation_without_moving_first',async()=>{const f=setup(),a=f.create();assert.equal((await a.task.run()).status,'succeeded');assert.equal(f.view().length,0);assert.equal(f.stats().receipts,0);const first={...f.artworks.get(a.result)};f.flush();const b=f.create();assert.equal((await b.task.run()).status,'succeeded');assert.notEqual(a.result,b.result);assert.deepEqual(f.artworks.get(a.result),first);assert.equal(f.stats().posts,2);assert.equal(f.stats().receipts,0);});
+ await test('completed_recovery_keeps_original_position',async()=>{const f=setup(),a=f.create();await a.task.run();const first={...f.artworks.get(a.result)};f.api.savePendingAttempt(a.key,a.receipt);const recovered=f.api.createCanvasImageTask({...a.options,position:()=>({x:9999,y:8888}),submit:async()=>Response.json({jobId:a.jobId})});assert.equal((await recovered.run()).status,'succeeded');assert.equal(f.stats().posts,1);assert.deepEqual(f.artworks.get(a.result),first);assert.ok(f.positions.every(p=>p.mode==='initialize'));assert.equal(f.stats().receipts,0);});
+ await test('reverse_completion_keeps_other_node_draft_and_receipts',async()=>{const f=setup(),a=f.create(),b=f.create(),draft={selected:'source-B',text:'B next draft'},before={...draft},release=f.hold(a.jobId),pending=a.task.run();assert.equal((await b.task.run()).status,'succeeded');release();assert.equal((await pending).status,'succeeded');assert.deepEqual(draft,before);assert.equal(f.stats().posts,2);assert.equal(f.stats().receipts,0);});
+ await test('missing_result_retries_attachment_not_submit',async()=>{const f=setup(),a=f.create();f.missing(true);assert.equal((await a.task.run()).status,'failed');assert.equal(f.stats().receipts,1);f.missing(false);assert.equal((await a.task.run()).status,'succeeded');assert.equal(f.stats().posts,1);assert.equal(f.positions.length,1);assert.equal(f.stats().receipts,0);assert.equal(f.history.length,1);});
+ await test('partial_delivery_retains_original_receipt',async()=>{const f=setup(),a=f.create();f.partial(true);assert.equal((await a.task.run()).status,'partial');assert.equal(f.stats().receipts,1);assert.equal(f.stats().posts,1);});
+ await test('one_task_parallel_and_completed_reentry_do_not_duplicate',async()=>{const f=setup(),a=f.create();const [one,two]=await Promise.all([a.task.run(),a.task.run()]);assert.equal(one.status,'succeeded');assert.equal(two.status,'succeeded');await a.task.run();assert.equal(f.stats().posts,1);assert.equal(f.positions.length,1);assert.equal(f.history.length,1);});
+ const report={sourceRoot:root,results,passed:results.length,failed:0,actualTaskResultReceiptOwners:true,reactView:'deliberately deferred fixture',supplierCalls:0};fs.writeFileSync(path.join(out,'RESULT_PLACEMENT.json'),JSON.stringify(report,null,2)+'\n');
+ console.log(`CANVAS_RESULT_PLACEMENT=PASS CASES=${results.length} PASSED=${results.length} FAILED=0 ACTUAL_OWNERS=1 SUPPLIER_CALLS=0`);
+})().catch(e=>{console.error(e);process.exitCode=1});

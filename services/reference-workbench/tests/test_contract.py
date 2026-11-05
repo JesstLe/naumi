@@ -152,3 +152,21 @@ def test_discovery_failure_preserves_config_and_unknown_not_retried(monkeypatch)
     with app.db() as d:
         result = d.execute('SELECT state FROM tasks WHERE id=?', (task['id'],)).fetchone()[0]
     assert result == 'maybe_submitted'
+
+
+def test_shared_document_asset_routes():
+    anonymous = TestClient(app.app)
+    assert anonymous.get('/reference-workbench/workbench-environment.js').status_code == 401
+    # Separate fixture client identity: do not spend the existing suite login budget.
+    c = TestClient(app.app, client=("asset-fixture", 50000))
+    assert c.post('/api/auth/login', json={'username': 'admin', 'password': 'test-admin-password'}).status_code == 200
+    for name, source in [('workbench-environment.js', 'workbench-environment.js'),
+                         ('workbench-history.js', 'workbench-history.js'),
+                         ('workbench-zip.js', 'vendor/jszip.min.js')]:
+        response = c.get('/reference-workbench/' + name)
+        assert response.status_code == 200
+        assert 'javascript' in response.headers['content-type']
+        assert response.content == (app.HERE / 'static' / source).read_bytes()
+    assert c.get('/reference-workbench/app.py').status_code == 404
+    assert c.get('/workbench-history.js').content == c.get('/reference-workbench/workbench-history.js').content
+    assert c.get('/workbench-zip.js').content == c.get('/reference-workbench/workbench-zip.js').content

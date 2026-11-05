@@ -1,7 +1,9 @@
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),assert=require('node:assert/strict'),{transformSync}=require('esbuild');
 const root=path.resolve(process.argv[2]||'.'),baseline=process.argv.includes('--baseline');
 Object.assign(process.env,{PGPOOL_MAX:'5',NAUMI_TICK_POOL_MAX:'2',NAUMI_VIDEO_COORDINATION_POOL_MAX:'2',NAUMI_DB_POOL_BUDGET:'15'});
-function load(relative,bindings={}){const filename=path.join(root,relative),fixtureModule={exports:{}};const code=transformSync(fs.readFileSync(filename,'utf8'),{loader:'ts',format:'cjs',target:'es2022'}).code;vm.runInThisContext('(function(require,module,exports){'+code+'\n})',{filename})(name=>name==='server-only'?{}:name in bindings?bindings[name]:require(name),fixtureModule,fixtureModule.exports);return fixtureModule.exports;}
+const migratedPorts={'@/platform/db/pool':['@/lib/db','../db'],'@/lib/media-assets-schema':['../media-assets','@/lib/media-assets'],'@/lib/teams/errors':['@/lib/teams/server'],'@/lib/bi/schema':['@/lib/bi/repository'],'@/lib/object-storage/runtime':['@/lib/storage'],'@/lib/object-storage/managed-read':['@/lib/storage'],'../object-storage/runtime':['../storage'],'../object-storage/managed-read':['../storage'],'@/lib/saas/creation-access':['../saas/creation-context'],'../enterprise/media-stream':['@/lib/enterprise/media-stream'],'@/lib/feature-access/repository':['@/lib/feature-access/server']};
+function load(relative,bindings={}){for(const [name,old] of Object.entries(migratedPorts)){if(!(name in bindings)){const found=old.find(p=>p in bindings);if(found)bindings[name]=bindings[found];}}
+const filename=path.join(root,relative),fixtureModule={exports:{}};const code=transformSync(fs.readFileSync(filename,'utf8'),{loader:'ts',format:'cjs',target:'es2022'}).code;vm.runInThisContext('(function(require,module,exports){'+code+'\n})',{filename})(name=>name==='server-only'?{}:name in bindings?bindings[name]:require(name),fixtureModule,fixtureModule.exports);return fixtureModule.exports;}
 async function main(){
  let borrowed=0,bodyReads=0,queries=0;const owner='owner@example.test',asset='asset-11111111-1111-1111-1111-111111111111';
  const tx={query:async(sql,args)=>{queries++;if(sql.includes('app_media_assets')){assert.equal(args[0],owner);return {rows:[{key:`imagegen-inputs/${asset.slice(6)}.png`,content_type:'image/png'}]};}if(sql.includes('SELECT * FROM app_image_jobs'))return {rows:[{id:'job-test',email:owner,created_at:'2026-10-30',status:'done',payload:{plan:{request:{prompt:'fixture',inputs:[{artworkId:asset}]}}}}]};if(sql.includes('count(*)'))return {rows:[{n:0}]};if(sql.includes('sum(delta)'))return {rows:[{charged:0}]};return {rows:[]};}};
@@ -26,10 +28,10 @@ async function main(){
  if(!baseline){await Promise.all(Array.from({length:4},()=>api.legacyCreationAsset(id,'legacy-media-0',scope)));assert.equal(borrowed,0);assert.equal(bodyReads,0);console.log('ENTERPRISE_CONCURRENT assets=4 nested_checkout=0 bodyReads=0');}
  const source=fs.readFileSync(path.join(root,'src/components/canvas/canvas-client.tsx'),'utf8');
  const raw=(source.match(/await fetch\(\s*`\/api\/generate-image\?job=/g)||[]).length;
- if(baseline){assert.equal(raw,3);console.log('CANVAS_RECEIPT unbounded_raw_fetches=3');}
+ if(baseline){const controller=path.join(root,'src/lib/canvas/image-task-controller.ts');const original=fs.existsSync(controller)?(fs.readFileSync(controller,'utf8').match(/await fetch\(`\/api\/generate-image\?job=/g)||[]).length:raw;assert.equal(original,fs.existsSync(controller)?2:3);console.log('CANVAS_RECEIPT unbounded_raw_fetches='+original+' OWNER='+ (fs.existsSync(controller)?'image-task-controller':'page'));}
  else {assert.equal(raw,0);await receiptTests();await enterpriseChainTests(api,reference,bindings,tx,id);
   const full=await input.readImagegenInputAsset(asset,owner);assert.ok(Buffer.isBuffer(full.buffer));assert.equal(full.mimeType,'image/png');assert.equal(full.url,media.url);console.log('IMAGEGEN_INPUT buffer/mimeType/url=PASS');}
- const connection=load('src/lib/db/connection.ts');const pool=connection.getPool(),tick=connection.getWorkerTickPool();
+ const connection=load(fs.existsSync(path.join(root,'src/platform/db/pool.ts'))?'src/platform/db/pool.ts':'src/lib/db/connection.ts');const pool=connection.getPool(),tick=connection.getWorkerTickPool();
  assert.equal(pool.options.connectionTimeoutMillis,baseline?undefined:12000);assert.equal(tick.options.connectionTimeoutMillis,3000);assert.equal(pool.options.max,5);
  console.log(`POOL business_timeout=${pool.options.connectionTimeoutMillis??'unset'} tick_timeout=${tick.options.connectionTimeoutMillis} business_max=${pool.options.max}`);
  if(!baseline)await poolTimeoutTests(pool);
@@ -37,6 +39,7 @@ async function main(){
 }
 
 async function receiptTests(){
+ if(fs.existsSync(path.join(root,'src/lib/canvas/image-task-controller.ts')))return controllerReceiptTests();
  const {readCanvasGenerationReceipt}=load('src/lib/canvas/generation-receipt.ts');
  const realFetch=global.fetch,realSetTimeout=global.setTimeout;
  const source=fs.readFileSync(path.join(root,'src/components/canvas/canvas-client.tsx'),'utf8'),ts=require('typescript');
@@ -74,6 +77,42 @@ async function receiptTests(){
   console.log('CANVAS_EXITS terminal/http/deadline/context/invalid_json=PASS');
  }finally{global.fetch=realFetch;global.setTimeout=realSetTimeout;}
 }
+async function controllerReceiptTests(){
+ const esbuild=require('esbuild');
+ const build=await esbuild.build({entryPoints:[path.join(root,'src/lib/canvas/image-task-controller.ts')],bundle:true,write:false,platform:'node',format:'cjs',packages:'external',plugins:[{name:'browser-ports',setup(b){
+  b.onResolve({filter:/supabase$/},()=>({path:'auth',namespace:'fixture'}));b.onResolve({filter:/saas\/workspace-client$/},()=>({path:'workspace',namespace:'fixture'}));
+  b.onLoad({filter:/.*/,namespace:'fixture'},a=>({contents:a.path==='auth'?`export const authHeader=async()=>({'x-naumi-workspace':'wrong','x-naumi-project-context':'wrong'});`:`export const currentWorkspace=()=> 'enterprise-fixture',currentWorkspaceRevision=()=>0;`,loader:'js'}));
+ }}]});
+ const m={exports:{}};new Function('require','module','exports',build.outputFiles[0].text)(require,m,m.exports);
+ const {createCanvasImageTask}=m.exports,original={fetch:global.fetch,setTimeout:global.setTimeout,now:Date.now};let clock=1;
+ try{
+  Date.now=()=>clock;
+  global.setTimeout=(run,ms,...args)=>{if(ms===2500){clock+=2500;return original.setTimeout(run,0,...args)}return original.setTimeout(run,ms===30000?5:ms,...args);};
+  const setup=(replacement=false)=>{
+   let current=true,submits=0,histories=0,positions=0,user=0;
+   const scope={owner:'owner@example.test',workspace:'enterprise-fixture',project:'project-fixture',isCurrent:()=>current,assertCurrent(){if(!current)throw Error('retired');}};
+   const attachment={nodeId:'node',applied:true,previousVersionId:'old',previousImage:'/media/old.png',versionId:'version',revision:1};
+   const task=createCanvasImageTask({scope,prepare:async()=>new FormData(),submit:async()=>{submits++;return Response.json({jobId:'same-job'})},position:()=>({x:1,y:2}),merge:async ids=>ids.map(id=>({id,image:'/media/result.png',canvasImageRevision:1,canvasImageVersionId:'version'})),history:()=>histories++,replacement:replacement?{nodeId:'node',history:()=>histories++}:undefined,stage(){},user(){user++},notice(){},errorText:'fixture failed',saveErrorText:'save failed',resultGap:40});
+   return {task,attachment,retire(){current=false},position(){positions++},snapshot:()=>({submits,histories,positions,user})};
+  };
+  const terminal=(extra={})=>Response.json({status:'done',images:[{id:'result',url:'/media/result.png'}],...extra});
+  const checkRequest=(url,init)=>{assert.equal(url,'/api/generate-image?job=same-job');assert.equal(init.method,undefined);assert.equal(init.cache,'no-store');assert.equal(new Headers(init.headers).get('x-naumi-workspace'),'enterprise-fixture');assert.equal(new Headers(init.headers).get('x-naumi-project-context'),'project-fixture');};
+  const f=setup();let attempts=0,aborts=0;
+  global.fetch=async(url,init)=>{
+   if(url==='/api/artworks/position'){f.position();return Response.json({ok:true})}
+   checkRequest(url,init);attempts++;const stalled=()=>new Promise((resolve,reject)=>init.signal.addEventListener('abort',()=>{aborts++;reject(new DOMException('aborted','AbortError'))},{once:true}));
+   if(attempts===1)return stalled();if(attempts===2)return {text:stalled};if(attempts===3)throw TypeError('fixture network failure');if(attempts===4)return Response.json({status:'pending'});return terminal();
+  };
+  assert.equal((await f.task.run()).status,'succeeded');assert.equal(attempts,5);assert.equal(aborts,2);assert.deepEqual(f.snapshot(),{submits:1,histories:1,positions:1,user:0});
+  console.log('CANVAS_CONTROLLER attempts=5 aborts=2 network_errors=1 pending_then_done=PASS PAID_POST=1 ATTACH=1');
+  for(const [name,response]of [['terminal',()=>Response.json({status:'error',error:'fixture terminal'})],['http',()=>Response.json({error:'fixture forbidden'},{status:403})],['invalid-json',()=>new Response('<html>gateway</html>',{status:503})]]){
+   const t=setup();global.fetch=async()=>response();const result=await t.task.run();assert.equal(result.status,'failed');assert.equal(result.failure.jobId,'same-job');assert.equal(t.snapshot().histories,0);assert.equal(t.snapshot().submits,1);console.log('CANVAS_CONTROLLER_EXIT '+name+'=PASS ORIGINAL_JOB=1');
+  }
+  {const t=setup();let count=0;global.fetch=async()=>{count++;throw TypeError('offline')};const result=await t.task.run();assert.equal(result.status,'failed');assert(count>1&&count<145);assert.equal(t.snapshot().submits,1);console.log('CANVAS_CONTROLLER_EXIT deadline=PASS GETS='+count+' PAID_POST=1');}
+  {const t=setup();global.fetch=async()=>{t.retire();return terminal()};assert.equal((await t.task.run()).status,'stale');assert.equal(t.snapshot().histories,0);console.log('CANVAS_CONTROLLER_EXIT context=PASS NO_ATTACH=1');}
+  {const t=setup(true);let count=0;global.fetch=async(url,init)=>{checkRequest(url,init);count++;if(count===1)return terminal();if(count===2)throw TypeError('receipt unavailable');return terminal({canvasAttachment:t.attachment})};assert.equal((await t.task.run()).status,'failed');assert.equal((await t.task.run()).status,'failed');assert.equal((await t.task.run()).status,'succeeded');assert.equal(t.snapshot().submits,1);assert.equal(t.snapshot().histories,1);assert.equal(count,3);console.log('CANVAS_REPLACEMENT original_receipt_only=PASS SYNC_UNKNOWN_RETAINED=1 PAID_POST=1');}
+ }finally{global.fetch=original.fetch;global.setTimeout=original.setTimeout;Date.now=original.now;}
+}
 async function poolTimeoutTests(pool){
  // Use the real pg queue/timer/removal implementation, with an in-memory wire
  // client only. No database URL or network connection is used by this fixture.
@@ -99,7 +138,7 @@ async function enterpriseChainTests(api,reference,bindings,detailTx,id){
  }};
  const pool={connect:async()=>{assert.equal(checkedOut,0,'second checkout');checkedOut++;return tx;},query:async()=>{assert.equal(active,false,'schema/pool query inside transaction');return {rows:[]};}};
  const team=bindings['@/lib/teams/server'];
- const server=load('src/lib/enterprise/server.ts',{'./site-administrator':{administeredSite:async()=>null,siteAdministrators:async()=>[]},'@/lib/site-control/identity':{},'./workflow-permissions':{workflowPermissionsSchema:require('zod').z.array(require('zod').z.string())},'@/lib/teams/server':{...team,ensureTeamSchema:async()=>{}},'@/lib/teams/grants':{requireTeamGrant:async()=>({expires_at:null})},'@/lib/db':{getPool:()=>pool},'@/lib/settings-secret':{},'./integration/policy':{pinnedEnterpriseIds:()=>[],IntegrationError:class extends Error{}}});
+ const server=load('src/lib/enterprise/server.ts',{'./site-administrator':{administeredSite:async()=>null,siteAdministrators:async()=>[]},'@/lib/site-control/identity':{},'./workflow-permissions':{workflowPermissionsSchema:require('zod').z.array(require('zod').z.string())},'@/lib/enterprise/schema':{ensureEnterpriseSchema:async()=>{}},'@/lib/teams/server':{...team,ensureTeamSchema:async()=>{}},'@/lib/teams/grants':{requireTeamGrant:async()=>({expires_at:null})},'@/lib/db':{getPool:()=>pool},'@/lib/settings-secret':{},'./integration/policy':{pinnedEnterpriseIds:()=>[],IntegrationError:class extends Error{}}});
  const history=load('src/lib/enterprise/creation-history.ts',{'./server':server,'@/lib/teams/server':team,'@/lib/bi/repository':{ensureBiSchema:async()=>{assert.equal(active,false);}},'@/lib/media-assets':{ensureMediaSchema:async()=>{assert.equal(active,false);events.push('schema');}},'@/lib/saas/legacy-creations':api,'@/lib/saas/creation-writer':{publicCreationParameters:x=>x}});
  const actor={email:'owner@example.test',admin:true};
  const filters={page:1,size:24,user:'',q:'',period:'all'};

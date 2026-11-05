@@ -42,6 +42,15 @@ const boundaries={
  'src/lib/imagegen/stored-delivery.ts':{storedDeliveryState:fatal('stored delivery'),recoverStoredDelivery:fatal('stored delivery')},
  'src/lib/bi/model-observer.ts':{withBiModelContext:(_c,run)=>run()},
 };
+// Source ownership moved, fixture boundaries did not: config/SQL/auth and
+// quote providers remain fixtures; real preparation/executor/planner run.
+boundaries['src/platform/db/pool.ts']=dbBoundary;
+boundaries['src/lib/persistence/schema.ts']={ensureSchema:async()=>{}};
+boundaries['src/lib/feature-access/repository.ts']=boundaries['src/lib/feature-access/server.ts'];
+boundaries['src/lib/billing/quotation.ts']=boundaries['src/lib/billing/server.ts'];
+boundaries['src/lib/saas/creation-scope.ts']=boundaries['src/lib/saas/creation-context.ts'];
+boundaries['src/lib/artworks/repository.ts']={listArtworksByIds:async()=>[]};
+boundaries['src/lib/model-config/execution-services.ts']={getModelExecutionServices:()=>({...admin,models:admin.repo})};
 function read(rel){const p=fs.existsSync(path.join(source,rel))?path.join(source,rel):path.join(root,rel),b=fs.readFileSync(p);loaded.set(rel,{path:p,sha256:hash(b)});return b.toString('utf8');}
 function resolve(from,id){if(id.startsWith('@/'))return 'src/'+id.slice(2);if(id.startsWith('.'))return path.posix.normalize(path.posix.join(path.posix.dirname(from),id));return null;}
 function load(rel){if(boundaries[rel])return boundaries[rel];if(cache.has(rel))return cache.get(rel).exports;const m={exports:{}};cache.set(rel,m);

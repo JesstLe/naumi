@@ -1,7 +1,7 @@
 "use client";
 import { MessageCircle, Share2 } from "lucide-react";
 import type { CanvasShareSource } from "@/lib/collaboration/contracts";
-import { useCollaboration, useCollaborationState } from "./collaboration-provider";
+import { useCollaboration, useCollaborationState } from "./collaboration-context";
 
 export function CollaborationEntry({ className = "", label = false }: { className?: string; label?: boolean }) {
   const { available, unread, open } = useCollaboration();

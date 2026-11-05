@@ -1,25 +1,17 @@
-import "server-only";
-import { randomUUID } from "node:crypto";
-import type { Pool, PoolClient } from "pg";
-import { getPool, ensureSchema } from "@/lib/db";
-import { ensureEnterpriseSchema } from "@/lib/enterprise/server";
-import { OFFICIAL_IMAGE_SKILLS, SkillError, validateSkillDraft, validateSkillSelection, type ImageSkill } from "./catalog";
-import { skillDefinitionHash } from "./import";
+import {ensureImageSkills} from "@/lib/image-skills/schema";
+export {ensureImageSkills};
 
-let schema: Promise<void> | undefined;
-export async function ensureImageSkills() {
-  if (!schema) schema = ensureSchema().then(ensureEnterpriseSchema).then(() => getPool().query(`
-    CREATE TABLE IF NOT EXISTS app_image_skills (
-      id text PRIMARY KEY, email text NOT NULL REFERENCES app_users(email) ON DELETE CASCADE,
-      revision integer NOT NULL DEFAULT 1, definition jsonb NOT NULL,
-      created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(), deleted_at timestamptz
-    );
-    ALTER TABLE app_image_skills ADD COLUMN IF NOT EXISTS enterprise_id uuid REFERENCES app_enterprise_settings(team_id);
-    CREATE INDEX IF NOT EXISTS app_image_skills_email_idx ON app_image_skills(email,updated_at DESC);
-    CREATE INDEX IF NOT EXISTS app_image_skills_enterprise_idx ON app_image_skills(enterprise_id,updated_at DESC) WHERE deleted_at IS NULL AND enterprise_id IS NOT NULL;
-  `)).then(() => undefined).catch(error => { schema = undefined; throw error; });
-  await schema;
-}
+import "server-only";
+import {randomUUID} from "node:crypto";
+import type {Pool,PoolClient} from "pg";
+import {getPool} from "@/platform/db/pool";
+
+
+
+import {OFFICIAL_IMAGE_SKILLS,SkillError,validateSkillDraft,validateSkillSelection,type ImageSkill} from "./catalog";
+import {skillDefinitionHash} from "./import";
+
+
 // Ordinary employees use live membership, not an enterprise-manager grant or a
 // browser-supplied tenant ID. Activated-enterprise expiry follows the owner entry grant.
 const enterpriseAccess = `SELECT t.id,t.name FROM app_enterprise_settings es

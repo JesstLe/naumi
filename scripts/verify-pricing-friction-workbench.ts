@@ -19,7 +19,7 @@ const root=process.cwd(),args=process.argv.slice(2),arg=(key:string,fallback:str
 const mode=arg("--mode","modified"),baseline=mode==="baseline",sourceRoot=resolve(arg("--source-root",root));
 assert.ok(["baseline","modified"].includes(mode));
 const label=arg("--label",mode);assert.ok(["baseline","modified","rollback"].includes(label));
-const out=resolve("output/pricing-friction-removal-20261023/workbench"),checks:string[]=[];
+const out=resolve(process.env.WORKBENCH_EVIDENCE||"output/pricing-friction-removal-20261023/workbench"),checks:string[]=[];
 function passed(name:string){checks.push(name);console.log(`PASS ${name}`);}
 function transpile(source:string,file:string){return ts.transpileModule(source,{fileName:file,compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;}
 async function loadActual(file:string,overrides:Record<string,unknown>={},project=false){
@@ -59,7 +59,7 @@ async function browserChecks(){
 
 async function main(){
  assert.equal(process.env.NAUMI_VERIFY_ISOLATED_DB,"1");
- const dbUrl=new URL(process.env.DATABASE_URL!);assert.equal(dbUrl.hostname,"127.0.0.1");assert.equal(dbUrl.pathname,"/naumi_pricing_fixture");
+ const dbUrl=new URL(process.env.DATABASE_URL!);assert.equal(dbUrl.hostname,"127.0.0.1");assert.match(dbUrl.pathname,/^\/[A-Za-z0-9_]*fixture[A-Za-z0-9_]*$/);
  await mkdir(out,{recursive:true});await browserChecks();
  let imageCalls=0,textCalls=0,routerDigest="";const wires:any[]=[];
  const f=await createModelFixture(async(req,res)=>{

@@ -1,4 +1,4 @@
-// Execute unchanged AST-extracted CanvasClient functions and complete helpers.
+// Execute unchanged AST-extracted CanvasClient wiring and complete refactor owners.
 // React/persistence/inner generation boundaries are fixtures; no HTTP is used.
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),assert=require('node:assert/strict'),crypto=require('node:crypto'),ts=require('typescript');
 const args=process.argv.slice(2),arg=(name,fallback)=>args.includes(name)?args[args.indexOf(name)+1]:fallback;
@@ -10,13 +10,14 @@ const transpile=(source,file)=>ts.transpileModule(source,{fileName:file,compiler
 const source=read('src/components/canvas/canvas-client.tsx'),ast=ts.createSourceFile('canvas-client.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX),functions={};
 (function visit(node){if(ts.isFunctionDeclaration(node)&&node.name)functions[node.name.text]=node.getText(ast);ts.forEachChild(node,visit)})(ast);
 const globals={console,Date,Math,Map,Set,WeakMap,Promise,Error,JSON,Array,Buffer,URL,File,Blob,Response,Request,Headers,FormData,AbortController,AbortSignal,TextEncoder,TextDecoder,structuredClone,queueMicrotask,setTimeout,clearTimeout,crypto:crypto.webcrypto,fetch:forbidden('network'),privateFetch:forbidden('model HTTP')};
-function moduleLoader(){const context=vm.createContext(globals),cache=new Map();function load(relative){
+function moduleLoader(overrides={},environment={}){const context=vm.createContext({...globals,...environment}),cache=new Map();function load(relative){
+ if(Object.hasOwn(overrides,relative))return overrides[relative];
  if(cache.has(relative))return cache.get(relative).exports;
  const mod={exports:{}};cache.set(relative,mod);
  const localRequire=id=>{const base=id.startsWith('@/')?'src/'+id.slice(2):id.startsWith('.')?path.posix.normalize(path.posix.join(path.posix.dirname(relative),id)):null;if(!base)return require(id);for(const ext of ['','.ts','.tsx','/index.ts'])if(fs.statSync(path.join(root,base+ext),{throwIfNoEntry:false})?.isFile())return load(base+ext);throw Error('MODULE_NOT_FOUND:'+base)};
  vm.runInContext('(function(require,module,exports){'+transpile(read(relative),relative)+'\n})',context,{filename:relative})(localRequire,mod,mod.exports);return mod.exports;
  }return{load};}
-const modules=moduleLoader(),helpers={...modules.load('src/lib/canvas/linked-image-text.ts'),...modules.load('src/lib/canvas/prepare-linked-image-text.ts'),...modules.load('src/lib/canvas/image-node-drafts.ts'),...modules.load('src/lib/canvas/image-reference-drafts.ts')};
+const modules=moduleLoader(),helpers={...modules.load('src/lib/canvas/linked-image-text.ts'),...modules.load('src/lib/canvas/prepare-linked-image-text.ts'),...modules.load('src/lib/canvas/image-node-drafts.ts'),...modules.load('src/lib/canvas/image-reference-drafts.ts'),...modules.load('src/lib/canvas/image-draft-completion.ts'),...modules.load('src/lib/canvas/node-commands.ts')};
 function compile(names,environment){
  for(const name of names){assert.ok(functions[name],'real source function exists: '+name);extracted.set(name,crypto.createHash('sha256').update(functions[name]).digest('hex'));}
  const context=vm.createContext({...globals,...helpers,...environment});
@@ -30,15 +31,17 @@ const account='owner@fixture.test',workspace='personal',project='tree:fixture';
 
 function pendingFixture(){
  const initial={id:'pend-a',parentId:'text-a',inputs:['text-a'],x:40,y:80,uploading:false,generating:false,label:'图片'};
- const state={nodes:[initial],text:[{id:'text-a',projectKey:project,title:'正文',content:'before',prompt:'AI instruction',status:'completed',targetIds:[]}],inner:[],errors:[],flushed:[],pending:new Set(['text-a']),unsaved:new Set(['text-a']),locked:false,workspace,externalCurrent:true,flushGate:null};
+ const state={nodes:[initial],text:[{id:'text-a',projectKey:project,title:'正文',content:'before',prompt:'AI instruction',status:'completed',targetIds:[]}],inner:[],errors:[],flushed:[],pending:new Set(['text-a']),unsaved:new Set(['text-a']),locked:false,workspace,externalCurrent:true,flushGate:null,confirmations:[]};
  const refs={nodes:{current:state.nodes},text:{current:state.text},account:{current:account},project:{current:{key:project}},epoch:{current:1},operations:{current:new Set()},queues:{current:new Map()},deleting:{current:false},history:{current:false}};
- const env={readOnly:false,user:{email:account},selectedPendId:'pend-a',editPrompt:'direction',pendNodes:[],pendNodesRef:refs.nodes,textNodesRef:refs.text,
-  canvasAccountRef:refs.account,activeProjectRef:refs.project,canvasContextEpochRef:refs.epoch,currentWorkspace:()=>state.workspace,generationOperationRef:refs.operations,nodeDeletingRef:refs.deleting,historyBusyRef:refs.history,isNodeLocked:()=>state.locked,
-  unsavedTextRef:{current:state.unsaved},textSaveQueuesRef:refs.queues,
-  textAutosave:{flush:async id=>{state.flushed.push(id);state.pending.delete(id);if(state.flushGate)await state.flushGate.promise;state.unsaved.delete(id);return refs.text.current.find(node=>node.id===id)||null},hasPending:id=>state.pending.has(id)},
-  generatePreparedPend:async options=>{state.inner.push(options);return true},setGenError:error=>state.errors.push(error),generationTasksRef:{current:[]},
+ const scope={project,workspace,viewCurrent:()=>refs.account.current===account&&refs.project.current.key===project&&state.workspace===workspace};
+ const env={readOnly:false,user:{email:account},selectedPendId:'pend-a',editPrompt:'direction',canvasAccountRef:refs.account,canvasContextEpochRef:refs.epoch,
+  canvasArtworkDocument:{scope},pendingPresentation:{getSnapshot:()=>refs.nodes.current},preparingPendingImagesRef:refs.operations,textWriteBarrierRef:refs.deleting,historyBusyRef:refs.history,isNodeLocked:()=>state.locked,
+  canvasTextDocument:{getSnapshot:()=>({nodes:refs.text.current}),hasUnsaved:id=>state.unsaved.has(id)||refs.queues.current.has(id),flush:ids=>Promise.all(ids.map(id=>refs.queues.current.get(id)))},
+  textTasks:{state:()=>({busy:false})},textAutosave:{flush:async id=>{state.flushed.push(id);state.pending.delete(id);if(state.flushGate)await state.flushGate.promise;state.unsaved.delete(id);return refs.text.current.find(node=>node.id===id)||null},hasPending:id=>state.pending.has(id)},
+  generatePreparedPend:async options=>{state.inner.push(options);return true},setGenError:error=>state.errors.push(error),generationPresentation:{getSnapshot:()=>({tasks:[]})},
+  setConfirmModal:value=>state.confirmations.push(value),t:key=>key,fmt:(key,values)=>key+JSON.stringify(values),runDelete:forbidden('delete preparing node'),
  };
- const actions=compile(['prepareImageText','generatePend','deletableCanvasIds'],env);
+ const actions=compile(['prepareImageText','generatePend','batchDelete'],env);
  return{state,refs,initial,actions,hold:()=>{state.flushGate=deferred();return state.flushGate},replace:patch=>{state.nodes=refs.nodes.current.map(node=>node.id===initial.id?{...node,...patch}:node);refs.nodes.current=state.nodes;}};
 }
 
@@ -47,7 +50,7 @@ async function pendingChecks(){
   const f=pendingFixture(),ack=f.hold(),run=f.actions.generatePend();
   await until(()=>f.state.flushed.length===1,'flush started');
   assert.equal(f.state.inner.length,0);assert.equal(await f.actions.generatePend(),false);assert.equal(f.state.flushed.length,1);
-  assert.deepEqual(Array.from(f.actions.deletableCanvasIds(['pend-a'])),[],'preparing node cannot be deleted');
+  f.actions.batchDelete(['pend-a']);assert.deepEqual(f.state.confirmations,[],'real batch-delete entry never offers a preparing node for deletion');
   f.refs.text.current=[{...f.refs.text.current[0],content:'latest complete body'}];ack.resolve();
   assert.equal(await run,true);assert.equal(f.state.inner.length,1);assert.equal(f.state.inner[0].linked.prompt,'latest complete body\n\ndirection');
   assert.deepEqual(plain(f.state.inner[0].linked.sources),[{id:'text-a',title:'正文',content:'latest complete body'}]);
@@ -100,82 +103,101 @@ async function pendingChecks(){
 }
 
 function uploadFixture(){
- const state={nodes:[{id:'pend-upload',inputs:[],x:10,y:20,uploading:false,prompt:'pending metadata'}],errors:[],seeds:[],copies:[],history:[],selected:'pend-upload',syncCalls:0,fail:false,syncGate:null};
- const scope={},draftScope=helpers.imageDraftScope(account,null,project,workspace),draftKey=id=>helpers.imageDraftKey(draftScope,id);
+ const state={nodes:[{id:'pend-upload',inputs:[],x:10,y:20,uploading:false,label:'Upload'}],errors:[],seeds:[],copies:[],history:[],selected:'pend-upload',syncCalls:0,posts:0,fail:false,syncGate:null,reveals:[]};
+ const scopeToken={},draftScope=helpers.imageDraftScope(account,null,project,workspace),draftKey=id=>helpers.imageDraftKey(draftScope,id);
  const artwork=Object.freeze({id:'art-upload',image:'/uploaded.png',title:'Uploaded',prompt:'immutable upload provenance',groupId:'fixture'});
  const drafts=new helpers.ImageNodeDraftStore();let urls=0;const references=new helpers.ImageReferenceDraftStore({createObjectURL:()=>`blob:fixture-${++urls}`,revokeObjectURL:()=>{}});
  drafts.write(draftKey('pend-upload'),{prompt:'editable pending direction',ratio:'3:4',hiddenReferenceIds:['hidden']});
  references.add(draftKey('pend-upload'),[{key:'upload:reference',file:new File(['fixture'],'reference.png',{type:'image/png'})}]);
- const receipt={artworkId:artwork.id,account,workspace,revision:1,scope,draftScope,draftProject:project};
- const refs={account:{current:account},scope:{current:scope},pending:{current:null},receipts:{current:new Map([['pend-upload',receipt]])},works:{current:[artwork]}};
- const env={canvasAccountRef:refs.account,currentWorkspace:()=>workspace,currentWorkspaceRevision:()=>1,importScopeRef:refs.scope,pendingNodeRef:refs.pending,pendUploadReceiptsRef:refs.receipts,worksRef:refs.works,user:{email:account},targetEmail:null,
-  setPendNodes:update=>{state.nodes=update(state.nodes)},setSelectedPendId:update=>{state.selected=update(state.selected)},setGenError:error=>state.errors.push(error),setWorks:update=>{refs.works.current=update(refs.works.current)},
-  synchronizeCanvasArtworks:async(ids,read,current)=>{state.syncCalls++;assert.deepEqual(Array.from(ids),[artwork.id]);if(state.syncGate)await state.syncGate.promise;if(state.fail)throw Error('fixture sync failed');return read()},
-  mergeWorks:async()=>[artwork],projectKey:()=>project,
+ const refs={account:{current:account},scope:{current:scopeToken},works:{current:[artwork]}};
+ const scope={project,workspace,documentCurrent:()=>refs.account.current===account,viewCurrent:()=>refs.account.current===account&&refs.scope.current===scopeToken};
+ const context={owner:account,account,workspace,project,documentCurrent:scope.documentCurrent,viewCurrent:scope.viewCurrent,rects:()=>[],
+  merge:async()=>{state.syncCalls++;if(state.syncGate)await state.syncGate.promise;if(state.fail)throw Error('fixture sync failed');return [artwork]},
+  history:(ids,rows)=>state.history.push({add:Array.from(ids),rows:plain(rows)}),reveal:id=>state.reveals.push(id),t:key=>key,locale:'zh'};
+ const fixtureModules=moduleLoader({'src/lib/client-image-upload.ts':{
+  prepareImageUploads:async files=>files.map(file=>({file,originalBytes:file.size,uploadBytes:file.size,width:400,height:300})),
+  uploadFormData:async(url,form,progress,timeout,guard)=>{guard();assert.equal(url,'/api/artworks/add');assert.equal(form.has('prompt'),false);state.posts++;progress?.(1,1);return{id:artwork.id}},
+ }});
+ const importer=fixtureModules.load('src/lib/canvas/image-imports.ts').createCanvasImageImports();
+ const env={user:{email:account},readOnly:false,preparingPendingImagesRef:{current:new Set()},canvasArtworkDocument:{scope},targetEmail:null,activeKey:project,worksRef:refs.works,
+  pendUploadTargetRef:{current:null},pendUploadRef:{current:{value:''}},pendSeqRef:{current:0},activeRootId:()=>null,canvasImportContext:()=>({...context,account:refs.account.current}),imageImportOwner:importer,
+  pendingPresentation:{get:id=>state.nodes.find(node=>node.id===id),getSnapshot:()=>state.nodes,set:update=>{state.nodes=update(state.nodes)}},
+  setSelectedPendId:update=>{state.selected=update(state.selected)},setGenError:error=>state.errors.push(error),pushUndo:action=>state.history.push(action),
   imageDraft:{read:(id,scope)=>drafts.read(helpers.imageDraftKey(scope,id)),seed:(id,patch,scope)=>{state.seeds.push({id,patch:plain(patch),scope});drafts.write(helpers.imageDraftKey(scope,id),patch)}},
-  referenceDraft:{copyTo:(target,source)=>{state.copies.push({target,source});references.copy(source,target)}},
-  consumePendingNodeHistory:id=>state.history.push({consume:id}),pushAddUndo:(id,rows)=>state.history.push({add:id,rows:plain(rows)}),
+  referenceDraft:{copyTo:(target,source)=>{state.copies.push({target,source});references.copy(source,target)}},canvasHistory:{consumePending:id=>state.history.push({consume:id})},t:value=>value,
  };
- return{state,refs,receipt,artwork,drafts,references,draftKey,draftScope,run:compile(['synchronizePendUpload'],env).synchronizePendUpload};
+ const action=compile(['doUploadPend'],env).doUploadPend;
+ return{state,refs,artwork,drafts,references,draftKey,draftScope,importer,context,receipt:()=>importer.pendingBatch('pend-upload',context),
+  run:async()=>{env.pendUploadTargetRef.current='pend-upload';return action([new File(['original'],'original.png',{type:'image/png'})]);}};
 }
 
 async function uploadChecks(){
  await check('REAL_UPLOAD_SYNC_MIGRATES_EDITABLE_DRAFT_NOT_ARTWORK_PROMPT',async()=>{
-  const f=uploadFixture(),before=JSON.stringify(f.artwork);await f.run('pend-upload',f.receipt);
+  const f=uploadFixture(),before=JSON.stringify(f.artwork);await f.run();
   assert.equal(f.drafts.read(f.draftKey(f.artwork.id)).prompt,'editable pending direction');assert.equal(f.drafts.read(f.draftKey(f.artwork.id)).ratio,'3:4');
   assert.deepEqual(plain(f.drafts.read(f.draftKey(f.artwork.id)).hiddenReferenceIds),['hidden']);assert.equal(JSON.stringify(f.artwork),before);
   assert.equal(f.references.read(f.draftKey(f.artwork.id)).length,1);assert.notEqual(f.references.read(f.draftKey(f.artwork.id))[0].url,f.references.read(f.draftKey('pend-upload'))[0].url);
-  assert.equal(f.state.nodes.length,0);assert.equal(f.refs.receipts.current.size,0);assert.equal(f.refs.pending.current,f.artwork.id);assert.equal(f.state.selected,null);
-  assert.equal(f.state.seeds.length,1);assert.equal(f.state.copies.length,1);assert.equal(f.state.history.length,2);
+  assert.equal(f.state.nodes.length,0);assert.equal(f.receipt().phase,'done');assert.deepEqual(f.state.reveals,[f.artwork.id]);assert.equal(f.state.selected,null);
+  assert.equal(f.state.seeds.length,1);assert.equal(f.state.copies.length,1);assert.equal(f.state.history.length,2);assert.equal(f.state.posts,1);
  });
  await check('REAL_UPLOAD_SYNC_PRESERVES_NEWER_DESTINATION_EDIT',async()=>{
-  const f=uploadFixture();f.drafts.write(f.draftKey(f.artwork.id),{prompt:'newer destination direction'});await f.run('pend-upload',f.receipt);
+  const f=uploadFixture();f.drafts.write(f.draftKey(f.artwork.id),{prompt:'newer destination direction'});await f.run();
   assert.equal(f.drafts.read(f.draftKey(f.artwork.id)).prompt,'newer destination direction');assert.equal(f.drafts.read(f.draftKey(f.artwork.id)).ratio,'3:4');assert.equal(f.artwork.prompt,'immutable upload provenance');
  });
  await check('REAL_UPLOAD_FAILED_SYNC_RETAINS_PENDING_AND_RECEIPT_THEN_MIGRATES_ON_RETRY',async()=>{
-  const f=uploadFixture();f.state.fail=true;await f.run('pend-upload',f.receipt);
+  const f=uploadFixture();f.state.fail=true;await f.run();const receipt=f.receipt();
   assert.equal(f.state.nodes.length,1);assert.equal(f.state.nodes[0].id,'pend-upload');assert.equal(f.state.nodes[0].uploading,false);assert.equal(f.state.nodes[0].progress,100);
-  assert.equal(f.refs.receipts.current.get('pend-upload'),f.receipt);assert.equal(f.state.seeds.length,0);assert.equal(f.state.copies.length,0);assert.equal(f.state.history.length,0);
-  assert.equal(f.drafts.read(f.draftKey('pend-upload')).prompt,'editable pending direction');assert.deepEqual(plain(f.drafts.read(f.draftKey(f.artwork.id))),{});assert.match(f.state.errors[0],/无需重新上传/);
-  f.state.fail=false;await f.run('pend-upload',f.receipt);assert.equal(f.state.nodes.length,0);assert.equal(f.state.seeds.length,1);assert.equal(f.state.syncCalls,2);
+  assert.deepEqual(Array.from(receipt.nodeIds),[f.artwork.id]);assert.equal(receipt.phase,'sync');assert.equal(f.state.seeds.length,0);assert.equal(f.state.copies.length,0);assert.equal(f.state.history.length,0);
+  assert.equal(f.drafts.read(f.draftKey('pend-upload')).prompt,'editable pending direction');assert.deepEqual(plain(f.drafts.read(f.draftKey(f.artwork.id))),{});assert.match(f.state.nodes[0].generationFailure.message,/无需重新上传/);
+  f.state.fail=false;await f.run();assert.equal(f.state.nodes.length,0);assert.equal(f.state.seeds.length,1);assert.equal(f.state.syncCalls,4);assert.equal(f.state.posts,1,'three bounded reads then retry never upload twice');
  });
  for(const when of ['before','during'])await check('REAL_UPLOAD_ACCOUNT_CHANGE_'+when.toUpperCase()+'_ZERO_MIGRATION',async()=>{
   const f=uploadFixture();let run;
-  if(when==='before'){f.refs.account.current='other';run=f.run('pend-upload',f.receipt)}
-  else{f.state.syncGate=deferred();run=f.run('pend-upload',f.receipt);await until(()=>f.state.syncCalls===1,'upload sync');f.refs.account.current='other';f.state.syncGate.resolve()}
-  await run;assert.equal(f.state.seeds.length,0);assert.equal(f.state.copies.length,0);assert.equal(f.state.history.length,0);assert.equal(f.state.nodes.length,1);assert.equal(f.refs.receipts.current.size,1);
-  assert.equal(f.state.syncCalls,when==='before'?0:1);assert.deepEqual(plain(f.drafts.read(f.draftKey(f.artwork.id))),{});
+  if(when==='before'){
+   f.state.fail=true;await f.run();f.state.fail=false;f.state.syncCalls=0;
+   f.refs.account.current='other';run=f.run();
+  }else{
+   f.state.syncGate=deferred();run=f.run();await until(()=>f.state.syncCalls===1,'upload sync');f.refs.account.current='other';f.state.syncGate.resolve();
+  }
+  await run;assert.equal(f.state.seeds.length,0);assert.equal(f.state.copies.length,0);assert.equal(f.state.history.length,0);assert.equal(f.state.nodes.length,1);assert.deepEqual(Array.from(f.receipt().nodeIds),[f.artwork.id]);
+  assert.equal(f.state.syncCalls,when==='before'?0:1);assert.equal(f.state.posts,1);assert.deepEqual(plain(f.drafts.read(f.draftKey(f.artwork.id))),{});
  });
  await check('REAL_UPLOAD_PROJECT_NAVIGATION_ZERO_DRAFT_MIGRATION',async()=>{
-  const f=uploadFixture();f.refs.scope.current={};await f.run('pend-upload',f.receipt);
-  assert.equal(f.state.seeds.length,0);assert.equal(f.state.copies.length,0);assert.equal(f.state.nodes.length,1);assert.equal(f.refs.pending.current,null);
+  const f=uploadFixture();f.state.syncGate=deferred();const run=f.run();await until(()=>f.state.syncCalls===1,'project sync');
+  f.refs.scope.current={};f.importer.reset();f.state.syncGate.resolve();await run;
+  assert.equal(f.state.seeds.length,0);assert.equal(f.state.copies.length,0);assert.equal(f.state.nodes.length,1);assert.deepEqual(f.state.reveals,[]);
  });
 }
 
 async function historyChecks(){
  await check('REAL_IMAGE_VERSION_UNDO_REDO_KEEP_EDITABLE_PROMPT_DRAFT',async()=>{
-  const historyScope='fixture-history',draftScope=helpers.imageDraftScope(account,null,project,workspace),key=helpers.imageDraftKey(draftScope,'art-version'),drafts=new helpers.ImageNodeDraftStore();
+  const draftScope=helpers.imageDraftScope(account,null,project,workspace),key=helpers.imageDraftKey(draftScope,'art-version'),drafts=new helpers.ImageNodeDraftStore();
   drafts.write(key,{prompt:'my reusable editable draft',ratio:'3:4'});
   const act={kind:'image-version',id:'art-version',from:{versionId:'version-old',image:'/old.png',prompt:'old provenance'},to:{versionId:'version-new',image:'/new.png',prompt:'new provenance'}};
-  const state={works:[{id:act.id,image:act.to.image,prompt:act.to.prompt,canvasImageVersionId:act.to.versionId,canvasImageRevision:2}],posts:[],merges:[],target:act.from};
-  const worksRef={current:state.works},noopStore={flush:async()=>{},getNode:()=>undefined,refresh:forbidden('unrelated history refresh')};
-  const env={canvasAccountRef:{current:account},currentWorkspace:()=>workspace,currentWorkspaceRevision:()=>1,historyScope,historyScopeRef:{current:historyScope},historyAttemptsRef:{current:new WeakMap()},activeKey:project,
-   textAutosave:{flushAll:async()=>{}},textSaveQueuesRef:{current:new Map()},videoNodesStore:noopStore,directorNodesStore:noopStore,characterNodesStore:noopStore,sceneNodesStore:noopStore,audioNodesStore:noopStore,timelineNodesStore:noopStore,
-   worksRef,generationOperationRef:{current:new Set()},browserRandomUUID:()=>crypto.randomUUID(),t:value=>value,
-   privateFetchRaw:async(url,init)=>{assert.equal(url,'/api/canvas/history');state.posts.push(JSON.parse(init.body));return{ok:true}},expectJsonOk:async value=>value,
-   setWorks:update=>{state.works=update(state.works);worksRef.current=state.works},mergeWorks:async(ids,current)=>{assert.equal(current(),true);state.merges.push(Array.from(ids));state.works=state.works.map(art=>({...art,image:state.target.image,prompt:state.target.prompt,canvasImageVersionId:state.target.versionId,canvasImageRevision:art.canvasImageRevision+1}));worksRef.current=state.works;return state.works},
-   unsavedTextRef:{current:new Set()},setUnsavedTextCount:()=>{},imageDraft:{setPrompt:forbidden('history overwrites draft'),seed:forbidden('history replaces draft'),read:()=>drafts.read(key)},selected:{id:act.id},
-  };
-  const action=compile(['applyHistory'],env).applyHistory,before=JSON.stringify(drafts.read(key));
-  await action(act,true);assert.equal(state.posts[0].operations[0].versionId,act.from.versionId);assert.equal(state.works[0].prompt,'old provenance');assert.equal(JSON.stringify(drafts.read(key)),before);
-  state.target=act.to;await action(act,false);assert.equal(state.posts[1].operations[0].versionId,act.to.versionId);assert.equal(state.works[0].prompt,'new provenance');assert.equal(JSON.stringify(drafts.read(key)),before);
-  assert.deepEqual(state.merges,[[act.id],[act.id]]);assert.notEqual(state.posts[0].operationId,state.posts[1].operationId);
+  const state={posts:[],receipts:[],target:act.from},initial={id:act.id,title:'Image',image:act.to.image,prompt:act.to.prompt,canvasImageVersionId:act.to.versionId,canvasImageRevision:2};
+  let revision=2;
+  const historyModules=moduleLoader({'src/lib/supabase.ts':{authHeader:async()=>({})},'src/lib/saas/workspace-client.ts':{currentWorkspace:()=>workspace,currentWorkspaceRevision:()=>1},'src/lib/browser-data-cache.ts':{invalidateBrowserData:()=>{},loadAccountSnapshot:forbidden('unrelated snapshot read')}},{fetch:async(url,init)=>{
+   assert.equal(url,'/api/canvas/history');assert.equal(init.headers.get('x-naumi-workspace'),workspace);const body=JSON.parse(init.body);state.posts.push(body);
+   const node={...initial,image:state.target.image,prompt:state.target.prompt,canvasImageVersionId:state.target.versionId,canvasImageRevision:++revision};state.receipts.push(node);
+   return Response.json({ok:true,persisted:true,artworkNodes:[{visible:true,node}],artworkIds:[act.id]});
+  }});
+  const documentContext=historyModules.load('src/lib/canvas/document-scope.ts').createCanvasDocumentContext(),scope=documentContext.render(account,project);
+  const artwork=historyModules.load('src/lib/canvas/artwork-document.ts').createCanvasArtworkDocument().bind(scope,account,true);artwork.set([initial]);
+  const applied=compile(['onHistoryApplied'],{...historyModules.load('src/lib/canvas/history-model.ts'),active:null,canvasArtworkDocument:artwork,
+   imageDraft:{setPrompt:forbidden('history overwrites draft'),seed:forbidden('history replaces draft'),read:()=>drafts.read(key)},projectNavigation:{empty:forbidden('unrelated navigation'),open:forbidden('unrelated navigation')}}).onHistoryApplied;
+  const owner=historyModules.load('src/lib/canvas/history-controller.ts').createCanvasHistoryController({changed:()=>{},readOnly:()=>false,flush:async()=>{},video:()=>undefined,
+   artwork:id=>artwork.getSnapshot().nodes.find(node=>node.id===id),transaction:(target,work)=>artwork.history.transaction(target,work),
+   commit:(target,value)=>{artwork.history.applyHistory(target,value);applied(value)},pending:forbidden('unrelated pending history'),refresh:forbidden('unrelated refresh'),warning:forbidden('history warning')});
+  const before=JSON.stringify(drafts.read(key));
+  await owner.apply(scope,act,true);assert.equal(state.posts[0].operations[0].versionId,act.from.versionId);assert.equal(artwork.getSnapshot().nodes[0].prompt,'old provenance');assert.equal(JSON.stringify(drafts.read(key)),before);
+  state.target=act.to;await owner.apply(scope,act,false);assert.equal(state.posts[1].operations[0].versionId,act.to.versionId);assert.equal(artwork.getSnapshot().nodes[0].prompt,'new provenance');assert.equal(JSON.stringify(drafts.read(key)),before);
+  assert.deepEqual(state.receipts.map(row=>row.id),[act.id,act.id]);assert.notEqual(state.posts[0].operationId,state.posts[1].operationId);
  });
 }
 
 (async()=>{
  try{await pendingChecks();await uploadChecks();await historyChecks()}catch(error){errors.push(error.stack||String(error))}
  const status=errors.length?'FAIL':'PASS',exit=errors.length?1:0,stdout=`CANVAS_TEXT_PROMPT_REUSE_FUNCTIONS=${status} CHECKS=${checks.length} FAILED=${errors.length} SUPPLIER_CALLS=0 NETWORK_CALLS=0 EXIT=${exit}`;
- fs.mkdirSync(out,{recursive:true});fs.writeFileSync(path.join(out,'MODIFIED.json'),JSON.stringify({status,checks,errors,loaded:[...loaded].map(([relative,meta])=>({relative,...meta})),extractedFunctions:[...extracted].map(([name,sha256])=>({name,sha256})),stdout,exit,evidence:'Unmodified AST-extracted CanvasClient functions; complete linked text and draft-store modules; React, save, inner-generation and history persistence boundaries are fixtures.'},null,2));
+ fs.mkdirSync(out,{recursive:true});fs.writeFileSync(path.join(out,'MODIFIED.json'),JSON.stringify({status,checks,errors,loaded:[...loaded].map(([relative,meta])=>({relative,...meta})),extractedFunctions:[...extracted].map(([name,sha256])=>({name,sha256})),stdout,exit,evidence:'Unmodified AST-extracted CanvasClient functions plus complete import, history controller/artwork document, linked text and draft-store owners; React, save, inner generation and transport/auth boundaries are fixtures; all 28 original semantics retained across refactor boundaries.'},null,2));
  console.log(stdout);if(errors.length)console.error(errors.join('\n'));process.exitCode=exit;
 })();

@@ -1,0 +1,25 @@
+# Acceptance SDK only. The application remains the exact fixed release image.
+ARG FIXED_APP_IMAGE
+FROM ${FIXED_APP_IMAGE} AS fixed-app
+FROM node:24-bookworm-slim AS deps
+WORKDIR /app
+COPY source/package.json source/package-lock.json ./
+COPY source/scripts/patch-next-body.mjs ./scripts/patch-next-body.mjs
+RUN npm ci
+
+FROM deps AS native-sdk
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright NEXT_TELEMETRY_DISABLED=1
+RUN npx --no-install playwright install --with-deps chromium \
+    && apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=fixed-app /app /fixed-app
+COPY --from=fixed-app /opt/naumi-media-runtime /opt/naumi-media-runtime
+COPY --from=fixed-app /usr/local/bin/naumi-media-sandbox /usr/local/bin/naumi-media-sandbox
+RUN groupadd -g 1001 nodejs && useradd -u 1001 -g nodejs -m nextjs \
+    && mkdir -p /fixture && ln -s /app/node_modules /fixture/node_modules
+COPY --chown=1001:1001 source/ /fixture/
+COPY --from=fixed-app --chown=1001:1001 /app/dist/worker /fixture/dist/worker
+RUN mkdir -p /fixture/output && chown -R 1001:1001 /fixture/output /fixed-app
+WORKDIR /fixture
+USER nextjs
+CMD ["node","-e","process.on('SIGTERM',()=>process.exit(0));setInterval(()=>{},1000)"]

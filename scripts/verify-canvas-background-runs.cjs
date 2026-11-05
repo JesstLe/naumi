@@ -48,6 +48,7 @@ function moduleLoader() {
   return { load };
 }
 const modules = moduleLoader();
+let ownerBundle;
 const helpers = {
   ...modules.load('src/lib/canvas/generation-parameters.ts'),
   ...modules.load('src/lib/canvas/generation-feedback.ts'),
@@ -60,9 +61,19 @@ const helpers = {
   ...modules.load('src/lib/canvas/image-reference-drafts.ts'),
   ...modules.load('src/lib/browser-crypto.ts'),
   ...(!baseline ? modules.load('src/lib/canvas/background-generation.ts') : {}),
+  ...(!baseline ? modules.load('src/lib/canvas/generation-presentation.ts') : {}),
+  ...(!baseline ? modules.load('src/lib/canvas/pending-presentation.ts') : {}),
 };
+// Private catalogue algorithms remain exercised from their actual owner. They
+// are not copied into the Canvas composition just to satisfy the old harness.
+if(!functions.projectKey){const catalog=read('src/lib/canvas/project-catalog.ts'),tree=ts.createSourceFile('catalog.ts',catalog,99,true);for(const n of tree.statements)if(ts.isFunctionDeclaration(n)&&['rootOf','isSuiteBatch','projectKey'].includes(n.name?.text))functions[n.name.text]=n.getText(tree);}
 function compile(names, environment) {
-  const context = vm.createContext({ ...globals, ...helpers, flushImagePrompts: async()=>{}, canvasAccountRef:{current:account}, currentWorkspace:()=>workspace, activeProjectRef:{current:{key:project}}, canvasContextEpochRef:{current:0}, imageSubmissionRef:{current:new Map()}, originalImageChecksRef:{current:new Map()}, setImageSubmissionEpoch:()=>{}, ...environment });
+  const defaults={__ports:{workspace,revision:1,auth:async()=>({}),read:async()=>new Blob(['reference-pixels'],{type:'image/png'})},flushImagePrompts:async()=>{},user:{email:account},batchRunMountedRef:{current:true},canvasAccountRef:{current:account},currentWorkspace:()=>workspace,activeProjectRef:{current:{key:project}},canvasContextEpochRef:{current:0},imageSubmissionRef:{current:new Map()},originalImageChecksRef:{current:new Map()},setImageSubmissionEpoch:()=>{}};
+  const context = vm.createContext({ ...globals, ...helpers,...defaults,...environment });
+  if(ownerBundle){context.module={exports:{}};context.exports=context.module.exports;vm.runInContext(ownerBundle,context);Object.assign(context,context.module.exports,defaults,environment);}
+  if(environment.readCanvasGenerationReceipt)context.fetch=async(url,init)=>String(url).includes('/position')?environment.privateFetchRaw(url,init):(await environment.readCanvasGenerationReceipt(new URL(String(url),'http://fixture').searchParams.get('job'),init.headers)).response;
+  for(const name of ['canvasImageRunContext','canvasImageCreationServices'])if(functions[name]&&!names.includes(name))names=[...names,name];
+  context.renameGeneratedArtwork=unexpected('unused rename');context.generateDetailSequence=unexpected('unused detail');
   for (const name of names) assert.ok(functions[name], 'source function exists: ' + name);
   vm.runInContext(transpile(names.map(name => functions[name]).join('\n') + '\nglobalThis.actions={' + names.join(',') + '};', 'canvas-actions.tsx'), context);
   return context.actions;
@@ -128,10 +139,19 @@ function makeFixture({ pending = true, activeProject = project } = {}) {
     selectedPendId: pending ? 'pend-A' : null, selectedId: pending ? null : 'original', tasks: [], calls: [], positions: [], history: [], completed: [], errors: [], notices: [],
     works: [structuredClone(original), structuredClone(reference)], prompt: 'A frozen 【图1】', refs: references(), project: activeProject,
     userUpdates: [], cancelCalls: 0, refundCalls: 0, rawReferenceReads: 0 };
+  const receiptStorage=new Map(),sessionStorage={getItem:k=>receiptStorage.get(k)||null,setItem:(k,v)=>receiptStorage.set(k,v),removeItem:k=>{const value=receiptStorage.get(k);if(value)state.completed.push(JSON.parse(value).jobId);receiptStorage.delete(k);},get length(){return receiptStorage.size},key:i=>[...receiptStorage.keys()][i]};
   const refs = { pend: { current: state.nodes }, selectedPend: { current: state.selectedPendId }, selected: { current: state.selectedId },
     account: { current: account }, project: { current: activeProject ? { key: activeProject } : null }, epoch: { current: 1 }, operations: { current: new Set() },
     positions: { current: {} }, sizes: { current: {} }, textNodes: { current: [] }, editTasks: { current: new Map() }, fanoutHistory: { current: new Map() },
     pendingNode: { current: null }, works: { current: state.works }, tasks:{current:state.tasks}, submissions:{current:new Map()}, originalChecks:{current:new Map()} };
+  let generation,pendingView;
+  if(!baseline){const scope=JSON.stringify([account,workspace,activeProject||'workspace']);generation=helpers.createCanvasGenerationPresentation().bind(scope);pendingView=helpers.createCanvasPendingPresentation().bind(scope);pendingView.set(state.nodes);
+   Object.defineProperty(state,'nodes',{get:()=>pendingView.getSnapshot(),set:value=>pendingView.set(value)});
+   Object.defineProperty(refs.pend,'current',{get:()=>pendingView.getSnapshot(),set:value=>pendingView.set(value)});
+   Object.defineProperty(state,'tasks',{get:()=>generation.getSnapshot().tasks});
+   Object.defineProperty(refs.operations,'current',{get:()=>generation.getSnapshot().operations});
+   Object.defineProperty(refs.positions,'current',{get:()=>generation.getSnapshot().positions});
+  }
   const drafts = new helpers.ImageNodeDraftStore(); let urlSequence = 0;
   const uploads = new helpers.ImageReferenceDraftStore({ createObjectURL: () => `blob:fixture-${++urlSequence}`, revokeObjectURL: () => {} });
   const draftScope = helpers.imageDraftScope(account, null, activeProject, workspace), key = id => helpers.imageDraftKey(draftScope, id);
@@ -144,6 +164,11 @@ function makeFixture({ pending = true, activeProject = project } = {}) {
     const selectedDraft = state.selectedPendId || state.selectedId;
     const draft = drafts.read(key(selectedDraft));
     const env = {
+      generationPresentation:generation,pendingPresentation:pendingView,batchRunMountedRef:{current:true},
+      sessionStorage,
+      artworkNodeSize:()=>({width:384,height:384}),livePendingPosition:(id,fallback)=>{const node=state.nodes.find(n=>n.id===id);return node?{x:node.x,y:node.y}:fallback;},
+      __ports:{workspace,revision:1,auth:async()=>({}),read:async()=>new Blob(['reference-pixels'],{type:'image/png'})},
+      canvasTextDocument:{attachImageResults:async()=>{}},canvasHistory:{consumePending:id=>state.history.push({consumed:id})},projectNavigation:{requestNode:id=>{refs.pendingNode.current=id;}},
       readOnly: false, user: { email: account }, targetEmail: null, activeKey: state.project, active: state.project ? { key: state.project, members: state.works } : null,
       pendNodes: state.nodes, pendNodesRef: refs.pend, selectedPendId: state.selectedPendId, selectedPendIdRef: refs.selectedPend,
       selectedIdRef: refs.selected, selected: state.works.find(item => item.id === state.selectedId),
@@ -182,6 +207,8 @@ function makeFixture({ pending = true, activeProject = project } = {}) {
           images: form.getAll('image'), references: form.get('canvasReferences'), form, ack, result, queries: 0,
           jobId: previous?.jobId || `imagegen-${crypto.randomUUID()}`, recovered: !!previous };
         state.calls.push(call);
+        const scopeProject=activeProject||'workspace',operationId=call.jobId.slice('imagegen-'.length),receiptKey='naumi:imagegen-pending:v1:'+JSON.stringify([account,workspace,scopeProject,'node:'+actionKey]);
+        sessionStorage.setItem(receiptKey,JSON.stringify({version:1,owner:account,workspace,project:scopeProject,actionKey:'node:'+actionKey,operationId,request:{operationId,variants:1},authorizedCredits:1,confirmationRequired:false,accepted:'accepted',jobId:call.jobId,context:{workspace,projectContext:scopeProject}}));
         await ack.promise;
         if (call.failAck) throw Error('connection lost after durable acceptance');
         return Response.json({ jobId: call.jobId });
@@ -204,12 +231,13 @@ function makeFixture({ pending = true, activeProject = project } = {}) {
       pendingAttemptKey: (...parts) => parts.join('|'), readPendingAttempt: () => null, updateCanvasImagegenPlacement: unexpected('unused fanout'),
       cancelImagegen: () => { state.cancelCalls++; throw Error('Unexpected cancellation'); }, refund: () => { state.refundCalls++; throw Error('Unexpected refund'); },
     };
-    return compile(['rootOf', 'isSuiteBatch', 'projectKey', 'reserveGenerationPosition', 'rememberGenerationDrag', 'runGen', 'generateSelectedImage',
+    return compile(['rootOf', 'isSuiteBatch', 'projectKey', ...(baseline?['reserveGenerationPosition', 'rememberGenerationDrag']:[]), 'runGen', 'generateSelectedImage',
       ...(baseline ? [] : ['generatePendingImage']), 'generatePend'], env);
   }
   function edit(id, prompt, patch = {}) { drafts.write(key(id), { prompt, ...patch }); state.prompt = prompt; }
   async function acknowledge(call) { call.ack.resolve(); await until(() => call.queries > 0, 'receipt poll ' + call.key); }
   function finish(call, id, attachment, artwork = {}) {
+    if(attachment?.applied){const node=state.works.find(art=>art.id===attachment.nodeId);if(node)node.canvasImageVersionId=attachment.versionId;}
     state.works.push({ id, image: '/' + id + '.png', width: 2048, height: 2048, prompt: call.prompt, ...artwork });
     call.result.resolve({ status: 'done', operationStatus: 'succeeded', images: [{ id, url: '/' + id + '.png', width: 2048, height: 2048 }], ...(attachment ? { canvasAttachment: attachment } : {}) });
   }
@@ -415,6 +443,11 @@ async function emptyCanvasDestinationScope() {
 
 (async () => {
   try {
+    if(!baseline){
+      for(const file of ['image-runs','image-creation','image-task-controller','image-task-request','image-task-scope','result-attachment','generation-receipt','image-draft-completion'])read(`src/lib/canvas/${file}.ts`);
+      read('src/lib/imagegen/client-recovery.ts');process.env.CANVAS_IMAGE_SOURCE_ROOT=root;
+      ownerBundle=await require('./verify-canvas-image-task-refactor.cjs').bundle();
+    }
     await selectionIdentity();
     if (baseline) {
       const f = makeFixture(); f.state.nodes[0].generating = true;

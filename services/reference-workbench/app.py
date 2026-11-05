@@ -441,6 +441,19 @@ async def auth_status(request: Request):
     return {'ok': True, 'id': u['id'], 'username': u['name'], 'admin': bool(u['admin'])}
 
 
+# Shared documents use the same asset URLs in standalone and native Web.
+# Original root history/ZIP aliases below remain compatible with old pages.
+@app.get('/reference-workbench/{name}')
+async def shared_ui_asset(name: str, request: Request):
+    user(request)
+    sources = {'workbench-environment.js': 'workbench-environment.js',
+               'workbench-history.js': 'workbench-history.js',
+               'workbench-zip.js': 'vendor/jszip.min.js'}
+    if name not in sources:
+        raise HTTPException(404, 'Not found')
+    return FileResponse(HERE / 'static' / sources[name], media_type='application/javascript')
+
+
 @app.get('/workbench-history.js')
 async def history_script(request: Request):
     user(request)

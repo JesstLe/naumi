@@ -1,6 +1,6 @@
 import "server-only";
 import {createHash} from "node:crypto";
-import {getPool} from "../db";
+import {getPool} from "@/platform/db/pool";
 import {ModelConfigError} from "../model-config/types";
 import {acquireVideoCoordinationLock} from "./coordination-pool";
 import {createMediaJob,getMediaJob,listMediaJobs,cancelMediaJob} from "./media-jobs";

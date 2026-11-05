@@ -15,7 +15,7 @@ const media={listMediaJobs:async(_actor,{operationId})=>{reads++;if(lookupFailur
  createMediaJob:async(actor,request,quote,hashes)=>{seenHashes=hashes;assert.equal(actor,run.email);assert.deepEqual(quote,run.assembly_quote);let job=receipts.get(request.operationId);if(!job){creates++;job={id:'media-'+creates,operationId:request.operationId,status:'queued',outputs:[],request};receipts.set(request.operationId,job);}if(cancelAfterCreate)run.cancellation_requested_at='now';if(drop){drop=false;throw Error('accepted response lost');}return copy(job);},
  cancelMediaJob:async(_actor,id)=>{const job=[...receipts.values()].find(job=>job.id===id);job.status='cancelled';return copy(job);}};
 const m={exports:{}};vm.runInThisContext('(function(require,module,exports){'+ts.transpileModule(fs.readFileSync(filename,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText+'\n})',{filename})((name)=>{
- if(name==='server-only')return {};if(name==='node:crypto')return require(name);if(name==='../db')return {getPool};if(name==='../model-config/types')return {ModelConfigError};if(name==='./media-jobs')return media;
+ if(name==='server-only')return {};if(name==='node:crypto')return require(name);if(name==='../db'||name==='@/platform/db/pool')return {getPool};if(name==='../model-config/types')return {ModelConfigError};if(name==='./media-jobs')return media;
  if(name==='./coordination-pool')return {acquireVideoCoordinationLock:async()=>{if(locked)return {acquired:false,release:async()=>{}};locked=true;return {acquired:true,release:async()=>{locked=false;}};}};
  throw Error('Unmocked import '+name);
 },m,m.exports);

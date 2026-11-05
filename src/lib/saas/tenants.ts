@@ -1,35 +1,23 @@
+import {ensureTenantSchema} from "@/lib/saas/tenant-schema";
+export {ensureTenantSchema};
+import {withTransaction} from "@/platform/db/transaction";
 import 'server-only';
-import { createHash, randomUUID } from 'node:crypto';
-import type { PoolClient } from 'pg';
-import { z } from 'zod';
-import { requireAdmin, resolveUserEmail } from '@/lib/admin-auth';
-import { dbEnabled, getPool } from '@/lib/db';
-import { ensureEnterpriseSchema, validateHierarchy } from '@/lib/enterprise/server';
-import { TeamError } from '@/lib/teams/server';
-import { teamJson } from '@/lib/teams/access';
-import {ALL_FEATURE_IDS} from '@/lib/feature-access/catalog';
-import type { TeamActor } from '@/lib/teams/grants';
-import { createTenantSchema, updateTenantSchema, tenantMemberSchema, type TenantFilters, type TenantList, type TenantSummary } from './tenant-contracts';
+import {createHash,randomUUID} from 'node:crypto';
+import type {PoolClient} from 'pg';
+import {z} from 'zod';
+import {requireAdmin,resolveUserEmail} from '@/lib/admin-auth';
+import {dbEnabled,getPool} from "@/platform/db/pool";
+import {validateHierarchy} from "@/lib/enterprise/server";
 
-let ready: Promise<void>|null = null;
-export async function ensureTenantSchema() {
-  await ensureEnterpriseSchema();
-  if (!ready) ready = getPool().query(`
-    CREATE TABLE IF NOT EXISTS app_tenant_entitlements(
-      tenant_id uuid PRIMARY KEY REFERENCES app_account_teams(id),
-      entitlement_name text, seat_limit integer CHECK(seat_limit IS NULL OR seat_limit>0),
-      feature_policy jsonb NOT NULL DEFAULT '{}', updated_by text NOT NULL,
-      updated_at timestamptz NOT NULL DEFAULT now());
-    CREATE TABLE IF NOT EXISTS app_tenant_commands(
-      command_id uuid PRIMARY KEY, tenant_id uuid NOT NULL REFERENCES app_account_teams(id),
-      actor text NOT NULL, fingerprint text NOT NULL, action text NOT NULL,
-      result jsonb NOT NULL, changes jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
-    CREATE INDEX IF NOT EXISTS app_tenant_commands_tenant ON app_tenant_commands(tenant_id,created_at DESC);
-    ALTER TABLE app_account_teams ALTER COLUMN authorized_until DROP NOT NULL;
-    CREATE INDEX IF NOT EXISTS app_account_teams_name ON app_account_teams(lower(name),id);
-  `).then(()=>{}).catch(e=>{ready=null;throw e;});
-  await ready;
-}
+
+import { TeamError } from "@/lib/teams/errors";
+import {teamJson} from '@/lib/teams/access';
+import {ALL_FEATURE_IDS} from '@/lib/feature-access/catalog';
+import type {TeamActor} from '@/lib/teams/grants';
+import {createTenantSchema,updateTenantSchema,tenantMemberSchema,type TenantFilters,type TenantList,type TenantSummary} from './tenant-contracts';
+
+
+
 export async function tenantAuthorize(request:Request) {
   if (!await requireAdmin(request) || process.env.FLEET_PORTAL_ONLY==='1' || process.env.NAUMI_AUTH_LOGIN_ONLY==='1') return teamJson({error:'需要平台管理权限',code:'PLATFORM_ACCESS_REQUIRED'},403);
   if (!dbEnabled) return teamJson({error:'数据库未配置',code:'DATABASE_UNAVAILABLE'},503);
@@ -40,9 +28,8 @@ export function tenantFailure(error:unknown) {
   return teamJson({error:'服务暂不可用，请使用原操作编号核对结果',code:'TENANT_UNAVAILABLE',uncertain:true},503);
 }
 async function transaction<T>(run:(tx:PoolClient)=>Promise<T>) {
-  await ensureTenantSchema(); const tx=await getPool().connect();
-  try {await tx.query('BEGIN');await tx.query("SET LOCAL statement_timeout='20s'");const result=await run(tx);await tx.query('COMMIT');return result;}
-  catch(e){await tx.query('ROLLBACK');throw e;}finally{tx.release();}
+  await ensureTenantSchema();
+  return withTransaction(getPool(),async tx=>{await tx.query("SET LOCAL statement_timeout='20s'");return run(tx);});
 }
 const projection=`SELECT t.id,t.name,t.owner_email,u.name AS owner_name,t.authorized_until,t.enabled,t.version,t.created_at,t.updated_at,
   COALESCE(s.enabled,true) AS enterprise_enabled,e.entitlement_name,e.seat_limit,COALESCE(e.feature_policy,'{}') AS feature_policy,

@@ -1,46 +1,33 @@
-import { bindBackgroundClaim } from "@/lib/release-runtime/background-activity";
-import { withVideoCoordinationActivity } from "./coordination-activity";
+import {withVideoCoordinationActivity} from "./coordination-activity";
+import {deferApplicationTask} from "../application/task-execution";
+import {ensureVideoWorkflowSchema as ensureWorkflowSchema} from "@/lib/video/storage-schema";
+import {detachBackgroundActivity,bindBackgroundClaim} from "@/lib/release-runtime/background-activity";
 import "server-only";
 import {creationTransaction} from "../saas/creation-writer";
 import {assertWorkflowCreationScope,runWorkflowCreation,bindWorkflowCreationProject,validateWorkflowCreationInputs,acceptWorkflowCreationTx,updateWorkflowCreationTx} from "./workflow-creation";
 import {encryptAtRest,decryptAtRest} from "../settings";
 import {freezeVideoWorkflow,withFrozenWorkflowStage,workflowBindingId,type FrozenWorkflowStage} from "./workflow-freeze";
 import {createHash} from "node:crypto";
-import {getPool,getVideoTask,getVideoTaskByIdempotencyKey,listArtworksByIds} from "../db";
+import {getVideoTask,getVideoTaskByIdempotencyKey} from "@/lib/video/task-repository";
+import {getPool} from "@/platform/db/pool";
+import {listArtworksByIds} from "@/lib/artworks/repository";
 import {acquireVideoCoordinationLock} from "./coordination-pool";
 import {ModelConfigError} from "../model-config/types";
 import {BillingError} from "../billing/types";
-import {createVideoGeneration,type CreateVideoInput} from "./service";
+import {createVideoGeneration} from "./creation";
+import {type CreateVideoInput} from "./submission-types";
 import {authorizeVideoReferences} from "./reference-materialization";
 import {videoWorkflowPlanSchema,workflowVideoRequestSchema,type VideoWorkflowPlan,type WorkflowVideoRequest} from "./workflow-schema";
 import {getVideoNode} from "../canvas/video-node-repository";
-import {canonicalConfig} from "../model-config/repository";
+import {canonicalConfig} from "@/lib/model-config/snapshot-value";
 import type {VideoGenerationRequest,VideoReference} from "./types";
 import {existingWorkflowResult} from "./workflow-reuse";
 import {advanceWorkflowAssembly,publicWorkflowAssembly,resetWorkflowAssembly} from "./workflow-assembly";
 import {mediaBillingQuote} from "./media-billing";
 
 export type VideoWorkflowNodeStatus="pending"|"processing"|"completed"|"blocked"|"needs_confirmation"|"needs_attention"|"cancelled";
-let ready:Promise<void>|undefined;
-async function ensureWorkflowSchema(){if(!ready)ready=getPool().query(`
- CREATE TABLE IF NOT EXISTS app_video_workflow_runs(id uuid PRIMARY KEY,email text NOT NULL,project_key text NOT NULL,plan jsonb NOT NULL,plan_digest text NOT NULL,
-   cancellation_requested_at timestamptz,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now());
- CREATE INDEX IF NOT EXISTS app_video_workflow_runs_owner_idx ON app_video_workflow_runs(email,project_key,created_at DESC);
- ALTER TABLE app_video_workflow_runs ADD COLUMN IF NOT EXISTS confirmations jsonb NOT NULL DEFAULT '{}'::jsonb;
- ALTER TABLE app_video_workflow_runs ADD COLUMN IF NOT EXISTS input_digest text;
- ALTER TABLE app_video_workflow_runs ADD COLUMN IF NOT EXISTS canvas_intent_digest text;
- ALTER TABLE app_video_workflow_runs ADD COLUMN IF NOT EXISTS frozen_nodes_enc text;
- ALTER TABLE app_video_workflow_runs ADD COLUMN IF NOT EXISTS creation_scope jsonb;
- ALTER TABLE app_video_workflow_runs ADD COLUMN IF NOT EXISTS creation_evidence_pending boolean NOT NULL DEFAULT false;
- CREATE INDEX IF NOT EXISTS app_video_workflow_evidence_pending_idx ON app_video_workflow_runs(updated_at) WHERE creation_evidence_pending;
- ALTER TABLE app_video_workflow_runs ADD COLUMN IF NOT EXISTS public_frozen_nodes jsonb NOT NULL DEFAULT '{}'::jsonb;
- ALTER TABLE app_video_workflow_runs ADD COLUMN IF NOT EXISTS assembly_state jsonb NOT NULL DEFAULT '{}'::jsonb;
- ALTER TABLE app_video_workflow_runs ADD COLUMN IF NOT EXISTS assembly_quote jsonb;
- CREATE INDEX IF NOT EXISTS app_video_workflow_assembly_pending_idx ON app_video_workflow_runs(updated_at) WHERE plan ? 'assembly' AND COALESCE(assembly_state->>'status','waiting') IN ('waiting','queued','processing','needs_attention');
- CREATE TABLE IF NOT EXISTS app_video_workflow_run_nodes(run_id uuid NOT NULL REFERENCES app_video_workflow_runs(id),node_id text NOT NULL,status text NOT NULL DEFAULT 'pending',
-   task_id text,error text,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(run_id,node_id));
- ALTER TABLE app_video_workflow_run_nodes ADD COLUMN IF NOT EXISTS result_assets jsonb NOT NULL DEFAULT '[]'::jsonb;
-`).then(()=>undefined).catch(error=>{ready=undefined;throw error;});await ready;}
+
+
 
 function substitute(template:string,variables:NonNullable<VideoWorkflowPlan["variables"]>){
   return template.replace(/\{\{\s*var\s+([A-Za-z0-9._:-]+)\s*\}\}/g,(_match,name:string)=>{
@@ -72,7 +59,7 @@ export function validateVideoWorkflow(raw:unknown):VideoWorkflowPlan{
   return plan;
 }
 function operationId(runId:string,nodeId:string){return `video-wf-${createHash("sha256").update(`${runId}\0${nodeId}`).digest("hex")}`;}
-async function authorizeProject(actor:string,key:string){const {authorizeVideoProject}=await import("../canvas/video-node-service");await authorizeVideoProject(actor,key);}
+async function authorizeProject(actor:string,key:string){const {authorizeVideoProject}=await import("../canvas/project-access");await authorizeVideoProject(actor,key);}
 export async function authorizeWorkflowInputs(actor:string,plan:VideoWorkflowPlan){
   for(const node of plan.nodes){
     if(node.canvasNodeId){const current=await getVideoNode(actor,node.canvasNodeId);if(!current||current.projectKey!==plan.projectKey||current.revision!==node.canvasNodeRevision)throw new ModelConfigError("VIDEO_NODE_REVISION_CONFLICT","制作链节点不存在或已更新",409);node.canvasContentDigest=createHash("sha256").update(canonicalConfig({config:current.config,inputs:current.inputs})).digest("hex");node.canvasLastTaskId=current.lastTaskId;}
@@ -180,14 +167,32 @@ async function resumeVideoWorkflowLocal(runId:string,actor?:string){
     await pool.query("UPDATE app_video_workflow_runs SET updated_at=now() WHERE id=$1",[runId]);await creationTransaction(tx=>updateWorkflowCreationTx(tx,run.email,runId)).catch(()=>{});return getVideoWorkflow(run.email,runId);
   }finally{await lock.release();}
 }
+const recoveringVideoWorkflows=new Set<string>();
 export async function recoverVideoWorkflows(limit=2){
-  await ensureWorkflowSchema();const pool=getPool(),bounded=Math.max(1,Math.min(10,limit));
-  // Evidence debt is independent of execution. Terminal runs are repaired without
-  // invoking task creation, model lookup or the media submit/poll path.
+  if(await deferApplicationTask())return 0;
+  const direct=process.env.NAUMI_APPLICATION_TASK_EXECUTION==="worker",available=direct?Math.max(0,limit-recoveringVideoWorkflows.size):limit;
+  if(!available)return 0;
+  await ensureWorkflowSchema();const pool=getPool(),bounded=Math.max(1,Math.min(10,available));
+  // Terminal evidence repair is not execution: retain its original identity
+  // and never enter task creation or supplier/media submission to repair it.
   const evidence=(await pool.query("SELECT id,email FROM app_video_workflow_runs WHERE creation_evidence_pending ORDER BY updated_at LIMIT $1",[bounded])).rows;
   for(const row of evidence){try{await creationTransaction(tx=>updateWorkflowCreationTx(tx,row.email,row.id));await pool.query("UPDATE app_video_workflow_runs SET updated_at=now() WHERE id=$1",[row.id]);}catch{console.error("[video-worker] workflow evidence remains pending");}}
   const runs=(await pool.query(`SELECT r.id FROM app_video_workflow_runs r WHERE EXISTS (
-    SELECT 1 FROM app_video_workflow_run_nodes n WHERE n.run_id=r.id AND n.status IN ('pending','processing')) OR (r.plan ? 'assembly' AND COALESCE(r.assembly_state->>'status','waiting') IN ('waiting','queued','processing','needs_attention') AND NOT EXISTS (SELECT 1 FROM app_video_workflow_run_nodes n WHERE n.run_id=r.id AND n.status<>'completed')) ORDER BY r.updated_at LIMIT $1`,[Math.max(1,Math.min(10,limit))])).rows;
+    SELECT 1 FROM app_video_workflow_run_nodes n WHERE n.run_id=r.id AND n.status IN ('pending','processing')) OR (r.plan ? 'assembly' AND COALESCE(r.assembly_state->>'status','waiting') IN ('waiting','queued','processing','needs_attention') AND NOT EXISTS (SELECT 1 FROM app_video_workflow_run_nodes n WHERE n.run_id=r.id AND n.status<>'completed')) ORDER BY r.updated_at LIMIT $1`,[bounded])).rows;
+  if(direct){
+    let admitted=0;
+    for(const run of runs){
+      if(recoveringVideoWorkflows.has(run.id)||recoveringVideoWorkflows.size>=limit)continue;
+      recoveringVideoWorkflows.add(run.id);
+      try{
+        const started=await detachBackgroundActivity("video-workflow",run.id,"claim",async()=>{
+          try{await resumeVideoWorkflowLocal(run.id);}finally{recoveringVideoWorkflows.delete(run.id);}
+        });
+        if(started)admitted++;else recoveringVideoWorkflows.delete(run.id);
+      }catch(error){recoveringVideoWorkflows.delete(run.id);throw error;}
+    }
+    return admitted;
+  }
   let processed=0;
   for(const run of runs){
     try{await resumeVideoWorkflow(run.id);processed++;}
@@ -231,10 +236,12 @@ export async function retryVideoWorkflowAssembly(actor:string,runId:string,expec
 }
 
 export async function resumeVideoWorkflow(runId:string,actor?:string) {
-  return withVideoCoordinationActivity("video-workflow", runId, "claim", `video-workflow:${runId}`, () => resumeVideoWorkflowLocal(runId,actor), async () => {
+  const view=async () => {
     await ensureWorkflowSchema();
     const run=(await getPool().query("SELECT email FROM app_video_workflow_runs WHERE id=$1",[runId])).rows[0];
     if(!run||actor&&run.email!==actor)throw new ModelConfigError("WORKFLOW_UNAVAILABLE","工作流不存在",404);
     return getVideoWorkflow(run.email,runId);
-  });
+  };
+  if(await deferApplicationTask())return view();
+  return withVideoCoordinationActivity("video-workflow", runId, "claim", `video-workflow:${runId}`, () => resumeVideoWorkflowLocal(runId,actor), view);
 }

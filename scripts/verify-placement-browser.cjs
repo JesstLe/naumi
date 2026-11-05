@@ -1,6 +1,6 @@
 'use strict';
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),esbuild=require('esbuild'),{chromium}=require('playwright');
-const root=path.resolve(__dirname,'..'),args=process.argv.slice(2),option=(k,d)=>args.includes(k)?args[args.indexOf(k)+1]:d,before=path.resolve(option('--baseline-root',root)),out=path.resolve(option('--output','output/placement-browser'));
+const root=path.resolve(__dirname,'..'),args=process.argv.slice(2),option=(k,d)=>args.includes(k)?args[args.indexOf(k)+1]:d,before=path.resolve(option('--baseline-root',path.join(root,'scripts/fixtures/placement-baseline'))),out=path.resolve(option('--output','output/placement-browser'));
 fs.mkdirSync(out,{recursive:true});
 function bundle(resolveDir,globalName){return esbuild.buildSync({stdin:{contents:"export {stableArtworkPositions} from './src/lib/canvas/stable-placement';",resolveDir,loader:'ts'},bundle:true,write:false,platform:'browser',format:'iife',globalName,nodePaths:[path.join(root,'node_modules')]}).outputFiles[0].text;}
 (async()=>{

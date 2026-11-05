@@ -1,4 +1,5 @@
-import {createdResult,field,polled,rejectAdvanced,selectWireOptions,type VideoWireCodec,type VideoWireContext,type VideoWireRequest} from "../wire";
+import {createdResult,field,polled,rejectAdvanced,selectWireOptions} from "../wire-helpers";
+import type {VideoWireCodec,VideoWireContext,VideoWireRequest} from "../wire-contracts";
 // Behavior adapted from infinite-canvas 68b37db web/src/services/api/video.ts and protocols/ark.ts (AGPL-3.0).
 export function buildArkCreate(context:VideoWireContext):VideoWireRequest{
   rejectAdvanced(context);const input=context.request;

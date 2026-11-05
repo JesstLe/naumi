@@ -67,7 +67,7 @@ export async function applyChromaToPixels({data,info}:DecodedImagegenPixels,opti
     data[i+3]=alpha;
   }
   if(originalAlpha){
-    let alpha=Buffer.alloc(info.width*info.height);for(let i=0;i<alpha.length;i++)alpha[i]=data[i*4+3];
+    let alpha:Buffer=Buffer.alloc(info.width*info.height);for(let i=0;i<alpha.length;i++)alpha[i]=data[i*4+3];
     if(options.edgeContract)alpha=contractMatte(alpha,info.width,info.height,options.edgeContract);
     let layer=sharp(alpha,{raw:{width:info.width,height:info.height,channels:1}});
     if(options.edgeFeather)layer=layer.blur(Math.max(0.3,options.edgeFeather));

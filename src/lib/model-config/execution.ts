@@ -1,33 +1,31 @@
-import {canonicalConfig} from './repository';
-import {compileImageParameterPlan,imagePlanSelection,imageParameterPlansSchema,type ImageParameterPlans} from './image-parameter-plan';
+import {canonicalConfig} from './snapshot-value';
+import {compileImageParameterPlan,imagePlanSelection,type ImageParameterPlans} from './image-parameter-plan';
 import {resolveImageResolution, resolutionFacts, upstreamAcceptsResolution} from "./resolution-fallback";
 import { applicationAPIMartImages } from "./apimart-image-policy";
 import "server-only";
 import { frontendModelSelection } from "./frontend-selection";
-import {imagegenRequirementsSchema,missingImagegenCapabilities,publishedImagegenCapabilities} from "../imagegen/capabilities";
+import {missingImagegenCapabilities,publishedImagegenCapabilities} from "../imagegen/capabilities";
 import { requestedFeatureModel } from "./selection-policy";
-import { z } from "zod";
 import type { ConfigSnapshot } from "../billing/types";
 import type { createCredentialStore } from "./credentials";
 import type { ModelRuntime } from "./runtime";
-import { simulateModel } from "./runtime";
+import {simulateModel} from "@/lib/model-config/simulation";
 import { MODEL_BINDINGS, type ModelBinding } from "./bindings";
 import { validateModelConfig, type ValidationOptions } from "./schema";
 import { ModelConfigError, type ModelFacts, type ModelSnapshot, type Modality, type ModelProvider } from "./types";
 import { runModelExecution, runExecutionBundle, type ExecutionBundle, type ResolvedExecutionBundle, type ModelExecutionScope } from "./context";
 import { executionOpenAI } from "./clients";
 import { businessRoutePlan, selectedBusinessOption } from "./business";
-import { selectedImagePreset, presetPublicId, effectiveImageParameters } from "./image-preset";
-import { assertToolScope, featureDefaultModel } from "./tool-scope";
+import { selectedImagePreset, effectiveImageParameters } from "./image-preset";
+import {selectFeatureModel} from "./model-selection";
+import {validatePreparedImage,type PreparedImageOperation} from "./prepared-image-contract";
 import {freezeManagedVideoCapability} from "../video/frozen-capability";
-import {frozenVideoSchema,type FrozenVideoCapability} from "../video/frozen-capability-schema";
+import {type FrozenVideoCapability} from "../video/frozen-capability-schema";
 
 export type ExecutionModel = { imageParameterPlanVersion?:1; imageParameterPlans?:ImageParameterPlans; imageUpstreamIds?: string[]; video?: FrozenVideoCapability; requestedParameters?: import("./image-preset").ImageParameters; feature?: string; modelVersion: number; billingVersion: number; modelDigest: string; publicModelId: string; binding: string; modality: Modality; target: { type: "upstream" | "pool"; id: string }; credentialRef?: string; routerDigest?: string; facts?: ModelFacts };
 export type ExecutionConnection = { providerId: string; protocol: string; baseUrl: string; apiKey: string; wireModel: string; timeoutMs: number; credentialRef?: string; maxConcurrent?: number; options?: ModelProvider["options"] };
-type Dependencies = ValidationOptions & { runtime: Pick<ModelRuntime, "byVersion" | "prepareExecution"> & Partial<Pick<ModelRuntime, "validateExecutionProjection">>; credentials: ReturnType<typeof createCredentialStore>; billingByVersion?:(version:number)=>Promise<ConfigSnapshot>; gateway: () => { baseUrl: string; apiKey: string } };
-const factsSchema = z.strictObject({ imagegenRequirements:imagegenRequirementsSchema.optional(), task: z.enum(["draft", "product", "detail", "layout"]), quality: z.string().max(10), resolution: z.enum(["1K", "2K", "4K"]), requestedResolution:z.enum(["1K","2K","4K"]).optional(), ratio: z.string().max(20).optional(), needsEdit: z.boolean(), needsMask: z.boolean().optional(), preserveIdentity: z.boolean(), needsText: z.boolean(), nativeResolution: z.boolean(), references: z.number().int().min(0).max(32), quantity: z.number().int().min(1).max(4).optional(), inputLength: z.number().int().min(0).max(1000000).optional() });
-const imageUpstreamIdsSchema = z.array(z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/)).min(1).max(50).refine(ids => new Set(ids).size === ids.length);
-const executionSchema = z.strictObject({ imageParameterPlanVersion:z.literal(1).optional(),imageParameterPlans:imageParameterPlansSchema.optional(), imageUpstreamIds:imageUpstreamIdsSchema.optional(), video: frozenVideoSchema.optional(), requestedParameters: z.strictObject({quality:z.string().max(20),resolution:z.string().max(20),ratio:z.string().max(20)}).optional(), feature: z.string().max(100).optional(), modelVersion: z.number().int().positive(), billingVersion: z.number().int().positive(), modelDigest: z.string().regex(/^[a-f0-9]{64}$/), publicModelId: z.string().max(100), binding: z.string().max(100), modality: z.enum(["image", "text", "video"]), target: z.strictObject({ type: z.enum(["upstream", "pool"]), id: z.string().max(100) }), credentialRef: z.uuid().optional(), routerDigest: z.string().regex(/^[a-f0-9]{64}$/).optional(), facts: factsSchema.optional() });
+type Dependencies = ValidationOptions & { runtime: Pick<ModelRuntime, "byVersion" | "prepareExecution"> & Partial<Pick<ModelRuntime, "validateExecutionProjection">>; credentials: Pick<ReturnType<typeof createCredentialStore>,"read">; billingByVersion?:(version:number)=>Promise<ConfigSnapshot>; gateway: () => { baseUrl: string; apiKey: string } };
+import {executionSchema,imageUpstreamIdsSchema} from "./execution-contract";
 export function createModelExecutor(deps: Dependencies) {
   const describe = async (raw: ExecutionModel): Promise<ModelExecutionScope> => {
     const parsed = executionSchema.safeParse(raw);
@@ -97,24 +95,24 @@ export function createModelExecutor(deps: Dependencies) {
     return scope;
   };
   return {
-    async resolve(input: { imageParameterPlanVersion?:1|0; imageParameterPlans?:ImageParameterPlans; imageUpstreamIds?:string[]; allowResolutionFallback?:boolean; requestedParameters?:import("./image-preset").ImageParameters; scopeSystem?:"canvas"; feature?: string; binding: string; requestedModelId?: string; snapshot: ModelSnapshot; billing: ConfigSnapshot; facts?: ModelFacts }): Promise<ExecutionModel> {
+    async resolve(input: { preparedImage?:PreparedImageOperation; imageParameterPlanVersion?:1|0; imageParameterPlans?:ImageParameterPlans; imageUpstreamIds?:string[]; allowResolutionFallback?:boolean; requestedParameters?:import("./image-preset").ImageParameters; scopeSystem?:"canvas"; feature?: string; binding: string; requestedModelId?: string; snapshot: ModelSnapshot; billing: ConfigSnapshot; facts?: ModelFacts }): Promise<ExecutionModel> {
+      const prepared=input.preparedImage?validatePreparedImage(input.preparedImage,input.snapshot,input.billing,input.feature,input.binding):undefined;
+      if(prepared)input={...input,requestedModelId:prepared.modelId,facts:prepared.facts,requestedParameters:prepared.requestedParameters,imageUpstreamIds:prepared.eligibleUpstreamIds,allowResolutionFallback:false};
       input = { ...input, requestedModelId: requestedFeatureModel(input.feature, input.requestedModelId) };
       const purpose = MODEL_BINDINGS[input.binding as ModelBinding];
       if (!purpose) throw new ModelConfigError("INVALID_REQUEST", "未知模型用途");
       const config = validateModelConfig(input.snapshot.config, deps);
       const preset = selectedImagePreset(config,input.feature,input.requestedModelId,input.binding);
       let requestedParameters = input.requestedParameters || (preset && input.facts ? {quality:input.facts.quality,resolution:input.facts.resolution,ratio:input.facts.ratio||"1:1"} : undefined);
-      if (preset && input.facts) {
+      if (preset && input.facts && !prepared) {
         const parameters = effectiveImageParameters(preset,{quality:input.facts.quality,resolution:input.facts.requestedResolution||input.facts.resolution,ratio:input.facts.ratio||"1:1"});
         input = {...input,facts:{...input.facts,...parameters.effective,nativeResolution:parameters.nativeResolution && input.facts.resolution !== "1K"}};
       }
-      const option = selectedBusinessOption(config, input.feature, input.requestedModelId);
-      const id = preset ? presetPublicId(preset,input.requestedModelId) : option?.modelId || input.requestedModelId || featureDefaultModel(config,input.feature,input.binding as ModelBinding);
-      const model = config.publicModels.find(m => m.id === id && m.enabled && m.modality === purpose.modality && (!input.requestedModelId || m.visible));
-      if (!model) throw new ModelConfigError("MODEL_UNAVAILABLE", "所选模型不可用，请刷新模型列表后重试", 409);
+      const selection=selectFeatureModel(config,{feature:input.feature,binding:input.binding,requestedModelId:input.requestedModelId,scopeSystem:input.scopeSystem})!;
+      const {model,option}=selection;
+      if(prepared&&model.id!==prepared.modelId)throw new ModelConfigError("EXECUTION_MISMATCH","准备模型与执行用途不一致",503);
       let imageUpstreamIds = input.imageUpstreamIds === undefined ? undefined : imageUpstreamIdsSchema.parse(input.imageUpstreamIds);
       if(imageUpstreamIds && (purpose.modality!=="image" || !model.supplierRouting && model.target.type==="upstream" && !imageUpstreamIds.includes(model.target.id)))throw new ModelConfigError("MODEL_INCOMPATIBLE","本次图片候选与模型配置不一致",400);
-      assertToolScope(config,input.feature,model.id,input.scopeSystem);
       if (purpose.modality === "image" && input.facts && input.allowResolutionFallback !== false) {
         const requested = input.facts.requestedResolution || input.facts.resolution;
         const choice = resolveImageResolution(config, model.id, requested, input.feature, input.facts.ratio,{snapshot:input.snapshot,billing:input.billing,facts:input.facts,options:deps});
@@ -172,8 +170,9 @@ export function createModelExecutor(deps: Dependencies) {
     describe,
     async clientFor(model: ExecutionModel) { const scope = await describe(model); return { client: executionOpenAI(scope, deps), wireModel: scope.connection.wireModel }; },
     async run<T>(model: ExecutionModel, action: () => Promise<T>) { return runModelExecution(await describe(model), action); },
-    async runBundle<T>(frozen: ExecutionBundle, billing: ConfigSnapshot, action: () => Promise<T>) {
-      const resolved: ResolvedExecutionBundle = { frozen, billing };
+    async runBundle<T>(frozen: ExecutionBundle, billing: ConfigSnapshot, action: () => Promise<T>, models?:ModelSnapshot) {
+      const resolved: ResolvedExecutionBundle = { frozen, billing,...(models?{models}:{} ) };
+      if(models&&models.version!==frozen.modelVersion)throw new ModelConfigError("EXECUTION_MISMATCH","准备模型快照版本不一致",503);
       if (billing.version !== frozen.billingVersion) throw new ModelConfigError("EXECUTION_MISMATCH", "任务计费快照版本不一致", 503);
       for (const role of ["image", "text", "vision", "video"] as const) if (frozen[role]) {
         if (frozen[role]!.modelVersion !== frozen.modelVersion || frozen[role]!.billingVersion !== frozen.billingVersion) throw new ModelConfigError("EXECUTION_MISMATCH", "任务模型与计费组合不一致", 503);
@@ -186,13 +185,13 @@ export function createModelExecutor(deps: Dependencies) {
 }
 
 export async function getModelExecutor() {
-  const { getModelAdministration } = await import("./server");
-  const admin = await getModelAdministration();
-  return createModelExecutor({ runtime: admin.runtime,billingByVersion:version=>admin.billing.byVersion(version), credentials: admin.credentials, trustedOrigins: admin.trustedOrigins,
+  const {getModelExecutionServices}=await import("./execution-services");
+  const services=getModelExecutionServices();
+  return createModelExecutor({ runtime:services.runtime,billingByVersion:services.billing.byVersion,credentials:services.credentials,trustedOrigins:services.trustedOrigins,
     gateway: () => ({ baseUrl: process.env.NAUMI_ROUTER_GENERATION_URL || "", apiKey: process.env.NAUMI_ROUTER_GENERATION_TOKEN || "" }) });
 }
 export async function withExecutionModel<T>(model: ExecutionModel, run: () => Promise<T>) { return (await getModelExecutor()).run(model, run); }
 export async function withFrozenExecutionBundle<T>(bundle: ExecutionBundle, run: () => Promise<T>) {
-  const { getBillingRuntime } = await import("../billing/server");
-  return (await getModelExecutor()).runBundle(bundle, await (await getBillingRuntime()).config.byVersion(bundle.billingVersion), run);
+  const {readFrozenBillingSnapshot}=await import("../billing/frozen-config");
+  return (await getModelExecutor()).runBundle(bundle,await readFrozenBillingSnapshot(bundle.billingVersion),run);
 }

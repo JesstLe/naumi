@@ -8,9 +8,9 @@ const mode = process.argv[2] || 'MODIFIED';
 const root = path.resolve(process.argv[3] || '.');
 function load(source) {
   const built = esbuild.buildSync({ stdin: { contents: source, loader: 'ts', resolveDir: root }, bundle: true, write: false, platform: 'node', format: 'cjs', nodePaths: [path.resolve('node_modules')] });
-  const module = { exports: {} };
-  vm.runInThisContext('(function(module,exports,require){' + built.outputFiles[0].text + '\n})')(module, module.exports, require);
-  return module.exports;
+  const loaded = { exports: {} };
+  vm.runInThisContext('(function(module,exports,require){' + built.outputFiles[0].text + '\n})')(loaded, loaded.exports, require);
+  return loaded.exports;
 }
 const menu = load(`export {canvasNodeMenuItems} from './src/components/canvas/node-menu-items';`).canvasNodeMenuItems;
 assert.equal(menu({ L: zh => zh, readOnly: false, videoDisabled: false, onCreate() {} }).find(item => item.id === 'character').disabled, mode !== 'MODIFIED');

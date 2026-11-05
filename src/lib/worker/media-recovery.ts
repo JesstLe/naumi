@@ -37,7 +37,7 @@ let scheduler:ReturnType<typeof createMediaRecoveryScheduler>|undefined;
 export async function scheduleMediaRecovery() {
   if(!scheduler){
     const [{detachBackgroundActivity},{recoverMediaMirrors},{recoverMediaJobs}]=await Promise.all([
-      import('@/lib/release-runtime/background-activity'),import('@/lib/media-assets'),import('@/lib/video/media-jobs')]);
+      import('@/lib/release-runtime/background-activity'),import('@/lib/media-assets/mirror-recovery'),import('@/lib/video/media-jobs')]);
     // Recheck after module loading: concurrent first ticks must share one lane set.
     scheduler ||= createMediaRecoveryScheduler({detach:detachBackgroundActivity,mirrors:recoverMediaMirrors,jobs:recoverMediaJobs});
   }

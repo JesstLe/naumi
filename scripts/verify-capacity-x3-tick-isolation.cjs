@@ -23,7 +23,7 @@ Object.assign(process.env, {SOURCE_COMMIT: commit, NAUMI_INSTANCE_ID: 'x3-web', 
 const cases = [];
 async function check(name, fn) { await fn(); cases.push(name); console.log('PASS ' + name); }
 function load(relative, bindings = {}) {
-  const filename = path.join(root, relative);
+  const filename = path.join(root, relative==='src/lib/db/connection.ts' && fs.existsSync(path.join(root,'src/platform/db/pool.ts')) ? 'src/platform/db/pool.ts' : relative);
   const code = transformSync(fs.readFileSync(filename, 'utf8'), {loader:'ts',format:'cjs',target:'es2022'}).code;
   const module = {exports:{}};
   vm.runInThisContext('(function(require,module,exports){' + code + '\n})', {filename})(name => name === 'server-only' ? {} : name in bindings ? bindings[name] : require(name), module, module.exports);
@@ -46,6 +46,10 @@ async function main() {
   let scans=0, server, extraPool;
   const route=load('src/app/api/video/worker/tick/route.ts', {
     '@/lib/db':{dbEnabled:true,getPool:connection.getPool}, '@/lib/db/connection':connection,
+    '@/platform/db/pool':{...connection,dbEnabled:true},
+    '@/lib/worker/scan':{scanApplicationWorkerOnce:async()=>{scans++;return {ok:true};}},
+    '@/lib/worker/authorization':{imageWorkerAuthorized:req=>req.headers.get('x-video-worker-secret')===secret},
+    '@/lib/application/task-execution':{applicationTasksRunHere:()=>true},
     '@/lib/release-runtime/worker-tick-receipts':api,
     '@/lib/video/worker':{scanVideoWorkerOnce:async()=>{scans++;return 0;}},
     '@/lib/canvas-image-tasks':{recoverCanvasImageTasks:async()=>0},
@@ -102,7 +106,7 @@ async function main() {
       console.log('ACTIVE_DISCONNECT childExit='+result.status+' handled='+!baseline);
     });
     await check('bundle-singleton',async()=>{
-      const other=load('src/lib/db/connection.ts');extraPool=other.getPool();assert.equal(extraPool===business,!baseline);
+      const other=load('src/lib/db/connection.ts');extraPool=other.getPool();assert.equal(extraPool===business,!baseline||fs.existsSync(path.join(root,'src/platform/db/pool.ts')));
       console.log('BUNDLE_SINGLETON shared='+(extraPool===business));
       if(extraPool!==business){await extraPool.end();extraPool=undefined;}
     });

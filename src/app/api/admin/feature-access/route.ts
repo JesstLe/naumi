@@ -1,8 +1,9 @@
 import { requireAdmin, resolveUserEmail } from "@/lib/admin-auth";
-import { dbEnabled } from "@/lib/db";
+import { dbEnabled } from "@/platform/db/pool";
 import { sameSiteBillingMutation } from "@/lib/billing/access";
-import { accessJson, FeatureAccessError, featureAccessUsers, saveFeaturePolicy, validatePolicyCommand } from "@/lib/feature-access/server";
-import { checkRateLimit } from "@/lib/rate-limit-http";
+import {accessJson} from "@/lib/feature-access/server";
+import {FeatureAccessError,featureAccessUsers,saveFeaturePolicy,validatePolicyCommand} from "@/lib/feature-access/repository";
+import {checkRateLimit} from "@/lib/rate-limit-http";
 export const runtime = "nodejs", dynamic = "force-dynamic";
 async function guard(request: Request) {
   if (!await requireAdmin(request)) return accessJson({ error: "需要管理员身份" }, 403);

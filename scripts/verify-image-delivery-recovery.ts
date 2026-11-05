@@ -43,7 +43,7 @@ async function main(){
  check(imageRequestAdmission("79:140","jimeng",false,source,"reverse-hub").includes("REVERSE_HUB_RATIO_UNSUPPORTED"));
  check(imageRequestAdmission("3:4","jimeng",false,source,"reverse-hub").length===0);
  check(imageRequestAdmission("79:140","unknown-model",false,{...source,model:"unknown"}).length===0);
- const dispatch=readFileSync("src/lib/imagegen/dispatch.ts","utf8");check(dispatch.indexOf('charged=await childCharges(owner,state.children,plan);chargeKnown=true')<dispatch.indexOf('for(const id of new Set(baseIds.length?baseIds:ids))'));check(dispatch.includes('billingStatus:chargeKnown?"confirmed":"unavailable"'));
+ const dispatch=readFileSync("src/lib/imagegen/dispatch.ts","utf8");check(dispatch.indexOf('charged=billing.chargedCredits;chargeKnown=billing.confirmed')<dispatch.indexOf('for(const id of new Set(baseIds.length?baseIds:ids))'));check(dispatch.includes('billingStatus:chargeKnown?"confirmed":"unavailable"'));
  writeFileSync(out+"/PURE.json",JSON.stringify({checks,bytes:bytes.length,width:2304,height:2048,originalHash:before,realSupplierCalls:0},null,2));
  console.log(`MODIFIED=PASS CHECKS=${checks} LARGE_OUTPUT=DELIVERED INPUT12MIB=UNCHANGED OUTPUT64MIB=BOUNDED HASH=UNCHANGED BILLING_QUERY=INDEPENDENT STORED_RECOVERY=NO_SUPPLIER WAIT=LOCAL_ONLY HUB_RATIO=PREQUOTE PROVIDER_CALLS=0`);
 }

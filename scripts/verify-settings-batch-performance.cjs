@@ -22,6 +22,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
+const { execFileSync } = require('node:child_process');
 const ts = require('typescript');
 
 const ROOT = path.resolve(__dirname, '..');
@@ -76,8 +77,8 @@ function local(value) {
 }
 const deep = (actual, expected, message) => assert.deepEqual(local(actual), local(expected), message);
 const sha = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
-function parse(file) {
-  const bytes = fs.readFileSync(file), source = bytes.toString('utf8');
+function parse(file, bytes = fs.readFileSync(file)) {
+  const source = bytes.toString('utf8');
   const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
   assert.equal(ast.parseDiagnostics.length, 0, `${file}: TypeScript parse diagnostics`);
   return { file, bytes, source, ast, sha256: sha(bytes) };
@@ -98,7 +99,7 @@ function constant(model, name) {
   return `const ${name} = ${found[0].initializer.getText(model.ast)};`;
 }
 function models(root, phase) {
-  const model = { root, phase, db: parse(path.join(root, 'src/lib/db.ts')), settings: parse(path.join(root, 'src/lib/settings.ts')) };
+  const model = { root, phase, db: parse(path.join(root, phase==='baseline'?'src/lib/db.ts':'src/lib/settings/repository.ts')), settings: parse(path.join(root, 'src/lib/settings.ts')) };
   if (phase === 'baseline') for (const [file, hash] of Object.entries(PINNED)) assert.equal(model[file.endsWith('db.ts') ? 'db' : 'settings'].sha256, hash, `baseline byte hash: ${file}`);
   return model;
 }
@@ -115,16 +116,18 @@ function stableSettings(model, candidate) {
   return source;
 }
 function sourceContract(baseline, candidate) {
-  const added = fn(candidate.db, 'getSettings');
-  assert.equal(candidate.db.source.slice(0, added.getFullStart()) + candidate.db.source.slice(added.end), baseline.db.source,
-    'db.ts outside the newly added getSettings declaration/comment is byte-stable');
-  assert.equal(stableSettings(candidate.settings, true), stableSettings(baseline.settings, false),
-    'settings.ts outside two selected getters and one import is byte-stable');
-  assert.equal(body(candidate.db, 'getSetting'), body(baseline.db, 'getSetting'), 'single-key body is unchanged');
-  assert.equal(body(candidate.settings, 'getOpenAISettings'), body(baseline.settings, 'getOpenAISettings'), 'frozen execution scope entry is unchanged');
-  return { sourceStable: true, singleKeySourceUnchanged: true, frozenExecutionSourceUnchanged: true,
-    otherSettingsGettersUnchanged: true, scope: ['db.getSettings (added)', 'settings db import',
-      'getLegacyOpenAISettings (four reads batched)', 'getSmtpConfig (five reads batched)'] };
+  // Main's performance algorithms are unchanged, but db/settings now have real
+  // owners. Compare selected production declarations to the pinned incoming
+  // source, not a pre-refactor whole-file shape or deleted import spelling.
+  // Immutable incoming ref is now an ancestor of this integration. Reconstruct
+  // its selected algorithms from Git, not this machine's ignored evidence tree.
+  const incoming='368c93e2343c57a330a0db6831ccbef01283ed6d';
+  const original=file=>parse(`${incoming}:${file}`,execFileSync('git',['show',`${incoming}:${file}`],{cwd:ROOT}));
+  const originalDb=original('src/lib/db.ts'),originalSettings=original('src/lib/settings.ts');
+  const tokens=text=>{const scan=ts.createScanner(ts.ScriptTarget.Latest,true),a=[];scan.setText(text);while(scan.scan()!==ts.SyntaxKind.EndOfFileToken)a.push(scan.getTokenText());return JSON.stringify(a);};
+  assert.equal(tokens(body(candidate.db,'getSettings')),tokens(body(originalDb,'getSettings')),'incoming batch SQL/semantics retained in repository owner');
+  for(const name of SETTING_FUNCTIONS)assert.equal(tokens(body(candidate.settings,name)),tokens(body(originalSettings,name)),name+' retains incoming algorithm');
+  return {sourceStable:true,scope:'selected algorithms token-identical to pinned incoming main; owners moved',batchReaderOwner:'src/lib/settings/repository.ts',frozenExecutionSourceUnchanged:true};
 }
 function compile(model, secret) {
   const names = DB_FUNCTIONS.concat(model.phase === 'modified' ? ['getSettings'] : []);

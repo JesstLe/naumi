@@ -1,7 +1,9 @@
 import { z } from "zod";
 import { biAuthorize, biJson, sameSiteBiMutation } from "@/lib/bi/access";
-import { getPool } from "@/lib/db";
-import { ensurePostprocessSchema, PostprocessPending } from "@/lib/media-postprocess";
+import { getPool } from "@/platform/db/pool";
+import {PostprocessPending} from "@/lib/media-postprocess";
+import {ensurePostprocessSchema} from "@/lib/media-postprocess-schema";
+
 import { recoverPostprocess } from "@/lib/postprocess-recovery";
 import { randomUUID } from "node:crypto";
 export const runtime="nodejs",dynamic="force-dynamic";

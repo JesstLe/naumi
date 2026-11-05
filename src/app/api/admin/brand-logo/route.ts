@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { dbEnabled } from "@/lib/db";
+import { dbEnabled } from "@/platform/db/pool";
 import { requireAdmin } from "@/lib/admin-auth";
-import { storageEnabled, uploadImage } from "@/lib/storage";
+import { storageEnabled } from "@/lib/object-storage/runtime";
+import { uploadImage } from "@/lib/media-upload";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,7 +41,7 @@ export async function POST(req: Request) {
     let ext = (file.type.split("/")[1] || "png").replace(/[^a-z0-9]/gi, "") || "png";
     try {
       const mod = (await import("sharp")) as unknown as {
-        default?: typeof import("sharp");
+        default?: typeof import("sharp").default;
       } & typeof import("sharp");
       const sharp = mod.default ?? mod;
       const png = await sharp(Buffer.from(bytes))

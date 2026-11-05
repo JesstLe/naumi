@@ -1,12 +1,8 @@
 import { NextResponse } from "next/server";
 import { adminSupabase, bearer } from "@/lib/supabase-admin";
 import { resolveUserEmail } from "@/lib/admin-auth";
-import {
-  dbEnabled,
-  listUserFavs,
-  addUserFav,
-  removeUserFav,
-} from "@/lib/db";
+import {listUserFavs, addUserFav, removeUserFav} from "@/lib/templates/repository";
+import {dbEnabled} from "@/platform/db/pool";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

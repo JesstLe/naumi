@@ -1,5 +1,5 @@
 import "server-only";
-import {currentCreationContext,frozenCreationScope,type CreationContext} from "../saas/creation-context";
+import {currentCreationContext,frozenCreationScope,type CreationContext} from "@/lib/saas/creation-scope";
 import type {ImagegenRequest} from "./types";
 
 export class ImagegenScopeError extends Error {
@@ -40,7 +40,7 @@ export async function assertAcceptedImagegenCreationScope(value:unknown,owner:st
   const target=Array.isArray(request.inputs)?request.inputs.find(input=>input.role==="edit-target"):undefined;
   const source=request.sourceNodeId||target?.originalArtworkId||target?.reference?.sourceNodeId||target?.artworkId;
   if(!project||typeof source!=="string"||!source||source.startsWith("asset-")||source.length>160)throw error;
-  const {getPool}=await import("../db");
+  const {getPool}=await import("@/platform/db/pool");
   const proof=await getPool().query(`SELECT 1 FROM app_artworks
    WHERE email=$1 AND id=$2 AND deleted_at IS NULL
     AND (($3='tree' AND (id=$4 OR group_id=$4)) OR ($3='batch' AND batch_id=$4))

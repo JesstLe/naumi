@@ -1,9 +1,10 @@
 /**
  * Offline behavioral check for the quality-fallback rework in
- * src/lib/model-config/requests.ts. Pure logic mirror of the guard section:
+ * src/lib/model-config/image-quality-selection.ts. Execute the actual shared rule:
  * no DB, no HTTP, no suppliers. Asserts the three contract cases.
  */
-const IMAGE_QUALITY_IDS = ["low", "medium", "high", "xhigh", "max"] as const;
+import {selectImageQuality} from "../src/lib/model-config/image-quality-selection";
+import {fixtureModelConfig} from "./model-config-unit-fixture";
 
 export type QualityCase = {
   explicitQuality: string;
@@ -12,13 +13,11 @@ export type QualityCase = {
   expectedFallbackReason: string | null;
 };
 
-export function computeRequestedQuality(explicitQuality: string, qualities: string[], environmentQuality = "medium") {
-  const qualityMalformed = !!explicitQuality && ![...IMAGE_QUALITY_IDS, "auto"].includes(explicitQuality as any);
-  const qualityUnsupported = !!explicitQuality && !qualityMalformed && !!qualities.length && !qualities.includes(explicitQuality as any);
-  const defaultQuality = qualities.includes(environmentQuality) ? environmentQuality : qualities[0] || "medium";
-  const requestedQuality = !explicitQuality || qualityMalformed || qualityUnsupported ? defaultQuality : explicitQuality;
-  const qualityFallbackReason = !explicitQuality ? null : qualityMalformed ? "malformed-quality-value" : qualityUnsupported ? "channel-unsupported" : null;
-  return { requestedQuality, qualityFallbackReason };
+export function computeRequestedQuality(explicitQuality:string,qualities:string[],environmentQuality="medium"){
+  const config=fixtureModelConfig("http://127.0.0.1:1","00000000-0000-4000-8000-000000000001");
+  config.upstreamModels[0].capabilities.qualities=qualities as typeof config.upstreamModels[number]["capabilities"]["qualities"];
+  const decision=selectImageQuality(config,"canvas.image","image-a",explicitQuality,undefined,environmentQuality);
+  return {requestedQuality:decision.quality,qualityFallbackReason:decision.reason};
 }
 
 const CASES: QualityCase[] = [

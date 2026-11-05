@@ -1,7 +1,9 @@
 import 'server-only';
 import {createHash} from 'node:crypto';
-import {privateMedia,storageKeyFromManagedUrl,readManagedObject,uploadImage} from './storage';
-import {getMediaAsset} from './media-assets';
+import { privateMedia, storageKeyFromManagedUrl } from "./object-storage/runtime";
+import { readManagedObject } from "./object-storage/managed-read";
+import { uploadImage } from "./media-upload";
+import { getMediaAsset } from "./media-assets-reader";
 
 // Called only for server-owned published template rows, never arbitrary client URLs.
 async function publishedCopy(source:string) {

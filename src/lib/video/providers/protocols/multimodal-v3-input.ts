@@ -2,7 +2,8 @@ import definitions from "../../../model-config/video-family-multimodal.json";
 import type {VideoModelDefinition} from "../../capability-schema";
 import {normalizeVideoInput,VideoContractError} from "../../contract";
 import type {VideoReference} from "../../types";
-import {mediaUrl,rejectAdvanced,selectWireOptions,type VideoWireContext} from "../wire";
+import {mediaUrl,rejectAdvanced,selectWireOptions} from "../wire-helpers";
+import type {VideoWireContext} from "../wire-contracts";
 
 export function rejectMultimodal(message:string,field="references"):never {
   throw new VideoContractError("VIDEO_PROFILE_INPUT_UNSUPPORTED",message,[field]);

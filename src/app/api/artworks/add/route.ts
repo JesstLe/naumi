@@ -1,10 +1,15 @@
+import {artworkImportRequest,importCanvasArtwork,readCanvasArtworkImport} from "@/lib/canvas/artwork-import";
+import {ModelConfigError} from "@/lib/model-config/types";
+import {withCreationRoute,withCreationReceiptRoute} from "@/lib/saas/creation-context";
+import {withCreationOperation} from "@/lib/saas/creation-writer";
 import { NextResponse } from "next/server";
-import { dbEnabled, addArtworks, setArtworkPosition, listArtworksByIds } from "@/lib/db";
+import {dbEnabled} from "@/platform/db/pool";
+import {addArtworks} from "@/lib/artworks/writer";
+import {setArtworkPosition} from "@/lib/canvas/artwork-repository";
 import { provenanceEntry } from "@/lib/artwork-provenance";
-import { uploadImage, privateMedia, storageKeyFromManagedUrl } from "@/lib/storage";
-import {canReadMedia} from '@/lib/media-assets';
+import { uploadImage } from "@/lib/media-upload";
 import { authenticatedEmail } from "@/lib/request-auth";
-import { adaptiveCanvasImageSize } from "@/lib/mock-data";
+import { adaptiveCanvasImageSize } from "@/lib/canvas/image-size";
 import {ORIGINAL_IMAGE_MAX_BYTES} from "@/lib/image-upload-policy";
 import {originalImageMetadata,browserPreviewsFromForm,saveCanvasOriginal} from "@/lib/canvas-original-upload";
 import {readImagegenBody} from "@/lib/imagegen/body";
@@ -27,7 +32,7 @@ function newId() {
 //  - multipart(含 image 文件)= 上传图片作新节点(默认根节点,或挂 parentId)
 //  - json {src} = 创建副本 / 复制粘贴节点(复制源图与血缘)
 // email 限定,沿用本站信任模式。
-export async function POST(request: Request) {
+async function handlePost(request: Request) {
   if (!dbEnabled)
     return NextResponse.json({ error: "未启用存储" }, { status: 400 });
 
@@ -124,106 +129,27 @@ export async function POST(request: Request) {
     });
   }
 
-  // ── 创建副本 / 粘贴节点 ──
-  let body: {
-    entry?: string;
-    email?: string;
-    parentId?: string | null; // 顶层覆盖:落到当前项目某父节点下
-    linked?: boolean; // true=画连线(衍生);false/缺省=独立节点(canvas-add,不连线)
-    x?: number;
-    y?: number;
-    src?: {
-      id?: string;
-      image?: string;
-      videoUrl?: string | null;
-      title?: string;
-      category?: string;
-      prompt?: string;
-      style?: string;
-      ratio?: string;
-      resolution?: string;
-      parentId?: string | null;
-      templateId?: string | null;
-      width?: number | null;
-      height?: number | null;
-      canvasWidth?: number | null;
-      canvasHeight?: number | null;
-    };
-  };
+  // JSON insertion delegates its validation, ownership and atomic receipt to Canvas.
+  let body:unknown;try{body=await request.json();}catch{return NextResponse.json({error:"请求格式不正确"},{status:400});}
   try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: "请求格式不正确" }, { status: 400 });
+    const input=artworkImportRequest.safeParse(body);
+    if(!input.success)return NextResponse.json({error:"请求格式不正确"},{status:400});
+    const run=()=>importCanvasArtwork(authenticated,input.data);
+    const result=input.data.operationId
+      ?await withCreationOperation("canvas-copy",input.data.operationId,authenticated,{parameters:{mode:"import"}},run,r=>({artworkIds:[r.id]}))
+      :await run();
+    return NextResponse.json(result);
+  } catch(error) {
+    if(error instanceof ModelConfigError)return NextResponse.json({error:error.message,code:error.code},{status:error.status});
+    return NextResponse.json({error:"导入未完成，请重试原操作"},{status:503});
   }
-  const email = authenticated;
-  const src = body.src;
-  const image = String(src?.image || "").trim();
-  const videoUrl = String(src?.videoUrl || "").trim() || null;
-  if (!src || (!image && !videoUrl)) {
-    return NextResponse.json({ error: "缺少参数" }, { status: 400 });
-  }
-  const id = newId();
-  const sourceId = String(src.id || "").trim().slice(0, 240);
-  if(privateMedia){
-    for(const url of [image,videoUrl].filter(Boolean) as string[]){const key=storageKeyFromManagedUrl(url);
-      if(key&&!await canReadMedia(key,email))return NextResponse.json({error:'素材不存在'},{status:404});}
-  }
-  if (sourceId) {
-    const original = (await listArtworksByIds(email, [sourceId]))[0];
-    if (!original || original.image !== image || (original.videoUrl || null) !== videoUrl)
-      return NextResponse.json({ error: "复制源作品不存在或不匹配" }, { status: 404 });
-  }
-  // 顶层 parentId(从历史加到当前项目)优先于 src.parentId(纯副本)
-  const parentId =
-    body.parentId !== undefined ? body.parentId : (src.parentId ?? null);
-  const canvasSize =
-    src.canvasWidth && src.canvasHeight
-      ? { width: src.canvasWidth, height: src.canvasHeight }
-      : adaptiveCanvasImageSize(src.width, src.height);
-  try {
-    await addArtworks(email, [
-      {
-        id,
-        title: src.title || "作品",
-        category: src.category || "main",
-        creationProvenance: { version: 1, operation: sourceId ? "copy" : src.templateId ? "template" : "import", entry: provenanceEntry(body.entry, "canvas"), ref: id, ...(sourceId ? { sourceArtworkId: sourceId } : {}), evidence: "server-route" },
-        prompt: src.prompt || "",
-        status: "completed",
-        image,
-        videoUrl,
-        gradient: GRADIENTS[1],
-        style: src.style,
-        ratio: src.ratio,
-        resolution: src.resolution,
-        parentId,
-        templateId: src.templateId ?? null,
-        width: src.width ?? null,
-        height: src.height ?? null,
-        canvasWidth: canvasSize.width,
-        canvasHeight: canvasSize.height,
-        // linked → 非 canvas-add(画布会画连线);否则独立节点
-        source: body.linked ? "derived" : "canvas-add",
-      },
-    ]);
-  } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : String(e) },
-      { status: 500 }
-    );
-  }
-  const bx = Number(body.x);
-  const by = Number(body.y);
-  if (Number.isFinite(bx) && Number.isFinite(by)) {
-    await setArtworkPosition(email, id, bx, by).catch(() => {});
-  }
-  return NextResponse.json({
-    ok: true,
-    id,
-    image,
-    videoUrl,
-    width: src.width ?? null,
-    height: src.height ?? null,
-    canvasWidth: canvasSize.width,
-    canvasHeight: canvasSize.height,
-  });
 }
+export function POST(request:Request){return withCreationRoute(request,()=>handlePost(request));}
+export function GET(request:Request){return withCreationReceiptRoute(request,async()=>{
+  const email=await authenticatedEmail(request);if(!email)return NextResponse.json({error:"请先登录"},{status:401});
+  if(!dbEnabled)return NextResponse.json({error:"未启用存储"},{status:503});
+  const operationId=artworkImportRequest.shape.operationId.safeParse(new URL(request.url).searchParams.get("operationId"));
+  if(!operationId.success||!operationId.data)return NextResponse.json({error:"导入编号无效"},{status:400});
+  try{const result=await readCanvasArtworkImport(email,operationId.data);return result?NextResponse.json(result):NextResponse.json({error:"尚无导入回执"},{status:404});}
+  catch(error){return error instanceof ModelConfigError?NextResponse.json({error:error.message,code:error.code},{status:error.status}):NextResponse.json({error:"原导入结果尚未同步，请重试"},{status:503});}
+});}

@@ -1,8 +1,8 @@
 import "server-only";
 import {videoNodeConfigSchema,type CanvasVideoNode} from "../canvas/video-node-schema";
 import {orderedInputSchema,videoReferenceSchema,type OrderedInput} from "./references";
-import {storageKeyFromManagedUrl} from "../storage";
-import type {VideoTaskRow} from "../db";
+import { storageKeyFromManagedUrl } from "../object-storage/runtime";
+import type {VideoTaskRow} from "@/lib/video/task-types";
 import type {VideoReference} from "./types";
 export type PublicVideoTaskSnapshot={config:CanvasVideoNode["config"];inputs:OrderedInput[];modelVersion:number|null;billingVersion:number|null;originalPrompt:string;compiledPrompt:string;projectKey:string|null;nodeId:string|null;retryOf:string|null;byoc:boolean;workflow:{id:string|null;digest:string|null}|null;unavailableFields:string[]};
 const fields=["mode","negativePrompt","durationSeconds","aspectRatio","resolution","width","height","generateAudio","watermark","providerOptions","shots","elements"] as const;

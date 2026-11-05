@@ -61,6 +61,15 @@ async function main() {
     assert.equal((await f.repo.current()).version, old.version);
     const recovered = await handler(request(switchBody)); assert.equal(recovered.status, 200); assert.equal((await recovered.json()).publication.phase, "applied"); assert.equal(activations, 1);
     assert.equal((await handler(request(switchBody))).status, 200); assert.equal(activations, 1);
+    const sameReceipts=await Promise.all(Array.from({length:8},()=>handler(request(switchBody))));
+    assert.ok(sameReceipts.every(response=>response.status===200),"concurrent applied receipt reads retain the original operation");
+    assert.equal(activations,1,"receipt reads never repeat Router activation");
+    const changedReplay=await handler(request({...switchBody,upstreamId:"u1"}));
+    assert.equal(changedReplay.status,409);assert.equal((await changedReplay.json()).code,"OPERATION_CONFLICT");
+    const otherActorHandler=createModelManagementHandler({authorize:async()=>({actor:"different-admin@example.test"}),administration,managed:async()=>true});
+    const foreignReplay=await otherActorHandler(request(switchBody));
+    assert.equal(foreignReplay.status,409);assert.equal((await foreignReplay.json()).code,"OPERATION_CONFLICT");
+    console.log("MODEL_MANAGEMENT_REPLAY=PASS SAME_RECEIPT_READS=9 ACTIVATIONS=1 MUTATED_INPUT=409 FOREIGN_ACTOR=409");
     const current = await f.repo.current(); assert.equal(current.config.publicModels[0].target.id, "u2"); assert.equal(current.config.publicModels[0].label, "测试生图");
     assert.deepEqual(current.config.bindings, old.config.bindings); assert.deepEqual(current.config.business, old.config.business);
     assert.deepEqual(await f.repo.draft(actor), fullDraft, "MODEL_MANAGEMENT must preserve full administration drafts");
@@ -106,6 +115,22 @@ async function main() {
     assert.equal(plainResponse.status, 200); assert.ok(!(await plainResponse.text()).includes("http-fixture-provider-key"));
     const connect = { action: "connect", id: connectId, expectedVersion: renamed.version, name: "新目录来源", protocol: "openai-images", baseUrl: `${f.origin}/another-v1`, credentialRef };
     assert.equal((await handler(request(connect))).status, 200);
+    const beforeConnectReplay=activations;
+    const connectReplay=await handler(request(connect));assert.equal(connectReplay.status,200);
+    assert.ok((await connectReplay.json()).discovery,"applied connect receipt still projects discovery");
+    assert.equal(activations,beforeConnectReplay,"connect discovery replay does not activate again");
+    const currentBeforeProjectionFailure=f.repo.current;let projectionReads=0;
+    f.repo.current=async()=>{if(++projectionReads===2)throw Error("fixture connect projection snapshot read failed");return currentBeforeProjectionFailure();};
+    try{
+      const unreadableProjection=await handler(request(connect));
+      assert.equal(unreadableProjection.status,503,"post-commit projection failure keeps the JSON error contract");
+      assert.equal((await unreadableProjection.json()).operationNotStaged,false,"projection failure never proves the applied operation was not staged");
+      assert.equal((await f.repo.publication(connectId)).phase,"applied","original applied receipt survives a transient projection failure");
+      assert.equal(activations,beforeConnectReplay,"projection failure never reactivates the applied operation");
+    }finally{f.repo.current=currentBeforeProjectionFailure;}
+    assert.equal((await handler(request(connect))).status,200,"original CONNECT recovers after projection read returns");
+    assert.equal(activations,beforeConnectReplay);
+    console.log("MODEL_MANAGEMENT_CONNECT_PROJECTION=PASS TRANSIENT_READ=JSON503 NOT_STAGED_PROOF=0 ORIGINAL_RECEIPT=APPLIED RECOVERY=200 ACTIVATIONS_UNCHANGED=1");
     const connected = await f.repo.current(), newProvider = connected.config.providers.find(p => p.name === "新目录来源")!;
     assert.ok(newProvider); assert.equal(await f.credentials.read(newProvider.credentialRef!, newProvider.id), "mvp-isolated-provider-key");
     const registration = { action: "register", id: randomUUID(), expectedVersion: connected.version, providerId: newProvider.id, model: "directory-image-new", confirmed: true, edit: true, vision: false, qualities: ["medium", "high"], resolutions: ["1K"], maxReferenceImages: 4 };

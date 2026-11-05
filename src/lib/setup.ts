@@ -1,5 +1,6 @@
 import "server-only";
-import { getSetting, setSetting, dbEnabled } from "@/lib/db";
+import {getSetting,setSetting} from "@/lib/settings/repository";
+import {dbEnabled} from "@/platform/db/pool";
 import { getOpenAISettings, saveOpenAIKey } from "@/lib/settings";
 
 // Initial configuration is a one-time operation, locked by an API key or admin password.
@@ -84,9 +85,8 @@ export async function applySetup(input: SetupInput): Promise<SetupResult> {
   const adminEmail = (input.adminEmail ?? "").trim().toLowerCase();
   if (adminEmail && adminPassword && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(adminEmail)) {
     try {
-      const { getOrCreateUser, setUserPassword, setUserRole } = await import(
-        "@/lib/db"
-      );
+      const {getOrCreateUser} = await import("@/lib/accounts/session");
+const {setUserPassword, setUserRole} = await import("@/lib/accounts/repository");
       const { hashPassword } = await import("@/lib/pw");
       await getOrCreateUser(adminEmail, "站长");
       await setUserPassword(adminEmail, hashPassword(adminPassword));
@@ -96,5 +96,8 @@ export async function applySetup(input: SetupInput): Promise<SetupResult> {
     }
   }
 
+  // Setup is the explicit configuration write boundary. Do not let an earlier
+  // empty boot freeze an empty registry or make the first catalog read import.
+  if(process.env.NAUMI_ROUTER_MANAGEMENT_URL)await(await import("./model-config/startup")).prepareModelRegistry();
   return { ok: true };
 }

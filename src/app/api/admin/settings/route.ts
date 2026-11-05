@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { dbEnabled, setSignupBonus } from "@/lib/db";
+import {dbEnabled} from "@/platform/db/pool";
+import {setSignupBonus} from "@/lib/billing/signup";
 import {
   decryptFromClient,
   getAdminView,
@@ -29,7 +30,7 @@ import {
 } from "@/lib/settings";
 import { requireAdmin, resolveUserEmail } from "@/lib/admin-auth";
 import {sameSiteBillingMutation} from "@/lib/billing/access";
-import { modelConfigurationEnabled } from "@/lib/model-config/requests";
+import { modelConfigurationEnabled } from "@/lib/model-config/availability";
 import { ModelConfigError } from "@/lib/model-config/types";
 
 export const runtime = "nodejs";

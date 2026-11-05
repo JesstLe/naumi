@@ -13,3 +13,5 @@
 @media(max-width:600px){.page{padding:20px 16px 36px;}.top>span{display:none;}.hero{flex-direction:column;gap:15px;padding:27px 0;}.hero h1{font-size:25px;}.actions{width:100%;}.filters{grid-template-columns:repeat(2,minmax(0,1fr));padding:16px;}.filters form{flex-wrap:wrap;}.dialog header,.body{padding:20px 18px;}.grid{grid-template-columns:1fr;}.dialog footer{padding:14px 18px;}.resultBar{align-items:flex-start;}.priceCard{padding:14px;}}
 
 .dialog textarea { font-family:monospace; font-size:12px; resize:vertical; min-height:120px; }
+.provenance { display:grid; grid-template-columns:auto 1fr; gap:7px 16px; margin:0 0 16px; font-size:12px; }
+.provenance dt { color:#6d8497; }.provenance dd { margin:0; overflow-wrap:anywhere; }

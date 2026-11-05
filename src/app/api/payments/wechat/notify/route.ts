@@ -1,4 +1,5 @@
-import { dbEnabled, getOrder, fulfillOrder } from "@/lib/db";
+import {getOrder, fulfillOrder} from "@/lib/payments/orders";
+import {dbEnabled} from "@/platform/db/pool";
 import { getPaymentSettings } from "@/lib/settings";
 import { verifyAndDecryptWxNotify } from "@/lib/pay/wechatpay";
 

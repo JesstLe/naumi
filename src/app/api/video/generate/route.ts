@@ -1,12 +1,14 @@
 import {NextResponse} from "next/server";
-import {withBiRequest} from "@/lib/bi/model-observer";
-import {dbEnabled,getUser} from "@/lib/db";
+import {withBiRequest} from "@/lib/bi/request";
+import {dbEnabled} from "@/platform/db/pool";
+import {getUser} from "@/lib/accounts/session";
 import {authenticatedEmail} from "@/lib/request-auth";
 import {sameSiteBiMutation} from "@/lib/bi/access";
 import {clientIp} from "@/lib/ip";
 import { checkRateLimit } from "@/lib/rate-limit-http";
 import {readBounded} from "@/lib/supplier-cost/io";
-import {createVideoGeneration,type CreateVideoInput} from "@/lib/video/service";
+import {createVideoGeneration} from "@/lib/video/creation";
+import {type CreateVideoInput} from "@/lib/video/submission-types";
 import {videoSubmissionSchema} from "@/lib/video/submission-schema";
 import {VideoContractError} from "@/lib/video/contract";
 import {requestQuoteConfirmation,billingErrorResponse} from "@/lib/billing/request";

@@ -3,175 +3,25 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { AdminCenterShell } from "@/components/admin/center-shell";
 import { adminDestination } from "@/lib/admin-navigation";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { useAdminEntry } from "./use-admin-entry";
 import { Loader2, ShieldAlert, Lock } from "lucide-react";
-import { useAuth } from "@/lib/auth-context";
-import { useAuthModal } from "@/lib/auth-modal-context";
-import { browserSupabase } from "@/lib/supabase";
 import { AdminSettings } from "@/components/admin/admin-settings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-
-// Dedicated /admin page. 两条鉴权通道:
-//  ① 本地管理员(开源版/自托管无 Supabase):向导设的密码 → cookie 会话。
-//  ② 官方云 Supabase:登录用户邮箱 == ADMIN_EMAIL。
-// 优先看本地通道(有本地密码就走它);否则回落 Supabase。
-
-// sessionStorage 缓存 Supabase 校验结果(5 分钟),避免每次刷新都跑一遍 getSession +
-// 远程 auth.getUser。只控前端 UI gate;所有 admin 接口仍在服务端逐次 requireAdmin 校验。
-const CACHE_KEY = "naumi:adminVerifiedV1";
-const CACHE_TTL_MS = 5 * 60 * 1000;
-
-type AdminCache = { email: string; ts: number };
-function readCache(): AdminCache | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = sessionStorage.getItem(CACHE_KEY);
-    if (!raw) return null;
-    const c = JSON.parse(raw) as AdminCache;
-    if (Date.now() - c.ts > CACHE_TTL_MS) return null;
-    return c;
-  } catch {
-    return null;
-  }
-}
-function writeCache(email: string) {
-  try {
-    sessionStorage.setItem(CACHE_KEY, JSON.stringify({ email, ts: Date.now() }));
-  } catch {
-    /* quota / privacy mode — silently skip */
-  }
-}
-function clearCache() {
-  try {
-    sessionStorage.removeItem(CACHE_KEY);
-  } catch {
-    /* ignore */
-  }
-}
 
 export function AdminClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const settingsView = searchParams.get("view") === "settings";
   const destination = adminDestination(searchParams.get("next"));
-  const { user, ready } = useAuth();
-  const { openAuth } = useAuthModal();
-  const [status, setStatus] = useState<
-    "loading" | "denied" | "ok" | "local-login" | "unavailable"
-  >("loading");
-  const [accessRetry, setAccessRetry] = useState(0);
-  // ok 时:是否走本地管理员通道(决定 AdminSettings 用 cookie 而非 Bearer)。
-  const [localAdmin, setLocalAdmin] = useState(false);
+  const entry=useAdminEntry();
+  const {status,localAdmin,password:pw,busy:pwBusy,error:pwErr,setPassword:setPw,submitLocal}=entry;
   useEffect(() => {
     // Bearer-only Supabase sessions retain their original settings entry:
     // a browser page navigation cannot carry that Authorization header.
     if (status === "ok" && localAdmin && !settingsView) router.replace(destination);
   }, [status, localAdmin, settingsView, destination, router]);
-
-  // 本地密码登录框状态
-  const [pw, setPw] = useState("");
-  const [pwBusy, setPwBusy] = useState(false);
-  const [pwErr, setPwErr] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      // ── ① 本地管理员通道(开源版/自托管)──
-      try {
-        const r = await fetch("/api/admin/login", { cache: "no-store" });
-        if (!r.ok) { if (!cancelled) setStatus("unavailable"); return; }
-        const d = (await r.json()) as {
-          localAvailable?: boolean;
-          localAuthed?: boolean;
-          nativeAdmin?: boolean;
-          passwordRequired?: boolean;
-        };
-        if (cancelled) return;
-        // 本地密码会话 或 站长邮箱账号(role=admin)会话,都算已登录管理员。
-        if (d.passwordRequired && !d.localAuthed) { setStatus("local-login"); return; }
-        if (d.localAuthed || d.nativeAdmin) {
-          setLocalAdmin(true);
-          setStatus("ok");
-          return;
-        }
-        if (d.localAvailable) {
-          // 设了本地密码但未登录 → 显示密码框(不走 Supabase)。
-          setStatus("local-login");
-          return;
-        }
-      } catch {
-        // An unavailable session read is not a permission rejection. Keep the
-        // page closed and retry the authoritative check, never trust cached UI state.
-        if (!cancelled) setStatus("unavailable");
-        return;
-      }
-
-      // ── ② 官方云 Supabase 通道 ──
-      if (!ready) return;
-      if (!user) {
-        openAuth("sign-in");
-        return;
-      }
-      const cached = readCache();
-      if (cached && cached.email === user.email) setStatus("ok");
-      try {
-        const sb = browserSupabase();
-        const { data } = await sb.auth.getSession();
-        const tok = data.session?.access_token;
-        if (!tok) {
-          clearCache();
-          openAuth("sign-in");
-          return;
-        }
-        const res = await fetch("/api/admin/settings", {
-          headers: { Authorization: `Bearer ${tok}` },
-        });
-        if (cancelled) return;
-        if (res.ok) {
-          writeCache(user.email);
-          setLocalAdmin(false);
-          setStatus("ok");
-        } else {
-          clearCache();
-          setStatus("denied");
-        }
-      } catch {
-        if (!cancelled && !cached) setStatus("denied");
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [ready, user, openAuth, accessRetry]);
-
-  async function submitLocal() {
-    if (pw.length < 1) return;
-    setPwErr(null);
-    setPwBusy(true);
-    try {
-      const res = await fetch("/api/admin/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: pw }),
-      });
-      const d = (await res.json().catch(() => null)) as {
-        ok?: boolean;
-        error?: string;
-      } | null;
-      if (!res.ok || !d?.ok) {
-        setPwErr(d?.error || "登录失败");
-        setPwBusy(false);
-        return;
-      }
-      setPw("");
-      setLocalAdmin(true);
-      setStatus("ok");
-    } catch {
-      setPwErr("网络错误,请重试");
-      setPwBusy(false);
-    }
-  }
 
   if (status === "local-login") {
     return (
@@ -233,7 +83,7 @@ export function AdminClient() {
   if (status === "unavailable") {
     return <div className="container flex min-h-[60vh] flex-col items-center justify-center gap-4 text-center">
       <p role="status" className="text-sm text-muted-foreground">后台验证暂不可用</p>
-      <Button variant="outline" onClick={() => { setStatus("loading"); setAccessRetry(value => value + 1); }}>重新验证</Button>
+      <Button variant="outline" onClick={entry.retry}>重新验证</Button>
     </div>;
   }
 

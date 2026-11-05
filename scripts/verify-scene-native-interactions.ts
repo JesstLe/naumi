@@ -1,4 +1,8 @@
+import { assertPlainPendingPrompt } from "./verification/native-pending-prompt";
+import { selectReferenceMention } from "./verification/reference-mention-locator";
 import assert from "node:assert/strict";
+import {dragCanvasNode} from "./verification/canvas-node-drag";
+import {dragCanvasConnection} from "./verification/canvas-connection-drag";
 import {spawnSync} from "node:child_process";
 import {createHash, randomUUID} from "node:crypto";
 import {writeFile} from "node:fs/promises";
@@ -7,6 +11,7 @@ import {chromium, expect as playwrightExpect, type Page} from "@playwright/test"
 import {newDirectorProject} from "../src/lib/director/project";
 import {sceneInputIdentity} from "../src/lib/scene/project";
 import type {createVideoFixture} from "./video-fusion/harness";
+import {prewarmNativeWriteRoutes} from './verification/native-route-readiness';
 
 const expect = playwrightExpect.configure({timeout: 60000});
 
@@ -23,6 +28,13 @@ export async function verifySceneInteractions(h: Awaited<ReturnType<typeof creat
       assert.equal(response.status, 200, JSON.stringify({url, body: response.body}));
     }
     await writeFile(path.join(out, "ui-prewarm.json"), JSON.stringify(warm, null, 2));
+    const writeRoutes=await prewarmNativeWriteRoutes(h,['/api/video/references','/api/canvas/director-nodes/prewarm/outputs','/api/canvas/video-nodes/prewarm/generate']);
+    await writeFile(path.join(out,'native-write-route-prewarm.json'),JSON.stringify(writeRoutes,null,2));
+    // Original director/character readiness: read real HTML and static bytes before browser timers.
+    const htmlResponse=await fetch(`${h.baseUrl}/canvas?node=${existingVideoId}`,{headers:{cookie:h.cookies.a},signal:AbortSignal.timeout(180000)});assert.equal(htmlResponse.status,200);
+    const html=await htmlResponse.text(),entryAssets=[...new Set(Array.from(html.matchAll(/(?:src|href)="([^"<>]+)"/g),match=>match[1].replaceAll('&amp;','&')).filter(url=>url.startsWith('/_next/static/')&&!url.includes('.woff')))];
+    const warmed=[];for(const url of entryAssets){const response=await fetch(h.baseUrl+url,{signal:AbortSignal.timeout(180000)});assert.equal(response.status,200,url);warmed.push({url,bytes:(await response.arrayBuffer()).byteLength});}
+    await writeFile(path.join(out,'prewarm-assets.json'),JSON.stringify(warmed,null,2));
     const context = await browser.newContext({viewport: {width: 1440, height: 960}});
     await context.addCookies([{name: "nv_user", value: h.cookies.a.slice(8), url: h.baseUrl, httpOnly: true, sameSite: "Lax"}, {name: "naumi_locale", value: "zh", url: h.baseUrl}]);
     page = await context.newPage(); page.setDefaultTimeout(90000);
@@ -33,7 +45,8 @@ export async function verifySceneInteractions(h: Awaited<ReturnType<typeof creat
     const get = async (id: string) => (await h.request<any>("a", "GET", `/api/canvas/scene-nodes/${id}`)).body.node;
     const video = async (id: string) => (await h.request<any>("a", "GET", `/api/canvas/video-nodes/${id}`)).body.node;
     const freeBefore = await h.creditState("a"), createsBefore = h.supplierCalls().filter(call => call.phase === "create").length;
-    await page.goto(`${h.baseUrl}/canvas?node=${existingVideoId}`, {waitUntil: "domcontentloaded", timeout: 180000});
+    const navigation=await page.goto(`${h.baseUrl}/canvas?node=${existingVideoId}`, {waitUntil:"domcontentloaded",timeout:180000});
+    assert.equal(navigation?.status(),200,"Actual Canvas must compile before waiting for controls");
     await page.locator(`.react-flow__node[data-id="${existingVideoId}"]`).waitFor();
     await page.getByTestId("canvas-project-chrome").getByRole("button", {name: "Naumi", exact: true}).click();
     await page.locator("aside").getByRole("button", {name: "创建新项目", exact: true}).click();
@@ -74,14 +87,17 @@ export async function verifySceneInteractions(h: Awaited<ReturnType<typeof creat
     await editor.getByRole("button", {name: "生成参考图", exact: true}).click(); await editor.waitFor({state: "hidden"});
     // This opens the existing image composer. It is not an automatic paid call.
     await expect(page.getByTestId("pending-node-dock")).toContainText("生成");
-    const pendingText = await page.getByTestId("pending-node-dock").locator("textarea").evaluateAll(items => items.map(item => (item as HTMLTextAreaElement).value));
+    const pendingPrompt = await assertPlainPendingPrompt(page.getByTestId("pending-node-dock"), "庭院 · 交互\n石阶连接木廊，石桌靠东，跨镜头保持布局\n夜景：木廊暖灯照明，空间位置保持");
+    const pendingText = [pendingPrompt.text];
     assert.ok(pendingText.some(text => text.includes("木廊暖灯照明") && text.includes("石桌靠东")), JSON.stringify(pendingText));
     assert.deepEqual(await h.creditState("a"), freeBefore); assert.equal(h.supplierCalls().filter(call => call.phase === "create").length, createsBefore);
     await page.reload({waitUntil: "domcontentloaded"}); await title.waitFor();
     console.log("SCENE_PHASE=UI_LIFECYCLE");
-    node = await get(id); const drag = await title.boundingBox(); assert.ok(drag);
-    await page.mouse.move(drag.x + Math.min(65, drag.width / 2), drag.y + drag.height / 2); await page.mouse.down();
-    await page.mouse.move(drag.x + Math.min(65, drag.width / 2) + 80, drag.y + drag.height / 2 + 55, {steps: 12}); await page.mouse.up();
+    // A raw boundingBox read does not wait for the post-reload Flow fit/resize.
+    // Use the real header's actionability first, then perform exactly one drag.
+    // Do not retry a gesture after a missing write or weaken the PG assertion.
+    await title.hover();
+    node = await get(id); await dragCanvasNode(page,title,{x:80,y:55},path.join(out,"actual-node-drag.json"));
     await expect.poll(async () => (await get(id)).x, {timeout: 60000}).not.toBe(node.x); const moved = await get(id);
     await expect(card.getByTestId("scene-canvas-node")).toHaveAttribute("data-revision", String(moved.revision));
     await page.locator('button[data-tool="undo"]').click(); await expect.poll(async () => (await get(id)).x).toBe(node.x);
@@ -118,8 +134,8 @@ export async function verifySceneInteractions(h: Awaited<ReturnType<typeof creat
     const dock = page.getByTestId("video-node-dock"); await dock.waitFor();
     await dock.getByLabel("引用1状态", {exact: true}).selectOption(sceneInputIdentity(id, state.id));
     await dock.getByTestId("video-composer-prompt").fill("跟随 @庭院");
-    await dock.getByRole("listbox", {name: "选择引用素材", exact: true}).getByRole("option", {name: "庭院 · 交互 · 夜景", exact: true}).click();
-    await expect(dock.getByTestId("video-composer-prompt")).toHaveValue("跟随 @【庭院 · 交互 · 夜景】");
+    const mentionSelection = await selectReferenceMention(page, dock.getByTestId("video-composer-prompt"), '庭院 · 交互 · 夜景');
+    const mentionChip = dock.getByTestId("video-composer-prompt").getByRole("button", { name: '庭院 · 交互 · 夜景', exact: true }); await expect(mentionChip).toBeVisible(); await expect(mentionChip).toHaveAttribute("data-inline-token", "{{ref 1}}"); await expect(mentionChip).toHaveAttribute("data-reference-missing", "false");
     await dock.getByRole("button", {name: "保存设置", exact: true}).click();
     await expect.poll(async () => (await video(videoId)).config.prompt).toBe("跟随 {{ref 1}}");
     assert.equal((await video(videoId)).inputs[0].nodeId, sceneInputIdentity(id, state.id));
@@ -154,8 +170,9 @@ export async function verifySceneInteractions(h: Awaited<ReturnType<typeof creat
     const renderCredits=await h.creditState("a");
     await page.goto(`${h.baseUrl}/canvas?node=${directorId}`,{waitUntil:"domcontentloaded"});
     const directorCard=page.locator(`.react-flow__node[data-id="${directorId}"]`);
-    await directorCard.getByTestId("director-canvas-node").waitFor();await page.getByRole("button",{name:"适应视图",exact:true}).click();
-    await card.locator('.react-flow__handle.source[data-handleid="out"]').dragTo(directorCard.locator('.react-flow__handle.target[data-handleid="in"]'));
+    await directorCard.getByTestId("director-canvas-node").waitFor();
+    await page.getByRole("button",{name:"适应视图",exact:true}).click();
+    await dragCanvasConnection(page,card.locator('.react-flow__handle.source[data-handleid="out"]'),directorCard.locator('.react-flow__handle.target[data-handleid="in"]'),path.join(out,'scene-director-connection.json'));
     await expect.poll(async()=>(await getDirector()).project.sceneReference?.stateId).toBe("base");
     let applied=await getDirector();assert.equal(applied.project.backgroundProjection,"image");assert.deepEqual(applied.project.cameras,directorProject.cameras);assert.deepEqual(applied.project.entities,directorProject.entities);
     await directorCard.getByRole("button",{name:"打开3D导演台",exact:true}).first().click();const directorEditor=page.getByTestId("director-editor"),canvas=directorEditor.locator('canvas[data-director-renderer="webgl"]');
@@ -234,7 +251,8 @@ export async function verifySceneInteractions(h: Awaited<ReturnType<typeof creat
     assert.equal((await h.request("a", "POST", "/api/canvas/video-workflows", intent)).status, 202);
     assert.equal(h.supplierCalls().filter(call => call.phase === "create").length, calls);
     assert.deepEqual(errors, []);
-    const evidence = {realBrowserCanvas: true, nativeSceneDirectorConnection:true, actualImageAndPanoramaWebgl:true, directorImageVideoOutputsFree:true, directorSnapshotSurvivesSceneDeletion:true, directorApplyTrustedAndReplayAfterDeletion:true, mixedDirectorSnapshotRemap:true, menuCreateUploadSaveRefresh: true, statesAndDefault: true, imageGenerationDraftOnly: true, dragLockDuplicateDeleteUndoRedo: true, nativeHandleConnection: true, namedMentionAndLookSwitch: true, uiVideoGeneration: true, mixedCopyAliasAndImagesRemapped: true, mixedDeletionRestoreBeforeImageAtomic: true, failedHistoryRollsBackAll: true, workflowRolesFrozen: true, laterEditDeleteLeavesQueuedStageUnchanged: true, replayNoNewCalls: true, taskIds: [uiTaskId, ...((await run()).nodes.map((item: any) => item.taskId))], simulatedCreatesAdded: calls - createsBefore, paidCalls: 0, pageErrors: errors};
+    const evidence = {
+      pendingPrompt,mentionSelection,realBrowserCanvas: true, nativeSceneDirectorConnection:true, actualImageAndPanoramaWebgl:true, directorImageVideoOutputsFree:true, directorSnapshotSurvivesSceneDeletion:true, directorApplyTrustedAndReplayAfterDeletion:true, mixedDirectorSnapshotRemap:true, menuCreateUploadSaveRefresh: true, statesAndDefault: true, imageGenerationDraftOnly: true, dragLockDuplicateDeleteUndoRedo: true, nativeHandleConnection: true, namedMentionAndLookSwitch: true, uiVideoGeneration: true, mixedCopyAliasAndImagesRemapped: true, mixedDeletionRestoreBeforeImageAtomic: true, failedHistoryRollsBackAll: true, workflowRolesFrozen: true, laterEditDeleteLeavesQueuedStageUnchanged: true, replayNoNewCalls: true, taskIds: [uiTaskId, ...((await run()).nodes.map((item: any) => item.taskId))], simulatedCreatesAdded: calls - createsBefore, paidCalls: 0, pageErrors: errors};
     await writeFile(path.join(out, "interaction-result.json"), JSON.stringify(evidence, null, 2));
     return evidence;
   } catch (error) {

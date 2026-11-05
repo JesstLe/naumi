@@ -11,8 +11,8 @@ import {timelineFailure} from "../../response";
 export const runtime = "nodejs", dynamic = "force-dynamic", maxDuration = 120;
 const requestSchema = z.strictObject({operationId: z.uuid(), expectedRevision: z.number().int().positive()});
 export async function POST(request: Request, context: {params: Promise<{id: string}>}) {
-  return withCreationReceiptRoute(request, async () => {
-    const actor = await authenticatedEmail(request);
+  return withCreationReceiptRoute(request, async (authenticatedActor) => {
+    const actor = await authenticatedEmail(request, authenticatedActor);
     if (!actor) return NextResponse.json({error: "请先登录"}, {status: 401});
     if (!sameSiteBiMutation(request)) return NextResponse.json({error: "不允许跨站修改"}, {status: 403});
     try {

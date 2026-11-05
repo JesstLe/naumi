@@ -1,0 +1,81 @@
+import {verifyCanvasSupplierOutcomesBrowser} from './verification/canvas-supplier-outcomes-browser.mjs';
+import {verifyCanvasNativeEditorsBrowser} from './verification/canvas-native-editors-browser.mjs';
+import {verifyCanvasPaidDisconnectBrowser} from './verification/canvas-paid-disconnect-browser.mjs';
+/** Actual full-product browser + real image Worker. No mocked browser routes,
+ * no injected auth provider, no DOM fixture, no replacement API handlers. */
+import {chromium,expect as rawExpect} from '@playwright/test';
+import assert from 'node:assert/strict';
+import {readFile,writeFile} from 'node:fs/promises';
+import path from 'node:path';
+import {execFile} from 'node:child_process';
+import {promisify} from 'node:util';
+import {verifyCanvasArtworkPickerBrowser} from './verification/canvas-artwork-picker-browser.mjs';
+import {verifyCanvasNodePreferencesBrowser} from './verification/canvas-node-preferences-browser.mjs';
+import {verifyCanvasInputControls} from './verification/canvas-input-controls-browser.mjs';
+import {verifyCanvasClipboardBrowser} from './verification/canvas-clipboard-browser.mjs';
+import {verifyCanvasImageCreationBrowser} from './verification/canvas-image-creation-browser.mjs';
+import {verifyCanvasTextEditingBrowser} from './verification/canvas-text-editing-browser.mjs';
+import {verifyCanvasStitchBrowser} from './verification/canvas-stitch-browser.mjs';
+import {verifyCanvasProjectNavigationBrowser} from './verification/canvas-project-navigation-browser.mjs';
+import {verifyCanvasComfyBrowser} from './verification/canvas-comfy-browser.mjs';
+import {verifyCanvasDownloadBrowser,verifyCanvasLargeDownloadBrowser} from './verification/canvas-download-browser.mjs';
+const exec=promisify(execFile),arg=name=>{const i=process.argv.indexOf(name);return i<0?undefined:process.argv[i+1]},base=arg('--base'),worker=arg('--worker'),out=path.resolve(arg('--out')),duration=Number(arg('--soak-seconds')||180);
+assert.equal(new URL(base).hostname,'127.0.0.1');assert.match(worker,/^refactor-r6c-[a-f0-9]+-worker$/);assert.ok(duration>=60&&duration<=1800);
+const input=JSON.parse(await readFile(path.join(out,'SETUP.json'),'utf8')),checks=[],errors=[],dialogs=[],requests=[],responses=[],samples=[];
+const expect=rawExpect.configure({timeout:45000}),browser=await chromium.launch({channel:'msedge',headless:true}),a=await browser.newContext({viewport:{width:1440,height:1000},reducedMotion:'reduce'}),b=await browser.newContext({viewport:{width:1440,height:1000},reducedMotion:'reduce'}),pa=await a.newPage(),pb=await b.newPage();
+const pass=name=>{checks.push(name);console.log('PASS '+name)},node=(p,id='r6c-root')=>p.locator(`.react-flow__node[data-id="${id}"]`);
+for(const page of [pa,pb]){
+ page.on('pageerror',e=>errors.push({message:e.message,stack:e.stack}));
+ page.on('dialog',async d=>{dialogs.push({type:d.type(),message:d.message()});await d.dismiss();});
+ page.on('request',r=>{const u=new URL(r.url());if(u.origin!==base){errors.push({externalRequest:r.url()});return;}if(u.pathname.startsWith('/api/')&&r.method()!=='GET')requests.push({path:u.pathname,method:r.method(),body:r.postData()?.slice(0,3000)});});
+ page.on('response',r=>{const u=new URL(r.url());if(u.pathname.startsWith('/api/'))responses.push({path:u.pathname,status:r.status()});});
+}
+const helper=async(action,...args)=>{const result=await exec('docker',['exec','--env','NODE_OPTIONS=','--env','NODE_PATH=/app/node_modules','--env','NAUMI_RELEASE_RUNTIME=0',worker,'node','/evidence/fixture.cjs','--browser-helper','--action',action,...args],{encoding:'utf8',maxBuffer:4*1024*1024,windowsHide:true});return JSON.parse(result.stdout.trim().split('\n').at(-1));};
+const snapshot=()=>helper('snapshot'),stats=()=>helper('stats'),row=async id=>(await snapshot()).artworks.find(n=>n.id===id),textrow=async()=>(await snapshot()).texts.find(n=>n.id==='text-r6c');
+async function login(context){await context.addCookies([{name:'naumi_locale',value:'zh',url:base}]);const r=await context.request.post(base+'/api/auth/login',{data:{email:input.owner,password:input.password}});assert.equal(r.status(),200,await r.text());}
+async function open(p){await p.goto(base+'/canvas',{waitUntil:'domcontentloaded'});const card=p.getByTitle('R6C full-image canvas',{exact:true});await expect.poll(async()=>await node(p).isVisible()||await card.isVisible(),{timeout:90000}).toBe(true);if(!await node(p).isVisible())await card.click();await expect(node(p)).toBeVisible({timeout:90000});const close=p.getByRole('button',{name:'收起助手',exact:true});if(await close.isVisible())await close.click();}
+async function close(p){const c=p.getByRole('button',{name:'关闭创作栏',exact:true});if(await c.isVisible())await c.click();}
+async function rename(p,title){await close(p);await node(p).click({position:{x:90,y:100}});await p.getByTestId('image-node-toolbar').locator('[data-action="rename"]').click();const field=p.locator('input[maxlength="60"]');await expect(field).toBeVisible();await field.fill(title);await field.press('Enter');}
+async function finish(p,index){await expect.poll(async()=>{const s=await snapshot();return s.artworks.filter(n=>!['r6c-root','r6c-second'].includes(n.id)).length;}).toBe(index);await expect(p.getByTestId('generation-placeholder')).toHaveCount(0,{timeout:90000});await expect(p.getByRole('status').filter({hasText:'重新生成中'})).toHaveCount(0,{timeout:90000});await expect.poll(()=>p.evaluate(()=>Object.keys(sessionStorage).filter(key=>key.startsWith('naumi:imagegen-pending:v1:')).length),{timeout:90000}).toBe(0);}
+try{
+ await login(a);await login(b);await open(pa);await open(pb);pass('packaged product loads native project in two independent authenticated browser contexts');
+ const beforeControls=await snapshot();checks.push(...await verifyCanvasInputControls({page:pb,expect,out:path.join(out,'input-controls')}));assert.deepEqual(await snapshot(),beforeControls);assert.equal((await stats()).calls,0);pass('packaged input controls preserve real PG artwork/text/task/ledger state before generation');
+ await rename(pa,'R6C browser A');await expect.poll(async()=>(await row('r6c-root')).title).toBe('R6C browser A');await rename(pb,'R6C browser B retained');
+ const conflict=pb.getByTestId('canvas-artwork-conflict');await expect(conflict).toBeVisible();await conflict.getByText('查看两份修改',{exact:true}).click();await expect(conflict).toContainText('R6C browser A');await expect(conflict).toContainText('R6C browser B retained');await conflict.getByRole('button',{name:'保留本页修改',exact:true}).click();await expect.poll(async()=>(await row('r6c-root')).title).toBe('R6C browser B retained');pass('full-image browser rename conflict retains two versions and explicitly resolves through real PG history');
+ await close(pb);const toolbar=pb.getByTestId('canvas-main-toolbar');await toolbar.locator('[data-tool="undo"]').click();await expect.poll(async()=>(await row('r6c-root')).title).toBe('R6C browser A');await toolbar.locator('[data-tool="redo"]').click();await expect.poll(async()=>(await row('r6c-root')).title).toBe('R6C browser B retained');pass('full-image conflict resolution remains one real undo/redo action');
+ const text=p=>node(p,'text-r6c').getByRole('textbox',{name:'编辑生成文本',exact:true});
+ await text(pa).fill('R6C A text persisted');await text(pa).press('Tab');await expect.poll(async()=>(await textrow()).content).toBe('R6C A text persisted');await text(pb).fill('R6C B local text');await text(pb).press('Tab');
+ const tc=pb.getByTestId('canvas-text-conflict');await expect(tc).toBeVisible();await expect(text(pb)).toHaveValue('R6C B local text');await tc.getByText('查看两份内容',{exact:true}).click();await expect(tc).toContainText('R6C A text persisted');await tc.getByRole('button',{name:'使用服务器版本',exact:true}).click();await expect(text(pb)).toHaveValue('R6C A text persisted');pass('actual packaged text UI keeps local draft on conflict and accepts canonical server content');
+ await close(pb);await toolbar.locator('[data-tool="image-node"]').click();const pending=pb.getByTestId('pending-node-dock');await expect(pending).toBeVisible();await pending.locator('textarea').fill('R6C blank node full-image generation');
+ await expect(pending).toContainText('6 积分');await expect(pending).not.toContainText('— 积分');await pending.getByTestId('generation-submit-action').click();await expect.poll(async()=>(await snapshot()).jobs.length).toBeGreaterThan(0);assert.equal((await stats()).calls,0);assert.deepEqual((await snapshot()).ledger,{n:0,amount:0});pass('real blank-node controls display exact quote and persist pending operation without executing in Web');
+ await helper('resume');await expect.poll(async()=>(await stats()).waiting).toBe(1);await pending.locator('textarea').fill('R6C next draft survives receipt');await close(pb);
+ const health=await pb.request.get(base+'/api/health');assert.equal((await health.json()).db.ok,true);await helper('release');await finish(pb,1);assert.deepEqual((await snapshot()).ledger,{n:1,amount:6});pass('actual Worker completes held supplier request, browser attaches one result and one six-credit debit');
+ await close(pb);await node(pb).click({position:{x:90,y:100}});const image=pb.getByTestId('image-node-dock');await expect(image).toBeVisible();const beforeRegeneration=await row('r6c-root');await image.locator('textarea').fill('R6W original-node regeneration');await expect(image).toContainText('6 积分');await image.getByTestId('generation-submit-action').click();await finish(pb,2);assert.equal((await stats()).calls,1);assert.equal((await stats()).edits,1);assert.deepEqual((await snapshot()).ledger,{n:2,amount:12});const editPlan=requests.filter(row=>row.path==='/api/imagegen/plan'&&row.method==='POST').map(row=>JSON.parse(row.body)).find(plan=>plan.canvasTarget?.nodeId==='r6c-root');assert.equal(editPlan.mode,'edit');assert.equal(editPlan.inputs[0].role,'edit-target');assert.equal(editPlan.inputs[0].reference.sourceNodeId,'r6c-root');assert.equal(editPlan.canvasTarget.expectedImage,beforeRegeneration.image_url);const regenerated=await row('r6c-root');assert.equal(regenerated.canvas_image_revision,1);assert.equal(regenerated.image_url,beforeRegeneration.image_url);assert.equal(regenerated.canvas_x,beforeRegeneration.canvas_x);assert.equal(regenerated.canvas_y,beforeRegeneration.canvas_y);assert.ok(regenerated.canvas_image_version);await expect(node(pb)).toHaveCount(1);pass('ordinary generation edits the current image and updates its original display version without moving it or adding a visible node');
+ await close(pb);await pb.reload({waitUntil:'domcontentloaded'});await expect(node(pb)).toBeVisible({timeout:90000});await expect(node(pb).locator('.art-title')).toContainText('R6C browser B retained');await expect(text(pb)).toHaveValue('R6C A text persisted');assert.equal((await snapshot()).artworks.length,4);assert.deepEqual((await snapshot()).ledger,{n:2,amount:12});pass('full product refresh restores native text, image metadata and delivered nodes without new generation');
+ await pb.screenshot({path:path.join(out,'full-product-canvas.png')});
+ const soakStart=performance.now();let iterations=0;
+ while(performance.now()-soakStart<duration*1000){
+  const t=performance.now();const replies=await Promise.all(['/api/health','/api/account','/api/projects','/api/canvas/text-nodes'].map(p=>pb.request.get(base+p)));for(const r of replies)assert.equal(r.status(),200,await r.text());
+  const memory=await exec('docker',['stats','--no-stream','--format','{{json .}}',worker,worker.replace(/-worker$/,'-web')],{encoding:'utf8',windowsHide:true});
+  // This whole cycle includes docker stats collection; it is not HTTP latency.
+  samples.push({atMs:Math.round(performance.now()-soakStart),sampleCycleMs:Math.round(performance.now()-t),docker:memory.stdout.trim().split('\n').map(JSON.parse),browserHeap:await pb.evaluate(()=>performance.memory?{used:performance.memory.usedJSHeapSize,total:performance.memory.totalJSHeapSize}:null)});iterations++;
+  await pb.waitForTimeout(Math.min(10000,Math.max(0,duration*1000-(performance.now()-soakStart))));
+ }
+ assert.ok(iterations>=5);assert.equal((await stats()).calls,1);assert.equal((await stats()).edits,1);assert.deepEqual((await snapshot()).ledger,{n:2,amount:12});pass(`sustained ${duration}s two-browser mixed reads retain exactly two deliveries and two debits`);
+ checks.push(...await verifyCanvasDownloadBrowser({page:pb,expect,out:path.join(out,'downloads'),snapshot,stats,requests}));
+ checks.push(...await verifyCanvasClipboardBrowser({page:pb,expect,out:path.join(out,'clipboard'),snapshot,stats,requests,owner:input.owner}));
+ checks.push(...await verifyCanvasImageCreationBrowser({page:pb,expect,out:path.join(out,'image-creation'),snapshot,stats,open}));
+ checks.push(...await verifyCanvasComfyBrowser({page:pb,expect,out:path.join(out,'comfy'),snapshot,stats,open,requests}));
+ checks.push(...await verifyCanvasProjectNavigationBrowser({page:pb,expect,out:path.join(out,'project-navigation'),snapshot,stats,open}));
+ checks.push(...await verifyCanvasTextEditingBrowser({page:pb,expect,out:path.join(out,'text-editing'),snapshot,stats,open}));
+ checks.push(...await verifyCanvasNodePreferencesBrowser({page:pb,expect,out:path.join(out,'node-preferences'),snapshot,preferences:()=>helper('preferences'),stats,open,requests}));
+ checks.push(...await verifyCanvasStitchBrowser({page:pb,expect,out:path.join(out,'stitch'),snapshot,stats,open,requests}));
+ checks.push(...await verifyCanvasArtworkPickerBrowser({page:pb,expect,out:path.join(out,'artwork-picker'),snapshot,copies:()=>helper('copies'),stats,requests}));
+ checks.push(...await verifyCanvasNativeEditorsBrowser({page:pb,expect,out:path.join(out,'native-editors'),snapshot,native:()=>helper('native-editors'),stats,open,requests}));
+ const paidDisconnect=await verifyCanvasPaidDisconnectBrowser({page:pb,expect,out:path.join(out,'paid-disconnect'),open,snapshot,helper});checks.push(...paidDisconnect.checks);
+ const supplierOutcomes=await verifyCanvasSupplierOutcomesBrowser({page:pb,expect,out:path.join(out,'supplier-outcomes'),open,snapshot,helper});checks.push(...supplierOutcomes.checks);
+ checks.push(...await verifyCanvasLargeDownloadBrowser({page:pb,expect,out:path.join(out,'downloads-large'),snapshot,stats,seed:()=>helper('download-project')}));
+ await helper('drain');await expect.poll(async()=>(await helper('status')).tickDrainComplete).toBe(true);assert.equal(dialogs.length,0);assert.deepEqual(errors,[]);assert.equal(requests.filter(r=>['/api/artworks/rename','/api/artworks/mark','/api/artworks/canvas-size','/api/canvas/groups'].includes(r.path)).length,0);
+ const final=await snapshot(),report={status:'PASS',checks,source:'fixed image recorded by parent INPUT.json',actualFullProduct:true,actualBrowser:true,browser:'msedge-headless',routeMocks:0,authProvidersReplaced:0,checksCount:checks.length,errors,dialogs,requests,responses,samples,soakSeconds:(performance.now()-soakStart)/1000,iterations,final,fixture:await stats(),paidDisconnect,supplierOutcomes,capacityClaim:false};
+ await writeFile(path.join(out,'BROWSER_RESULT.json'),JSON.stringify(report,null,2)+'\n');console.log(`REFACTOR_PRODUCT_BROWSER=PASS CHECKS=${checks.length} FULL_IMAGE=1 NATIVE_HTTP=1 BROWSER_ROUTES_MOCKED=0 TWO_CONTEXTS=2 IMAGE_TEXT_CONFLICT=RETAINED DELIVERIES=${final.ledger.n} USER_CONSUME=${final.ledger.n} USER_CREDITS=${final.ledger.amount} CONFIRM_DIALOGS=0 SOAK_SECONDS=${duration} EXTERNAL=0 DEPLOY=0`);
+}catch(error){await pb.screenshot({path:path.join(out,'browser-failure.png')}).catch(()=>{});await writeFile(path.join(out,'BROWSER_FAILURE.json'),JSON.stringify({error:String(error),stack:error.stack,checks,errors,dialogs,requests,responses,bodyA:await pa.locator('body').innerText().catch(()=>''),bodyB:await pb.locator('body').innerText().catch(()=>''),state:await snapshot().catch(e=>String(e)),samples},null,2)+'\n');throw error;}finally{await browser.close();}

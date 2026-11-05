@@ -4,7 +4,7 @@ import type { ValidationOptions } from "./schema";
 import { publicUpstreamIds } from "./channel-policy";
 import { businessRoutePlan, selectedBusinessOption } from "./business";
 import { selectedImagePreset } from "./image-preset";
-import { simulateModel } from "./runtime";
+import {simulateModel} from "@/lib/model-config/simulation";
 import { imageRequestAdmission } from "../imagegen/request-admission";
 import { exactRatioPixels } from "../imagegen/request-size";
 import {acceptsAPIMartRatio} from "./apimart-image-policy";

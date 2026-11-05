@@ -2,9 +2,10 @@ import "server-only";
 import sharp from "sharp";
 import {createHash} from "node:crypto";
 import {ORIGINAL_IMAGE_MAX_BYTES,ORIGINAL_IMAGE_MAX_PIXELS} from "./image-upload-policy";
-import {uploadImage,privateMedia,writeStoredObject} from "./storage";
-import {ensureMediaSchema} from "./media-assets";
-import {getPool} from "./db";
+import { uploadImage } from "./media-upload";
+import { privateMedia, writeStoredObject,storageDriver } from "./object-storage/runtime";
+import {assertOwnedMediaVersion,registerOriginalWithPreviews,type PreparedMediaMetadata} from "./media-assets";
+
 
 export type BrowserPreviews={thumbnail:Buffer;preview:Buffer};
 export async function originalImageMetadata(bytes:Buffer){
@@ -37,28 +38,17 @@ export async function saveCanvasOriginal(bytes:Buffer,key:string,owner:string,pr
  if(!previews){if(bytes.length>12*1024*1024)throw Error("大图请通过画布上传，浏览器会自动准备预览");return {url:await uploadImage(bytes,meta.mime,key,undefined,owner),...meta};}
  await validateBrowserPreviews(meta,previews);
  if(!privateMedia){return {url:await uploadImage(bytes,meta.mime,key,undefined,owner),...meta};}
- await ensureMediaSchema();const sha=createHash("sha256").update(bytes).digest("hex"),prepared=[];
- const existing=(await getPool().query("SELECT owner,sha256 FROM app_media_assets WHERE key=$1",[key])).rows[0];
- if(existing&&(existing.owner!==owner.toLowerCase()||existing.sha256!==sha))throw Error("素材归属或内容不匹配");
+ const sha=createHash("sha256").update(bytes).digest("hex"),prepared=new Map<string,PreparedMediaMetadata>();
+ await assertOwnedMediaVersion(key,owner,sha);
  const ownerKey=createHash("sha256").update(owner.toLowerCase()).digest("hex").slice(0,16);
  const original=await writeStoredObject(bytes,meta.mime,key);
  for(const [name,body] of Object.entries(previews)){
   const format=(await sharp(body).metadata()).format!,variantKey=`media-variants/${ownerKey}-${sha}-${name}-${createHash("sha256").update(body).digest("hex").slice(0,16)}.${format}`;
-  const saved=await writeStoredObject(body,`image/${format}`,variantKey);prepared.push({name,key:variantKey,body,ready:saved.remoteReady,mime:`image/${format}`});
+  const saved=await writeStoredObject(body,`image/${format}`,variantKey),dimensions=await sharp(body).metadata();
+  prepared.set(name,{key:variantKey,contentType:`image/${format}`,sha256:createHash("sha256").update(body).digest("hex"),bytes:body.length,remoteReady:saved.remoteReady,width:dimensions.width!,height:dimensions.height!});
  }
- const tx=await getPool().connect();
- try{
-  await tx.query("BEGIN");
-  const driver=(await import("./storage")).storageDriver;
-  for(const item of [{key,body:bytes,ready:original.remoteReady,mime:meta.mime},...prepared]){
-   const dimensions=item.key===key?meta:await sharp(item.body).metadata();
-   const result=await tx.query(`INSERT INTO app_media_assets(key,owner,public,driver,remote_ready,content_type,sha256,bytes,width,height)
-    VALUES($1,$2,false,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(key) DO UPDATE SET remote_ready=EXCLUDED.remote_ready
-    WHERE app_media_assets.owner=EXCLUDED.owner AND app_media_assets.sha256=EXCLUDED.sha256 RETURNING key`,[item.key,owner.toLowerCase(),driver,item.ready,item.mime,createHash("sha256").update(item.body).digest("hex"),item.body.length,dimensions.width,dimensions.height]);
-   if(!result.rowCount)throw Error("素材归属或内容不匹配");
-  }
-  await tx.query("UPDATE app_media_assets SET thumbnail_key=$2,preview_key=$3 WHERE key=$1 AND owner=$4",[key,prepared.find(v=>v.name==="thumbnail")!.key,prepared.find(v=>v.name==="preview")!.key,owner.toLowerCase()]);
-  await tx.query("COMMIT");
- }catch(error){await tx.query("ROLLBACK");throw error;}finally{tx.release();}
+ await registerOriginalWithPreviews({owner,driver:storageDriver,
+  original:{key,contentType:meta.mime,sha256:sha,bytes:bytes.length,remoteReady:original.remoteReady,width:meta.width,height:meta.height},
+  thumbnail:prepared.get("thumbnail")!,preview:prepared.get("preview")!});
  return {url:`/media/${key}`,...meta};
 }

@@ -3,7 +3,7 @@ import {publicUpstreamIds} from './channel-policy';
 import {selectedBusinessOption} from './business';
 import {selectedImagePreset} from './image-preset';
 import {resolveImageResolution,resolutionFacts,type ResolutionContext} from './resolution-fallback';
-import {simulateModel} from './runtime';
+import {simulateModel} from './simulation';
 import {imageRequestAdmission} from '../imagegen/request-admission';
 import {REVERSE_HUB_IMAGE_RATIOS} from '../imagegen/ratio-support';
 

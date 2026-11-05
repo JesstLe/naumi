@@ -1,11 +1,13 @@
 /** Isolated local database and mock suppliers/Router. No production access. */
-import { spawn } from "node:child_process";
+import { spawn,spawnSync } from "node:child_process";
+import path from "node:path";
 import { mkdir, writeFile, rm } from "node:fs/promises";
 import { createModelFixture } from "./model-config-fixture";
 import { fixtureConfig } from "./billing-unit-fixture";
+let cleanupOnFailure=async()=>{};
 
 async function main() {
-  let close = async () => {}, activeDigest = "", queries = 0, paid = 0, dropNext = false;
+  let close = async (_code=0) => {}, activeDigest = "", queries = 0, paid = 0, dropNext = false;
   const publications = new Map<string, unknown>();
   const f = await createModelFixture(async (req, res) => {
     const send = (status: number, body: unknown) => { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(body)); };
@@ -28,8 +30,31 @@ async function main() {
     if (req.method === "POST") paid++;
     send(405, { error: "Generation forbidden" });
   });
+  let next:ReturnType<typeof spawn>|undefined,closing=false,imageContainer="",imageEnvFile="";
+  close=async(code=0)=>{
+    if(closing)return;closing=true;
+    if(imageContainer){
+      const state=spawnSync("docker",["inspect","--format",'{{index .Config.Labels "naumi.ui.run"}}',imageContainer],{encoding:"utf8",windowsHide:true});
+      if(state.status===0){
+        if(state.stdout.trim()!==process.env.NAUMI_MODEL_UI_RUN_ID)throw Error("UI_IMAGE_CONTAINER_OWNER_MISMATCH");
+        const removed=spawnSync("docker",["rm","--force",imageContainer],{encoding:"utf8",windowsHide:true});
+        if(removed.status!==0)throw Error("UI_IMAGE_CONTAINER_CLEANUP_FAILED");
+      }
+      if(imageEnvFile)await rm(imageEnvFile,{force:true});
+    }else if(next?.pid && next.exitCode===null){
+      if(process.platform==="win32")await new Promise(resolve=>spawn("taskkill",["/pid",String(next!.pid),"/T","/F"],{windowsHide:true,stdio:"ignore"}).once("exit",resolve));
+      else next.kill();
+    }
+    const db=await import("../src/lib/db");
+    await db.getPool().end();await f.cleanup();
+    await rm("output/model-management-fixture/fixture.json",{force:true});process.exit(code);
+  };
+  cleanupOnFailure=()=>close(1);
+  process.on("message",message=>{const control=message as {action?:string;runId?:string};if(control.action==="stop"&&control.runId===process.env.NAUMI_MODEL_UI_RUN_ID)void close();});
+  process.on("disconnect",()=>void close());
+  process.on("SIGINT",()=>void close());process.on("SIGTERM",()=>void close());
   process.env.PGOPTIONS = `-c search_path=${f.schemaName}`;
-  process.env.NEXT_DIST_DIR = "output/model-management-fixture/next";
+  process.env.NEXT_DIST_DIR ||= "output/model-management-fixture/next";
   process.env.NAUMI_VIDEO_WORKER = "0";
   process.env.NAUMI_MULTI_USER = "1";
   process.env.BUILD_VERSION="1791542000";
@@ -50,6 +75,7 @@ async function main() {
   Object.assign(f.config.bindings, { "agent.text": "smart-text", "text.generate": "smart-text", "vision.ocr": "smart-text" });
   f.config.upstreamModels.push({...structuredClone(f.config.upstreamModels[0]),id:"family-image",model:"fixture-family-wire"});
   f.config.publicModels.push(...["square","portrait","three-four"].map(s=>({...structuredClone(f.config.publicModels[0]),id:"gemini-3.0-pro-image-"+s,label:"gemini-3.0-pro-image-"+s,target:{type:"upstream" as const,id:"family-image"}})));
+  if(process.env.NAUMI_MODEL_UI_IMAGE)for(const provider of f.config.providers)provider.baseUrl=provider.baseUrl.replace(f.origin,f.origin.replace('127.0.0.1','host.docker.internal'));
   if(process.env.VERIFY_CANVAS_NODE_EDITING === "1") f.config.upstreamModels[0].parameterMap.qualityPolicy={mode:"map",choices:(["low","medium","high","xhigh","max"] as const).map((id,i)=>({id,label:["低","标准","高","超高","最高"][i],value:["xhigh","max"].includes(id)?"high":id}))};
   const db = await import("../src/lib/db"), auth = await import("../src/lib/admin-auth"), native = await import("../src/lib/native-auth");
   await db.ensureSchema();
@@ -76,16 +102,26 @@ async function main() {
   const fixtureBilling=fixtureConfig();fixtureBilling.switches.metering="on";
   const billing=createConfigRuntime({ pool: f.sql, ensureSchema: db.ensureSchema, initialize: async () => fixtureBilling });
   const beforeBilling=await billing.current();await billing.publish({id:crypto.randomUUID(),expectedVersion:beforeBilling.version,config:fixtureBilling,actor:"fixture",reason:"Enable isolated UI pricing"});
+  if(process.env.VERIFY_ADMIN_UI_INTEGRATION === "1") {
+    process.env.STORAGE_DRIVER="local";
+    process.env.MEDIA_DIR=process.cwd()+"/output/model-management-fixture/admin-media";
+    const seed=spawn(process.execPath,["--conditions=react-server","--import","tsx","scripts/seed-saas-admin-preview.ts"],{env:process.env,windowsHide:true,stdio:"inherit"});
+    const code=await new Promise<number|null>((resolve,reject)=>{seed.once("error",reject);seed.once("exit",resolve);});
+    if(code!==0)throw Error("ADMIN_UI_REAL_FIXTURE_SEED_FAILED");
+  }
   await mkdir("output/model-management-fixture", { recursive: true });
-  const next = spawn(process.execPath, ["node_modules/next/dist/bin/next", "dev", "--hostname", "127.0.0.1", "--port", "54989"], { env: process.env, windowsHide: true, stdio: "inherit" });
-  let closing = false;
-  close = async () => {
-    if (closing) return; closing = true;
-    if (process.platform === "win32") await new Promise(resolve => spawn("taskkill", ["/pid", String(next.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" }).once("exit", resolve));
-    else next.kill();
-    await db.getPool().end(); await f.cleanup(); await rm("output/model-management-fixture/fixture.json", { force: true }); process.exit(0);
-  };
-  await writeFile("output/model-management-fixture/fixture.json", JSON.stringify({ control: f.origin, memberCookie: native.signUserSession("mvp-member@example.test", Date.now()), schemaName: f.schemaName }));
-  process.on("SIGINT", () => void close()); process.on("SIGTERM", () => void close());
+  if(process.env.NAUMI_MODEL_UI_IMAGE){
+    if(!/^sha256:[a-f0-9]{64}$/.test(process.env.NAUMI_MODEL_UI_IMAGE)||!process.env.NAUMI_MODEL_UI_RUN_ID)throw Error("FIXED_UI_IMAGE_REQUIRED");
+    imageContainer="naumi-ui-"+process.env.NAUMI_MODEL_UI_RUN_ID;
+    imageEnvFile=path.resolve("output/model-management-fixture/image.env");
+    const keys=["DATABASE_URL","PGOPTIONS","SETTINGS_SECRET","NAUMI_MULTI_USER","NAUMI_VIDEO_WORKER","VIDEO_WORKER_SECRET","NAUMI_ROUTER_MANAGEMENT_URL","NAUMI_ROUTER_MANAGEMENT_TOKEN","MODEL_CONFIG_ENVELOPE_SECRET","MODEL_CONFIG_TRUSTED_ORIGINS","FLEET_CONTROL_ENABLED"];
+    const env=Object.fromEntries(keys.flatMap(key=>process.env[key]===undefined?[]:[[key,process.env[key]!]]));
+    env.DATABASE_URL=env.DATABASE_URL.replace('127.0.0.1','host.docker.internal');env.NAUMI_ROUTER_MANAGEMENT_URL=f.origin.replace('127.0.0.1','host.docker.internal');
+    env.MODEL_CONFIG_TRUSTED_ORIGINS=env.NAUMI_ROUTER_MANAGEMENT_URL;env.NAUMI_RELEASE_RUNTIME="0";env.STORAGE_DRIVER="local";env.MEDIA_DIR="/data/media";
+    await writeFile(imageEnvFile,Object.entries(env).map(([key,value])=>{if(/[\r\n]/.test(value))throw Error("FIXTURE_ENV_NEWLINE");return key+"="+value;}).join("\n")+"\n",{mode:0o600});
+    next=spawn("docker",["run","--name",imageContainer,"--label","naumi.task=model-ui-image","--label","naumi.ui.run="+process.env.NAUMI_MODEL_UI_RUN_ID,"--publish","127.0.0.1:"+(process.env.NAUMI_MODEL_UI_PORT||"54989")+":3000","--mount","type=bind,src="+path.resolve(process.env.MEDIA_DIR!)+",dst=/data/media","--env-file",imageEnvFile,process.env.NAUMI_MODEL_UI_IMAGE],{windowsHide:true,stdio:"inherit"});
+  }else next = spawn(process.execPath, ["node_modules/next/dist/bin/next", "dev", "--hostname", "127.0.0.1", "--port", process.env.NAUMI_MODEL_UI_PORT||"54989"], { env: process.env, windowsHide: true, stdio: "inherit" });
+  next.once("exit",(code,signal)=>console.log(`MODEL_UI_WEB_EXIT=${code} SIGNAL=${signal} IMAGE=${!!imageContainer}`));
+  await writeFile("output/model-management-fixture/fixture.json", JSON.stringify({ control: f.origin, memberCookie: native.signUserSession("mvp-member@example.test", Date.now()), schemaName: f.schemaName,runId:process.env.NAUMI_MODEL_UI_RUN_ID }));
 }
-main().catch(e => { console.error(e); process.exitCode = 1; });
+main().catch(async e => { console.error(e);process.exitCode=1;await cleanupOnFailure(); });

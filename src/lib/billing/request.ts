@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { BillingError, type BillingQuote } from "./types";
 import { billingJson } from "./access";
-import { ModelConfigError } from "../model-config/types";
+import {billingFailure} from "./failure";
+export {billingFailure} from "./failure";
 /** Compatibility entry point. The server quote, not browser echoes, prices a
  * creation. Wallet reservation and operation identity are checked separately. */
 export function assertQuotedVersion(_client: {
@@ -26,9 +27,6 @@ export function operationIdFor(request: Request, explicit?: string) {
     return id;
 }
 export function billingErrorResponse(error: unknown) {
-    if (error instanceof ModelConfigError)
-        return billingJson({ error: error.message, code: error.code,...(error.code==="IMAGE_QUOTE_EXPIRED"?{accepted:false}:{}) }, error.status);
-    if (error instanceof BillingError)
-        return billingJson({ error: error.message, code: error.code }, error.status);
-    return billingJson({ error: "计费服务暂时不可用，请稍后重试" }, 503);
+    const {status,...body}=billingFailure(error);
+    return billingJson(body,status);
 }

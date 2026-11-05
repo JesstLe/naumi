@@ -1,8 +1,7 @@
 import "server-only";
 import process from "node:process";
 import { Pool, type PoolClient } from "pg";
-import { getPool } from "../db";
-import { videoCoordinationPoolLimit } from "../db/connection";
+import { getPool, videoCoordinationPoolLimit } from "@/platform/db/pool";
 
 // Media polling and workflow resumption share a budgeted session-lock pool
 // per Node process, including separately bundled copies of this module. Web and

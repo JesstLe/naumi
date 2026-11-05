@@ -12,7 +12,7 @@ import type {BillingQuote} from '../src/lib/billing/types';
 const sha=(b:Buffer)=>createHash('sha256').update(b).digest('hex');
 const sleep=(ms:number)=>new Promise(r=>setTimeout(r,ms));
 async function main(){
- const url=new URL(process.env.DATABASE_URL!);assert.equal(url.hostname,'127.0.0.1');assert.equal(url.port,'55435');assert.equal(url.pathname,'/naumi_x5_native');assert.equal(url.username,'x5_fixture');
+ const url=new URL(process.env.DATABASE_URL!);assert.equal(url.hostname,'127.0.0.1');assert.equal(process.env.NAUMI_VERIFY_ISOLATED_DB,'1');assert.ok(Number(url.port)>0);assert.equal(url.pathname,'/naumi_x5_native');assert.equal(url.username,'x5_fixture');
  if(process.argv[2]==='--read'){
   const {DurableImageJobs}=await import('../src/lib/durable-image-jobs'),jobs=new DurableImageJobs<any>('generate');
   try{const saved=await jobs.get(process.argv[3]);const image=Object.values(saved.paidOperations)[0] as any;assert.equal(sha(Buffer.from(image.result[0].url.split(',')[1],'base64')),process.argv[4]);console.log('NATIVE_RESTART=PASS ORIGINAL_BYTES=MATCH');}

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { enterpriseAuthorize } from "@/lib/enterprise/access";
 import { enterpriseRead } from "@/lib/enterprise/server";
 import { teamFailure, teamJson } from "@/lib/teams/access";
-import { TeamError } from "@/lib/teams/server";
+import { TeamError } from "@/lib/teams/errors";
 import { parseUsageQuery } from "@/lib/bi/usage-contracts";
 import { readUserUsage } from "@/lib/bi/usage-repository";
 export const runtime = "nodejs";

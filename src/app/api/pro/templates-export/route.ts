@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
-import { dbEnabled, validateLicense, listTemplatesPaged } from "@/lib/db";
-import { checkRateLimit } from "@/lib/rate-limit-http";
+import {validateLicense} from "@/lib/licensing/repository";
+import {listTemplatesPaged} from "@/lib/templates/repository";
+import {dbEnabled} from "@/platform/db/pool";
+import {checkRateLimit} from "@/lib/rate-limit-http";
 import { clientIp } from "@/lib/ip";
 
 export const runtime = "nodejs";

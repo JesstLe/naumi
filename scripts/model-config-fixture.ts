@@ -23,7 +23,8 @@ export async function createModelFixture(handleRequest?: RequestListener) {
   const credential = await credentials.importPlain({ providerId: "p1", plain: marker, actor: "fixture" });
   const config = fixtureModelConfig(`${origin}/v1`, credential.id);
   let initializations = 0;
-  const repo = createModelRepository({ pool: sql, initialize: async () => { initializations++; return config; }, trustedOrigins: [origin] });
+  const trustedOrigins=[origin,...(process.env.NAUMI_MODEL_UI_IMAGE||process.env.NAUMI_MODEL_UI_DEV_IMAGE?[origin.replace('127.0.0.1','host.docker.internal')]:[])];
+  const repo = createModelRepository({ pool: sql, initialize: async () => { initializations++; return config; }, trustedOrigins });
   return { repo, config, sql, credentials, marker, origin, schemaName: name, initializations: () => initializations,
     async cleanup() { await sql.end(); await admin.query(`DROP SCHEMA ${name} CASCADE`); await admin.end(); await new Promise<void>(resolve => server.close(() => resolve())); } };
 }

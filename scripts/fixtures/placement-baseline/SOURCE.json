@@ -1,0 +1,5 @@
+{
+  "source": "ad5ab489aa629e998f9b80966b432704a5ffd089",
+  "originalFunctionSha256": "68ff29b88735cec6df52266827a82b256a00a08998a2a257f1a5d919d3290d84",
+  "purpose": "Exact original allocator reference for differential tests; no production owner"
+}

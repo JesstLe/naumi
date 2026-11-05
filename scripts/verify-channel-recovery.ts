@@ -9,11 +9,12 @@ import { channelOperationKey, readChannelOperationPin } from "../src/lib/model-c
 import { ImageOperationPending, withImageOperation } from "../src/lib/image-gateway";
 import type { ModelConfig, ModelSnapshot } from "../src/lib/model-config/types";
 import {runModelExecution} from "../src/lib/model-config/context";
+import {withBiModelContext} from "../src/lib/bi/context";
 import {DurableImageJobs} from "../src/lib/durable-image-jobs";
 
 async function main() {
   const png=await sharp({create:{width:32,height:32,channels:4,background:"white"}}).png().toBuffer();
-  let posts=0,gets=0,paid=0,backups=0,drop=false,complete=false;
+  let posts=0,gets=0,paid=0,backups=0,drop=false,complete=false,durableRunning=false;
   const tasks=new Map<string,any>();
   const f=await createModelFixture(async(req,res)=>{
     const chunks:Buffer[]=[];for await(const c of req)chunks.push(Buffer.from(c));
@@ -21,7 +22,7 @@ async function main() {
     res.setHeader("content-type","application/json");
     if(path==="/v1/tasks" && req.method==="POST"){
       posts++;let task=tasks.get(body.operation_id);
-      if(!task){paid++;task={id:randomUUID(),operation_id:body.operation_id,model:body.model,state:"reconciling"};tasks.set(body.operation_id,task)}
+      if(!task){paid++;task={id:randomUUID(),operation_id:body.operation_id,model:body.model,state:durableRunning?"running":"reconciling"};tasks.set(body.operation_id,task)}
       if(drop){drop=false;return req.socket.destroy()}
       res.statusCode=202;return res.end(JSON.stringify(complete?{...task,state:"running"}:task));
     }
@@ -82,9 +83,10 @@ async function main() {
     assert.equal(posts,3,"Re-enabled original Hub may replay its same idempotent operation");assert.equal(paid,2,"Idempotent replay must not create another paid native task");assert.equal(backups,0);
     console.log("LOST_RECEIPT_DISABLED_HOLD_ORIGINAL_IDEMPOTENT_RECOVERY=PASS; NATIVE_PAID_OPERATIONS=2; BACKUP_POSTS=0");
 
+    durableRunning=true;
     const jobs=new DurableImageJobs<{status:string}>("generate"),jobId="job-"+randomUUID(),email="channel-recovery@example.test",unit=jobId+":image:0";
     await db.getOrCreateUser(email);await jobs.create(jobId,email,{status:"pending"},{fixture:true},0,false);
-    const durable=()=>runModelExecution(scope,()=>jobs.paidOperation(jobId,"image-a",{id:unit},()=>fetcher(f.origin+"/v1/images/generations",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({model:"image-a",prompt:"fixture",n:1})})));
+    const durable=()=>runModelExecution(scope,()=>withBiModelContext(email,"image.generate",jobId,()=>jobs.paidOperation(jobId,"image-a",{id:unit},()=>fetcher(f.origin+"/v1/images/generations",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({model:"image-a",prompt:"fixture",n:1}),signal:AbortSignal.timeout(1000)}))));
     complete=false;await assert.rejects(durable(),ImageOperationPending);
     const saved=await jobs.get(jobId) as any;assert.equal(saved.paidOperations[unit].state,"started");assert.equal(saved.paidOperations[unit].replayable,true,"A mixed family gains recoverability only after the Hub is pinned");
     const beforeResume={posts,paid};await publish(off);complete=true;

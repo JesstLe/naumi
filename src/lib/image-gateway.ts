@@ -18,6 +18,10 @@ export type ImageOperation = {
   ratio?: string;
   task?: "draft" | "product" | "detail" | "layout";
   preserveIdentity?: boolean;
+  /** Frozen fan-out size for an accepted legacy provider fallback. */
+  imageCount?: number;
+  /** A distinct child attempt, never a second delivery/settlement root. */
+  providerFallback?: boolean;
   textAccuracy?: "auto" | "required" | "best_effort";
 };
 const operations = new AsyncLocalStorage<ImageOperation>();
@@ -143,10 +147,10 @@ export function appendImageGatewayFields(form: FormData, model: string) {
 }
 
 /** Each fan-out image is a separate paid operation, stable across job recovery. */
-export function withImageIndex<T>(model: string, index: number, run: () => Promise<T>) {
+export function withImageIndex<T>(model: string, index: number, run: () => Promise<T>, providerFallback = false) {
   const operation = operations.getStore();
   if (!operation) return run();
-  const indexedOperation = { ...operation, id: `${operation.id}:image:${index}` };
+  const indexedOperation = { ...operation, id: `${operation.id}:image:${index}${providerFallback ? ":provider-fallback" : ""}`, providerFallback };
   const execute = () => withImageOperation(model, indexedOperation, run);
   const checkpoint = imageIndexCheckpoints.getStore();
   return checkpoint ? checkpoint(model, indexedOperation, execute) : execute();

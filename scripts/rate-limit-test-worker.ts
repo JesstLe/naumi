@@ -33,6 +33,7 @@ class HarnessError extends Error { constructor(readonly code: string, readonly s
   fillWorkflowAsset: async () => { effects.canvas++; return { image: 'fixture.png' }; },
   releaseRuntimeEnabled: () => false, forwardLegacyAgentSession: async () => null,
   withBiRequest: (_r: Request, fn: () => unknown) => fn(),
+  withCreationRoute: (_r: Request, fn: () => unknown) => fn(),
   readHarnessBody: (req: Request) => req.json(), assertHarnessSessionId: () => {},
   harnessErrorResponse: (e: HarnessError) => Response.json({ error: e.code }, { status: e.status }),
   resolveImageSkill: async () => undefined, requestedTextModel: () => 'fixture', agentVisionEnabled: () => false,

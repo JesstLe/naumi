@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {Pool} from "pg";
 import {randomUUID} from "node:crypto";
 import {addArtworks,getOrCreateUser,getPool,listArtworks,listArtworksByIds,setArtworkDimensions,setArtworkCanvasLayout} from "../src/lib/db";
 import {ensureCanvasImageVersions,assertCanvasRegeneration,attachCanvasImageVersions,listCanvasImageVersions} from "../src/lib/canvas/image-version-store";
@@ -11,6 +12,10 @@ import type {Artwork} from "../src/lib/mock-data";
 
 async function main(){
  if(process.env.NAUMI_VERIFY_ISOLATED_DB!=="1"||new URL(process.env.DATABASE_URL||"http://invalid").hostname!=="127.0.0.1")throw new Error("Requires isolated local PostgreSQL");
+ const schema='image_versions_'+randomUUID().replaceAll('-',''),admin=new Pool({connectionString:process.env.DATABASE_URL,ssl:false});
+ await admin.query(`CREATE SCHEMA ${schema}`);process.env.PGOPTIONS=`-c search_path=${schema}`;
+ try{
+ const {initializeApplicationPersistence}=await import('../src/lib/application/persistence');await initializeApplicationPersistence();
  const owner=`regen-${randomUUID()}@example.test`,pool=getPool(),checks:string[]=[];
  const ok=(name:string)=>{checks.push(name);console.log('CHECK='+name)};
  await getOrCreateUser(owner,"Canvas regeneration fixture");await ensureCanvasImageVersions();
@@ -62,6 +67,10 @@ async function main(){
  assert.deepEqual(canvasRegenerationReferences(art,[art,input]).map(a=>a.id),['output','input']);assert.deepEqual(canvasRegenerationReferences({...art,source:'canvas-add',parentIds:[]},[art,input]).map(a=>a.id),['output']);assert.deepEqual(canvasGenerationReferences({...art,parentIds:[]},[art,input]).map(a=>a.id),['output']);ok('current-image-edit-target-with-incoming-references-and-version-placement');
  assert.deepEqual(await counts(),before);ok('version-operations-create-no-task-reservation-or-charge');
  console.log(`IMAGE_VERSIONS=PASS CASES=${checks.length} DATABASE=real-postgres SUPPLIER_CALLS=0`);
- await pool.end();
+ }finally{
+  const {closeImageCoordinationPool}=await import('../src/lib/imagegen/coordination-pool');
+  await closeImageCoordinationPool();await getPool().end();await admin.query(`DROP SCHEMA ${schema} CASCADE`);await admin.end();
+  console.log('IMAGE_VERSIONS_CLEANUP=PASS ownSchemaDropped=true poolsClosed=true');
+ }
 }
 main().catch(async error=>{console.error(error);await getPool().end();process.exitCode=1});

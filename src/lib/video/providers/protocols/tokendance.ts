@@ -1,4 +1,5 @@
-import {createdResult,field,polled,rejectAdvanced,selectWireOptions,string,unsupportedWire,wireReferences,type VideoWireContext,type VideoWireRequest,type VideoWireCodec} from "../wire";
+import {createdResult,field,polled,rejectAdvanced,selectWireOptions,string,unsupportedWire,wireReferences} from "../wire-helpers";
+import type {VideoWireContext,VideoWireRequest,VideoWireCodec} from "../wire-contracts";
 import {buildArkCreate} from "./ark";
 import {buildMiniMaxCreate} from "./minimax";
 import type {VideoWireProfile} from "../../capability-schema";

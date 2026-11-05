@@ -32,7 +32,7 @@ services:
       # Naumi 实例固定走 3012 端口(http://localhost:3012)。
       # 若 80 已被占用(如装了宝塔/nginx),设 HTTP_PORT=8080 后重跑即可。
       - "${HTTP_PORT:-3012}:3000"
-    environment:
+    environment: &application-environment
       DATABASE_URL: ${DATABASE_URL:-postgres://naumi:naumi@db:5432/naumi?sslmode=disable}
       # 大陆服务器连不上 api.openai.com 时,设为任意 OpenAI 兼容中转地址即可。
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
@@ -98,6 +98,8 @@ services:
       INTERNAL_APP_ORIGIN: http://127.0.0.1:3000
       # 外置视频 worker 通过内部鉴权端点驱动恢复，app 内不再启动定时器。
       NAUMI_VIDEO_WORKER: "0"
+      # Saved image jobs/batches/reference tasks execute only in the direct Worker.
+      NAUMI_APPLICATION_TASK_EXECUTION: ${NAUMI_APPLICATION_TASK_EXECUTION:-worker}
       MEDIA_WORKER_ORIGIN: http://media-worker:3001
       MEDIA_WORKER_SECRET: ${MEDIA_WORKER_SECRET:?请配置独立随机 MEDIA_WORKER_SECRET}
       MEDIA_JOB_DIR: /scratch
@@ -117,6 +119,12 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/api/health').then(async r=>process.exit(r.ok&&(await r.json()).db?.ok===true?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 45s
 
   media-worker:
     image: ghcr.io/jesstle/naumi:latest
@@ -125,7 +133,7 @@ services:
     command: ["node", "scripts/video-media-worker.mjs"]
     read_only: true
     cap_drop: [ALL]
-    cap_add: [SYS_CHROOT, SETUID, SETGID, CHOWN, DAC_OVERRIDE, FOWNER]
+    cap_add: [SYS_CHROOT, SETUID, SETGID, CHOWN, DAC_OVERRIDE, FOWNER, KILL]
     security_opt: ["no-new-privileges:true"]
     pids_limit: 160
     mem_limit: 3g
@@ -148,16 +156,31 @@ services:
   video-worker:
     image: ghcr.io/jesstle/naumi:latest
     restart: unless-stopped
+    stop_grace_period: ${WORKER_STOP_GRACE_PERIOD:-10m}
     command: ["node", "scripts/video-worker.mjs"]
     environment:
+      <<: *application-environment
+      NAUMI_WORKER_EXECUTION: direct
+      NAUMI_INSTANCE_ID: ${NAUMI_WORKER_INSTANCE_ID:-naumi-worker}
+      NAUMI_RELEASE_RUNTIME: "1"
+      NAUMI_RELEASE_ADMISSION_START: open
+      NAUMI_WORKER_RELEASE_CONTROL: "1"
+      NAUMI_WORKER_START_PAUSED: "0"
+      NAUMI_WORKER_STATE_FILE: /release-state/worker.json
       NAUMI_APP_ORIGIN: http://app:3000
+      INTERNAL_APP_ORIGIN: http://app:3000
       VIDEO_WORKER_SECRET: ${VIDEO_WORKER_SECRET:?请配置独立随机 VIDEO_WORKER_SECRET}
       VIDEO_WORKER_INTERVAL_MS: ${VIDEO_WORKER_INTERVAL_MS:-15000}
+    volumes:
+      - appdata:/data
+      - mediajobs:/scratch
+      - workerstate:/release-state
     depends_on:
       app:
-        condition: service_started
+        condition: service_healthy
 
 volumes:
   pgdata:
   appdata:
   mediajobs:
+  workerstate:

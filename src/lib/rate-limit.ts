@@ -1,6 +1,6 @@
 import 'server-only';
 import { createHmac } from 'node:crypto';
-import { getPool } from './db/connection';
+import { getPool } from '@/platform/db/pool';
 import { settingsSecret } from './settings-secret';
 import { consumePostgresRateLimit } from './rate-limit-store';
 

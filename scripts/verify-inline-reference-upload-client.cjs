@@ -17,7 +17,7 @@ const fakePreview = { prepareOriginalImage: async file => {
 const modules = new Map();
 function load(file) {
   const full = path.resolve(source, file); if (modules.has(full)) return modules.get(full).exports;
-  const module = { exports: {} }; modules.set(full, module);
+  const loadedModule = { exports: {} }; modules.set(full, loadedModule);
   const code = esbuild.transformSync(fs.readFileSync(full, 'utf8'), { loader: 'ts', format: 'cjs', target: 'es2022' }).code;
   const req = name => {
     if (name === '@/lib/supabase' || /\/supabase$/.test(name)) return fakeAuth;
@@ -28,8 +28,8 @@ function load(file) {
     }
     return require(name);
   };
-  vm.runInThisContext('(function(require,module,exports){' + code + '\n})', { filename: full })(req, module, module.exports);
-  return module.exports;
+  vm.runInThisContext('(function(require,module,exports){' + code + '\n})', { filename: full })(req, loadedModule, loadedModule.exports);
+  return loadedModule.exports;
 }
 global.sessionStorage = { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) };
 async function main() {

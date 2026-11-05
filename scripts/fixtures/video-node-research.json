@@ -1,0 +1,1021 @@
+{
+  "schemaVersion": 1,
+  "description": "Independent saved vendor research witnesses. Modes/maps only; not generated from production capability definitions.",
+  "apib": {
+    "sourceSha256": "82cce899f84de9ec3005394d57fa32bb0db31cb27b8dfdb80926fee9262fa916",
+    "proposals": [
+      {
+        "model": "seedance-1-0-pro-fast",
+        "definition": {
+          "modes": [
+            "text",
+            "single_image"
+          ],
+          "durationResolutionMap": [
+            {
+              "durations": [
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12
+              ],
+              "resolutions": [
+                "480p",
+                "720p",
+                "1080p"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "model": "seedance-1-0-pro-quality",
+        "definition": {
+          "modes": [
+            "text",
+            "single_image",
+            "frames_required"
+          ],
+          "durationResolutionMap": [
+            {
+              "durations": [
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12
+              ],
+              "resolutions": [
+                "480p",
+                "720p",
+                "1080p"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "model": "seedance-1-5-pro",
+        "definition": {
+          "modes": [
+            "text",
+            "single_image",
+            "frames_required"
+          ],
+          "durationResolutionMap": [
+            {
+              "durations": [
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12
+              ],
+              "resolutions": [
+                "480p",
+                "720p",
+                "1080p"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "model": "seedance-2.0",
+        "definition": {
+          "modes": [
+            "text",
+            "single_image",
+            "frames_required",
+            "reference"
+          ],
+          "durationResolutionMap": [
+            {
+              "durations": [
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12,
+                13,
+                14,
+                15
+              ],
+              "resolutions": [
+                "480p",
+                "720p",
+                "1080p",
+                "4k"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "model": "seedance-2.0-fast",
+        "definition": {
+          "modes": [
+            "text",
+            "single_image",
+            "frames_required",
+            "reference"
+          ],
+          "durationResolutionMap": [
+            {
+              "durations": [
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12,
+                13,
+                14,
+                15
+              ],
+              "resolutions": [
+                "480p",
+                "720p"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "model": "seedance-2.0-mini",
+        "definition": {
+          "modes": [
+            "text",
+            "single_image",
+            "frames_required",
+            "reference"
+          ],
+          "durationResolutionMap": [
+            {
+              "durations": [
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12,
+                13,
+                14,
+                15
+              ],
+              "resolutions": [
+                "480p",
+                "720p"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "model": "seedance-2.5",
+        "definition": {
+          "modes": [
+            "text",
+            "single_image",
+            "frames_required",
+            "reference"
+          ],
+          "durationResolutionMap": [
+            {
+              "durations": [
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12,
+                13,
+                14,
+                15,
+                16,
+                17,
+                18,
+                19,
+                20,
+                21,
+                22,
+                23,
+                24,
+                25,
+                26,
+                27,
+                28,
+                29,
+                30
+              ],
+              "resolutions": [
+                "480p",
+                "720p",
+                "1080p"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "model": "kling-3.0-turbo",
+        "definition": {
+          "modes": [
+            "text",
+            "single_image"
+          ],
+          "durationResolutionMap": [
+            {
+              "durations": [
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12,
+                13,
+                14,
+                15
+              ],
+              "resolutions": [
+                "720p",
+                "1080p"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "model": "kling-v2-6",
+        "definition": {
+          "modes": [
+            "text",
+            "single_image",
+            "frames_required"
+          ],
+          "durationResolutionMap": [
+            {
+              "durations": [
+                5,
+                10
+              ],
+              "resolutions": [
+                "720p",
+                "1080p"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "model": "kling-v3",
+        "definition": {
+          "modes": [
+            "text",
+            "single_image",
+            "frames_required"
+          ],
+          "durationResolutionMap": [
+            {
+              "durations": [
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12,
+                13,
+                14,
+                15
+              ],
+              "resolutions": [
+                "720p",
+                "1080p",
+                "4k"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "model": "kling-v3-omni",
+        "definition": {
+          "modes": [
+            "text",
+            "single_image",
+            "frames_required"
+          ],
+          "durationResolutionMap": [
+            {
+              "durations": [
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12,
+                13,
+                14,
+                15
+              ],
+              "resolutions": [
+                "720p",
+                "1080p",
+                "4k"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "model": "kling-v4",
+        "definition": {
+          "modes": [
+            "text",
+            "single_image",
+            "frames_required",
+            "reference"
+          ],
+          "durationResolutionMap": [
+            {
+              "durations": [
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12,
+                13,
+                14,
+                15,
+                16,
+                17,
+                18,
+                19,
+                20,
+                21,
+                22,
+                23,
+                24,
+                25,
+                26,
+                27,
+                28,
+                29,
+                30
+              ],
+              "resolutions": [
+                "720p",
+                "1080p"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "model": "kling-video-o1",
+        "definition": {
+          "modes": [
+            "text",
+            "single_image",
+            "frames_required"
+          ],
+          "durationResolutionMap": [
+            {
+              "durations": [
+                5,
+                10
+              ],
+              "resolutions": [
+                "720p",
+                "1080p"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "model": "wan2.5-preview",
+        "definition": {
+          "modes": [
+            "text",
+            "single_image"
+          ],
+          "durationResolutionMap": [
+            {
+              "durations": [
+                5,
+                10
+              ],
+              "resolutions": [
+                "480p",
+                "720p",
+                "1080p"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "model": "wan2.6",
+        "definition": {
+          "modes": [
+            "text",
+            "single_image"
+          ],
+          "durationResolutionMap": [
+            {
+              "durations": [
+                5,
+                10,
+                15
+              ],
+              "resolutions": [
+                "720p",
+                "1080p"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "model": "wan2.6-i2v-flash",
+        "definition": {
+          "modes": [
+            "single_image"
+          ],
+          "durationResolutionMap": [
+            {
+              "durations": [
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12,
+                13,
+                14,
+                15
+              ],
+              "resolutions": [
+                "720p",
+                "1080p"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "model": "wan2.7-r2v",
+        "definition": {
+          "modes": [
+            "single_image",
+            "reference"
+          ],
+          "durationResolutionMap": [
+            {
+              "durations": [
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12,
+                13,
+                14,
+                15
+              ],
+              "resolutions": [
+                "720P",
+                "1080P"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "model": "wan2.7-videoedit",
+        "definition": {
+          "modes": [
+            "video_edit"
+          ],
+          "durationResolutionMap": [
+            {
+              "durations": [
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10
+              ],
+              "resolutions": [
+                "720P",
+                "1080P"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "model": "wan3.0-video",
+        "definition": {
+          "modes": [
+            "text",
+            "single_image",
+            "frames_required",
+            "reference"
+          ],
+          "durationResolutionMap": [
+            {
+              "durations": [
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12,
+                13,
+                14,
+                15,
+                16,
+                17,
+                18,
+                19,
+                20,
+                21,
+                22,
+                23,
+                24,
+                25,
+                26,
+                27,
+                28,
+                29,
+                30
+              ],
+              "resolutions": [
+                "480P",
+                "720P",
+                "1080P"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "model": "wan3.0-video-prime",
+        "definition": {
+          "modes": [
+            "text",
+            "single_image",
+            "frames_required",
+            "reference"
+          ],
+          "durationResolutionMap": [
+            {
+              "durations": [
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12,
+                13,
+                14,
+                15,
+                16,
+                17,
+                18,
+                19,
+                20,
+                21,
+                22,
+                23,
+                24,
+                25,
+                26,
+                27,
+                28,
+                29,
+                30
+              ],
+              "resolutions": [
+                "480P",
+                "720P",
+                "1080P"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "model": "MiniMax-H3",
+        "definition": {
+          "modes": [
+            "text",
+            "single_image",
+            "frames_required",
+            "first_optional",
+            "reference"
+          ],
+          "durationResolutionMap": [
+            {
+              "durations": [
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12,
+                13,
+                14,
+                15
+              ],
+              "resolutions": [
+                "768P",
+                "2K"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "model": "MiniMax-H3-Max",
+        "definition": {
+          "modes": [
+            "text",
+            "single_image",
+            "frames_required",
+            "first_optional",
+            "reference"
+          ],
+          "durationResolutionMap": [
+            {
+              "durations": [
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12,
+                13,
+                14,
+                15
+              ],
+              "resolutions": [
+                "480P",
+                "768P",
+                "1080P"
+              ]
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "geek": {
+    "sourceSha256": "156bd3814c913314053f84983c6a2852271b83fff7e80089c365bc2986ae3fcc",
+    "proposals": [
+      {
+        "model": "kling-1.6-720p",
+        "definition": {
+          "modes": [
+            "text",
+            "single_image"
+          ],
+          "durationResolutionMap": [
+            {
+              "durations": [
+                5,
+                10
+              ],
+              "resolutions": [
+                "720P"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "model": "kling-2.0-720p",
+        "definition": {
+          "modes": [
+            "text",
+            "single_image"
+          ],
+          "durationResolutionMap": [
+            {
+              "durations": [
+                5,
+                10
+              ],
+              "resolutions": [
+                "720P"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "model": "kling-2.1-720p",
+        "definition": {
+          "modes": [
+            "text",
+            "single_image"
+          ],
+          "durationResolutionMap": [
+            {
+              "durations": [
+                5,
+                10
+              ],
+              "resolutions": [
+                "720P"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "model": "kling-2.5-720p",
+        "definition": {
+          "modes": [
+            "text",
+            "single_image"
+          ],
+          "durationResolutionMap": [
+            {
+              "durations": [
+                5,
+                10
+              ],
+              "resolutions": [
+                "720P"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "model": "kling-2.6-mute-720p",
+        "definition": {
+          "modes": [
+            "text",
+            "single_image"
+          ],
+          "durationResolutionMap": [
+            {
+              "durations": [
+                5,
+                10
+              ],
+              "resolutions": [
+                "720P"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "model": "kling-3.0-720p-mute",
+        "definition": {
+          "modes": [
+            "text",
+            "single_image"
+          ],
+          "durationResolutionMap": [
+            {
+              "durations": [
+                5,
+                10
+              ],
+              "resolutions": [
+                "720P"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "model": "kling-3.0-omni-720p-noref-mute",
+        "definition": {
+          "modes": [
+            "text"
+          ],
+          "durationResolutionMap": [
+            {
+              "durations": [
+                5,
+                10
+              ],
+              "resolutions": [
+                "720P"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "model": "kling-3.0-omni-720p-ref-mute",
+        "definition": {
+          "modes": [
+            "reference"
+          ],
+          "durationResolutionMap": [
+            {
+              "durations": [
+                5,
+                10
+              ],
+              "resolutions": [
+                "720P"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "model": "kling-o1-720p",
+        "definition": {
+          "modes": [
+            "text",
+            "single_image"
+          ],
+          "durationResolutionMap": [
+            {
+              "durations": [
+                5,
+                10
+              ],
+              "resolutions": [
+                "720P"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "model": "wan3.0-video",
+        "definition": {
+          "modes": [
+            "text",
+            "single_image",
+            "frames_required",
+            "reference"
+          ],
+          "durationResolutionMap": [
+            {
+              "durations": [
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12,
+                13,
+                14,
+                15,
+                16,
+                17,
+                18,
+                19,
+                20,
+                21,
+                22,
+                23,
+                24,
+                25,
+                26,
+                27,
+                28,
+                29,
+                30
+              ],
+              "resolutions": [
+                "480P",
+                "720P",
+                "1080P"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "model": "MiniMax-H3",
+        "definition": {
+          "modes": [
+            "text",
+            "single_image",
+            "frames_required",
+            "first_optional",
+            "reference"
+          ],
+          "durationResolutionMap": [
+            {
+              "durations": [
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9,
+                10,
+                11,
+                12,
+                13,
+                14,
+                15
+              ],
+              "resolutions": [
+                "768P"
+              ]
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

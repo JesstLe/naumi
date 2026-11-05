@@ -1,6 +1,6 @@
 import "server-only";
 import type {PoolClient} from "pg";
-import {getPool} from "../db";
+import {getPool} from "@/platform/db/pool";
 import {ModelConfigError} from "../model-config/types";
 import {assertCreationInputsTx, assertCreationObjectRefs} from "../saas/creation-writer";
 

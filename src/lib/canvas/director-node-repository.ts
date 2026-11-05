@@ -1,26 +1,14 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import type { PoolClient } from "pg";
-import { getPool } from "../db";
-import { canonicalConfig } from "../model-config/repository";
+import { getPool } from "@/platform/db/pool";
+import { canonicalConfig } from "../model-config/snapshot-value";
 import { ModelConfigError } from "../model-config/types";
 import { newDirectorProject } from "../director/project";
-import { ensureVideoNodeSchema } from "./video-node-repository";
 import type { CanvasDirectorNode, DirectorNodeWrite } from "./director-node-schema";
 
-let ready: Promise<void> | undefined;
-export async function ensureDirectorNodeSchema() {
-  if (!ready) ready = ensureVideoNodeSchema().then(() => getPool().query(`
-    CREATE TABLE IF NOT EXISTS app_canvas_director_nodes(email text NOT NULL,id text NOT NULL,project_key text NOT NULL,
-      revision bigint NOT NULL DEFAULT 1,title text NOT NULL DEFAULT '3D 导演台',x double precision NOT NULL DEFAULT 0,y double precision NOT NULL DEFAULT 0,
-      width double precision NOT NULL DEFAULT 420,height double precision NOT NULL DEFAULT 280,project jsonb NOT NULL,outputs jsonb NOT NULL DEFAULT '[]',
-      deleted_at timestamptz,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(email,id));
-    CREATE INDEX IF NOT EXISTS app_canvas_director_nodes_project_idx ON app_canvas_director_nodes(email,project_key,updated_at DESC);
-    CREATE TABLE IF NOT EXISTS app_canvas_director_operations(email text NOT NULL,operation_id uuid NOT NULL,input_digest text NOT NULL,result jsonb NOT NULL,
-      created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(email,operation_id));
-  `)).then(() => undefined).catch(error => { ready = undefined; throw error; });
-  await ready;
-}
+import {ensureDirectorNodeSchema} from "./storage-schema";
+export {ensureDirectorNodeSchema};
 export function mapDirectorNode(row: Record<string, any>): CanvasDirectorNode {
   return { id: String(row.id), projectKey: String(row.project_key), revision: Number(row.revision), title: String(row.title), x: Number(row.x), y: Number(row.y), width: Number(row.width), height: Number(row.height),
     project: row.project, outputs: row.outputs || [], deletedAt: row.deleted_at ? new Date(row.deleted_at).toISOString() : null, createdAt: new Date(row.created_at).toISOString(), updatedAt: new Date(row.updated_at).toISOString() };

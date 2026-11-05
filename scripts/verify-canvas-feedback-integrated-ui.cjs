@@ -11,7 +11,7 @@ fs.mkdirSync(out, { recursive: true });
   const page = await context.newPage(); page.setDefaultTimeout(30000);
   const checks = [], errors = [], external = [], requests = [], groups = [], history = [], optimizations = [], textGenerations = [], textWrites = [];
   const rootId = 'regeneration-root', otherId = 'reference-neighbor', textId = 'text-feedback';
-  const account = 'regeneration-ui@example.test';
+  const account = process.env.CANVAS_FEEDBACK_ACCOUNT||'regeneration-ui@example.test';
   const originalPrompt = '保留瓶身和标签，使用浅色自然光。';
   const optimizedPrompt = '保留瓶身轮廓与标签文字，浅色背景搭配柔和自然光，呈现清晰细节。';
   const writePrompt = '为这款营养品写一句简洁文案';
@@ -31,8 +31,8 @@ fs.mkdirSync(out, { recursive: true });
     if (!['127.0.0.1', 'localhost'].includes(u.hostname) && !['blob:', 'data:'].includes(u.protocol)) { external.push(u.origin); return route.abort(); }
     if (p === '/api/account') {
       const response = await route.fetch(), data = await response.json(); user = data.user;
-      arts ||= [{ ...data.artworks[0], id: rootId, title: '营养品原图', prompt: originalPrompt, image: '/media/feedback-original.png', width: 768, height: 1024, canvasWidth: 264, canvasHeight: 352, canvasX: 100, canvasY: 150, parentId: undefined, parentIds: [], canvasGroupId: null },
-        { ...data.artworks[0], id: otherId, title: '参考构图', prompt: originalPrompt, image: '/media/feedback-reference.png', width: 768, height: 1024, canvasWidth: 264, canvasHeight: 352, canvasX: 510, canvasY: 150, parentId: rootId, parentIds: [rootId], source: 'generate', canvasGroupId: null }];
+      arts ||= [{ ...data.artworks[0], id: rootId, groupId:rootId, title: '营养品原图', prompt: originalPrompt, image: '/media/feedback-original.png', width: 768, height: 1024, canvasWidth: 264, canvasHeight: 352, canvasX: 100, canvasY: 150, parentId: undefined, parentIds: [], canvasGroupId: null },
+        { ...data.artworks[0], id: otherId, groupId:rootId, title: '参考构图', prompt: originalPrompt, image: '/media/feedback-reference.png', width: 768, height: 1024, canvasWidth: 264, canvasHeight: 352, canvasX: 510, canvasY: 150, parentId: rootId, parentIds: [rootId], source: 'generate', canvasGroupId: null }];
       return json(route, { ...data, artworks: arts });
     }
     if (p === '/api/canvas/text-nodes') {
@@ -62,7 +62,7 @@ fs.mkdirSync(out, { recursive: true });
     if (p === '/api/download' && u.searchParams.get('u')?.includes('/media/feedback-')) return route.fulfill({ contentType: 'image/png', body: pixels });
     if (p === '/api/artworks/get') return json(route, { artworks: arts.filter(a => (u.searchParams.get('ids') || '').split(',').includes(a.id)) });
     if (p === '/api/canvas/groups') { const body = req.postDataJSON(); const assignments = body.assignments || body.ids.map(id => ({ id, canvasGroupId: body.action === 'group' ? 'feedback-persistent-group' : null })); groups.push({ body, assignments }); for (const item of assignments) Object.assign(arts.find(a => a.id === item.id), item); return json(route, { ok: true, persisted: true, assignments }); }
-    if (p === '/api/canvas/history') { const body = req.postDataJSON(); history.push(body); for (const op of body.operations || []) { const a = arts.find(a => a.id === op.id); if (a && op.type === 'position') { a.canvasX = op.x; a.canvasY = op.y; } } return json(route, { ok: true, persisted: true }); }
+    if (p === '/api/canvas/history') { const body = req.postDataJSON(); history.push(body); const assignments=[];for (const op of body.operations || []) { const a = arts.find(a => a.id === op.id); if (a && op.type === 'position') { a.canvasX = op.x; a.canvasY = op.y; }if(a&&op.type==='group'){a.canvasGroupId=op.value;assignments.push({id:a.id,canvasGroupId:op.value});} }if(assignments.length)groups.push({body,assignments});return json(route, { ok: true, persisted: true }); }
     if (p === '/api/artworks/position') { const body = req.postDataJSON(); Object.assign(arts.find(a => a.id === body.id), { canvasX: body.x, canvasY: body.y }); return json(route, { ok: true }); }
     return route.continue();
   });
@@ -71,6 +71,7 @@ fs.mkdirSync(out, { recursive: true });
   const empty = async () => { await page.locator('.react-flow__pane').click({ position: { x: 1400, y: 850 } }); };
   const check = name => { checks.push(name); console.log('CHECK=' + name); };
   try {
+    await context.addInitScript(project=>localStorage.setItem('nv:canvas:last',project),'tree:'+rootId);
     await page.goto(base + '/canvas', { waitUntil: 'domcontentloaded', timeout: 180000 }); await node(rootId).waitFor({ timeout: 120000 }); await node(textId).waitFor();
     await select(rootId); const submit = page.getByTestId('generation-submit-action'); await expect(submit).toBeVisible(); assert.equal((await submit.innerText()).trim(), ''); await expect(submit).toHaveAttribute('aria-label', '生成'); check('IMAGE_PRIMARY_IS_ARROW_NOT_REGENERATE_LABEL');
     const imageDock = page.getByTestId('image-node-dock');

@@ -1,0 +1,86 @@
+import "server-only";
+import {getPool} from "@/platform/db/pool";
+import {ensureSchema} from "../persistence/schema";
+import {getBillingConfiguration} from "../billing/configuration";
+import {ensureModelSchema} from "../model-config/storage-schema";
+import {ensureModelRuntimeSchema} from "../model-config/runtime-schema";
+import {ensureVideoDefaultsSchema} from "../video/model-defaults-schema";
+import {ensureSupplierVideoSchema} from "../supplier-models/video-schema";
+import {ensureSupplierSchema} from "../supplier-cost/schema";
+import {ensureSupplierModels} from "../supplier-models/schema";
+import {ensureProviderCatalogSchema} from "../model-config/catalog-schema";
+import {ensureHealthSchema} from "../model-health/schema";
+import {ensureExecutionAuditSchema} from "../model-config/execution-audit-schema";
+import {ensureTeamSchema} from "../teams/schema";
+import {ensureEnterpriseSchema} from "../enterprise/schema";
+import {ensureTenantSchema} from "../saas/tenant-schema";
+import {ensureCreationSchema} from "../saas/creation-schema";
+import {ensureMediaSchema} from "../media-assets-schema";
+import {ensureLoginGuardSchema} from "../auth-login-schema";
+import {ensureImageSkills} from "../image-skills/schema";
+import {ensureImagegenQuotes,ensureImagegenBatches} from "../imagegen/storage-schema";
+import {ensureImageBillingQuotes} from "../billing/image-quote-schema";
+import {ensureWorkbench} from "../reference-workbench/schema";
+import {ensureBiSchema} from "../bi/schema";
+import {ensureCanvasSettingsSchema,ensureWorkflowImportSchema,ensureVideoNodeSchema,ensureCanvasNodeCopySchema,ensureDirectorNodeSchema,ensureCharacterNodeSchema,ensureSceneNodeSchema,ensureCanvasImageVersionSchema,ensureAudioNodeSchema,ensureTimelineNodeSchema} from "../canvas/storage-schema";
+import {ensureCompetitorSchema} from "../competitor/schema";
+import {ensurePackagingSchema} from "../packaging-strategy/schema";
+import {ensurePostprocessSchema} from "../media-postprocess-schema";
+import {ensureVideoAssetSchema,ensureMediaInspectionSchema,ensureMediaJobSchema,ensureVideoScriptSchema,ensureVideoReferenceUploadSchema,ensureVideoWorkflowSchema,ensureVideoBatchSchema} from "../video/storage-schema";
+import {ensurePostgresRateLimitSchema} from '../rate-limit-store';
+import {ensureSitePolicySchema} from '../site-control/schema';
+import {enterpriseSiteIdentity} from '../site-control/identity';
+
+/** Web persistence composition, not a runtime/service registry. Each owner keeps
+ * its SQL, transaction and retry contract. No scanner, discovery or paid work. */
+export async function initializeApplicationPersistence():Promise<string[]>{
+ const pool=getPool(),steps:string[]=[];
+ await ensureSchema();steps.push("persistence");
+ await getBillingConfiguration().current();steps.push("billing");
+ await ensureModelSchema(pool);steps.push("models");
+ await ensureModelRuntimeSchema(pool);steps.push("model-runtime");
+ await ensureVideoDefaultsSchema(pool);steps.push("video-defaults");
+ await ensureSupplierVideoSchema(pool);steps.push("supplier-video");
+ await ensureSupplierSchema(pool);steps.push("supplier-cost");
+ await ensureSupplierModels(pool);steps.push("supplier-models");
+ await ensureProviderCatalogSchema(pool);steps.push("provider-catalog");
+ await ensureHealthSchema(pool);steps.push("model-health");
+ await ensureExecutionAuditSchema(pool);steps.push("execution-audit");
+ await ensureTeamSchema();steps.push("teams");
+ await ensureEnterpriseSchema();steps.push("enterprise");
+ await ensureTenantSchema();steps.push("tenants");
+ await ensureCreationSchema();steps.push("creation");
+ await ensureMediaSchema();steps.push("media");
+ await ensureLoginGuardSchema(pool);steps.push("login");
+ await ensureImageSkills();steps.push("image-skills");
+ await ensureImagegenQuotes();steps.push("imagegen-quotes");
+ await ensureImageBillingQuotes();steps.push("billing-quotes");
+ await ensureImagegenBatches();steps.push("imagegen-batches");
+ await ensureWorkbench();steps.push("workbench");
+ await ensureBiSchema();steps.push("bi");
+ await ensureCanvasSettingsSchema();steps.push("canvas-settings");
+ await ensureCanvasImageVersionSchema();steps.push("canvas-image-versions");
+ await ensureWorkflowImportSchema();steps.push("canvas-workflow-import");
+ await ensureVideoNodeSchema();steps.push("canvas-video-nodes");
+ await ensureDirectorNodeSchema();steps.push("canvas-director-nodes");
+ await ensureCharacterNodeSchema();steps.push("canvas-character-nodes");
+ await ensureSceneNodeSchema();steps.push("canvas-scene-nodes");
+ await ensureAudioNodeSchema();steps.push("canvas-audio-nodes");
+ await ensureTimelineNodeSchema();steps.push("canvas-timeline-nodes");
+ await ensureCanvasNodeCopySchema();steps.push("canvas-node-copy");
+ await ensureCompetitorSchema();steps.push("competitor");
+ await ensurePackagingSchema();steps.push("packaging");
+ await ensurePostprocessSchema(pool);steps.push("postprocess");
+ await ensureMediaInspectionSchema();steps.push("media-inspection");
+ await ensureMediaJobSchema();steps.push("media-jobs");
+ await ensureVideoAssetSchema();steps.push("video-assets");
+ await ensureVideoReferenceUploadSchema();steps.push("reference-upload");
+ await ensureVideoScriptSchema();steps.push("script-assets");
+ await ensureVideoWorkflowSchema();steps.push("video-workflows");
+ await ensureVideoBatchSchema();steps.push("video-canvas-batches");
+ await ensurePostgresRateLimitSchema(pool);steps.push("rate-limit");
+ if(enterpriseSiteIdentity()){
+  await ensureSitePolicySchema();steps.push("site-policy");
+ }
+ return steps;
+}

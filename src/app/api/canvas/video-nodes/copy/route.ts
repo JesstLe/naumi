@@ -1,12 +1,13 @@
 import {withCreationRoute} from "@/lib/saas/creation-context";
-import {TeamError} from "@/lib/teams/server";
+import { TeamError } from "@/lib/teams/errors";
 import {NextResponse} from "next/server";
 import {z} from "zod";
 import {authenticatedEmail} from "@/lib/request-auth";
 import {sameSiteBiMutation} from "@/lib/bi/access";
 import {readBounded} from "@/lib/supplier-cost/io";
 import {copyVideoNodes} from "@/lib/canvas/video-node-service";
-import {videoNodeIdSchema,videoProjectKeySchema} from "@/lib/canvas/video-node-schema";
+import { videoNodeIdSchema } from "@/lib/canvas/video-node-schema";
+import { videoProjectKeySchema } from "@/lib/canvas/project-key";
 import {ModelConfigError} from "@/lib/model-config/types";
 export const runtime="nodejs",dynamic="force-dynamic";
 const schema=z.strictObject({ids:z.array(videoNodeIdSchema).min(1).max(100),projectKey:videoProjectKeySchema,operationId:z.uuid()});

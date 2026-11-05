@@ -153,7 +153,11 @@ async function main() {
     if (p === '/api/billing/quote') return json(route, { ...payload, credits: 0, reserveCredits: 0, version: 1, modelVersion: 1, quote: { id: `text-ux-quote-${apiRequests.length}` } });
     if (p === '/api/canvas/text-generate') {
       textGenerations.push(structuredClone(payload));
-      return textMode === 'fail' ? json(route, { error: '文字回复未完整返回，请稍后重试', code: 'TEXT_OUTPUT_LIMIT' }, 502)
+      // This scenario exercises an identity-bound settled failure, not a bare
+      // TEXT_OUTPUT_LIMIT (which can remain financially UNKNOWN on the server).
+      const operationId = req.headers()['x-naumi-billing-operation-id'];
+      return textMode === 'fail' ? json(route, { error: '文字回复未完整返回，请稍后重试', code: 'TEXT_OUTPUT_LIMIT',
+        terminal: true, status: 'failed', operationId: `tool-${operationId}`, chargedCredits: 0 }, 502)
         : json(route, { text: generated, model: textModel.id });
     }
     if ((p.startsWith('/api/imagegen') || p === '/api/generate-image' || p === '/api/canvas/image-tasks' || p === '/api/video/generate') && req.method() === 'POST') {

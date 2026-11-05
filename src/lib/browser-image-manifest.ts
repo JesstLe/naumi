@@ -3,8 +3,9 @@ import { stat } from 'node:fs/promises';
 import path from 'node:path';
 import { authenticatedEmail } from '@/lib/request-auth';
 import { sameSiteBillingMutation } from '@/lib/billing/access';
-import { canReadMedia, getMediaAsset, getMediaAssets, ensureMediaVariants, importLegacyMedia } from '@/lib/media-assets';
-import { MEDIA_DIR, privateMedia, storageDriver, remoteMediaAccess, presignStoredObject } from '@/lib/storage';
+import { canReadMedia } from "@/lib/media-assets";
+import { getMediaAsset, getMediaAssets } from "@/lib/media-assets-reader";
+import { MEDIA_DIR, privateMedia, storageDriver, remoteMediaAccess, presignStoredObject } from "@/lib/object-storage/runtime";
 import { managedImageSource, publicImageSource, type BrowserImageDescriptor } from '@/lib/browser-image-source';
 import { checkRateLimit } from "@/lib/rate-limit-http";
 import {clientIp} from '@/lib/ip';
@@ -13,6 +14,7 @@ import {teamAuthorize} from '@/lib/teams/access';
 import {teamArtwork} from '@/lib/teams/server';
 import {enterpriseAuthorize} from '@/lib/enterprise/access';
 import {enterpriseArtwork} from '@/lib/enterprise/server';
+import {resolveMediaRepresentation} from '@/lib/media/representation';
 
 const headers = {'cache-control':'private, no-store', vary:'Cookie, Authorization', 'x-content-type-options':'nosniff'};
 const mime: Record<string,string> = {png:'image/png', jpg:'image/jpeg',jpeg:'image/jpeg',webp:'image/webp',avif:'image/avif',gif:'image/gif'};
@@ -58,14 +60,9 @@ export async function imageCacheManifest(request:Request,publicOnly:boolean){
       const url=new URL(source,origin),key=decodeURIComponent(url.pathname.slice(7));
       const known=assets.get(key);
       if(privateMedia && !(known?.public||known?.owner===account.toLowerCase()) && !await canReadMedia(key,account)) continue;
-      let asset=known||await getMediaAsset(key), resolved=key;
       const variant=url.searchParams.get('variant');
-      if(variant==='thumbnail'||variant==='preview') {
-        asset ||= await importLegacyMedia(key,account).catch(()=>null);
-        if(asset&&!(asset.thumbnail_key&&asset.preview_key))asset=await ensureMediaVariants(key).catch(()=>asset);
-        const variantKey=variant==='thumbnail'?asset?.thumbnail_key:asset?.preview_key;
-        if(variantKey){resolved=variantKey;asset=variants.get(resolved)||await getMediaAsset(resolved);}
-      }
+      const representation=await resolveMediaRepresentation(key,variant,{asset:known,owner:account,variants,legacyOptional:true});
+      const {asset}=representation,resolved=representation.key;
       const contentType=asset?.content_type||mime[resolved.split('.').pop()?.toLowerCase()||''];
       if(!contentType || !/^image\/(png|jpeg|webp|avif|gif)$/.test(contentType))continue;
       let version=asset?.sha256,bytes=Number(asset?.bytes);

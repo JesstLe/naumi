@@ -1,5 +1,5 @@
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),assert=require('node:assert/strict'),ts=require('typescript'),crypto=require('node:crypto');
-const root=path.resolve(process.argv[2]||'.'),out=path.resolve(process.argv[3]||'output/fanout-receipt');fs.mkdirSync(out,{recursive:true});
+const root=path.resolve(process.argv[2]||'.'),out=path.resolve(process.argv[3]||process.env.CANVAS_FANOUT_RECEIPT_EVIDENCE||'output/fanout-receipt');fs.mkdirSync(out,{recursive:true});
 const memory=new Map(),sessionStorage={get length(){return memory.size},key:i=>[...memory.keys()][i]??null,getItem:k=>memory.get(k)??null,setItem:(k,v)=>memory.set(k,v),removeItem:k=>memory.delete(k)};
 const loaded=[],checks=[],state={posts:[],plans:[],gets:[],uploads:0,networkFailure:false,readFailure:false};
 const sandbox={console,Response,Request,Headers,FormData,Blob,File,URL,AbortSignal,TextEncoder,TextDecoder,crypto:crypto.webcrypto,Map,Set,Date,Promise,JSON,Error,sessionStorage,window:{},fetch:async(url,init={})=>{
@@ -11,7 +11,7 @@ const sandbox={console,Response,Request,Headers,FormData,Blob,File,URL,AbortSign
 }};
 const context=vm.createContext(sandbox),cache=new Map();function load(rel){if(cache.has(rel))return cache.get(rel);const file=path.join(root,rel),source=fs.readFileSync(file,'utf8'),mod={exports:{}};cache.set(rel,mod.exports);loaded.push({file,sha256:crypto.createHash('sha256').update(source).digest('hex')});const req=id=>{
  if(id==='../supabase')return{authHeader:async()=>({authorization:'transient-not-persisted'})};if(id==='../browser-reference-image')return{prepareReferenceImage:async file=>({file,sourceWidth:768,sourceHeight:1024,optimized:false}),browserImageHeader:async()=>({width:768,height:1024})};
- if(!id.startsWith('.'))return require(id);const abs=path.posix.normalize(path.posix.join(path.posix.dirname(rel),id));return load(abs+(/\.[cm]?[jt]sx?$/.test(abs)?'':'.ts'));};
+ if(id.startsWith('@/'))return load('src/'+id.slice(2)+(/\.[cm]?[jt]sx?$/.test(id)?'':'.ts'));if(!id.startsWith('.'))return require(id);const abs=path.posix.normalize(path.posix.join(path.posix.dirname(rel),id));return load(abs+(/\.[cm]?[jt]sx?$/.test(abs)?'':'.ts'));};
  const code=ts.transpileModule(source,{fileName:file,compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,esModuleInterop:true}}).outputText;vm.runInContext('(function(require,module,exports){'+code+'\n})',context,{filename:file})(req,mod,mod.exports);return mod.exports;}
 (async()=>{try{
  const client=load('src/lib/imagegen/canvas-client.ts'),recovery=load('src/lib/imagegen/client-recovery.ts'),fanout=load('src/lib/canvas/generation-fanout.ts');

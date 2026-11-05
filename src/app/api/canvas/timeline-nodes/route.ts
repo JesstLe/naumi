@@ -1,3 +1,4 @@
+import {withCreationReceiptRoute} from "@/lib/saas/creation-context";
 import { NextResponse } from "next/server";
 import { authenticatedEmail, authorizedTargetEmail } from "@/lib/request-auth";
 import { sameSiteBiMutation } from "@/lib/bi/access";
@@ -7,17 +8,17 @@ import { listTimelineNodes, saveTimelineNode } from "@/lib/canvas/timeline-node-
 import { timelineFailure } from "./response";
 
 export const runtime = "nodejs", dynamic = "force-dynamic";
-async function readNodes(request: Request) {
+async function readNodes(request: Request, authenticatedActor?:string|null) {
   const url = new URL(request.url);
-  const actor = await authorizedTargetEmail(request, url.searchParams.get("email"), true);
+  const actor = await authorizedTargetEmail(request, url.searchParams.get("email"), true, authenticatedActor);
   if (!actor) return NextResponse.json({ error: "未登录或无权访问" }, { status: 401 });
   try {
     return NextResponse.json({ nodes: await listTimelineNodes(actor, url.searchParams.get("includeDeleted") === "1") }, { headers: { "cache-control": "private, no-store" } });
   } catch (error) { return timelineFailure(error); }
 }
 export async function POST(request: Request) {
-  return withCreationRoute(request, async () => {
-    const actor = await authenticatedEmail(request);
+  return withCreationRoute(request, async (authenticatedActor) => {
+    const actor = await authenticatedEmail(request, authenticatedActor);
     if (!actor) return NextResponse.json({ error: "请先登录" }, { status: 401 });
     if (!sameSiteBiMutation(request)) return NextResponse.json({ error: "不允许跨站修改" }, { status: 403 });
     try {
@@ -27,4 +28,4 @@ export async function POST(request: Request) {
   });
 }
 
-export function GET(request:Request){return withCreationRoute(request,()=>readNodes(request));}
+export function GET(request:Request){return withCreationReceiptRoute(request,(authenticatedActor)=>readNodes(request, authenticatedActor));}

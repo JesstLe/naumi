@@ -28,7 +28,7 @@ const mode = baseline ? 'BASELINE' : 'MODIFIED';
 const sources = new Map(), cases = [], fixtures = [];
 const hash = value => crypto.createHash('sha256').update(value).digest('hex');
 const clone = value => structuredClone(value);
-const requiredBefore = new Set(['src/lib/durable-image-jobs.ts', 'src/lib/image-gateway.ts', 'src/lib/model-config/channel-availability.ts']);
+const requiredBefore = new Set(['src/lib/image-jobs/runtime.ts', 'src/lib/image-gateway.ts', 'src/lib/model-config/channel-availability.ts']);
 let checks = 0;
 function check(value, message) { assert.ok(value, message); checks++; }
 function equal(actual, expected, message) { assert.equal(actual, expected, message); checks++; }
@@ -183,8 +183,10 @@ function fixture(name, count = 1) {
   const mocks = new Map();
   const mock = (rel, exports) => mocks.set(rel, exports);
   const passthrough = (_context, run) => run();
-  mock('src/lib/db.ts', { dbEnabled: true, getPool: () => sql });
+  mock('src/platform/db/pool.ts', { dbEnabled: true, getPool: () => sql });
   mock('src/lib/image-job-repository.ts', repository);
+  // Same external scheduling port for this paid-checkpoint test;real scheduling SQL has its own PG matrix.
+  mock('src/lib/image-jobs/scheduling.ts', repository);
   mock('src/lib/staging-history.ts', { assertMutableStagingTask: async () => {} });
   mock('src/lib/storage.ts', {
     async uploadImage(bytes, _mime, key) { const url = `/media/${key}`; f.assets.set(url, Buffer.from(bytes)); return url; },
@@ -195,21 +197,23 @@ function fixture(name, count = 1) {
   mock('src/lib/openai-base.ts', { getOpenAIBaseUrl: async () => 'http://fixture.invalid/v1' });
   mock('src/lib/model-config/context.ts', { currentModelExecution: () => modelContext.getStore() || null,
     currentExecutionBundle: () => undefined, runLegacyModelExecution: run => run() });
-  mock('src/lib/model-config/schema.ts', { ensureModelSchema: async () => {} });
+  mock('src/lib/model-config/storage-schema.ts', { ensureModelSchema: async () => {} });
   mock('src/lib/model-config/execution.ts', { withFrozenExecutionBundle: passthrough });
-  mock('src/lib/saas/creation-context.ts', { withFrozenCreation: passthrough });
-  mock('src/lib/bi/model-observer.ts', { withBiModelContext: (_email, _kind, _id, run) => run() });
+  mock('src/lib/saas/creation-scope.ts', { withFrozenCreation: passthrough });
+  mock('src/lib/bi/context.ts', { withBiModelContext: (_email, _kind, _id, run) => run() });
   mock('src/lib/release-runtime/identity.ts', { releaseRuntimeEnabled: () => false });
   mock('src/lib/release-runtime/background-activity.ts', { withBackgroundActivity: (_kind, _id, _phase, run) => run(),
     detachBackgroundActivity: (_kind, _id, _phase, run) => run(), bindBackgroundClaim: async () => {} });
   mock('src/lib/image-job-queue.ts', { dispatchImageQueue: () => { throw Error('Unexpected worker scan'); } });
   mock('src/lib/image-job-failure.ts', { IMAGE_JOB_RELEASED_MESSAGE: 'fixture released' });
   mock('src/lib/model-config/transport.ts', { modelEndpointFetch: () => { f.networkCalls++; throw Error('UNEXPECTED_REAL_TRANSPORT'); } });
-  mock('src/lib/billing/synchronous.ts', { currentSynchronousBilling: () => undefined });
+  mock('src/lib/billing/synchronous-operation.ts', { currentSynchronousBilling: () => undefined });
   mock('src/lib/supplier-cost/collect.ts', { supplierContext: async () => ({ operationId: f.id }) });
   mock('src/lib/supplier-cost/runtime.ts', { supplierLedger: () => { throw Error('Use explicit fixture ledger'); }, accountIdentity: (base, key) => hash(`${base}\0${key}`) });
   mock('src/lib/competitor-image.ts', { preserveOutsideMask: () => { throw Error('Unexpected mask processing'); } });
-  const real = new Set(['src/lib/durable-image-jobs.ts', 'src/lib/image-gateway.ts', 'src/lib/model-config/channel-availability.ts',
+  mock('src/lib/application/task-execution.ts', {deferApplicationTask: async () => false});
+  mock('src/lib/worker/inflight.ts', {trackBackgroundWork: value => value});
+  const real = new Set(['src/lib/image-jobs/runtime.ts', 'src/lib/image-gateway.ts', 'src/lib/model-config/channel-availability.ts',
     'src/lib/model-config/types.ts', 'src/lib/model-config/apimart-image-policy.ts', 'src/lib/model-config/reverse-hub-images.ts',
     'src/lib/imagegen/delivery-checkpoint.ts', 'src/lib/imagegen/ratio-support.ts', 'src/lib/supplier-cost/io.ts', 'src/lib/supplier-cost/money.ts']);
   const cache = new Map();
@@ -233,7 +237,7 @@ function fixture(name, count = 1) {
   f.availability = load('src/lib/model-config/channel-availability.ts');
   f.adapter = load('src/lib/model-config/reverse-hub-images.ts');
   f.delivery = load('src/lib/imagegen/delivery-checkpoint.ts');
-  f.jobs = new (load('src/lib/durable-image-jobs.ts').DurableImageJobs)('generate');
+  f.jobs = new (load('src/lib/image-jobs/runtime.ts').DurableImageJobs)('generate');
   f.withScope = run => modelContext.run(scope, run);
   f.snapshot = () => clone(f.rows.get(f.id).snapshot);
   f.ledgerApi = {
@@ -284,7 +288,7 @@ function fixture(name, count = 1) {
       parameters: { requestHash: prepared.requestHash, acceptedOutputs: 1, modelVersion: VERSION }, ...overrides };
     f.ledgerRows.push(row); return row;
   };
-  f.fanOut = snippet('src/app/api/generate-image/route.ts', ['fanOut'], {
+  f.fanOut = snippet('src/lib/imagegen/generation-provider.ts', ['fanOut'], {
     p: { count }, model: PUBLIC, withImageIndex: f.gateway.withImageIndex,
     ImageOperationPending: f.gateway.ImageOperationPending, isImageGatewayModel: f.gateway.isImageGatewayModel,
   }).fanOut;

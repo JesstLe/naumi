@@ -11,8 +11,9 @@ const unused=['./inputs','./postprocess','../canvas-image-input','../canvas-loca
 const exportsObject={};
 vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:exportsObject,console,Buffer,process:{env:{}},require(id){
  if(id==='server-only')return{};
- if(id==='../durable-image-jobs')return{DurableImageJobs:class{async kick(id){kicks.push(id);}}};
- if(id==='../db')return{dbEnabled:true,getPool:()=>({async query(q,p){queries.push(q);return sql.query(q,p);}})};
+ if(id==='@/lib/image-jobs/runtime')return{DurableImageJobs:class{async kick(id){kicks.push(id);}}};
+ if(id==='@/platform/db/pool')return{dbEnabled:true,getPool:()=>({async query(q,p){queries.push(q);return sql.query(q,p);}})};
+ if(id==='@/lib/artworks/repository'||id==='@/lib/artworks/writer'||id==='@/lib/saas/creation-scope'||id==='./delivery-billing')return {};
  if(unused.includes(id))return{};
  throw Error('UNMOCKED_MODULE '+id);
 }});

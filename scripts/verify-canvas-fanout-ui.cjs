@@ -1,5 +1,6 @@
 // Real Next CanvasClient/React Flow in a browser. API/media boundaries are loopback fixtures.
 const {chromium}=require('@playwright/test'),fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),sharp=require('sharp'),crypto=require('node:crypto');
+const account=process.env.CANVAS_FEEDBACK_ACCOUNT||'regeneration-ui@example.test';
 const base=process.env.CANVAS_FANOUT_URL||'http://127.0.0.1:15181',out=path.resolve(process.env.CANVAS_FANOUT_OUT||'output/canvas-fanout-ui');fs.mkdirSync(out,{recursive:true});
 (async()=>{
  const browser=await chromium.launch({channel:'msedge',headless:true}),context=await browser.newContext({viewport:{width:1920,height:1180}}),page=await context.newPage();
@@ -17,9 +18,9 @@ const base=process.env.CANVAS_FANOUT_URL||'http://127.0.0.1:15181',out=path.reso
  page.on('pageerror',e=>errors.push(e.message));const json=(route,value,status=200)=>route.fulfill({status,contentType:'application/json',body:JSON.stringify(value)});
  await context.route('**/*',async route=>{const req=route.request(),u=new URL(req.url());
   if(!['127.0.0.1','localhost'].includes(u.hostname)&&!['blob:','data:'].includes(u.protocol)){external.push(u.origin);return route.abort();}
-  if(u.pathname==='/api/media/image-cache'){const sources=req.postDataJSON().sources;return json(route,{account:'regeneration-ui@example.test',results:Object.fromEntries(sources.map(source=>[source,{source,account:'regeneration-ui@example.test',version,fetchUrl:source,bytes:pixels.length,contentType:'image/png'}]))});}
+  if(u.pathname==='/api/media/image-cache'){const sources=req.postDataJSON().sources;return json(route,{account,results:Object.fromEntries(sources.map(source=>[source,{source,account,version,fetchUrl:source,bytes:pixels.length,contentType:'image/png'}]))});}
   if(u.pathname.startsWith('/media/fanout-'))return route.fulfill({contentType:'image/png',body:pixels});
-  if(u.pathname==='/api/account'){const response=await route.fetch(),data=await response.json();if(!arts)arts=[{...data.artworks[0],id:rootId,title:'原始上传图片',image:'/media/fanout-original.png',width:768,height:1024,canvasWidth:315,canvasHeight:420,canvasX:80,canvasY:110,ratio:'3:4'}];return json(route,{...data,artworks:arts});}
+  if(u.pathname==='/api/account'){const response=await route.fetch(),data=await response.json();if(!arts)arts=[{...data.artworks[0],id:rootId,groupId:rootId,canvasImageRevision:0,title:'原始上传图片',image:'/media/fanout-original.png',width:768,height:1024,canvasWidth:315,canvasHeight:420,canvasX:80,canvasY:110,ratio:'3:4'}];return json(route,{...data,artworks:arts});}
   if(u.pathname==='/api/canvas/text-nodes'||/^\/api\/canvas\/(video|director|character|scene|audio|timeline)-nodes$/.test(u.pathname))return json(route,{nodes:[],persisted:true});
   if(u.pathname==='/api/imagegen/inputs')return json(route,{artworkId:'asset-fanout',url:'/media/fanout-original.png',width:768,height:1024});
   if(u.pathname==='/api/imagegen/plan'){prepared=req.postDataJSON();plans.push(prepared);return json(route,{request:prepared,intent:{operation:'edit',background:null},steps:[{key:'generate',operation:'edit',credits:18}],warnings:[],confirmationRequired:false,totalCredits:18,billingVersion:1,modelVersion:1,quote:{id:'fixture-frozen18'}});}
@@ -35,6 +36,7 @@ const base=process.env.CANVAS_FANOUT_URL||'http://127.0.0.1:15181',out=path.reso
  });
  const node=id=>page.locator(`.react-flow__node[data-id="${id}"]`),wait=async fn=>{for(let n=0;n<200&&!fn();n++)await new Promise(r=>setTimeout(r,40));assert.ok(fn(),'fixture reached');};
  try{
+  await context.addInitScript(project=>localStorage.setItem('nv:canvas:last',project),'tree:'+rootId);
   await page.goto(base+'/canvas',{waitUntil:'domcontentloaded',timeout:180000});await node(rootId).waitFor({timeout:180000});await node(rootId).click({position:{x:75,y:75}});await page.getByLabel('生成图片数量',{exact:true}).fill('3');
   const button=page.getByTestId('generation-submit-action');assert.equal((await button.innerText()).trim(),'');assert.equal(await button.getAttribute('aria-label'),'生成');checks.push('IMAGE_PRIMARY_ACTION_ARROW_ONLY');
   const original=await node(rootId).locator('img').getAttribute('src');await button.click();await wait(()=>submissions.length===1);await page.waitForFunction(()=>document.querySelectorAll('.react-flow__node[data-id^="task-"] [data-testid="generation-placeholder"]').length===3);

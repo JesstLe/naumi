@@ -1,10 +1,11 @@
 import "server-only";
-import {getPool} from "../db";
+import {getPool} from "@/platform/db/pool";
 import {parseTimelineInputIdentity} from "../timeline/project";
 import {ModelConfigError} from "../model-config/types";
-import {assertCreationProjectInput} from "../saas/creation-context";
+import {assertCreationProjectInput} from "../saas/creation-access";
 import type {OrderedInput} from "../video/references";
-import {ensureTimelineNodeSchema,mapTimelineNode} from "./timeline-node-repository";
+import {mapTimelineNode} from "./timeline-node-repository";
+import {ensureTimelineNodeSchema} from "./storage-schema";
 import {requireTimelineMaterials} from "./timeline-materials";
 
 export async function resolveCanvasTimelineInputs(actorRaw:string,inputs:readonly OrderedInput[]){

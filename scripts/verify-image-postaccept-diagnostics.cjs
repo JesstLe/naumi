@@ -57,7 +57,7 @@ function load(rel, deps = {}) {
   const fakeConsole={...console,error(...v){logs.push(v);}};
   const rel='src/lib/model-health/observe.ts', source=fs.readFileSync(path.join(root,rel),'utf8'),exports={};
   const scope={frozen:{feature:'canvas.image',modality:'image',modelVersion:141},connection:{providerId:'fixture',credentialRef:'fixture'}};
-  const deps={'../db':{dbEnabled:true,getPool:()=>({})},'../model-config/channel-image-response':{completedChannelImage:async()=>{validations++;throw original},channelImageFailureStage:()=> 'decode-base64'},
+  const deps={'@/platform/db/pool':{dbEnabled:true,getPool:()=>({})},'../model-config/channel-image-response':{completedChannelImage:async()=>{validations++;throw original},channelImageFailureStage:()=> 'decode-base64'},
     '../model-config/types':{ModelConfigError:class extends Error{}},'../image-gateway':{ImageOperationDeferred:class extends Error{},currentImageOperationId:()=> 'job-fixture:image:0'},
     '../imagegen/failure-evidence':evidence,'../supplier-cost/response-diagnostics':{recordImageResponseFailure:async()=>{}},'../model-config/channel-text-response':{},'./repository':{createHealthRepository:()=>({observe:async(t,r)=>observations.push(r)})},'./targets':{healthTargetKey:()=> 'fixture'},'./outcomes':{classifyHealthFailure:()=>({success:false,reason:'network',status:200})}};
   vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,Request,Response,URL,console:fakeConsole,require(id){if(id==='server-only')return {};if(id in deps)return deps[id];throw Error('unexpected dependency '+id)}});

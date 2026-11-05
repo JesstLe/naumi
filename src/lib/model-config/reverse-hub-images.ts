@@ -9,7 +9,7 @@ import { ModelConfigError } from "./types";
 import { modelEndpointFetch } from "./transport";
 import { mapResolution } from "./resolution-policy";
 import { currentImageOperationId, currentImageOperationParameters, ImageOperationPending, ImageOperationReview } from "../image-gateway";
-import { currentSynchronousBilling } from "../billing/synchronous";
+import {currentSynchronousBilling} from "@/lib/billing/synchronous-operation";
 import { supplierContext } from "../supplier-cost/collect";
 import { supplierLedger, accountIdentity } from "../supplier-cost/runtime";
 import { readBoundedBytes } from "../supplier-cost/io";

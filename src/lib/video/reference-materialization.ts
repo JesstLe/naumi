@@ -1,8 +1,10 @@
 import "server-only";
 import {createHash} from "node:crypto";
-import {listArtworksByIds} from "../db";
-import {canReadMedia,getMediaAsset,importLegacyMedia} from "../media-assets";
-import {storageKeyFromManagedUrl,readManagedObject,writeStoredObject,presignStoredObject,privateMedia,remoteMediaAccess} from "../storage";
+import {listArtworksByIds} from "@/lib/artworks/repository";
+import { canReadMedia, importLegacyMedia } from "../media-assets";
+import { getMediaAsset } from "../media-assets-reader";
+import { storageKeyFromManagedUrl, writeStoredObject, presignStoredObject, privateMedia, remoteMediaAccess } from "../object-storage/runtime";
+import { readManagedObject } from "../object-storage/managed-read";
 import {createVideoReferenceMediaUrl,type VideoReferenceMediaAsset} from "./reference-media-token";
 import {VideoContractError} from "./contract";
 import {videoReferenceSchema} from "./references";

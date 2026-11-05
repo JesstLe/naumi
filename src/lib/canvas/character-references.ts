@@ -1,10 +1,10 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import type { PoolClient } from "pg";
-import { getPool } from "../db";
+import { getPool } from "@/platform/db/pool";
 import { characterReferenceText, frozenCharacterInputIdentity, parseCharacterInputIdentity, type CharacterProject } from "../character/project";
 import { ModelConfigError } from "../model-config/types";
-import { assertCreationProjectInput } from "../saas/creation-context";
+import { assertCreationProjectInput } from "../saas/creation-access";
 import {requireVisualImages} from "./visual-images";
 import type {VisualReferenceExpansion} from "./visual-references";
 import type { OrderedInput } from "../video/references";

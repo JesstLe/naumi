@@ -6,7 +6,7 @@ import {copyCanvasNodes,nodeCopyRequest} from "@/lib/canvas/node-copy";
 import {ModelConfigError} from "@/lib/model-config/types";
 import {withCreationRoute} from '@/lib/saas/creation-context';
 import {withCreationOperation,assertCreationObjectRefs} from '@/lib/saas/creation-writer';
-import {listArtworksByIds} from '@/lib/db';
+import {listArtworksByIds} from "@/lib/artworks/repository";
 export const runtime="nodejs",dynamic="force-dynamic";
 async function handlePost(request:Request){const email=await authenticatedEmail(request);if(!email)return NextResponse.json({error:"请先登录"},{status:401});if(!sameSiteBiMutation(request))return NextResponse.json({error:"不允许跨站复制"},{status:403});
   try{const input=nodeCopyRequest.safeParse(JSON.parse(await readBounded(new Response(request.body),64*1024)));if(!input.success)return NextResponse.json({error:"复制字段无效"},{status:422});

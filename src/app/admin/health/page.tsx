@@ -1,6 +1,6 @@
 import {AdminCenterShell} from "@/components/admin/center-shell";
 import { requireAdminPage } from "@/lib/admin-page";
-import { dbEnabled, getPool } from "@/lib/db";
+import { dbEnabled, getPool } from "@/platform/db/pool";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "运行健康 — Naumi", robots: { index: false, follow: false } };

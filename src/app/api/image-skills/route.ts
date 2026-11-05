@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { authenticatedEmail } from "@/lib/request-auth";
-import { dbEnabled, getAgentSession } from "@/lib/db";
-import { checkRateLimit } from "@/lib/rate-limit-http";
+import {getAgentSession} from "@/lib/agent/session-repository";
+import {dbEnabled} from "@/platform/db/pool";
+import {checkRateLimit} from "@/lib/rate-limit-http";
 import { SkillError, conversationSkillDraft, validateSkillSelection } from "@/lib/image-skills/catalog";
 import { listImageSkills, saveImageSkill, archiveImageSkill, imageSkillEnterprise } from "@/lib/image-skills/server";
 export const runtime = "nodejs";

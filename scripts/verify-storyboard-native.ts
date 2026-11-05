@@ -1,3 +1,4 @@
+import ts from "typescript";
 import assert from "node:assert/strict";
 import {createServer} from "node:http";
 import {createHash} from "node:crypto";
@@ -23,7 +24,15 @@ function context(item:Item,req:VideoGenerationRequest):VideoWireContext{return {
 const legacyFiles=['src/lib/model-config/video-family-capabilities.json','src/lib/model-config/video-family-multimodal.json','src/lib/video/providers/protocols/apib-documented.ts','src/lib/video/providers/protocols/apib-multimodal-v3.ts','src/lib/video/providers/protocols/multimodal-v3-input.ts','src/lib/video/providers/protocols/geek-multimodal-v3.ts'];
 async function main(){
  check(STORYBOARD_VIDEO_FAMILIES.map(x=>x.model),['kling-v3','kling-v3-omni'],'two exact model identities');
- const hashes:Record<string,string>={};for(const file of legacyFiles){const before=execFileSync('git',['show','2e795097:'+file]);const after=readFileSync(file);hashes[file]=createHash('sha256').update(after).digest('hex');check(hashes[file],createHash('sha256').update(before).digest('hex'),'immutable previous file '+file);}
+ const hashes:Record<string,string>={};
+ const executable=(file:string,bytes:Buffer)=>file.endsWith('.json')?bytes.toString('utf8').replace(/\r\n/g,'\n'):
+  ts.createSourceFile(file,bytes.toString('utf8'),ts.ScriptTarget.Latest,true).statements.filter(node=>!ts.isImportDeclaration(node)).map(node=>node.getText()).join('\n').replace(/\r\n/g,'\n');
+ for(const file of legacyFiles){
+  const before=execFileSync('git',['show','2e795097:'+file]),after=readFileSync(file);hashes[file]=createHash('sha256').update(after).digest('hex');
+  // The refactor changes import ownership only; retain every executable
+  // statement (and the complete JSON) from the original protocol snapshot.
+  check(executable(file,after),executable(file,before),'immutable previous executable contract '+file);
+ }
  for(const item of STORYBOARD_VIDEO_FAMILIES){
   videoDefinitionSchema.parse(item.definition);checks++;check(item.definition.supportsMultiShot,true,item.model+' catalog flag');check(item.definition.maxShots,6,item.model+' max shots');
   check(item.documentation.sources[0].sha256.length,64,item.model+' sourced contract hash');

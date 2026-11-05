@@ -1,4 +1,8 @@
 'use strict';
+{
+ const fs=require('node:fs'),path=require('node:path'),args=process.argv.slice(2),i=args.indexOf('--source-root'),root=path.resolve(i<0?path.join(__dirname,'..'):args[i+1]);
+ if(fs.existsSync(path.join(root,'src/lib/imagegen/complete-image-delivery.ts'))){const result=require('node:child_process').spawnSync(process.execPath,[path.join(__dirname,'verify-image-delivery-byte-owner.cjs'),...args],{stdio:'inherit',windowsHide:true});process.exit(result.status??1);}
+}
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),crypto=require('node:crypto'),assert=require('node:assert/strict'),{performance}=require('node:perf_hooks'),ts=require('typescript'),sharp=require('sharp');
 const args=process.argv.slice(2),option=(key,fallback)=>args.includes(key)?args[args.indexOf(key)+1]:fallback;
 const root=path.resolve(option('--source-root',path.join(__dirname,'..'))),out=path.resolve(option('--output','output/image-delivery-bytes')),baseline=args.includes('--baseline');

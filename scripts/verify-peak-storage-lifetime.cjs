@@ -37,7 +37,7 @@ async function main(){
   const built=await esbuild.build({stdin:{contents:fs.readFileSync(entry,'utf8'),resolveDir:path.join(root,'src/lib/object-storage'),sourcefile:entry,loader:'ts'},bundle:true,write:false,platform:'node',format:'cjs',packages:'external',plugins:[{name:'server-only-test',setup(b){b.onResolve({filter:/^server-only$/},()=>({path:'server-only',namespace:'empty'}));b.onLoad({filter:/.*/,namespace:'empty'},()=>({contents:''}));}}]});
   const module={exports:{}};new Function('module','exports','require',built.outputFiles[0].text)(module,module.exports,require);
   const backend=module.exports.createObjectStorage({driver:'s3',enabled:true,endpoint:origin,accessKeyId:'fixture-only',secretAccessKey:'fixture-only',region:'fixture',bucket:'fixture',pathStyle:true,privateMedia:false,accessMode:'proxy',mediaDir:'/fixture'});
-  const storage=functions('src/lib/storage.ts',['readManagedObject'],{
+  const storage=functions(fs.existsSync(path.join(source,'src/lib/object-storage/managed-read.ts'))?'src/lib/object-storage/managed-read.ts':'src/lib/storage.ts',['readManagedObject'],{
    storageKeyFromManagedUrl:u=>u.startsWith('/media/')?u.slice(7):null,storageDriver:'s3',privateMedia:false,
    fetchStoredObject:(key)=>backend.get(key),readLocalMirror:async key=>{if(key==='error'||key==='missing')return {bytes:small,contentType:'image/png',size:small.length};throw Object.assign(new Error('not found'),{code:'ENOENT'});}
   });

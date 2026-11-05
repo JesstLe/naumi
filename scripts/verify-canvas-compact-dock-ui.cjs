@@ -122,7 +122,8 @@ async function scenario(browser, dimensions, referenceCount) {
       const n = document.querySelector(`.react-flow__node[data-id="${selectedId}"]`), submit = d?.querySelector('[data-testid="generation-submit-action"]');
       const s = box(submit), hit = s && document.elementFromPoint(s.x + s.width / 2, s.y + s.height / 2);
       const style = el => { if (!el) return null; const c = getComputedStyle(el); return { minHeight: c.minHeight, maxHeight: c.maxHeight, overflowX: c.overflowX, overflowY: c.overflowY }; };
-      return { label, selectedId, density: d?.getAttribute('data-composer-density'), expanded: d?.getAttribute('data-composer-expanded'),
+      const ancestors=[];for(let parent=d?.parentElement;parent;parent=parent.parentElement){const c=getComputedStyle(parent);ancestors.push({tag:parent.tagName,id:parent.id,classes:String(parent.className).slice(0,180),rect:box(parent),position:c.position,width:c.width,minWidth:c.minWidth,maxWidth:c.maxWidth,marginLeft:c.marginLeft,paddingLeft:c.paddingLeft,transform:c.transform,scrollLeft:parent.scrollLeft});}
+      return { label, selectedId, ancestors, density: d?.getAttribute('data-composer-density'), expanded: d?.getAttribute('data-composer-expanded'),
         dock: box(d), body: box(b), footer: box(d?.querySelector('[data-composer-footer]')), editor: box(e), editorStyle: style(e),
         dockStyle: style(d), bodyStyle: style(b), toolbar: box(t), node: box(n), title: box(n?.querySelector('.art-title')),
         pixel: box(n?.querySelector('[data-testid="image-pixel-size"]')), submit: s, submitHit: hit?.closest('button') === submit,
@@ -207,6 +208,19 @@ async function scenario(browser, dimensions, referenceCount) {
         }
         pass(name + ':COMPACT_SHORT_PROMPT_TITLE_PIXELS_IMAGE_AND_GENERATE');
       } else pass(name + ':MOBILE_PAGE_BOUNDS_AND_GENERATE_HIT');
+      if (dimensions.width < 320) {
+        const submit=dock().getByTestId('generation-submit-action');
+        await editor().click();let reached=false;
+        for(let step=0;step<24;step++){await page.keyboard.press('Tab');if(await submit.evaluate(el=>el===document.activeElement)){reached=true;break;}}
+        assert(reached,'native keyboard Tab reaches Generate at the narrow viewport');
+        await expect(submit).toBeFocused();
+        // Playwright's native actionability/hit-target trial intentionally does
+        // not dispatch paid generation; the existing POST sentinel stays zero.
+        await submit.click({trial:true});
+        const focused=await measure('narrow-keyboard-submit');assertBounds(focused);
+        assert.equal(focused.ancestors.find(a=>a.classes.includes('canvas-stage'))?.scrollLeft,0,'canvas stage is not a native focus scroll container');
+        pass(name + ':NATIVE_TAB_REACHES_SUBMIT_CLICK_ACTIONABLE_STAGE_SCROLL_ZERO');
+      }
 
       if (desktop) {
         const rename = toolbar().locator('[data-action="rename"]');
@@ -305,7 +319,9 @@ async function scenario(browser, dimensions, referenceCount) {
   try {
     assert.equal(Array.from(shortPrompt).length, 39);
     browser = await chromium.launch({ channel: 'msedge', headless: true });
-    const only = arg('--only', ''), cases = [[1440, 900], [1920, 948], [390, 844]];
+    const only = arg('--only', ''), viewport = arg('--viewport', '');
+    assert(!viewport || /^\d{2,4}x\d{2,4}$/.test(viewport), 'Explicit viewport must be WIDTHxHEIGHT');
+    const cases = viewport ? [viewport.split('x').map(Number)] : [[1440, 900], [1920, 948], [390, 844]];
     for (const [width, height] of cases) for (const references of [0, 2]) {
       if (!only || only === `${width}x${height}-refs-${references}`) await scenario(browser, { width, height }, references);
     }

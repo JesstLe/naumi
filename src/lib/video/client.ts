@@ -26,7 +26,7 @@ export function resolveVideoConfig(): VideoClientConfig | null {
   return { baseUrl, apiKey, model };
 }
 
-export {videoCostPublic as videoCost} from "./service";
+export {videoCostPublic as videoCost} from "./queries";
 
 type CreateInput = {
   prompt: string;

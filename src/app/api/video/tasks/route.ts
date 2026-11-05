@@ -3,8 +3,9 @@ import {z} from "zod";
 
 import { authenticatedEmail, authorizedTargetEmail } from "@/lib/request-auth";
 import { safeError } from "@/lib/api-error";
-import {getVideoTask,getVideoTaskByIdempotencyKey} from "@/lib/db";
-import { listVideoTaskViews, pollAndSettle, publicVideoTaskView } from "@/lib/video/service";
+import {getVideoTask, getVideoTaskByIdempotencyKey} from "@/lib/video/task-repository";
+import {listVideoTaskViews,publicVideoTaskView} from "@/lib/video/queries";
+import {pollAndSettle} from "@/lib/video/runtime";
 
 // ---------------------------------------------------------------------------
 // 视频任务查询(兼容契约 {ok, task}):惰性触发一次服务端轮询与结算(service)。

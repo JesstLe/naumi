@@ -1,3 +1,12 @@
+/** Only an identity-bound, financially settled server failure releases an
+ * intent. Output error codes, missing receipts and foreign IDs prove nothing. */
+export function isTerminalBillingFailure(data: unknown, operationId?: string | null): boolean {
+    if (!operationId || !data || typeof data !== "object" || Array.isArray(data)) return false;
+    const receipt = data as Record<string, unknown>;
+    return receipt.terminal === true && receipt.status === "failed" && receipt.operationId === `tool-${operationId}` &&
+        Number.isSafeInteger(receipt.chargedCredits) && Number(receipt.chargedCredits) >= 0;
+}
+
 /** Read a mutation receipt, never retry a mutation or infer non-acceptance. */
 export async function readBillingSubmissionResponse(response: Response, operationId: string, timeoutMs = 30_000, requestUrl?: string): Promise<{response: Response; data: Record<string, unknown>}> {
     let timer: ReturnType<typeof setTimeout> | undefined;

@@ -52,7 +52,7 @@ async function main() {
     for (const path of ["SKILL.md", "references/brief-schema.md", "references/output-format.md", "agents/openai.yaml"]) {
       const content = await readFile(source + "/" + path, "utf8"); originals.set(path, content.replace(/\r\n?/g, "\n").trim()); zip.file("brand-packaging-strategy/" + path, content);
     }
-    const form = new FormData(); form.set("file", new Blob([await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" })]), "brand-packaging-strategy.zip");
+    const form = new FormData(); form.set("file", new Blob([Uint8Array.from(await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }))]), "brand-packaging-strategy.zip");
     const imported = await (await import("../src/app/api/image-skills/import/route")).POST(new Request(f.origin + "/api/image-skills/import", { method: "POST", headers: { cookie }, body: form }));
     is(imported.status, 201); const skill = (await imported.json()).skill;
     is(skill.source, "personal"); is(skill.name, "品牌包装创意策略生成器");

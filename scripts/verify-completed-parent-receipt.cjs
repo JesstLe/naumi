@@ -4,7 +4,7 @@ const baseline=process.argv.includes('--baseline');
 assert.equal(process.env.NAUMI_VERIFY_ISOLATED_DB,'1');assert.equal(new URL(process.env.DATABASE_URL).hostname,'127.0.0.1');
 const namespace='completed_parent_'+crypto.randomUUID().replaceAll('-','');let db;const admin=new Pool({connectionString:process.env.DATABASE_URL});
 let checks=0,network=0,mediaFailure=false,mediaRace=null;
-function load(file,deps){const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(root,file),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,{exports,Buffer,Date,Set,Map,console,require:n=>n==='server-only'?{}:n.startsWith('node:')?require(n):deps[n]??{}});return exports;}
+function load(file,deps){if(deps['../db'])deps['@/platform/db/pool']=deps['../db'];if(deps['../durable-image-jobs'])deps['@/lib/image-jobs/runtime']=deps['../durable-image-jobs'];const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(root,file),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,{exports,Buffer,Date,Set,Map,console,require:n=>n==='server-only'?{}:n.startsWith('node:')?require(n):deps[n]??{}});return exports;}
 const check=(name,fn)=>{fn();checks++;console.log('PASS '+name);};
 (async()=>{try{
  await admin.query(`CREATE SCHEMA ${namespace}`);db=new Pool({connectionString:process.env.DATABASE_URL,options:`-c search_path=${namespace}`});

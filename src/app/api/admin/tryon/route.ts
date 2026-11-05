@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { dbEnabled } from "@/lib/db";
+import { dbEnabled } from "@/platform/db/pool";
 import { requireAdmin } from "@/lib/admin-auth";
-import { storageEnabled, uploadImage, deleteImageByUrl } from "@/lib/storage";
+import { storageEnabled, deleteImageByUrl } from "@/lib/object-storage/runtime";
+import { uploadImage } from "@/lib/media-upload";
 import { getTryonLibrary, setTryonLibrary } from "@/lib/tryon-store";
 import type {
   TryonModel,
@@ -55,7 +56,7 @@ export async function POST(req: Request) {
 
       const loadSharp = async () => {
         const mod = (await import("sharp")) as unknown as {
-          default?: typeof import("sharp");
+          default?: typeof import("sharp").default;
         } & typeof import("sharp");
         return mod.default ?? mod;
       };

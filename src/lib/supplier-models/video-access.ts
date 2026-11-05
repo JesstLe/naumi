@@ -1,24 +1,15 @@
+import {ensureSupplierVideoSchema} from "@/lib/supplier-models/video-schema";
+export {ensureSupplierVideoSchema};
 import "server-only";
-import { createHash, randomUUID } from "node:crypto";
-import type { Pool,PoolClient } from "pg";
-import { dbEnabled, getPool } from "../db";
-import { videoDefinitionSchema, videoWireProfileSchema, type VideoModelDefinition, type VideoWireProfile } from "../video/capability-schema";
-import type { ModelConfig } from "../model-config/types";
+
+import {createHash,randomUUID} from "node:crypto";
+import type {Pool,PoolClient} from "pg";
+import {dbEnabled,getPool} from "@/platform/db/pool";
+import {videoDefinitionSchema,videoWireProfileSchema,type VideoModelDefinition,type VideoWireProfile} from "../video/capability-schema";
+import type {ModelConfig} from "../model-config/types";
 
 export type SupplierVideoDefinition={definition:VideoModelDefinition;profile?:VideoWireProfile;sourceRevision:{id:string;revision:number;sourceUrl:string;collectedAt:string}};
-const ready=new WeakMap<Pool,Promise<void>>();
-export async function ensureSupplierVideoSchema(pool:Pool){
-  let task=ready.get(pool);
-  if(!task){task=pool.query(`CREATE TABLE IF NOT EXISTS app_supplier_video_definitions (
-    id uuid NOT NULL UNIQUE,provider_id text NOT NULL,model_id text NOT NULL,definition jsonb NOT NULL,profile text,
-    revision bigint NOT NULL DEFAULT 1,content_hash text NOT NULL,source_url text NOT NULL,collected_at timestamptz NOT NULL DEFAULT now(),
-    PRIMARY KEY(provider_id,model_id));
-    CREATE TABLE IF NOT EXISTS app_supplier_video_definition_versions (
-      id uuid NOT NULL,revision bigint NOT NULL,definition jsonb NOT NULL,profile text,content_hash text NOT NULL,
-      source_url text NOT NULL,collected_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(id,revision));`)
-    .then(()=>undefined).catch(error=>{ready.delete(pool);throw error;});ready.set(pool,task);}
-  await task;
-}
+
 export async function recordSupplierVideoDefinition(pool:Pool,input:{providerId:string;modelId:string;definition:unknown;profile?:unknown;sourceUrl:string},parent?:PoolClient){
   const definition=videoDefinitionSchema.parse(input.definition),profile=input.profile===undefined?undefined:videoWireProfileSchema.parse(input.profile);
   if(Object.keys(definition.providerOptions||{}).some(key=>/^(api_?key|authorization|password|secret|credential|access_?token|token)$/i.test(key)))throw new Error("供应商资料不能存认证字段");

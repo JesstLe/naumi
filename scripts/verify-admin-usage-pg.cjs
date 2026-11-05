@@ -1,9 +1,10 @@
 // Executes the complete TypeScript analytics modules against isolated PostgreSQL.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), vm = require('node:vm');
 const ts = require('typescript'), { Pool } = require('pg'), { randomUUID, createHash } = require('node:crypto');
-const root = path.resolve(__dirname, '..'), out = path.resolve(process.argv[2] || 'output/admin-usage-pg');
-const url = process.env.ADMIN_USAGE_FIXTURE_DATABASE_URL || '';
-assert.equal(new URL(url).hostname, '127.0.0.1'); assert.equal(new URL(url).pathname, '/usage_fixture');
+const root = path.resolve(__dirname, '..'), out = path.resolve(process.argv[2] || process.env.ADMIN_USER_USAGE_EVIDENCE || 'output/admin-usage-pg');
+const url = process.env.ADMIN_USAGE_FIXTURE_DATABASE_URL || process.env.DATABASE_URL || '';
+assert.equal(new URL(url).hostname, '127.0.0.1');
+assert.ok(process.env.ADMIN_USAGE_FIXTURE_DATABASE_URL || process.env.NAUMI_VERIFY_ISOLATED_DB === '1', 'Explicit isolated fixture required');
 const checks = [], loaded = [], cache = new Map();
 const scale = process.argv.includes('--scale');
 function load(relative, mocks = {}) {
@@ -16,8 +17,8 @@ function load(relative, mocks = {}) {
     if (name === 'server-only') return {};
     if (Object.hasOwn(mocks, name)) return mocks[name];
     if (name.startsWith('./')) return load(path.relative(root, path.resolve(path.dirname(filename), name + '.ts')), mocks);
-    if (name === '@/lib/db') return { getPool() { throw new Error('Only explicit test client is allowed'); } };
-    if (name === './repository') return { ensureBiSchema() { throw new Error('Test SQL schema is explicit'); } };
+    if (name === '@/lib/db' || name === '@/platform/db/pool') return { getPool() { throw new Error('Only explicit test client is allowed'); } };
+    if (name === './repository' || name === './schema') return { ensureBiSchema() { throw new Error('Test SQL schema is explicit'); } };
     return require(name);
   };
   new vm.Script(`(function(require,module,exports){${code}\n})`, { filename }).runInThisContext()(localRequire, module, module.exports);
@@ -48,7 +49,7 @@ async function main() {
       CREATE TABLE app_creation_records(id text PRIMARY KEY,actor_email text,source_kind text,source_id text,parent_id text);
       CREATE INDEX creation_source ON app_creation_records(actor_email,source_kind,source_id);`);
     const { parseUsageQuery } = load('src/lib/bi/usage-contracts.ts');
-    const { readUserUsage } = load('src/lib/bi/usage-repository.ts', { './repository': { ensureBiSchema: async () => {} } });
+    const { readUserUsage } = load('src/lib/bi/usage-repository.ts', { './schema': { ensureBiSchema: async () => {} } });
     const query = extra => parseUsageQuery(new URLSearchParams({ from: '2026-10-28', to: '2026-10-29', ...extra }));
     const check = async (name, fn) => { await fn(); checks.push(name); console.log('PASS ' + name); };
     await check('DATE_VALIDATION_AND_BJT_EXCLUSIVE_END', async () => {

@@ -9,7 +9,9 @@ import {specificationResolution} from "./specifications";
 import {imageModelDisplayId} from "../image-model-routing";
 import { cleanSource, documentedMetadata, reverseHubCatalogMetadata, sourceHash, type PublicSupplierDirectory } from "./discovery";
 import {documentedVideoDefinition} from "./discovery";
-import {ensureSupplierVideoSchema,recordSupplierVideoDefinition} from "./video-access";
+import {recordSupplierVideoDefinition} from "./video-access";
+import {ensureSupplierVideoSchema} from "@/lib/supplier-models/video-schema";
+
 
 export class SupplierMetadataError extends Error{constructor(public code:string,message:string,public status=400){super(message);}}
 const serial=(v:unknown):string=>JSON.stringify(v&&typeof v==="object"?Array.isArray(v)?v.map(x=>JSON.parse(serial(x))):Object.fromEntries(Object.entries(v).sort(([a],[b])=>a.localeCompare(b)).map(([k,x])=>[k,JSON.parse(serial(x))])):v);

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { dbEnabled } from "@/lib/db";
+import { dbEnabled } from "@/platform/db/pool";
 import { authenticatedEmail } from "@/lib/request-auth";
 import { localEditSchema, saveCanvasLocalEdit } from "@/lib/canvas-local-image-edit";
 import {withCreationRoute} from '@/lib/saas/creation-context';

@@ -6,16 +6,15 @@ import {readBounded} from "../../supplier-cost/io";
 import {downloadVideoResultAsset} from "./result-fetch";
 import {PermanentVideoCreateError,TransientPollError,UnsupportedVideoCancellationError,type VideoGenerationRequest,type VideoProviderAdapter,type VideoTaskSnapshot} from "../types";
 import type {VideoProviderRuntimeConfig} from "./config";
-import {buildVideoCreate,buildVideoPoll,buildVideoCancel,decodeVideoCreated,decodeVideoPolled,field,string,type VideoWireContext,type VideoWireRequest} from "./wire";
+import {buildVideoCreate,buildVideoPoll,buildVideoCancel,decodeVideoCreated,decodeVideoPolled} from "./wire";
+import {field,string} from "./wire-helpers";
+import type {VideoWireContext,VideoWireRequest} from "./wire-contracts";
+import {videoWireEndpoint} from "./wire-endpoint";
+export {videoWireEndpoint} from "./wire-endpoint";
 import {uploadWorkflowReferences} from "./workflow-upload";
 import {currentPrivateVideoContext} from "./private-context";
 
-export function videoWireEndpoint(config:Pick<VideoProviderRuntimeConfig,"baseUrl"|"videoProfile">,path:string){
-  let base=config.baseUrl.replace(/\/+$/,"");
-  if((config.videoProfile?.startsWith("tokendance-")||config.videoProfile==="compshare-h3")&&base.endsWith("/v1"))base=base.slice(0,-3);
-  const version=path.match(/^\/(?:api\/)?v\d+(?:beta)?(?=\/)/)?.[0];
-  return base+(version&&base.endsWith(version)?path.slice(version.length):path);
-}
+
 export function createWireVideoAdapter(config:VideoProviderRuntimeConfig):VideoProviderAdapter{
   if(!config.videoProfile)throw new Error("A frozen video profile is required");
   const profile=config.videoProfile,scope=currentModelExecution("video");

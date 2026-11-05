@@ -3,7 +3,7 @@ const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),asse
 const {randomUUID}=require('node:crypto'),{createServer}=require('node:http'),{spawnSync}=require('node:child_process');
 const {pathToFileURL}=require('node:url'),{transformSync}=require('esbuild'),{Pool}=require('pg');
 const root=path.resolve(process.argv[2]||'.'),mode=process.argv[3]||'baseline';
-const database='postgresql://postgres@127.0.0.1:55469/naumi_x3_negative_fixture?sslmode=disable',container='naumi-x3-negative-4608267e';
+const database='postgresql://postgres@127.0.0.1:55469/naumi_x3_negative_fixture?sslmode=disable',container=process.env.NAUMI_X3_FIXTURE_CONTAINER||'naumi-x3-negative-4608267e';
 for(const k of Object.keys(process.env))if(k.startsWith('PG')||k==='DATABASE_URL'||k==='NODE_OPTIONS'||k.startsWith('NAUMI_DB_')||k==='NAUMI_TICK_POOL_MAX')delete process.env[k];
 const schema='negative_'+randomUUID().replaceAll('-',''),commit='a'.repeat(40),secret='negative-fixture-secret-0123456789abcdef',boot=randomUUID();
 Object.assign(process.env,{DATABASE_URL:database,PGOPTIONS:'-c search_path='+schema,SOURCE_COMMIT:commit,NAUMI_INSTANCE_ID:'negative-web',VIDEO_WORKER_SECRET:secret,NAUMI_RELEASE_BOOT_SOURCE:'preload',NAUMI_RELEASE_BOOT_ID:boot});
@@ -17,11 +17,11 @@ function loadBaseline(file,bindings={}){
  const filename=revision+':'+file,module={exports:{}},code=transformSync(source.stdout,{loader:'ts',format:'cjs',target:'es2022'}).code;
  vm.runInThisContext('(function(require,module,exports){'+code+'\n})',{filename})(name=>name==='server-only'?{}:name in bindings?bindings[name]:require(name),module,module.exports);return module.exports;
 }
-const connection=load('src/lib/db/connection.ts');
+const connection=require('../src/platform/db/pool.ts');
 const api=load('src/lib/release-runtime/worker-tick-receipts.ts');
 let scans=0,paidCallbacks=0,scanGate;
 const scan=async()=>{scans++;paidCallbacks++;if(scanGate)await scanGate.promise;return {ok:true,processed:1};};
-const bindings={'@/lib/db':{dbEnabled:true},'@/lib/db/connection':connection,'@/lib/release-runtime/worker-tick-receipts':api,
+const bindings={'@/platform/db/pool':connection,'@/lib/worker/scan':{scanApplicationWorkerOnce:scan},'@/lib/worker/authorization':{imageWorkerAuthorized:actualAuth},'@/lib/application/task-execution':{applicationTasksRunHere:()=>true},'@/lib/db':{dbEnabled:true},'@/lib/db/connection':connection,'@/lib/release-runtime/worker-tick-receipts':api,
  '@/lib/video/worker':{scanVideoWorkerOnce:scan},'@/lib/canvas-image-tasks':{recoverCanvasImageTasks:async()=>0},
  '@/lib/durable-image-jobs':{recoverDurableImageJobs:async()=>0,imageWorkerAuthorized:actualAuth},
  '@/lib/supplier-cost/worker':{scanSupplierCostsOnce:async()=>0},'@/lib/worker/media-recovery':{scheduleMediaRecovery:async()=>({})},

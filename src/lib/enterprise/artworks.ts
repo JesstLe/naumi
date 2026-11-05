@@ -1,10 +1,12 @@
 import "server-only";
 import { z } from "zod";
 import type { TeamActor } from "@/lib/teams/grants";
-import { TeamError } from "@/lib/teams/server";
+import { TeamError } from "@/lib/teams/errors";
 import { parseBiQuery, biCsvCell, type BiQuery, type BiResponse } from "@/lib/bi/contracts";
 import { ARTWORK_COLUMNS, artworkValue } from "@/lib/bi/artwork-view";
-import { ensureBiSchema, queryBi } from "@/lib/bi/repository";
+import {queryBi} from "@/lib/bi/repository";
+import {ensureBiSchema} from "@/lib/bi/schema";
+
 import { enterpriseRead } from "./server";
 
 export function parseEnterpriseArtworks(params: URLSearchParams) {

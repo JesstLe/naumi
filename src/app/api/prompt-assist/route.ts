@@ -1,5 +1,6 @@
 import { modelAwareOpenAI } from "@/lib/model-config/clients";
-import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
+import {observeOpenAI} from "@/lib/bi/model-calls";
+import {withBiRequest} from "@/lib/bi/request";
 import { NextResponse } from "next/server";
 import { toVisionDataUrl } from "@/lib/vision-image";
 import OpenAI from "openai";
@@ -11,12 +12,12 @@ import {
   ASSIST_TOOL_HINTS,
 } from "@/lib/prompt-config";
 import { resolveUserEmail } from "@/lib/admin-auth";
-import { dbEnabled } from "@/lib/db";
-import { checkRateLimit } from "@/lib/rate-limit-http";
+import { dbEnabled } from "@/platform/db/pool";
+import {checkRateLimit} from "@/lib/rate-limit-http";
 import { clientIp } from "@/lib/ip";
 import { safeError } from "@/lib/api-error";
 import { requestedTextModel } from "@/lib/text-models";
-import { modelConfigurationEnabled } from "@/lib/model-config/requests";
+import { modelConfigurationEnabled } from "@/lib/model-config/availability";
 import { VIDEO_PROMPT_OPTIMIZE_SYSTEM, validateVideoOptimizedPrompt } from "@/lib/video/prompt-assist";
 import { CANVAS_PROMPT_LIMIT, isCanvasPromptTool, canvasPromptOptimizationSystem, validateCanvasOptimizedPrompt } from "@/lib/canvas/prompt-optimization";
 import { canvasAnswerText, canvasTextFailure } from "@/lib/canvas-text-output";

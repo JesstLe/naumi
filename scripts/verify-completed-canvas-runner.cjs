@@ -1,7 +1,7 @@
 'use strict';
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),crypto=require('node:crypto'),assert=require('node:assert/strict'),{Pool}=require('pg'),ts=require('typescript'),sharp=require('sharp');
 assert.equal(process.env.NAUMI_VERIFY_ISOLATED_DB,'1');assert.equal(new URL(process.env.DATABASE_URL).hostname,'127.0.0.1');
-const root=process.cwd(),out=path.join(root,'output/completed-canvas-sync47-20261026'),schema='canvas_runner_'+crypto.randomUUID().replaceAll('-','');let pool;
+const root=process.cwd(),out=path.resolve(process.env.COMPLETED_CANVAS_EVIDENCE||'output/completed-canvas-sync47-20261026'),schema='canvas_runner_'+crypto.randomUUID().replaceAll('-','');let pool;fs.mkdirSync(out,{recursive:true});
 const transpile=p=>ts.transpileModule(fs.readFileSync(path.join(root,p),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
 const source=fs.readFileSync(path.join(root,'scripts/run-completed-canvas-repair.cjs'),'utf8');
 async function run(input,stage,modules,bindings){
@@ -27,7 +27,7 @@ async function run(input,stage,modules,bindings){
  const png=await sharp({create:{width:4,height:3,channels:4,background:'#4477ff'}}).png().toBuffer();
  const wrapper={query:(...a)=>pool.query(...a),connect:()=>pool.connect(),end:async()=>{}};
  const bindings={35552:{getPool:()=>wrapper},92930:{oU:async(tx,id,s)=>tx.query('UPDATE app_creation_records SET status=$2 WHERE source_id=$1',[id,s.result.status])},20231:{M:async()=>({buffer:png,mimeType:'image/png'})},75381:{R:async()=>({width:4,height:3,visiblePixels:12,transparentPixels:0,totalPixels:12})},1431:{F:p=>p.steps.length===1&&p.request.output.format==='png'},93852:{VI:async()=>{}}};
- const ratio=fs.readFileSync(path.join(out,'legacy-ratio.cjs'),'utf8'),receipt=transpile('src/lib/imagegen/completed-parent-receipt.ts'),placement=fs.readFileSync(path.join(root,'scripts/completed-canvas-placement.cjs'),'utf8'),sha=s=>crypto.createHash('sha256').update(s).digest('hex');const modules={receipt,ratio,placement,receiptSha256:sha(receipt),ratioSha256:sha(ratio),placementSha256:sha(placement)};
+ const ratio=transpile('src/lib/imagegen/output-advisory.ts'),receipt=transpile('src/lib/imagegen/completed-parent-receipt.ts'),placement=fs.readFileSync(path.join(root,'scripts/completed-canvas-placement.cjs'),'utf8'),sha=s=>crypto.createHash('sha256').update(s).digest('hex');const modules={receipt,ratio,placement,receiptSha256:sha(receipt),ratioSha256:sha(ratio),placementSha256:sha(placement)};
  const input={sourceCommit:'b15d4761b938428c449531e2d8744401a38a2ec7',statusTargets:[{id:'imagegen-fixture',owner:'owner',childIds:['child']}],placementTargets:[{artworkId:'result',parentId:'imagegen-fixture',owner:'owner',groupId:'root',createdAt:'2026-10-26'}],projectCorrections:[]};
  const log1=await run(input,'status',modules,bindings);assert(log1.includes('transaction-preimage'));assert.equal((await pool.query("SELECT snapshot->>'status' AS s FROM app_image_jobs WHERE id='imagegen-fixture'")).rows[0].s,'done');assert.equal((await pool.query('SELECT status FROM app_creation_records')).rows[0].status,'succeeded');assert.deepEqual((await pool.query("SELECT * FROM app_image_jobs WHERE id='child'")).rows,before);
  const log2=await run(input,'placement',modules,bindings);assert(log2.includes('placement-committed'));const position=(await pool.query("SELECT canvas_x,canvas_y FROM app_artworks WHERE id='result'")).rows[0];assert.deepEqual(position,{canvas_x:516,canvas_y:0});

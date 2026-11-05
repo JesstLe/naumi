@@ -1,18 +1,17 @@
 import { supplierCostFetch } from "@/lib/supplier-cost/collect";
-import {withBillingRequest,configuredToolCost,synchronousChargedCredits,markBillingUpstream} from "@/lib/billing/synchronous";
+import {withBillingRequest} from "@/lib/billing/synchronous";
+import {configuredToolCost, synchronousChargedCredits, markBillingUpstream} from "@/lib/billing/synchronous-operation";
 import { NextResponse } from "next/server";
-import {
-  dbEnabled,
-  reserveCredits,
-  refundCredits,
-  addArtworks,
-  getUser,
-  isBanned,
-  addLedgerEntry,
-} from "@/lib/db";
+import {reserveCredits, refundCredits} from "@/lib/billing/legacy-credit-reservation";
+import {addLedgerEntry} from "@/lib/billing/legacy-ledger";
+import {dbEnabled} from "@/platform/db/pool";
+import {addArtworks} from "@/lib/artworks/writer";
+import {getUser} from "@/lib/accounts/session";
+import {isBanned} from "@/lib/accounts/repository";
 import { clientIp } from "@/lib/ip";
 import { resolveUserEmail } from "@/lib/admin-auth";
-import { storageEnabled, uploadImage } from "@/lib/storage";
+import { storageEnabled } from "@/lib/object-storage/runtime";
+import { uploadImage } from "@/lib/media-upload";
 import { safeError } from "@/lib/api-error";
 
 // ---------------------------------------------------------------------------

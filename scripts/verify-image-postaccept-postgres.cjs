@@ -14,7 +14,7 @@ function load(rel,deps){const exports={};vm.runInNewContext(ts.transpileModule(f
  CREATE TABLE app_model_channel_operations(operation_key text PRIMARY KEY,upstream_id text);`);
  const policy=load('src/lib/model-config/apimart-image-policy.ts',{zod:require('zod')});
  const gateway=load('src/lib/image-gateway.ts',{'./model-config/apimart-image-policy':policy,'./model-config/context':{currentModelExecution:()=>null},'./model-config/types':{ModelConfigError:class extends Error{}}});
- const availability=load('src/lib/model-config/channel-availability.ts',{'./apimart-image-policy':policy,'./schema':{ensureModelSchema:async()=>{}},'./types':{ModelConfigError:class extends Error{}},'../image-gateway':gateway});
+ const availability=load('src/lib/model-config/channel-availability.ts',{'./apimart-image-policy':policy,'@/lib/model-config/storage-schema':{ensureModelSchema:async()=>{}},'./types':{ModelConfigError:class extends Error{}},'../image-gateway':gateway});
  const target={upstreamId:'fixture-apib',scope:{frozen:{modelVersion:141,publicModelId:'gpt-image-2',modality:'image'},connection:{providerId:'fixture-apib',wireModel:'gpt-image-2.5',protocol:'apimart-images',baseUrl:'https://supplier.invalid/v1',apiKey:'fixture-not-a-secret'},parameterMap:{apimartImages:{schemaVersion:1}}}};
  const scope={...target.scope,supplierRouting:{targets:[target]}};const root='job-fixture',unit=root+':image:0';
  const fixture={id:'call-1',operation_id:root,public_model_id:'gpt-image-2',model_version:141,billing_unit_id:unit,provider_id:'fixture-apib',model:'gpt-image-2.5',
@@ -42,7 +42,7 @@ function load(rel,deps){const exports={};vm.runInNewContext(ts.transpileModule(f
  check(presetProof[unit]?.startsWith('accepted:'),'legacy cost preset accepted task remains queryable without apimartImages map');
  const transport=load('src/lib/model-config/transport.ts',{'./apimart-image-policy':policy,'./channel-availability':availability,
   'https-proxy-agent':{HttpsProxyAgent:class{}},'./schema':{validateModelEndpoint:s=>s,privateModelHost:()=>false,modelMetadataHost:()=>false},
-  './types':{ModelConfigError:class extends Error{}},'./capacity':{capacityFetch:()=>{throw Error('unexpected-capacity')}},'../db':{dbEnabled:false,getPool:()=>pool},
+  './types':{ModelConfigError:class extends Error{}},'./capacity':{capacityFetch:()=>{throw Error('unexpected-capacity')}},'@/platform/db/pool':{dbEnabled:false,getPool:()=>pool},
   '../supplier-cost/collect':{supplierCostFetch:()=>{throw Error('unexpected-cost')}},'../image-gateway':{noteImageSupplierDispatch:()=>{throw Error('unexpected-dispatch')}}});
  let stageBlocked;await gateway.withImageOperation('fixture',{id:unit},()=>availability.withAcceptedImageRead(unit,async()=>{
   try{await transport.modelEndpointFetch('https://supplier.invalid',{})('https://supplier.invalid/tasks',{method:'POST',body:'{}'});}catch(e){stageBlocked=e;}

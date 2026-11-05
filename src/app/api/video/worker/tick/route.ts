@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
+import {scanApplicationWorkerOnce as scan} from "@/lib/worker/scan";
 
-import { imageWorkerAuthorized } from "@/lib/durable-image-jobs";
-import { scanWorkerTick as scan } from "@/lib/worker/tick-scan";
-import { dbEnabled } from "@/lib/db";
-import { getWorkerTickPool } from "@/lib/db/connection";
+import { imageWorkerAuthorized } from "@/lib/worker/authorization";
+import {applicationTasksRunHere} from "@/lib/application/task-execution";
+import { dbEnabled, getWorkerTickPool } from "@/platform/db/pool";
 import { createWorkerTickReceiptStore, runReceiptedWorkerTick, tickIdentity, workerTickWebIdentity, WorkerTickReceiptError, type WorkerTickReceiptStore } from "@/lib/release-runtime/worker-tick-receipts";
 
 export const runtime = "nodejs";
@@ -23,6 +23,7 @@ function failure(error: unknown) {
 }
 export async function POST(request: Request) {
   if (!imageWorkerAuthorized(request)) return NextResponse.json({ error: "worker authentication failed" }, { status: 401,headers });
+  if(!applicationTasksRunHere())return NextResponse.json({error:"APPLICATION_TASKS_ASSIGNED_TO_WORKER"},{status:409,headers});
   let input;
   try {input=tickIdentity(request);}catch(error){return failure(error);}
   // Legacy callers retain their existing scan contract; never infer that they have durable control.

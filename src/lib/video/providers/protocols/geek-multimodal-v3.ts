@@ -1,4 +1,5 @@
-import {createdResult,field,polled,type VideoWireContext,type VideoWireRequest,type VideoWireCodec} from "../wire";
+import {createdResult,field,polled} from "../wire-helpers";
+import type {VideoWireContext,VideoWireRequest,VideoWireCodec} from "../wire-contracts";
 import {buildGeekVerifiedPoll,decodeGeekVerifiedCreated,decodeGeekVerifiedPoll} from "./geek-verified";
 import {multimodalV3Input,ordinaryReferenceImages,rejectMultimodal,requireVisualReference,requireReferenceFormats,mediaMinDuration,validateDimensions,mappedReferencePrompt} from "./multimodal-v3-input";
 

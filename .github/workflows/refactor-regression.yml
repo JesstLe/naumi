@@ -1,0 +1,98 @@
+name: Core refactor regression
+on:
+  push:
+    branches: [main]
+    paths: ['src/**', 'services/**', 'scripts/**', 'package*.json', 'Dockerfile', '.dockerignore', 'next.config.*', 'tsconfig*.json', 'docs/apimart-image25-pricing-20261008.json', '.github/workflows/**']
+  pull_request:
+    paths: ['src/**', 'services/**', 'scripts/**', 'package*.json', 'Dockerfile', '.dockerignore', 'next.config.*', 'tsconfig*.json', 'docs/apimart-image25-pricing-20261008.json', '.github/workflows/**']
+  workflow_call:
+    inputs:
+      source_commit:
+        type: string
+        required: true
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  core:
+    if: github.repository == 'JesstLe/naumi'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: fixture
+          POSTGRES_PASSWORD: isolated-fixture
+          POSTGRES_DB: refactor_fixture
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U fixture -d refactor_fixture"
+          --health-interval 3s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_commit || github.sha }}
+          # The catalogue compares named ancestor revisions, not only HEAD.
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Install media test runtime
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: Install pinned Playwright test browsers
+        run: npx --no-install playwright install --with-deps chromium msedge
+      - name: Prepare receipt fixture database
+        run: |
+          node --input-type=module - <<'NODE'
+          import pg from 'pg';
+          const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+          await client.connect();
+          try { await client.query('CREATE DATABASE canvas_feedback_fixture'); }
+          finally { await client.end(); }
+          NODE
+        env:
+          DATABASE_URL: postgres://fixture:isolated-fixture@127.0.0.1:5432/refactor_fixture
+      - name: Verify orchestration and workflow wiring
+        run: node scripts/verify-refactor-runner.mjs
+      - name: Build fixed full application for native acceptance
+        run: node scripts/verify-refactor-image.mjs --expected-sha "${{ inputs.source_commit || github.sha }}" --out output/refactor-ci-image
+      - name: Prepare isolated native application SDK
+        run: python -X utf8 scripts/verify-native-application.py prepare --image-manifest output/refactor-ci-image/BUILD_RESULT.json --out output/refactor-ci-native-sdk
+      - name: Run source-bound core regression
+        run: node scripts/verify-refactor.mjs --expected-sha "${{ inputs.source_commit || github.sha }}" --out output/refactor-ci --native-sdk-manifest output/refactor-ci-native-sdk/SDK_RESULT.json
+        env:
+          DATABASE_URL: postgres://fixture:isolated-fixture@127.0.0.1:5432/refactor_fixture
+          CANVAS_FEEDBACK_TEST_DATABASE: postgres://fixture:isolated-fixture@127.0.0.1:5432/canvas_feedback_fixture
+          NAUMI_VERIFY_ISOLATED_DB: '1'
+          SETTINGS_SECRET: refactor-ci-fixture-only-not-production-20261026
+          NODE_OPTIONS: --conditions=react-server
+          GOMAXPROCS: '2'
+      - name: Publish exact core failure
+        if: failure()
+        run: |
+          node --input-type=module - <<'NODE'
+          import fs from 'node:fs';
+          const file='output/refactor-ci/REPORT.json';
+          if(!fs.existsSync(file)){console.log('Core report not created; inspect the preceding fixed build/SDK stage.');process.exit(0);}
+          const report=JSON.parse(fs.readFileSync(file,'utf8'));
+          const escaped=value=>String(value).replaceAll('%','%25').replaceAll('\r','%0D').replaceAll('\n','%0A');
+          const emit=text=>console.log('::error title=Core refactor case failed::'+escaped(text));
+          for(const row of report.cases.filter(row=>row.status==='FAIL')){
+            const tail=row.log&&fs.existsSync(row.log)?fs.readFileSync(row.log,'utf8').slice(-8000):'';
+            emit('source='+report.source?.commit+' case='+row.id+' exit='+row.exit+'\n'+(row.error||'')+'\n'+tail);
+          }
+          if(report.error)emit('source='+report.source?.commit+' runner='+report.error);
+          NODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: refactor-core-${{ inputs.source_commit || github.sha }}
+          path: |
+            output/refactor-ci/
+            output/refactor-ci-image/
+            output/refactor-ci-native-sdk/SDK_RESULT.json
+          if-no-files-found: error

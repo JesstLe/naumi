@@ -1,4 +1,7 @@
+import { assertPlainPendingPrompt } from "./verification/native-pending-prompt";
+import { selectReferenceMention } from "./verification/reference-mention-locator";
 import assert from "node:assert/strict";
+import {dragCanvasNode} from "./verification/canvas-node-drag";
 import {createHash, randomUUID} from "node:crypto";
 import {writeFile} from "node:fs/promises";
 import path from "node:path";
@@ -10,9 +13,9 @@ const expect = playwrightExpect.configure({timeout: 60000});
 
 /** Extends the same isolated app run. No additional server, real provider or account. */
 export async function verifyCharacterInteractions(h: Awaited<ReturnType<typeof createVideoFixture>>, out: string, existingVideoId: string) {
-  const errors: string[] = [], network: unknown[] = [];
+  const errors: string[] = [], network: unknown[] = [], errorDetails:unknown[]=[];
   let page: Page | undefined;
-  const browser = await chromium.launch({headless: true});
+  const browser = await chromium.launch({headless:true});
   try {
     console.log("CHARACTER_PHASE=UI_PREWARM");
     const warm: unknown[] = [];
@@ -21,17 +24,23 @@ export async function verifyCharacterInteractions(h: Awaited<ReturnType<typeof c
       assert.equal(response.status, 200, JSON.stringify({url, body: response.body}));
     }
     await writeFile(path.join(out, "ui-prewarm.json"), JSON.stringify(warm, null, 2));
+    // Reuse the director verifier's real-entry warmup. No route mocks or JS rewriting.
+    const htmlResponse=await fetch(`${h.baseUrl}/canvas?node=${existingVideoId}`,{headers:{cookie:h.cookies.a},signal:AbortSignal.timeout(180000)});assert.equal(htmlResponse.status,200);
+    const html=await htmlResponse.text(),entryAssets=[...new Set(Array.from(html.matchAll(/(?:src|href)="([^"<>]+)"/g),match=>match[1].replaceAll('&amp;','&')).filter(url=>url.startsWith('/_next/static/')&&!url.includes('.woff')))];
+    const warmed=[];for(const url of entryAssets){const response=await fetch(h.baseUrl+url,{signal:AbortSignal.timeout(180000)});assert.equal(response.status,200,url);warmed.push({url,bytes:(await response.arrayBuffer()).byteLength});}
+    await writeFile(path.join(out,'prewarm-assets.json'),JSON.stringify(warmed,null,2));
     const context = await browser.newContext({viewport: {width: 1440, height: 960}});
     await context.addCookies([{name: "nv_user", value: h.cookies.a.slice(8), url: h.baseUrl, httpOnly: true, sameSite: "Lax"}, {name: "naumi_locale", value: "zh", url: h.baseUrl}]);
     page = await context.newPage(); page.setDefaultTimeout(90000);
-    page.on("pageerror", error => errors.push(error.message));
+    page.on("pageerror", error => {errors.push(error.message);errorDetails.push({message:error.message,stack:error.stack});});
     page.on("request", request => {if(request.method()!=="GET"&&!request.url().includes("_next"))network.push({request:new URL(request.url()).pathname,body:request.postData()?.slice(0,1500)});});
     page.on("response", response => network.push({path: new URL(response.url()).pathname, status: response.status()}));
     const live = async () => (await h.request<any>("a", "GET", "/api/canvas/character-nodes")).body.nodes as any[];
     const get = async (id: string) => (await h.request<any>("a", "GET", `/api/canvas/character-nodes/${id}`)).body.node;
     const video = async (id: string) => (await h.request<any>("a", "GET", `/api/canvas/video-nodes/${id}`)).body.node;
     const freeBefore = await h.creditState("a"), createsBefore = h.supplierCalls().filter(call => call.phase === "create").length;
-    await page.goto(`${h.baseUrl}/canvas?node=${existingVideoId}`, {waitUntil: "domcontentloaded", timeout: 180000});
+    const navigation=await page.goto(`${h.baseUrl}/canvas?node=${existingVideoId}`, {waitUntil: "domcontentloaded", timeout: 180000});
+    assert.equal(navigation?.status(),200,"Actual Canvas must compile and return HTTP200 before waiting for controls");
     await page.locator(`.react-flow__node[data-id="${existingVideoId}"]`).waitFor();
     await page.getByTestId("canvas-project-chrome").getByRole("button", {name: "Naumi", exact: true}).click();
     await page.locator("aside").getByRole("button", {name: "创建新项目", exact: true}).click();
@@ -71,14 +80,13 @@ export async function verifyCharacterInteractions(h: Awaited<ReturnType<typeof c
     await editor.getByRole("button", {name: "生成参考图", exact: true}).click(); await editor.waitFor({state: "hidden"});
     // This opens the existing image composer. It is not an automatic paid call.
     await expect(page.getByTestId("pending-node-dock")).toContainText("生成");
-    const pendingText = await page.getByTestId("pending-node-dock").locator("textarea").evaluateAll(items => items.map(item => (item as HTMLTextAreaElement).value));
+    const pendingPrompt = await assertPlainPendingPrompt(page.getByTestId("pending-node-dock"), "林舟 · 交互\n短发，左眉有疤，跨镜头保持身份\n外套：深蓝外套，保持左眉疤痕");
+    const pendingText = [pendingPrompt.text];
     assert.ok(pendingText.some(text => text.includes("深蓝外套") && text.includes("左眉有疤")), JSON.stringify(pendingText));
     assert.deepEqual(await h.creditState("a"), freeBefore); assert.equal(h.supplierCalls().filter(call => call.phase === "create").length, createsBefore);
     await page.reload({waitUntil: "domcontentloaded"}); await title.waitFor();
     console.log("CHARACTER_PHASE=UI_LIFECYCLE");
-    node = await get(id); const drag = await title.boundingBox(); assert.ok(drag);
-    await page.mouse.move(drag.x + Math.min(65, drag.width / 2), drag.y + drag.height / 2); await page.mouse.down();
-    await page.mouse.move(drag.x + Math.min(65, drag.width / 2) + 80, drag.y + drag.height / 2 + 55, {steps: 12}); await page.mouse.up();
+    node = await get(id); await dragCanvasNode(page,title,{x:80,y:55},path.join(out,"actual-node-drag.json"));
     await expect.poll(async () => (await get(id)).x, {timeout: 60000}).not.toBe(node.x); const moved = await get(id);
     await expect(card.getByTestId("character-canvas-node")).toHaveAttribute("data-revision", String(moved.revision));
     await page.locator('button[data-tool="undo"]').click(); await expect.poll(async () => (await get(id)).x).toBe(node.x);
@@ -115,8 +123,8 @@ export async function verifyCharacterInteractions(h: Awaited<ReturnType<typeof c
     const dock = page.getByTestId("video-node-dock"); await dock.waitFor();
     await dock.getByLabel("引用1外观", {exact: true}).selectOption(characterInputIdentity(id, look.id));
     await dock.getByTestId("video-composer-prompt").fill("跟随 @林舟");
-    await dock.getByRole("listbox", {name: "选择引用素材", exact: true}).getByRole("option", {name: "林舟 · 交互 · 外套", exact: true}).click();
-    await expect(dock.getByTestId("video-composer-prompt")).toHaveValue("跟随 @【林舟 · 交互 · 外套】");
+    const mentionSelection = await selectReferenceMention(page, dock.getByTestId("video-composer-prompt"), '林舟 · 交互 · 外套');
+    const mentionChip = dock.getByTestId("video-composer-prompt").getByRole("button", { name: '林舟 · 交互 · 外套', exact: true }); await expect(mentionChip).toBeVisible(); await expect(mentionChip).toHaveAttribute("data-inline-token", "{{ref 1}}"); await expect(mentionChip).toHaveAttribute("data-reference-missing", "false");
     await dock.getByRole("button", {name: "保存设置", exact: true}).click();
     await expect.poll(async () => (await video(videoId)).config.prompt).toBe("跟随 {{ref 1}}");
     assert.equal((await video(videoId)).inputs[0].nodeId, characterInputIdentity(id, look.id));
@@ -194,11 +202,12 @@ export async function verifyCharacterInteractions(h: Awaited<ReturnType<typeof c
     assert.equal((await h.request("a", "POST", "/api/canvas/video-workflows", intent)).status, 202);
     assert.equal(h.supplierCalls().filter(call => call.phase === "create").length, calls);
     assert.deepEqual(errors, []);
-    const evidence = {realBrowserCanvas: true, menuCreateUploadSaveRefresh: true, looksAndDefault: true, imageGenerationDraftOnly: true, dragLockDuplicateDeleteUndoRedo: true, nativeHandleConnection: true, namedMentionAndLookSwitch: true, uiVideoGeneration: true, mixedCopyAliasAndImagesRemapped: true, mixedDeletionRestoreBeforeImageAtomic: true, failedHistoryRollsBackAll: true, workflowRolesFrozen: true, laterEditDeleteLeavesQueuedStageUnchanged: true, replayNoNewCalls: true, taskIds: [uiTaskId, ...((await run()).nodes.map((item: any) => item.taskId))], simulatedCreatesAdded: calls - createsBefore, paidCalls: 0, pageErrors: errors};
+    const evidence = {
+      pendingPrompt,mentionSelection,realBrowserCanvas: true, menuCreateUploadSaveRefresh: true, looksAndDefault: true, imageGenerationDraftOnly: true, dragLockDuplicateDeleteUndoRedo: true, nativeHandleConnection: true, namedMentionAndLookSwitch: true, uiVideoGeneration: true, mixedCopyAliasAndImagesRemapped: true, mixedDeletionRestoreBeforeImageAtomic: true, failedHistoryRollsBackAll: true, workflowRolesFrozen: true, laterEditDeleteLeavesQueuedStageUnchanged: true, replayNoNewCalls: true, taskIds: [uiTaskId, ...((await run()).nodes.map((item: any) => item.taskId))], simulatedCreatesAdded: calls - createsBefore, paidCalls: 0, pageErrors: errors};
     await writeFile(path.join(out, "interaction-result.json"), JSON.stringify(evidence, null, 2));
     return evidence;
   } catch (error) {
-    await writeFile(path.join(out, "browser-diagnostics.json"), JSON.stringify({errors, network}, null, 2));
+    await writeFile(path.join(out, "browser-diagnostics.json"), JSON.stringify({errors, errorDetails, network}, null, 2));
     if (page) {await page.screenshot({path: path.join(out, "failure.png")}).catch(() => {}); await writeFile(path.join(out, "failure.txt"), await page.locator("body").innerText().catch(() => ""));}
     throw error;
   } finally {await browser.close();}

@@ -7,7 +7,7 @@ import { getVideoProviderConfig, type VideoProviderRuntimeConfig } from "@/lib/v
 import { PermanentVideoCreateError, TransientPollError, type VideoGenerationRequest, type VideoProviderAdapter, type VideoProviderCreateResult, type VideoProviderFetchResult, type VideoProviderPollResult, type VideoTaskSnapshot, type VideoTaskStatus } from "@/lib/video/types";
 import { readLimitedVideoResponse } from "@/lib/video/result-download";
 import {decodeGeminiPoll,GEMINI_WIRE_OPTIONS} from "./protocols/gemini";
-import {selectWireOptions} from "./wire";
+import {selectWireOptions} from "./wire-helpers";
 
 function status(value: unknown): VideoTaskStatus {
   const raw = String(value || "").toLowerCase();

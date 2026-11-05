@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { dbEnabled } from "@/lib/db";
+import { dbEnabled } from "@/platform/db/pool";
 import { authorizedTargetEmail } from "@/lib/request-auth";
 import { listCanvasNodeSettings } from "@/lib/canvas-node-settings-store";
 export const runtime = "nodejs";

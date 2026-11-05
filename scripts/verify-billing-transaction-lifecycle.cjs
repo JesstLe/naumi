@@ -56,10 +56,12 @@ async function relay(port) {
 async function probe(source, database) {
   const url = new URL(database);
   assert.equal(url.hostname, '127.0.0.1'); assert.equal(url.pathname, '/billing_tx_fixture');
-  const connection = load(path.join(root, 'src/lib/db/connection.ts'));
+  const connectionFile=fs.existsSync(path.join(root,'src/platform/db/pool.ts'))?'src/platform/db/pool.ts':'src/lib/db/connection.ts';
+  const connection = load(path.join(root, connectionFile));
   const { withBillingTransaction: transaction } = load(path.join(source, 'src/lib/billing/service.ts'), {
     '../saas/creation-writer': {}, './types': {}, './fingerprint': {}, './quote': {}, './repository': {},
     './api-cost-ledger': {}, '../staging-history': {},
+    '@/platform/db/transaction': fs.existsSync(path.join(source,'src/platform/db/transaction.ts'))?load(path.join(source,'src/platform/db/transaction.ts')):{},
   });
   const admin = new Client({ connectionString: database }); await admin.connect();
   await admin.query(`CREATE TABLE IF NOT EXISTS lifecycle_value(id text PRIMARY KEY, n int);

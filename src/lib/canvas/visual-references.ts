@@ -1,4 +1,4 @@
-import type {VideoInputChoice} from "../video/client-settings";
+import type {VideoInputChoice} from "../video/input-choice";
 import {remapVideoPromptReferences} from "../video/prompt-references";
 import {numberVideoInputs, type OrderedInput} from "../video/references";
 

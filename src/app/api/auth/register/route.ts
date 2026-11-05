@@ -1,11 +1,8 @@
 import { NextResponse } from "next/server";
-import {
-  multiUserEnabled,
-  signUserSession,
-  USER_COOKIE,
-  USER_TTL_MS,
-} from "@/lib/native-auth";
-import { userExists, getOrCreateUser, setUserPassword } from "@/lib/db";
+import {signUserSession,USER_COOKIE,USER_TTL_MS} from "@/lib/native-auth";
+import {multiUserEnabled} from "@/lib/accounts/mode";
+import {userExists, setUserPassword} from "@/lib/accounts/repository";
+import {getOrCreateUser} from "@/lib/accounts/session";
 import { hashPassword } from "@/lib/pw";
 import { checkRateLimit } from "@/lib/rate-limit-http";
 import { clientIp } from "@/lib/ip";

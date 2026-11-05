@@ -1,35 +1,21 @@
+import {ensureVideoNodeSchema} from "@/lib/canvas/storage-schema";
+export {ensureVideoNodeSchema};
 import "server-only";
 import {remapVideoPromptReferences} from "../video/prompt-references";
 import {createHash} from "node:crypto";
 import type {PoolClient} from "pg";
-import {getPool,ensureSchema} from "../db";
-import {canonicalConfig} from "../model-config/repository";
+import {getPool} from "@/platform/db/pool";
+
+import {canonicalConfig} from "@/lib/model-config/snapshot-value";
 import {ModelConfigError} from "../model-config/types";
 import type {CanvasVideoNode,VideoNodeWrite} from "./video-node-schema";
-let ready:Promise<void>|undefined;
-export async function ensureVideoNodeSchema(){
-  if(!ready)ready=ensureSchema().then(()=>getPool().query(`
-    CREATE TABLE IF NOT EXISTS app_canvas_video_projects(email text NOT NULL,project_key text NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(email,project_key));
-    ALTER TABLE app_canvas_video_projects ADD COLUMN IF NOT EXISTS deleted_at timestamptz;
-    CREATE TABLE IF NOT EXISTS app_canvas_video_nodes(email text NOT NULL,id text NOT NULL,project_key text NOT NULL,revision bigint NOT NULL DEFAULT 1,
-      title text NOT NULL DEFAULT '视频',x double precision NOT NULL DEFAULT 0,y double precision NOT NULL DEFAULT 0,
-      width double precision NOT NULL DEFAULT 384,height double precision NOT NULL DEFAULT 320,config jsonb NOT NULL DEFAULT '{}',inputs jsonb NOT NULL DEFAULT '[]',
-      last_task_id text,last_result_id text,deleted_at timestamptz,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(email,id));
-    CREATE INDEX IF NOT EXISTS app_canvas_video_nodes_project_idx ON app_canvas_video_nodes(email,project_key,updated_at DESC);
-    ALTER TABLE app_canvas_video_nodes ADD COLUMN IF NOT EXISTS display_result_id text;
-    CREATE TABLE IF NOT EXISTS app_canvas_video_task_sends(email text NOT NULL,task_id text NOT NULL,project_key text NOT NULL,result jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(email,task_id,project_key));
-    CREATE TABLE IF NOT EXISTS app_canvas_video_workflow_sources(email text NOT NULL,task_id text NOT NULL,public_model_id text NOT NULL,manifest_enc text NOT NULL,digest text,created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(email,task_id));
-    CREATE TABLE IF NOT EXISTS app_canvas_video_node_operations(email text NOT NULL,operation_id uuid NOT NULL,node_id text NOT NULL,
-      input_digest text NOT NULL,result jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(email,operation_id));
-    CREATE TABLE IF NOT EXISTS app_canvas_video_node_copies(email text NOT NULL,operation_id uuid NOT NULL,input_digest text NOT NULL,
-      result jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(email,operation_id));
-  `)).then(()=>undefined).catch(error=>{ready=undefined;throw error;});await ready;
-}
-function mapNode(row:Record<string,any>):CanvasVideoNode{return {id:String(row.id),projectKey:String(row.project_key),revision:Number(row.revision),title:String(row.title),x:Number(row.x),y:Number(row.y),width:Number(row.width),height:Number(row.height),
+
+
+export function mapVideoNode(row:Record<string,any>):CanvasVideoNode{return {id:String(row.id),projectKey:String(row.project_key),revision:Number(row.revision),title:String(row.title),x:Number(row.x),y:Number(row.y),width:Number(row.width),height:Number(row.height),
   config:row.config,inputs:row.inputs,lastTaskId:row.last_task_id||null,lastResultId:row.last_result_id||null,displayResultId:row.display_result_id||null,deletedAt:row.deleted_at?new Date(row.deleted_at).toISOString():null,
   createdAt:new Date(row.created_at).toISOString(),updatedAt:new Date(row.updated_at).toISOString()};}
-export async function getVideoNode(actor:string,id:string,includeDeleted=false){await ensureVideoNodeSchema();const row=(await getPool().query("SELECT * FROM app_canvas_video_nodes WHERE email=$1 AND id=$2 AND ($3 OR deleted_at IS NULL)",[actor,id,includeDeleted])).rows[0];return row?mapNode(row):null;}
-export async function listVideoNodes(actor:string,projectKey?:string,includeDeleted=false){await ensureVideoNodeSchema();return (await getPool().query("SELECT * FROM app_canvas_video_nodes WHERE email=$1 AND ($2::text IS NULL OR project_key=$2) AND ($3 OR deleted_at IS NULL) ORDER BY created_at,id LIMIT 2000",[actor,projectKey||null,includeDeleted])).rows.map(mapNode);}
+export async function getVideoNode(actor:string,id:string,includeDeleted=false){await ensureVideoNodeSchema();const row=(await getPool().query("SELECT * FROM app_canvas_video_nodes WHERE email=$1 AND id=$2 AND ($3 OR deleted_at IS NULL)",[actor,id,includeDeleted])).rows[0];return row?mapVideoNode(row):null;}
+export async function listVideoNodes(actor:string,projectKey?:string,includeDeleted=false){await ensureVideoNodeSchema();return (await getPool().query("SELECT * FROM app_canvas_video_nodes WHERE email=$1 AND ($2::text IS NULL OR project_key=$2) AND ($3 OR deleted_at IS NULL) ORDER BY created_at,id LIMIT 2000",[actor,projectKey||null,includeDeleted])).rows.map(mapVideoNode);}
 export async function saveVideoNodeTx(client:PoolClient,actor:string,input:VideoNodeWrite,projectKey:string):Promise<CanvasVideoNode>{
   // Serialize graph edits before per-node locks, including copies and cross-project references.
   await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`video-node-graph:${actor}`]);
@@ -60,7 +46,7 @@ export async function saveVideoNodeTx(client:PoolClient,actor:string,input:Video
       config=EXCLUDED.config,inputs=EXCLUDED.inputs,deleted_at=EXCLUDED.deleted_at,revision=app_canvas_video_nodes.revision+1,updated_at=now() RETURNING *`,
     [actor,input.id,projectKey,input.title??old?.title??"视频",input.x??old?.x??0,input.y??old?.y??0,input.width??old?.width??384,input.height??old?.height??320,
       JSON.stringify(config),JSON.stringify(input.inputs??old?.inputs??[]),input.deleted===undefined?!!old?.deleted_at:input.deleted])).rows[0];
-  const result=mapNode(row);
+  const result=mapVideoNode(row);
   await client.query("INSERT INTO app_canvas_video_node_operations(email,operation_id,node_id,input_digest,result) VALUES($1,$2,$3,$4,$5::jsonb)",[actor,input.operationId,input.id,digest,JSON.stringify(result)]);
   return result;
 }

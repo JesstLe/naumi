@@ -1,9 +1,10 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import type { PoolClient } from "pg";
-import { getPool } from "../db";
-import { currentCreationContext, bindActualCreationProject, withFrozenCreation, type CreationContext } from "../saas/creation-context";
-import { canonicalConfig } from "../model-config/repository";
+import { getPool } from "@/platform/db/pool";
+import {currentCreationContext,withFrozenCreation,type CreationContext} from "../saas/creation-scope";
+import {bindActualCreationProject} from "../saas/creation-access";
+import { canonicalConfig } from "../model-config/snapshot-value";
 import { ModelConfigError } from "../model-config/types";
 import { imagePromptReadSchema, imagePromptWriteSchema, type ImagePromptState } from "./image-prompt-schema";
 import { ensureImagePromptSchema, readImagePromptTx } from "./image-prompt-repository";

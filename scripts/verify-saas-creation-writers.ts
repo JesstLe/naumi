@@ -120,7 +120,8 @@ async function main(){
  const plan={...childPlan,request,children:[{key:'one',plan:childPlan}]};
  await context.withFrozenCreation(base(),()=>batches.submitAcceptedImagegenBatch(plan,actor));
  const batch=(await pool.query('SELECT plan FROM app_imagegen_batches WHERE id=$1',[op])).rows[0];assert.equal(batch.plan.creationScope.tenantId,tenant.tenantId);assert(batch.plan.creationScope.creationId);
- await batches.cancelImagegenBatch(op,actor);await batches.runImagegenBatchTick(op);
+ // Cancellation is an authenticated actor operation; use the same frozen tenant as acceptance.
+ await context.withFrozenCreation(base(),()=>batches.cancelImagegenBatch(op,actor));await batches.runImagegenBatchTick(op);
  assert.equal((await pool.query("SELECT status FROM app_creation_records WHERE source_kind='imagegen-batch' AND source_id=$1",[op])).rows[0].status,'cancelled');
  const {signUserSession}=await import('../src/lib/native-auth'),sync=await import('../src/lib/billing/synchronous');
  const response=await sync.withBillingRequest(new Request('http://fixture/api/upscale',{method:'POST',headers:{cookie:'nv_user='+signUserSession(actor,Date.now()),'content-type':'application/json','x-naumi-billing-operation-id':randomUUID()},body:'{"prompt":"zero-cost text fixture"}'}),'tool.upscale',async()=>Response.json({text:'zero-cost fixture reply'}));

@@ -1,24 +1,17 @@
 import "server-only";
-import {createHash} from "node:crypto";
-import {signUserSession,USER_COOKIE} from "../native-auth";
-import {signAcceptedModelContext} from "../model-config/accepted-context";
+import {submitGenerationOperation} from "./generation-operation";
+import {multipartFieldText} from "../billing/submission-identity";
+import type {GenParams} from "./generation-types";
 import {readImagegenInputs} from "./inputs";
 import {compileImagegenPrompt} from "./prompt";
-import {withImagegenStep} from "./context";
-import {listArtworksByIds,getPool,dbEnabled} from "../db";
-import {currentCreationContext,assertCreationProjectInput} from "../saas/creation-context";
-import type {ImagegenPlan,ImagegenRequest,Intent} from "./types";
-export function imagegenStepId(operationId:string,key:string){const h=createHash("sha256").update(`${operationId}:${key}`).digest("hex");return `${h.slice(0,8)}-${h.slice(8,12)}-5${h.slice(13,16)}-a${h.slice(17,20)}-${h.slice(20,32)}`;}
-export async function imagegenInternalRequest(plan:ImagegenPlan,key:string,owner:string,body:FormData,path:string){
- const step=plan.steps.find(s=>s.key===key)!;
- const headers=new Headers({cookie:`${USER_COOKIE}=${signUserSession(owner,Date.now())}`,origin:"http://internal","x-naumi-billing-operation-id":imagegenStepId(plan.request.operationId,key),"x-naumi-model-version":String(plan.modelVersion),"x-naumi-billing-version":String(plan.billingVersion),"x-naumi-billing-credits":String(step.credits),"x-naumi-feature-model":step.modelId||""});
- if(plan.modelVersion)headers.set("x-naumi-accepted-model-context",await signAcceptedModelContext(owner,{modelVersion:plan.modelVersion,billingVersion:plan.billingVersion}));
- return new Request(`http://internal/api/${path}`,{method:"POST",headers,body});
-}
-export function imagegenStepIntent(plan:ImagegenPlan,key:string):Intent{
- const step=plan.steps.find(s=>s.key===key)!;
- return {...plan.intent,operation:step.operation,background:plan.steps.length>1&&key==="generate"?null:plan.intent.background,requirements:(plan.steps.length>1&&key==="generate"?plan.intent.requirements.filter(r=>r.name!=="background"):plan.intent.requirements).map(r=>r.name==="resolution"&&step.parameters.resolution?{...r,value:String(step.parameters.resolution)}:r)};
-}
+import {listArtworksByIds} from "@/lib/artworks/repository";
+import {getPool, dbEnabled} from "@/platform/db/pool";
+import {currentCreationContext} from "@/lib/saas/creation-scope";
+import {assertCreationProjectInput} from "@/lib/saas/creation-access";
+import type {ImagegenPlan,ImagegenRequest} from "./types";
+export {imagegenStepId} from "./operation-id";
+import {imagegenStepIntent} from "./step-intent";
+export {imagegenStepIntent} from "./step-intent";
 /** Resolve only an owned text anchor; project placement is metadata, not a new execution plan. */
 export async function canvasTextImageProjectPlacement(owner:string,sourceNodeId?:string):Promise<{groupId?:string;parentId?:string}|undefined>{
  if(!dbEnabled||!sourceNodeId?.startsWith("text-"))return undefined;
@@ -47,14 +40,24 @@ export async function submitGenerationCore(plan:ImagegenPlan,key:string,owner:st
  const namedTarget=inputs.find(i=>i.role==="edit-target")?.reference?.sourceNodeId;
  const source=lineage.find(w=>w.id===(target?.artworkId||namedTarget||plan.request.sourceNodeId));
  const request:ImagegenRequest={...plan.request,parameters:{...plan.request.parameters,...(step.parameters.resolution?{resolution:step.parameters.resolution as "1K"|"2K"|"4K"}:{})},output:{...plan.request.output,background:intent.background||undefined}};
- const form=new FormData();
  const frameInstructions=plan.frameChoice?.method==='provider-auto'?`画幅跟随${plan.frameChoice.source==='reference'?'所选参考图':'用户选择'}的 ${plan.frameChoice.target}，完整保留主体，不裁切或拉伸。`:undefined;
- const prompt=[compileImagegenPrompt(request,intent,plan.skillInstructions),frameInstructions].filter(Boolean).join('\n\n');
- for(const [k,v] of Object.entries({prompt,userPrompt:request.prompt,model:step.modelId,origin:request.entry==="canvas"?"canvas":"",entry:"imagegen",quality:request.parameters.quality||"medium",resolution:request.parameters.resolution||"1K",ratio:request.parameters.ratio||"1:1",count:String(request.variants),transparent:intent.background==="transparent"?"1":"0",parentId:inputs.find(i=>i.role==="edit-target")?.artworkId||"",targetWidth:request.parameters.width?String(request.parameters.width):undefined,targetHeight:request.parameters.height?String(request.parameters.height):undefined}))if(v!==undefined)form.set(k,v);
- for(const i of inputs)form.append(i.role==="mask"?"mask":"image",new File([new Uint8Array(i.buffer)],`${i.artworkId}.png`,{type:i.mimeType}));
+ const prompt=[compileImagegenPrompt(request,intent,plan.skillInstructions),frameInstructions].filter(Boolean).join("\n\n");
+ const fields:Record<string,string>={prompt,userPrompt:request.prompt,model:step.modelId||"",origin:request.entry==="canvas"?"canvas":"",entry:"imagegen",quality:request.parameters.quality||"medium",resolution:request.parameters.resolution||"1K",ratio:request.parameters.ratio||"1:1",count:String(request.variants),transparent:intent.background==="transparent"?"1":"0",parentId:inputs.find(i=>i.role==="edit-target")?.artworkId||""};
+ if(step.modelId===undefined)delete fields.model;
+ if(request.parameters.width)fields.targetWidth=String(request.parameters.width);
+ if(request.parameters.height)fields.targetHeight=String(request.parameters.height);
  const parentId=target?.artworkId||(plan.request.mode==="edit"?source?.id:undefined)||"";
- form.set("parentId",parentId);form.set("parentIds",JSON.stringify([...new Set([...artworkIds,...referenceSourceIds.filter(id=>lineage.some(work=>work.id===id))])].filter(id=>id!==parentId)));const textPlacement=plan.request.entry==="canvas"?await canvasTextImageProjectPlacement(owner,plan.request.sourceNodeId):undefined;const projectGroupId=source?.groupId||textPlacement?.groupId;if(projectGroupId)form.set("projectGroupId",projectGroupId);if(textPlacement?.parentId&&!parentId)form.set("parentId",textPlacement.parentId);
- const internal=await imagegenInternalRequest(plan,key,owner,form,"generate-image");
- const {POST}=await import("../../app/api/generate-image/route");
- return withImagegenStep(request,intent,()=>POST(internal),plan.ratioContractVersion,plan.requestedParameters,plan.channelContractVersion===1?step.eligibleUpstreamIds:undefined,step.billingQuote?{owner:owner.toLowerCase(),operationId:imagegenStepId(plan.request.operationId,key),quote:step.billingQuote}:undefined);
+ fields.parentId=parentId;fields.parentIds=JSON.stringify([...new Set([...artworkIds,...referenceSourceIds.filter(id=>lineage.some(work=>work.id===id))])].filter(id=>id!==parentId));
+ const textPlacement=plan.request.entry==="canvas"?await canvasTextImageProjectPlacement(owner,plan.request.sourceNodeId):undefined;
+ const projectGroupId=source?.groupId||textPlacement?.groupId;if(projectGroupId)fields.projectGroupId=projectGroupId;
+ if(textPlacement?.parentId&&!parentId)fields.parentId=textPlacement.parentId;
+ for(const key of Object.keys(fields))fields[key]=multipartFieldText(fields[key]);
+ const files=inputs.map(i=>({field:i.role==="mask"?"mask" as const:"image" as const,name:`${i.artworkId}.png`,mimeType:i.mimeType,buffer:i.buffer}));
+ const parameters:GenParams={prompt:fields.prompt.trim(),userPrompt:fields.userPrompt.trim(),category:"main",style:"",email:owner,
+  ratio:fields.ratio,resolution:fields.resolution,quality:fields.quality,count:request.variants,transparent:fields.transparent==="1",ratiogen:false,
+  images:inputs.filter(i=>i.role!=="mask").map(i=>({buf:i.buffer,type:i.mimeType})),
+  ...(inputs.find(i=>i.role==="mask")?{mask:{buf:inputs.find(i=>i.role==="mask")!.buffer,type:inputs.find(i=>i.role==="mask")!.mimeType}}:{}),
+  parentId:fields.parentId,parentIds:JSON.parse(fields.parentIds),templateId:"",templateImage:"",templatePrompt:"",origin:fields.origin,entry:fields.entry,
+  projectGroupId:fields.projectGroupId||"",model:fields.model||"",targetWidth:request.parameters.width||0,targetHeight:request.parameters.height||0};
+ return submitGenerationOperation({plan,key,owner,request,intent,parameters,fields,files});
 }

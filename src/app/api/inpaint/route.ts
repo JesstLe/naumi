@@ -1,20 +1,19 @@
-import {withBillingRequest,configuredToolCost,synchronousChargedCredits} from "@/lib/billing/synchronous";
-import { withBiRequest } from "@/lib/bi/model-observer";
+import {withBillingRequest} from "@/lib/billing/synchronous";
+import {configuredToolCost, synchronousChargedCredits} from "@/lib/billing/synchronous-operation";
+import {withBiRequest} from "@/lib/bi/request";
 import { requestImageQuality, imageQualityCost, settleToolImage } from "@/lib/image-quality-request";
 import type { ResolvedImageQuality } from "@/lib/image-quality";
 import { NextResponse } from "next/server";
 import { editImage } from "@/lib/image-edit";
-import {
-  dbEnabled,
-  reserveCredits,
-  refundCredits,
-  addArtworks,
-  getUser,
-  isBanned,
-} from "@/lib/db";
+import {reserveCredits, refundCredits} from "@/lib/billing/legacy-credit-reservation";
+import {dbEnabled} from "@/platform/db/pool";
+import {addArtworks} from "@/lib/artworks/writer";
+import {getUser} from "@/lib/accounts/session";
+import {isBanned} from "@/lib/accounts/repository";
 import { clientIp } from "@/lib/ip";
 import { resolveUserEmail } from "@/lib/admin-auth";
-import { storageEnabled, uploadImage } from "@/lib/storage";
+import { storageEnabled } from "@/lib/object-storage/runtime";
+import { uploadImage } from "@/lib/media-upload";
 import { isGenerationResolution, resolutionLongSide } from "@/lib/mock-data";
 import { safeError } from "@/lib/api-error";
 
@@ -72,7 +71,7 @@ async function parseInput(request: Request): Promise<InpaintInput | null> {
 async function toPng(buf: Buffer): Promise<Buffer> {
   try {
     const mod = (await import("sharp")) as unknown as {
-      default?: typeof import("sharp");
+      default?: typeof import("sharp").default;
     } & typeof import("sharp");
     const sharp = mod.default ?? mod;
     return await sharp(buf).rotate().png().toBuffer();
@@ -87,7 +86,7 @@ async function upscaleTo(buf: Buffer, resolution: string): Promise<Buffer> {
   if (!target) return buf;
   try {
     const mod = (await import("sharp")) as unknown as {
-      default?: typeof import("sharp");
+      default?: typeof import("sharp").default;
     } & typeof import("sharp");
     const sharp = mod.default ?? mod;
     const meta = await sharp(buf).metadata();

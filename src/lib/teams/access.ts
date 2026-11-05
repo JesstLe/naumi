@@ -1,11 +1,11 @@
 import "server-only";
 import { NextResponse } from "next/server";
 import { requireAdmin, resolveUserEmail, adminPasswordState } from "@/lib/admin-auth";
-import { dbEnabled } from "@/lib/db";
-import { checkRateLimit, rateLimitFailureResponse } from "@/lib/rate-limit-http";
+import { dbEnabled } from "@/platform/db/pool";
+import {checkRateLimit,rateLimitFailureResponse} from "@/lib/rate-limit-http";
 import { clientIp } from "@/lib/ip";
 import { teamEntryAccess } from "./grants";
-import { TeamError } from "./server";
+import { TeamError } from "./errors";
 export const PRIVATE_HEADERS = { "Cache-Control": "private, no-store, max-age=0", Vary: "Cookie, Authorization", "X-Content-Type-Options": "nosniff" };
 export function teamJson(body: unknown, status = 200) { return NextResponse.json(body, { status, headers: PRIVATE_HEADERS }); }
 export async function teamAuthorize(request: Request, adminOnly = false) {

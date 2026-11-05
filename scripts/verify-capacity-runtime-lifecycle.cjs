@@ -15,19 +15,19 @@ function exec(source,file,globals={},imports={}){
 }
 const integer=exec(read('src/lib/runtime/positive-integer.ts'),'integer');
 const queue=exec(read('src/lib/image-job-queue.ts'),'queue',{}, {'./runtime/positive-integer':integer});
-const recoveryAst=ts.createSourceFile('durable',read('src/lib/durable-image-jobs.ts'),ts.ScriptTarget.Latest,true);
+const recoveryAst=ts.createSourceFile('durable',read('src/lib/worker/image-recovery.ts'),ts.ScriptTarget.Latest,true);
 const recoveryFunctions=recoveryAst.statements.filter(n=>ts.isFunctionDeclaration(n)&&['recoverDurableImageJobsLocal','recoverDurableImageJobs'].includes(n.name?.text));assert.equal(recoveryFunctions.length,2);
 const recoveryText=recoveryFunctions.map(n=>n.getText(recoveryAst)).join('\n');
 const background=async(_scope,_key,_admission,run)=>run();
 function recovery(send,options={}){
  const counts={due:0,batch:0,delivery:0,signals:[]};
- const api=exec('let recoveryScan;\n'+recoveryText,'actual-recovery-callers',{dbEnabled:true,repository:{dueImageJobs:async()=>{counts.due++;return options.due?options.due():Array.from({length:12},(_,n)=>({kind:'generate',id:'fixture-'+n}));}},dispatchImageQueue:queue.dispatchImageQueue,fetch:(url,init)=>{counts.signals.push(init.signal);return send(url,init);},withBackgroundActivity:background,randomUUID},{'./imagegen/batch':{recoverImagegenBatches:async()=>{counts.batch++;if(options.batch)await options.batch();return 2;}},'./imagegen/stored-delivery':{recoverStoredDeliveries:async()=>{counts.delivery++;return 3;}}});
+ const api=exec('let recoveryScan;\n'+recoveryText,'actual-recovery-callers',{dbEnabled:true,deferApplicationTask:async()=>false,dueImageJobs:async()=>{counts.due++;return options.due?options.due():Array.from({length:12},(_,n)=>({kind:'generate',id:'fixture-'+n}));},resumeImageJob:async job=>{const signal=AbortSignal.timeout(10000);counts.signals.push(signal);return (await send(job,{signal})).ok;},dispatchImageQueue:queue.dispatchImageQueue,fetch:(url,init)=>{counts.signals.push(init.signal);return send(url,init);},withBackgroundActivity:background,randomUUID},{'../imagegen/batch':{recoverImagegenBatches:async()=>{counts.batch++;if(options.batch)await options.batch();return 2;}},'../imagegen/stored-delivery':{recoverStoredDeliveries:async()=>{counts.delivery++;return 3;}}});
  return {api,counts};
 }
 function worker(runtime,recoveryApi,video=async()=>0){
  const timers={intervals:new Set(),timeouts:new Set()};const make=(set,fn,ms)=>{const t={fn,ms,unref(){}};set.add(t);return t;};
  const settings=exec(read('src/lib/video/worker-settings.ts'),'settings',{process:runtime},{'../runtime/positive-integer':integer});
- const api=exec(read('src/lib/video/worker.ts'),'worker',{process:runtime,setInterval:(fn,ms)=>make(timers.intervals,fn,ms),setTimeout:(fn,ms)=>make(timers.timeouts,fn,ms),clearInterval:t=>timers.intervals.delete(t),clearTimeout:t=>timers.timeouts.delete(t)},{'@/lib/release-runtime/background-activity':{withBackgroundActivity:background},'@/lib/db':{dbEnabled:true},'@/lib/video/service':{recoverDueVideoTasks:video},'@/lib/durable-image-jobs':recoveryApi,'@/lib/supplier-cost/worker':{scanSupplierCostsOnce:async()=>0},'./workflow':{recoverVideoWorkflows:async()=>0},'./worker-settings':settings,'../reference-workbench/service':{recoverReferenceWorkbench:async()=>0}});
+ const api=exec(read('src/lib/video/worker.ts'),'worker',{process:runtime,setInterval:(fn,ms)=>make(timers.intervals,fn,ms),setTimeout:(fn,ms)=>make(timers.timeouts,fn,ms),clearInterval:t=>timers.intervals.delete(t),clearTimeout:t=>timers.timeouts.delete(t)},{'@/lib/release-runtime/background-activity':{withBackgroundActivity:background},'@/platform/db/pool':{dbEnabled:true},'@/lib/video/runtime':{recoverDueVideoTasks:video},'@/lib/worker/image-recovery':recoveryApi,'@/lib/supplier-cost/worker':{scanSupplierCostsOnce:async()=>0},'./workflow':{recoverVideoWorkflows:async()=>0},'./worker-settings':settings,'../application/task-execution':{applicationTasksRunHere:()=>true,deferApplicationTask:async()=>false},'../reference-workbench/service':{recoverReferenceWorkbench:async()=>0}});
  return {api,timers,cycle(){const t=[...timers.intervals][0];assert(t);t.fn();}};
 }
 async function callsites(){
@@ -99,7 +99,7 @@ async function poolLifecycle(){
   ready=new pg.Pool({connectionString,connectionTimeoutMillis:500});const deadline=Date.now()+30000;
   for(;;){try{await ready.query('SELECT 1');break;}catch(e){if(Date.now()>deadline)throw e;await new Promise(r=>setTimeout(r,100));}}
   console.log(`PG_FIXTURE label=${label} port=${port} TCP_SQL_READY=1 memory=256MiB cpus=1`);
-  function instance(){const process={env:{DATABASE_URL:connectionString}},db=exec(read('src/lib/db/connection.ts'),'db',{process},{pg:{Pool}}),coord=()=>exec(read('src/lib/video/coordination-pool.ts'),'coord',{process},{'node:process':process,pg:{Pool},'../db':db,'../db/connection':db});return{process,db,coord};}
+  function instance(){const process={env:{DATABASE_URL:connectionString}},db=exec(read('src/platform/db/pool.ts'),'db',{process},{pg:{Pool}}),coord=()=>exec(read('src/lib/video/coordination-pool.ts'),'coord',{process},{'node:process':process,pg:{Pool},'@/platform/db/pool':db});return{process,db,coord};}
   await test('actual PG closing drains lock holder, shares promise and recreates correct budget generation',async()=>{
    const x=instance(),a=x.coord(),b=x.coord(),old=a.getVideoCoordinationPool();assert.equal(b.getVideoCoordinationPool(),old);
    const held=await a.acquireVideoCoordinationLock('parent-held');assert(held.acquired);let complete=false;

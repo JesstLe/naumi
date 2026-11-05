@@ -5,7 +5,7 @@ const {pathToFileURL} = require('node:url');
 const esbuild = require('esbuild');
 const {chromium, expect} = require('@playwright/test');
 const root = path.resolve(process.argv[2] || '.');
-const out = path.resolve(process.argv[3] || 'output/scene-native-ui');
+const out = path.resolve(process.argv[3] || process.env.SCENE_UI_EVIDENCE || 'output/scene-native-ui');
 const abs = file => JSON.stringify(path.join(root, file).replaceAll('\\', '/'));
 
 // Real editor/React/CSS, with explicit callback fixtures. The application driver

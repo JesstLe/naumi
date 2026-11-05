@@ -1,7 +1,7 @@
 import "server-only";
-import { getPool } from "../db";
+import { getPool } from "@/platform/db/pool";
 import { ModelConfigError } from "../model-config/types";
-import { bindActualCreationProject, assertCreationProjectInput } from "../saas/creation-context";
+import { bindActualCreationProject, assertCreationProjectInput } from "../saas/creation-access";
 import {audioEditMediaRequest} from "../audio/project";
 import {createMediaJob,listMediaJobs} from "../video/media-jobs";
 import {requireAudioMaterials} from "./audio-materials";

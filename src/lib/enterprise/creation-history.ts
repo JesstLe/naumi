@@ -3,7 +3,7 @@ import type {TeamActor} from '@/lib/teams/grants';
 import {TeamError} from '@/lib/teams/server';
 import {enterpriseRead} from './server';
 import {ensureBiSchema} from '@/lib/bi/repository';
-import {ensureMediaSchema} from '@/lib/media-assets';
+import {ensureMediaSchema} from '@/lib/media-assets-schema';
 import {listLegacyCreations,legacyCreationDetail,legacyCreationAsset,type LegacyReadScope} from '@/lib/saas/legacy-creations';
 import {publicCreationParameters} from '@/lib/saas/creation-writer';
 import type {CreationFilters,CreationPage} from '@/lib/saas/creation-contracts';

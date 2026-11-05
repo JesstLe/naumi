@@ -1,18 +1,26 @@
+import {ensureVideoAssetSchema} from "@/lib/video/storage-schema";
+export {ensureVideoAssetSchema};
 import "server-only";
 import {z} from "zod";
 import {createHash} from "node:crypto";
-import {getPool,ensureSchema,addArtworksTx,type ArtworkRecord} from "../db";
-import {storageKeyFromManagedUrl} from "../storage";
-import {canonicalConfig} from "../model-config/repository";
+import {getPool} from "@/platform/db/pool";
+import {ensureSchema} from "@/lib/persistence/schema";
+import {addArtworksTx} from "@/lib/artworks/writer";
+import {type ArtworkRecord} from "@/lib/artworks/types";
+import { storageKeyFromManagedUrl } from "../object-storage/runtime";
+import {canonicalConfig} from "@/lib/model-config/snapshot-value";
 import {ModelConfigError} from "../model-config/types";
-import {verifiedOwnedMedia,ensureMediaInspectionSchema} from "./media-inspection";
-import {ensureMediaSchema} from "../media-assets";
-import {authorizeVideoProject} from "../canvas/video-node-service";
+import {verifiedOwnedMedia} from "./media-inspection";
+import {ensureMediaInspectionSchema} from "@/lib/video/storage-schema";
+
+import {ensureMediaSchema} from "@/lib/media-assets-schema";
+
+import { authorizeVideoProject } from "../canvas/project-access";
 import type {MediaProbe} from "./media-job-schema";
 export const videoAssetImportSchema=z.strictObject({operationId:z.uuid(),storageKey:z.string().min(1).max(1000).optional(),url:z.string().min(1).max(16384).optional(),title:z.string().trim().min(1).max(200),kind:z.enum(["image","video","audio"]).optional(),projectKey:z.string().regex(/^(?:tree|batch):[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/).optional()}).refine(input=>!!input.storageKey||!!input.url,"缺少素材身份");
 export type VideoAssetView={artworkId:string;title:string;kind:"image"|"video"|"audio";url:string;storageKey:string;mimeType:string;bytes:number;sha256:string;probe:MediaProbe|null;projectKey:string|null};
-let ready:Promise<void>|undefined;
-export async function ensureVideoAssetSchema(){if(!ready)ready=ensureSchema().then(()=>getPool().query("CREATE TABLE IF NOT EXISTS app_video_asset_imports(email text NOT NULL,operation_id uuid NOT NULL,input_digest text NOT NULL,result jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(email,operation_id))")).then(()=>undefined).catch(error=>{ready=undefined;throw error;});await ready;}
+
+
 export async function importVideoAsset(actorRaw:string,raw:unknown):Promise<VideoAssetView>{
   const parsed=videoAssetImportSchema.safeParse(raw);if(!parsed.success)throw new ModelConfigError("INVALID_VIDEO_ASSET","素材登记字段无效",422);
   const actor=actorRaw.toLowerCase(),input=parsed.data,key=input.storageKey||storageKeyFromManagedUrl(input.url||"");if(!key||input.url&&storageKeyFromManagedUrl(input.url)!==key)throw new ModelConfigError("INVALID_VIDEO_ASSET","素材身份不一致",422);

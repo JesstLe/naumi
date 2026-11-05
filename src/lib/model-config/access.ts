@@ -77,7 +77,7 @@ export function createModelAdminHandler(deps: { authorize: typeof biAuthorize; a
         // These stage exceptions are raised before INSERT and transaction
         // rollback completes before they escape. Later activation/commit
         // conflicts are persisted as an unknown publication instead.
-        const operationNotStaged = ["publish", "restore"].includes(action) && ["CONFIG_CONFLICT", "DRAFT_CONFLICT", "PUBLICATION_PENDING"].includes(error.code);
+        const operationNotStaged = ["publish", "restore"].includes(action) && ["CONFIG_CONFLICT", "DRAFT_CONFLICT", "PUBLICATION_PENDING", "PUBLISH_STALE_DRAFT_BASE"].includes(error.code);
         return biJson({ error: error.message, code: error.code, ...(operationNotStaged ? { operationNotStaged: true } : {}), ...(error.fields.length ? { fields: error.fields } : {}) }, error.status);
       }
       if (error instanceof z.ZodError || error instanceof SyntaxError) return biJson({ error: "管理参数无效", code: "INVALID_REQUEST" }, 400);

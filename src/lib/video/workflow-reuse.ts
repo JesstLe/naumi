@@ -1,7 +1,7 @@
 import "server-only";
-import {listArtworksByIds} from "../db";
+import {listArtworksByIds} from "@/lib/artworks/repository";
 import {assertCreationObjectRefs} from "../saas/creation-writer";
-import {storageKeyFromManagedUrl} from "../storage";
+import {storageKeyFromManagedUrl} from "../object-storage/runtime";
 import {ModelConfigError} from "../model-config/types";
 import {verifiedOwnedMedia} from "./media-inspection";
 import type {SavedVideoResultAsset} from "./result-assets";

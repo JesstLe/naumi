@@ -5,11 +5,12 @@ import { siteProfile } from '@/lib/site-control/store';
 import 'server-only';
 import { createPrivateKey,randomUUID,sign } from 'node:crypto';
 import { enterpriseUserEmail } from './access';
-import { getPool } from '@/lib/db';
-import { ensureEnterpriseSchema } from '@/lib/enterprise/server';
+import { getPool } from "@/platform/db/pool";
+import {ensureEnterpriseSchema} from "@/lib/enterprise/schema";
+
 import { requireTeamGrant } from '@/lib/teams/grants';
-import { TeamError } from '@/lib/teams/server';
-import { userFeaturePolicy } from '@/lib/feature-access/server';
+import { TeamError } from "@/lib/teams/errors";
+import {userFeaturePolicy} from "@/lib/feature-access/repository";
 import { allows } from '@/lib/feature-access/catalog';
 import { assertEnterpriseAllowed,deploymentPolicy,IntegrationError } from './integration/policy';
 

@@ -8,6 +8,10 @@ async function main() {
     if (process.argv[2] === "cleanup") {
         const data = JSON.parse(readFileSync(path, "utf8")), current = await runtime.config.current();
         await runtime.config.publish({ id: randomUUID(), expectedVersion: current.version, config: data.original.config, actor: "fixture", reason: "Restore UI acceptance configuration" });
+        // Real executable quotes belong to the synthetic user. Remove its
+        // children before the account, without weakening the production FK.
+        const quotes=await db.getPool().query("SELECT to_regclass('app_image_billing_quotes') AS name");
+        if(quotes.rows[0]?.name)await db.getPool().query("DELETE FROM app_image_billing_quotes WHERE owner=$1",[data.email]);
         for (const table of ["app_billing_reconciliations", "app_billing_operations", "app_billing_intents", "app_artworks", "app_ledger", "app_credit_batches", "app_users"])
             await db.getPool().query(`DELETE FROM ${table} WHERE email=$1`, [data.email]);
     }

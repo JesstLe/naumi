@@ -2,7 +2,7 @@
 // config/auth/billing/ledger fixtures; real Sharp and loopback HTTP, no supplier.
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),cp=require('node:child_process'),crypto=require('node:crypto'),assert=require('node:assert/strict'),http=require('node:http'),esbuild=require('esbuild'),sharp=require('sharp');
 const root=path.resolve(__dirname,'..'),args=process.argv.slice(2),arg=(k,d)=>args.includes(k)?args[args.indexOf(k)+1]:d;
-const source=path.resolve(arg('--source',root)),ref=arg('--ref',''),out=path.resolve(arg('--output','output/capacity-audit-wave2-20261029/x6-auto-fix-20261030/modified'));
+const source=path.resolve(arg('--source',root)),ref=arg('--ref',''),out=path.resolve(arg('--output',process.env.IMAGE_AUTO_FRAME_EVIDENCE||'output/capacity-audit-wave2-20261029/x6-auto-fix-20261030/modified'));
 fs.mkdirSync(out,{recursive:true});const results=[],loaded=new Map(),baseline=!!ref||args.includes('--original');
 const fixture=JSON.parse(fs.readFileSync(path.join(root,'scripts/fixtures/x6-parameters-v152.json'),'utf8'));
 const snapshot={version:152,digest:'a'.repeat(64),config:structuredClone(fixture)},billing={version:8,config:JSON.parse(fs.readFileSync(path.join(root,'src/lib/billing/bootstrap.json'),'utf8'))};
@@ -41,11 +41,20 @@ const mocks={
   previewImagegen:async r=>{uiPreview.push(structuredClone(r));return plans.planImagegen(r,'fixture@example.test');},
   startImagegen:async r=>{uiStart++;return{jobId:'imagegen-'+r.operationId,operationId:r.operationId};},pollImagegen:async id=>({jobId:'imagegen-'+id,operationId:id})},
 };
+mocks['src/platform/db/pool.ts']=mocks['src/lib/db.ts'];
+mocks['src/lib/model-config/execution-services.ts']={getModelExecutionServices:()=>({models:{current:async()=>snapshot,byVersion:async()=>snapshot},billing:{current:async()=>billing,byVersion:async()=>billing}})};
+mocks['src/lib/model-config/published.ts']={readPublishedModelSnapshot:async()=>snapshot};
+mocks['src/lib/model-config/availability.ts']={modelConfigurationEnabled:async()=>true};
+mocks['src/lib/feature-access/repository.ts']=mocks['src/lib/feature-access/server.ts'];
+mocks['src/lib/saas/creation-access.ts']=mocks['src/lib/saas/creation-context.ts'];
+mocks['src/lib/billing/quotation.ts']=mocks['src/lib/billing/server.ts'];
+mocks['src/lib/model-config/snapshot-value.ts']={canonicalConfig:v=>JSON.stringify(v)};
 const cache=new Map();
 function load(rel){if(mocks[rel])return mocks[rel];if(cache.has(rel))return cache.get(rel).exports;const m={exports:{}};cache.set(rel,m);
  const file=path.join(source,rel),bytes=ref?cp.execFileSync('git',['show',ref+':'+rel],{cwd:root}):fs.readFileSync(fs.existsSync(file)?file:path.join(root,rel));loaded.set(rel,hash(bytes));
+ if(rel.endsWith('.json')){m.exports=JSON.parse(bytes.toString());return m.exports;}
  const code=esbuild.transformSync(bytes.toString(),{loader:rel.endsWith('.tsx')?'tsx':'ts',format:'cjs',target:'node20',supported:{'dynamic-import':false}}).code;
- const req=id=>{if(id==='server-only')return{};if(id==='lucide-react')return new Proxy({},{get:()=>()=>null});if(!id.startsWith('.')&&!id.startsWith('@/'))return require(id);const p=id.startsWith('@/')?'src/'+id.slice(2):path.posix.normalize(path.posix.join(path.posix.dirname(rel),id));return load(p.endsWith('.ts')?p:p+'.ts');};
+ const req=id=>{if(id==='server-only')return{};if(id==='lucide-react')return new Proxy({},{get:()=>()=>null});if(!id.startsWith('.')&&!id.startsWith('@/'))return require(id);const p=id.startsWith('@/')?'src/'+id.slice(2):path.posix.normalize(path.posix.join(path.posix.dirname(rel),id));return load(/\.(?:ts|tsx|json)$/.test(p)?p:p+'.ts');};
  vm.runInNewContext('(function(require,module,exports){'+code+'\n})',{Buffer,TextEncoder,TextDecoder,URL,URLSearchParams,FormData,File,Request,Response,Headers,AbortController,AbortSignal,process:{env:{}},performance,structuredClone,console,setTimeout,clearTimeout,crypto:crypto.webcrypto,sessionStorage:{getItem:k=>uiStorage.get(k)??null,setItem:(k,v)=>uiStorage.set(k,v),removeItem:k=>uiStorage.delete(k)},fetch:()=>{network++;throw Error('NETWORK_FORBIDDEN')}})(req,m,m.exports);return m.exports;
 }
 let plans;
@@ -61,7 +70,7 @@ async function main(){
  const compiler=load('src/lib/model-config/image-parameter-plan.ts'),runtime=load('src/lib/model-config/runtime.ts');
  for(const model of models){
   await test(model+' automatic-original-frame',async()=>{reset();const r=request(model),before=JSON.stringify(r),p=await plans.planImagegen(r,'fixture@example.test');assert.equal(p.request.parameters.ratio,'9:16');assert.equal(p.frameChoice.target,'941:1672');assert.equal(p.frameChoice.source,'reference');assert.equal(p.requestedParameters.ratio,'941:1672');assert.equal(p.totalCredits,18);assert.equal(quotes,1);assert.equal(p.fingerprint,plans.imagegenFingerprint(r));assert.equal(JSON.stringify(r),before);const frozen=Object.values(p.steps[0].billingQuote.imageParameterPlans)[0];assert.equal(frozen.wire.size,'9:16');assert.equal(frozen.requested.ratio,'9:16');assert.equal(p.warnings.length,1);});
-  await test(model+' browser-original-not-transport-frame',async()=>{reset();uiStorage.clear();uiStart=0;uiPreview=[];const form=new FormData();form.set('model',model);form.set('userPrompt','换成红色');form.set('ratio','auto');form.set('count','3');form.append('image',new File(['fixture-input'],'reference.png',{type:'image/png'}));const notes=[];await load('src/lib/imagegen/canvas-client.ts').submitCanvasImagegen(form,'node',s=>notes.push(s),{owner:'fixture@example.test',project:'workspace'});assert.equal(uiPreview[0].parameters.ratio,'941:1672');assert.equal(uiPreview[0].ratioMode,'automatic');assert.equal(uiStart,1);assert(notes.some(s=>s.includes('9:16')));});
+  await test(model+' browser-original-not-transport-frame',async()=>{reset();uiStorage.clear();uiStart=0;uiPreview=[];const form=new FormData();form.set('model',model);form.set('userPrompt','换成红色');form.set('ratio','auto');form.set('count','3');form.append('image',new File(['fixture-input'],'reference.png',{type:'image/png'}));const notes=[];await load('src/lib/imagegen/canvas-client.ts').submitCanvasImagegen(form,'node',s=>notes.push(s),{owner:'fixture@example.test',project:'workspace'});assert.equal(uiPreview[0].parameters.ratio,'941:1672');assert.equal(uiPreview[0].ratioMode,'automatic');assert.equal(uiStart,1);assert.deepEqual(notes,[],"selected informational ratio notice stays internal; original frame and single submit above remain verified");});
   await test(model+' explicit-supported-3:4',async()=>{reset();const p=await plans.planImagegen(request(model,'3:4'),'fixture@example.test');assert.equal(p.request.parameters.ratio,'3:4');assert.equal(p.automaticFrame,undefined);});
   await test(model+' explicit-unsupported-uses-nearest',async()=>{reset();const p=await plans.planImagegen(request(model,'941:1672'),'fixture@example.test');assert.equal(p.request.parameters.ratio,'9:16');assert.equal(p.frameChoice.source,'explicit');assert.equal(p.frameChoice.target,'941:1672');assert.equal(p.steps[0].billingQuote.facts.ratio,'941:1672');assert.equal(quotes,1);});
   await test(model+' explicit-landscape-beats-portrait-reference',async()=>{reset();const p=await plans.planImagegen(request(model,'16:9'),'fixture@example.test');assert.equal(p.request.parameters.ratio,'16:9');assert.equal(p.frameChoice,undefined);});

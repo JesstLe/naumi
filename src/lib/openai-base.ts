@@ -1,5 +1,5 @@
 import "server-only";
-import { dbEnabled } from "@/lib/db";
+import { dbEnabled } from "@/platform/db/pool";
 import { readOpenAIBaseUrlPlain } from "@/lib/settings";
 
 // AI 模型接口地址(OpenAI 兼容 baseURL)。DB(加密存储)优先 → env 兜底。

@@ -50,7 +50,7 @@ async function main() {
       bundle: true, write: false, platform: 'node', format: 'cjs', packages: 'external', tsconfig: resolve('tsconfig.json'),
       plugins: [{ name: 'isolated-db-port', setup(b) {
         b.onResolve({ filter: /^server-only$/ }, () => ({ path: 'empty', namespace: 'x1' }));
-        b.onResolve({ filter: /^@\/lib\/db$/ }, () => ({ path: 'db', namespace: 'x1' }));
+        b.onResolve({ filter: /^@\/(?:lib\/db|platform\/db\/pool)$/ }, () => ({ path: 'db', namespace: 'x1' }));
         b.onLoad({ filter: /.*/, namespace: 'x1' }, a => ({ contents: a.path === 'db' ? 'module.exports=globalThis.__x1BiDb;' : '' }));
       } }],
     });

@@ -1,5 +1,5 @@
 import "server-only";
-import { getBillingRuntime } from "@/lib/billing/server";
+import {getBillingRuntime} from "@/lib/billing/runtime";
 import type { BillingProduct, ExpiryPolicy } from "@/lib/billing/types";
 export type ProductReceipt = {
     configVersion: number;

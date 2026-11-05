@@ -56,6 +56,7 @@ export class VideoNodeSaveQueue {
     this.options.pendingChanged?.(this.pendingCount);
   }
 
+  hasUnconfirmed(id:string){return (this.pending.get(id)||[]).some(entry=>entry.uncertain!==false);}
   get pendingCount() { return [...this.pending.values()].reduce((sum, entries) => sum + entries.length, 0); }
   private journal(entry?: Entry) {
     if (this.lifetime.signal.aborted) return;
@@ -114,6 +115,10 @@ export class VideoNodeSaveQueue {
           this.options.accept(recovered);
           this.failed.delete(id);
           this.removePending(id, unresolved);
+          // A new implicit-revision edit follows this recovered own write.
+          // Its base was captured before the lost ACK, not after that write.
+          // Explicit expectedRevision remains authoritative and is never rebased.
+          if (entry.patch.expectedRevision === undefined) entry.baseRevision = recovered.revision;
         }
       }
       const old = this.options.getNode(id);
@@ -144,7 +149,8 @@ export class VideoNodeSaveQueue {
         this.options.changed(this.pending.size ? new Error('视频节点仍有未保存的修改，请重试') : null);
         return node;
       } catch (cause) {
-        const error = cause instanceof Error ? cause : new Error('视频节点保存失败');
+        const error = cause instanceof Error ? cause : new Error(
+          cause && typeof cause === 'object' && 'message' in cause && typeof cause.message === 'string' ? cause.message : '视频节点保存失败');
         entry.uncertain = !(error instanceof VideoNodeClientError) || [408, 500, 502, 503, 504].includes(error.status);
         this.failed.set(id, entry);
         this.journal(entry);

@@ -1,7 +1,7 @@
 "use client";
 import {useCallback,useEffect,useRef,useState} from "react";
 import {browserRandomUUID} from "@/lib/browser-crypto";
-import type {PublicVideoTaskView} from "@/lib/video/service";
+import {type PublicVideoTaskView} from "@/lib/video/queries";
 import type {PublicVideoTaskSnapshot} from "@/lib/video/task-snapshot";
 import type {PublicQuote} from "@/lib/billing/client";
 import type {VideoPrivateFetch} from "./use-video-nodes";

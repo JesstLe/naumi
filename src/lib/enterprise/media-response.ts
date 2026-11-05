@@ -1,7 +1,8 @@
 import {NextResponse} from 'next/server';
 import sharp from 'sharp';
 import {teamJson,PRIVATE_HEADERS} from '@/lib/teams/access';
-import {dataUrlToBytes,isManagedImageUrl,readManagedObject} from '@/lib/storage';
+import { dataUrlToBytes, isManagedImageUrl } from "@/lib/object-storage/runtime";
+import { readManagedObject } from "@/lib/object-storage/managed-read";
 import {parseDownloadSource,fetchDownloadSource} from '@/lib/download-source';
 import {mediaCacheVersion} from '@/lib/media-cache-version';
 /** Authorization precedes this renderer; never accept an image URL from the browser. */

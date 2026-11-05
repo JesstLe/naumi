@@ -1,12 +1,13 @@
 import { withBackgroundActivity } from "@/lib/release-runtime/background-activity";
 import "server-only";
 
-import { dbEnabled } from "@/lib/db";
-import { recoverDueVideoTasks } from "@/lib/video/service";
-import { recoverDurableImageJobs } from "@/lib/durable-image-jobs";
+import { dbEnabled } from "@/platform/db/pool";
+import { recoverDueVideoTasks } from "@/lib/video/runtime";
+import { recoverDurableImageJobs } from "@/lib/worker/image-recovery";
 import { scanSupplierCostsOnce } from "@/lib/supplier-cost/worker";
 import { recoverVideoWorkflows } from "./workflow";
 import { videoWorkerSettings } from "./worker-settings";
+import { applicationTasksRunHere, deferApplicationTask } from "../application/task-execution";
 
 // Shared by layout/tick route bundles in this process. Cross-process ownership
 // still belongs to the existing leases/advisory locks, not this local guard.
@@ -36,7 +37,8 @@ async function recoverPhase(name: string, run: () => Promise<number>): Promise<n
 }
 
 export async function scanVideoWorkerOnce(): Promise<number> {
-  if (!dbEnabled || state.stopping || state.stopped) return 0;
+  if (!dbEnabled || await deferApplicationTask()) return 0;
+  if (state.stopping || state.stopped) return 0;
   if (state.scan) return state.scan;
   // Validate before the recovery catch: bad settings are not network jitter.
   const settings = videoWorkerSettings();
@@ -50,6 +52,7 @@ export async function scanVideoWorkerOnce(): Promise<number> {
 }
 
 export function startVideoWorker(): void {
+  if (!applicationTasksRunHere()) return;
   if (state.started || state.stopping) return;
   // An explicit restart also re-enables externally driven scans, without
   // enabling an embedded timer when the deployment deliberately disables it.

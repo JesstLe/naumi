@@ -1,14 +1,10 @@
+import type {ImageDeliveryBytes} from "./imagegen/delivery-bytes";
 import "server-only";
 
 import path from "node:path";
 
-import {
-  dataUrlToBytes,
-  isManagedImageUrl,
-  readManagedObject,
-  privateMedia,
-  storageKeyFromManagedUrl,
-} from "@/lib/storage";
+import { dataUrlToBytes, isManagedImageUrl, privateMedia, storageKeyFromManagedUrl } from "@/lib/object-storage/runtime";
+import { readManagedObject } from "@/lib/object-storage/managed-read";
 import {canReadMedia} from '@/lib/media-assets';
 import { IMAGEGEN_OUTPUT_MAX_BYTES } from "./imagegen/image-limits";
 
@@ -43,16 +39,16 @@ export async function readCanvasImage(source: string, requestUrl: string, owner?
 }
 
 /** Same ownership/source rules as inputs; only the bounded byte budget differs. */
-export async function readCanvasOutput(source: string, requestUrl: string, owner: string) {
-  return readOwnedCanvasImage(source, requestUrl, owner, IMAGEGEN_OUTPUT_MAX_BYTES);
+export async function readCanvasOutput(source: string, requestUrl: string, owner: string, delivery?: ImageDeliveryBytes) {
+  return readOwnedCanvasImage(source, requestUrl, owner, IMAGEGEN_OUTPUT_MAX_BYTES, delivery);
 }
 
-async function readOwnedCanvasImage(source: string, requestUrl: string, owner: string | undefined, maxBytes: number) {
-  const inline = dataUrlToBytes(source);
+async function readOwnedCanvasImage(source: string, requestUrl: string, owner: string | undefined, maxBytes: number, delivery?: ImageDeliveryBytes) {
+  const inline = delivery ? delivery.read(source) : dataUrlToBytes(source);
   if (inline) {
     if (inline.bytes.byteLength > maxBytes) throw new Error("图片超出当前读取大小限制");
     return {
-      buffer: Buffer.from(inline.bytes),
+      buffer: Buffer.from(inline.bytes.buffer, inline.bytes.byteOffset, inline.bytes.byteLength),
       mimeType: inline.contentType || "image/png",
     };
   }

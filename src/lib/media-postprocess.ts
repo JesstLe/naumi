@@ -1,32 +1,23 @@
+import {ensurePostprocessSchema} from "@/lib/media-postprocess-schema";
+export {ensurePostprocessSchema};
 import "server-only";
-import { createHash, randomUUID } from "node:crypto";
+import {createHash,randomUUID} from "node:crypto";
 import sharp from "sharp";
-import type { Pool } from "pg";
-import { dbEnabled, getPool } from "./db";
-import { uploadImage } from "./storage";
-import { readManagedObject } from "./storage";
-import { assertMutableStagingTask } from "./staging-history";
-import type { Postprocess } from "./model-config/business-schema";
+
+import {dbEnabled,getPool} from "@/platform/db/pool";
+import { uploadImage } from "./media-upload";
+import { readManagedObject } from "./object-storage/managed-read";
+import {assertMutableStagingTask} from "./staging-history";
+import type {Postprocess} from "./model-config/business-schema";
 import {processImagegenPixels,inspectImagegenPixels} from "./imagegen/postprocess";
 import type {ImagegenRequest} from "./imagegen/types";
+import {stableJson} from "./billing/fingerprint";
 export type ImagegenPostprocessPolicy={enabled:true;kind:"imagegen";output:ImagegenRequest["output"];chroma?:ImagegenRequest["chroma"];failure:"hold"|"keep-base"};
 type MediaPostprocessPolicy=Postprocess|ImagegenPostprocessPolicy;
 export class PostprocessPending extends Error { constructor(public operationId: string) { super("底图已保存，后处理未完成；恢复只重做此阶段"); } }
-const ready = new WeakMap<Pool, Promise<unknown>>();
+
 type PostprocessResult = { url:string; width:number; height:number; kind:Postprocess["kind"]|"base"|"imagegen"; status:"succeeded"|"failed-kept-base";mime?:string;transparentPixels?:number;totalPixels?:number };
-export async function ensurePostprocessSchema(pool: Pool) {
-  let p = ready.get(pool);
-  if (!p) { p = pool.query(`CREATE TABLE IF NOT EXISTS app_media_postprocess(
-    operation_id text PRIMARY KEY,parent_operation_id text NOT NULL,email text NOT NULL,model_version bigint NOT NULL,
-    digest text NOT NULL,policy jsonb NOT NULL,base_url text NOT NULL,result_url text,width int,height int,
-    state text NOT NULL,attempts int NOT NULL DEFAULT 0,lease_id uuid,lease_until timestamptz,error text,
-    processing_kind text NOT NULL,cost_cny_micros numeric(30,0),created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now());
-    ALTER TABLE app_media_postprocess ADD COLUMN IF NOT EXISTS next_attempt_at timestamptz;
-    ALTER TABLE app_media_postprocess ADD COLUMN IF NOT EXISTS output_mime text;
-    ALTER TABLE app_media_postprocess ADD COLUMN IF NOT EXISTS transparent_pixels bigint;
-    ALTER TABLE app_media_postprocess ADD COLUMN IF NOT EXISTS total_pixels bigint;`).catch(e => { ready.delete(pool); throw e; }); ready.set(pool,p); }
-  await p;
-}
+
 export async function transformImage(bytes: Buffer, policy: MediaPostprocessPolicy) {
   if(policy.kind==="imagegen")return {...await processImagegenPixels(bytes,policy),kind:"imagegen" as const};
   if (policy.kind === "ai-upscale") throw new Error("AI 超分供应商回执尚未接通");
@@ -43,13 +34,32 @@ export async function runPostprocess(input: { id: string; parentId: string; emai
   await assertMutableStagingTask(pool, "app_billing_operations", input.parentId);
   await assertMutableStagingTask(pool, "app_image_jobs", input.parentId);
   await assertMutableStagingTask(pool, "app_canvas_image_tasks", input.parentId);
-  const digest=createHash("sha256").update(input.bytes).update(JSON.stringify(input.policy)).digest("hex"), key=createHash("sha256").update(input.id).digest("hex");
+  const digest=createHash("sha256").update(input.bytes).update(stableJson(input.policy)).digest("hex"), key=createHash("sha256").update(input.id).digest("hex");
+  // Legacy byte reads may use the query pool (private object-storage metadata).
+  // Do that before taking a transaction connection; five recovery callers must
+  // not hold all query connections while waiting for their own nested reads.
+  const prior=(await pool.query("SELECT * FROM app_media_postprocess WHERE operation_id=$1",[input.id])).rows[0];
+  let legacyProof:{digest:string;baseUrl:string}|undefined;
+  if(prior&&prior.digest!==digest){
+    if(prior.email!==input.email||Number(prior.model_version)!==input.modelVersion||prior.parent_operation_id!==input.parentId||stableJson(prior.policy)!==stableJson(input.policy))throw new Error("后处理任务与冻结配置不一致");
+    const original=await readManagedObject(prior.base_url,64*1024*1024);
+    if(!original.bytes.equals(input.bytes))throw new Error("后处理任务与冻结配置不一致");
+    legacyProof={digest:prior.digest,baseUrl:prior.base_url};
+  }
   const tx=await pool.connect();
   try {
     await tx.query("BEGIN");
     await tx.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`media-postprocess:${input.id}`]);
     const exists=(await tx.query("SELECT * FROM app_media_postprocess WHERE operation_id=$1",[input.id])).rows[0];
-    if(exists&&(exists.digest!==digest||exists.email!==input.email||Number(exists.model_version)!==input.modelVersion||exists.parent_operation_id!==input.parentId))throw new Error("后处理任务与冻结配置不一致");
+    if(exists){
+      if(exists.email!==input.email||Number(exists.model_version)!==input.modelVersion||exists.parent_operation_id!==input.parentId)throw new Error("后处理任务与冻结配置不一致");
+      if(exists.digest!==digest){
+        // Pre-R2 hashes depended on JS property order, which JSONB discards.
+        // Prove the saved policy AND original bytes instead of trusting a hash
+        // mismatch or rewriting historical stage evidence.
+        if(!legacyProof||legacyProof.digest!==exists.digest||legacyProof.baseUrl!==exists.base_url||stableJson(exists.policy)!==stableJson(input.policy))throw new Error("后处理任务与冻结配置不一致");
+      }
+    }
     if(!exists){
       if(input.policy.kind==="imagegen")await inspectImagegenPixels(input.bytes);
       const meta=await sharp(input.bytes).metadata(),mime=meta.format==="jpeg"?"image/jpeg":meta.format==="webp"?"image/webp":"image/png";

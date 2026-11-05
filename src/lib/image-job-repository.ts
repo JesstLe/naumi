@@ -1,23 +1,28 @@
+import {reserveLegacyTaskTx,settleLegacyTaskTx,clearTaskReservationTx,taskBillingExistsTx,holdTaskBillingTx,releaseUndeliveredTaskTx} from "@/lib/billing/task-settlement";
+import {currentCreationContext} from "@/lib/saas/creation-scope";
 import {readTaskDiagnostic,type TaskFailureDiagnostic} from "./imagegen/task-diagnostics";
-import {currentCreationContext} from "./saas/creation-context";
 import {acceptCreationTx,recordImageStateTx,creationLinkTx} from "./saas/creation-writer";
 import "server-only";
 import { randomUUID } from "node:crypto";
-import {IMAGE_JOB_KINDS,imageJobConcurrency} from "./image-job-queue";
-import { dbEnabled, getPool, ensureSchema, deductPrincipalFIFO, refreshBalance, creditMeteringEnabled, expireDueBatches } from "@/lib/db";
+import {dbEnabled,getPool} from "@/platform/db/pool";
+import {ensureSchema} from "@/lib/persistence/schema";
+import {creditMeteringEnabled} from "@/lib/billing/runtime";
+import {refreshBalance, expireDueBatches} from "@/lib/billing/wallet-balance";
 import {createBillingService} from "@/lib/billing/service";
 import type {BillingQuote,BillingResult,OperationInput} from "@/lib/billing/types";
 import { IMAGE_JOB_RELEASED_MESSAGE, imageJobHasResults } from "./image-job-failure";
-import { lockWallet, syncBalanceTx } from "./billing/repository";
-import { assertMutableStagingTask, excludeImportedHistory, isImportedHistory } from "./staging-history";
+import { assertMutableStagingTask } from "./staging-history";
 import type { PoolClient } from "pg";
 import { IMAGE_JOB_LEASE_MS, ImageJobLeaseLostError } from "./image-job-lease";
 import { imageJobCleanupClient, reportImageJobCleanupFailure } from "./image-job-cleanup";
 const billingService=createBillingService();
 function billingOperation(row:{id:string;email:string;payload:{billingQuote:BillingQuote}},reason:string):OperationInput{return {id:row.id,email:row.email,quote:row.payload.billingQuote,reason,ledgerId:`led-image-${row.id}`,fingerprint:row.id};}
 
-export type ImageJobKind = "generate" | "suite" | "aplus" | "imagegen";
-export type ImageJobRow = { id: string; email: string; kind: ImageJobKind; snapshot: Record<string, unknown>; payload: Record<string, unknown>; lease_token: string | null; billing_settled: boolean };
+import type {ImageJobKind,ImageJobRow} from './image-jobs/types';
+export type {ImageJobKind,ImageJobRow} from './image-jobs/types';
+// Existing scripts retain this API;these are the same scheduling functions,not
+// another implementation or writer.
+export {claimImageJob,releaseImageJob,dueImageJobs} from './image-jobs/scheduling';
 
 export async function createImageJob(id: string, email: string, kind: ImageJobKind, snapshot: unknown, payload: unknown, cost: number, reserve: boolean, billingQuote?:BillingQuote) {
   await ensureSchema();
@@ -34,11 +39,8 @@ export async function createImageJob(id: string, email: string, kind: ImageJobKi
       await billingService.reserveTx(client,billingOperation({id,email,payload:{billingQuote}},"图片任务预占"));
       await client.query("UPDATE app_image_jobs SET reserved_cost=$2 WHERE id=$1",[id,billingQuote.reserveCredits]);
     } else if (!billingQuote && reserve && cost > 0 && metered) {
-      const result = await client.query(`UPDATE app_users u SET credits_used=credits_used+$2 WHERE email=$1 AND
-        (SELECT COALESCE(sum(remaining),0) FROM app_credit_batches WHERE email=$1 AND expires_at>now())-credits_used >= $2`, [email.toLowerCase(), cost]);
-      if (!result.rowCount) throw new Error("积分不足，请充值后重试");
-      await client.query(`UPDATE app_image_jobs SET reserved_cost=$2 WHERE id=$1`, [id, cost]);
-      await client.query(`INSERT INTO app_gen_reservations(job_id,email,cost) VALUES($1,$2,$3)`, [id, email.toLowerCase(), cost]);
+      await reserveLegacyTaskTx(client,{id,email:email.toLowerCase(),cost,metered:true,principalPolicy:"unexpired-total",insufficientMessage:"积分不足，请充值后重试"});
+      await client.query("UPDATE app_image_jobs SET reserved_cost=$2 WHERE id=$1",[id,cost]);
     }
     await client.query("COMMIT");
   } catch (error) { await client.query("ROLLBACK"); throw error; }
@@ -56,22 +58,6 @@ export async function listActiveImageJobs(email: string, kind: ImageJobKind) {
   const { rows } = await getPool().query(`SELECT id,snapshot->>'status' AS status FROM app_image_jobs
     WHERE email=$1 AND kind=$2 AND snapshot->>'status' NOT IN ('done','error','needs_attention') ORDER BY created_at DESC LIMIT 30`, [email.toLowerCase(), kind]);
   return rows;
-}
-
-export async function claimImageJob(id: string, kind: ImageJobKind): Promise<ImageJobRow | null> {
-  await ensureSchema();
-  if (await isImportedHistory(getPool(), "app_image_jobs", id)) return null;
-  const tx=await getPool().connect();
-  try {
-    await tx.query("BEGIN");
-    await tx.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",["naumi-image-job-queue:"+kind]);
-    const {rows}=await tx.query(`UPDATE app_image_jobs SET lease_token=$3,lease_until=clock_timestamp()+$5*interval '1 millisecond'
-      WHERE id=$1 AND kind=$2 AND (lease_until IS NULL OR lease_until<clock_timestamp())
-      AND snapshot->>'status' NOT IN ('done','error','needs_attention')
-      AND (SELECT count(*) FROM app_image_jobs active WHERE active.kind=$2 AND active.lease_token IS NOT NULL
-        AND active.lease_until>now())<$4 RETURNING *`,[id,kind,randomUUID(),imageJobConcurrency(kind),IMAGE_JOB_LEASE_MS]);
-    await tx.query("COMMIT");return rows[0]||null;
-  }catch(error){await tx.query("ROLLBACK");throw error;}finally{tx.release();}
 }
 
 export async function heartbeatImageJob(id: string, token: string) {
@@ -183,22 +169,18 @@ export async function settleImageJob(id: string, charged: number|BillingResult, 
       if(row.payload.billingQuote){
         if(typeof charged==="number")throw new Error("新任务结算必须包含实际结果");
         const op=billingOperation(row,reason);
-        const reserved=await client.query("SELECT 1 FROM app_billing_operations WHERE id=$1",[id]);
-        if(reserved.rowCount){
+        const reserved=await taskBillingExistsTx(client,id);
+        if(reserved){
           const settled=await billingService.settleTx(client,op,charged);
             if(charged.state==="unknown" || settled.state==="manual" || settled.state==="hold"){await assertLeaseTx(client,id,token);await client.query("COMMIT");return;}
         }else if(charged.state!=="failed")throw new Error("任务尚未完成计费预占");
       }else{
       if(typeof charged!=="number")throw new Error("旧任务须按已保存价格恢复结算");
-      const actual = Math.min(row.cost, Math.max(0, Math.trunc(charged)));
-      if (row.metered && actual > 0) {
-        await deductPrincipalFIFO(client, email, actual);
-        await client.query(`INSERT INTO app_ledger(id,email,delta,reason,kind) VALUES($1,$2,$3,$4,'consume')`, [`led-image-${id}`, email, -actual, reason]);
-      }
-      if (row.metered) await client.query(`UPDATE app_users SET credits_used=GREATEST(credits_used-$2,0) WHERE email=$1`, [email, row.reserved_cost]);
+      const actual=Math.min(row.cost,Math.max(0,Math.trunc(charged)));
+      await settleLegacyTaskTx(client,{email,charge:row.metered?actual:0,reservedCredits:row.metered?row.reserved_cost:0,ledgerId:`led-image-${id}`,reason,idempotency:"task-lock"});
       }
       await client.query(`UPDATE app_image_jobs SET billing_settled=true WHERE id=$1`, [id]);
-      await client.query(`DELETE FROM app_gen_reservations WHERE job_id=$1`, [id]);
+      await clearTaskReservationTx(client,id);
       // Wallet/operation locks may outlast the lease after the first check.
       // Roll back the whole debit and reservation change, never just the flag.
       await assertLeaseTx(client, id, token);
@@ -222,10 +204,7 @@ export async function reserveReviewedImageJob(id: string) {
     if(row.payload.billingQuote){
       await billingService.reserveTx(client,billingOperation(row,"A+ 审核后预占"));
     }else if (row.metered && row.cost>0) {
-      const result = await client.query(`UPDATE app_users SET credits_used=credits_used+$2 WHERE email=$1 AND
-        (SELECT COALESCE(sum(remaining),0) FROM app_credit_batches WHERE email=$1 AND expires_at>now())-credits_used >= $2`, [row.email,row.cost]);
-      if (!result.rowCount) throw new Error("积分不足，请充值后重试");
-      await client.query(`INSERT INTO app_gen_reservations(job_id,email,cost) VALUES($1,$2,$3)`, [id,row.email,row.cost]);
+      await reserveLegacyTaskTx(client,{id,email:row.email,cost:row.cost,metered:true,principalPolicy:"unexpired-total",insufficientMessage:"积分不足，请充值后重试"});
     }
     await client.query(`UPDATE app_image_jobs SET reserved_cost=$2,
       snapshot=snapshot || '{"generationStarted":true,"reserved":true,"status":"pending","stage":"generating"}'::jsonb WHERE id=$1`, [id,row.payload.billingQuote?.reserveCredits??(row.metered?row.cost:0)]);
@@ -254,25 +233,6 @@ export async function reviewImageSource(id: string, index: number, redo: boolean
   finally {client.release();}
 }
 
-export async function releaseImageJob(id: string, token: string) {
-  await getPool().query(`UPDATE app_image_jobs SET lease_token=NULL,updated_at=now(),
-    lease_until=CASE WHEN snapshot->>'status'='pending' THEN now()+interval '10 seconds' ELSE NULL END
-    WHERE id=$1 AND lease_token=$2`, [id,token]);
-}
-
-export async function dueImageJobs() {
-  await ensureSchema();
-  const { rows } = await getPool().query(`WITH waiting AS (SELECT id,kind,updated_at,
-    row_number() OVER(PARTITION BY kind ORDER BY updated_at,id) AS lane_rank FROM app_image_jobs WHERE (lease_until IS NULL OR lease_until<now())
-    AND (snapshot->>'status'='pending' OR (kind='imagegen' AND snapshot->>'status'='running') OR snapshot->'sources' @> '[{"status":"redoing"}]'::jsonb)
-    ${excludeImportedHistory("app_image_jobs")}), budgets AS (SELECT * FROM unnest($1::text[],$2::int[]) v(kind,capacity)),
-    active AS (SELECT kind,count(*)::int n FROM app_image_jobs WHERE lease_token IS NOT NULL AND lease_until>now() GROUP BY kind)
-    SELECT w.id,w.kind FROM waiting w JOIN budgets b ON b.kind=w.kind LEFT JOIN active a ON a.kind=w.kind
-    WHERE w.lane_rank<=LEAST(32,GREATEST(0,b.capacity-COALESCE(a.n,0))) ORDER BY w.lane_rank,w.updated_at,w.id`,
-    [IMAGE_JOB_KINDS,IMAGE_JOB_KINDS.map(imageJobConcurrency)]);
-  return rows as {id:string;kind:ImageJobKind}[];
-}
-
 /** Keep an uncertain paid domain job visible to billing reconciliation. */
 export async function holdImageJobBilling(id:string, token:string|null) {
   if(!dbEnabled)return;
@@ -282,7 +242,7 @@ export async function holdImageJobBilling(id:string, token:string|null) {
     await tx.query("BEGIN");
     await tx.query("SELECT id FROM app_image_jobs WHERE id=$1 FOR UPDATE", [id]);
     await assertLeaseTx(tx, id, token);
-    await tx.query("UPDATE app_billing_operations SET state=CASE WHEN quote->'tariff'->'settlement'->>'unknown'='manual' THEN 'manual' ELSE 'hold' END,updated_at=now() WHERE id=$1 AND state='reserved'",[id]);
+    await holdTaskBillingTx(tx,id,"uncertain");
     await assertLeaseTx(tx, id, token);
     await tx.query("COMMIT");
   } catch(error) { await tx.query("ROLLBACK"); throw error; }
@@ -308,22 +268,8 @@ export async function failUndeliveredImageJob(id: string, token: string | null, 
     if (hasSupplierLedger && (await tx.query("SELECT 1 FROM app_supplier_calls WHERE operation_id=$1 AND delivered>0 LIMIT 1", [id])).rowCount) {
       await tx.query("COMMIT"); return false;
     }
-    let released = 0;
-    const billing = (await tx.query("SELECT * FROM app_billing_operations WHERE id=$1 FOR UPDATE", [id])).rows[0];
-    if (billing && ["settled", "released"].includes(billing.state)) { await tx.query("COMMIT"); return false; }
-    if (billing) {
-      released = Number((await tx.query("SELECT cost FROM app_gen_reservations WHERE job_id=$1 AND email=$2", [id, row.email])).rows[0]?.cost || 0);
-      await billingService.releaseTx(tx, billingOperation(row, "图片未交付，释放预占积分"));
-    } else {
-      await lockWallet(tx, row.email);
-      const reservation = (await tx.query("DELETE FROM app_gen_reservations WHERE job_id=$1 AND email=$2 RETURNING cost", [id, row.email])).rows[0];
-      released = Number(reservation?.cost || 0);
-      if (released) await tx.query("UPDATE app_users SET credits_used=GREATEST(credits_used-$2,0) WHERE email=$1", [row.email, released]);
-      await syncBalanceTx(tx, row.email);
-    }
-    const proof = { reasonCode, customerOutcome: "failed", supplierOutcome: "unknown", supplierCost: "pending", releasedCredits: released };
-    await tx.query("INSERT INTO app_billing_reconciliations(id,operation_id,email,actor,request_fingerprint,reason,proof,result,charge) VALUES($1,$2,$3,'system:image-job', $4,'图片未交付，释放预占积分',$5,$6::jsonb,0)",
-      [`image-release-${id}`, id, row.email, `image-release-${id}`, JSON.stringify(proof), JSON.stringify({ state: "unknown", ...proof })]);
+    const released=await releaseUndeliveredTaskTx(tx,{id,email:row.email,operation:billingOperation(row,"图片未交付，释放预占积分"),reasonCode});
+    if(released===null){await tx.query("COMMIT");return false;}
     await assertLeaseTx(tx, id, token);
     await tx.query(`UPDATE app_image_jobs SET snapshot=snapshot || $2::jsonb,billing_settled=true,reserved_cost=0,lease_token=NULL,lease_until=NULL,updated_at=now() WHERE id=$1`,
       [id, JSON.stringify({ status: "error", error: IMAGE_JOB_RELEASED_MESSAGE, failureCode: reasonCode, ...(diagnostic?{failureDiagnostic:readTaskDiagnostic(diagnostic)}:{}), customerBilling: "released", supplierCostStatus: "pending", creditsReleased: released, stoppedAt: Date.now() })]);

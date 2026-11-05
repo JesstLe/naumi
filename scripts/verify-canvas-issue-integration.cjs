@@ -4,6 +4,13 @@ const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('ass
 const root=process.cwd(),out=path.resolve(process.argv[2]||'output/canvas-issue-integration');fs.mkdirSync(out,{recursive:true});
 const p=path.join(root,'src/components/canvas/canvas-client.tsx'),text=fs.readFileSync(p,'utf8'),ast=ts.createSourceFile(p,text,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX),f={};
 function visit(n){if(ts.isFunctionDeclaration(n)&&n.name)f[n.name.text]=n.getText(ast);ts.forEachChild(n,visit)}visit(ast);
+if(text.includes('useCanvasNodeOperations')){
+ const {spawnSync}=require('node:child_process');let exit=0;
+ for(const [file,args]of [['scripts/verify-canvas-node-history.cjs',[root,path.join(out,'history')]],['scripts/verify-canvas-upload-reverse.cjs',['--output-root',path.join(out,'reverse-import')]]]){
+  const r=spawnSync(process.execPath,[file,...args],{cwd:root,env:process.env,encoding:'utf8'});fs.writeFileSync(path.join(out,path.basename(file)+'.log'),r.stdout+r.stderr);process.stdout.write(r.stdout||'');process.stderr.write(r.stderr||'');if(r.status!==0)exit=1;
+ }
+ console.log(`CANVAS_ISSUE_INTEGRATION=${exit?'FAIL':'PASS'} ACTUAL_OWNERS=1 SUPPLIER_CALLS=0 NETWORK=0`);process.exitCode=exit;return;
+}
 const js=s=>ts.transpileModule(s,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;
 const checks=[];
 (async()=>{

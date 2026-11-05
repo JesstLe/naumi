@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { authenticatedEmail } from "@/lib/request-auth";
-import { fillWorkflowAsset } from "@/lib/canvas-workflow-import";
-import { checkRateLimit } from "@/lib/rate-limit-http";
+import {fillWorkflowAsset,readWorkflowAssetFill} from "@/lib/canvas/workflow-asset-fill";
+import {withCreationRoute,withCreationReceiptRoute} from "@/lib/saas/creation-context";
+import {checkRateLimit} from "@/lib/rate-limit-http";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export async function POST(request: Request) {
+async function handlePost(request: Request) {
   const email = await authenticatedEmail(request);
   if (!email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
   const rateLimitResult = await checkRateLimit(`workflow-fill:${email}`,20,60000);
@@ -22,3 +23,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ok:true,...await fillWorkflowAsset(email,String(fd.get("id") || ""),String(fd.get("operationId") || ""),Buffer.from(await image.arrayBuffer()))});
   } catch (error) { return NextResponse.json({error:error instanceof Error && /图片|节点|补图|解锁|12MB/.test(error.message) ? error.message : "补图失败，请重试"},{status:409}); }
 }
+
+export function POST(request:Request){return withCreationRoute(request,()=>handlePost(request));}
+export function GET(request:Request){return withCreationReceiptRoute(request,async()=>{
+  const email=await authenticatedEmail(request);if(!email)return NextResponse.json({error:"请先登录"},{status:401});
+  const q=new URL(request.url).searchParams;
+  try{const result=await readWorkflowAssetFill(email,q.get("id")||"",q.get("operationId")||"");return result?NextResponse.json({ok:true,...result}):NextResponse.json({error:"尚无补图回执"},{status:404});}
+  catch{return NextResponse.json({error:"原补图结果待核实，请检查原节点"},{status:409});}
+});}

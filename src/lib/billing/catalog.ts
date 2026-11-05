@@ -1,6 +1,8 @@
+import {billingSnapshotFromRow as snapshot} from "./frozen-config";
 import "server-only";
+import type {ConfigSnapshot} from "./types";
 import type { Pool, PoolClient } from "pg";
-import { BillingError, type BillingConfig, type ConfigRuntime, type ConfigSnapshot } from "./types";
+import { BillingError, type BillingConfig, type ConfigRuntime } from "./types";
 import { validateBillingConfig } from "./rules/schema";
 import { ensureBillingSchema } from "./schema";
 import { fingerprint } from "./fingerprint";
@@ -16,12 +18,7 @@ type Row = {
     actor: string;
     request_fingerprint: string;
 };
-function snapshot(row: Row): ConfigSnapshot {
-    const version = Number(row.version);
-    if (!Number.isSafeInteger(version) || version < 1)
-        throw new BillingError("CONFIG_UNAVAILABLE", "计费配置版本无效", 503);
-    return { version, config: validateBillingConfig(row.config) };
-}
+
 function validateWrite(id: string, actor: string, reason: string, version: number) {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id) || !actor || actor.length > 254 || !reason.trim() || reason.length > 500 || !Number.isSafeInteger(version) || version < 1)
         throw new BillingError("INVALID_CONFIG", "配置发布参数无效", 400);
@@ -72,22 +69,28 @@ export function createConfigRuntime(deps: Deps): ConfigRuntime {
             return insert(tx, input.id, hash, input.actor, input.reason, config);
         });
     };
+    const initializeCurrent = async (tx: PoolClient) => {
+        const row = (await selectCurrent(tx)).rows[0];
+        if (row) return snapshot(row);
+        if ((await tx.query("SELECT 1 FROM app_settings WHERE k=$1", [POINTER])).rowCount)
+            throw new Error("Missing billing version");
+        const config = validateBillingConfig(await deps.initialize(tx));
+        return insert(tx, "bootstrap", fingerprint(config), "system", "现行规则初始化", config);
+    };
     const runtime: ConfigRuntime = {
-        async current() {
+        async current(tx) {
             try {
-                await ensure();
-                const found = (await selectCurrent(deps.pool)).rows[0];
+                // Task transitions have already ensured schema before BEGIN.
+                // Never check out a second connection while retaining their first.
+                if (!tx) await ensure();
+                const found = (await selectCurrent(tx ?? deps.pool)).rows[0];
                 if (found)
                     return snapshot(found);
-                return await locked(async (tx) => {
-                    const row = (await selectCurrent(tx)).rows[0];
-                    if (row)
-                        return snapshot(row);
-                    if ((await tx.query("SELECT 1 FROM app_settings WHERE k=$1", [POINTER])).rowCount)
-                        throw new Error("Missing billing version");
-                    const config = validateBillingConfig(await deps.initialize(tx));
-                    return insert(tx, "bootstrap", fingerprint(config), "system", "现行规则初始化", config);
-                });
+                if (tx) {
+                    await tx.query("SELECT pg_advisory_xact_lock(hashtext('naumi-billing-config'))");
+                    return await initializeCurrent(tx);
+                }
+                return await locked(initializeCurrent);
             }
             catch {
                 throw new BillingError("CONFIG_UNAVAILABLE", "计费配置暂时不可用，请稍后重试", 503);

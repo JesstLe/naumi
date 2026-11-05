@@ -1,0 +1,29 @@
+// Actual extracted/rendered node implementations; React Flow measurement/media
+// ports are stubbed identically in baseline/new SSR. Browser acceptance is separate.
+const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),assert=require('node:assert/strict'),ts=require('typescript'),{build}=require('esbuild'),React=require('react'),{renderToStaticMarkup}=require('react-dom/server');
+const root=path.resolve(process.env.SCENE_SOURCE_ROOT||'.'),out=path.resolve(process.env.SCENE_EVIDENCE||'output/refactor-r3c1-20261024'),baseline=process.argv.includes('--baseline');fs.mkdirSync(out,{recursive:true});
+async function main(){
+ const src=fs.readFileSync(path.join(root,'src/components/canvas/canvas-client.tsx'),'utf8'),ast=ts.createSourceFile('canvas.tsx',src,99,true,4),fns={};
+ (function walk(n){if(ts.isFunctionDeclaration(n)&&n.name)fns[n.name.text]=n.getText(ast);ts.forEachChild(n,walk);})(ast);
+ const entry=baseline?`import {createContext,useContext,useRef,useState,useEffect} from 'react';
+ import {Handle,NodeResizer,Position,getBezierPath} from '@xyflow/react';import {MapPin,Lock,Combine,ImagePlus,Loader2,Scissors,X,Minimize2,Maximize2,Upload,AlertTriangle,Image as ImageIcon} from 'lucide-react';
+ import Link from 'next/link';import {cn,formatDate} from './src/lib/utils';import {defaultNodeSettings,nodeTextStyle} from './src/lib/canvas/node-settings';import {useFeatureAccess} from './src/lib/feature-access/client';
+ import {CanvasImage} from './src/components/canvas/canvas-image';import {VideoPlayer,mediaDownloadHref} from './src/components/canvas/video/player';import {GenerationPlaceholder} from './src/components/canvas/generation-placeholder';
+ const PendContext=createContext(null),TextNodeContext=createContext(null),DEFAULT_CANVAS_SETTINGS=defaultNodeSettings();
+ const IMAGE_NODE_MIN_W=120,IMAGE_NODE_MIN_H=108,IMAGE_NODE_MAX_W=2400,IMAGE_NODE_MAX_H=2400,TEXT_NODE_MIN_W=220,TEXT_NODE_MIN_H=140,TEXT_NODE_MAX_W=1200,TEXT_NODE_MAX_H=1200,PORT_Y=136;
+ ${['TextCanvasNode','PendNode','CometEdge','VideoNodeSurface','ArtNode'].map(n=>fns[n]).join('\n')}
+ export {TextCanvasNode,PendNode,CometEdge,ArtNode};`:
+ ['artwork-node','text-node','pending-node','comet-edge'].map(file=>`export * from './src/components/canvas/nodes/${file}';`).join('\n');
+ const bundle=await build({stdin:{contents:entry,resolveDir:root,loader:'tsx'},bundle:true,platform:'node',format:'cjs',write:false,jsx:'automatic',external:['react','react/jsx-runtime'],plugins:[{name:'ports',setup(b){
+  b.onResolve({filter:/^@xyflow\/react$/},()=>({path:'flow',namespace:'fixture'}));b.onResolve({filter:/canvas-image$/},()=>({path:'image',namespace:'fixture'}));b.onResolve({filter:/video\/player$/},()=>({path:'video',namespace:'fixture'}));b.onResolve({filter:/feature-access\/client$/},()=>({path:'feature',namespace:'fixture'}));b.onResolve({filter:/i18n\/locale-context$/},()=>({path:'locale',namespace:'fixture'}));b.onResolve({filter:/^next\/link$/},()=>({path:'link',namespace:'fixture'}));b.onResolve({filter:/\.css$/},()=>({path:'css',namespace:'fixture'}));
+  b.onLoad({filter:/.*/,namespace:'fixture'},a=>({loader:'tsx',contents:({flow:`import React from 'react';export const Position={Left:'left',Right:'right'};export const getBezierPath=()=>['M0 0 L100 100'];export const Handle=({children,...p})=><i data-port={p.id} data-connectable={p.isConnectable} style={p.style}>{children}</i>;export const NodeResizer=p=><i data-resizer={p.isVisible} data-aspect={p.keepAspectRatio}/>;`,image:`import React from 'react';export const CanvasImage=({source,forceOriginal,hasDimensions,...p})=><img {...p} src={source} data-original={forceOriginal} data-dimensions={hasDimensions}/>;`,video:`import React from 'react';export const VideoPlayer=p=><video src={p.url} data-selected={p.selected} data-kind={p.kind}/>;export const mediaDownloadHref=(u,n)=>'/download/'+n;`,feature:'export const useFeatureAccess=()=>({can:()=>true});',locale:"export const useI18n=()=>({locale:'zh',t:k=>k});",link:"import React from 'react';export default p=><a {...p}/>;",css:'export default {};'})[a.path]}));
+ }}]});
+ const module={exports:{}},c=vm.createContext({module,exports:module.exports,require,console,process:{env:{}},Date:class extends Date{static now(){return 10000}},setTimeout,clearTimeout});vm.runInContext(bundle.outputFiles[0].text,c);const api=module.exports,rows=[];
+ const common={id:'a',__id:'a',title:'Title',label:'Title',image:'/fixture.png',width:320,height:240,intrinsicWidth:640,intrinsicHeight:480,content:'Saved body',prompt:'Prompt',status:'completed',lightCanvas:true,nodeKind:'text',sourceRefs:[{id:'ref',title:'Reference'}]};
+ for(const name of ['ArtNode','TextCanvasNode','PendNode','CometEdge'])for(const variant of ['normal','selected','locked','readonly','generating','failure','video','missing']){
+  const data={...common,settings:{locked:variant==='locked',order:0,text:{fontSize:12,fontWeight:'400',align:'left',lineHeight:1.65}},readOnly:variant==='readonly',...(variant==='generating'?{pending:true,generating:true,status:'generating',generationStage:'generating',generationStartedAt:1000}:{}),...(variant==='failure'?{pending:true,generationFailure:{kind:'sync',message:'原结果同步失败'}}:{}),...(variant==='video'?{videoUrl:'/fixture.mp4',category:'video'}:{}),...(variant==='missing'?{missingAsset:true,onFill(){}}:{})};
+  const html=renderToStaticMarkup(React.createElement(api[name],{id:'a',data,selected:variant==='selected'}));assert.ok(html.length>0);rows.push({name,variant,html});
+ }
+ fs.writeFileSync(path.join(out,baseline?'RENDER_BASELINE.json':'RENDER_MODIFIED.json'),JSON.stringify(rows,null,2));console.log(`CANVAS_NODE_RENDERERS=PASS mode=${baseline?'BASELINE':'MODIFIED'} cases=${rows.length} ACTUAL_COMPONENTS=4 REACT_SSR=1 FLOW_MEDIA=FIXTURE SUPPLIER=0`);
+}
+main().catch(e=>{console.error(e);process.exitCode=1});

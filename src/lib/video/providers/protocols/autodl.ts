@@ -1,4 +1,5 @@
-import {createdResult,field,mediaUrl,polled,rejectAdvanced,string,unsupportedWire,type VideoWireContext,type VideoWireRequest,type VideoWireCodec} from "../wire";
+import {createdResult,field,mediaUrl,polled,rejectAdvanced,string,unsupportedWire} from "../wire-helpers";
+import type {VideoWireContext,VideoWireRequest,VideoWireCodec} from "../wire-contracts";
 import {compileWorkflowInputs} from "./workflow-inputs";
 import {TransientPollError} from "../../types";
 // IC 68b37db service/autodl.go: manifest stores the inspected InputRules mapping without later silent clamping.

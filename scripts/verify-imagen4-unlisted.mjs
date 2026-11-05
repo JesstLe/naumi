@@ -36,12 +36,17 @@ const mocks = {
   "@/lib/request-auth": "export async function authenticatedEmail(){return null}",
   "@/lib/commerce": "export const betaPreviewEnabled=false",
   "@/lib/model-config/requests": "export async function modelConfigurationEnabled(){return globalThis.__imagenFixture.managed}",
-  "@/lib/model-config/server": "export async function getModelRuntime(){return {publicCatalog:async()=>structuredClone(globalThis.__imagenFixture.catalog)}};export async function getModelAdministration(){return {repo:{byVersion:async()=>({config:{business:{},bindings:{}}})}}}",
+  "@/lib/model-config/server": "export async function getModelRuntime(){return {current:async()=>({version:132,config:{}}),publicCatalog:async()=>structuredClone(globalThis.__imagenFixture.catalog)}};export async function getModelAdministration(){return {repo:{byVersion:async()=>({config:{business:{},bindings:{}}})}}}",
   "@/lib/billing/rules/registry": "export function isFeatureId(f){return ['canvas.image','image.generate','text.generate','tool.cutout'].includes(f)}",
   "@/lib/model-config/business": "export const FEATURE_BINDINGS={'canvas.image':'image.edit','image.generate':'image.generate','text.generate':'text.generate','tool.cutout':'image.cutout'}",
   "@/lib/model-config/bindings": "export const MODEL_BINDINGS={'image.edit':{modality:'image'},'image.generate':{modality:'image'},'image.cutout':{modality:'image'},'text.generate':{modality:'text'}}",
   "@/lib/model-config/types": "export class ModelConfigError extends Error {}",
 };
+mocks["@/platform/db/pool"] = "export const dbEnabled=false";
+mocks["@/lib/billing/runtime"] = "export async function creditMeteringEnabled(){return true}";
+mocks["@/lib/accounts/mode"] = mocks["@/lib/native-auth"];
+mocks["@/lib/model-config/availability"] = mocks["@/lib/model-config/requests"];
+mocks["@/lib/model-config/feature-model-policy"] = mocks["@/lib/model-config/business"];
 async function bundle(entry, name, mocked = false) {
   const file = join(temp, name + ".cjs");
   await build({ entryPoints: [join(source, entry)], bundle: true, platform: "node", format: "cjs", outfile: file,

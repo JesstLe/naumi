@@ -1,5 +1,5 @@
 import type {CanvasTimelineNode} from "../canvas/timeline-node-schema";
-import type {VideoInputChoice} from "../video/client-settings";
+import type {VideoInputChoice} from "../video/input-choice";
 import type {OrderedInput} from "../video/references";
 import {timelineInputIdentity,parseTimelineInputIdentity} from "./project";
 

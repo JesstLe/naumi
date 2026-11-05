@@ -18,7 +18,7 @@ async function main() {
   const bytes = await zip.generateAsync({type: "uint8array", compression: "DEFLATE"});
   const dir = process.env.PACKAGING_EVIDENCE_DIR || "output/brand-packaging-live";
   await mkdir(dir, {recursive: true}); await writeFile(dir + "/brand-packaging-strategy.zip", bytes);
-  const form = new FormData(); form.append("file", new File([bytes], "brand-packaging-strategy.zip", {type: "application/zip"}));
+  const form = new FormData(); form.append("file", new File([Uint8Array.from(bytes)], "brand-packaging-strategy.zip", {type: "application/zip"}));
   const imported = await (await import("../src/app/api/image-skills/import/route")).POST(new Request("http://127.0.0.1:3616/api/image-skills/import", {method: "POST", headers: {cookie}, body: form}));
   assert.ok([200, 201].includes(imported.status), await imported.clone().text());
   const skill = (await imported.json()).skill;

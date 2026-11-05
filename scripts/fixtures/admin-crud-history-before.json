@@ -1,0 +1,7 @@
+{
+  "commit": "cb1d2f4932e402a75511485173027ed049ed342e",
+  "path": "src/lib/bi/user-management.ts",
+  "sha256": "d36b129d7a64420ba2b3c657196caabffee314c754dc88d25cfaf354794d8c8a",
+  "bytes": 9325,
+  "purpose": "Exact original source for the native alias regression;not runtime application code"
+}

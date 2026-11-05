@@ -1,7 +1,7 @@
 import 'server-only';
 import { z } from 'zod';
 import { timingSafeEqual } from 'node:crypto';
-import {getPool} from '@/lib/db';
+import {getPool} from "@/platform/db/pool";
 import {rateLimit} from '@/lib/rate-limit';
 import {clientIp} from '@/lib/ip';
 import {ensureFleetSchema,limitedJson,FleetError} from './server';

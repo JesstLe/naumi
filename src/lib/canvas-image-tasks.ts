@@ -2,47 +2,37 @@ import { withBackgroundActivity, bindBackgroundClaim } from "@/lib/release-runti
 import { runPostprocess } from "./media-postprocess";
 import { resolveConfiguredImageQuality } from "@/lib/model-config/image-quality";
 import "server-only";
-import {withFrozenCreation,frozenCreationScope,currentCreationContext} from './saas/creation-context';
+import {withFrozenCreation,frozenCreationScope,currentCreationContext} from "@/lib/saas/creation-scope";
 import {creationTransaction,addCreationAssetTx} from './saas/creation-writer';
 import { currentModelExecution, currentExecutionBundle, runLegacyModelExecution, type ExecutionBundle } from "@/lib/model-config/context";
 import { withFrozenExecutionBundle } from "@/lib/model-config/execution";
-import { withModelRequest, modelConfigurationEnabled } from "@/lib/model-config/requests";
-import {quoteForActor} from "@/lib/billing/server";
-import {assertQuotedVersion,requestQuoteConfirmation} from "@/lib/billing/request";
+import {withModelOperation} from "@/lib/model-config/requests";
+import {modelConfigurationEnabled} from "@/lib/model-config/availability";
+import {quoteForActor} from "@/lib/billing/quotation";
 import { resolveImageQuality, type ResolvedImageQuality } from "@/lib/image-quality";
 import { imageQualityCost, auditSettledImage } from "@/lib/image-quality-request";
 
 import { createHash } from "node:crypto";
 import sharp from "sharp";
 
-import {
-  addArtworks,
-  beginCanvasImageTaskSubmission,
-  saveCanvasImageTaskProviderResult,
-  holdCanvasImageTask,
-  claimNextCanvasImageTask,
-  completeCanvasImageTask,
-  createCanvasImageTaskWithReservation,
-  dbEnabled,
-  failCanvasImageTask,
-  getCanvasImageTask,
-  getCanvasImageTaskChargedCredits,
-  listArtworksByIds,
-  listCanvasImageTasks,
-  retryCanvasImageTask,
-  updateCanvasImageTaskProgress,
-  type CanvasImageTaskRow,
-} from "@/lib/db";
+import {beginCanvasImageTaskSubmission, saveCanvasImageTaskProviderResult, holdCanvasImageTask, claimNextCanvasImageTask, getCanvasImageTask, listCanvasImageTasks, retryCanvasImageTask, updateCanvasImageTaskProgress} from "@/lib/canvas/image-task-repository";
+import {completeCanvasImageTask, createCanvasImageTaskWithReservation, failCanvasImageTask} from "@/lib/canvas/image-task-transitions";
+import {getCanvasImageTaskChargedCredits} from "@/lib/billing/cost-audit-repository";
+import {type CanvasImageTaskRow} from "@/lib/canvas/image-task-records";
+import {listArtworksByIds} from "@/lib/artworks/repository";
+import {addArtworks} from "@/lib/artworks/writer";
 import { supabaseEnabled } from "@/lib/auth-mode";
-import { creditsMeteringOn, multiUserEnabled } from "@/lib/native-auth";
+import {creditsMeteringOn} from "@/lib/billing/metering";
+import {multiUserEnabled} from "@/lib/accounts/mode";
 import { readCanvasImage } from "@/lib/canvas-image-input";
 import { editImage } from "@/lib/image-edit";
 import {canvasEditedImage} from "@/lib/canvas/edited-image-output";
 import {canvasSourceFrameRatio} from "@/lib/canvas/generation-parameters";
-import { storageEnabled, uploadImage } from "@/lib/storage";
+import { storageEnabled } from "@/lib/object-storage/runtime";
+import { uploadImage } from "@/lib/media-upload";
 import { safeError } from "@/lib/api-error";
 import { ImageOperationPending } from "@/lib/image-gateway";
-import { getPool } from "@/lib/db";
+import {dbEnabled,getPool} from "@/platform/db/pool";
 import { recoverableAPIMartImageOperation } from "@/lib/model-config/channel-availability";
 
 type Box = { x: number; y: number; width: number; height: number };
@@ -104,19 +94,22 @@ function editSize(width: number, height: number) {
   return ratio > 1.2 ? "1536x1024" as const : ratio < 0.83 ? "1024x1536" as const : "1024x1024" as const;
 }
 
-export async function enqueueTextEditTask(email: string, raw: Partial<TextEditTaskInput>,request?:Request): Promise<CanvasImageTaskRow> {
+/** The caller may prepare the owned operation using its ingress adapter. No HTTP
+ * object enters the task use case; headless callers use the existing typed model API. */
+export type TextEditModelPreparation=<T>(body:Record<string,unknown>,run:()=>Promise<T>)=>Promise<T>;
+export async function enqueueTextEditTask(email: string, raw: Partial<TextEditTaskInput>,prepareModel?:TextEditModelPreparation): Promise<CanvasImageTaskRow> {
   if (!dbEnabled) throw new Error("后台图片任务需要数据库支持");
   const input = normalizedInput(raw);
   validateInput(input);
   const artwork = (await listArtworksByIds(email, [input.artworkId]))[0];
   if (!artwork) throw new Error("图片不存在或无权访问");
   if (!currentModelExecution("image") && await modelConfigurationEnabled()) {
-    const effective = new Request("http://localhost/api/canvas/image-tasks", { method: "POST", headers: { ...(request ? Object.fromEntries(request.headers.entries()) : {}), "content-type": "application/json" }, body: JSON.stringify({ ...raw, artworkId: artwork.id, resolution: artwork.resolution || "1K",ratio:canvasSourceFrameRatio(artwork) }) });
-    return withModelRequest(effective, () => enqueueTextEditTask(email, raw, request));
+    const body={...raw,artworkId:artwork.id,resolution:artwork.resolution||"1K",ratio:canvasSourceFrameRatio(artwork)};
+    const run=()=>enqueueTextEditTask(email,raw,prepareModel);
+    return prepareModel?prepareModel(body,run):withModelOperation({path:"/api/canvas/image-tasks",body,references:1},run);
   }
   const quality = resolveConfiguredImageQuality(input.quality);
   const billingQuote=await quoteForActor(email,{feature:"canvas.image",quantity:1,quality:quality.requested||"medium",resolution:artwork.resolution||"1K",ratio:canvasSourceFrameRatio(artwork)});
-  if(request)assertQuotedVersion(requestQuoteConfirmation(request,raw as {billingVersion?:unknown;billingCredits?:unknown}),billingQuote);
   const cost = billingQuote.requestedCredits;
   const operationId = String(input.operationId || "").trim();
   const id = operationId
@@ -132,6 +125,7 @@ export async function enqueueTextEditTask(email: string, raw: Partial<TextEditTa
     cost,
     metered,
   });
+  await deferApplicationTask();
   return task;
 }
 
@@ -268,6 +262,7 @@ export async function processCanvasImageTask(task: CanvasImageTaskRow): Promise<
 }
 
 export async function recoverCanvasImageTasks(limit = 2): Promise<number> {
+  if(await deferApplicationTask())return 0;
   let processed = 0;
   for (let index = 0; index < Math.min(Math.max(limit, 1), 5); index += 1) {
     const claimed = await withBackgroundActivity("canvas-image", `claim:${index}`, "claim", async () => {
@@ -291,4 +286,5 @@ export function publicCanvasImageTask(task: CanvasImageTaskRow) {
   return { quality: task.parameters.qualityAudit, id, kind, sourceArtworkId, status, progress, cost, resultArtworkId, error, attempts, createdAt, completedAt,
     parameters: normalizedInput(task.parameters as Partial<TextEditTaskInput>) };
 }
-import { withBiModelContext } from "@/lib/bi/model-observer";
+import {withBiModelContext} from "@/lib/bi/context";
+import {deferApplicationTask} from "./application/task-execution";

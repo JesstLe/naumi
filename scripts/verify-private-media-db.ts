@@ -16,7 +16,7 @@ async function main(){
   if(url.hostname!=='fixture.r2.cloudflarestorage.com')throw new Error('Unexpected network request');
   requests++;const key=decodeURIComponent(url.pathname.slice('/fixture/'.length));
   if(request.method==='PUT'){objects.set(key,Buffer.from(await request.arrayBuffer()));return new Response(null,{status:200});}
-  const bytes=objects.get(key);return bytes?new Response(bytes,{headers:{'content-length':String(bytes.length),'content-type':'image/png'}}):new Response(null,{status:404});
+  const bytes=objects.get(key);return bytes?new Response(Uint8Array.from(bytes),{headers:{'content-length':String(bytes.length),'content-type':'image/png'}}):new Response(null,{status:404});
  };
  const db=await import('../src/lib/db'),assets=await import('../src/lib/media-assets'),uploads=await import('../src/app/api/media/uploads/route'),media=await import('../src/app/media/[...path]/route'),zip=await import('../src/app/api/suite/download/route');
  const {signUserSession}=await import('../src/lib/native-auth');

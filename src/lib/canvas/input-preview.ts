@@ -1,6 +1,6 @@
-import type {OrderedInput} from "../video/references";
-import type {VideoInputChoice} from "../video/client-settings";
 import {previewTimelineInputs} from "../timeline/canvas";
+import type {OrderedInput} from "../video/references";
+import type {VideoInputChoice} from "../video/input-choice";
 import {previewAudioInputs} from "../audio/canvas";
 import {previewVisualInputs} from "./visual-references";
 

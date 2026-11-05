@@ -1,6 +1,9 @@
 import "server-only";
 import type {PoolClient} from "pg";
-import {ensureSchema,getPool,getVideoTask,type VideoTaskRow} from "../db";
+import {ensureSchema} from "@/lib/persistence/schema";
+import {getPool} from "@/platform/db/pool";
+import {getVideoTask} from "@/lib/video/task-repository";
+import {type VideoTaskRow} from "@/lib/video/task-types";
 import {settleTaskBillingTx} from "../billing/task-operation";
 import {ModelConfigError} from "../model-config/types";
 import {getVideoProvider} from "./providers/adapter";

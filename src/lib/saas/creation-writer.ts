@@ -1,15 +1,17 @@
 import 'server-only';
 import {createHash,randomUUID} from 'node:crypto';
 import type {PoolClient} from 'pg';
-import {currentCreationContext,withFrozenCreation,bindActualCreationProject,creationId,type CreationContext} from './creation-context';
+import {currentCreationContext,withFrozenCreation,creationId,type CreationContext} from "@/lib/saas/creation-scope";
+import {bindActualCreationProject} from "@/lib/saas/creation-access";
 import {creationStatus} from './creation-contracts';
 import {currentModelExecution,currentExecutionBundle} from '@/lib/model-config/context';
-import {getPool,dbEnabled} from '@/lib/db';
+import {getPool,dbEnabled} from "@/platform/db/pool";
+import {withTransaction} from "@/platform/db/transaction";
 import {ensureCreationSchema} from './creation-schema';
 import type {CreationStatus} from './creation-contracts';
-import {uploadImage} from '@/lib/storage';
+import { uploadImage } from "@/lib/media-upload";
 import {currentObservedCallId} from '@/lib/bi/call-scope';
-import {TeamError} from '@/lib/teams/server';
+import { TeamError } from "@/lib/teams/errors";
 const obj=(v:unknown):Record<string,any>=>v&&typeof v==='object'&&!Array.isArray(v)?v as Record<string,any>:{};
 const key=(...values:string[])=>createHash('sha256').update(values.join('\0')).digest('hex');
 export async function creationEventTx(tx:PoolClient,id:string,eventKey:string,type:string,status:string,summary:string){
@@ -107,7 +109,7 @@ export async function captureCreationMediaTx(tx:PoolClient,id:string,email:strin
  }
 }
 export async function creationTransaction<T>(run:(tx:PoolClient)=>Promise<T>) {
- await ensureCreationSchema();const tx=await getPool().connect();try{await tx.query('BEGIN');const result=await run(tx);await tx.query('COMMIT');return result;}catch(e){await tx.query('ROLLBACK');throw e;}finally{tx.release();}
+ await ensureCreationSchema();return withTransaction(getPool(),run);
 }
 export async function startCreation(kind:string,sourceId:string,email:string,payload:unknown={},frozen?:CreationContext) {
  if(!dbEnabled||!(frozen||currentCreationContext()))return null;
@@ -165,7 +167,10 @@ export async function recordAgentToolEvidence(id:string|undefined,email:string,e
 }
 export async function withCreationOperation<T>(kind:string,sourceId:string,email:string,payload:unknown,run:()=>Promise<T>,outputs:(result:T)=>{artworkIds?:string[];text?:string} = ()=>({})) {
  const scope=currentCreationContext();if(!scope||!dbEnabled)return run();
- const id=await startCreation(kind,sourceId,email,payload);
+ // The existing claim owns concurrent acceptance of one source identity. Each
+ // caller still runs the domain's original receipt-aware operation; a unique
+ // creation-record race must not reject an otherwise idempotent import.
+ const {id}=await claimCreation(kind,sourceId,email,payload);
  return withFrozenCreation({...scope,creationId:id||scope.creationId},async()=>{
   try{const result=await run();await finishCreation(id||undefined,email,'succeeded',outputs(result));return result;}
   catch(error){await finishCreation(id||undefined,email,'needs_review',{summary:'执行未完成，请按原业务来源核查，不自动重放'});throw error;}
@@ -259,6 +264,13 @@ export async function recordImageStateTx(tx:PoolClient,jobId:string,snapshot:unk
   }}
  }
  return rows.length>0;
+}
+
+/** Preserve task outcome evidence or its pending marker within the caller transaction. */
+export async function durableCreationOutcomeTx(client:PoolClient,kind:'video'|'canvas-image',id:string,email:string,status:import('@/lib/saas/creation-contracts').CreationStatus,artworkIds:string[]=[]){
+  if(!(await client.query("SELECT to_regclass('app_creation_records') AS name")).rows[0].name)return;
+  const table=kind==='video'?'app_video_tasks':'app_canvas_image_tasks';
+  await creationEvidenceTx(client,()=>recordSourceOutcomeTx(client,kind,id,email,status,{artworkIds}),()=>client.query(`UPDATE ${table} SET parameters=parameters||'{"creationEvidencePending":true}'::jsonb WHERE id=$1 AND email=$2`,[id,email]));
 }
 
 /** Admin-only execution facts; no prompt, credential, media URL or raw supplier body. */

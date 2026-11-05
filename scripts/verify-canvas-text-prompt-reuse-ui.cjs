@@ -138,7 +138,10 @@ async function createScenario(browser, name, { emptyText = false } = {}) {
           Object.assign(root, { image: version.image, prompt: version.prompt, canvasImageVersionId: version.id, canvasImageRevision: root.canvasImageRevision + 1 });
         } else if (op.type === 'position' && saved(op.id)) Object.assign(saved(op.id), { canvasX: op.x, canvasY: op.y });
       }
-      return json(route, { ok: true, persisted: true });
+      // The refactored history route returns canonical same-transaction receipts.
+      // Mirror saveCanvasHistory rather than leaving the real document owner stale.
+      const artworkIds = [...new Set((payload.operations || []).filter(op => op.type === 'image-version').map(op => op.id))];
+      return json(route, { ok: true, persisted: true, artworkIds, artworkNodes: artworkIds.map(id => ({visible:true,node:clone(arts.find(art=>art.id===id))})) });
     }
     if (!['GET', 'HEAD'].includes(method)) { state.forbidden.push({ method, path: p, payload }); return json(route, { error: 'unhandled mutation sentinel', code: 'FIXTURE_UNHANDLED_MUTATION' }, 409); }
     state.fallbackReads.push({ method, path: p });
@@ -228,8 +231,8 @@ async function notebook(browser) {
     await expect(s.node(textId).getByRole('alert')).toContainText('润色结果未完整返回'); await expect(s.body()).toHaveValue(firstBody);
     assert.equal(s.saved(textId).prompt, oldInstruction, 'default polish does not replace the reusable custom writing instruction');
     check('EXPLICIT_BODY_POLISH_USES_CURRENT_BODY_NOT_OLD_INSTRUCTION_FAILURE_KEEPS_TEXT');
-    s.state.textMode = 'success'; await s.textDock().getByRole('button', { name: '润色文字', exact: true }).click();
-    await expect.poll(() => s.state.textGenerations.length).toBe(2); await expect.poll(() => s.saved(textId).content).toBe(polished);
+    s.state.textMode = 'success'; await s.textDock().getByRole('button', { name: '继续原任务', exact: true }).click();
+    await expect.poll(() => s.state.textGenerations.length).toBe(2); assert.deepEqual(s.state.textGenerations[1],request,'retry keeps the original frozen text request'); await expect.poll(() => s.saved(textId).content).toBe(polished);
     await expect(s.body()).toHaveValue(polished); await s.screenshot('explicit-polish-result');
     await s.node(textId).getByTestId('text-node-title').click({ position: { x: 45, y: 14 } }); await s.page.keyboard.press('Control+z');
     await expect.poll(() => s.saved(textId).content).toBe(firstBody); await expect(s.body()).toHaveValue(firstBody);
@@ -278,6 +281,7 @@ async function existingImage(browser) {
     await s.screenshot('linked-body-result-and-reusable-draft'); await s.open();
     await expect(s.editor()).toHaveText('源图持续使用的草稿 P2'); check('SOURCE_DRAFT_SURVIVES_FULL_PAGE_RELOAD');
     await s.selectVersion('initial'); await expect(s.editor()).toHaveText('源图持续使用的草稿 P2'); assert.equal(s.root.prompt, '');
+    await expect(s.page.locator('[data-tool="undo"]')).toBeEnabled();
     await s.node(rootId).click({ position: { x: 65, y: 65 } }); await s.page.keyboard.press('Control+z');
     await expect.poll(() => s.root.canvasImageVersionId).toBe('reuse-result-1'); await expect(s.editor()).toHaveText('源图持续使用的草稿 P2');
     // A boundary fixture updates root before the real response/mergeWorks

@@ -3,11 +3,11 @@ import { NextResponse } from 'next/server';
 import { bearer, emailFromToken } from '@/lib/supabase-admin';
 import { activeNativeUserEmail } from '@/lib/native-auth';
 import { supabaseEnabled } from '@/lib/auth-mode';
-import { dbEnabled } from '@/lib/db';
-import { checkRateLimit } from "@/lib/rate-limit-http";
+import { dbEnabled } from "@/platform/db/pool";
+import {checkRateLimit} from '@/lib/rate-limit-http';
 import { clientIp } from '@/lib/ip';
 import { teamJson } from '@/lib/teams/access';
-import { userFeaturePolicy } from '@/lib/feature-access/server';
+import {userFeaturePolicy} from "@/lib/feature-access/repository";
 import { allows } from '@/lib/feature-access/catalog';
 export async function enterpriseUserEmail(request:Request){return await emailFromToken(bearer(request))||(!supabaseEnabled?await activeNativeUserEmail(request):null);}
 export async function enterpriseAuthorize(request:Request) {

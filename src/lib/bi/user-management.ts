@@ -1,11 +1,12 @@
 import "server-only";
 import { createHmac } from "node:crypto";
 import { z } from "zod";
-import { getPool } from "@/lib/db";
+import { getPool } from "@/platform/db/pool";
 import { hashPassword } from "@/lib/pw";
 import { settingsSecret } from "@/lib/settings-secret";
-import { ensureBiSchema } from "./repository";
-import { getBillingRuntime } from "@/lib/billing/server";
+import {ensureBiSchema} from "@/lib/bi/schema";
+
+import {getBillingRuntime} from "@/lib/billing/runtime";
 import { expiryFrom } from "@/lib/billing/rules/schema";
 import { BillingError } from "@/lib/billing/types";
 import {accountIdentifierSchema} from '@/lib/account-identity-schema';

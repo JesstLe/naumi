@@ -12,15 +12,15 @@ const { Pool } = require('pg');
 const args = process.argv.slice(2);
 const arg = (key, fallback) => args.includes(key) ? args[args.indexOf(key) + 1] : fallback;
 const root = path.resolve(arg('--source-root', path.join(__dirname, '..')));
-const out = path.resolve(arg('--output-root', 'output/canvas-text-node-ux-pg'));
-const connectionString = process.env.CANVAS_TEXT_FIXTURE_DATABASE_URL;
+const out = path.resolve(arg('--output-root', process.env.CANVAS_TEXT_NODE_UX_PG_EVIDENCE || 'output/canvas-text-node-ux-pg'));
+const connectionString = process.env.CANVAS_TEXT_FIXTURE_DATABASE_URL || (process.env.NAUMI_VERIFY_ISOLATED_DB === "1" ? process.env.DATABASE_URL : undefined);
 assert.ok(connectionString, 'CANVAS_TEXT_FIXTURE_DATABASE_URL is required; .env is never read');
 const url = new URL(connectionString);
 assert.ok(['postgres:', 'postgresql:'].includes(url.protocol));
 assert.equal(url.hostname, '127.0.0.1');
 assert.ok(Number(url.port) > 0);
 assert.equal(url.username, 'fixture');
-assert.equal(url.pathname, '/naumi_text_node_ux_fixture');
+assert.ok(url.pathname === '/naumi_text_node_ux_fixture' || process.env.NAUMI_VERIFY_ISOLATED_DB === '1' && url.pathname === '/refactor_fixture');
 const schema = 'text_node_ux_' + crypto.randomUUID().replaceAll('-', '');
 const pool = new Pool({ connectionString, max: 3, options: '-c search_path=' + schema, connectionTimeoutMillis: 5000 });
 const checks = [], loaded = [], lines = [];
@@ -43,10 +43,19 @@ function functions(text, names) {
   for (const name of names) assert.ok(found.has(name), 'Real function exists: ' + name);
   return names.map(name => found.get(name)).join('\n');
 }
-const db = source('src/lib/db.ts'), history = source('src/lib/canvas-history.ts');
-const context = { exports: {}, ensureSchema: async () => {}, getPool: () => pool, currentCreationContext: () => null, createHash: crypto.createHash, Map, Set };
+const db = source('src/lib/canvas/text-node-repository.ts'), history = source('src/lib/canvas-history.ts');
+const lifecycle = source('src/lib/canvas/native-node-lifecycle.ts');
+// Pure concurrency/link/native selectors are the real modules. Only unrelated
+// application schema startup and empty artwork receipt I/O are fixture ports.
+for (const file of ['field-write.ts','text-write.ts','text-node-links.ts','native-node-records.ts']) source('src/lib/canvas/' + file);
+const pure = require('esbuild').buildSync({ stdin: { contents: "export * from './src/lib/canvas/text-write';export * from './src/lib/canvas/text-node-links';export * from './src/lib/canvas/native-node-records';", resolveDir: root, loader: 'ts' }, bundle: true, platform: 'node', format: 'cjs', write: false }).outputFiles[0].text;
+const pureModule = { exports: {} };
+vm.runInNewContext(pure, { module: pureModule, exports: pureModule.exports });
+const context = { exports: {}, ...pureModule.exports, ensureSchema: async () => {}, getPool: () => pool, currentCreationContext: () => null, createHash: crypto.createHash, Map, Set,
+  readCanvasArtworkReceiptTx: async (_tx, _actor, ids) => { assert.equal(ids.length, 0, 'Text-only fixture must not suppress artwork reads'); return []; },
+};
 vm.createContext(context);
-const code = functions(db, ['mapCanvasTextNode', 'listCanvasTextNodes', 'upsertCanvasTextNode']) + '\n' + functions(history, ['saveCanvasHistory']);
+const code = functions(db, ['mapCanvasTextNode', 'listCanvasTextNodes', 'upsertCanvasTextNode']) + '\n' + functions(lifecycle, ['nativeHistoryIds','ensureNativeNodeSchemas','readNativeNodeReceiptsTx']) + '\n' + functions(history, ['saveCanvasHistory']);
 const compiled = ts.transpileModule(code, { reportDiagnostics: true, compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } });
 assert.equal(compiled.diagnostics.filter(item => item.category === ts.DiagnosticCategory.Error).length, 0);
 vm.runInContext(compiled.outputText, context);
@@ -161,6 +170,8 @@ async function check(name, run) { await run(); checks.push(name); emit('CHECK=' 
   } catch (error) {
     result = 'FAIL'; failure = error.stack; console.error(error); process.exitCode = 1;
   } finally {
+    try { await pool.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`); }
+    catch (cleanup) { result = 'FAIL'; failure = (failure || '') + '\nSCHEMA_CLEANUP=' + cleanup.stack; process.exitCode = 1; }
     await pool.end();
     const exit = result === 'PASS' ? 0 : 1;
     emit(`CANVAS_TEXT_NODE_UX_PG=${result} CHECKS=${checks.length} REAL_SQL=1 SUPPLIER_CALLS=0 EXIT=${exit}`);

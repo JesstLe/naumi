@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { directorProjectSchema } from "../director/project";
-import { videoNodeIdSchema, videoProjectKeySchema } from "./video-node-schema";
+import {videoNodeIdSchema} from "./video-node-schema";
+import {videoProjectKeySchema} from "./project-key";
 
 const position = z.number().finite().min(-1e7).max(1e7);
 export const directorNodeWriteSchema = z.strictObject({

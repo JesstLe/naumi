@@ -1,7 +1,7 @@
 'use strict';
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),assert=require('node:assert/strict'),esbuild=require('esbuild'),ts=require('typescript'),{performance}=require('node:perf_hooks');
 const root=path.resolve(__dirname,'..'),args=process.argv.slice(2),option=(key,fallback)=>args.includes(key)?args[args.indexOf(key)+1]:fallback;
-const before=path.resolve(option('--baseline-root',root)),out=path.resolve(option('--output','output/placement-index'));fs.mkdirSync(out,{recursive:true});
+const before=path.resolve(option('--baseline-root',path.join(root,'scripts/fixtures/placement-baseline'))),out=path.resolve(option('--output',process.env.CANVAS_PLACEMENT_EVIDENCE||'output/placement-index'));fs.mkdirSync(out,{recursive:true});
 const fn=(file,name)=>{const source=fs.readFileSync(file,'utf8'),ast=ts.createSourceFile(file,source,ts.ScriptTarget.Latest,true);let found;function visit(n){if(ts.isFunctionDeclaration(n)&&n.name?.text===name)found=n.getText(ast);ts.forEachChild(n,visit)}visit(ast);assert.ok(found,name);return found;};
 function execute(code,locals={}){const exports={};vm.runInNewContext(ts.transpileModule(code,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText,{exports,Math,Number,Set,Map,...locals});return exports;}
 const oldBundle=esbuild.buildSync({stdin:{contents:"export * from './src/lib/canvas/stable-placement';export {placeGenerationPreview} from './src/lib/canvas/generation-feedback';",resolveDir:before,loader:'ts'},bundle:true,write:false,platform:'node',format:'cjs',nodePaths:[path.join(root,'node_modules')]}).outputFiles[0].text;

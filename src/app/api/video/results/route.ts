@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { deleteVideoResult, listVideoResults } from "@/lib/db";
+import {deleteVideoResult, listVideoResults} from "@/lib/video/task-repository";
 import { authenticatedEmail } from "@/lib/request-auth";
 
 export const runtime = "nodejs";

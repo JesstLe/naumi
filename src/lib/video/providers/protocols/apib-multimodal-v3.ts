@@ -1,4 +1,4 @@
-import {type VideoWireContext,type VideoWireRequest,type VideoWireCodec} from "../wire";
+import {type VideoWireContext,type VideoWireRequest,type VideoWireCodec} from "../wire-contracts";
 import {buildAPIMartPoll,decodeAPIMartCreated,decodeAPIMartPoll} from "./apimart";
 import {multimodalV3Input,ordinaryReferenceImages,rejectMultimodal,requireVisualReference,requireReferenceFormats,mediaMinDuration,validateDimensions,mappedReferencePrompt} from "./multimodal-v3-input";
 

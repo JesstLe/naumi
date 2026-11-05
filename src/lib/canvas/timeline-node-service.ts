@@ -1,8 +1,8 @@
 import "server-only";
-import {getPool} from "../db";
-import {TeamError} from "../teams/server";
+import {getPool} from "@/platform/db/pool";
+import {TeamError} from "../teams/errors";
 import {ModelConfigError} from "../model-config/types";
-import {bindActualCreationProject,assertCreationProjectInput,assertCurrentCreationFeature} from "../saas/creation-context";
+import {bindActualCreationProject,assertCreationProjectInput,assertCurrentCreationFeature,filterCreationProjects} from "../saas/creation-access";
 import {createMediaJob,listMediaJobs,readMediaJobEvidence} from "../video/media-jobs";
 import {timelineMediaRequest} from "../timeline/render";
 import {authorizeCanvasProject,mayCreateCanvasRoot} from "./project-access";
@@ -15,9 +15,7 @@ export async function getTimelineNode(actor:string,id:string){
   try{await assertCreationProjectInput(actor,node.projectKey,undefined,true);}catch(error){if(error instanceof TeamError&&error.status===403)return null;throw error;}return node;
 }
 export async function listTimelineNodes(actor:string,includeDeleted=false){
-  const nodes=await listRawTimelineNodes(actor,includeDeleted),visible:typeof nodes=[];
-  for(const node of nodes){try{await assertCreationProjectInput(actor,node.projectKey,undefined,true);visible.push(node);}catch(error){if(!(error instanceof TeamError)||error.status!==403)throw error;}}
-  return visible;
+  return filterCreationProjects(actor,await listRawTimelineNodes(actor,includeDeleted));
 }
 
 async function saveNode(actor:string,raw:unknown,render?:TimelineRender|null){

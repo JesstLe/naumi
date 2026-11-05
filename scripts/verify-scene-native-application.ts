@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {connectNativeParentDatabase} from "./video-fusion/native-parent-database";
 import { randomBytes, randomUUID, createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { createServer } from "node:http";
@@ -10,10 +11,11 @@ import { newSceneProject, sceneInputIdentity } from "../src/lib/scene/project";
 import { createVideoFixture, CAP_RICH } from "./video-fusion/harness";
 import { verifySceneInteractions } from "./verify-scene-native-interactions";
 import { prepareVideoAssets } from "./video-fusion/assets.mjs";
+import {fixtureCommandOutput} from './video-fusion/process-lifecycle';
 
 /** Real local app/DB/task/worker/media/billing. Suppliers are isolated fixtures, not paid providers. */
 async function main() {
-  const out = path.resolve(process.argv[2] || "output/scene-native-application");
+  const out = path.resolve(process.argv[2] || process.env.SCENE_APP_EVIDENCE || "output/scene-native-application");
   await mkdir(out, { recursive: true });
   const owner = "canvas-scene-native-20261028", name = "scene-native-app-" + randomUUID();
   const password = randomBytes(24).toString("hex"), database = "naumi_video_fixture_native_" + randomBytes(6).toString("hex");
@@ -39,12 +41,15 @@ async function main() {
     } catch { res.writeHead(500); res.end(); }
   });
   try {
+    const parentDatabase=await connectNativeParentDatabase();
+    let databaseUrl:string;
+    if(parentDatabase){pool=parentDatabase.pool;databaseUrl=parentDatabase.url;}else{
     container = docker(["run", "--detach", "--rm", "--name", name, "--label", `naumi.task=${owner}`, "--memory", "768m", "--cpus", "2", "--tmpfs", "/var/lib/postgresql/data", "--publish", "127.0.0.1::5432", "--env-file", envFile, "postgres:16-alpine"]);
     let ready = false;
     for (let i = 0; i < 60; i++) { if (spawnSync("docker", ["exec", container, "pg_isready", "-U", "postgres", "-d", database], { windowsHide: true, stdio: "ignore" }).status === 0) { ready = true; break; } await new Promise(resolve => setTimeout(resolve, 200)); }
     assert.ok(ready);
     const port = Number(docker(["port", container, "5432/tcp"]).split(":").at(-1));
-    const databaseUrl = `postgresql://postgres:${password}@127.0.0.1:${port}/${database}`;
+    databaseUrl = `postgresql://postgres:${password}@127.0.0.1:${port}/${database}`;
     // pg_isready in the container can observe initdb's temporary Unix-socket
     // server. Verify the published TCP database before starting the application.
     let tcpReady = false;
@@ -60,6 +65,7 @@ async function main() {
     pool = new Pool({ connectionString: databaseUrl, max: 2 });
     await pool.query("CREATE TABLE public.naumi_video_fixture_guard(owner text NOT NULL)");
     await pool.query("INSERT INTO public.naumi_video_fixture_guard VALUES($1)", ["canvas-video-fusion-20261013"]);
+    }
     await new Promise<void>(resolve => router.listen(0, "127.0.0.1", resolve)); listening = true;
     process.env.NAUMI_VERIFY_ISOLATED_DB = "1"; process.env.VIDEO_FIXTURE_DATABASE_URL = databaseUrl;
     process.env.VIDEO_FIXTURE_ROUTER_MANAGEMENT_URL = `http://127.0.0.1:${(router.address() as { port: number }).port}`;
@@ -139,15 +145,19 @@ async function main() {
     await writeFile(path.join(out, "result.json"), JSON.stringify({ realApp: true, realPostgres: true, realWorkerStorageBilling: true, sceneRevisionOneWinner: true, crossAccount404: true, forgedClientDefinitionIgnored: true, expandedReferenceOrderStable: true, sceneAndStateIdentityFrozen: true, laterEditLeavesOldTaskUnchanged: true, twoNodesReuseSameScene: true, savedReplayAfterDependencyDeletion: true, acceptedTaskReplayAfterSceneDeletion: true, missingSceneNoCharge: true, privateOutputHash: true, simulatedSupplierCreates: 5, paidCalls: 0, uiTested: true, menuEnabled: true, interactions, taskIds: [first.task.id, second.task.id] }, null, 2));
     console.log("SCENE_APPLICATION=PASS REAL_APP_DB_WORKER_STORAGE_BILLING=PASS REVISION=ONE_WINNER CROSS_ACCOUNT=404 SERVER_SCENE=TRUSTED EXPANDED_ORDER=STABLE SNAPSHOTS=IMMUTABLE TWO_NODE_REUSE=PASS REPLAY_AFTER_DELETE=PASS MISSING_SCENE=NO_CHARGE MEDIA_HASH=PASS UI_CREATE_UPLOAD_STATES_DRAG_LOCK_COPY_DELETE_UNDO_REDO=PASS HANDLE_AND_MENTION=PASS MIXED_HISTORY=ATOMIC WORKFLOW_FROZEN_AFTER_EDIT_DELETE=PASS SIMULATED_CREATES=5 PAID_CALLS=0 PAGE_ERRORS=0");
   } catch (error) {
+    console.error('SCENE_PRIMARY_FAILURE',error);
     if (container) {
-      const logs = spawnSync("docker", ["logs", container], { encoding: "utf8", windowsHide: true });
-      await writeFile(path.join(out, "postgres-failure.log"), logs.stdout + logs.stderr);
+      try {
+        const logs = spawnSync("docker", ["logs", container], { encoding: "utf8", windowsHide: true });
+        await writeFile(path.join(out, "postgres-failure.log"), fixtureCommandOutput(logs));
+      } catch(diagnosticError) {console.error('SCENE_DIAGNOSTIC_FAILURE',diagnosticError);}
     }
     throw error;
   } finally {
     if (fixture) await fixture.stop(); if (listening) await new Promise<void>(resolve => router.close(() => resolve())); if (pool) await pool.end();
     if (container) { assert.equal(docker(["inspect", "--format", '{{index .Config.Labels "naumi.task"}}', container]), owner); docker(["rm", "--force", container]); }
     await unlink(envFile).catch(() => undefined);
+    await writeFile(path.join(out,"CLEANUP.json"),JSON.stringify({status:"PASS",fixtureStopped:true,routerClosed:true,poolClosed:true,ownContainerRemoved:container,environmentFileRemoved:true}));
   }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

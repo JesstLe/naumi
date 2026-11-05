@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin-auth";
-import { dbEnabled, importTemplates } from "@/lib/db";
+import {importTemplates} from "@/lib/templates/import";
+import {dbEnabled} from "@/platform/db/pool";
 import { TEMPLATES } from "@/lib/templates-data";
 
 export const runtime = "nodejs";

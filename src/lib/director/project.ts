@@ -1,6 +1,13 @@
 import { z } from "zod";
 import {sceneDirectorSnapshotSchema} from "../scene/project";
 
+/** JSONB may reorder object keys. Project identity ignores that representation
+ * detail, but preserves entity/keyframe array order and every actual value. */
+export function directorProjectFingerprint(project:DirectorProject):string{
+  return JSON.stringify(project,(_key,value)=>value&&typeof value==="object"&&!Array.isArray(value)
+    ?Object.fromEntries(Object.keys(value).sort().map(key=>[key,value[key]])):value);
+}
+
 const id = z.string().min(1).max(160);
 const value = z.number().finite().min(-10000).max(10000);
 const vector = z.tuple([value, value, value]);

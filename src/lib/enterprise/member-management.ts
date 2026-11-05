@@ -6,9 +6,9 @@ import {hashPassword} from '@/lib/pw';
 import {settingsSecret} from '@/lib/settings-secret';
 import {enterpriseSiteIdentity} from '@/lib/site-control/identity';
 import {supabaseEnabled} from '@/lib/auth-mode';
-import {getBillingRuntime} from '@/lib/billing/server';
+import {getBillingRuntime} from '@/lib/billing/runtime';
 import {BillingError} from '@/lib/billing/types';
-import {TeamError} from '@/lib/teams/server';
+import {TeamError} from '@/lib/teams/errors';
 import type {TeamActor} from '@/lib/teams/grants';
 import {enterpriseManageTransaction,validateHierarchy} from './server';
 

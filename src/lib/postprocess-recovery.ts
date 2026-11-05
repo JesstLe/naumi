@@ -1,5 +1,5 @@
 import "server-only";
-import { getPool } from "./db";
+import { getPool } from "@/platform/db/pool";
 import { resumePostprocess } from "./media-postprocess";
 import { assertMutableStagingTask } from "./staging-history";
 export async function recoverPostprocess(id: string, email: string) {

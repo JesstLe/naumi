@@ -15,7 +15,7 @@ import ts from 'typescript';
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2), arg = (key, fallback) => args.includes(key) ? args[args.indexOf(key) + 1] : fallback;
 const root = path.resolve(arg('--source-root', repo));
-const out = path.resolve(arg('--output-root', path.join(repo, 'output/canvas-image-stability')));
+const out = path.resolve(arg('--output-root', process.env.CANVAS_IMAGE_STABILITY_EVIDENCE||path.join(repo, 'output/canvas-image-stability')));
 const baseline = args.includes('--baseline'), mode = baseline ? 'BASELINE' : 'MODIFIED';
 const req = createRequire(path.join(repo, 'package.json'));
 const exists = async p => !!await fs.stat(p).catch(() => null);
@@ -23,18 +23,21 @@ const source = async rel => await exists(path.join(root, rel)) ? path.join(root,
 const hash = data => createHash('sha256').update(data).digest('hex');
 await fs.mkdir(out, { recursive: true });
 const clientPath = await source('src/components/canvas/canvas-client.tsx'), client = await fs.readFile(clientPath, 'utf8');
-const modernProjects = client.includes('<ProjectBrowserSurface');
+const projectOwnerPath=await source('src/components/canvas/project-browser.tsx');
+const projectOwner=await fs.readFile(projectOwnerPath,'utf8');
+const modernProjects = projectOwner.includes('<ProjectBrowserSurface')||client.includes('<ProjectBrowserSurface');
 // Load the baseline's exact production cover JSX. The surrounding visibility
 // boundary mirrors its asserted browsing ternary, not a missing-new-export test.
 let oldCover;
 if (!modernProjects) {
   assert.match(client, /\) : browsing \? \(/);
-  const ast = ts.createSourceFile(clientPath, client, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const ast = ts.createSourceFile(projectOwnerPath, projectOwner, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const visit = node => { if (ts.isJsxSelfClosingElement(node) && node.tagName.getText(ast) === 'CachedImage' && node.getText(ast).includes('cdnUrl(p.cover)')) oldCover = node.getText(ast); ts.forEachChild(node, visit); };
   visit(ast); assert.ok(oldCover, 'real baseline project cover was found');
 } else {
-  assert.match(client, /<ProjectCover source=\{p.cover\} title=\{p.name\}/);
-  assert.match(client, /ProjectBrowserSurface key=\{`\$\{user\?\.email/);
+  assert.match(projectOwner, /<ProjectCover source=\{p.cover\} title=\{p.name\}/);
+  assert.match(client, /CanvasProjectBrowser key=\{`\$\{canvasArtworkDocument.scope.account\}:\$\{canvasArtworkDocument.scope.workspace\}/);
+  assert.match(client,/visible=\{!loading && browsing\}/);
 }
 const projectImport = modernProjects ? "import {ProjectBrowserSurface,ProjectCover} from '@/components/canvas/project-browser-surface';" :
   `function ProjectBrowserSurface({visible,children}){return visible?<div data-testid="canvas-project-browser">{children}</div>:null}
@@ -62,7 +65,12 @@ const bundle = await build({ stdin: { contents: entry, resolveDir: repo, loader:
     b.onResolve({ filter: /^\.\/supabase$|^@\/lib\/i18n\/locale-context$/ }, a => ({ path: a.path.includes('locale') ? 'locale' : 'auth', namespace: 'fixture' }));
     b.onLoad({ filter: /.*/, namespace: 'fixture' }, a => ({ contents: a.path === 'auth' ? 'export async function authHeader(){return {}}' : 'export function useI18n(){return {locale:"en"}}', loader: 'js' }));
     b.onResolve({ filter: /^@\// }, async a => { for (const ext of ['.tsx', '.ts']) { const p = await source('src/' + a.path.slice(2) + ext); if (await exists(p)) return { path: p }; } throw new Error('Missing source: ' + a.path); });
-    b.onResolve({ filter: /^(react(?:\/|$)|react-dom(?:\/|$)|@xyflow\/react$)/ }, a => ({ path: req.resolve(a.path) }));
+    b.onResolve({ filter: /^(react(?:\/|$)|react-dom(?:\/|$)|@xyflow\/react$)/ }, a => {
+      // The parent core process also tests server code with react-server. These
+      // actual DOM components need the package's browser entry, not an RSC stub.
+      const match=/^(react|react-dom)(?:\/(jsx-runtime|jsx-dev-runtime|client))?$/.exec(a.path);
+      return {path:match?path.join(path.dirname(req.resolve(match[1]+'/package.json')),(match[2]||'index')+'.js'):req.resolve(a.path)};
+    });
   } }],
 });
 const loaded = [];

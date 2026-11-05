@@ -1,23 +1,25 @@
 import { modelAwareOpenAI } from "@/lib/model-config/clients";
-import { observeOpenAI, withBiRequest } from "@/lib/bi/model-observer";
+import {observeOpenAI} from "@/lib/bi/model-calls";
+import {withBiRequest} from "@/lib/bi/request";
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import path from "path";
-import { dbEnabled, listArtworksByIds, listCanvasTextNodes, type ArtworkRecord } from "@/lib/db";
+import {dbEnabled} from "@/platform/db/pool";
+import {listArtworksByIds} from "@/lib/artworks/repository";
+import {type ArtworkRecord} from "@/lib/artworks/types";
+import {listCanvasTextNodes} from "@/lib/canvas/text-node-repository";
 import { authenticatedEmail } from "@/lib/request-auth";
 import { getOpenAISettings } from "@/lib/settings";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
 import { checkRateLimit } from "@/lib/rate-limit-http";
 import { clientIp } from "@/lib/ip";
 import { safeError } from "@/lib/api-error";
-import {
-  dataUrlToBytes,
-  isManagedImageUrl,
-  readManagedObject,
-} from "@/lib/storage";
+import { dataUrlToBytes, isManagedImageUrl } from "@/lib/object-storage/runtime";
+import { readManagedObject } from "@/lib/object-storage/managed-read";
 import { toVisionDataUrl } from "@/lib/vision-image";
 import { requestedTextModel } from "@/lib/text-models";
-import { withBillingRequest, configuredToolCost } from "@/lib/billing/synchronous";
+import {withBillingRequest} from "@/lib/billing/synchronous";
+import {configuredToolCost} from "@/lib/billing/synchronous-operation";
 import { CANVAS_TEXT_OUTPUT_INSTRUCTION, canvasTextInput, canvasAnswerText, canvasTextFailure, reportCanvasTextFailure } from "@/lib/canvas-text-output";
 import { currentModelExecution } from "@/lib/model-config/context";
 import { CanvasTextContentError, canvasTextGenerationInput, parseCanvasTextContent, resolveCanvasTextInstruction } from "@/lib/canvas/text-generation-input";

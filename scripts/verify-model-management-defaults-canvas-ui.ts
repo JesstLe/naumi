@@ -5,7 +5,7 @@ import {randomUUID} from "node:crypto";
 import {chromium,expect as baseExpect} from "@playwright/test";
 async function main(){
  if(process.env.NAUMI_VERIFY_ISOLATED_DB!=="1")throw Error("Isolated fixture required");
- const origin="http://127.0.0.1:54989",out="output/metadata-canvas-20261010/local";await mkdir(out,{recursive:true});
+ const origin=(process.env.NAUMI_MODEL_UI_BASE_URL||"http://127.0.0.1:54989"),out="output/metadata-canvas-20261010/local";await mkdir(out,{recursive:true});
  const fixture=JSON.parse(await readFile("output/model-management-fixture/fixture.json","utf8")),browser=await chromium.launch({channel:process.platform==="win32"?"msedge":undefined,headless:true}),context=await browser.newContext({viewport:{width:1440,height:1000}}),expect=baseExpect.configure({timeout:30000});
  const get=async(path:string)=>{const r=await context.request.get(origin+path);assert.equal(r.status(),200);return r.json();};
  try{

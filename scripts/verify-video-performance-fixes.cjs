@@ -1,26 +1,26 @@
 'use strict';
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),crypto=require('node:crypto'),assert=require('node:assert/strict'),ts=require('typescript'),{Pool}=require('pg');
-const args=process.argv.slice(2),option=(k,d)=>args.includes(k)?args[args.indexOf(k)+1]:d,root=path.resolve(option('--source-root',path.join(__dirname,'..'))),out=path.resolve(option('--output','output/video-performance-fixes')),baseline=args.includes('--baseline');
-assert.equal(process.env.NAUMI_VERIFY_ISOLATED_DB,'1');const url=new URL(process.env.DATABASE_URL);assert.equal(url.hostname,'127.0.0.1');assert.equal(url.pathname,'/perf_fixture');fs.mkdirSync(out,{recursive:true});
+const args=process.argv.slice(2),option=(k,d)=>args.includes(k)?args[args.indexOf(k)+1]:d,root=path.resolve(option('--source-root',path.join(__dirname,'..'))),out=path.resolve(option('--output',process.env.VIDEO_PERFORMANCE_EVIDENCE||'output/video-performance-fixes')),baseline=args.includes('--baseline');
+assert.equal(process.env.NAUMI_VERIFY_ISOLATED_DB,'1');const url=new URL(process.env.DATABASE_URL);assert.equal(url.hostname,'127.0.0.1');assert.match(url.pathname,/fixture/);fs.mkdirSync(out,{recursive:true});
 const records=[],read=file=>fs.readFileSync(path.join(root,file),'utf8');
 function fn(file,name){const text=read(file),ast=ts.createSourceFile(file,text,ts.ScriptTarget.Latest,true);let found;function visit(n){if(ts.isFunctionDeclaration(n)&&n.name?.text===name)found=n.getText(ast);ts.forEachChild(n,visit)}visit(ast);assert.ok(found,name);return found;}
 function load(text,locals={},dependencies={}){const exports={};vm.runInNewContext(ts.transpileModule(text,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,esModuleInterop:true}}).outputText,{exports,Buffer,console,setInterval,clearInterval,require:name=>Object.hasOwn(dependencies,name)?dependencies[name]:require(name),...locals});return exports;}
 async function check(name,action){await action();records.push({name,pass:true})}
 const schema='perffix_'+crypto.randomBytes(6).toString('hex'),admin=new Pool({connectionString:url.href,max:1,connectionTimeoutMillis:4000,query_timeout:6000}),pool=new Pool({connectionString:url.href,max:5,options:`-c search_path=${schema} -c statement_timeout=5000`,connectionTimeoutMillis:4000,query_timeout:6000});
-let imported=false;const code=['claimVideoTaskPoll','scheduleVideoTaskRetry','listDueVideoTaskRefs'].map(n=>fn('src/lib/db.ts',n)).join('\n');
+let imported=false;const code=['claimVideoTaskPoll','scheduleVideoTaskRetry','listDueVideoTaskRefs'].map(n=>fn(fs.existsSync(path.join(root,'src/lib/video/task-polling.ts'))?'src/lib/video/task-polling.ts':'src/lib/db.ts',n)).join('\n');
 const db=load(code,{ensureSchema:async()=>{},getPool:()=>pool,isImportedHistory:async()=>imported,excludeImportedHistory:()=>''});
 const actor='perf@example.test',id='fixture-video';
 const get=async()=>{const row=(await pool.query('SELECT *,EXTRACT(epoch FROM next_poll_at-now())::float AS due FROM app_video_tasks WHERE id=$1',[id])).rows[0];return {...row,cancellationRequestedAt:row.cancellation_requested_at,supplierCancellationSupported:row.cancellation_supported}};
 class ModelConfigError extends Error{constructor(code,message,status){super(message);Object.assign(this,{code,status})}}
 const forbidden=()=>{throw Error('Unexpected provider or business side effect')};
-const cancel=load(read('src/lib/video/cancellation.ts'),{}, {'server-only':{},'../db':{ensureSchema:async()=>{},getPool:()=>pool,getVideoTask:get},'../billing/task-operation':{settleTaskBillingTx:forbidden},'../model-config/types':{ModelConfigError},'./providers/adapter':{getVideoProvider:forbidden},'./types':{UnsupportedVideoCancellationError:class extends Error{}},'../saas/creation-writer':{creationEvidenceTx:forbidden,recordSourceOutcomeTx:forbidden}});
+const cancel=load(read('src/lib/video/cancellation.ts'),{}, {'server-only':{},'../db':{ensureSchema:async()=>{},getPool:()=>pool,getVideoTask:get},'@/lib/persistence/schema':{ensureSchema:async()=>{}},'@/platform/db/pool':{getPool:()=>pool},'@/lib/video/task-repository':{getVideoTask:get},'../billing/task-operation':{settleTaskBillingTx:forbidden},'../model-config/types':{ModelConfigError},'./providers/adapter':{getVideoProvider:forbidden},'./types':{UnsupportedVideoCancellationError:class extends Error{}},'../saas/creation-writer':{creationEvidenceTx:forbidden,recordSourceOutcomeTx:forbidden}});
 async function reset(){imported=false;await pool.query("TRUNCATE app_video_tasks; INSERT INTO app_video_tasks(id,email,status,next_poll_at,upstream_id,parameters)VALUES('fixture-video','perf@example.test','processing',now()+interval '60 seconds','accepted-upstream','{}')");}
 async function coordination(){
  const instances=[];
  function instance(badPassword=false){
   const u=new URL(url.href);if(badPassword)u.password='deliberately-wrong-test-password';const controls={fault:false,errors:[],queries:0},runtime={},created=[];
   class ObservedPool extends Pool{constructor(options){super(options);created.push(this)}async connect(){if(controls.fault){controls.fault=false;const e=Object.assign(Error('fixture reset'),{code:'ECONNRESET'});controls.errors.push(e.code);throw e}try{return await super.connect()}catch(e){controls.errors.push(e.code);throw e}}}
-  const api=load(read('src/lib/video/coordination-pool.ts'),{}, {'server-only':{},'node:process':runtime,pg:{Pool:ObservedPool},'../db':{getPool:()=>({options:{connectionString:u.href,ssl:false}})}});
+  const api=load(read('src/lib/video/coordination-pool.ts'),{}, {'server-only':{},'node:process':runtime,pg:{Pool:ObservedPool},'../db':{getPool:()=>({options:{connectionString:u.href,ssl:false}})},'@/platform/db/pool':{getPool:()=>({options:{connectionString:u.href,ssl:false}}),videoCoordinationPoolLimit:()=>2}});
   const item={...api,controls,created};instances.push(item);return item;
  }
  try{
@@ -31,7 +31,7 @@ async function coordination(){
   const ErrorType=instances[0].VideoCoordinationCheckoutError;
   function activity(options={}){
    const state={begin:0,finish:0,unknown:0,logs:[]},runtime={};
-   const observer=load(read('src/lib/release-runtime/background-activity.ts'),{console:{error:value=>state.logs.push(value)}},{'node:process':runtime,'./identity':{releaseRuntimeEnabled:()=>options.enabled!==false,releaseIdentity:()=>({instanceId:'fixture',bootId:'fixture-boot'})},'./accepted-context':{currentAcceptedParent:()=>null},'./store':{OBSERVED_BACKGROUND_SCOPES:['video-workflow','media-job'],beginBackgroundActivity:async()=>{state.begin++;return options.draining?null:crypto.randomUUID()},finishActivity:async()=>{if(options.finishFailure)throw Error('fixture finish failure');state.finish++},heartbeatActivity:async()=>{},bindBackgroundActivity:async()=>{},unknownActivity:async()=>{state.unknown++}}});
+   const observer=load(read('src/lib/release-runtime/background-activity.ts'),{console:{error:value=>state.logs.push(value)}},{'node:process':runtime,'../worker/inflight':load(read('src/lib/worker/inflight.ts')),'./identity':{releaseRuntimeEnabled:()=>options.enabled!==false,releaseIdentity:()=>({instanceId:'fixture',bootId:'fixture-boot'})},'./accepted-context':{currentAcceptedParent:()=>null},'./store':{OBSERVED_BACKGROUND_SCOPES:['video-workflow','media-job'],beginBackgroundActivity:async()=>{state.begin++;return options.draining?null:crypto.randomUUID()},finishActivity:async()=>{if(options.finishFailure)throw Error('fixture finish failure');state.finish++},heartbeatActivity:async()=>{},bindBackgroundActivity:async()=>{},unknownActivity:async()=>{state.unknown++}}});
    const wrapper=load(read('src/lib/video/coordination-activity.ts'),{console:{error:value=>state.logs.push(value)}},{'../release-runtime/background-activity':observer,'./coordination-pool':{VideoCoordinationCheckoutError:ErrorType}});
    return {state,call:action=>wrapper.withVideoCoordinationActivity('media-job','job:poll-settle','continuation','media-job:job',action,()=>({draining:true}))};
   }

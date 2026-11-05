@@ -37,9 +37,8 @@ async function main() {
       const s=await scope(new Request("http://fixture.test/api/generate-image",{method:"POST",body}));
       assert.equal(s.frozen.facts!.references,2);assert.equal(s.frozen.binding,"image.edit");assert.deepEqual(s.supplierRouting!.targets.map(t=>t.upstreamId),["u2"]);
     });
-    await check("unsupported explicit quality fails before transport; default and canonical quality retained",async()=>{
-      await assert.rejects(()=>scope(json({quality:"high"})),/质量/);
-      await assert.rejects(()=>scope(json({quality:"unrecognized"})),/质量/);
+    await check("unsupported or malformed quality uses default before transport; raw audit retained",async()=>{
+      for(const raw of ["high","unrecognized"]){const chosen=await scope(json({quality:raw}));assert.equal(chosen.frozen.facts!.quality,"medium");assert.equal(chosen.frozen.requestedParameters!.quality,raw);}
       const s=await scope(json({quality:" MEDIUM "}));assert.equal(s.frozen.facts!.quality,"medium");
       const quality=await runModelExecution(s,async()=>resolveConfiguredImageQuality("high"));assert.equal(quality.requested,"medium");assert.equal(quality.executed,"medium");
     });

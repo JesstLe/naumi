@@ -2,14 +2,17 @@
 // fixtures; no real supplier requests or production database changes.
 const { chromium, expect } = require('@playwright/test');
 const fs = require('node:fs'), path = require('node:path'), assert = require('node:assert/strict'), crypto = require('node:crypto'), sharp = require('sharp');
+const {createImagePromptFixture}=require('./canvas-image-prompt-fixture.cjs');
 const args=process.argv.slice(2),arg=(key,fallback)=>args.includes(key)?args[args.indexOf(key)+1]:fallback;
 const sourceRoot=path.resolve(arg('--source-root',path.join(__dirname,'..'))),baseline=args.includes('--baseline'),port=Number(arg('--port','15381')),base='http://127.0.0.1:'+port;
 const cp=require('node:child_process'),net=require('node:net');
-const out=path.resolve(arg('--output-root','output/canvas-theme-matrix'));
+const out=path.resolve(arg('--output-root',process.env.CANVAS_THEME_MATRIX_EVIDENCE||'output/canvas-theme-matrix'));
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 fs.mkdirSync(out, { recursive: true });
 const sourceFiles=['src/app/layout.tsx','src/app/globals.css','src/components/canvas/canvas-client.tsx','src/components/ui/surface-appearance.tsx','src/lib/canvas/appearance.ts','src/components/canvas/composer-shell.tsx','src/components/canvas/composer-shell.module.css','src/components/canvas/prompt-optimizer.tsx','src/components/canvas/image-version-control.tsx','src/components/canvas/text-image-generation-dialog.tsx','src/components/canvas/frame-ratio-dialog.tsx','src/components/canvas/canvas-help-dialog.tsx','src/components/canvas/group-layer.module.css','src/components/canvas/generation-placeholder.module.css','src/components/canvas/imagegen-pending-recovery.tsx','src/components/ui/text-model-select.tsx','src/components/ui/select-menu.tsx','src/components/ui/image-quality-select.tsx','src/components/tools/feature-model-select.tsx'];
 function sourceHashes(){return sourceFiles.map(file=>({file:path.join(sourceRoot,file),sha256:fs.existsSync(path.join(sourceRoot,file))?crypto.createHash('sha256').update(fs.readFileSync(path.join(sourceRoot,file))).digest('hex'):null}));}
+sourceFiles.push('src/components/canvas/use-canvas-view-controls.ts','src/components/canvas/use-canvas-viewport-focus.ts','src/components/canvas/image-composer.tsx','src/components/canvas/image-generation-controls.tsx','src/components/canvas/text-composer.tsx','src/components/canvas/image-import-status.tsx','src/components/canvas/nodes/artwork-node.tsx','src/components/canvas/nodes/text-node.tsx');
+sourceFiles.push('scripts/canvas-image-prompt-fixture.cjs','scripts/canvas-mapping-ui-fixture.cjs');
 const sourceAtStart=sourceHashes();
 
 
@@ -47,7 +50,10 @@ async function startFixture(){
 (async () => {
   const runtime=await startFixture();
   const browser = await chromium.launch({ channel: 'msedge', headless: true });
-  const context = await browser.newContext({ viewport: { width: 1800, height: 1200 } });
+  // These accessibility assertions describe the Chinese UI, not the host OS.
+  // Use real browser/SSR locale inputs; do not replace the product translator.
+  const context = await browser.newContext({ viewport: { width: 1800, height: 1200 }, locale: 'zh-CN' });
+  await context.addCookies([{ name: 'naumi_locale', value: 'zh', url: base }]);
   const page = await context.newPage(); page.setDefaultTimeout(30000);
   const checks = [], errors = [], external = [], requests = [], groups = [], history = [], optimizations = [], textGenerations = [], textWrites = [];
   const rootId = 'regeneration-root', otherId = 'reference-neighbor', textId = 'text-feedback';
@@ -64,7 +70,16 @@ async function startFixture(){
   let texts = [{ id: textId, projectKey: 'tree:' + rootId, title: '品牌文案', prompt: writePrompt, content: '给每一天，恰到好处的营养。', status: 'completed', sourceIds: [], targetIds: [], productIds: [], canvasX: 950, canvasY: 160, width: 330, height: 230, createdAt: now, updatedAt: now }];
   const model = { id: 'gpt-image-2', label: '图片模型', modality: 'image', supportsEdit: true, qualities: ['medium'], nativeResolutions: ['1K'], generationParameters: { ratios: ['auto', '1:1', '3:4', '16:9'], resolutions: ['1K'] }, qualitySupported: true };
   const textModel = { id: 'published-text', label: '文字模型', modality: 'text', supportsVision: true };
+  const promptFixtureState={promptRequests:[]};
+  const imagePromptFixture=createImagePromptFixture({getArtworks:()=>arts||[],state:promptFixtureState});
+  const generationFixtureState={requests:[],preAck:null,postAck:null,receiptStatus:null};
+  let generationAckGate=null;
   page.on('pageerror', e => errors.push(e.message));
+  const lifecycle=[];const observe=event=>{if(lifecycle.length<256)lifecycle.push({time:new Date().toISOString(),...event});};
+  page.on('crash',()=>observe({kind:'page-crash',url:page.url()}));
+  page.on('framenavigated',frame=>{if(frame===page.mainFrame())observe({kind:'navigation',url:frame.url()});});
+  page.on('requestfailed',request=>{const pathname=new URL(request.url()).pathname;if(request.isNavigationRequest()||pathname.startsWith('/_next/'))observe({kind:'request-failed',pathname,navigation:request.isNavigationRequest(),failure:request.failure()});});
+  page.on('response',response=>{if(response.request().isNavigationRequest())observe({kind:'navigation-response',url:response.url(),status:response.status(),contentType:response.headers()['content-type']});});
   const hydration=[];page.on('console',message=>{if(message.type()==='error'&&/hydrat|didn.t match|server rendered/i.test(message.text()))hydration.push(message.text());});
   const json = (route, value, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(value) });
   await context.route('**/*', async route => {
@@ -75,6 +90,15 @@ async function startFixture(){
       arts ||= [{ ...data.artworks[0], id: rootId, title: '营养品原图', prompt: originalPrompt, image: '/media/feedback-original.png', width: 768, height: 1024, canvasWidth: 264, canvasHeight: 352, canvasX: 100, canvasY: 150, parentId: undefined, parentIds: [], canvasGroupId: null },
         { ...data.artworks[0], id: otherId, title: '参考构图', prompt: originalPrompt, image: '/media/feedback-reference.png', width: 768, height: 1024, canvasWidth: 264, canvasHeight: 352, canvasX: 510, canvasY: 150, parentId: rootId, parentIds: [rootId], source: 'generate', canvasGroupId: null }];
       return json(route, { ...data, artworks: arts });
+    }
+    if (p === '/api/canvas/image-prompts') {
+      const receipt=await imagePromptFixture.request(req.method(),req.method()==='GET'?Object.fromEntries(u.searchParams):req.postDataJSON());
+      return json(route,receipt.body,receipt.status);
+    }
+    if (p === '/api/imagegen' && req.method() === 'POST') {
+      generationFixtureState.requests.push({body:req.postDataJSON(),operationId:req.headers()['x-naumi-billing-operation-id']});
+      if(generationAckGate&&await generationAckGate.promise==='abort')return route.abort();
+      return route.continue();
     }
     if (p === '/api/canvas/text-nodes') {
       if (req.method() === 'POST') { const body = req.postDataJSON(); textWrites.push(body); const list = body.nodes || [body]; for (const item of list) { const at = texts.findIndex(n => n.id === item.id); if (at >= 0) texts[at] = { ...texts[at], ...item }; else texts.push(item); } return json(route, { node: texts.find(n => n.id === body.id), nodes: texts, persisted: true }); }
@@ -137,6 +161,7 @@ async function startFixture(){
     result.history=await appearance(historyDialog);surface(key+'_HISTORY_PORTAL',result.history,canvas);readable(key+'_HISTORY_TEXT',result.history);await page.getByRole('button',{name:'关闭历史版本',exact:true}).click();
     await imageDock.getByRole('button',{name:'更多图片参数',exact:true}).click();const settings=page.getByRole('dialog',{name:'更多图片参数',exact:true});await settings.waitFor();surface(key+'_MORE_OPTIONS',await appearance(settings),canvas);await page.getByRole('button',{name:'关闭设置',exact:true}).click();
     await select(textId);const dock=page.getByTestId('text-node-dock');await expect(dock).toBeVisible();result.textDock=await appearance(dock);surface(key+'_TEXT_DOCK',result.textDock,canvas);
+    await dock.getByRole('tab',{name:'AI 写作',exact:true}).click();
     const textModel=dock.locator('button[title^="文字模型："]').first();result.textModel=await appearance(textModel);readable(key+'_TEXT_MODEL_CONTRAST',result.textModel);
     await textModel.hover();await page.waitForTimeout(180);readable(key+'_TEXT_MODEL_HOVER',await appearance(textModel));await textModel.click();
     const textOption=page.getByRole('button',{name:'文字模型',exact:true}).last();if(await textOption.count()){readable(key+'_TEXT_MODEL_OPTION',await appearance(textOption));await textOption.click();}else await page.keyboard.press('Escape');
@@ -154,20 +179,31 @@ async function startFixture(){
   try {
     await context.addInitScript(()=>{if(!localStorage.getItem('nv:canvas:last'))localStorage.setItem('nv:canvas:last','tree:regeneration-root');});
     await page.goto(base+'/canvas',{waitUntil:'domcontentloaded',timeout:180000});await node(rootId).waitFor({timeout:120000});await node(textId).waitFor();
+    await expect(page.locator('html')).toHaveAttribute('lang','zh-CN');check('EXPLICIT_CHINESE_BROWSER_AND_SSR_LOCALE');
     await page.waitForFunction(()=>[...document.querySelectorAll('.react-flow__node img')].filter(i=>i.complete&&i.naturalWidth>0).length>=2);
     await capture('light','light');await capture('light','dark');await capture('dark','light');await capture('dark','dark');
     // Real first OCR action, with actual feature selector portal.
-    await select(rootId);await page.getByRole('button',{name:'编辑图中文字',exact:true}).click();await expect(page.getByRole('textbox',{name:'修改文字 1',exact:true})).toHaveValue('N');
+    await select(rootId);await page.getByRole('button',{name:'更多处理',exact:true}).click();const ocrAction=page.locator('[role="menuitem"][data-action="edit-text"]');await expect(ocrAction).toContainText('编辑图中文字');await ocrAction.click();await expect(page.getByRole('textbox',{name:'修改文字 1',exact:true})).toHaveValue('N');
     await page.getByRole('combobox',{name:'执行模型',exact:true}).click();let menu=page.getByRole('listbox',{name:'执行模型',exact:true});await menu.waitFor();surface('OCR_EXECUTION_MODEL_PORTAL_DARK',await appearance(menu),'dark');readable('OCR_EXECUTION_MODEL_TEXT',await appearance(menu));await page.keyboard.press('Escape');await snapshot('dark-ocr');
     await page.reload({waitUntil:'domcontentloaded'});await node(rootId).waitFor();
     verify(await page.getByRole('button',{name:'切换浅色画布',exact:true}).count()===1,'DARK_CANVAS_PREFERENCE_SURVIVES_RELOAD');verify(await page.locator('html').evaluate(el=>el.classList.contains('dark')),'DARK_APP_PREFERENCE_SURVIVES_RELOAD');
     // Capture and measure the four previously confirmed readability defects.
-    await select(textId);const dock=page.getByTestId('text-node-dock');await dock.locator('textarea').first().fill('主题故障态检查');await dock.locator('textarea').first().press('Control+Enter');await expect(node(textId).getByRole('alert')).toBeVisible();
+    await select(textId);const dock=page.getByTestId('text-node-dock');await dock.getByRole('tab',{name:'AI 写作',exact:true}).click();const instruction=dock.getByRole('textbox',{name:'AI 写作要求',exact:true});await instruction.fill('主题故障态检查');await instruction.press('Control+Enter');await expect(node(textId).getByRole('alert')).toBeVisible();
     const failure={text:await appearance(node(textId).getByRole('alert')),card:await appearance(node(textId).locator('.canvas-ui-node-card').first())};readable('TEXT_FAILURE_CONTRAST',failure.text);await snapshot('dark-text-error');
     await page.reload({waitUntil:'domcontentloaded'});await node(rootId).waitFor();await theme('dark','dark');await select(rootId);await node(otherId).click({position:{x:100,y:80},modifiers:['Shift']});await page.getByTestId('image-batch-bar').getByRole('button',{name:'成组',exact:true}).click();
     const frame=page.getByTestId('canvas-group-frame');await frame.waitFor();const group={selected:await appearance(frame),title:await appearance(node(rootId).locator('.art-title').first())};surface('GROUP_SELECTED_SURFACE',group.selected,'dark');readable('GROUP_SELECTED_TITLE_CONTRAST',group.title,effective(group.selected));await snapshot('dark-group-selected');await empty();group.unselected=await appearance(frame);readable('GROUP_UNSELECTED_TITLE_CONTRAST',await appearance(node(rootId).locator('.art-title').first()),effective(group.unselected));await snapshot('dark-group-persistent');
-    await page.getByRole('button',{name:'选择分组（2 张图片）',exact:true}).click();await page.getByTestId('image-batch-bar').getByRole('button',{name:'解组',exact:true}).click();await empty();await select(rootId);await page.getByTestId('generation-submit-action').click();
-    const generating=page.getByTestId('generation-placeholder');await generating.waitFor();const regeneration={text:await appearance(generating),overlay:await appearance(generating.locator('..'))};surface('REGENERATION_OVERLAY_SURFACE',regeneration.overlay,'dark');readable('REGENERATION_TITLE_CONTRAST',regeneration.text);verify(await page.getByTestId('generation-submit-action').isDisabled(),'GENERATING_ACTION_DISABLED');await snapshot('dark-regeneration');
+    await page.getByRole('button',{name:'选择分组（2 张图片）',exact:true}).click();await page.getByTestId('image-batch-bar').getByRole('button',{name:'解组',exact:true}).click();await empty();await select(rootId);
+    // The standard action releases after its original receipt, while the job
+    // continues in the background. Measure the existing disabled contract in
+    // the actual pre-ACK window instead of racing an already received ACK.
+    let settleAck;generationAckGate={promise:new Promise(resolve=>{settleAck=resolve;}),release:()=>settleAck('continue'),cancel:()=>settleAck('abort')};
+    await page.getByTestId('generation-submit-action').click();
+    const generating=page.getByTestId('generation-placeholder');await Promise.all([generating.waitFor(),expect.poll(()=>generationFixtureState.requests.length,{timeout:30000}).toBe(1)]);const regeneration={text:await appearance(generating),overlay:await appearance(generating.locator('..'))};surface('REGENERATION_OVERLAY_SURFACE',regeneration.overlay,'dark');readable('REGENERATION_TITLE_CONTRAST',regeneration.text);verify(await page.getByTestId('generation-submit-action').isDisabled(),'GENERATING_ACTION_DISABLED');await snapshot('dark-regeneration');
+    generationFixtureState.preAck=await (await fetch(base+'/__fixture/state')).json();assert.equal(generationFixtureState.preAck.submissions.length,0);
+    const originalReceipt=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/imagegen'&&response.request().method()==='POST');
+    generationAckGate.release();const accepted=await originalReceipt;generationFixtureState.receiptStatus=accepted.status();assert.equal(accepted.status(),200);
+    await expect(page.getByTestId('generation-submit-action')).toBeEnabled();
+    generationFixtureState.postAck=await (await fetch(base+'/__fixture/state')).json();assert.equal(generationFixtureState.requests.length,1);assert.equal(generationFixtureState.postAck.submissions.length,1);assert.equal(generationFixtureState.postAck.submissions[0].operationId,accepted.request().postDataJSON().operationId);
     // The fixture marks only the local request as failed; no supplier or live queue.
     await fetch(base+'/__fixture/fail');const failed=node(rootId).getByRole('alert');await expect(failed).toContainText('重新生成未完成',{timeout:15000});surface('INPLACE_IMAGE_FAILURE_SURFACE',await appearance(failed),'dark');readable('INPLACE_IMAGE_FAILURE_TEXT',await appearance(failed));await snapshot('dark-image-failure');
     // Original accepted receipt remains queryable; verify its local recovery UI.
@@ -177,7 +213,7 @@ async function startFixture(){
     if(baseline){assert.ok(violations.some(v=>v.name==='REGENERATION_TITLE_CONTRAST'));assert.ok(violations.some(v=>v.name==='GROUP_SELECTED_TITLE_CONTRAST'));assert.ok(violations.some(v=>v.name==='TEXT_FAILURE_CONTRAST'));assert.ok(violations.some(v=>v.name.includes('TEXT_MODEL_CONTRAST')));}
     const status=baseline?'REPRODUCED':violations.length?'FAIL':'PASS',exit=baseline?1:violations.length?2:0;
     const literal=`CANVAS_THEME_MATRIX=${status} COMBINATIONS=4 CHECKS=${checks.length} VIOLATIONS=${violations.length} FULL_NEXT=YES SUPPLIER_CALLS=0 EXIT=${exit}`;
-    fs.writeFileSync(path.join(out,'RESULT.json'),JSON.stringify({status,sourceRoot,baseline,checks,violations,contrasts,samples,failure,regeneration,group,errors,hydration,external,loaded,sourceAtStart,supplierCalls:0,productionWrites:0,literal},null,2));console.log(literal);process.exitCode=exit;
-  }catch(e){await page.screenshot({path:path.join(out,'failure.png')}).catch(()=>{});fs.writeFileSync(path.join(out,'ERROR.json'),JSON.stringify({error:e.stack,checks,violations,contrasts,samples,errors,external,body:await page.locator('body').innerText().catch(()=>'' )},null,2));throw e;}
-  finally{await browser.close();await runtime.stop();}
+    fs.writeFileSync(path.join(out,'RESULT.json'),JSON.stringify({status,sourceRoot,baseline,checks,violations,contrasts,samples,failure,regeneration,group,errors,hydration,external,loaded,sourceAtStart,promptFixtureState,generationFixtureState,supplierCalls:0,productionWrites:0,literal},null,2));console.log(literal);process.exitCode=exit;
+  }catch(e){let screenshotError=null,bodyError=null;await page.screenshot({path:path.join(out,'failure.png')}).catch(error=>{screenshotError=String(error);});const body=await page.locator('body').innerText().catch(error=>{bodyError=String(error);return '';});fs.writeFileSync(path.join(out,'ERROR.json'),JSON.stringify({error:e.stack,checks,violations,contrasts,samples,errors,external,promptFixtureState,generationFixtureState,body,screenshotError,bodyError,lifecycle},null,2));throw e;}
+  finally{generationAckGate?.cancel();fs.writeFileSync(path.join(out,'BROWSER_LIFECYCLE.json'),JSON.stringify({fixturePid:runtime.pid,lifecycle,errors,hydration,originalTimeouts:true,gestureRetries:0},null,2));await browser.close();await runtime.stop();}
 })().catch(e=>{console.error(e);process.exitCode=2});

@@ -10,7 +10,7 @@ import ts from 'typescript';
 import pg from 'pg';
 
 const option = name => { const at=process.argv.indexOf(name); return at<0?undefined:process.argv[at+1]; };
-const root = process.cwd(), out = path.resolve(option('--out') || 'output/a15');
+const root = process.cwd(), out = path.resolve(option('--out') || process.env.DISTRIBUTED_RATE_LIMIT_EVIDENCE || 'output/a15');
 const storeSource = option('--store-source');
 fs.mkdirSync(out, { recursive: true });
 const keep = new Set(['PATH','SYSTEMROOT','WINDIR','COMSPEC','TEMP','TMP','USERPROFILE','APPDATA','LOCALAPPDATA','PATHEXT']);

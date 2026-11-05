@@ -1,12 +1,13 @@
-// Actual CanvasClient submit function, runtime subscriber, SSE handler and UI
+// Actual session owner, runtime subscriber, SSE handler and UI
 // status component. All dependencies are local fixtures; supplier calls=0.
 require('tsx/cjs');
-const fs=require('node:fs'),assert=require('node:assert/strict'),vm=require('node:vm'),path=require('node:path'),ts=require('typescript'),{build}=require('esbuild');
+const fs=require('node:fs'),assert=require('node:assert/strict'),vm=require('node:vm'),path=require('node:path'),ts=require('typescript'),{build,buildSync}=require('esbuild');
 const root=process.cwd(),canvas=fs.readFileSync('src/components/canvas/canvas-client.tsx','utf8');
 const ast=ts.createSourceFile('canvas.tsx',canvas,99,true,4);let sendFunction;
 function visit(n){if(ts.isFunctionDeclaration(n)&&n.name?.text==='sendAssistantMessage')sendFunction=n.getText(ast);ts.forEachChild(n,visit);}visit(ast);
-const beforeFetch=sendFunction.indexOf('await privateFetch("/api/canvas/assistant"');
-assert.ok(sendFunction.indexOf('setAssistantTurns([...history')>=0&&sendFunction.indexOf('setAssistantTurns([...history')<beforeFetch,'Submitted user message and reply placeholder must appear before waiting for the SSE response');
+const ownerSource=fs.readFileSync('src/lib/canvas/assistant-session.ts','utf8');
+assert.ok(canvas.includes('assistantSession.send(canvasAssistantContext(),continueText)'));
+assert.ok(ownerSource.indexOf('turns:[...history')<ownerSource.indexOf('await context.submit('),'Owner publishes optimistic transcript before the SSE response');
 const {receiveAssistantActivity,assistantLivePresentation}=require('../src/lib/canvas/assistant-live-state.ts');
 const {createModelActivityTracker}=require('../src/lib/agent/model-activity.ts');
 const Module=require('node:module'),originalLoad=Module._load;
@@ -18,25 +19,25 @@ const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {
 const compile=s=>ts.transpileModule(s,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;
 
 async function browserSubmit(){
+ const source=fs.readFileSync('src/lib/canvas/assistant-session.ts','utf8');
+ if(!fs.existsSync('src/components/canvas/use-canvas-assistant.ts'))throw Error('Session owner consumer missing');
+ const compiled=buildSync({entryPoints:['src/lib/canvas/assistant-session.ts'],bundle:true,write:false,platform:'node',format:'cjs'}).outputFiles[0].text;
+ const loaded={exports:{}};vm.runInNewContext(compiled,{module:loaded,exports:loaded.exports,require,console,process,Response,Request,Headers,AbortController,TextDecoder,TextEncoder,ReadableStream,crypto:require('node:crypto').webcrypto,setTimeout,clearTimeout});
+ const session=loaded.exports.createCanvasAssistant().bind({account:'fixture',workspace:'personal',project:'workspace',key:'fixture',documentCurrent:()=>true,viewCurrent:()=>true,assertView:()=>{}});
  const response=deferred();let posted=0;
- const c={console,Date,Error,Set,Map,Promise,Response,TextDecoder,AbortController,AbortSignal,JSON,encodeURIComponent,DOMException,
- assistantInput:'先出初稿',assistantBusy:false,assistantUploadToken:{current:null},currentAssistantReferences:()=>[],assistantArtworkId:null,selectedId:null,active:{members:[]},activeKey:'workspace',assistantRetry:{current:null},assistantTurns:[],assistantSkill:null,assistantRequestEpoch:{current:0},assistantSessionId:{current:'fixture-session'},assistantLiveSessionId:{current:''},assistantController:{current:null},
- videoNodesStore:{getNode:()=>null,refresh:async()=>{}},textNodes:[],chosenFeatureModel:()=>undefined,genModel:'image-fixture',genRatio:'auto',genResolution:'1K',genQuality:'medium',browserRandomUUID:()=>crypto.randomUUID(),
- orbCue:()=>{},setAssistantError:v=>c.error=v,setAssistantBusy:v=>c.busy=v,setAssistantResponding:v=>c.responding=v,setAssistantSteps:()=>{},setAssistantOutcome:v=>c.outcome=v,setAssistantActivity:v=>c.activity=typeof v==='function'?v(c.activity):v,setAssistantTurns:v=>c.turns=typeof v==='function'?v(c.turns||[]):v,setAssistantInput:v=>c.input=v,
- privateFetch:async()=>{posted++;return response.promise;},readJsonSafe:r=>r.json(),classifyAgentFailure:()=>({code:'ABORTED'}),reduceAgentProgress:()=>[],mergeWorks:async()=>[],pushAddUndoMany:()=>{},locale:'zh',receiveAssistantActivity,
- };
- vm.createContext(c);vm.runInContext(compile(sendFunction),c);const run=c.sendAssistantMessage();await Promise.resolve();
- check(c.busy&&c.turns.length===2&&c.turns[0].content==='先出初稿'&&c.turns[1].content==='', 'optimistic user turn visible during header wait');
- check(c.activity.phase==='connecting'&&c.input===''&&posted===1,'immediate connecting state without another request');
+ const context={english:false,members:[],imageModelId:'fixture',ratio:'auto',resolution:'1K',quality:'medium',submit:async()=>{posted++;return response.promise},read:async()=>Response.json({}),merge:async()=>[],history:()=>{},upload:async()=>[],cue:()=>{},selectAnchor:()=>{},video:async()=>{},text:async()=>{},revealVideo:async()=>{}};
+ session.input('先出初稿');const run=session.send(context);await Promise.resolve();const now=session.getSnapshot();
+ check(now.busy&&now.turns.length===2&&now.turns[0].content==='先出初稿'&&now.turns[1].content==='', 'optimistic user turn visible during header wait');
+ check(now.activity.phase==='connecting'&&now.input===''&&posted===1,'immediate connecting state without another request');
  response.resolve(Response.json({error:'fixture reject'},{status:400}));await run;
- check(!c.busy&&c.input==='先出初稿'&&c.error==='fixture reject','preparation rejection restores draft and stops animation');
+ check(!session.getSnapshot().busy&&session.getSnapshot().input==='先出初稿'&&session.getSnapshot().error==='fixture reject','preparation rejection restores draft and stops animation');
 }
 
 async function runtimeEvents(){
  const source=fs.readFileSync('src/lib/agent/runtime.ts','utf8'),start=source.indexOf('  let modelStartedAt = 0;'),end=source.indexOf('\n  session.agent = agent;',start);
  const secret='fixture-secret-not-for-public',harness=new AgentHarness('fixture@test.local','cv-fixture');harness.registerSecret(secret);
  let subscriber;const phases=[],deltas=[];const session={harness,events:[],onModelActivity:p=>phases.push(p),onDelta:s=>deltas.push(s)};
- const c={session,agent:{subscribe:fn=>subscriber=fn},createModelActivityTracker,PublicOutputBuffer,Date,console,recordBiModelCompletion:async()=>{},modelExecutionTelemetry:()=>null,email:'fixture@test.local',sessionId:'fixture',scope:null,persistAgentSession:async()=>{}};
+ const c={modelRequestedAt:0,streamDiagnostic:require('../src/lib/agent/stream-recovery.ts').streamDiagnostic,session,agent:{subscribe:fn=>subscriber=fn},createModelActivityTracker,PublicOutputBuffer,Date,console,recordBiModelCompletion:async()=>{},modelExecutionTelemetry:()=>null,email:'fixture@test.local',sessionId:'fixture',scope:null,persistAgentSession:async()=>{}};
  vm.createContext(c);vm.runInContext(compile(source.slice(start,end)),c);
  await subscriber({type:'message_start',message:{role:'assistant'}});
  for(let i=0;i<15;i++)await subscriber({type:'message_update',assistantMessageEvent:{type:'thinking_delta',delta:'PRIVATE_REASONING_CONTENT '+secret}});
@@ -55,7 +56,7 @@ async function bundle(entry,state,modules,globals={}){
  const result=await build({entryPoints:[path.resolve(entry)],bundle:true,platform:'node',format:'cjs',write:false,jsx:'automatic',plugins:[{name:'fixture',setup(b){
   b.onResolve({filter:/^server-only$/},()=>({path:'empty',namespace:'fixture'}));
   b.onResolve({filter:/\.module\.css$/},()=>({path:'css',namespace:'fixture'}));
-  b.onResolve({filter:/.*/},args=>modules[args.path]?{path:args.path,namespace:'fixture'}:undefined);
+  b.onResolve({filter:/.*/},args=>modules[args.path]&&(!args.path.startsWith('.')||path.resolve(args.importer)===path.resolve(entry))?{path:args.path,namespace:'fixture'}:undefined);
   b.onLoad({filter:/.*/,namespace:'fixture'},args=>({contents:args.path==='css'?'export default new Proxy({},{get:(_,key)=>key})':modules[args.path]||'',loader:'ts'}));
  }}]});const m={exports:{}};vm.runInNewContext(result.outputFiles[0].text,{module:m,exports:m.exports,require,console,__fixture:state,Response,Request,Headers,URL,Buffer,TextEncoder,ReadableStream,Date,DOMException,process,setInterval,clearInterval,setTimeout,clearTimeout,...globals});return m.exports;
 }
@@ -86,6 +87,9 @@ async function serverStream(){
   '../canvas/video-node-repository':'export async function getVideoNode(){return null}',
   './harness':'export async function readHarnessBody(request){return request.json()}',
  };
+ modules['@/platform/db/pool']=modules['../db'];modules['@/lib/artworks/repository']=modules['../db'];
+ modules['@/lib/billing/synchronous-operation']=modules['../billing/synchronous'];modules['../object-storage/runtime']=modules['../storage'];
+ modules['../canvas/project-access']=modules['../canvas/video-node-service'];
  const FakeDate=class extends Date{static now(){return now;}};
  const {runCanvasAgent}=await bundle('src/lib/agent/canvas.ts',state,modules,{Date:FakeDate,setInterval:fn=>{const n=++id;timers.set(n,fn);return n},clearInterval:n=>timers.delete(n),setTimeout:()=>++id,clearTimeout:()=>{}});
  const request=()=>new Request('http://fixture/api/canvas/assistant',{method:'POST',body:JSON.stringify({sessionId:'fixture-session',projectKey:'workspace',messages:[{role:'user',content:'先出初稿'}]})});

@@ -7,7 +7,7 @@ const { Pool } = require('pg');
 const root = path.resolve(__dirname, '..');
 const arg = key => { const i = process.argv.indexOf(key); return i < 0 ? undefined : process.argv[i + 1]; };
 const source = path.resolve(arg('--source-root') || root), baseline = process.argv.includes('--baseline');
-const out = path.resolve(arg('--output-root') || 'output/cutout-receipt');
+const out = path.resolve(arg('--output-root') || process.env.CUTOUT_RECEIPT_EVIDENCE || 'output/cutout-receipt');
 const url = new URL(process.env.CANVAS_FEEDBACK_TEST_DATABASE || 'http://missing');
 assert.equal(url.hostname, '127.0.0.1'); assert.equal(url.pathname, '/canvas_feedback_fixture');
 fs.mkdirSync(out, { recursive: true });
@@ -41,17 +41,37 @@ const fixtures = {
   '../saas/creation-writer': { startCreation: async () => 'fixture-creation', finishCreation: async () => {}, prepareOriginalCreationInput: async () => {} },
   '../teams/server': { TeamError },
 };
+Object.assign(fixtures,{
+ '@/lib/billing/runtime':{getBillingRuntime:fixtures['./server'].getBillingRuntime},
+ '@/lib/saas/creation-scope':fixtures['../saas/creation-context'],
+ '@/platform/db/pool':fixtures['@/lib/db'],
+ '@/lib/persistence/schema':fixtures['@/lib/db'],
+ '@/lib/accounts/repository':fixtures['@/lib/db'],
+ '../admin-auth':fixtures['@/lib/admin-auth'],
+ '../model-config/context':fixtures['@/lib/model-config/context'],
+ '../saas/creation-scope':fixtures['../saas/creation-context'],
+ '../saas/creation-writer':{...fixtures['../saas/creation-writer'],claimCreation:async()=>({id:'fixture-creation'})},
+ '../teams/errors':{TeamError},
+ '../artwork-provenance-context':{withArtworkCreation:(_c,run)=>run()},
+ '../artwork-provenance':{provenanceEntry:()=> 'fixture'},
+});
 function load(rel) {
   const file = path.join(source, rel);
   if (cache.has(file)) return cache.get(file).exports;
   const mod = { exports: {} }; cache.set(file, mod);
   const bytes = fs.readFileSync(file);
   loaded.push({ path: file, sha256: crypto.createHash('sha256').update(bytes).digest('hex') });
+  if(rel.endsWith('.json')){mod.exports=JSON.parse(bytes.toString());return mod.exports;}
   const code = transformSync(bytes.toString(), { loader: 'ts', format: 'cjs', target: 'es2022' }).code;
   const requireLocal = name => {
     if (Object.hasOwn(fixtures, name)) return fixtures[name];
+    if(name==='lucide-react')return new Proxy({},{get:()=>()=>null});
+    const resolved=name.startsWith('.')?path.posix.normalize(path.posix.join(path.posix.dirname(rel.replaceAll('\\','/')),name)):name.startsWith('@/')?'src/'+name.slice(2):null;
+    const alias=resolved?.startsWith('src/')?'@/'+resolved.slice(4):null;
+    if(alias&&Object.hasOwn(fixtures,alias))return fixtures[alias];
+
     if (name.startsWith('@/')) return load('src/' + name.slice(2) + '.ts');
-    if (name.startsWith('.')) return load(path.relative(source, path.resolve(source, path.dirname(rel), name + '.ts')));
+    if (name.startsWith('.')) return load(path.relative(source, path.resolve(source, path.dirname(rel), name + (/\.(?:ts|json)$/.test(name)?'':'.ts'))));
     return require(name);
   };
   vm.runInThisContext('(function(require,module,exports){' + code + '\n})', { filename: file })(requireLocal, mod, mod.exports);
@@ -144,13 +164,23 @@ async function check(name, action) { await action(); checks.push(name); }
           '@/lib/supplier-cost/collect': {},
           '@/lib/model-config/clients': { modelAwareOpenAI: () => ({ images: { edit: async () => { state.mockSupplierCalls = (state.mockSupplierCalls || 0) + 1; sync.markBillingUpstream('succeeded'); return { data: [{ b64_json: png.toString('base64') }] }; } } }) },
           '@/lib/bi/model-observer': { observeOpenAI: x => x, withBiRequest: (_r, action) => action() },
-          'next/server': { NextResponse: { json } }, '@/lib/ip': { clientIp: () => '' },
+          'next/server': { NextResponse: { json:(value,options)=>json(value,options?.status||200) } }, '@/lib/ip': { clientIp: () => '' },
           '@/lib/storage': { storageEnabled: false }, '@/lib/settings': { getCutoutSettings: async () => ({ backend: 'openai' }), getOpenAISettings: async () => ({ apiKey: 'local-fixture-not-a-key' }) },
-          '@/lib/openai-base': { getOpenAIBaseUrl: async () => null }, '@/lib/api-error': { safeError: (_e, message) => message },
+          '@/lib/openai-base': { getOpenAIBaseUrl: async () => null }, '@/lib/api-error': { safeError: (_e,message)=>message },
+        });
+        Object.assign(fixtures,{
+          '@/lib/billing/legacy-credit-reservation':fixtures['@/lib/db'],
+          '@/lib/billing/legacy-ledger':fixtures['@/lib/db'],
+          '@/lib/accounts/session':fixtures['@/lib/db'],
+          '@/lib/artworks/writer':fixtures['@/lib/db'],
+          '@/lib/object-storage/runtime':fixtures['@/lib/storage'],
+          '@/lib/bi/request':fixtures['@/lib/bi/model-observer'],
+          '@/lib/bi/model-calls':fixtures['@/lib/bi/model-observer'],
+          '@/lib/media-upload':{uploadImage:()=>{throw Error('STORAGE_NOT_USED');}},
         });
         const route = load('src/app/api/cutout/route.ts');
         const req = key => { const f = new FormData(); f.set('image', new File([png], 'input.png', { type: 'image/png' })); f.set('email', state.owner); return new Request('http://fixture.local/api/cutout', { method: 'POST', headers: { 'x-naumi-billing-operation-id': key }, body: f }); };
-        const first = await route.POST(req('route-cutout-0001')); assert.equal(first.status, 200); assert.ok((await first.json()).id);
+        const first = await route.POST(req('route-cutout-0001')); if(first.status!==200)console.error('CUTOUT_ROUTE_FIXTURE_RESPONSE='+JSON.stringify(await first.clone().json()));assert.equal(first.status, 200); assert.ok((await first.json()).id);
         const row = (await pool.query('SELECT * FROM app_billing_operations WHERE id=$1', ['tool-route-cutout-0001'])).rows[0];
         assert.equal(row.state, 'settled'); assert.equal(row.result_response.receipt, 'cutout-artwork-v1');
         state.route = route; state.routeRequest = req;

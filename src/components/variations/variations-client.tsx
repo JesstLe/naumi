@@ -14,7 +14,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Copy, Plus, X, Download, ArrowRight, RefreshCw, Wand2, Sparkles } from "lucide-react";
 import { PromptAssistPopup } from "@/components/tools/prompt-assist-popup";
-import type { GeneratedImage } from "@/app/api/generate-image/route";
+import type { GeneratedImage } from "@/lib/imagegen/generation-types";
 import { useAuth } from "@/lib/auth-context";
 import { useAuthModal } from "@/lib/auth-modal-context";
 import { useI18n } from "@/lib/i18n/locale-context";

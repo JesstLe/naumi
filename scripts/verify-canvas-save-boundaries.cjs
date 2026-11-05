@@ -7,7 +7,7 @@ const {createRequire}=require('node:module');
 const deps=process.env.REVIEW_DEPS||path.resolve('node_modules');
 const req=createRequire(path.join(deps,'package.json'));
 const {build}=req('esbuild'),{chromium}=req('playwright'),ts=req('typescript');
-const root=process.cwd(),mode=process.argv[2]||'MODIFIED',out=path.resolve('output/capacity-audit-wave2-20261029/review-followups/canvas-'+mode);fs.mkdirSync(out,{recursive:true});const fixed=mode==='MODIFIED';
+const root=process.cwd(),mode=process.argv[2]||'MODIFIED',out=path.resolve(process.env.CANVAS_SAVE_REVIEW_EVIDENCE||'output/capacity-audit-wave2-20261029/review-followups/canvas-'+mode);fs.mkdirSync(out,{recursive:true});const fixed=mode==='MODIFIED';
 const isBaseline=false;
 const hook=path.resolve(process.argv[3]||'src/components/canvas/video/use-video-nodes.ts');
 const client=path.resolve(process.argv[4]||'src/components/canvas/canvas-client.tsx');
@@ -23,18 +23,18 @@ function resetData(){nodes=new Map(['vnode-a','vnode-b'].map(id=>[id,seed(id)]))
 function remote(id,patch){const n=nodes.get(id);nodes.set(id,{...n,...patch,revision:n.revision+1});}
 function json(res,status,data){res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(data));}
 async function main(){
- const bundle=await build({stdin:{contents:`import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {useVideoNodes} from ${JSON.stringify(hook.replaceAll('\\','/'))};import {selectWorkspace} from './src/lib/saas/workspace-client';
+ const bundle=await build({stdin:{contents:`import React,{useRef,useSyncExternalStore} from 'react';import {createCanvasDocumentContext} from './src/lib/canvas/document-scope';import {createCanvasVideoNodeActions} from './src/lib/canvas/video-node-actions';window.__fixtureActor='a@example.test';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {useVideoNodes} from ${JSON.stringify(hook.replaceAll('\\','/'))};import {selectWorkspace,currentWorkspaceRevision,WORKSPACE_SELECTION} from './src/lib/saas/workspace-client';
  let options={email:'a@example.test',readOnly:false};
  const authHeader=async()=>({'x-fixture-actor':options.email});
  ${extract('privateFetchRaw')}
  const root=createRoot(document.getElementById('root'));window.undo=[];window.tip='';window.switchWorkspace=selectWorkspace;
- function App(){const videoNodesStore=useVideoNodes({...options,request:privateFetchRaw});window.store=videoNodesStore;
- const pushUndo=x=>window.undo.push(x);${extract('patchVideoNode')}
+ function App(){window.__fixtureActor=options.email;useSyncExternalStore(cb=>{window.addEventListener(WORKSPACE_SELECTION,cb);return()=>window.removeEventListener(WORKSPACE_SELECTION,cb)},currentWorkspaceRevision,()=>0);const ctx=useRef(createCanvasDocumentContext()),scope=ctx.current.render(options.email,'tree:review');const videoNodesStore=useVideoNodes({...options,scope,request:privateFetchRaw});window.store=videoNodesStore;
+ const pushUndo=x=>window.undo.push(x);const videoNodeActions=createCanvasVideoNodeActions().bind(scope,{store:videoNodesStore,history:pushUndo});${extract('patchVideoNode')}
  ${extract('saveVideoDraft')}window.patchVideoNode=patchVideoNode;window.saveVideoDraft=saveVideoDraft;
- const unsavedTextCount=0,unsavedTextRef={current:new Map()},persistTextNode=async n=>n,t=k=>k,flashTip=s=>{window.tip=s;};
+ const canvasTextDocument={retry:async()=>{}},unsavedTextCount=0,unsavedTextRef={current:new Map()},persistTextNode=async n=>n,t=k=>k,flashTip=s=>{window.tip=s;};
  return <><output data-testid="nodes">{JSON.stringify(videoNodesStore.nodes)}</output>${alert}</>;}
  window.mount=(next={},strict=false)=>{options={...options,...next};flushSync(()=>root.render(strict?<React.StrictMode><App/></React.StrictMode>:<App/>));};
- window.detach=()=>flushSync(()=>root.render(null));window.mount();`,resolveDir:root,loader:'tsx'},bundle:true,write:false,platform:'browser',nodePaths:[deps],tsconfig:path.join(root,'tsconfig.json'),define:{'process.env.NODE_ENV':'"development"'},plugins:[{name:'exact-queue-copy',setup(b){b.onResolve({filter:/^@\/lib\/canvas\/video-node-save-queue$/},()=>({path:path.resolve(path.dirname(hook),'../../../lib/canvas/video-node-save-queue.ts')}));}}]});
+ window.detach=()=>flushSync(()=>root.render(null));window.mount();`,resolveDir:root,loader:'tsx'},bundle:true,write:false,platform:'browser',nodePaths:[deps],tsconfig:path.join(root,'tsconfig.json'),define:{'process.env.NODE_ENV':'"development"'},plugins:[{name:'exact-queue-copy',setup(b){b.onResolve({filter:/supabase$/},()=>({path:'auth',namespace:'fixture-auth'}));b.onLoad({filter:/.*/,namespace:'fixture-auth'},()=>({contents:"export const authHeader=async()=>({'x-fixture-actor':window.__fixtureActor});",loader:'js'}));b.onResolve({filter:/^@\/lib\/canvas\/video-node-save-queue$/},()=>({path:path.resolve(path.dirname(hook),'../../../lib/canvas/video-node-save-queue.ts')}));}}]});
  // Use the actual request schema, not a fixture that accepts impossible fields.
  await build({entryPoints:[path.join(root,'src/lib/canvas/video-node-schema.ts')],outfile:path.join(out,'schema.cjs'),bundle:true,platform:'node',nodePaths:[deps],format:'cjs'});
  const {videoNodeWriteSchema}=require(path.join(out,'schema.cjs'));

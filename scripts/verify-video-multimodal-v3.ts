@@ -1,3 +1,4 @@
+import ts from "typescript";
 import assert from "node:assert/strict";
 import {createServer} from "node:http";
 import {createHash} from "node:crypto";
@@ -34,7 +35,9 @@ const hash=(b:Buffer)=>createHash('sha256').update(b).digest('hex');
 
 async function main(){
   check(MULTIMODAL_VIDEO_FAMILIES.length,11,'eleven exact published identities, not model-name wildcard routing');
-  const legacyHashes:Record<string,string>={};for(const file of legacyFiles){const before=execFileSync('git',['show','2b990949:'+file]),after=readFileSync(file);check(hash(after),hash(before),'old frozen file unchanged '+file);legacyHashes[file]=hash(after)}
+  const executable=(file:string,bytes:Buffer)=>file.endsWith('.json')?bytes.toString('utf8').replace(/\r\n/g,'\n'):
+    ts.createSourceFile(file,bytes.toString('utf8'),ts.ScriptTarget.Latest,true).statements.filter(node=>!ts.isImportDeclaration(node)).map(node=>node.getText()).join('\n').replace(/\r\n/g,'\n');
+  const legacyHashes:Record<string,string>={};for(const file of legacyFiles){const before=execFileSync('git',['show','2b990949:'+file]),after=readFileSync(file);check(executable(file,after),executable(file,before),'old frozen executable contract unchanged '+file);legacyHashes[file]=hash(after)}
   for(const item of MULTIMODAL_VIDEO_FAMILIES){
     videoDefinitionSchema.parse(item.definition);checks++;
     assert.ok(item.documentation.sources.every(source=>source.sha256.length===64));checks++;

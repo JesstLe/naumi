@@ -1,14 +1,13 @@
 "use client";
 
-import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { authHeader } from "@/lib/supabase";
 import { CollaborationClient } from "./collaboration-client";
 import { CollaborationWindow } from "./collaboration-window";
+import { CollaborationContext } from "./collaboration-context";
 import "./collaboration.css";
-
-type Context = { client: CollaborationClient };
-const CollaborationContext = createContext<Context | null>(null);
+export {useCollaboration,useCollaborationState} from "./collaboration-context";
 
 /** Mounted once below Auth/Toast and outside route-keyed content. */
 export function CollaborationProvider({ children }: { children: React.ReactNode }) {
@@ -28,17 +27,4 @@ export function CollaborationProvider({ children }: { children: React.ReactNode 
   }, [client]);
   const value = useMemo(() => ({ client }), [client]);
   return <CollaborationContext.Provider value={value}>{children}<CollaborationWindow /></CollaborationContext.Provider>;
-}
-
-export function useCollaborationState() {
-  const context = useContext(CollaborationContext);
-  if (!context) throw new Error("CollaborationProvider is missing");
-  return { client: context.client, state: useSyncExternalStore(context.client.subscribe, context.client.snapshot, context.client.snapshot) };
-}
-
-export function useCollaboration() {
-  const context = useContext(CollaborationContext);
-  if (!context) throw new Error("CollaborationProvider is missing");
-  // Draft typing/upload progress must not re-render the entire CanvasClient.
-  return useSyncExternalStore(context.client.subscribe, context.client.entrySnapshot, context.client.entrySnapshot);
 }

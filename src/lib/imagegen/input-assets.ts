@@ -2,10 +2,12 @@ import "server-only";
 import {randomUUID} from "node:crypto";
 import sharp from "sharp";
 import {registerMediaAsset} from "../media-assets";
-import {writeStoredObject,readManagedObject} from "../storage";
+
+import { writeStoredObject } from "../object-storage/runtime";
+import { readManagedObject } from "../object-storage/managed-read";
 import {decodeImagegenPixels} from "./pixels";
-import {bindCreationMedia} from '../saas/creation-context';
-import {readImagegenInputAssetReference} from './input-asset-reference';
+import {bindCreationMedia} from "@/lib/saas/creation-access";
+import {readImagegenInputAssetReference} from "./input-asset-reference";
 /** Private original references, including masks; not gallery artworks or arbitrary URLs. */
 export async function saveImagegenInput(bytes:Buffer,owner:string){
  const decoded=await decodeImagegenPixels(bytes),id=randomUUID(),meta=await sharp(bytes).metadata();

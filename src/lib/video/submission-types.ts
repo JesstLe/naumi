@@ -1,0 +1,36 @@
+import type {VideoGenerationRequest,VideoReference,VideoTaskSource} from "./types";
+
+export type CreateVideoInput = {
+  billingConfirmation?:{version?:number;credits?:number};
+  source: VideoTaskSource;
+  sourceId?: string;
+  projectKey?:string;
+  nodeId?:string;
+  nodeRevision?:number;workflowRunId?:string;workflowNodeId?:string;
+  mode?:VideoGenerationRequest["mode"];
+  orderedInputs?:VideoGenerationRequest["orderedInputs"];
+  shots?:VideoGenerationRequest["shots"];
+  elements?:VideoGenerationRequest["elements"];
+  camera?:import("zod").infer<typeof import("./submission-schema").videoCameraSchema>;
+  workflowManifest?:VideoGenerationRequest["workflowManifest"];
+  workflowTaskId?:string;
+  retryOf?:string;
+  prompt: string;
+  seconds: string;
+  size: string;
+  artworkId?: string;
+  imageUrl?: string;
+  idempotencyKey?: string;
+  providerId?: string;
+  modelId?: string;
+  negativePrompt?: string;
+  durationSeconds?: number;
+  aspectRatio?: string;
+  resolution?: string;
+  width?: number;
+  height?: number;
+  generateAudio?: boolean;
+  watermark?: boolean;
+  references?: VideoReference[];
+  providerOptions?: Record<string, unknown>;
+};

@@ -30,11 +30,12 @@ const base=process.env.CANVAS_HISTORY_FIXTURE_URL||'http://127.0.0.1:17871',out=
   if(u.pathname==='/api/download'){return route.fulfill({contentType:'image/png',body:bytes});}
   return route.continue();
  });
+ const textFixtureId=process.env.CANVAS_HISTORY_TEXT_ID||'text-dock-fixture';
  const pend=()=>page.locator('.react-flow__node[data-id^="pend-"]'),node=id=>page.locator(`.react-flow__node[data-id="${id}"]`);
  const blur=()=>page.evaluate(()=>document.activeElement?.blur());
  const waitCount=(selector,n)=>page.waitForFunction(({selector,n})=>document.querySelectorAll(selector).length===n,{selector,n});
  try{
-  await page.goto(base+'/canvas',{waitUntil:'domcontentloaded',timeout:180000});await node('placement-root').waitFor({timeout:120000});await node('text-dock-fixture').waitFor();
+  await page.goto(base+'/canvas',{waitUntil:'domcontentloaded',timeout:180000});await node('placement-root').waitFor({timeout:120000});await node(textFixtureId).waitFor();
   await page.locator('[data-tool="image-node"]').click();await waitCount('.react-flow__node[data-id^="pend-"]',1);await blur();await page.keyboard.press('Control+z');await waitCount('.react-flow__node[data-id^="pend-"]',0);await page.keyboard.press('Control+Shift+z');await waitCount('.react-flow__node[data-id^="pend-"]',1);checks.push('REAL_ADD_EMPTY_CTRL_Z_REDO');
   await pend().first().click({position:{x:40,y:40}});await blur();await page.keyboard.press('Backspace');await waitCount('.react-flow__node[data-id^="pend-"]',0);await page.keyboard.press('Control+z');await waitCount('.react-flow__node[data-id^="pend-"]',1);assert.equal(requests.length,0);checks.push('REAL_SINGLE_EMPTY_BACKSPACE_UNDO_NO_API');
   // Move the first blank out of the center before creating another, so actual
@@ -42,12 +43,12 @@ const base=process.env.CANVAS_HISTORY_FIXTURE_URL||'http://127.0.0.1:17871',out=
   const b=await pend().first().boundingBox();await page.mouse.move(b.x+20,b.y+20);await page.mouse.down();await page.mouse.move(b.x-260,b.y-210,{steps:10});await page.mouse.up();
   await page.locator('[data-tool="image-node"]').click();await waitCount('.react-flow__node[data-id^="pend-"]',2);
   const ids=await pend().evaluateAll(ns=>ns.map(n=>n.dataset.id));
-  await node(ids[0]).click({position:{x:20,y:30}});await node(ids[1]).click({position:{x:20,y:30},modifiers:['Shift']});await node('text-dock-fixture').click({position:{x:20,y:30},modifiers:['Shift']});
+  await node(ids[0]).click({position:{x:20,y:30}});await node(ids[1]).click({position:{x:20,y:30},modifiers:['Shift']});await node(textFixtureId).click({position:{x:20,y:30},modifiers:['Shift']});
   await page.getByTestId('mixed-node-batch-bar').waitFor();assert.match(await page.getByTestId('mixed-node-batch-bar').innerText(),/3/);
   await page.getByTestId('mixed-node-batch-bar').getByRole('button',{name:'删除',exact:true}).click();
   await page.getByText('删除选中的 3 个节点?',{exact:true}).waitFor();await page.getByRole('button',{name:'确定删除',exact:true}).click();
-  await waitCount('.react-flow__node[data-id^="pend-"]',0);await node('text-dock-fixture').waitFor({state:'detached'});assert.equal(requests.filter(r=>r.path.endsWith('/delete')).length,1);checks.push('REAL_MIXED_TWO_EMPTY_ONE_TEXT_COUNTS_AND_DELETES_THREE');
-  await blur();await page.keyboard.press('Control+z');await waitCount('.react-flow__node[data-id^="pend-"]',2);await node('text-dock-fixture').waitFor();checks.push('REAL_MIXED_DELETE_SINGLE_UNDO_RESTORES_ALL');
+  await waitCount('.react-flow__node[data-id^="pend-"]',0);await node(textFixtureId).waitFor({state:'detached'});assert.equal(requests.filter(r=>r.path.endsWith('/delete')).length,1);checks.push('REAL_MIXED_TWO_EMPTY_ONE_TEXT_COUNTS_AND_DELETES_THREE');
+  await blur();await page.keyboard.press('Control+z');await waitCount('.react-flow__node[data-id^="pend-"]',2);await node(textFixtureId).waitFor();checks.push('REAL_MIXED_DELETE_SINGLE_UNDO_RESTORES_ALL');
   // A failed history response leaves local state and the original operation ID.
   failHistory=true;await page.keyboard.press('Control+y');await page.getByText('保存响应超时，修改仍保留；请重试原操作',{exact:true}).waitFor();assert.equal(await pend().count(),2);
   const firstAttempt=requests.at(-1).body;await page.keyboard.press('Control+y');await waitCount('.react-flow__node[data-id^="pend-"]',0);assert.equal(requests.at(-1).body.operationId,firstAttempt.operationId);assert.deepEqual(requests.at(-1).body,firstAttempt);checks.push('REAL_HISTORY_TIMEOUT_NO_LOCAL_LOSS_SAME_OPERATION_RETRY');

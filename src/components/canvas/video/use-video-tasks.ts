@@ -1,6 +1,6 @@
 "use client";
 import {useCallback,useEffect,useRef,useState} from "react";
-import type {PublicVideoTaskView} from "@/lib/video/service";
+import {type PublicVideoTaskView} from "@/lib/video/queries";
 import type {VideoPrivateFetch} from "./use-video-nodes";
 import {reuseVideoTaskSnapshots} from '@/lib/video/polling-state';
 export function useVideoTasks({email,projectKey,readOnly,request,onCompleted}:{email?:string;projectKey?:string|null;readOnly:boolean;request:VideoPrivateFetch;onCompleted:(task:PublicVideoTaskView,projectKey:string)=>Promise<void>}){

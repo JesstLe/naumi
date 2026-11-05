@@ -3,6 +3,7 @@ import {spawn} from 'node:child_process';
 import {createHash,timingSafeEqual,randomUUID} from 'node:crypto';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {directWorkerEnvironment} from './direct-worker-settings.mjs';
 
 const scriptDirectory=path.dirname(fileURLToPath(import.meta.url));
 const integer=value=>Number.isSafeInteger(value)&&value>=0;
@@ -38,10 +39,12 @@ export function combinedWorkerPlan(env=process.env,{platform=process.platform,ui
     NAUMI_INSTANCE_ID:env.NAUMI_INSTANCE_ID||'',NAUMI_WORKER_TARGET_INSTANCE_ID:env.NAUMI_WORKER_TARGET_INSTANCE_ID||'',
     NAUMI_WORKER_TICK_PROTOCOL:env.NAUMI_WORKER_TICK_PROTOCOL||'1',NAUMI_APP_ORIGIN:env.NAUMI_APP_ORIGIN||'',VIDEO_WORKER_SECRET:env.VIDEO_WORKER_SECRET,
     ...(env.BUILD_VERSION?{BUILD_VERSION:env.BUILD_VERSION}:{}),...(env.VIDEO_WORKER_INTERVAL_MS?{VIDEO_WORKER_INTERVAL_MS:env.VIDEO_WORKER_INTERVAL_MS}:{})};
+  const direct=env.NAUMI_WORKER_EXECUTION==='direct';
+  if(direct)Object.assign(scannerEnv,directWorkerEnvironment(env),{NAUMI_WORKER_TARGET_INSTANCE_ID:scannerEnv.NAUMI_INSTANCE_ID});
   const mediaEnv={...common,HOME:'/',TMPDIR:'/tmp',MEDIA_JOB_DIR:'/scratch',MEDIA_WORKER_SECRET:env.MEDIA_WORKER_SECRET,
     MEDIA_WORKER_HOST:'0.0.0.0',MEDIA_WORKER_PORT:'3002',MEDIA_WORKER_CONCURRENCY:'1',MEDIA_WORKER_START_PAUSED:env.MEDIA_WORKER_START_PAUSED==='0'?'0':'1'};
   return {version:env.SOURCE_COMMIT,workerSecret:env.VIDEO_WORKER_SECRET,mediaSecret:env.MEDIA_WORKER_SECRET,
-    scanner:{name:'scanner',uid:1001,gid:1001,args:['--max-old-space-size=64',path.join(scriptDirectory,'video-worker.mjs')],env:scannerEnv},
+    scanner:{name:'scanner',uid:1001,gid:1001,args:[`--max-old-space-size=${direct?512:64}`,path.join(scriptDirectory,'video-worker.mjs')],env:scannerEnv},
     media:{name:'media',uid:0,gid:0,args:['--max-old-space-size=96',path.join(scriptDirectory,'video-media-worker.mjs')],env:mediaEnv},
     controlHost:'127.0.0.1',controlPort:3001,scannerPort:3003,mediaPort:3002,graceMs:12000};
 }
@@ -52,7 +55,10 @@ export function verifiedMediaHealth(value,version){
 }
 export function verifiedScannerState(value,plan){
   assert(value&&value.commit===plan.version&&value.instanceId===plan.scanner.env.NAUMI_INSTANCE_ID&&value.durableControl===true&&
-    typeof value.paused==='boolean'&&integer(value.revision),'SCANNER_WORKER_HEALTH_INVALID');return value;
+    typeof value.paused==='boolean'&&integer(value.revision),'SCANNER_WORKER_HEALTH_INVALID');
+  if(plan.scanner.env.NAUMI_WORKER_EXECUTION==='direct')assert(value.executionMode==='direct'&&value.executorRole==='worker'&&
+    value.targetInstanceId===value.instanceId&&integer(value.backgroundTasks),'DIRECT_SCANNER_WORKER_HEALTH_INVALID');
+  return value;
 }
 async function boundedJson(response){
   const reader=response.body?.getReader();assert(reader,'WORKER_CONTROL_RESPONSE_MISSING');
@@ -178,6 +184,9 @@ export class CombinedWorkerSupervisor{
   async stopChild(name){
     const record=this.children.get(name);if(!record||record.closed)return;
     try{this.kill(-record.child.pid,'SIGTERM');}catch(error){if(error?.code!=='ESRCH')this.exitCode=1;}
+    // Local paid callbacks now live in scanner, not Web. Its signal handler
+    // joins them; do not turn the old HTTP-caller 12s grace into a forced kill.
+    if(name==='scanner'&&this.plan.scanner.env.NAUMI_WORKER_EXECUTION==='direct'){await record.closedPromise;return;}
     await settledWithin(record.closedPromise,this.plan.graceMs);
     if(!record.closed){this.exitCode=1;try{this.kill(-record.child.pid,'SIGKILL');}catch{}await settledWithin(record.closedPromise,1000);}
   }

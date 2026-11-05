@@ -35,6 +35,14 @@ const mocks = {
   './feature-path': { featureForRequest: pathname => pathname === '/api/canvas/text-generate' ? 'canvas.text-generate' : pathname === '/api/canvas/assistant' ? 'canvas.assistant' : 'image.generate' },
   '../canvas/generation-parameters': { canvasSourceFrameEdit: () => false },
 };
+// The refactor exposes these same owned read ports rather than the monolithic server.
+Object.assign(mocks, {
+  './availability': { modelConfigurationEnabled: async () => true },
+  './execution-services': { getModelExecutionServices: () => ({
+    models: { current: async () => { state.snapshotReads++; return snapshot; } },
+    billing: { current: async () => billing },
+  }) },
+});
 const compiled = ts.transpileModule(source + '\nexport { requestFacts as requestFactsForTest };', {
   fileName: file, reportDiagnostics: true,
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },

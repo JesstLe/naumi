@@ -1,25 +1,18 @@
 import "server-only";
 import type { PoolClient } from "pg";
-import { ensureSchema, getPool } from "../db";
-import { ensureCanvasSettingsSchema } from "../canvas-node-settings-store";
-import { assertCreationProjectInput, currentCreationContext } from "../saas/creation-context";
+import {getPool} from "@/platform/db/pool";
+import {ensureSchema} from "../persistence/schema";
+import {ensureCanvasSettingsSchema,ensureCanvasImageVersionSchema} from "./storage-schema";
+import {assertCreationProjectInput} from "../saas/creation-access";
+import {currentCreationContext} from "../saas/creation-scope";
 import { ensureCreationSchema } from "../saas/creation-schema";
 import type { ImagegenRequest } from "../imagegen/types";
 import { CANVAS_IMAGE_VERSION_SOURCE, type CanvasImageVersion, type CanvasImageAttachment } from "./image-versions";
 
 type Row = Record<string, any>;
 type Query = Pick<PoolClient, "query">;
-let ready: Promise<void> | undefined;
 export async function ensureCanvasImageVersions() {
-  await ensureSchema(); await ensureCanvasSettingsSchema(); await ensureCreationSchema();
-  if (!ready) ready = getPool().query(`CREATE TABLE IF NOT EXISTS app_canvas_image_versions (
-    email text NOT NULL, node_id text NOT NULL, version_id text NOT NULL, operation_id uuid,
-    asset jsonb NOT NULL, attachment jsonb, created_at timestamptz NOT NULL DEFAULT now(),
-    PRIMARY KEY(email,node_id,version_id));
-    CREATE INDEX IF NOT EXISTS canvas_image_version_operation ON app_canvas_image_versions(email,operation_id);
-    CREATE INDEX IF NOT EXISTS canvas_image_version_node ON app_canvas_image_versions(email,node_id,created_at);`)
-    .then(() => undefined).catch(error => { ready = undefined; throw error; });
-  await ready;
+  await ensureSchema();await ensureCanvasSettingsSchema();await ensureCreationSchema();await ensureCanvasImageVersionSchema();
 }
 function snapshot(row: Row): Omit<CanvasImageVersion, "id" | "createdAt"> {
   return { image: row.image_url, prompt: row.prompt || "", width: row.image_width || null, height: row.image_height || null,

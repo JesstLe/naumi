@@ -1,4 +1,5 @@
-import {createdResult,field,imageWireValue,mediaUrl,polled,rejectAdvanced,selectWireOptions,unsupportedWire,wireReferences,type VideoWireContext,type VideoWireRequest,type VideoWireCodec} from "../wire";
+import {createdResult,field,imageWireValue,mediaUrl,polled,rejectAdvanced,selectWireOptions,unsupportedWire,wireReferences} from "../wire-helpers";
+import type {VideoWireContext,VideoWireRequest,VideoWireCodec} from "../wire-contracts";
 import {buildMiniMaxCreate,decodeMiniMaxPoll} from "./minimax";
 import {TransientPollError} from "../../types";
 // Toonflow-app ae9e5f1 packages/providers/src/media/compshare.ts. Copyright (c) 2026 HBAI-Ltd, MIT.

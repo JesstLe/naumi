@@ -1,19 +1,17 @@
 import { canvasParameterError } from "@/lib/canvas/generation-parameters";
-import {withBillingRequest,currentSynchronousBilling} from "@/lib/billing/synchronous";
-import { withBiRequest } from "@/lib/bi/model-observer";
+import {withBillingRequest} from "@/lib/billing/synchronous";
+import {currentSynchronousBilling} from "@/lib/billing/synchronous-operation";
+import {withBiRequest} from "@/lib/bi/request";
 import { imageRequestBilling, requestImageQuality, settleToolImage } from "@/lib/image-quality-request";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
 
 import { authenticatedEmail } from "@/lib/request-auth";
-import {
-  addArtworks,
-  dbEnabled,
-  getUser,
-  listArtworksByIds,
-  refundCredits,
-  reserveCredits,
-} from "@/lib/db";
+import {refundCredits, reserveCredits} from "@/lib/billing/legacy-credit-reservation";
+import {listArtworksByIds} from "@/lib/artworks/repository";
+import {addArtworks} from "@/lib/artworks/writer";
+import {dbEnabled} from "@/platform/db/pool";
+import {getUser} from "@/lib/accounts/session";
 import { readCanvasImage } from "@/lib/canvas-image-input";
 import { editImage, isImageTimeout } from "@/lib/image-edit";
 import { ImageOperationPending } from "@/lib/image-gateway";
@@ -22,7 +20,8 @@ import { billingErrorResponse } from "@/lib/billing/request";
 import { expansionGeometry, composeExpandedImage, ExpandInputError } from "@/lib/canvas/expand-image";
 import { expansionUsesMask } from "@/lib/canvas/expand-capabilities";
 import { currentModelExecution } from "@/lib/model-config/context";
-import { storageEnabled, uploadImage } from "@/lib/storage";
+import { storageEnabled } from "@/lib/object-storage/runtime";
+import { uploadImage } from "@/lib/media-upload";
 import { safeError } from "@/lib/api-error";
 
 // ---------------------------------------------------------------------------

@@ -16,7 +16,7 @@ export async function toVisionDataUrl(
 ): Promise<string> {
   try {
     const mod = (await import("sharp")) as unknown as {
-      default?: typeof import("sharp");
+      default?: typeof import("sharp").default;
     } & typeof import("sharp");
     const sharp = mod.default ?? mod;
     const small = await sharp(raw)

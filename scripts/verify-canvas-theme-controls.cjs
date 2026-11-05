@@ -3,7 +3,7 @@
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),crypto=require('node:crypto'),assert=require('node:assert/strict');
 const esbuild=require('esbuild'),postcss=require('postcss'),tailwind=require('tailwindcss'),{chromium,expect}=require('@playwright/test');
 const args=process.argv.slice(2),arg=(name,fallback)=>args.includes(name)?args[args.indexOf(name)+1]:fallback;
-const root=path.resolve(arg('--source-root','.')),out=path.resolve(arg('--output-root','output/canvas-theme-controls')),baseline=args.includes('--baseline');
+const root=path.resolve(arg('--source-root','.')),out=path.resolve(arg('--output-root',process.env.CANVAS_THEME_CONTROLS_EVIDENCE||'output/canvas-theme-controls')),baseline=args.includes('--baseline');
 const deps=path.resolve(__dirname,'../node_modules');fs.mkdirSync(out,{recursive:true});
 const files=['src/components/ui/select-menu.tsx','src/components/ui/text-model-select.tsx','src/components/ui/image-quality-select.tsx','src/components/canvas/imagegen-pending-recovery.tsx','src/components/canvas/group-layer.module.css','src/components/canvas/generation-placeholder.module.css','src/app/globals.css'];
 const originalFiles=files.map(file=>({file:path.join(root,file),sha256:crypto.createHash('sha256').update(fs.readFileSync(path.join(root,file))).digest('hex')}));

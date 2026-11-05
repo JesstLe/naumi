@@ -1,8 +1,8 @@
 import "server-only";
-import {getPool} from "../db";
+import {getPool} from "@/platform/db/pool";
 import {parseAudioInputIdentity} from "../audio/project";
 import {ModelConfigError} from "../model-config/types";
-import {assertCreationProjectInput} from "../saas/creation-context";
+import {assertCreationProjectInput} from "../saas/creation-access";
 import type {OrderedInput} from "../video/references";
 import {ensureAudioNodeSchema, mapAudioNode} from "./audio-node-repository";
 import {requireAudioMaterials} from "./audio-materials";

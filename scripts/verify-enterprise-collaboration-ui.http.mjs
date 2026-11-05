@@ -13,7 +13,10 @@ export async function startFixture(assets) {
   const makeConversation = (id, kind, ids, title, ownerId = A) => ({ id, enterpriseId: 'enterprise-fixture', kind, title, memberIds: ids, ownerId, lastMessage: null, unread: 0, lastReadMessageId: null, pinned: false, muted: false, updatedAt: now(), read: {}, preferences: {} });
   conversations.set('direct-ab', makeConversation('direct-ab', 'direct', [A, B], '产品设计'));
   conversations.set('group-abc', makeConversation('group-abc', 'group', [A, B, C], '春日产品小组'));
-  function publicConversation(c, actor) { const all = messages.get(c.id) || [], lastRead = c.read[actor] || null, readIndex = all.findIndex(m => m.id === lastRead); const { read, preferences, ...wire } = c; return { ...wire, ...preferences[actor], lastMessage: all.at(-1) || null, lastReadMessageId: lastRead, unread: all.slice(readIndex + 1).filter(m => m.senderId !== actor).length }; }
+  function publicConversation(c, actor) { const all = messages.get(c.id) || [], lastRead = c.read[actor] || null, readIndex = all.findIndex(m => m.id === lastRead); const { read, preferences, ...wire } = c; return { ...wire, ...preferences[actor], lastMessage: all.at(-1) || null, lastReadMessageId: lastRead, unread: all.slice(readIndex + 1).filter(m => m.senderId !== actor && !m.withdrawnAt).length }; }
+  const visibleConversations = actor => [...conversations.values()].filter(c => c.memberIds.includes(actor));
+  const unreadTotal = actor => visibleConversations(actor).reduce((total, c) => total + publicConversation(c, actor).unread, 0);
+  const conversationPage = (actor, cursor) => ({ ...paginate(visibleConversations(actor).map(c => publicConversation(c, actor)).sort((a, b) => b.id.localeCompare(a.id)), cursor, 50), unreadTotal: unreadTotal(actor) });
   function pushMessage(conversationId, senderId, body, extra = {}) {
     const createdAt = now(), id = `message-${String(sequence).padStart(4, '0')}`;
     const message = { id, conversationId, senderId, clientId: `seed-${id}`, body, createdAt, withdrawnAt: null, replyTo: null, attachmentIds: [], attachments: [], mentionIds: [], shareId: null, ...extra };
@@ -47,7 +50,10 @@ export async function startFixture(assets) {
       const path = pathname.slice('/api/collaboration'.length), enterprise = url.searchParams.get('enterpriseId') || 'enterprise-fixture';
       if (path !== '/bootstrap' && !url.searchParams.has('enterpriseId')) return fail(res, '缺少企业', 400);
       if (flags.badJson && path === '/members') { flags.badJson = false; res.writeHead(503, { 'Content-Type': 'text/html' }); return res.end('<html>fixture failure</html>'); }
-      if (path === '/bootstrap') return json(res, { actorId: actor, enterpriseId: enterprise, enterprises: [{ id: 'enterprise-fixture', name: 'Naumi 创意团队' }, { id: 'enterprise-second', name: '另一企业' }], members: members.slice(0,100), conversations: [...conversations.values()].filter(c => c.memberIds.includes(actor)).map(c => publicConversation(c, actor)).slice(0,50), cursor: String(eventSequence), limits: { attachmentBytes: 20 * 1024 * 1024, chunkBytes: 16 * 1024 } });
+      if (path === '/bootstrap') {
+        const memberPage = paginate(members, undefined, 100), page = conversationPage(actor);
+        return json(res, { actorId: actor, enterpriseId: enterprise, enterprises: [{ id: 'enterprise-fixture', name: 'Naumi 创意团队' }, { id: 'enterprise-second', name: '另一企业' }], members: memberPage.items, membersNextCursor: memberPage.nextCursor, conversations: page.items, conversationsNextCursor: page.nextCursor, unreadTotal: page.unreadTotal, cursor: String(eventSequence), limits: { attachmentBytes: 20 * 1024 * 1024, chunkBytes: 16 * 1024 } });
+      }
       if (path === '/members') { if (flags.delayMembers) await new Promise(r => setTimeout(r, flags.delayMembers)); const q = url.searchParams.get('q') || ''; return json(res, paginate(members.filter(m => (m.name + m.roleName).includes(q)), url.searchParams.get('cursor'), 100)); }
       if (path === '/presence') { const value = JSON.parse((await body(req)).toString()); const member = members.find(m => m.id === actor); member.presence = value.state; return json(res, { ok: true }); }
       if (path === '/events') {
@@ -62,7 +68,7 @@ export async function startFixture(assets) {
         const timer = setInterval(() => { if (!res.destroyed) res.write('event: heartbeat\ndata: {}\n\n'); }, 5000);
         res.on('close', () => { clearInterval(timer); streams.delete(stream); }); return;
       }
-      if (path === '/conversations' && req.method === 'GET') return json(res, paginate([...conversations.values()].filter(c => c.memberIds.includes(actor)).map(c => publicConversation(c, actor)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)), url.searchParams.get('cursor'), 50));
+      if (path === '/conversations' && req.method === 'GET') return json(res, conversationPage(actor, url.searchParams.get('cursor')));
       if (path === '/conversations' && req.method === 'POST') {
         const input = JSON.parse((await body(req)).toString()), ids = [...new Set([actor, ...input.memberIds])].sort();
         let c = input.kind === 'direct' ? [...conversations.values()].find(c => c.kind === 'direct' && c.memberIds.slice().sort().join() === ids.join()) : [...conversations.values()].find(c => c.createId === input.clientId);
@@ -71,7 +77,11 @@ export async function startFixture(assets) {
       }
       const convMatch = /^\/conversations\/([^/]+)(?:\/(messages|read))?$/.exec(path);
       if (convMatch) {
-        const c = conversations.get(decodeURIComponent(convMatch[1])); if (!c || !c.memberIds.includes(actor)) return fail(res, '会话访问已失效', 403);
+        const c = conversations.get(decodeURIComponent(convMatch[1]));
+        // Native GET returns an authorized row or null plus the global unread
+        // count. It never parses an empty GET body as a PATCH mutation.
+        if (!convMatch[2] && req.method === 'GET') return json(res, { conversation: c?.memberIds.includes(actor) ? publicConversation(c, actor) : null, unreadTotal: unreadTotal(actor) });
+        if (!c || !c.memberIds.includes(actor)) return fail(res, '会话不存在或已退出', 404);
         if (!convMatch[2]) {
           const patch = JSON.parse((await body(req)).toString());
           if (patch.title || patch.addMemberIds || patch.removeMemberIds) if (c.ownerId !== actor) return fail(res, '仅群主可操作', 403);

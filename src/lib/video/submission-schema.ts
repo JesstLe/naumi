@@ -1,7 +1,8 @@
 import {z} from "zod";
 import {videoInputSchema} from "./contract";
 import {videoWorkflowManifestSchema} from "./workflow-schema";
-import {videoNodeIdSchema,videoProjectKeySchema} from "../canvas/video-node-schema";
+import { videoNodeIdSchema } from "../canvas/video-node-schema";
+import { videoProjectKeySchema } from "../canvas/project-key";
 import {videoCameraSchema} from "./camera";
 export {videoCameraSchema} from "./camera";
 export const videoSubmissionSchema=videoInputSchema.partial().extend({

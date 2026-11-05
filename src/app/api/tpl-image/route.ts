@@ -1,14 +1,8 @@
 import { NextResponse } from "next/server";
-import {
-  dbEnabled,
-  getTemplateImageCacheState,
-  setTemplateImageCacheFailure,
-  setTemplateImageCacheSuccess,
-} from "@/lib/db";
-import {
-  persistTemplateImage,
-  remoteTemplateImageSource,
-} from "@/lib/template-image-cache";
+import {getTemplateImageCacheState, setTemplateImageCacheFailure, setTemplateImageCacheSuccess} from "@/lib/templates/cache-repository";
+import {dbEnabled} from "@/platform/db/pool";
+import {persistTemplateImage} from "@/lib/template-image-cache";
+import {remoteTemplateImageSource} from "@/lib/templates/image-source";
 import { TEMPLATES as SEED } from "@/lib/templates-data";
 
 export const runtime = "nodejs";

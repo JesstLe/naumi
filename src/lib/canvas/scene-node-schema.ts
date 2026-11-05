@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { sceneIdSchema, sceneProjectSchema, type SceneProject } from "../scene/project";
-import { videoProjectKeySchema } from "./video-node-schema";
+import { videoProjectKeySchema } from "./project-key";
 
 const coordinate = z.number().finite().min(-1e8).max(1e8);
 const size = z.number().finite().min(64).max(32768);

@@ -1,3 +1,9 @@
+// Refactored source follows the real repository + field-CAS/history owners.
+if(require('node:fs').existsSync('src/lib/canvas/text-node-repository.ts')){
+ const path=require('node:path'),{spawnSync}=require('node:child_process'),args=process.argv.slice(2),i=args.indexOf('--output-root');
+ const r=spawnSync(process.execPath,['--conditions=react-server','--import','tsx',path.join(__dirname,'verify-canvas-text-failure-pg.ts')],{cwd:process.cwd(),env:{...process.env,DATABASE_URL:process.env.DATABASE_URL||process.env.CANVAS_TEXT_FIXTURE_DATABASE_URL,NAUMI_VERIFY_ISOLATED_DB:process.env.NAUMI_VERIFY_ISOLATED_DB||'1',TEXT_FAILURE_EVIDENCE:i<0?process.env.TEXT_FAILURE_EVIDENCE:args[i+1]},stdio:'inherit',windowsHide:true});
+ if(r.error)throw r.error;process.exitCode=r.status??1;return;
+}
 // Actual text-node CRUD/history functions and their SQL against an isolated local PG.
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),crypto=require('node:crypto'),assert=require('node:assert/strict'),ts=require('typescript'),{Pool}=require('pg');
 const args=process.argv.slice(2),arg=(k,d)=>args.includes(k)?args[args.indexOf(k)+1]:d,root=path.resolve(arg('--source-root','.')),out=path.resolve(arg('--output-root','output/text-failure-pg'));

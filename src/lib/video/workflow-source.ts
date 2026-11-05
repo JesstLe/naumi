@@ -1,6 +1,8 @@
 import "server-only";
-import {getPool,getVideoTask} from "../db";
-import {ensureVideoNodeSchema} from "../canvas/video-node-repository";
+import {getVideoTask} from "@/lib/video/task-repository";
+import {getPool} from "@/platform/db/pool";
+import {ensureVideoNodeSchema} from "@/lib/canvas/storage-schema";
+
 import {decryptAtRest} from "../settings";
 import {ModelConfigError} from "../model-config/types";
 import {videoWorkflowManifestSchema} from "./workflow-schema";

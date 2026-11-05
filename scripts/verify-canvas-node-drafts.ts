@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { ImageNodeDraftStore, imageDraftKey, imageDraftScope } from '../src/lib/canvas/image-node-drafts';
 import { canvasMediaVariant } from '../src/lib/canvas/media-loading';
+import { reconcileCanvasNodes } from '../src/lib/canvas/scene-reconciliation';
 import { readFileSync } from 'node:fs';
 const memory = new Map<string,string>();
 const storage = {getItem:(key:string)=>memory.get(key)||null,setItem:(key:string,value:string)=>{memory.set(key,value)}};
@@ -26,7 +27,26 @@ const full=new ImageNodeDraftStore(()=>({getItem:()=>null,setItem:()=>{throw Err
 for(const dpr of [1,1.25,1.5,2,3,4])for(const pixels of [512,513,1600,1601])check(canvasMediaVariant(pixels/dpr,dpr),pixels<=512?'thumbnail':pixels<=1600?'preview':'original');
 check(canvasMediaVariant(600,3),'original');check(canvasMediaVariant(600,2),'preview');check(canvasMediaVariant(1800,NaN),'original');
 const client=readFileSync('src/components/canvas/canvas-client.tsx','utf8');
-for(const token of ['JSON.stringify([n.data.inspectOriginal,n.data.image', 'const imageDraft = useImageNodeDraft(','const imageDraftNodeId = selectedPendId || selectedId','forceOriginal={forceOriginal || !!d.inspectOriginal}','inspectOriginal: n.id === selectedId && multiSel.length <= 1','imageDraft.seed(pend.id, { prompt: "" });','imageDraft.seed(id, { prompt: "", ratio: "auto" })']){assert.ok(client.includes(token),token);checks++;}
+// Scene equality now belongs to the complete-value reconciliation owner, not
+// a handwritten JSON field list in CanvasClient. Both visual fields must still
+// invalidate a node, while an unchanged projection preserves its identity.
+const projected=[{id:'image-draft-fixture',position:{x:0,y:0},data:{inspectOriginal:false,image:'/media/original.png'}}];
+const reconciled=reconcileCanvasNodes([],projected);
+check(reconcileCanvasNodes(reconciled,projected)===reconciled,true);
+for(const data of [{...projected[0].data,inspectOriginal:true},{...projected[0].data,image:'/media/replacement.png'}]){
+  const next=reconcileCanvasNodes(reconciled,[{...projected[0],data}]);
+  check(next===reconciled,false);check(next[0]===reconciled[0],false);check(next[0].data,data);
+}
+const renderer=readFileSync('src/components/canvas/nodes/artwork-node.tsx','utf8');
+const projection=readFileSync('src/lib/canvas/scene-projection.ts','utf8');
+for(const [owner,token] of [
+  [client,'const imageDraft = useImageNodeDraft('],
+  [client,'const imageDraftNodeId = selectedPendId || selectedId'],
+  [renderer,'forceOriginal={forceOriginal || !!d.inspectOriginal}'],
+  [projection,'inspectOriginal: n.id === selectedId && multiSel.length <= 1'],
+  [client,'imageDraft.seed(pend.id, { prompt: "" });'],
+  [client,'imageDraft.seed(node.id,{prompt:"",ratio:"auto"})'],
+]){assert.ok(owner.includes(token),token);checks++;}
 assert.ok(!client.includes('setEditPrompt(carried ?? selected?.prompt'));checks++;
 // Direct text references remain live inputs, not stale copies of the body.
 assert.ok(!client.includes('imageDraft.seed(pend.id, { prompt: textSource'));checks++;

@@ -1,8 +1,9 @@
 // Execute original product function bodies; fixture boundaries are state setters
 // and the HTTP persistence boundary. No production, supplier or paid task calls.
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),ts=require('typescript'),assert=require('node:assert/strict'),crypto=require('node:crypto');
-const root=path.resolve(process.argv[2]||'.'),out=path.resolve(process.argv[3]||'output/canvas-node-history'),baseline=process.argv.includes('--baseline');
+const root=path.resolve(process.argv[2]||'.'),out=path.resolve(process.argv[3]||process.env.LOCAL_NODE_HISTORY_EVIDENCE||'output/canvas-node-history'),baseline=process.argv.includes('--baseline');
 fs.mkdirSync(out,{recursive:true});const file=path.join(root,'src/components/canvas/canvas-client.tsx'),source=fs.readFileSync(file,'utf8');
+if(!baseline&&source.includes('useCanvasNodeOperations')){require('./verification/canvas-local-node-history.cjs').run(root,out).catch(e=>{console.error(e);process.exitCode=1});return;}
 const ast=ts.createSourceFile(file,source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX),functions={};let generationLoop;
 function walk(n){if(ts.isFunctionDeclaration(n)&&n.name)functions[n.name.text]=n.getText(ast);if(ts.isForOfStatement(n)&&n.expression.getText(ast)==='generationTasks'&&n.statement.getText(ast).includes('baseNodes'))generationLoop=n.getText(ast);ts.forEachChild(n,walk)}walk(ast);
 const compile=s=>ts.transpileModule(s,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;

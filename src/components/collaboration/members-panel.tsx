@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { MessageCircle, Search, Users } from "lucide-react";
-import { useCollaborationState } from "./collaboration-provider";
+import { useCollaborationState } from "./collaboration-context";
 import { isAbort } from "./transport";
 
 export function MemberAvatar({ name, presence }: { name: string; presence?: string }) {

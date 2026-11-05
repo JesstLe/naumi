@@ -1,3 +1,4 @@
+import {assertCanvasRegeneration} from "../canvas/image-version-store";
 import {resolveImageResolution,resolutionFallbackMessage,resolutionFacts,upstreamAcceptsResolution} from "../model-config/resolution-fallback";
 import "server-only";
 import {compileImageParameterPlan,imagePlanSelection,configuredImageCapabilities} from '../model-config/image-parameter-plan';
@@ -10,32 +11,34 @@ import { REVERSE_HUB_RATIO_MESSAGE } from "./ratio-support";
 import { imageRequestAdmission } from "./request-admission";
 import { ImagegenPlanError } from "./plan-error";
 import { ExactImageSizeError } from "./request-size";
-import {getModelAdministration} from "../model-config/server";
+import {getModelExecutionServices} from "../model-config/execution-services";
+import {selectImageQuality} from "../model-config/image-quality-selection";
+import {prepareImageOperation} from "../model-config/image-preparation";
+import {selectFeatureModel} from "../model-config/model-selection";
 import {selectedImagePreset} from "../model-config/image-preset";
 import {resolveImageFrame,type ImageFrameChoice} from "../model-config/frame-fallback";
-import {simulateModel} from "../model-config/runtime";
-import {assertToolScope,featureDefaultModel} from "../model-config/tool-scope";
+import {simulateModel} from "@/lib/model-config/simulation";
+import { assertToolScope, featureDefaultModel } from "../model-config/feature-model-policy";
 import {MAX_GENERATION_DIMENSION,resolutionForLongSide} from "../mock-data";
 import {routeImageModel} from "../image-model-routing";
-import {quoteForActor} from "../billing/server";
+import {quoteForActor} from "../billing/quotation";
 import {runExecutionBundle} from "../model-config/context";
 import {resolveImageSkill} from "../image-skills/server";
 import {mapImagegenParameters,imagegenWireRequest} from "./parameters";
 import {publishedImagegenCapabilities} from "./capabilities";
 import type {ImagegenRequest,ImagegenPlan,Intent} from "./types";
 import type {ModelFacts} from "../model-config/types";
-import {userFeaturePolicy,FeatureAccessError} from "../feature-access/server";
+import {userFeaturePolicy,FeatureAccessError} from "@/lib/feature-access/repository";
 import {allows} from "../feature-access/catalog";
-import {assertCurrentCreationFeature} from "../saas/creation-context";
-import {assertCanvasRegeneration} from "../canvas/image-version-store";
+import {assertCurrentCreationFeature} from "@/lib/saas/creation-access";
 export function imagegenFingerprint(request:ImagegenRequest){return createHash("sha256").update(JSON.stringify(imagegenRequestSchema.parse(request))).digest("hex");}
 export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{modelVersion:number;billingVersion:number}):Promise<ImagegenPlan>{
- await assertCurrentCreationFeature("/api/imagegen");
+ const featureAccess=await assertCurrentCreationFeature("/api/imagegen");
  const request=imagegenRequestSchema.parse(raw),skill=await resolveImageSkill(owner,request.skill),intent=resolveImagegenIntent({...request,useCase:request.useCase||skill?.useCase});
  const automaticRequested=request.ratioMode==='automatic'||!request.parameters.ratio||request.parameters.ratio==='auto';
  if(intent.conflicts.length)throw new ImagegenPlanError(intent.conflicts.join("；"));
  await assertCanvasRegeneration(owner,request);
- const access=await userFeaturePolicy(owner),imageAllowed=["generate","batchshot","variations","fuse"].some(id=>allows(access,id));
+ const access=featureAccess?.actorEmail===owner.toLowerCase()?featureAccess.policy:await userFeaturePolicy(owner),imageAllowed=["generate","batchshot","variations","fuse"].some(id=>allows(access,id));
  if(request.entry==="canvas"&&!allows(access,"canvas")||request.entry==="agent"&&!allows(access,"agent")||intent.operation!=="postprocess"&&!imageAllowed||intent.operation==="postprocess"&&!["canvas","works","generate"].some(id=>allows(access,id)))throw new FeatureAccessError("此图像功能尚未授权");
  if(intent.operation==="cutout"&&!allows(access,"cutout"))throw new FeatureAccessError("抠图功能尚未授权");
  if(request.output.format==="jpeg"&&(intent.background==="transparent"||!request.output.flattenColor))throw new ImagegenPlanError("JPEG不保留透明度，请选择PNG/WebP，或明确不透明背景和扁平化颜色");
@@ -59,14 +62,17 @@ export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{m
  if(intent.operation==="postprocess"&&request.output.compressionMode==="native")throw new ImagegenPlanError("本地后处理不调用供应商，请选择本地压缩控制");
  if(intent.operation==="postprocess"&&request.inputs.some(i=>i.role==="mask"))throw new ImagegenPlanError("本地输出处理不使用蒙版，请移除蒙版或选择模型编辑");
  if(intent.operation==="postprocess")return {request,intent,fingerprint,modelVersion:0,billingVersion:0,steps:[{key:"process",operation:"postprocess",eligibleUpstreamIds:[],parameters:{},credits:0}],totalCredits:0,confirmationRequired:false,warnings:[]};
- const admin=await getModelAdministration();
- const [models,billing]=await Promise.all([versions?admin.repo.byVersion(versions.modelVersion):admin.repo.current(),versions?admin.billing.byVersion(versions.billingVersion):admin.billing.current()]);
+ const services=getModelExecutionServices();
+ const [models,billing]=await Promise.all([versions?services.models.byVersion(versions.modelVersion):services.models.current(),versions?services.billing.byVersion(versions.billingVersion):services.billing.current()]);
  const feature=request.entry==="canvas"?"canvas.image":"image.generate";
  let id=request.modelId||featureDefaultModel(models.config,feature,"image.generate");
  id=routeImageModel(id||"",request.parameters.ratio||"1:1",models.config.publicModels.filter(m=>m.enabled&&m.modality==="image"));
  if(!id)throw new ImagegenPlanError("没有可用的生图模型，请管理员配置", "IMAGEGEN_NO_MODEL", 409);
  if(!models.config.publicModels.some(m=>m.id===id&&m.enabled&&m.visible&&m.modality==="image"))throw new ImagegenPlanError("所选模型未开放，请刷新模型列表", "IMAGEGEN_MODEL_UNAVAILABLE", 409);
- assertToolScope(models.config,feature,id);
+ id=selectFeatureModel(models.config,{feature,binding:request.inputs.length?"image.edit":"image.generate",requestedModelId:id,requireVisible:true})!.model.id;
+ const requestedQuality=request.parameters.quality||"medium";
+ const qualityChoice=selectImageQuality(models.config,feature,id,requestedQuality);
+ if(qualityChoice.reason){request.parameters.quality=qualityChoice.quality;intent.requirements=intent.requirements.map(r=>r.name==="quality"?{...r,value:qualityChoice.quality}:r);}
  const requestedResolution=request.parameters.resolution||"1K";
  const facts=(requirements:Intent):ModelFacts=>({task:"product",quality:request.parameters.quality||"medium",resolution:request.parameters.resolution||"1K",requestedResolution:request.parameters.resolution||"1K",ratio:request.parameters.ratio||"1:1",needsEdit:request.inputs.some(i=>i.role!=="mask"),needsMask:request.inputs.some(i=>i.role==="mask"),preserveIdentity:request.inputs.length>0,needsText:false,nativeResolution:false,references:request.inputs.filter(i=>i.role!=="mask").length,quantity:request.variants,inputLength:request.prompt.length,imagegenRequirements:requirements});
  const options={trustedOrigins:(process.env.MODEL_CONFIG_TRUSTED_ORIGINS||"").split(/[\s,]+/).filter(Boolean)};
@@ -86,14 +92,20 @@ export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{m
  }
  const simulate=(modelId:string,requirements:Intent)=>simulateModel(models,billing,modelId,requirements.operation==="cutout"?{...facts(requirements),needsEdit:true,references:1,quantity:1}:facts(requirements),options);
  const steps:ImagegenPlan["steps"]=[],warnings:string[]=maskedTarget?["模型编辑后按蒙版合成，未选区保留原图；原生成版本也会保留。"]:[];
+ if(qualityChoice.reason)warnings.push("本次质量标签已按模型默认档处理。");
  if(frameChoice)warnings.push(frameChoice.method==='nearest'?`本次按最接近${frameChoice.source==='reference'?'参考图':'所选'}画幅的 ${frameChoice.effective} 生成`:'本次自适应跟随参考画幅，结果保留完整画面');
  if(resolutionChoice?.changed)warnings.push(resolutionFallbackMessage(resolutionChoice));
  const selectedImagePresetForPlan=(modelId:string)=>selectedImagePreset(models.config,feature,modelId);
  const append=async(key:string,operation:Intent["operation"],modelId:string,requirements:Intent,featureId:"image.generate"|"canvas.image"|"tool.cutout")=>{
   const stageInputFacts=operation==="cutout"?{...facts(requirements),needsEdit:true,references:1,quantity:1}:facts(requirements);
-  const stageResolution = request.parameters.width || request.parameters.height || versions ? undefined : resolveImageResolution(models.config,modelId,request.parameters.resolution||"1K",featureId,request.parameters.ratio,{snapshot:models,billing,facts:stageInputFacts,options});
-  const stageFacts=stageResolution?.changed?resolutionFacts(stageInputFacts,stageResolution.effective):stageInputFacts;
-  if(operation==="cutout")Object.assign(stageFacts,{needsEdit:true,references:1,quantity:1});
+  const binding=operation==="cutout"?"image.cutout":stageInputFacts.needsEdit?"image.edit":"image.generate";
+  const preparedImage=prepareImageOperation({path:operation==="cutout"?"/api/cutout":"/api/generate-image",binding,feature:featureId,featureModel:modelId,references:stageInputFacts.references,allowResolutionFallback:!request.parameters.width&&!request.parameters.height&&!versions,
+   body:{model:modelId,prompt:request.prompt,origin:featureId==="canvas.image"?"canvas":"",quality:request.parameters.quality||"medium",resolution:request.parameters.resolution||"1K",ratio:request.parameters.ratio||"1:1",needsMask:stageInputFacts.needsMask,...(request.parameters.width?{targetWidth:request.parameters.width,targetHeight:request.parameters.height}:{})},
+   advanced:{intent:requirements},resolvedFrame:{ratio:request.parameters.ratio,preserveModelIdentity:true}},models,billing);
+  preparedImage.facts.quantity=operation==="cutout"?1:request.variants;
+  const effectiveResolution=preparedImage.facts.requestedResolution||preparedImage.facts.resolution;
+  const stageFacts={...preparedImage.facts,resolution:effectiveResolution};
+  const stageResolution={requested:request.parameters.resolution||"1K",effective:effectiveResolution,supported:[],changed:effectiveResolution!==(request.parameters.resolution||"1K")};
   const candidates=simulateModel(models,billing,modelId,stageFacts,options);
   const selected=models.config.publicModels.find(m=>m.id===modelId)!;
   let exactRatioRejected=false;
@@ -131,10 +143,13 @@ export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{m
   if(model.target.type==="pool"&&!model.supplierRouting&&(request.parameters.inputFidelity!==undefined||request.parameters.moderation!==undefined||request.parameters.width!==undefined||request.output.compressionMode==="native"&&request.output.compression!==undefined))throw new ImagegenPlanError("外部Router尚未开放这些原生参数的发送，请选择已发布参数映射的直连供应通道");
   assertToolScope(models.config,featureId,modelId);
   if(model.target.type!=="upstream"&&!model.supplierRouting&&candidates.excluded.length)throw new ImagegenPlanError("当前聚合通道尚不能限制高级参数候选，请管理员维护全部候选能力");
-  const q=await runExecutionBundle({frozen:{modelVersion:models.version,billingVersion:billing.version},billing},()=>quoteForActor(owner,{feature:featureId,quantity:operation==="cutout"?1:request.variants,modelId,quality:request.parameters.quality||"medium",resolution:requestedResolution,ratio:targetRatio},{effectiveResolution:stageFacts.resolution,...frameChoice?{effectiveRatio:request.parameters.ratio}:{}}));
+  const q=await runExecutionBundle({frozen:{modelVersion:models.version,billingVersion:billing.version},billing,models},()=>quoteForActor(owner,{feature:featureId,quantity:operation==="cutout"?1:request.variants,modelId,quality:requestedQuality,resolution:requestedResolution,ratio:targetRatio},{effectiveResolution:stageFacts.resolution,...(frameChoice?{effectiveRatio:request.parameters.ratio}:{})}));
   if(q.imageParameterPlanVersion===1)q.imageParameterPlans=Object.fromEntries(candidates.eligible.map(c=>{const u=models.config.upstreamModels.find(u=>u.id===c.upstreamId)!,p=models.config.providers.find(p=>p.id===u.providerId)!;return [u.id,compileImageParameterPlan(u,imagePlanSelection({...stageFacts,requestedResolution:stageFacts.resolution},{...request,output:{...request.output,background:requirements.background||undefined}}),{publicModelId:modelId,protocol:p.protocol,modelVersion:models.version,adapter:p.options?.imageAdapter})];}));
   if(stageResolution?.changed)warnings.push(resolutionFallbackMessage(stageResolution));
-  steps.push({key,operation,modelId,eligibleUpstreamIds:candidates.eligible.map(c=>c.upstreamId),parameters:{quality:request.parameters.quality||"medium",resolution:stageFacts.resolution,ratio:request.parameters.ratio||"1:1"},credits:q.tariff.pricing.mode==="api-cost-plus"?q.authorizedCredits:q.requestedCredits,billingQuote:q});
+  const eligibleUpstreamIds=candidates.eligible.map(c=>c.upstreamId);
+  preparedImage.eligibleUpstreamIds=eligibleUpstreamIds;
+  if(q.requestedParameters)preparedImage.requestedParameters=q.requestedParameters;
+  steps.push({key,operation,modelId,eligibleUpstreamIds,parameters:{quality:preparedImage.facts.quality,resolution:stageFacts.resolution,ratio:request.parameters.ratio||"1:1"},credits:q.tariff.pricing.mode==="api-cost-plus"?q.authorizedCredits:q.requestedCredits,billingQuote:q,preparedImage});
  };
  if(intent.operation==="cutout"){
   if(request.variants!==1)throw new ImagegenPlanError("抠图对单个目标输出一个透明版本，多个目标请使用批次");
@@ -148,6 +163,5 @@ export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{m
   for(let i=0;i<request.variants;i++)await append(`cutout-${i}`,"cutout",cutout,{...intent,operation:"cutout"},"tool.cutout");
   warnings.push("所选模型先生成，再通过后台指定的抠图模型生成透明图；两步积分已合计，原图保留。");
  }else await append("generate",intent.operation,id,intent,feature);
- return {imageParameterPlanVersion:1,...frameChoice?{frameChoice}:{},...((frameChoice||resolutionChoice?.changed||steps.some(s=>s.parameters.resolution!==requestedResolution))?{requestedParameters:{quality:request.parameters.quality||"medium",resolution:requestedResolution,ratio:targetRatio}}:{}),channelContractVersion:1,ratioContractVersion:2,request,intent,fingerprint,modelVersion:models.version,billingVersion:billing.version,skillInstructions:skill?.instructions,steps,totalCredits:steps.reduce((n,s)=>n+s.credits,0),confirmationRequired:false,warnings};
+ return {imageParameterPlanVersion:1,...(frameChoice?{frameChoice}:{}),...((qualityChoice.reason||frameChoice||resolutionChoice?.changed||steps.some(s=>s.parameters.resolution!==requestedResolution))?{requestedParameters:{quality:requestedQuality,resolution:requestedResolution,ratio:targetRatio}}:{}),channelContractVersion:1,ratioContractVersion:2,request,intent,fingerprint,modelVersion:models.version,billingVersion:billing.version,skillInstructions:skill?.instructions,steps,totalCredits:steps.reduce((n,s)=>n+s.credits,0),confirmationRequired:false,warnings};
 }
-

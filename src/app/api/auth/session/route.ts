@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { activeNativeUserEmail } from "@/lib/native-auth";
-import { getLocalOperatorEmail, getOrCreateUser, getUser } from "@/lib/db";
+import {getLocalOperatorEmail} from "@/lib/accounts/repository";
+import {getOrCreateUser, getUser} from "@/lib/accounts/session";
 import { adminPasswordState } from "@/lib/admin-auth";
 import { supabaseEnabled } from "@/lib/auth-mode";
 

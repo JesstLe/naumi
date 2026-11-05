@@ -1,4 +1,5 @@
-import {createdResult,field,imageWireValue,polled,rejectAdvanced,selectWireOptions,unsupportedWire,wireReferences,type VideoWireContext,type VideoWireRequest,type VideoWireCodec} from "../wire";
+import {createdResult,field,imageWireValue,polled,rejectAdvanced,selectWireOptions,unsupportedWire,wireReferences} from "../wire-helpers";
+import type {VideoWireContext,VideoWireRequest,VideoWireCodec} from "../wire-contracts";
 import {mediaExtension} from "../../media-formats";
 // IC 68b37db web/src/services/api/video.ts: distinct Grok2API, CogVideoX3 and Agnes wire forms.
 function dimensions(context:VideoWireContext){

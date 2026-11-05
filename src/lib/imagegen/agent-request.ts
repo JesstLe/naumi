@@ -1,7 +1,8 @@
 import "server-only";
 import {appendOriginalRequest} from "../agent/execution-evidence";
 import {randomUUID} from "node:crypto";
-import {getPool,ensureSchema} from "../db";
+import {getPool} from "@/platform/db/pool";
+import {ensureSchema} from "@/lib/persistence/schema";
 import {imagegenRequestSchema} from "./schema";
 import type {CanvasAgentContext} from "../agent/canvas-context";
 import type {ImagegenRequest} from "./types";

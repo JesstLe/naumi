@@ -1,6 +1,7 @@
 import {NextResponse} from "next/server";
 import {z} from "zod";
-import {bindUnknownVideoTaskUpstream,getVideoTask,resumeVideoTaskPolling} from "@/lib/db";
+import {bindUnknownVideoTaskUpstream, resumeVideoTaskPolling} from "@/lib/video/task-transitions";
+import {getVideoTask} from "@/lib/video/task-repository";
 import {authenticatedEmail} from "@/lib/request-auth";
 import {requireAdmin} from "@/lib/admin-auth";
 import {sameSiteBiMutation} from "@/lib/bi/access";

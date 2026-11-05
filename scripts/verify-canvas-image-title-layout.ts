@@ -27,4 +27,21 @@ const sample=canvasDockLayout({nodeScreen:{left:480,cx:660,top:403,bottom:641},c
  nodeTitleHeight:canvasImageTitleInset(1),protectNodeTitle:true});
 assert(sample.toolbar!.top+49.5<=365-12);
 assert.equal(canvasImageTitleInset(.5),19);assert.equal(canvasImageTitleInset(2),76);
+// The real 390px composer can fill its allowed height. Feed each rendered
+// height back as the next ResizeObserver sample; both zoom states must settle
+// without reopening a maxHeight that covers the label or action bar.
+for(const [top,zoom] of [[520,1],[471,.5]]){
+ let measured=360,previous:string|undefined;
+ for(let frame=0;frame<8;frame++){
+  const out=canvasDockLayout({nodeScreen:{left:120,cx:195,top,bottom:top+84*zoom},canvasSize:{width:390,height:844},
+   dockMetrics:{dockHeight:measured,toolbarHeight:49.5,toolbarWidth:374,dockMinimumHeight:224},
+   selectedTextId:null,textComposerExpanded:false,readOnly:false,nodeTitleHeight:canvasImageTitleInset(zoom),protectNodeTitle:true});
+  assert(out.dock&&out.toolbar);const rendered=out.dock.maxHeight!;
+  assert(out.dock.top+rendered<=top-canvasImageTitleInset(zoom)-12||out.dock.top>=top+12);
+  assert(out.dock.top+rendered+12<=out.toolbar.top||out.toolbar.top+49.5+12<=out.dock.top);
+  const current=JSON.stringify(out);if(previous)assert.equal(current,previous,'narrow ResizeObserver feedback cannot alternate allowed heights');
+  measured=rendered;previous=current;
+ }
+}
+console.log('NARROW_MEASUREMENT_FEEDBACK=PASS ZOOMS=2 FRAMES=16 TITLE_AND_TOOLBAR_CLEAR=1');
 console.log(`IMAGE_TITLE_LAYOUT=PASS CASES=${checks} SCREEN_SPACE_ZOOM=PASS TOOLBAR_MEASURED=PASS FINAL_TITLE_COLLISION=0`);

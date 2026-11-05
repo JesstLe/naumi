@@ -11,7 +11,7 @@ import {ensureBiSchema} from '../src/lib/bi/repository';
 import {hashPassword} from '../src/lib/pw';
 
 async function main(){
- assert.equal(process.env.NAUMI_VERIFY_ISOLATED_DB,'1');const url=new URL(process.env.DATABASE_URL!);assert.equal(url.hostname,'127.0.0.1');assert.match(url.pathname,/saas_admin_fixture$/);
+ assert.equal(process.env.NAUMI_VERIFY_ISOLATED_DB,'1');const url=new URL(process.env.DATABASE_URL!);assert.equal(url.hostname,'127.0.0.1');assert.ok(/saas_admin_fixture$/.test(url.pathname)||process.env.VERIFY_ADMIN_UI_INTEGRATION==='1'&&url.pathname.includes('fixture'));
  await ensureTenantSchema();await ensureCreationSchema();await ensureBiSchema();const pool=getPool();
  const stamp='saas-20261022';
  if((await pool.query('SELECT 1 FROM app_settings WHERE k=$1',[stamp])).rows.length){console.log('Fixture already seeded; existing isolated data retained');await pool.end();return;}

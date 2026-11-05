@@ -1,7 +1,7 @@
 import "server-only";
-import { getPool } from "../db";
+import {getPool} from "@/platform/db/pool";
 import { ModelConfigError } from "../model-config/types";
-import { bindActualCreationProject } from "../saas/creation-context";
+import { bindActualCreationProject } from "../saas/creation-access";
 import { authorizeCanvasProject, mayCreateCanvasRoot } from "./project-access";
 import { characterNodeWriteSchema } from "./character-node-schema";
 import { ensureCharacterNodeSchema, findCharacterOperation, getCharacterNode, saveCharacterNodeTx } from "./character-node-repository";

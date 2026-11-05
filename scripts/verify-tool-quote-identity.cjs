@@ -7,11 +7,11 @@ const args=process.argv.slice(2),arg=(k,d)=>{const i=args.indexOf(k);return i<0?
 const source=path.resolve(arg('--source-root',process.cwd())),out=path.resolve(arg('--output-root','output/tool-quote-identity'));
 const baseline=args.includes('--baseline'),loaded=new Map(),results=[];
 function moduleAt(relative,mocks={}){
- const file=path.join(source,relative),bytes=fs.readFileSync(file),module={exports:{}};
+ const file=path.join(source,relative),bytes=fs.readFileSync(file),loadedModule={exports:{}};
  loaded.set(relative,{path:file,sha256:crypto.createHash('sha256').update(bytes).digest('hex')});
- const context={module,exports:module.exports,require:name=>Object.hasOwn(mocks,name)?mocks[name]:{},console,Request,Response,Headers,FormData,File,Blob,URL,Buffer,structuredClone,crypto,Date,JSON,Map,Set,process:{env:{NAUMI_ROUTER_MANAGEMENT_URL:'http://fixture.invalid'}},setTimeout,clearTimeout};
+ const context={module: loadedModule,exports:loadedModule.exports,require:name=>Object.hasOwn(mocks,name)?mocks[name]:{},console,Request,Response,Headers,FormData,File,Blob,URL,Buffer,structuredClone,crypto,Date,JSON,Map,Set,process:{env:{NAUMI_ROUTER_MANAGEMENT_URL:'http://fixture.invalid'}},setTimeout,clearTimeout};
  vm.runInNewContext(ts.transpileModule(bytes.toString('utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText,context,{filename:file});
- return module.exports;
+ return loadedModule.exports;
 }
 const types=moduleAt('src/lib/billing/types.ts'),modelTypes=moduleAt('src/lib/model-config/types.ts');
 const routing=moduleAt('src/lib/image-model-routing.ts');
@@ -28,19 +28,27 @@ const db={dbEnabled:true,ensureSchema:async()=>{},getPool:()=>({query:async(sql,
  if(sql.startsWith('SELECT *,expires_at'))return {rows:params[0]===quoteId&&params[1]==='owner@example.test'&&state.quote?[{id:quoteId,owner:'owner@example.test',scope_key:JSON.stringify(['personal',null]),quote:structuredClone(state.quote)}]:[]};
  throw Error('UNEXPECTED_SQL');
 }}),isBanned:async()=>false,sweepStaleReservations:async()=>{}};
-const quotes=moduleAt('src/lib/billing/image-quotes.ts',{'node:crypto':crypto,'../db':db,'../admin-auth':auth,'../saas/creation-context':{currentCreationContext:()=>({scopeKind:state.scopeKind,tenantId:state.tenantId})},'../model-config/types':modelTypes,'./types':types,'./image-quote-policy':{imageBillingFeature:f=>f==='image.generate'}});
+const quotes=moduleAt('src/lib/billing/image-quotes.ts',{'node:crypto':crypto,'../db':db,'@/platform/db/pool':db,'@/lib/billing/image-quote-schema':{ensureImageBillingQuotes:async()=>{}},'../admin-auth':auth,'@/lib/saas/creation-scope':{currentCreationContext:()=>({scopeKind:state.scopeKind,tenantId:state.tenantId})},'../model-config/types':modelTypes,'./types':types,'./image-quote-policy':{imageBillingFeature:f=>f==='image.generate'}});
 const capabilities={qualities:['low','medium','high'],nativeResolutions:['1K'],edit:true,generate:true,maxReferenceImages:16};
 const snapshot={version:3,digest:'a'.repeat(64),config:{publicModels:ids.map(id=>({id,enabled:true,visible:true,modality:'image',target:{type:'upstream',id:'upstream'}})),upstreamModels:[{id:'upstream',enabled:true,providerId:'provider',capabilities,parameterMap:{}}],providers:[{id:'provider',enabled:true}],bindings:{'image.generate':ORIGINAL}}};
 const billing={version:7};
 const makeScope=frozen=>({frozen:{modality:'image',...frozen},connection:{wireModel:frozen.publicModelId,apiKey:'fixture',providerId:'provider',protocol:'openai-images'},parameterMap:{},capabilities});
-const executor={resolve:async input=>{state.resolveInputs.push(structuredClone(input));return {publicModelId:input.requestedModelId||ORIGINAL,facts:input.facts,requestedParameters:input.requestedParameters,modality:'image'};},runBundle:async(bundle,_billing,run)=>{const previous=scope.current;scope.current=makeScope(bundle.image);try{return await run()}finally{scope.current=previous}}};
+const executor={resolve:async input=>{state.resolveInputs.push(structuredClone(input));const p=input.preparedImage||input;return {publicModelId:input.requestedModelId||p.modelId||ORIGINAL,facts:p.facts,requestedParameters:p.requestedParameters,modality:'image'};},runBundle:async(bundle,_billing,run)=>{const previous=scope.current;scope.current=makeScope(bundle.image);try{return await run()}finally{scope.current=previous}}};
+// The extraction owns the actual preparation. Keep the original IO fixtures,
+// execute the real preparation/selection functions rather than restoring the
+// previous monolithic request body just for this regression.
+const imagePolicies={'../image-quality':{IMAGE_QUALITY_IDS:['low','medium','high','xhigh','max']},'./business':{selectedBusinessOption:()=>undefined},'./channel-policy':{publicUpstreamIds:()=>['upstream']},'./cutout-quality':{cutoutImageQuality:x=>x},'./image-preset':{DISPLAY_QUALITIES:['low','medium','high'],selectedImagePreset:()=>undefined},'./quality-policy':{qualityPresentation:()=>({qualities:['low','medium','high']})}};
+const selectQuality=moduleAt('src/lib/model-config/image-quality-selection.ts',imagePolicies);
+const modelSelection=moduleAt('src/lib/model-config/model-selection.ts',{'./bindings':{MODEL_BINDINGS:{'image.generate':{modality:'image'},'image.edit':{modality:'image'},'image.cutout':{modality:'image'}}},'./business':imagePolicies['./business'],'./image-preset':imagePolicies['./image-preset'],'./selection-policy':selection,'./feature-model-policy':{featureDefaultModel:()=>state.noFeatureDefault?undefined:ORIGINAL,assertToolScope:()=>{}},'./types':modelTypes});
+const preparation=moduleAt('src/lib/model-config/image-preparation.ts',{'./resolution-fallback':{resolveImageResolution:(_cfg,_id,resolution)=>({effective:resolution,supported:[],changed:false})},'./image-quality-selection':selectQuality,'./model-selection':modelSelection,'./channel-policy':imagePolicies['./channel-policy'],'./resolution-options':{assertDisplayResolution:()=>{}},'./selection-policy':selection,'./feature-model-policy':{featureDefaultModel:()=>state.noFeatureDefault?undefined:ORIGINAL},'./image-preset':imagePolicies['./image-preset'],'../image-model-routing':routing,'../imagegen/legacy-intent':{legacyImagegenIntent:()=>null},'./types':modelTypes});
 const requests=moduleAt('src/lib/model-config/requests.ts',{
+ './availability':{modelConfigurationEnabled:async()=>true},'./image-preparation':preparation,'./execution-services':{getModelExecutionServices:()=>({models:{current:async()=>snapshot,byVersion:async()=>snapshot},billing:{current:async()=>billing,byVersion:async()=>billing}})},'./feature-model-policy':{featureDefaultModel:()=>state.noFeatureDefault?undefined:ORIGINAL},
  './cutout-quality':{cutoutImageQuality:x=>x},'./resolution-fallback':{resolveImageResolution:(_cfg,_id,resolution)=>({effective:resolution,supported:[],changed:false})},
  '../imagegen/context':{currentImagegenStep:()=>state.step},'../imagegen/legacy-intent':{legacyImagegenIntent:()=>null},'./channel-policy':{publicUpstreamIds:()=>['upstream']},'./resolution-options':{assertDisplayResolution:()=>{}},'./feature-path':featurePath,'../billing/image-quotes':quotes,'./selection-policy':selection,'./quality-policy':{qualityPresentation:()=>({qualities:['low','medium','high']})},'./business':{selectedBusinessOption:()=>undefined},'../db':db,'./server':{getModelAdministration:async()=>({repo:{current:async()=>snapshot,byVersion:async()=>snapshot},billing:{current:async()=>billing,byVersion:async()=>billing}})},'./execution':{getModelExecutor:async()=>executor},'./context':contextMock,'./types':modelTypes,'./accepted-context':{acceptedModelVersions:async()=>null},'./image-preset':{selectedImagePreset:()=>undefined},'../image-model-routing':routing,'./tool-scope':{featureDefaultModel:()=>state.noFeatureDefault?undefined:ORIGINAL},'../image-quality':{IMAGE_QUALITY_IDS:['low','medium','high']},'../canvas/generation-parameters':{canvasSourceFrameEdit:()=>false}
 });
 const billingServer={quoteForRequest:async(req,input)=>{const q=await quotes.imageBillingQuoteForRequest(req);if(q){quotes.assertImageBillingSelection(q,input);return q}return {facts:input,requestedCredits:6}}};
 class Jobs{async create(id,owner,snapshot,payload,cost,_flag,q){state.jobs.push({id,owner,snapshot,payload,cost,q})}async kick(){state.kicks++}}
-const route=moduleAt('src/app/api/generate-image/route.ts',{
+const routePorts={
  '@/lib/imagegen/context':{currentImagegenStep:()=>state.step},'@/lib/imagegen/legacy-intent':{legacyImagegenIntent:()=>null},'@/lib/model-config/context':contextMock,'@/lib/model-config/feature-path':featurePath,'@/lib/model-config/selection-policy':selection,
  '@/lib/billing/intent':{withBillingIntent:(_req,run)=>run()},'@/lib/model-config/image-quality':quality,'@/lib/bi/model-observer':{withBiRequest:(req,run)=>requests.withModelRequest(req,run)},
  '@/lib/billing/server':billingServer,'@/lib/billing/request':{assertQuotedVersion:()=>{},requestQuoteConfirmation:()=>({}),billingErrorResponse:e=>Response.json({code:e.code,error:e.message},{status:e.status})},'@/lib/billing/types':types,
@@ -49,7 +57,17 @@ const route=moduleAt('src/app/api/generate-image/route.ts',{
  '@/lib/image-model-catalog':{getUserDefaultImageModel:async()=>null,getImageModelCatalog:async()=>ids.map(id=>({id,supportsEdit:true,provider:'openai-images'}))},'@/lib/image-model-routing':routing,
  '@/lib/user-image-provider':{USER_IMAGE_MODEL_PREFIX:'byok:'},'@/lib/canvas/generation-parameters':{canvasParameterError:async()=>null},'@/lib/imagegen/legacy-frame-request':{normalizeLegacyFrameRequest:async req=>req},
  '@/lib/imagegen/ratio-support':{unsupportedReverseHubRatio:()=>false},'@/lib/imagegen/request-size':{exactImageRequestSize:()=>undefined}
-});
+};
+routePorts['@/platform/db/pool']=db;
+routePorts['@/lib/accounts/repository']=db;
+routePorts['@/lib/billing/reservations']=db;
+routePorts['@/lib/bi/request']=routePorts['@/lib/bi/model-observer'];
+routePorts['@/lib/worker/authorization']={imageWorkerAuthorized:()=>false};
+const promptModule=moduleAt('src/lib/imagegen/generation-prompt.ts');
+const submissionPorts={...routePorts,'../billing/request':{billingFailure:e=>({status:e.status||500,code:e.code,error:e.message})},'./generation-prompt':promptModule,'./generation-jobs':{JOBS:{create:async(...args)=>new Jobs().create(...args)}},'./generation-runtime':{kickGeneration:async()=>state.kicks++}};
+routePorts['@/lib/imagegen/generation-submission']=moduleAt('src/lib/imagegen/generation-submission.ts',submissionPorts);
+const route=moduleAt('src/app/api/generate-image/route.ts',routePorts);
+
 function quote({ratio,modelId=ORIGINAL,quantity=1,quality='medium',...rest}={}){return {facts:{feature:'image.generate',quantity,quality,resolution:'1K',modelId,...(ratio?{ratio}:{})},modelVersion:3,configVersion:7,requestedCredits:6,...rest}}
 function request({ratio='3:4',count=1,model,withQuote=true,owner='owner@example.test',...extra}={}){return new Request('http://fixture.invalid/api/generate-image',{method:'POST',headers:{'content-type':'application/json','x-fixture-owner':owner,'x-naumi-feature-model':ORIGINAL,...(withQuote?{'x-naumi-image-quote':quoteId}:{})},body:JSON.stringify({prompt:'one product',quality:'medium',resolution:'1K',ratio,count,...(model?{model}:{}),...extra})})}
 function reset(q=quote()){state.quote=q;state.step=null;state.resolveInputs=[];state.jobs=[];state.kicks=0;state.scopeKind='personal';state.tenantId=null;state.noFeatureDefault=false;scope.current=null;}

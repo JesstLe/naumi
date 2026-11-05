@@ -1,23 +1,20 @@
-import {withBillingRequest,configuredToolCost,synchronousChargedCredits} from "@/lib/billing/synchronous";
+import {withBillingRequest} from "@/lib/billing/synchronous";
+import {configuredToolCost, synchronousChargedCredits} from "@/lib/billing/synchronous-operation";
 import { managedImageEditFetch } from "@/lib/model-config/clients";
 import { requestImageQuality, imageQualityCost, withQualityFallback, settleToolImage, recordImageExecutionModel } from "@/lib/image-quality-request";
 import type { ResolvedImageQuality } from "@/lib/image-quality";
 import { NextResponse } from "next/server";
 import { insufficientCreditsMessage } from "@/lib/commerce";
-import {
-  dbEnabled,
-  reserveCredits,
-  refundCredits,
-  addArtworks,
-  getUser,
-  isBanned,
-  addReservation,
-  settleReservation,
-  sweepStaleReservations,
-} from "@/lib/db";
+import {reserveCredits, refundCredits} from "@/lib/billing/legacy-credit-reservation";
+import {addReservation, settleReservation, sweepStaleReservations} from "@/lib/billing/reservations";
+import {dbEnabled} from "@/platform/db/pool";
+import {addArtworks} from "@/lib/artworks/writer";
+import {getUser} from "@/lib/accounts/session";
+import {isBanned} from "@/lib/accounts/repository";
 import { clientIp } from "@/lib/ip";
 import { resolveUserEmail } from "@/lib/admin-auth";
-import { storageEnabled, uploadImage } from "@/lib/storage";
+import { storageEnabled } from "@/lib/object-storage/runtime";
+import { uploadImage } from "@/lib/media-upload";
 import { getOpenAISettings } from "@/lib/settings";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
 import { resolutionLongSide } from "@/lib/mock-data";
@@ -111,7 +108,7 @@ async function parseInput(request: Request): Promise<Input | null> {
 
 async function normalizeImage(bytes: Buffer): Promise<Buffer> {
   const mod = (await import("sharp")) as unknown as {
-    default?: typeof import("sharp");
+    default?: typeof import("sharp").default;
   } & typeof import("sharp");
   const sharp = mod.default ?? mod;
   return sharp(bytes, { density: 220 }).rotate().png().toBuffer();
@@ -121,7 +118,7 @@ async function upscaleTo(bytes: Buffer, resolution: string): Promise<Buffer> {
   const target = resolutionLongSide(resolution);
   if (!target) return bytes;
   const mod = (await import("sharp")) as unknown as {
-    default?: typeof import("sharp");
+    default?: typeof import("sharp").default;
   } & typeof import("sharp");
   const sharp = mod.default ?? mod;
   const meta = await sharp(bytes).metadata();
@@ -357,6 +354,6 @@ export async function GET(request: Request) {
   }
   return NextResponse.json(job);
 }
-import { withBiRequest } from "@/lib/bi/model-observer";
+import {withBiRequest} from "@/lib/bi/request";
 
 export async function POST(request:Request){return withBillingRequest(request,"tool.packaging3d",()=>billingRoutePost(request));}

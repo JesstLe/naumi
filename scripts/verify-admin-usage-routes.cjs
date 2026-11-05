@@ -1,7 +1,7 @@
 // Actual whole route modules with explicit auth/DB boundary doubles; no network.
 const assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), vm = require('node:vm'), ts = require('typescript');
 const { NextResponse } = require('next/server');
-const root = path.resolve(__dirname, '..'), out = path.resolve(process.argv[2] || 'output/admin-usage-routes');
+const root = path.resolve(__dirname, '..'), out = path.resolve(process.argv[2] || process.env.ADMIN_USAGE_ROUTES_EVIDENCE || 'output/admin-usage-routes');
 const checks = [], tenant = '00000000-0000-4000-8000-000000000001', other = '00000000-0000-4000-8000-000000000002';
 class TeamError extends Error { constructor(message, status = 403) { super(message); this.status = status; } }
 const json = (data, status = 200) => NextResponse.json(data, { status, headers: { 'Cache-Control': 'private, no-store' } });
@@ -24,7 +24,7 @@ async function main() {
     '@/lib/bi/usage-repository': { queryUserUsage: async query => { reads++; return { query }; }, readUserUsage: async (tx, query, scope) => { assert.equal(tx, client); received = { query, scope }; reads++; return received; } },
     '@/lib/enterprise/access': { enterpriseAuthorize: async () => auth ? { email: 'manager@example.test', admin: false } : json({ error: 'login' }, 401) },
     '@/lib/enterprise/server': { enterpriseRead: async (actor, id, run) => { assert.equal(actor.admin, false); if (!permission || id !== tenant) throw new TeamError('forbidden'); return run(client, { owner, visible: new Set(['self@example.test', 'child@example.test']), team: { id: tenant, name: '企业A', owner_email: 'owner@example.test' } }); } },
-    '@/lib/teams/server': { TeamError },
+    '@/lib/teams/errors': { TeamError },
     '@/lib/teams/access': { teamJson: json, teamFailure: error => json({ error: error.message }, error.status || 500) },
   };
   const admin = load('src/app/api/admin/bi/usage/route.ts', mocks), enterprise = load('src/app/api/enterprise/usage/route.ts', mocks);

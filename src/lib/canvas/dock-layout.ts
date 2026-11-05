@@ -127,7 +127,7 @@ export function canvasAnchorCenter(nodeScreen:NodeScreen|undefined,canvasSize:Ca
     }
     return cx;
 }
-export function preferredCanvasDock(nodeScreen:NodeScreen|undefined,canvasSize:CanvasSize,dockWidth:number,overlaySafeArea:SafeArea,selectedTextId:string|null,nodeTitleHeight=0,measuredToolbarHeight?:number):DockPlacement|undefined {
+export function preferredCanvasDock(nodeScreen:NodeScreen|undefined,canvasSize:CanvasSize,dockWidth:number,overlaySafeArea:SafeArea,selectedTextId:string|null,nodeTitleHeight=0,readOnly=false,measuredToolbarHeight?:number):DockPlacement|undefined {
  const anchorCenterX=canvasAnchorCenter(nodeScreen,canvasSize,dockWidth,overlaySafeArea);
  if(!nodeScreen||anchorCenterX==null)return undefined;
     const ch = canvasSize.height;
@@ -153,8 +153,14 @@ export function preferredCanvasDock(nodeScreen:NodeScreen|undefined,canvasSize:C
     const nodeToolbarReserve = measuredToolbarHeight === undefined ? 70 : topbarHeight + 24;
     const aboveBottom = nodeScreen.top - nodeToolbarReserve - nodeTitleHeight;
     const aboveSpace = Math.max(0, aboveBottom - safeTop);
-    const preferredHeight = selectedTextId ? 360 : 310;
-    const minimumComfort = selectedTextId
+    const narrowImage = !readOnly && !selectedTextId && canvasSize.width > 0 && canvasSize.width < 480;
+    const preferredHeight = selectedTextId || narrowImage ? 360 : 310;
+    // A narrow image footer has its own action row. Do not select a 220px
+    // gap that leaves only the header/footer and clips the editable body;
+    // use the existing bottom-sheet placement when neither side fits.
+    const minimumComfort = narrowImage
+      ? preferredHeight
+      : selectedTextId
       ? canvasSize.width < 480
         ? 240
         : 218
@@ -227,11 +233,15 @@ function protectImageTitle(layout:{dock:DockPlacement;toolbar:ToolbarPlacement},
  const gap=12,h=metrics.toolbarHeight>0?metrics.toolbarHeight:50;
  const minimum=metrics.dockMinimumHeight||120;
  const titleTop=node.top-titleHeight,titleBottom=node.top;
- const dh=Math.min(metrics.dockHeight||310,layout.dock.maxHeight??310);
+ // Reserve the allowed height, not the current ResizeObserver sample. A dock
+ // shortened by this clearance can grow to maxHeight again on the next render;
+ // using its sampled height here alternates between clear and colliding layouts.
+ const dh=layout.dock.maxHeight??(metrics.dockHeight||310);
  const intersects=(top:number,height:number)=>top<titleBottom&&top+height>titleTop;
  const titleCollision=intersects(layout.toolbar.top,h)||intersects(layout.dock.top,dh);
  const bodyCollision=layout.dock.top<node.bottom&&layout.dock.top+dh>node.top;
- if(!titleCollision&&!bodyCollision)return layout;
+ const overlayCollision=layout.dock.top<layout.toolbar.top+h+gap&&layout.dock.top+dh+gap>layout.toolbar.top;
+ if(!titleCollision&&!bodyCollision&&!overlayCollision)return layout;
  const upperEnd=Math.min(safeBottom,titleTop-gap),lowerStart=Math.max(safeTop,titleBottom+gap);
  const above=Math.max(0,upperEnd-safeTop),below=Math.max(0,safeBottom-lowerStart);
  const clamp=(n:number,lo:number,hi:number)=>Math.max(lo,Math.min(n,Math.max(lo,hi)));
@@ -289,7 +299,7 @@ export function canvasDockLayout(input:{nodeScreen:NodeScreen|undefined;canvasSi
  if(input.compactImage&&!selectedTextId)return compactImageDockLayout(nodeScreen,canvasSize,dockMetrics,canvasOverlaySafeArea(canvasSize),input.nodeTitleHeight??0,!!input.mediaComposerExpanded);
  const overlaySafeArea=canvasOverlaySafeArea(canvasSize),dockWidth=canvasDockWidth(canvasSize,overlaySafeArea);
  const measured=input.protectNodeTitle?(dockMetrics.toolbarHeight>0?dockMetrics.toolbarHeight:50):undefined;
- const dock=preferredCanvasDock(nodeScreen,canvasSize,dockWidth,overlaySafeArea,selectedTextId,input.nodeTitleHeight,measured),toolbar=preferredCanvasToolbar(nodeScreen,canvasSize,overlaySafeArea,dockMetrics,input.nodeTitleHeight,measured);
+ const dock=preferredCanvasDock(nodeScreen,canvasSize,dockWidth,overlaySafeArea,selectedTextId,input.nodeTitleHeight,readOnly,measured),toolbar=preferredCanvasToolbar(nodeScreen,canvasSize,overlaySafeArea,dockMetrics,input.nodeTitleHeight,measured);
  // Expand the composer, never the canvas viewport or its node. For images,
  // retain the title/pixel clearance instead of returning the full-screen
  // sheet before the opt-in title protection has had a chance to run.
@@ -308,4 +318,42 @@ export function canvasDockLayout(input:{nodeScreen:NodeScreen|undefined;canvasSi
  dockHeight:textComposerExpanded&&selectedTextId?canvasSize.height-overlaySafeArea.bottom-overlaySafeArea.top:dockMetrics.dockHeight||(selectedTextId?360:310),toolbarHeight:dockMetrics.toolbarHeight,safeTop:overlaySafeArea.top,safeBottom:canvasSize.height-overlaySafeArea.bottom});
  return input.protectNodeTitle&&nodeScreen&&input.nodeTitleHeight
    ?protectImageTitle(placed,nodeScreen,input.nodeTitleHeight,dockMetrics,overlaySafeArea.top,canvasSize.height-overlaySafeArea.bottom):placed;
+}
+
+export type CanvasOverlayViewport={x:number;y:number;zoom:number};
+export type CanvasOverlayNode={x:number;y:number;width:number;height:number};
+
+/** Render/live-transform geometry share the same anchor; no DOM or Flow state. */
+export function canvasOverlayNodeScreen(node:CanvasOverlayNode|undefined,viewport:CanvasOverlayViewport):NodeScreen|undefined{
+ if(!node)return;
+ const z=viewport.zoom||1,left=node.x*z+viewport.x,top=node.y*z+viewport.y;
+ return {left,top,bottom:top+node.height*z,cx:left+node.width*z/2};
+}
+
+/** Minimal pan after selection/area changes. Never changes zoom or node data.
+ * The view hook decides when to run; pure geometry cannot initiate navigation. */
+export function canvasAnchorViewport(input:{node:CanvasOverlayNode|undefined;viewport:CanvasOverlayViewport;size:CanvasSize;safeArea:SafeArea;selectedText:boolean;titleHeight:number;protectNodeTitle?:boolean;compactImage?:boolean;metrics?:DockMetrics}):CanvasOverlayViewport|undefined{
+ const {node,viewport:current,size:canvasSize,safeArea:overlaySafeArea,selectedText,titleHeight}=input;
+ if(!node||!canvasSize.width||!canvasSize.height)return;
+ const left=node.x*current.zoom+current.x,top=node.y*current.zoom+current.y;
+ const right=left+node.width*current.zoom,bottom=top+node.height*current.zoom;
+ const safeLeft=overlaySafeArea.left,safeRight=canvasSize.width-overlaySafeArea.right,defaultSafeTop=overlaySafeArea.top+(input.protectNodeTitle?(input.metrics?.toolbarHeight||50)+12+titleHeight:58);
+ // The view toolbar occupies only the left224px, not the complete canvas width.
+ const nodeIntersectsViewToolbar=left<=224&&right>=overlaySafeArea.left;
+ const safeBottom=canvasSize.height-(nodeIntersectsViewToolbar?overlaySafeArea.bottom:overlaySafeArea.right);
+ const estimatedDockHeight=selectedText?(canvasSize.width<480?240:218):220;
+ const stackedSafeTop=input.protectNodeTitle
+  ?overlaySafeArea.top+Math.max(estimatedDockHeight,input.metrics?.dockMinimumHeight||(canvasSize.width<480?300:178))+(input.metrics?.toolbarHeight||50)+24+titleHeight
+  :overlaySafeArea.top+estimatedDockHeight+70+titleHeight;
+ let dx=0,dy=0;
+ const visibleWidth=safeRight-safeLeft,nodeWidth=right-left,nodeHeight=bottom-top;
+ const safeTop=!input.compactImage&&safeBottom-stackedSafeTop>=nodeHeight?stackedSafeTop:defaultSafeTop,visibleHeight=safeBottom-safeTop;
+ if(nodeWidth>visibleWidth)dx=safeLeft+(visibleWidth-nodeWidth)/2-left;
+ else if(left<safeLeft)dx=safeLeft-left;
+ else if(right>safeRight)dx=safeRight-right;
+ if(nodeHeight>visibleHeight)dy=safeTop+(visibleHeight-nodeHeight)/2-top;
+ else if(top<safeTop)dy=safeTop-top;
+ else if(bottom>safeBottom)dy=safeBottom-bottom;
+ if(Math.abs(dx)<1&&Math.abs(dy)<1)return;
+ return {x:current.x+dx,y:current.y+dy,zoom:current.zoom};
 }

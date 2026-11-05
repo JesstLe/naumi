@@ -220,13 +220,13 @@ class PostgresFixture(unittest.TestCase):
         self.assertEqual(identity['name'], container)
         env = dict(v.split('=', 1) for v in inspect['Config']['Env'] if '=' in v)
         env.setdefault('POSTGRES_USER', 'postgres')
-        self.assertEqual(env['POSTGRES_DB'], 'naumi_packaging')
+        self.assertEqual(env['POSTGRES_DB'], os.environ.get('NAUMI_TASK_SNAPSHOT_TEST_DATABASE','naumi_packaging'))
         def sql(value):
             result = run(['docker', 'exec', '-i', identity['id'], 'psql', '-X', '-qAt', '--no-password', '-U', env['POSTGRES_USER'], '-d', env['POSTGRES_DB'], '-v', 'ON_ERROR_STOP=1'], stdin=value.encode())
             self.assertEqual(result.returncode, 0, result.stderr.decode()); return result.stdout
         try:
             sql(f"CREATE SCHEMA {schema}; CREATE TABLE {schema}.app_video_tasks(id text PRIMARY KEY,status text,upstream_id text,provider_id text,parameters jsonb); INSERT INTO {schema}.app_video_tasks VALUES('job-1','processing','original-task','original-provider','{{}}'),('already-done','completed','old-task','original-provider','{{}}'); CREATE TABLE {schema}.app_billing_operations(id text PRIMARY KEY,state text,ledger_id text,quote jsonb); INSERT INTO {schema}.app_billing_operations VALUES('job-1','reserved','led-video-job-1','{{\"frozen\":true}}'); CREATE TABLE {schema}.app_ledger(id text PRIMARY KEY,delta integer); INSERT INTO {schema}.app_ledger VALUES('old-unrelated',1);")
-            sql(f"CREATE TABLE {schema}.app_supplier_calls(id text PRIMARY KEY,operation_id text,account_id text,task_id text,state text,cost_status text); INSERT INTO {schema}.app_supplier_calls VALUES('call-1','job-1','account-original','original-task','completed','reported'),('unrelated-call','already-done','unrelated-account','old-task','completed','reported'); CREATE TABLE {schema}.app_supplier_accounts(id text PRIMARY KEY,base_url text,credential_ref text,protocol text); INSERT INTO {schema}.app_supplier_accounts VALUES('account-original','https://original.test','original-secret-ref','original-protocol'),('unrelated-account','https://other.test','other-secret','other'); CREATE TABLE {schema}.app_supplier_call_outputs(call_id text,output_index int,state text); INSERT INTO {schema}.app_supplier_call_outputs VALUES('call-1',0,'delivered'),('unrelated-call',0,'delivered');")
+            sql(f"CREATE TABLE {schema}.app_supplier_calls(id text PRIMARY KEY,operation_id text,account_id text,task_id text,state text,cost_status text); INSERT INTO {schema}.app_supplier_calls VALUES('call-1','job-1','account-original','original-task','completed','reported'),('unrelated-call','already-done','unrelated-account','old-task','completed','reported'); CREATE TABLE {schema}.app_supplier_accounts(id text PRIMARY KEY,base_url text,credential_ref text,protocol text); INSERT INTO {schema}.app_supplier_accounts VALUES('account-original','https://original.test','original-secret-ref','original-protocol'),('unrelated-account','https://other.test','other-secret','other'); CREATE TABLE {schema}.app_supplier_call_outputs(call_id text,output_index int,state text,PRIMARY KEY(call_id,output_index)); INSERT INTO {schema}.app_supplier_call_outputs VALUES('call-1',0,'delivered'),('unrelated-call',0,'delivered');")
             captures = []
             first = m.collect_task_snapshot(run, identity, lambda name, value: captures.append(value), schema=schema)
             self.assertEqual(first.public['tables']['app_video_tasks']['selectedCount'], 1)
@@ -246,7 +246,7 @@ class PostgresFixture(unittest.TestCase):
             self.assertEqual(sql(f'SELECT count(*) FROM {schema}.app_video_tasks;').strip(), b'2')
             sql(f"INSERT INTO {schema}.app_video_tasks VALUES('big-active','processing',NULL,NULL,jsonb_build_object('opaque',repeat('x',524289)));")
             bounded = m.collect_task_snapshot(run, identity, schema=schema)
-            self.assertEqual(bounded.public['tables']['app_video_tasks']['status'], 'unknown-byte-limit')
+            self.assertEqual(bounded.public['tables']['app_video_tasks']['status'], 'unknown-page-byte-limit')
             self.assertEqual(bounded.private['tables']['app_video_tasks']['rows'], [])
             proof = m.collect_task_snapshot(run, identity, schema=schema, projection='proof',
                         allow_absent_tables=m.ADDITIVE_TABLES)

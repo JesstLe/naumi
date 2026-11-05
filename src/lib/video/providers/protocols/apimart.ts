@@ -1,4 +1,5 @@
-import {createdResult,field,polled,rejectAdvanced,selectWireOptions,unsupportedWire,wireReferences,type VideoWireContext,type VideoWireRequest,type VideoWireCodec} from "../wire";
+import {createdResult,field,polled,rejectAdvanced,selectWireOptions,unsupportedWire,wireReferences} from "../wire-helpers";
+import type {VideoWireContext,VideoWireRequest,VideoWireCodec} from "../wire-contracts";
 // Wire adaptation: IC 68b37db handler/apimart_video.go (AGPL-3.0). Reject overlimits instead of upstream source truncation.
 export function buildAPIMartCreate(context:VideoWireContext):VideoWireRequest{
   const input=context.request,refs=wireReferences(context),profile=context.profile;

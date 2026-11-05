@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
+import {Pool} from 'pg';
 
 async function main(){
  const url=new URL(process.env.DATABASE_URL||'http://invalid');assert.equal(process.env.NAUMI_VERIFY_ISOLATED_DB,'1');assert.equal(url.hostname,'127.0.0.1');assert.match(url.pathname,/fixture/);
+ const originalUrl=process.env.DATABASE_URL,fixtureSchema='storyboard_evidence_'+randomUUID().replace(/-/g,''),fixtureAdmin=new Pool({connectionString:url.href,ssl:false});
+ await fixtureAdmin.query('CREATE SCHEMA '+fixtureSchema);url.searchParams.set('options','-c search_path='+fixtureSchema);process.env.DATABASE_URL=url.href;
  const db=await import('../src/lib/db'),ctx=await import('../src/lib/saas/creation-context'),writer=await import('../src/lib/saas/creation-writer'),schema=await import('../src/lib/saas/creation-schema'),tenants=await import('../src/lib/saas/tenants');
  const workflow=await import('../src/lib/video/workflow'),proof=await import('../src/lib/video/workflow-creation'),reader=await import('../src/lib/saas/creations'),evidence=await import('../src/lib/saas/creation-source-evidence'),contracts=await import('../src/lib/saas/creation-contracts');
  const pool=db.getPool(),actor='storyboard-evidence@example.test';let checks=0;
@@ -39,6 +42,6 @@ async function main(){
   assert.equal(Number((await pool.query("SELECT count(*) n FROM app_creation_links WHERE creation_id=$1 AND target_id='recovered-final-film' AND relation='output'",[creationId])).rows[0].n),1);
   assert.equal(Number((await pool.query('SELECT count(*) n FROM app_video_tasks')).rows[0].n),before);checks++;
   console.log(`STORYBOARD_CREATION_EVIDENCE=PASS CHECKS=${checks} REAL_PG=1 REUSE_SCOPE=UNCHANGED LIVE_STATUS=ASSEMBLY_AWARE FINAL_RECOVERY=PASS TERMINAL_DEBT=CLEARED NEW_VIDEO_TASKS=0 SUPPLIER_CALLS=0`);
- }finally{await pool.end();}
+ }finally{await pool.end();await fixtureAdmin.query('DROP SCHEMA '+fixtureSchema+' CASCADE');await fixtureAdmin.end();process.env.DATABASE_URL=originalUrl;console.log('STORYBOARD_EVIDENCE_CLEANUP=OWN_SCHEMA_DROPPED POOLS_CLOSED');}
 }
 main().catch(error=>{console.error(error);process.exitCode=1});

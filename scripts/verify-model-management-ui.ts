@@ -1,13 +1,13 @@
 import { expandManagedModelConfig } from "./model-mapping-ui-helpers";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { chromium, expect } from "@playwright/test";
+import { readFile, writeFile } from "node:fs/promises";
+import { chromium, expect as originalExpect } from "@playwright/test";
+const expect=originalExpect.configure({timeout:45000});
 
 async function main() {
   if (process.env.NAUMI_VERIFY_ISOLATED_DB !== "1") throw Error("Requires isolated fixture");
-  expect.configure({ timeout: 45000 });
-  const f = JSON.parse(await readFile("output/model-management-fixture/fixture.json", "utf8")), origin = "http://127.0.0.1:54989";
+  const f = JSON.parse(await readFile("output/model-management-fixture/fixture.json", "utf8")), origin = (process.env.NAUMI_MODEL_UI_BASE_URL||"http://127.0.0.1:54989");
   const browser = await chromium.launch({ channel: process.platform === "win32" ? "msedge" : undefined, headless: true });
   const admin = await browser.newContext({ viewport: { width: 1440, height: 1050 } }), member = await browser.newContext();
   try {
@@ -15,7 +15,7 @@ async function main() {
     await admin.addCookies([{name:"nv_user",value:f.memberCookie,domain:"127.0.0.1",path:"/"}]);
     const page = await admin.newPage(); page.setDefaultTimeout(45000);
     const errors: string[] = []; page.on("pageerror", e => errors.push(e.message));
-    await page.goto(`${origin}/admin/model-management`);
+    await page.goto(`${origin}/admin/model-management`,{waitUntil:"domcontentloaded",timeout:180000});
     await expect(page.getByRole("heading", { name: "灵动图片", exact: true })).toBeVisible();
     await expect(page.getByText("gpt-image-2", { exact: true })).toBeVisible();
     const legacyPage=await admin.request.get(origin+"/admin/mvp?view=models",{maxRedirects:0});assert.equal(legacyPage.status(),308);assert.ok(legacyPage.headers().location.endsWith("/admin/model-management?view=models"));
@@ -104,7 +104,7 @@ async function main() {
     for(const tool of ["自由生图","风格","画布"])await scope.getByRole("checkbox",{name:tool,exact:true}).check();
     await page.screenshot({path:"output/model-management-fixture/scope-subset.png",fullPage:true});
     await scope.getByRole("button",{name:"保存范围并生效",exact:true}).click();
-    await expect(scope).toHaveCount(0);await expect(family.getByText("应用工具 6 项",{exact:true})).toBeVisible();
+    await expect(scope).toHaveCount(0);await expect(family.getByRole("heading",{name:"应用工具 6",exact:true})).toBeVisible();
     const scoped=(await(await admin.request.get(origin+"/api/admin/bi/model-config")).json());
     assert.deepEqual(scoped.draft,configBeforeScope.draft);assert.deepEqual(scoped.snapshot.config.business,configBeforeScope.snapshot.config.business);assert.deepEqual(scoped.snapshot.config.bindings,configBeforeScope.snapshot.config.bindings);
     assert.ok(!(await(await admin.request.get(origin+"/api/models?feature=image.aplus")).json()).models.some((m:any)=>m.id.startsWith("gemini-3.0-pro-image-")));
@@ -122,10 +122,15 @@ async function main() {
     const canvasQuote=await quote({feature:"canvas.image",modelId:"gemini-3.0-pro-image-square",quantity:2});assert.equal(canvasQuote.status(),200);const cq=await canvasQuote.json();assert.equal(cq.credits,14);assert.equal(cq.modelId,"gemini-3.0-pro-image-square");
     assert.equal((await quote({feature:"image.aplus",modelId:"gemini-3.0-pro-image-square",quantity:1})).status(),400);
     const hints=await(await admin.request.get(origin+"/api/models?feature=image.generate")).json();assert.ok(hints.models.find((m:any)=>m.id.startsWith("gemini-3.0-pro-image")).creditHint.includes("7 积分/张"));
-    const frontend=await admin.newPage();await frontend.goto(origin+"/generate");
-    await frontend.getByRole("combobox",{name:"产品摄影模型",exact:true}).click();
-    const pricedModelLabel=hints.models.find((m:any)=>m.id.startsWith("gemini-3.0-pro-image")).label;
-    const modelOption=frontend.getByRole("option",{name:pricedModelLabel,exact:true});
+    const frontend=await admin.newPage();await frontend.goto(origin+"/generate",{waitUntil:"domcontentloaded",timeout:180000});
+    // The current default is independent of the renamed model; ratio variants
+    // are presented as one family in the existing selector.
+    const modelPicker=frontend.getByText("生图模型",{exact:true}).locator("..").getByRole("combobox");
+    await expect(modelPicker).toBeEnabled();
+    await writeFile("output/model-management-fixture/frontend-model-picker.json",JSON.stringify({controls:await frontend.getByRole("combobox").allTextContents(),catalog:hints},null,2));
+    await modelPicker.click();
+    await expect(frontend.getByRole("option",{name:/^产品摄影模型(?: · 仅文生图)?$/})).toBeVisible();
+    const modelOption=frontend.getByRole("option",{name:/^gemini-3\.0-pro-image(?: · 仅文生图)?$/});
     await expect(modelOption).toBeVisible();await expect(frontend.getByRole("listbox")).not.toContainText("积分");
     await modelOption.click();await expect(frontend.getByTestId("billing-estimate")).toContainText("7");
     await frontend.screenshot({path:"output/model-management-fixture/pricing-frontend.png",fullPage:true});
@@ -141,21 +146,22 @@ async function main() {
     await expandManagedModelConfig(family);await family.getByRole("button",{name:"设置积分",exact:true}).click();await price.getByRole("button",{name:"全选应用工具",exact:true}).click();await price.getByRole("button",{name:"恢复原计价",exact:true}).click();await expect(price).toHaveCount(0);
     const reset=await(await admin.request.get(origin+"/api/admin/model-management")).json();assert.ok(reset.rows.find((r:any)=>r.id==="gemini-3.0-pro-image").pricing.every((v:any)=>!v.override));assert.equal(reset.version,priceBefore.version);
     await expandManagedModelConfig(family);await family.getByRole("button",{name:"分辨率设置",exact:true}).click();
-    const resolutionsDialog=page.getByRole("dialog",{name:"前端分辨率选项",exact:true});
+    const resolutionsDialog=page.getByRole("dialog",{name:"分辨率显示与实际参数",exact:true});
     await resolutionsDialog.getByRole("checkbox",{name:"显示 2K",exact:true}).uncheck();await resolutionsDialog.getByRole("checkbox",{name:"显示 4K",exact:true}).uncheck();
     await resolutionsDialog.getByRole("button",{name:"保存分辨率并生效",exact:true}).click();await expect(resolutionsDialog).toHaveCount(0);
     const resCatalog=await(await admin.request.get(origin+"/api/models?feature=image.generate")).json();assert.ok(resCatalog.models.filter((m:any)=>m.id.startsWith("gemini-3.0-pro-image")).every((m:any)=>JSON.stringify(m.generationParameters.resolutions)===JSON.stringify(["1K"])));
-    assert.equal((await quote({feature:"image.generate",modelId:"gemini-3.0-pro-image-square",quality:"medium",resolution:"4K",quantity:1})).status(),409);
+    const resolutionFallback=await quote({feature:"image.generate",modelId:"gemini-3.0-pro-image-square",quality:"medium",resolution:"4K",quantity:1});assert.equal(resolutionFallback.status(),200);
+    const fallbackQuote=await resolutionFallback.json();assert.equal(fallbackQuote.requestedParameters.resolution,"4K");assert.equal(fallbackQuote.effectiveParameters.resolution,"1K");
     const resFront=await admin.newPage();await resFront.goto(origin+"/generate?model=gemini-3.0-pro-image-square&resolution=4K");await expect(resFront.getByRole("tab",{name:"1K",exact:true})).toBeVisible();await expect(resFront.getByRole("tab",{name:"4K",exact:true})).toHaveCount(0);await expect(resFront.getByRole("tab",{name:"1K",exact:true})).toHaveAttribute("aria-selected","true");
     await expandManagedModelConfig(family);await family.getByRole("button",{name:"分辨率设置",exact:true}).click();await resolutionsDialog.getByRole("button",{name:"全选",exact:true}).click();await resolutionsDialog.getByRole("button",{name:"保存分辨率并生效",exact:true}).click();await expect(resolutionsDialog).toHaveCount(0);
     await resFront.evaluate(()=>window.dispatchEvent(new Event("naumi:model-catalog-refresh")));for(const id of ["1K","2K","4K"])await expect(resFront.getByRole("tab",{name:id,exact:true})).toBeVisible();await resFront.getByRole("tab",{name:"4K",exact:true}).click();await expect(resFront.getByRole("tab",{name:"4K",exact:true})).toHaveAttribute("aria-selected","true");await resFront.screenshot({path:"output/model-management-fixture/resolutions-frontend.png",fullPage:true});
-    await page.reload();await expandManagedModelConfig(family);await family.getByRole("button",{name:"分辨率设置",exact:true}).click();for(const id of ["1K","2K","4K"])await expect(resolutionsDialog.getByRole("checkbox",{name:"显示 "+id,exact:true})).toBeChecked();await resolutionsDialog.getByRole("button",{name:"恢复默认分辨率",exact:true}).click();await expect(resolutionsDialog).toHaveCount(0);await resFront.close();
+    await page.reload();await expandManagedModelConfig(family);await family.getByRole("button",{name:"分辨率设置",exact:true}).click();for(const id of ["1K","2K","4K"])await expect(resolutionsDialog.getByRole("checkbox",{name:"显示 "+id,exact:true})).toBeChecked();await resolutionsDialog.getByRole("button",{name:"恢复默认显示",exact:true}).click();await expect(resolutionsDialog).toHaveCount(0);await resFront.close();
     await expandManagedModelConfig(family);await family.getByRole("button",{name:"编辑范围",exact:true}).click();
     await scope.getByRole("button",{name:"全选可用工具",exact:true}).click();
     assert.equal(await scope.locator('input[type=checkbox]:enabled:not(:checked)').count(),0);
     await scope.getByRole("button",{name:"保存范围并生效",exact:true}).click();await expect(scope).toHaveCount(0);
     await expandManagedModelConfig(family);await family.getByRole("button",{name:"编辑范围",exact:true}).click();await scope.getByRole("button",{name:"清空选择",exact:true}).click();await scope.getByRole("button",{name:"保存范围并生效",exact:true}).click();await expect(scope).toHaveCount(0);
-    await expect(family.getByText("应用工具 0 项",{exact:true})).toBeVisible();
+    await expect(family.getByRole("heading",{name:"应用工具 0",exact:true})).toBeVisible();
     assert.equal((await(await admin.request.get(origin+"/api/models?feature=canvas.image")).json()).models[0].id,"image-a");
     const first=page.getByTestId("managed-model-image-a");await expandManagedModelConfig(first);await first.getByRole("button",{name:/供应通道/}).click();
     const channelsDialog=page.getByRole("dialog",{name:"供应通道与分流",exact:true});const stopped=channelsDialog.locator("details").filter({has:page.locator("summary",{hasText:"停用通道"})});if(await stopped.count())await stopped.locator("summary").click();await channelsDialog.getByLabel("添加供应通道",{exact:true}).selectOption("u1");await channelsDialog.getByRole("button",{name:"添加通道",exact:true}).click();
@@ -164,12 +170,14 @@ async function main() {
     await page.reload();await expandManagedModelConfig(first);await first.getByRole("button",{name:/供应通道/}).click();await expect(channelsDialog.getByLabel("通道权重 u2",{exact:true})).toHaveValue("7");await expect(channelsDialog.getByLabel("通道权重 u1",{exact:true})).toHaveValue("3");await page.screenshot({path:"output/model-management-fixture/supplier-channels.png"});
     await page.setViewportSize({width:390,height:844});assert.ok(await channelsDialog.evaluate(e=>e.scrollWidth<=e.clientWidth+1));await page.screenshot({path:"output/model-management-fixture/supplier-channels-mobile.png"});await page.setViewportSize({width:1440,height:1050});await channelsDialog.getByRole("button",{name:"恢复单通道",exact:true}).click();await expect(channelsDialog).toHaveCount(0);
     const loaded=page.getByTestId("site-version");await expect(loaded).toHaveAttribute("data-loaded-version","1791542000");
+    const loadedLabel=(await loaded.getByRole("button",{name:"查看网站版本",exact:true}).textContent())!.trim();
+    const publishedVersion=await(await admin.request.get(origin+"/api/version")).json();assert.equal(publishedVersion.version,"1791542000");assert.equal(publishedVersion.commit,"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
     let simulatedVersion="1791542001",versionFailure=false;
     await page.route("**/api/version",route=>route.fulfill(versionFailure ? {status:503,json:{error:"fixture offline"}} : {json:{version:simulatedVersion,commit:"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}}));
     await page.getByRole("button",{name:"查看网站版本",exact:true}).click();
     const versionPanel=page.getByRole("dialog",{name:"网站版本",exact:true});
     await expect(loaded.getByText("可更新",{exact:true})).toBeVisible();await expect(loaded).toHaveAttribute("data-loaded-version","1791542000");
-    await expect(versionPanel.getByText("1791542000 / aaaaaaa",{exact:true})).toBeVisible();
+    await expect(versionPanel.getByText("当前页面",{exact:true}).locator("..").locator("dd")).toHaveText(loadedLabel);
     await expect(versionPanel.getByText("当前页面与服务器版本不同",{exact:false})).toBeVisible();
     await page.screenshot({path:"output/model-management-fixture/version-different.png",fullPage:true});
     versionFailure=true;await versionPanel.getByRole("button",{name:"检查版本",exact:true}).click();await expect(versionPanel.getByText("暂时无法检查服务器版本",{exact:false})).toBeVisible();await expect(loaded).toHaveAttribute("data-loaded-version","1791542000");
@@ -183,13 +191,19 @@ async function main() {
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
     await page.getByRole("button",{name:"查看网站版本",exact:true}).click();await expect(versionPanel).toBeVisible();assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:"output/model-management-fixture/version-mobile.png",fullPage:true});await page.keyboard.press("Escape");await expect(versionPanel).toHaveCount(0);
     await page.getByRole("button", { name: "展开管理导航" }).click();
-    await expect(page.getByRole("link", { name: "模型管理 模型与积分 新" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "模型与供应商",exact:true })).toBeVisible();
     await member.addCookies([{ name: "nv_user", value: f.memberCookie, domain: "127.0.0.1", path: "/" }]);
     assert.equal((await member.request.get(origin + "/api/admin/model-management")).status(), 404);
     const stats = await (await fetch(f.control + "/stats")).json(); assert.equal(stats.paid, 0);
     assert.equal(errors.length, 0, errors.join("\n"));
     assert.equal((await member.request.get(origin+"/api/admin/mvp")).status(),404);assert.equal((await member.request.get(origin+"/api/admin/mvp/library")).status(),404);
     console.log("ADMIN_MODEL_MANAGEMENT_BROWSER=PASS LEGACY_PAGE_QUERY_REDIRECT=PASS LEGACY_API_AUTH=PASS CROSS_ROUTE_OPERATION_REPLAY=PASS LEGACY_PENDING_RECOVERY=PASS PRICE_FIXED_MATRIX_RESTORE=PASS FRONTEND_REFERENCE_ACTUAL_QUOTE=PASS CANVAS_PRICE_SCOPE=PASS NAME_WIRE_SOURCE=PASS TOOL_SCOPE_SUBSET_ALL_NONE=PASS VERSION_MATCH_UPDATE_ROLLBACK_OFFLINE_REFRESH=PASS SWITCH_RECOVERY_RELOAD=PASS CONNECT_RSA_AUTO_DISCOVERY=PASS REGISTER=PASS FILTER_SEARCH=PASS MOBILE=PASS NON_ADMIN=404 PAID_GENERATION=0");
+  } catch(error) {
+    for(const [index,failedPage] of admin.pages().entries())await Promise.allSettled([
+      failedPage.content().then(html=>writeFile(`output/model-management-fixture/failure-page-${index}.html`,html)),
+      failedPage.screenshot({path:`output/model-management-fixture/failure-page-${index}.png`,fullPage:true}),
+    ]);
+    throw error;
   } finally { await admin.close(); await member.close(); await browser.close(); }
 }
 main().catch(e => { console.error(e); process.exitCode = 1; });

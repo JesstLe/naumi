@@ -1,53 +1,73 @@
-import "server-only";
-import {z} from "zod";
-import {createHash} from "node:crypto";
-import {getPool,ensureSchema,listArtworksByIds,listCanvasTextNodes,type CanvasTextNodeRecord} from "../db";
-import {ensureVideoNodeSchema,saveVideoNodeTx} from "./video-node-repository";
-import {authorizeVideoProject,authorizeNodeInputs,listVideoNodes} from "./video-node-service";
-import {videoNodeIdSchema,videoProjectKeySchema,type CanvasVideoNode} from "./video-node-schema";
-import {ModelConfigError} from "../model-config/types";
-import {canonicalConfig} from "../model-config/repository";
-import {ensureDirectorNodeSchema,listDirectorNodes,saveDirectorNodeTx} from "./director-node-repository";
-import {authorizeDirectorInputs} from "./director-node-service";
-import type {CanvasDirectorNode} from "./director-node-schema";
-import {assertCreationProjectInput,currentCreationContext} from "../saas/creation-context";
-import {ensureCharacterNodeSchema,listCharacterNodes,saveCharacterNodeTx} from "./character-node-repository";
-import {authorizeCharacterImages,lockCharacterImagesTx} from "./character-references";
-import type {CanvasCharacterNode} from "./character-node-schema";
-import {parseCharacterInputIdentity,characterInputIdentity} from "../character/project";
-import {ensureImagePromptSchema,writeCopiedImagePromptTx} from "./image-prompt-repository";
-import {imagePromptDocumentSchema,remapImagePromptDocument} from "./image-prompt-schema";
-import {authorizeImagePromptNodeTx} from "./image-prompt-service";
-
-import {ensureSceneNodeSchema,listSceneNodes,saveSceneNodeTx} from "./scene-node-repository";
-import {authorizeSceneImages,lockSceneImagesTx} from "./scene-references";
-import type {CanvasSceneNode} from "./scene-node-schema";
-import {parseSceneInputIdentity,sceneInputIdentity} from "../scene/project";
-
-import {ensureAudioNodeSchema,listAudioNodes,saveAudioNodeTx} from "./audio-node-repository";
-import {validateAudioProject} from "./audio-project-validation";
-import type {CanvasAudioNode} from "./audio-node-schema";
-
-import {ensureTimelineNodeSchema,listTimelineNodes,saveTimelineNodeTx} from "./timeline-node-repository";
+import {withTransaction} from "@/platform/db/transaction";
+import {readNativeNodeReceiptsTx} from "./native-node-lifecycle";
+import {canvasNativeIds} from "./native-node-records";
+import {ensureTimelineNodeSchema} from "./storage-schema";
+import {listTimelineNodes,saveTimelineNodeTx} from "./timeline-node-repository";
 import {validateTimelineProject,validateTimelineAdoption} from "./timeline-project-validation";
 import type {CanvasTimelineNode} from "./timeline-node-schema";
 import type {TimelineProject} from "../timeline/project";
+import {listAudioNodes,saveAudioNodeTx} from "./audio-node-repository";
+import {ensureAudioNodeSchema} from "./storage-schema";
+import {validateAudioProject} from "./audio-project-validation";
+import type {CanvasAudioNode} from "./audio-node-schema";
+import {listSceneNodes,saveSceneNodeTx} from "./scene-node-repository";
+import {ensureSceneNodeSchema} from "./storage-schema";
+import {authorizeSceneImages,lockSceneImagesTx} from "./scene-references";
+import type {CanvasSceneNode} from "./scene-node-schema";
+import {parseSceneInputIdentity,sceneInputIdentity} from "../scene/project";
+import {listCharacterNodes,saveCharacterNodeTx} from "./character-node-repository";
+import {ensureCharacterNodeSchema} from "./storage-schema";
+import {authorizeCharacterImages,lockCharacterImagesTx} from "./character-references";
+import type {CanvasCharacterNode} from "./character-node-schema";
+import {parseCharacterInputIdentity,characterInputIdentity} from "../character/project";
+import {ensureCanvasNodeCopySchema} from "./storage-schema";
+import "server-only";
+import {createHash} from "node:crypto";
+import {getPool} from "@/platform/db/pool";
+import {ensureSchema} from "@/lib/persistence/schema";
+import {listArtworksByIds} from "@/lib/artworks/repository";
+import {listCanvasTextNodes, type CanvasTextNodeRecord} from "@/lib/canvas/text-node-repository";
+import {saveVideoNodeTx} from "./video-node-repository";
+import {ensureVideoNodeSchema} from "@/lib/canvas/storage-schema";
 
-export const nodeCopyRequest=z.strictObject({operationId:z.uuid(),ids:z.array(videoNodeIdSchema).min(1).max(200).refine(ids=>new Set(ids).size===ids.length,"节点身份重复"),projectKey:videoProjectKeySchema.optional(),detached:z.boolean().optional()}).refine(input=>!input.detached||input.ids.length===1,"独立复制仅支持单个图片节点");
-type CopyResult={artworkIds:string[];textNodes:CanvasTextNodeRecord[];nodes:CanvasVideoNode[];directorNodes?:CanvasDirectorNode[];characterNodes?:CanvasCharacterNode[];sceneNodes?:CanvasSceneNode[];audioNodes?:CanvasAudioNode[];timelineNodes?:CanvasTimelineNode[];idMap:Record<string,string>;projectKey:string};
+import { authorizeNodeInputs, listVideoNodes } from "./video-node-service";
+import { authorizeVideoProject } from "./project-access";
+import type {CanvasVideoNode} from "./video-node-schema";
+import {ModelConfigError} from "../model-config/types";
+import {canonicalConfig} from "@/lib/model-config/snapshot-value";
+
+import {ensureDirectorNodeSchema} from "./storage-schema";
+import {listDirectorNodes,saveDirectorNodeTx} from "./director-node-repository";
+import {authorizeDirectorInputs} from "./director-node-service";
+import type {CanvasDirectorNode} from "./director-node-schema";
+import {assertCreationProjectInput} from "../saas/creation-access";
+import {currentCreationContext} from "../saas/creation-scope";
+import {ensureImagePromptSchema,writeCopiedImagePromptTx} from "./image-prompt-repository";
+import {imagePromptDocumentSchema,remapImagePromptDocument} from "./image-prompt-schema";
+import {authorizeImagePromptNodeTx} from "./image-prompt-service";
+import {nodeCopyRequest,type CanvasNodeCopyInput,type CanvasNodeCopyResult as CopyResult} from "./node-copy-contract";
+export {nodeCopyRequest} from "./node-copy-contract";
 function stableUuid(seed:string){const bytes=createHash("sha256").update(seed).digest().subarray(0,16);bytes[6]=(bytes[6]&15)|64;bytes[8]=(bytes[8]&63)|128;const h=bytes.toString("hex");return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;}
 /** Copies media identities and editable records together. No supplier requests, media writes, task replay or fees. */
-export async function copyCanvasNodes(actorRaw:string,raw:z.infer<typeof nodeCopyRequest>):Promise<CopyResult>{
+export async function copyCanvasNodes(actorRaw:string,raw:CanvasNodeCopyInput):Promise<CopyResult>{
   const actor=actorRaw.toLowerCase(),input=nodeCopyRequest.parse(raw);await ensureSchema();await ensureVideoNodeSchema();await ensureDirectorNodeSchema();await ensureCharacterNodeSchema();await ensureSceneNodeSchema();await ensureAudioNodeSchema();await ensureTimelineNodeSchema();await ensureImagePromptSchema();
-  const pool=getPool();await pool.query(`CREATE TABLE IF NOT EXISTS app_canvas_node_copies(email text NOT NULL,operation_id uuid NOT NULL,input_digest text NOT NULL,result jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(email,operation_id))`);
+  const pool=getPool();await ensureCanvasNodeCopySchema();
+  const currentCopyReceipt=async(result:CopyResult)=>{
+    return withTransaction(pool,async client=>{
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[actor]);
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`video-node-graph:${actor}`]);
+      return {...result,nativeNodes:await readNativeNodeReceiptsTx(client,actor,canvasNativeIds({videoNodes:result.nodes,...result}))};
+    });
+  };
   const digest=createHash("sha256").update(canonicalConfig(input)).digest("hex");
   const previous=(await pool.query("SELECT input_digest,result FROM app_canvas_node_copies WHERE email=$1 AND operation_id=$2",[actor,input.operationId])).rows[0];
-  if(previous){if(previous.input_digest!==digest)throw new ModelConfigError("NODE_OPERATION_CONFLICT","复制操作编号已用于另一请求",409);return previous.result;}
+  if(previous){if(previous.input_digest!==digest)throw new ModelConfigError("NODE_OPERATION_CONFLICT","复制操作编号已用于另一请求",409);return currentCopyReceipt(previous.result);}
   const [artworks,textNodes,videoNodes,directorRecords,characterRecords,sceneRecords,audioRecords,timelineRecords]=await Promise.all([listArtworksByIds(actor,input.ids),listCanvasTextNodes(actor),listVideoNodes(actor),listDirectorNodes(actor),listCharacterNodes(actor),listSceneNodes(actor),listAudioNodes(actor),listTimelineNodes(actor)]);
   const wanted=new Set(input.ids),texts=textNodes.filter(node=>wanted.has(node.id)),videos=videoNodes.filter(node=>wanted.has(node.id)),directors=directorRecords.filter(node=>wanted.has(node.id)),characters=characterRecords.filter(node=>wanted.has(node.id)),scenes=sceneRecords.filter(node=>wanted.has(node.id)),audios=audioRecords.filter(node=>wanted.has(node.id)),timelines=timelineRecords.filter(node=>wanted.has(node.id));
   const kinds=new Map([...artworks.map(node=>[node.id,"art"] as const),...texts.map(node=>[node.id,"text"] as const),...videos.map(node=>[node.id,"vnode"] as const),...directors.map(node=>[node.id,"director"] as const),...characters.map(node=>[node.id,"character"] as const),...scenes.map(node=>[node.id,"scene"] as const),...audios.map(node=>[node.id,"audio"] as const),...timelines.map(node=>[node.id,"timeline"] as const)]);
   if(input.detached&&kinds.get(input.ids[0])!=="art")throw new ModelConfigError("INVALID_NODE_COPY","独立复制仅支持图片节点",422);
   if(input.ids.some(id=>!kinds.has(id)))throw new ModelConfigError("CANVAS_NODE_UNAVAILABLE","复制节点不存在或无权访问",404);
+  if(input.singleArtwork&&artworks.length!==1)throw new ModelConfigError("CANVAS_NODE_UNAVAILABLE","单图复制来源不是作品",422);
   for(const node of videos)await authorizeNodeInputs(actor,{id:node.id,operationId:input.operationId,expectedRevision:node.revision,config:node.config,inputs:node.inputs});
   for(const node of directors){await assertCreationProjectInput(actor,node.projectKey);await authorizeDirectorInputs(actor,{project:node.project});}
   for(const node of characters){await assertCreationProjectInput(actor,node.projectKey);await authorizeCharacterImages(actor,node.character);}
@@ -63,7 +83,7 @@ export async function copyCanvasNodes(actorRaw:string,raw:z.infer<typeof nodeCop
   try{
     await client.query("BEGIN");await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[actor]);await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`video-node-graph:${actor}`]);
     const saved=(await client.query("SELECT input_digest,result FROM app_canvas_node_copies WHERE email=$1 AND operation_id=$2",[actor,input.operationId])).rows[0];
-    if(saved){if(saved.input_digest!==digest)throw new ModelConfigError("NODE_OPERATION_CONFLICT","复制操作编号已用于另一请求",409);await client.query("COMMIT");return saved.result;}
+    if(saved){if(saved.input_digest!==digest)throw new ModelConfigError("NODE_OPERATION_CONFLICT","复制操作编号已用于另一请求",409);const nativeNodes=await readNativeNodeReceiptsTx(client,actor,canvasNativeIds({videoNodes:saved.result.nodes,...saved.result}));await client.query("COMMIT");return {...saved.result,nativeNodes};}
     await client.query("INSERT INTO app_canvas_video_projects(email,project_key) VALUES($1,$2) ON CONFLICT DO NOTHING",[actor,key]);
     const [kind,projectId]=[key.slice(0,key.indexOf(":")),key.slice(key.indexOf(":")+1)];
     const artworkIds:string[]=[],copiedTexts:CanvasTextNodeRecord[]=[],nodes:CanvasVideoNode[]=[],directorNodes:CanvasDirectorNode[]=[],characterNodes:CanvasCharacterNode[]=[],sceneNodes:CanvasSceneNode[]=[],audioNodes:CanvasAudioNode[]=[],timelineNodes:CanvasTimelineNode[]=[];
@@ -74,7 +94,10 @@ export async function copyCanvasNodes(actorRaw:string,raw:z.infer<typeof nodeCop
       const fields={id:newId,email:actor,group_id:kind==="tree"?projectId:newId,batch_id:kind==="batch"?projectId:null,canvas_group_id:null,
         ...(input.detached?{title:`${String(current.title||"图片")} 副本`}:{}),
         parent_id:!input.detached&&current.parent_id&&(mapping.has(current.parent_id)||sameProject)?remap(current.parent_id):null,parent_ids:input.detached?[]:(current.parent_ids||[]).filter((id:string)=>mapping.has(id)||sameProject).map(remap),
-        canvas_x:Number(current.canvas_x||0)+40,canvas_y:Number(current.canvas_y||0)+40,origin:"canvas",source_url:current.source_url,source:"canvas-add",deleted_at:null,created_at:new Date().toISOString(),updated_at:new Date().toISOString()};
+        canvas_x:Number(current.canvas_x||0)+40,canvas_y:Number(current.canvas_y||0)+40,origin:"canvas",source_url:current.source_url,source:"canvas-add",deleted_at:null,created_at:new Date().toISOString(),updated_at:new Date().toISOString(),
+        ...(input.singleArtwork?{canvas_x:input.singleArtwork.x,canvas_y:input.singleArtwork.y,title:input.singleArtwork.title??current.title,
+          source_url:"canvas-add",parent_id:kind==="tree"&&projectId!==newId?projectId:null,parent_ids:[],
+          creation_provenance:{version:1,operation:"copy",entry:"canvas",ref:newId,sourceArtworkId:node.id,evidence:"server-route"}}:{} )};
       const result=await client.query("INSERT INTO app_artworks SELECT (jsonb_populate_record(NULL::app_artworks,to_jsonb(src)||$3::jsonb)).* FROM app_artworks src WHERE email=$1 AND id=$2 AND deleted_at IS NULL",[actor,node.id,JSON.stringify(fields)]);
       if(!result.rowCount)throw new Error("复制媒体失败");artworkIds.push(newId);
       const prompt=(await client.query("SELECT project_key,document,scope_kind,tenant_id FROM app_canvas_image_prompts WHERE email=$1 AND node_id=$2 FOR SHARE",[actor,node.id])).rows[0];
@@ -82,7 +105,7 @@ export async function copyCanvasNodes(actorRaw:string,raw:z.infer<typeof nodeCop
         await authorizeImagePromptNodeTx(client,actor,prompt.project_key,node.id);
         const scope=currentCreationContext();
         if(!scope||prompt.scope_kind!==scope.scopeKind||prompt.tenant_id!==scope.tenantId)throw new ModelConfigError("IMAGE_PROMPT_SCOPE_MISMATCH","提示词不属于当前工作空间",403);
-        const document=remapImagePromptDocument(imagePromptDocumentSchema.parse(prompt.document),mapping,{preserveExternal:prompt.project_key===key,detached:input.detached});
+        const document=remapImagePromptDocument(imagePromptDocumentSchema.parse(prompt.document),mapping,{preserveExternal:prompt.project_key===key,detached:input.detached||!!input.singleArtwork});
         await writeCopiedImagePromptTx(client,actor,newId,key,document,{scopeKind:prompt.scope_kind,tenantId:prompt.tenant_id});
       }
     }
@@ -139,8 +162,8 @@ export async function copyCanvasNodes(actorRaw:string,raw:z.infer<typeof nodeCop
       timelineNodes.push(await saveTimelineNodeTx(client,actor,{id:mapping.get(node.id)!,operationId:stableUuid(`${actor}:${input.operationId}:${node.id}`),expectedRevision:0,title:node.title,x:node.x+40,y:node.y+40,width:node.width,height:node.height,timeline,adopted},key));
     }
     // Copy shared properties only when that table already exists; do not initialize unrelated edit tables.
-    if((await client.query("SELECT to_regclass('app_canvas_node_settings') AS name")).rows[0].name){for(const [oldId,newId] of mapping)await client.query("INSERT INTO app_canvas_node_settings(email,node_id,kind,settings) SELECT email,$3,kind,settings FROM app_canvas_node_settings WHERE email=$1 AND node_id=$2 ON CONFLICT(email,node_id) DO NOTHING",[actor,oldId,newId]);}
-    const result:CopyResult={artworkIds,textNodes:copiedTexts,nodes,...(directorNodes.length?{directorNodes}:{}),...(characterNodes.length?{characterNodes}:{}),...(sceneNodes.length?{sceneNodes}:{}),...(audioNodes.length?{audioNodes}:{}),...(timelineNodes.length?{timelineNodes}:{}),idMap:Object.fromEntries(mapping),projectKey:key};
+    if(!input.singleArtwork&&(await client.query("SELECT to_regclass('app_canvas_node_settings') AS name")).rows[0].name){for(const [oldId,newId] of mapping)await client.query("INSERT INTO app_canvas_node_settings(email,node_id,kind,settings) SELECT email,$3,kind,settings FROM app_canvas_node_settings WHERE email=$1 AND node_id=$2 ON CONFLICT(email,node_id) DO NOTHING",[actor,oldId,newId]);}
+    const result:CopyResult={nativeNodes:{videoNodes:nodes,directorNodes,characterNodes,sceneNodes,audioNodes,timelineNodes},artworkIds,textNodes:copiedTexts,nodes,...(directorNodes.length?{directorNodes}:{}),...(characterNodes.length?{characterNodes}:{}),...(sceneNodes.length?{sceneNodes}:{}),...(audioNodes.length?{audioNodes}:{}),...(timelineNodes.length?{timelineNodes}:{}),idMap:Object.fromEntries(mapping),projectKey:key};
     await client.query("INSERT INTO app_canvas_node_copies(email,operation_id,input_digest,result) VALUES($1,$2,$3,$4::jsonb)",[actor,input.operationId,digest,JSON.stringify(result)]);await client.query("COMMIT");return result;
   }catch(error){await client.query("ROLLBACK");throw error;}finally{client.release();}
 }

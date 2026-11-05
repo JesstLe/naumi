@@ -123,7 +123,7 @@ export async function bootstrapModelConfig(input: ValidationOptions & { credenti
 }
 
 export async function readLegacyModelSources(): Promise<LegacyModelSources> {
-  const [{ getLegacyOpenAISettings }, { getLegacyOpenAIBaseUrl }, { getLegacyNewApiImageSettings, getLegacyImageModelCatalog }, { configuredVideoProviders }] = await Promise.all([import("../settings"), import("../openai-base"), import("../image-model-catalog"), import("../video/providers/config")]);
+  const [{ getLegacyOpenAISettings }, { getLegacyOpenAIBaseUrl }, { getLegacyNewApiImageSettings, getLegacyImageModelCatalog }, { configuredVideoProviders }] = await Promise.all([import("../settings"), import("../openai-base"), import("../image-model-legacy-catalog"), import("../video/providers/config")]);
   const [settings, baseUrl, catalog] = await Promise.all([getLegacyOpenAISettings(), getLegacyOpenAIBaseUrl(), getLegacyImageModelCatalog()]);
   const flow = getLegacyNewApiImageSettings();
   const list = (value?: string) => (value || "").split(/[\s,]+/).map(x => x.trim()).filter(Boolean);

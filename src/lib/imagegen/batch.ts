@@ -1,20 +1,24 @@
+import {canRetryImagegen} from './retry-eligibility';
 import { withBackgroundActivity, bindBackgroundClaim } from "@/lib/release-runtime/background-activity";
 import "server-only";
+import {deferApplicationTask} from "../application/task-execution";
 import {excludeImportedHistory,isImportedHistory} from '../staging-history';
-import {currentCreationContext,withFrozenCreation,type CreationContext} from '../saas/creation-context';
+import {currentCreationContext,withFrozenCreation,type CreationContext} from "@/lib/saas/creation-scope";
 import {acceptCreationTx,creationEventTx,recordSourceOutcomeTx,creationEvidenceTx} from '../saas/creation-writer';
 import {ensureCreationSchema} from '../saas/creation-schema';
 import {randomUUID} from "node:crypto";
-import {getPool} from "../db";
+import {getPool} from "@/platform/db/pool";
 import {imageCoordinationPool} from "./coordination-pool";
 import {imagegenRequestSchema} from "./schema";
 import {planImagegen,imagegenFingerprint} from "./plan";
 import {assertImagegenQuoteReference,frozenImagegenQuote,latestImagegenQuote,type ImagegenSubmissionConfirmation} from "./quotes";
 import {submitAcceptedImagegen,getImagegenResult} from "./dispatch";
 import {imagegenStepId} from "./generation-core";
-import {ensureImagegenBatches,imagegenBatchRow,imagegenBatchItems,type ImagegenBatchItem} from "./batch-repository";
+import {imagegenBatchRow,imagegenBatchItems,type ImagegenBatchItem} from "./batch-repository";
+import {ensureImagegenBatches} from "@/lib/imagegen/storage-schema";
+
 import type {ImagegenRequest,ImagegenPlan,ImagegenResult} from "./types";
-import {userFeaturePolicy,FeatureAccessError} from "../feature-access/server";
+import {userFeaturePolicy,FeatureAccessError} from "@/lib/feature-access/repository";
 import {allows} from "../feature-access/catalog";
 import {assertAcceptedImagegenCreationScope,imagegenFrozenCreationScope,imagegenCreationScopeKey,ImagegenScopeError} from "./creation-scope";
 const terminals=new Set(["succeeded","failed","cancelled","needs_attention"]);
@@ -80,7 +84,7 @@ export async function submitAcceptedImagegenBatch(plan:ImagegenPlan,owner:string
   }
   await tx.query("COMMIT");
  }catch(error){await tx.query("ROLLBACK");throw error;}finally{tx.release();}
- return {id:request.operationId,children:childIds};
+ await deferApplicationTask();return {id:request.operationId,children:childIds};
 }
 /** Parent row lock is held through durable child receipt creation: cancel and submit have one order. */
 async function submitNextLocal(id:string){
@@ -105,11 +109,15 @@ async function runImagegenBatchTickLocal(id:string){
  const batch=await imagegenBatchRow(id);if(!batch||!["running","cancelling"].includes(batch.state))return;
  for(const item of await imagegenBatchItems(id))if(item.state==="submitted"){
   const result=await withFrozenCreation(imagegenFrozenCreationScope((batch.plan as ImagegenPlan&{creationScope?:CreationContext}).creationScope,batch.owner),()=>getImagegenResult(item.child_operation_id,batch.owner));if(!result)continue;
+  // Read original eligibility before the batch lock; evidence stays with its
+  // child identity, and the transaction below rejects a superseded observation.
+  const retryAllowed=batch.state==="running"&&item.attempts<batch.request.batch!.maxAttempts&&result.status==="failed"&&result.error?.code==="NOT_ACCEPTED"&&result.chargedCredits===0&&!result.artifacts.length&&
+   await withFrozenCreation(imagegenFrozenCreationScope((batch.plan as ImagegenPlan&{creationScope?:CreationContext}).creationScope,batch.owner),()=>canRetryImagegen(item.child_operation_id,batch.owner));
   const tx=await imageCoordinationPool().connect();
   try{await tx.query("BEGIN");const current=(await tx.query("SELECT state FROM app_imagegen_batches WHERE id=$1 FOR UPDATE",[id])).rows[0];
    const locked=(await tx.query<ImagegenBatchItem>("SELECT * FROM app_imagegen_batch_items WHERE batch_id=$1 AND key=$2 FOR UPDATE",[id,item.key])).rows[0];
-   if(!locked||locked.state!=="submitted"){await tx.query("COMMIT");continue;}
-   const retry=result.status==="failed"&&result.error?.code==="NOT_ACCEPTED"&&result.chargedCredits===0&&!result.artifacts.length&&locked.attempts<batch.request.batch!.maxAttempts&&current.state==="running";
+   if(!locked||locked.state!=="submitted"||locked.child_operation_id!==item.child_operation_id||locked.attempts!==item.attempts){await tx.query("COMMIT");continue;}
+   const retry=retryAllowed&&locked.attempts<batch.request.batch!.maxAttempts&&current.state==="running";
    if(retry){const attempt=locked.attempts+1,request={...locked.plan.request,operationId:imagegenStepId(batch.id,`batch:${item.key}:${attempt}`)},plan={...locked.plan,request,fingerprint:imagegenFingerprint(request)};
     await tx.query("UPDATE app_imagegen_batch_items SET state='queued',attempts=$3,child_operation_id=$4,request=$5::jsonb,plan=$6::jsonb,result=$7::jsonb,lease_token=NULL,lease_until=NULL WHERE batch_id=$1 AND key=$2",[id,item.key,attempt,request.operationId,JSON.stringify(request),JSON.stringify(plan),JSON.stringify(result)]);
    }else{await tx.query("UPDATE app_imagegen_batch_items SET state=$3,result=$4::jsonb,lease_token=NULL,lease_until=NULL,updated_at=now() WHERE batch_id=$1 AND key=$2",[id,item.key,terminals.has(result.status)?result.status:"submitted",JSON.stringify(result)]);
@@ -154,15 +162,17 @@ export async function cancelImagegenBatch(id:string,owner:string){
  }catch(error){await tx.query("ROLLBACK");throw error;}finally{tx.release();}
 }
 export async function recoverImagegenBatches(){
+ if(await deferApplicationTask())return 0;
  await ensureImagegenBatches();const ids=(await getPool().query(`SELECT id FROM app_imagegen_batches WHERE state IN ('running','cancelling') ${excludeImportedHistory('app_imagegen_batches')} ORDER BY updated_at LIMIT 20`)).rows;
- const origin=process.env.INTERNAL_APP_ORIGIN||"http://127.0.0.1:3000";let count=0;
- for(const row of ids){const response=await fetch(`${origin}/api/imagegen/batches/${row.id}`,{method:"POST",headers:{"content-type":"application/json","x-video-worker-secret":process.env.VIDEO_WORKER_SECRET||""},body:JSON.stringify({action:"tick"}),signal:AbortSignal.timeout(10000)});if(response.ok)count++;}return count;
+ let count=0;
+ for(const row of ids)try{await runImagegenBatchTick(row.id);count++;}catch{console.error("[imagegen-batch] saved batch retained for next scan");}return count;
 }
 
 async function submitNext(id:string) {
   return withBackgroundActivity("imagegen-child", id, "claim", () => submitNextLocal(id), () => false);
 }
 export async function runImagegenBatchTick(id:string) {
+ if(await deferApplicationTask())return;
  if(await isImportedHistory(getPool(),'app_imagegen_batches',id))return;
   return withBackgroundActivity("imagegen-batch", id, "continuation", () => runImagegenBatchTickLocal(id), () => undefined);
 }

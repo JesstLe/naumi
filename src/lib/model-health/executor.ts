@@ -3,7 +3,7 @@ import type { Pool } from "pg";
 import type { ModelSnapshot } from "../model-config/types";
 import type { ModelExecutionScope } from "../model-config/context";
 import { runModelExecution } from "../model-config/context";
-import { executionFetch } from "../model-config/clients";
+import { executionFetch } from "../model-config/execution-fetch";
 import { completedChannelImage } from "../model-config/channel-image-response";
 import { createProviderCapacity } from "../model-config/capacity";
 import { withImageOperation } from "../image-gateway";

@@ -1,8 +1,9 @@
 import {NextResponse} from "next/server";
 import {authenticatedEmail} from "@/lib/request-auth";
-import {getPool} from "@/lib/db";
-import {authorizeVideoProject} from "@/lib/canvas/video-node-service";
-import {videoNodeIdSchema,videoProjectKeySchema} from "@/lib/canvas/video-node-schema";
+import {getPool} from "@/platform/db/pool";
+import { authorizeVideoProject } from "@/lib/canvas/project-access";
+import { videoNodeIdSchema } from "@/lib/canvas/video-node-schema";
+import { videoProjectKeySchema } from "@/lib/canvas/project-key";
 import {ModelConfigError} from "@/lib/model-config/types";
 import {z} from "zod";
 export const runtime="nodejs",dynamic="force-dynamic";

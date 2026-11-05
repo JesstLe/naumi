@@ -79,6 +79,11 @@ function oneFunction(model, name) {
 const functionText = (model, name) => oneFunction(model, name).getText(model.ast);
 function constantText(model, name) {
   const found = all(model, node => ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === name);
+  if (!found.length && name === 'TEXT_NODE_DEFAULT_W' && model.source.includes('CANVAS_TEXT_DEFAULT_WIDTH as TEXT_NODE_DEFAULT_W')) {
+    const root = path.resolve(path.dirname(model.file), '../..');
+    const shared = parse(path.join(root, 'lib/canvas/text-document-model.ts'));
+    return constantText(shared, 'CANVAS_TEXT_DEFAULT_WIDTH').replace('CANVAS_TEXT_DEFAULT_WIDTH', name);
+  }
   if (found.length !== 1 || !found[0].initializer) throw new Error(`Missing/ambiguous constant ${name}`);
   return `const ${name} = ${found[0].initializer.getText(model.ast)};`;
 }

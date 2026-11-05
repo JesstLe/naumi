@@ -1,6 +1,7 @@
 import definitions from "../../../model-config/video-family-capabilities.json";
 import {normalizeVideoInput,VideoContractError} from "../../contract";
-import {mediaUrl,rejectAdvanced,selectWireOptions,type VideoWireContext,type VideoWireRequest,type VideoWireCodec} from "../wire";
+import {mediaUrl,rejectAdvanced,selectWireOptions} from "../wire-helpers";
+import type {VideoWireContext,VideoWireRequest,VideoWireCodec} from "../wire-contracts";
 import type {VideoModelDefinition} from "../../capability-schema";
 import {buildAPIMartPoll,decodeAPIMartCreated,decodeAPIMartPoll} from "./apimart";
 

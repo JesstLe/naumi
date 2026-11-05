@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { saveCompetitorItem, deleteCompetitorItem } from "@/lib/db";
+import {saveCompetitorItem, deleteCompetitorItem} from "@/lib/competitor/repository";
 import { competitorActor, competitorError, ownedCompetitor, checkVersion, WorkspaceError } from "@/lib/competitor-server";
 import { draftSchema } from "@/lib/competitor-types";
 export const runtime = "nodejs";

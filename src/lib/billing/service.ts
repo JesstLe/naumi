@@ -1,38 +1,14 @@
 import {attachBillingCreationTx} from "../saas/creation-writer";
 import "server-only";
-import type { Pool } from "pg";
 import { BillingError, type BillingService, type OperationInput, type GrantInput, type Tx, type BillingQuote } from "./types";
 import { fingerprint } from "./fingerprint";
 import { settlementFor } from "./quote";
 import * as repository from "./repository";
 import { operationApiCost } from "./api-cost-ledger";
 import { assertMutableStagingTask, isImportedHistory } from "../staging-history";
-export async function withBillingTransaction<T>(pool: Pool, action: (tx: Tx) => Promise<T>): Promise<T> {
-    const tx = await pool.connect();
-    let discard = false;
-    try {
-        await tx.query("BEGIN");
-        const result = await action(tx);
-        await tx.query("COMMIT");
-        return result;
-    }
-    catch (error) {
-        try {
-            await tx.query("ROLLBACK");
-        }
-        catch {
-            // The session is not known clean, even if pg still considers it queryable.
-            discard = true;
-        }
-        // Cleanup cannot establish whether an unacknowledged COMMIT took effect.
-        // Preserve the original failure; never replay the action or change its holds.
-        throw error;
-    }
-    finally {
-        // pg also evicts disconnected/non-queryable clients on normal release.
-        tx.release(discard);
-    }
-}
+// Compatibility export for existing domain callers; no second transaction implementation.
+export {withTransaction as withBillingTransaction} from "@/platform/db/transaction";
+
 function identity(id: string, email: string, ledgerId: string) {
     if (!id || id.length > 200 || !email || email.length > 254 || !ledgerId || ledgerId.length > 300)
         throw new BillingError("INVALID_RESULT", "计费操作参数无效", 400);
@@ -145,7 +121,7 @@ export async function refreshApiCostOperation(tx:Tx,id:string) {
     if(result.apiCost?.status==="pending") { await tx.query("UPDATE app_billing_operations SET updated_at=now() WHERE id=$1",[id]); return; }
     if(["manual","hold"].includes(row.state)) {
       const settled=await settleLocked(tx,row,result,"APIMart费用补查结算");
-      if(settled.state==="settled")await tx.query("UPDATE app_image_jobs SET billing_settled=true WHERE id=$1",[id]);
+      if(settled.state==="settled")return {id:row.id as string,email:row.email as string};
       return;
     }
     const reviewId=fingerprint({id,cost:result.apiCost});

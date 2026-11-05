@@ -4,6 +4,7 @@ import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { build } from 'esbuild';
 import pg from 'pg';
+import ts from 'typescript';
 
 const root=process.cwd(),phase=process.argv[2]||'MODIFIED',overlay=process.argv[3]?path.resolve(process.argv[3]):null,out=path.join(root,'output/canvas-sharing-review-fixes-20261102',phase);
 await mkdir(out,{recursive:true});
@@ -12,12 +13,19 @@ let container='', exit=1, stdout='', stderr='', ready=false;
 const docker=(args)=>{const r=spawnSync('docker',args,{encoding:'utf8',windowsHide:true});if(r.status!==0)throw Error(`docker ${args[0]}: ${r.stderr}`);return r.stdout.trim();};
 try {
   const client=await readFile(path.join(root,'src/components/canvas/canvas-client.tsx'),'utf8');
-  const start=client.indexOf('    const arts = (works ?? []).filter('), end=client.indexOf('    return { projects };',start)+'    return { projects };'.length;
-  const fs=client.indexOf('function isSuiteBatch('), fe=client.indexOf('// 占位节点',fs);
-  if(start<0||end<start||fs<0||fe<fs)throw Error('CanvasClient extraction boundary changed');
-  const body=client.slice(start,end), helpers=client.slice(fs,fe);
-  await writeFile(path.join(out,'canvas-projects.actual.ts'),`// Unmodified CanvasClient project useMemo body, extracted for native-record evaluation.\nimport {createProjectRootResolver} from '${root.replaceAll('\\','/')}/src/lib/canvas/project-roots';\nimport {isCanvasImageVersion} from '${root.replaceAll('\\','/')}/src/lib/canvas/image-versions';\nimport {isHostedImageUrl as hasRenderableImage} from '${root.replaceAll('\\','/')}/src/lib/media-url';\n${helpers}\nexport function actualProjects(works:any[],names:any,textNodes:any[]=[],videoNodes:any[]=[],timelineNodes:any[]=[]) {\nconst t=(v:string)=>v,readOnly=false,pinnedNode=null;\nconst videoNodesStore={nodes:videoNodes},directorNodesStore={nodes:[]},characterNodesStore={nodes:[]},sceneNodesStore={nodes:[]},audioNodesStore={nodes:[]},timelineNodesStore={nodes:timelineNodes};\n${body}\n}\n`);
-  await writeFile(path.join(out,'CLIENT_EXTRACTION.json'),JSON.stringify({source:'src/components/canvas/canvas-client.tsx',sourceSha256:createHash('sha256').update(client).digest('hex'),bodySha256:createHash('sha256').update(body).digest('hex'),startLine:client.slice(0,start).split('\n').length,endLine:client.slice(0,end).split('\n').length},null,2));
+  const ownerPath=path.join(root,'src/lib/canvas/project-catalog.ts'),owner=await readFile(ownerPath,'utf8');
+  const ast=ts.createSourceFile('canvas-client.tsx',client,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+  const imported=ast.statements.filter(node=>ts.isImportDeclaration(node)&&ts.isStringLiteral(node.moduleSpecifier)&&node.moduleSpecifier.text==='@/lib/canvas/project-catalog')
+    .flatMap(node=>node.importClause?.namedBindings&&ts.isNamedImports(node.importClause.namedBindings)?node.importClause.namedBindings.elements:[])
+    .find(node=>(node.propertyName?.text||node.name.text)==='canvasProjects');
+  if(!imported)throw Error('CanvasClient no longer imports the actual project owner');
+  let calls=0;const visit=node=>{if(ts.isCallExpression(node)&&ts.isIdentifier(node.expression)&&node.expression.text===imported.name.text)calls++;ts.forEachChild(node,visit);};visit(ast);
+  if(calls!==1)throw Error('Canvas project owner call binding changed');
+  await writeFile(path.join(out,'canvas-projects.actual.ts'),`// Thin test adapter over the actual owner called by CanvasClient; no copied grouping policy.
+import {canvasProjects} from ${JSON.stringify(ownerPath.replaceAll('\\','/'))};
+export function actualProjects(works:any[],names:any,textNodes:any[]=[],videoNodes:any[]=[],timelineNodes:any[]=[]){return {projects:canvasProjects({works,names,t:value=>value,readOnly:false,pinnedNode:null,textNodes,videoNodes,timelineNodes})};}
+`);
+  await writeFile(path.join(out,'CLIENT_EXTRACTION.json'),JSON.stringify({method:'ACTUAL_OWNER_IMPORT_AND_BOUND_CALL',source:'src/components/canvas/canvas-client.tsx',sourceSha256:createHash('sha256').update(client).digest('hex'),owner:'src/lib/canvas/project-catalog.ts',ownerSha256:createHash('sha256').update(owner).digest('hex'),calls,policyCopy:false},null,2));
   await build({entryPoints:[path.join(root,'scripts/verify-canvas-sharing-review-fixes.ts')],outfile:path.join(out,'suite.cjs'),bundle:true,packages:'external',platform:'node',format:'cjs',target:'node24',conditions:['react-server'],logLevel:'warning',plugins:[{name:'official-lucide-esm-only-no-domain-stubs',setup(b){b.onResolve({filter:/^\.\/verify-canvas-sharing-review-projects$/},()=>({path:path.join(out,'canvas-projects.actual.ts')})); if(overlay)b.onLoad({filter:/[\\/]canvas-sharing[\\/](snapshot|copy)\.ts$/},async args=>({contents:await readFile(path.join(overlay,'src/lib/canvas-sharing',path.basename(args.path)),'utf8'),loader:'ts',resolveDir:path.dirname(args.path)}));b.onResolve({filter:/^lucide-react$/},()=>({path:path.join(root,'node_modules/lucide-react/dist/esm/lucide-react.js')}));}}]});
   container=docker(['run','-d','--memory=256m','--cpus=1','--label',`naumi.fixture=${label}`,'-p','127.0.0.1::5432','-e','POSTGRES_PASSWORD=isolated-review','-e','POSTGRES_DB=canvas_sharing_review','postgres:16-alpine','-c','shared_buffers=32MB','-c','max_connections=30']);
   const info=JSON.parse(docker(['inspect',container]))[0];

@@ -1,5 +1,5 @@
 import type {CanvasSceneNode} from "../canvas/scene-node-schema";
-import type {VideoInputChoice} from "../video/client-settings";
+import type {VideoInputChoice} from "../video/input-choice";
 import {sceneInputIdentity, sceneReferenceText} from "./project";
 
 export function sceneInputChoices(nodes: readonly CanvasSceneNode[], media: readonly VideoInputChoice[]): VideoInputChoice[] {

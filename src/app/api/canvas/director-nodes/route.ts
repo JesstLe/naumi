@@ -1,3 +1,5 @@
+import {withCreationReceiptRoute} from "@/lib/saas/creation-context";
+import {filterCreationProjects} from "@/lib/saas/creation-access";
 import { NextResponse } from "next/server";
 import { authenticatedEmail, authorizedTargetEmail } from "@/lib/request-auth";
 import { sameSiteBiMutation } from "@/lib/bi/access";
@@ -6,11 +8,13 @@ import { readBounded } from "@/lib/supplier-cost/io";
 import { directorFailure } from "./response";
 import { listDirectorNodes, saveDirectorNode } from "@/lib/canvas/director-node-service";
 export const runtime = "nodejs", dynamic = "force-dynamic";
-export async function GET(request: Request) {
-  const actor = await authorizedTargetEmail(request, new URL(request.url).searchParams.get("email"), true); if (!actor) return NextResponse.json({ error: "未登录或无权访问" }, { status: 401 });
-  try { return NextResponse.json({ nodes: await listDirectorNodes(actor, new URL(request.url).searchParams.get("includeDeleted") === "1") }, { headers: { "cache-control": "private, no-store" } }); } catch (error) { return directorFailure(error); }
+async function readNativeNodes(request: Request, authenticatedActor?:string|null) {
+  const actor = await authorizedTargetEmail(request, new URL(request.url).searchParams.get("email"), true, authenticatedActor); if (!actor) return NextResponse.json({ error: "未登录或无权访问" }, { status: 401 });
+  try { return NextResponse.json({ nodes: await filterCreationProjects(actor,await listDirectorNodes(actor, new URL(request.url).searchParams.get("includeDeleted") === "1")) }, { headers: { "cache-control": "private, no-store" } }); } catch (error) { return directorFailure(error); }
 }
-export async function POST(request: Request) { return withCreationRoute(request, async () => {
-  const actor = await authenticatedEmail(request); if (!actor) return NextResponse.json({ error: "请先登录" }, { status: 401 }); if (!sameSiteBiMutation(request)) return NextResponse.json({ error: "不允许跨站修改" }, { status: 403 });
+export async function POST(request: Request) { return withCreationRoute(request, async (authenticatedActor) => {
+  const actor = await authenticatedEmail(request, authenticatedActor); if (!actor) return NextResponse.json({ error: "请先登录" }, { status: 401 }); if (!sameSiteBiMutation(request)) return NextResponse.json({ error: "不允许跨站修改" }, { status: 403 });
   try { return NextResponse.json({ node: await saveDirectorNode(actor, JSON.parse(await readBounded(new Response(request.body), 8 * 1024 * 1024))) }, { status: 201 }); } catch (error) { return directorFailure(error); }
 }); }
+
+export function GET(request:Request){return withCreationReceiptRoute(request,(authenticatedActor)=>readNativeNodes(request, authenticatedActor));}

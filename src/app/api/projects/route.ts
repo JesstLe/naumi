@@ -1,10 +1,6 @@
 import { NextResponse } from "next/server";
-import {
-  dbEnabled,
-  deleteProjectName,
-  getProjectNames,
-  setProjectName,
-} from "@/lib/db";
+import {dbEnabled} from "@/platform/db/pool";
+import {deleteProjectName, getProjectNames, setProjectName} from "@/lib/canvas/project-repository";
 import { authenticatedEmail, authorizedTargetEmail } from "@/lib/request-auth";
 
 export const runtime = "nodejs";

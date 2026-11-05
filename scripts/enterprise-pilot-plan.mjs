@@ -1,8 +1,8 @@
 import {readFile,lstat,mkdir,writeFile} from 'node:fs/promises';
 import {resolve,join} from 'node:path';
 import {execFileSync} from 'node:child_process';
-import {preparePilot} from './lib/enterprise-pilot-plan.mjs';
-import {SourceAuditError} from './lib/enterprise-source-audit.mjs';
+import {preparePilot} from '../services/enterprise-workflow/src/source-onboarding/pilot-plan.mjs';
+import {SourceAuditError} from '../services/enterprise-workflow/src/source-onboarding/audit.mjs';
 try{
  const args=process.argv.slice(2),opts={};if(args.length!==10)throw new SourceAuditError('PILOT_ARGUMENTS_REQUIRED');
  for(let i=0;i<args.length;i+=2){if(!['--site','--request','--summary','--roster','--output'].includes(args[i])||opts[args[i]]||!args[i+1])throw new SourceAuditError('PILOT_ARGUMENT_INVALID');opts[args[i]]=args[i+1];}

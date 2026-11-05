@@ -3,24 +3,28 @@ import {associateWorkflowTaskTx} from "./workflow-links";
 import {prepareByocRecipe} from "./byoc-recipe";
 import {createHash,randomUUID} from "node:crypto";
 import {z} from "zod";
-import {getPool,getVideoTaskByIdempotencyKey,createVideoTaskWithReservation,listArtworksByIds,type VideoTaskRow} from "../db";
-import {createCredentialStore} from "../model-config/credentials";
-import {canonicalConfig} from "../model-config/repository";
+import {getVideoTaskByIdempotencyKey} from "@/lib/video/task-repository";
+import {createVideoTaskWithReservation} from "@/lib/video/task-transitions";
+import {type VideoTaskRow} from "@/lib/video/task-types";
+import {getPool} from "@/platform/db/pool";
+import {listArtworksByIds} from "@/lib/artworks/repository";
+import {canonicalConfig} from "@/lib/model-config/snapshot-value";
 import {ModelConfigError} from "../model-config/types";
-import {decryptAtRest} from "../settings";
-import {assertComfyEndpointAllowed} from "../comfyui/client";
 import type {ApiWorkflow} from "../comfyui/workflow";
-import {runLegacyModelExecution} from "../model-config/context";
-import {getVideoNode,associateVideoTaskTx,ensureVideoNodeSchema} from "../canvas/video-node-repository";
-import {authorizeVideoProject} from "../canvas/video-node-service";
+import {getVideoNode,associateVideoTaskTx} from "../canvas/video-node-repository";
+import {ensureVideoNodeSchema} from "@/lib/canvas/storage-schema";
+
+import { authorizeVideoProject } from "../canvas/project-access";
 import {videoWorkflowManifestSchema} from "./workflow-schema";
 import {compileVideoPrompt} from "./prompt";
 import {videoReferenceSchema,orderedInputSchema} from "./references";
 import {authorizeVideoReferences,materializeVideoReferences} from "./reference-materialization";
 import {buildVideoCreate} from "./providers/wire";
 import {publicProviderSnapshot,type VideoProviderRuntimeConfig} from "./providers/config";
-import {runPrivateVideoProvider} from "./providers/private-context";
-import {submitQueuedVideoTask,handleVideoCreationError} from "./service";
+import {submitQueuedVideoTask,handleVideoCreationError} from "./runtime";
+import {withByocVideoTask} from "./byoc-context";
+export {withByocVideoTask} from "./byoc-context";
+import {applicationTasksRunHere} from "../application/task-execution";
 import type {VideoGenerationRequest} from "./types";
 const num=z.number().finite().min(0).max(Number.MAX_SAFE_INTEGER),name=z.string().min(1).max(160);
 export const byocVideoInputSchema=z.strictObject({workflowId:name,idempotencyKey:z.string().min(1).max(100),mediaType:z.literal("video").optional(),artworkId:name.optional(),imageUrl:z.string().max(16384).optional(),
@@ -30,19 +34,9 @@ export const byocVideoInputSchema=z.strictObject({workflowId:name,idempotencyKey
   numericDefaults:z.record(name,num).optional(),numerics:z.record(name,z.record(name,num)).optional(),durationSeconds:z.number().int().positive().max(3600).optional(),
   negativePrompt:z.string().max(8192).optional(),resolution:z.string().max(100).optional(),aspectRatio:z.string().max(20).optional(),generateAudio:z.boolean().optional(),watermark:z.boolean().optional(),
   references:z.array(videoReferenceSchema).max(128).optional(),inputMappings:videoWorkflowManifestSchema.shape.inputs.optional()});
-const snapshotSchema=z.strictObject({actor:z.string(),providerId:name,endpointId:name,baseUrl:z.url(),credentialRef:z.uuid().optional(),manifest:videoWorkflowManifestSchema});
+
 export function knownComfyVideoOutput(api:ApiWorkflow){return Object.values(api).some(node=>["SaveVideo","VHS_VideoCombine","VideoCombine"].includes(node.class_type));}
-export async function withByocVideoTask<T>(actor:string,task:VideoTaskRow,run:()=>Promise<T>){
-  const decrypted=typeof task.parameters.byocSnapshot==="string"?decryptAtRest(task.parameters.byocSnapshot):null;
-  if(!decrypted)throw new ModelConfigError("BYOC_SNAPSHOT_UNAVAILABLE","自备视频工作流快照不可用",503);
-  const frozen=snapshotSchema.parse(JSON.parse(decrypted));
-  if(frozen.actor!==actor||frozen.providerId!==task.providerId)throw new ModelConfigError("BYOC_OWNER_MISMATCH","自备视频任务归属不一致",403);
-  await assertComfyEndpointAllowed(frozen.baseUrl);
-  const apiKey=frozen.credentialRef?await createCredentialStore(getPool()).read(frozen.credentialRef,frozen.providerId):"";
-  const config:VideoProviderRuntimeConfig={id:frozen.providerId,label:"自备 ComfyUI",protocol:"comfyui",videoProfile:"comfyui",baseUrl:frozen.baseUrl,apiKey,
-    models:[task.model],defaultModel:task.model,idempotencyStrategy:"none"};
-  return runLegacyModelExecution(()=>runPrivateVideoProvider({config,manifest:frozen.manifest},run));
-}
+
 export async function submitByocComfyVideo(actorRaw:string,raw:unknown,workflowLink?:{runId:string;nodeId:string}){
   const actor=actorRaw.toLowerCase(),parsed=byocVideoInputSchema.safeParse(raw);
   if(!parsed.success)throw new ModelConfigError("INVALID_BYOC_VIDEO","自备视频工作流字段无效",422);
@@ -69,7 +63,7 @@ export async function submitByocComfyVideo(actorRaw:string,raw:unknown,workflowL
   buildVideoCreate({provider:config,profile:"comfyui",request:{...prepared,workflowManifest:manifest,references:prepared.references.map(ref=>({...ref,submissionName:ref.storageKey}))}});
   const byocSnapshot=recipe.snapshot;
   const id=`vid-${randomUUID()}`;if(node)await ensureVideoNodeSchema();
-  const created=await createVideoTaskWithReservation({id,email:actor,model:input.workflowId,prompt:request.prompt,size:"workflow",seconds:String(request.durationSeconds),cost:0,requestBody:JSON.stringify({workflowId:input.workflowId,referenceIds:references.map(ref=>ref.id)}),
+  const created=await createVideoTaskWithReservation({leaseSeconds:applicationTasksRunHere()?undefined:0,id,email:actor,model:input.workflowId,prompt:request.prompt,size:"workflow",seconds:String(request.durationSeconds),cost:0,requestBody:JSON.stringify({workflowId:input.workflowId,referenceIds:references.map(ref=>ref.id)}),
     providerId,source:request.source,sourceId:request.sourceId,idempotencyKey:input.idempotencyKey,providerSnapshot:publicProviderSnapshot(config),videoReferences:request.references,
     capabilitySnapshot:{workflowOnly:true,durationUnknown:input.durationSeconds===undefined},parameters:{version:2,submissionState:"prepared",billingException:"comfyui-byoc-zero",byocSnapshot,request,
       workflowRunId:workflowLink?.runId,workflowNodeId:workflowLink?.nodeId,byocSettings:recipe.settings,creationInputDigest:digest,nodeId:node?.id,nodeRevision:node?.revision,projectKey,originalPrompt:input.prompt||""},
@@ -92,7 +86,7 @@ export async function retryByocVideoTask(actor:string,old:VideoTaskRow,idempoten
     if(node)await ensureVideoNodeSchema();
     const parameters={version:2,submissionState:"prepared",request,byocSnapshot:old.parameters.byocSnapshot,billingException:"comfyui-byoc-zero",retryOf:old.id,creationInputDigest:digest,
       byocSettings:old.parameters.byocSettings,nodeId:node?.id,nodeRevision:node?.revision,projectKey:request.projectKey,originalPrompt:old.parameters.originalPrompt};
-    const created=await createVideoTaskWithReservation({id,email:actor,model:old.model,prompt:request.prompt,size:old.parameters.size as string||"workflow",seconds:String(request.durationSeconds),cost:0,
+    const created=await createVideoTaskWithReservation({leaseSeconds:applicationTasksRunHere()?undefined:0,id,email:actor,model:old.model,prompt:request.prompt,size:old.parameters.size as string||"workflow",seconds:String(request.durationSeconds),cost:0,
       requestBody:JSON.stringify({retryOf:old.id}),providerId:old.providerId,source:old.source,sourceId:old.sourceId,parameters,videoReferences:request.references,capabilitySnapshot:old.capabilitySnapshot,
       idempotencyKey,providerSnapshot:old.providerSnapshot,...(node?{onReserved:async(client,task)=>associateVideoTaskTx(client,actor,node.id,node.revision,task.id)}:{})});
     if(created.created)try{await submitQueuedVideoTask(actor,created.task,undefined,undefined,false);}catch(error){await handleVideoCreationError(actor,created.task,error);}

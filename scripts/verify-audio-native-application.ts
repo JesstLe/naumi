@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {connectNativeParentDatabase} from "./video-fusion/native-parent-database";
 import { randomBytes, randomUUID, createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { createServer } from "node:http";
@@ -15,7 +16,7 @@ import { prepareVideoAssets } from "./video-fusion/assets.mjs";
 
 /** Real local app/DB/task/worker/media/billing. Suppliers are isolated fixtures, not paid providers. */
 async function main() {
-  const out = path.resolve(process.argv[2] || "output/audio-native-application");
+  const out = path.resolve(process.argv.slice(2).find(value=>!value.startsWith("--")) || process.env.AUDIO_APP_EVIDENCE || "output/audio-native-application");
   await mkdir(out, { recursive: true });
   const owner = "canvas-audio-native-20261028", name = "audio-native-app-" + randomUUID();
   const password = randomBytes(24).toString("hex"), database = "naumi_video_fixture_native_" + randomBytes(6).toString("hex");
@@ -41,12 +42,15 @@ async function main() {
     } catch { res.writeHead(500); res.end(); }
   });
   try {
+    const parentDatabase=await connectNativeParentDatabase();
+    let databaseUrl:string;
+    if(parentDatabase){pool=parentDatabase.pool;databaseUrl=parentDatabase.url;}else{
     container = docker(["run", "--detach", "--rm", "--name", name, "--label", `naumi.task=${owner}`, "--memory", "768m", "--cpus", "2", "--tmpfs", "/var/lib/postgresql/data", "--publish", "127.0.0.1::5432", "--env-file", envFile, "postgres:16-alpine"]);
     let ready = false;
     for (let i = 0; i < 60; i++) { if (spawnSync("docker", ["exec", container, "pg_isready", "-U", "postgres", "-d", database], { windowsHide: true, stdio: "ignore" }).status === 0) { ready = true; break; } await new Promise(resolve => setTimeout(resolve, 200)); }
     assert.ok(ready);
     const port = Number(docker(["port", container, "5432/tcp"]).split(":").at(-1));
-    const databaseUrl = `postgresql://postgres:${password}@127.0.0.1:${port}/${database}`;
+    databaseUrl = `postgresql://postgres:${password}@127.0.0.1:${port}/${database}`;
     // pg_isready in the container can observe initdb's temporary Unix-socket
     // server. Verify the published TCP database before starting the application.
     let tcpReady = false;
@@ -62,6 +66,7 @@ async function main() {
     pool = new Pool({ connectionString: databaseUrl, max: 2 });
     await pool.query("CREATE TABLE public.naumi_video_fixture_guard(owner text NOT NULL)");
     await pool.query("INSERT INTO public.naumi_video_fixture_guard VALUES($1)", ["canvas-video-fusion-20261013"]);
+    }
     await new Promise<void>(resolve => router.listen(0, "127.0.0.1", resolve)); listening = true;
     process.env.NAUMI_VERIFY_ISOLATED_DB = "1"; process.env.VIDEO_FIXTURE_DATABASE_URL = databaseUrl;
     process.env.VIDEO_FIXTURE_ROUTER_MANAGEMENT_URL = `http://127.0.0.1:${(router.address() as { port: number }).port}`;
@@ -74,6 +79,7 @@ async function main() {
       const id='vnode-audio-ui-anchor-'+randomUUID(),made=await h.request<any>('a','POST','/api/canvas/video-nodes',{id,projectKey:`tree:${id}`,expectedRevision:0,operationId:randomUUID(),config:{modelId:'video-a',providerId:'managed-video',mode:'reference',prompt:'',durationSeconds:4,resolution:'720p',aspectRatio:'16:9',generateAudio:false},inputs:[]});assert.equal(made.status,201,JSON.stringify(made.body));
       const interactions=await verifyAudioInteractions(h,out,id);await writeFile(path.join(out,'result.json'),JSON.stringify({uiOnly:true,interactions},null,2));console.log('AUDIO_NATIVE_CANVAS=PASS UI_IMPORT_EDIT_RENDER_ADOPT=PASS GRAPH_HISTORY=PASS HANDLE_MENTION_VIDEO=PASS WORKFLOW_FROZEN=PASS SIMULATED_CREATES=3 PAID_CALLS=0');return;
     }
+    const matrix=process.argv.includes("--with-matrix")?await verifyAudioMatrix(h,out):undefined;
     const id='audio-'+randomUUID(),projectKey=`tree:${id}`,audio=withAudioSource(h.refs.audio.id),create={id,projectKey,audio,expectedRevision:0,operationId:randomUUID()};
     console.log('AUDIO_PHASE=SAVE_AND_AUTH');
     const before=await h.creditState('a'),created=await h.request<any>('a','POST','/api/canvas/audio-nodes',create);
@@ -139,12 +145,13 @@ async function main() {
     const afterDelete=await h.creditState('a');
     const acceptedReplay=await h.request<any>('a','POST',`/api/canvas/audio-nodes/${id}/render`,renderIntent);assert.equal(acceptedReplay.status,200,JSON.stringify(acceptedReplay.body));assert.equal(acceptedReplay.body.job.id,job.id);
     const replayVideo=await h.request<any>('a','POST',`/api/canvas/video-nodes/${videoId}/generate`,first.request);assert.equal(replayVideo.body.taskId,first.task.id);assert.deepEqual(await h.creditState('a'),afterDelete);assert.equal(JSON.stringify(await h.taskPersistence('a',first.task.id)),frozenText);
-    const summary={realAppDbMediaWorker:true,realFfmpegJob:true,adoptedRecipeVerified:true,originalAndDraftSeparate:true,crossAccount404:true,sourceDeletedAcceptedReplay:true,videoSnapshotImmutable:true,mixedCopyRestore:true,mixedAudioCharacterSceneNumberingOnce:true,mediaCost:job.cost,simulatedSupplierCreates:1,paidCalls:0,job,taskId:first.task.id};
+    const summary={matrix,realAppDbMediaWorker:true,realFfmpegJob:true,adoptedRecipeVerified:true,originalAndDraftSeparate:true,crossAccount404:true,sourceDeletedAcceptedReplay:true,videoSnapshotImmutable:true,mixedCopyRestore:true,mixedAudioCharacterSceneNumberingOnce:true,mediaCost:job.cost,simulatedSupplierCreates:1,paidCalls:0,job,taskId:first.task.id};
     await writeFile(path.join(out,'result.json'),JSON.stringify(summary,null,2));console.log('AUDIO_APPLICATION_CORE=PASS REAL_APP_DB_MEDIA_WORKER=PASS REAL_FFMPEG=PASS RECIPE=TRUSTED PRIVATE_MEDIA_SHA=PASS CROSS_ACCOUNT=404 MIXED_COPY_HISTORY=PASS VIDEO_FROZEN=PASS MIXED_AUDIO_CHARACTER_SCENE=PASS ACCEPTED_REPLAY_AFTER_DELETE=PASS SIMULATED_CREATES=1 PAID_CALLS=0');
   } finally {
     if (fixture) await fixture.stop(); if (listening) await new Promise<void>(resolve => router.close(() => resolve())); if (pool) await pool.end();
     if (container) { assert.equal(docker(["inspect", "--format", '{{index .Config.Labels "naumi.task"}}', container]), owner); docker(["rm", "--force", container]); }
     await unlink(envFile).catch(() => undefined);
+    await writeFile(path.join(out,"CLEANUP.json"),JSON.stringify({status:"PASS",fixtureStopped:true,routerClosed:true,poolClosed:true,ownContainerRemoved:container,environmentFileRemoved:true}));
   }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

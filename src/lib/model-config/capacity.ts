@@ -2,11 +2,13 @@ import "server-only";
 import { createHash, createHmac, randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 import type { ModelConfig } from "./types";
-import { ensureModelSchema } from "./schema";
+import {ensureModelSchema} from "@/lib/model-config/storage-schema";
+
 import { ModelConfigError } from "./types";
 import { decryptAtRest } from "../settings";
 import { settingsSecret } from "../settings-secret";
 import { imageCapacityBusy, imageSupplierWasDispatched, waitForImageCapacity } from "../image-gateway";
+import {notifyApplicationWork} from '../application/work-signal';
 
 type Limit = { providerId: string; baseUrl: string; maxConcurrent: number; timeoutMs: number };
 function capacityIdentity(providerId: string, baseUrl: string) { return createHash("sha256").update(`${providerId}\n${new URL(baseUrl).origin}`).digest("hex"); }
@@ -66,7 +68,14 @@ export function createProviderCapacity(pool: Pool) {
     } catch (error) { await tx.query("ROLLBACK"); throw error; } finally { if(!connection)tx.release(); }
     if (!allowed) throw new ModelConfigError("PROVIDER_BUSY", "当前模型通道繁忙，请稍后再试；本次未提交上游", 429);
     let released = false;
-    return { token, async release() { if (released) return; await pool.query("DELETE FROM app_model_provider_leases WHERE token=$1", [token]); released = true; } };
+    return { token, async release() {
+      if (released) return;
+      const result=await pool.query("DELETE FROM app_model_provider_leases WHERE token=$1", [token]);released=true;
+      // Only a proven released slot wakes the existing queue. Failed acquire,
+      // duplicate/missing release and Deferred jobs never create a busy loop.
+      // The optional hint cannot roll back the already-committed deletion.
+      if(result.rowCount)await notifyApplicationWork(pool);
+    } };
   } };
 }
 

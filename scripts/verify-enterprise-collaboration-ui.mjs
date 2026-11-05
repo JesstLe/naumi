@@ -6,6 +6,7 @@ import { build } from 'esbuild';
 import { chromium, expect } from '@playwright/test';
 import React from 'react';
 import ReactDOM from 'react-dom';
+import ts from 'typescript';
 import { startFixture } from './verify-enterprise-collaboration-ui.http.mjs';
 
 const root = process.cwd(), output = path.resolve(process.env.COLLAB_UI_EVIDENCE || 'output/enterprise-collaboration-ui');
@@ -50,7 +51,8 @@ try {
   await Promise.all([waitReady(a), waitReady(b)]);
   await expect.poll(() => fixture.streams.size).toBe(2);
   await a.getByRole('button', { name: /^消息/ }).first().click();
-  await a.locator('.co-conversation').filter({ hasText: '产品设计' }).click();
+  await expect(a.locator('.co-conversation strong').filter({ hasText: /^陈舟$/ })).toHaveCount(1);
+  await a.locator('.co-conversation').filter({ hasText: '陈舟' }).click();
   await expect(a.locator('.co-message')).toHaveCount(5);
   pass('React 19 strict root: two identities, one authenticated SSE per identity');
   await a.screenshot({ path: path.join(output, 'chat-floating.png') });
@@ -214,7 +216,7 @@ try {
   pass('Direct member canvas request can be rejected without creating a copy');
   for(let i=4;i<=101;i++)fixture.members.push({id:`employee${String(i).padStart(3,'0')}@fixture.test`,name:`员工${i}`,roleName:'创意设计',presence:'offline'});
   const template=fixture.conversations.get('direct-ab');
-  for(let i=0;i<55;i++)fixture.conversations.set(`extra-${i}`,{...template,id:`extra-${i}`,title:`分页会话 ${i}`,read:{},preferences:{},updatedAt:new Date(Date.UTC(2026,10,3,0,0,i)).toISOString()});
+  for(let i=0;i<55;i++)fixture.conversations.set(`extra-${i}`,{...template,kind:'group',id:`extra-${i}`,title:`分页会话 ${i}`,read:{},preferences:{},updatedAt:new Date(Date.UTC(2026,10,3,0,0,i)).toISOString()});
   await a.reload();await waitReady(a);await a.evaluate(()=>window.__client.open({section:'members'}));
   await expect(a.locator('.co-member')).toHaveCount(100);await a.getByRole('button',{name:'加载更多成员',exact:true}).click();await expect(a.locator('.co-member')).toHaveCount(101);await expect(a.getByRole('button',{name:'私聊 员工101',exact:true})).toBeVisible();
   await a.getByRole('textbox',{name:'搜索姓名或岗位',exact:true}).fill('员工101');await expect(a.locator('.co-member')).toHaveCount(1);await a.getByRole('button',{name:'私聊 员工101',exact:true}).click();await expect(a.locator('.co-thread-header h2')).toHaveText('员工101');
@@ -259,7 +261,25 @@ try {
   const parentDoc = await readFile('docs/changes/2026-11-02-enterprise-collaboration.md', 'utf8'); assert.ok(parentDoc.includes('CollaborationProvider'));
   const layout = await readFile('src/app/layout.tsx', 'utf8'), canvas = await readFile('src/components/canvas/canvas-client.tsx', 'utf8');
   assert.equal((layout.match(/<CollaborationProvider>/g) || []).length, 1); assert.ok(layout.indexOf('<ToastProvider>') < layout.indexOf('<CollaborationProvider>')); assert.ok(layout.indexOf('<CollaborationProvider>') < layout.indexOf('<AppShell>'));
-  assert.ok(canvas.includes('browsing && !desktopAppearance')); assert.ok(canvas.includes('collaborationNodeIds.has')); assert.ok(canvas.includes('data-canvas-hotkeys-blocked'));
+  assert.ok(canvas.includes('browsing && !desktopAppearance')); assert.ok(canvas.includes('collaborationNodeIds.has'));
+  // The refactored Canvas binds narrow native event owners instead of keeping
+  // their listener bodies inline. Follow the actual import and call, then check
+  // the same blocked selector in those owners; a root lexical marker is not proof.
+  const canvasAst=ts.createSourceFile('canvas-client.tsx',canvas,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX),bindings=[];
+  for(const [exported,specifier,file] of [
+    ['useCanvasKeyboard','./use-canvas-keyboard','src/components/canvas/use-canvas-keyboard.ts'],
+    ['useCanvasClipboard','./use-canvas-clipboard','src/components/canvas/use-canvas-clipboard.ts'],
+  ]){
+    const imported=canvasAst.statements.filter(node=>ts.isImportDeclaration(node)&&ts.isStringLiteral(node.moduleSpecifier)&&node.moduleSpecifier.text===specifier)
+      .flatMap(node=>node.importClause?.namedBindings&&ts.isNamedImports(node.importClause.namedBindings)?node.importClause.namedBindings.elements:[])
+      .find(node=>(node.propertyName?.text||node.name.text)===exported);
+    assert.ok(imported,`Canvas must import ${exported}`);
+    let calls=0;const visit=node=>{if(ts.isCallExpression(node)&&ts.isIdentifier(node.expression)&&node.expression.text===imported.name.text)calls++;ts.forEachChild(node,visit);};visit(canvasAst);
+    assert.equal(calls,1,`Canvas must bind one ${exported} owner`);
+    const source=await readFile(file,'utf8');assert.ok(source.includes('data-canvas-hotkeys-blocked="true"'));
+    bindings.push({file,sourceSha256:createHash('sha256').update(source).digest('hex'),exported,calls});
+  }
+  await writeFile(path.join(output,'NATIVE_EVENT_OWNER_BINDINGS.json'),JSON.stringify({canvasSha256:createHash('sha256').update(canvas).digest('hex'),bindings},null,2));
   pass('Static real Canvas narrow wiring + root placement + desktop duplicate chrome guards');
   console.log(`COLLABORATION_UI=PASS checks=${checks.length} react=${React.version} HTTP_FIXTURE=1 REAL_BACKEND=0 SUPPLIER_CALLS=0 PG_CONTAINERS=0`);
 } finally {

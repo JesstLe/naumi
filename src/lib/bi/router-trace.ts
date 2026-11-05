@@ -1,5 +1,5 @@
 import "server-only";
-import { getSetting } from "@/lib/db";
+import {getSetting} from "@/lib/settings/repository";
 import { decryptAtRest } from "@/lib/settings";
 
 /** Only server configuration selects the Router address; never a browser URL. */

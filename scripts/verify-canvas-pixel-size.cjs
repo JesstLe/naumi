@@ -6,10 +6,14 @@ const root=path.resolve(__dirname,'..'),args=process.argv.slice(2),arg=(key,fall
 const ref=arg('--ref',''),source=path.resolve(arg('--source',root)),mode=arg('--mode',ref?'baseline':'modified'),out=path.resolve(arg('--output','output/canvas-pixel-size-20261102/'+mode));
 fs.mkdirSync(out,{recursive:true});const hashes={},checks=[],requests=[],browserErrors=[];
 function read(rel){const bytes=ref?cp.execFileSync('git',['show',ref+':'+rel],{cwd:root,stdio:['ignore','pipe','pipe']}):fs.readFileSync(path.join(source,rel));hashes[rel]=crypto.createHash('sha256').update(bytes).digest('hex');return bytes.toString('utf8');}
-const canvasSource=read('src/components/canvas/canvas-client.tsx'),ast=ts.createSourceFile('canvas.tsx',canvasSource,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);let artNode='';
-function visit(n){if(ts.isFunctionDeclaration(n)&&n.name?.text==='ArtNode')artNode=n.getText(ast);ts.forEachChild(n,visit);}visit(ast);assert(artNode,'ART_NODE_MISSING');
+// Follow the real render owner after Canvas composition was split. Historical
+// refs keep exercising their original inline component without rewriting it.
+let canvasSource=read('src/components/canvas/canvas-client.tsx');
+if(!/function ArtNode\(/.test(canvasSource))canvasSource=read('src/components/canvas/nodes/artwork-node.tsx');
+const ast=ts.createSourceFile('artwork.tsx',canvasSource,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);let artNode='',content='';
+function visit(n){if(ts.isFunctionDeclaration(n)&&n.name?.text==='ArtNode')artNode=n.getText(ast).replace(/^export\s+/,'');if(ts.isVariableStatement(n)&&n.declarationList.declarations.some(d=>d.name.getText(ast)==='ArtworkContent'))content=n.getText(ast);ts.forEachChild(n,visit);}visit(ast);assert(artNode,'ART_NODE_MISSING');artNode+='\n'+content;
 let pixelSource;try{pixelSource=read('src/components/canvas/image-pixel-size.tsx');}catch(e){if(!ref&&fs.existsSync(path.join(source,'src/components/canvas/image-pixel-size.tsx')))throw e;pixelSource='export function ImagePixelSize(){return null}';}
-const entry=`import React,{useState,useEffect,useRef}from'react';import{createRoot}from'react-dom/client';import{flushSync}from'react-dom';import{ImagePixelSize}from'product-pixel-size';
+const entry=`import React,{memo,useState,useEffect,useRef}from'react';import{createRoot}from'react-dom/client';import{flushSync}from'react-dom';import{ImagePixelSize}from'product-pixel-size';
 const IMAGE_NODE_MIN_W=120,IMAGE_NODE_MIN_H=96,IMAGE_NODE_MAX_W=2400,IMAGE_NODE_MAX_H=2400;
 const cn=(...v)=>v.filter(Boolean).join(' '),formatDate=()=>'',useFeatureAccess=()=>({can:()=>false}),mediaDownloadHref=u=>u;
 const Position={Left:'left',Right:'right'};const Icon=p=><span {...p} aria-hidden="true"/>;const MapPin=Icon,Lock=Icon,Combine=Icon,ImagePlus=Icon,Loader2=Icon,Scissors=Icon;

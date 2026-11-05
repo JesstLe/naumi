@@ -1,11 +1,14 @@
 import { modelAwareOpenAI } from "@/lib/model-config/clients";
-import { observeOpenAI } from "@/lib/bi/model-observer";
+import {observeOpenAI} from "@/lib/bi/model-calls";
 import "server-only";
 import sharp from "sharp";
 import OpenAI from "openai";
 import { authenticatedEmail } from "./request-auth";
-import { dbEnabled, getCompetitorItem, isBanned } from "./db";
-import { isManagedImageUrl, readManagedObject } from "./storage";
+import {getCompetitorItem} from "@/lib/competitor/repository";
+import {dbEnabled} from "@/platform/db/pool";
+import {isBanned} from "@/lib/accounts/repository";
+import { isManagedImageUrl } from "./object-storage/runtime";
+import { readManagedObject } from "./object-storage/managed-read";
 import { getOpenAISettings } from "./settings";
 import { getOpenAIBaseUrl } from "./openai-base";
 import { toVisionDataUrl } from "./vision-image";

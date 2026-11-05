@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
-import { dbEnabled, listTemplatesPaged, syncTemplatesFromCode } from "@/lib/db";
+import {listTemplatesPaged} from "@/lib/templates/repository";
+import {syncTemplatesFromCode} from "@/lib/templates/import";
+import {dbEnabled} from "@/platform/db/pool";
 import { resolveUserEmail } from "@/lib/admin-auth";
 import { TEMPLATES as SEED } from "@/lib/templates-data";
 import {publishTemplateMedia} from "@/lib/template-published-media";
-import { templateImageDeliveryUrl } from "@/lib/template-image-cache";
+import {templateImageDeliveryUrl} from "@/lib/templates/image-source";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

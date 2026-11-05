@@ -1,8 +1,8 @@
 import {NextResponse} from "next/server";
-import {TeamError} from "@/lib/teams/server";
+import { TeamError } from "@/lib/teams/errors";
 import {z} from "zod";
 import {sameSiteBiMutation} from "@/lib/bi/access";
-import {withBiRequest} from "@/lib/bi/model-observer";
+import {withBiRequest} from "@/lib/bi/request";
 import {authenticatedEmail} from "@/lib/request-auth";
 import {readBounded} from "@/lib/supplier-cost/io";
 import {requestQuoteConfirmation,billingErrorResponse} from "@/lib/billing/request";

@@ -59,7 +59,7 @@ services:
     command: ["node", "scripts/video-media-worker.mjs"]
     read_only: true
     cap_drop: [ALL]
-    cap_add: [SYS_CHROOT, SETUID, SETGID, CHOWN, DAC_OVERRIDE, FOWNER]
+    cap_add: [SYS_CHROOT, SETUID, SETGID, CHOWN, DAC_OVERRIDE, FOWNER, KILL]
     security_opt: ["no-new-privileges:true"]
     pids_limit: 160
     mem_limit: 3g

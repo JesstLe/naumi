@@ -118,12 +118,39 @@ jobs:
           for failure in 0 1; do
             docker run --rm --network none -e NAUMI_VERIFY_RELEASE_FIXTURE=1 -e FAIL_HEALTH=$failure -v "$PWD/scripts/deploy-release.sh:/deploy.sh:ro" -v "$PWD/scripts/verify-coordinated-release.sh:/verify.sh:ro" --entrypoint bash node:24-bookworm-slim /verify.sh
           done
-      - run: npm run build
+      - name: Build full application
+        shell: bash
+        env:
+          # Match the already-required fixed application build; scope to build only.
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: |
+          mkdir -p output/image-gateway-build
+          git rev-parse HEAD > output/image-gateway-build/SOURCE.txt
+          git status --porcelain > output/image-gateway-build/SOURCE_TREE.txt
+          node scripts/prepare-model-ui-production.mjs before-build --out output/model-ui-production
+          if npm run build > output/image-gateway-build/build.log 2>&1; then
+            status=0
+          else
+            status=$?
+          fi
+          cat output/image-gateway-build/build.log
+          if [ "$status" -ne 0 ]; then
+            details="$(tail -n 40 output/image-gateway-build/build.log | tail -c 8000)"
+            details="${details//'%'/'%25'}"
+            details="${details//$'\r'/'%0D'}"
+            details="${details//$'\n'/'%0A'}"
+            printf '::error title=Full application build failed::%s\n' "$details"
+          fi
+          if [ "$status" -eq 0 ]; then
+            node scripts/prepare-model-ui-production.mjs seal --out output/model-ui-production
+          fi
+          exit "$status"
       - name: Configurable billing and transactional regressions
         run: npm run verify:billing-all
         env:
           DATABASE_URL: postgres://fixture:isolated-fixture@127.0.0.1:5432/gateway_fixture
           NAUMI_VERIFY_ISOLATED_DB: '1'
+          BILLING_VERIFY_EVIDENCE: output/image-gateway-billing
       - name: Feature models, RMB usage, routing and postprocess recovery
         run: npm run verify:business-routing
         env:
@@ -181,3 +208,27 @@ jobs:
         env:
           DATABASE_URL: postgres://fixture:isolated-fixture@127.0.0.1:5432/gateway_fixture
           NAUMI_VERIFY_ISOLATED_DB: '1'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: image-gateway-build-${{ github.sha }}
+          path: |
+            output/image-gateway-build/
+            output/model-ui-production/
+            output/image-gateway-billing/
+            output/image-gateway-regression/*.json
+            output/credit-billing-regression/*.json
+            output/billing-20261003/ui/
+            output/billing-20261003/ui-results.json
+            output/billing-20261003/ui-app.*.log
+            output/billing-20261003/ui-provider.json
+            output/billing-20261003/runs/*/PRODUCTION.json
+            output/billing-20261003/ui-frozen-price.json
+            output/billing-20261003/navigation-*.json
+            output/billing-20261003/*.png
+            output/model-config-ui-fixture/runs/*/RUN.json
+            output/model-config-ui-fixture/runs/*/source/output/model-config-ui-fixture/CLEANUP.json
+            output/model-config-ui-fixture/runs/*/source/output/billing-routing-20261007/
+            output/model-config-ui-fixture/runs/*/source/output/model-batch-20261007/
+            output/model-config-ui-fixture/runs/*/source/output/apimart-preset-20261007/
+          if-no-files-found: warn

@@ -1,5 +1,6 @@
 import {VideoContractError} from "../../contract";
-import {mediaUrl,rejectAdvanced,selectWireOptions,type VideoWireContext,type VideoWireRequest,type VideoWireCodec} from "../wire";
+import {mediaUrl,rejectAdvanced,selectWireOptions} from "../wire-helpers";
+import type {VideoWireContext,VideoWireRequest,VideoWireCodec} from "../wire-contracts";
 import {buildAPIMartPoll,decodeAPIMartCreated,decodeAPIMartPoll} from "./apimart";
 
 // Separate profiles preserve the wire behavior of already frozen APIMart tasks.

@@ -1,10 +1,13 @@
 import { siteCreations, siteCreationMedia } from '@/lib/site-control/creations';
 import { TeamError } from '@/lib/teams/server';
-import { ensureSitePolicySchema, readSitePolicy, applySitePolicyTx, SitePolicyError } from '@/lib/site-control/store';
+import { readSitePolicy, applySitePolicyTx, SitePolicyError } from '@/lib/site-control/store';
+import {ensureSitePolicySchema} from '@/lib/site-control/schema';
 import 'server-only';
 import { randomUUID } from 'node:crypto';
-import { getPool, getUser, adjustUserCredits } from '@/lib/db';
-import { saveFeaturePolicy, userFeaturePolicy, FeatureAccessError } from '@/lib/feature-access/server';
+import {adjustUserCredits} from "@/lib/billing/grants";
+import {getPool} from "@/platform/db/pool";
+import {getUser} from "@/lib/accounts/session";
+import {saveFeaturePolicy,userFeaturePolicy,FeatureAccessError} from "@/lib/feature-access/repository";
 import { BillingError } from '@/lib/billing/types';
 import { operationSchema, commandSchema, canonical, digest, centralUrl, verifyCommand, resultSchema, statusSchema, type FleetCommand, type FleetResult, type SignedFleetCommand } from './contracts';
 import { ensureFleetSchema } from './server';

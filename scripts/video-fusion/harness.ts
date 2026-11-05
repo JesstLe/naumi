@@ -9,6 +9,7 @@ import { createVideoSupplier } from "./supplier.mjs";
 import { createFixtureObjects } from "./objects.mjs";
 import type {VideoWireProfile} from "../../src/lib/video/capability-schema";
 import type {VideoModelDefinition} from "../../src/lib/video/capability-schema";
+import {stopFixtureChild as stopChild} from './process-lifecycle';
 
 export {CAP_RICH} from "./profiles";
 type Account="a"|"b";
@@ -16,14 +17,6 @@ type FixtureRef={id:string;url:string;storageKey:string;durationSeconds:number;h
 type Seed={accounts:Record<Account,string>;cookies:Record<Account,string>;refs:Record<"image"|"lastImage"|"video"|"silentVideo"|"audio",FixtureRef>;byocWorkflowId:string};
 const root=path.resolve(__dirname,"../..");
 async function freePort(){const server=createServer();await new Promise<void>(resolve=>server.listen(0,"127.0.0.1",resolve));const port=(server.address() as {port:number}).port;await new Promise<void>(resolve=>server.close(()=>resolve()));return port;}
-async function stopChild(child:ChildProcess|undefined){
-  if(!child||child.exitCode!==null)return;
-  if(process.platform==="win32"&&child.pid){
-    await new Promise<void>(resolve=>{const stop=spawn("taskkill.exe",["/PID",String(child.pid),"/T","/F"],{windowsHide:true,stdio:"ignore"});stop.once("error",()=>resolve());stop.once("exit",()=>resolve());});return;
-  }
-  child.kill("SIGTERM");
-  await new Promise<void>(resolve=>{const timer=setTimeout(()=>{child.kill("SIGKILL");resolve();},5000);child.once("exit",()=>{clearTimeout(timer);resolve();});});
-}
 function cleanEnv(){const env:NodeJS.ProcessEnv={NODE_ENV:"development"};for(const key of ["PATH","Path","SystemRoot","WINDIR","TEMP","TMP","LOCALAPPDATA","APPDATA","HOME","USERPROFILE"]){if(process.env[key])env[key]=process.env[key];}return env;}
 function privateChild(args:string[],env:NodeJS.ProcessEnv):Promise<string>{return new Promise((resolve,reject)=>{
   const child=spawn(process.execPath,args,{cwd:root,env,windowsHide:true,stdio:["ignore","pipe","pipe"]});let out="",error="";
@@ -114,7 +107,9 @@ export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot
       if(builtRoot&&(process.platform!=="linux"||builtRoot!==(mode==="rollback"?"/rollback-app":"/fixed-app")||!/^[a-f0-9]{40}$/.test(builtCommit||"")||!/^\d{10}$/.test(builtVersion||"")))throw new Error("Fixed Linux fixture image metadata required");
       // The Linux fixture has no network interface except loopback; its fake
       // BYOC endpoint uses the existing explicit private-network opt-in.
-      const appEnv:NodeJS.ProcessEnv=builtRoot?{...env,NODE_ENV:"production",HOSTNAME:"127.0.0.1",PORT:String(appPort),USER_IMAGE_PROVIDER_ALLOW_PRIVATE_NETWORK:"true",SOURCE_COMMIT:builtCommit!,BUILD_VERSION:builtVersion!}:env;
+      // Next dev otherwise overrides the heap to half the host's physical RAM,
+      // not the commit budget available to this isolated functional fixture.
+      const appEnv:NodeJS.ProcessEnv=builtRoot?{...env,NODE_ENV:"production",HOSTNAME:"127.0.0.1",PORT:String(appPort),USER_IMAGE_PROVIDER_ALLOW_PRIVATE_NETWORK:"true",SOURCE_COMMIT:builtCommit!,BUILD_VERSION:builtVersion!}:{...env,NODE_OPTIONS:"--max-old-space-size=6144"};
       app=spawn(process.execPath,builtRoot?[path.join(builtRoot,"server.js")]:["node_modules/next/dist/bin/next","dev","--hostname","127.0.0.1","--port",String(appPort)],{cwd:builtRoot||root,env:appEnv,windowsHide:true,stdio:["ignore","pipe","pipe"]});capture("app",app);
       const deadline=Date.now()+120_000;let ready=false;
       while(Date.now()<deadline){
@@ -216,7 +211,25 @@ export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot
       supplierCalls:()=>[...supplier.calls,...objectCalls],setScenario:(name:string)=>supplier.setScenario(name),
       async request<T=unknown>(account:Account,method:string,url:string,body?:unknown){
         if(!url.startsWith("/")||url.startsWith("//"))throw new Error("Fixture requests must stay in the fixture app");
-        const response=await fetch(baseUrl+url,{method,headers:{cookie:seed.cookies[account],...(body!==undefined?{"content-type":"application/json"}:{}),"x-naumi-billing-operation-id":String((body as {idempotencyKey?:string})?.idempotencyKey||randomUUID())},...(body!==undefined?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(90_000)});
+        // Inspection/control HTTP must not inherit an idle socket from the App
+        // process deliberately killed by restart tests. Browser traffic and the
+        // real unknown-acceptance requests keep their original transport. Only
+        // read-side transport failures may retry the same actor/URL/deadline.
+        // HTTP errors and every mutating method remain exactly one request.
+        let response:Response;
+        try{
+          const init={method,headers:{connection:"close",cookie:seed.cookies[account],...(body!==undefined?{"content-type":"application/json"}:{}),"x-naumi-billing-operation-id":String((body as {idempotencyKey?:string})?.idempotencyKey||randomUUID())},...(body!==undefined?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(90_000)};
+          for(let attempt=0;;attempt++){
+            try{init.signal.throwIfAborted();response=await fetch(baseUrl+url,init);break;}
+            catch(error){
+              const code=(error as {cause?:{code?:string}})?.cause?.code;
+              if(method!=="GET"||init.signal.aborted||attempt>=4||!['ECONNRESET','ECONNREFUSED','EPIPE','UND_ERR_SOCKET'].includes(code||''))throw error;
+              logs.push(`fixture-control: GET ${url} transport ${code}; retry same read ${attempt+1}`);
+              await new Promise(resolve=>setTimeout(resolve,250*(attempt+1)));
+            }
+          }
+        }
+        catch(error){logs.push(`fixture-control: ${method} ${url} transport failed: ${String(error)}`);throw new Error(`Fixture HTTP ${method} ${url} transport failed`,{cause:error});}
         const type=response.headers.get("content-type")||"";
         const data=type.includes("application/json")?await response.json():await response.arrayBuffer();
         return {status:response.status,body:data as T,headers:response.headers};

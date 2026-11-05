@@ -1,6 +1,6 @@
 import {STORYBOARD_VIDEO_FAMILIES} from "../../../model-config/video-family-storyboard";
 import {normalizeVideoInput,VideoContractError} from "../../contract";
-import type {VideoWireContext,VideoWireRequest,VideoWireCodec} from "../wire";
+import type {VideoWireContext,VideoWireRequest,VideoWireCodec} from "../wire-contracts";
 import {buildAPIBDocumentedCreate} from "./apib-documented";
 import {buildAPIBMultimodalCreate} from "./apib-multimodal-v3";
 import {mappedReferencePrompt} from "./multimodal-v3-input";

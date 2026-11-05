@@ -1,6 +1,6 @@
 import 'server-only';
 import {createHash} from 'node:crypto';
-import {dbEnabled,getPool} from '../db';
+import {dbEnabled,getPool} from '@/platform/db/pool';
 import {assertMutableStagingTask} from '../staging-history';
 import {recordImageStateTx} from '../saas/creation-writer';
 import {readCanvasOutput} from '../canvas-image-input';
@@ -33,6 +33,7 @@ export async function finalizeCompletedParent(parentId:string,owner:string,optio
  const ratioNotice=options.repairTerminalReceipt?legacyRatioWarning(child?.snapshot.imagegenOutputError):undefined;
  if(!child||child.snapshot.status!=='done'||!child.billing_settled||!expiredOrEmpty(child)||child.snapshot.imagegenOutputError&&!ratioNotice)return false;
  if(Object.values(child.snapshot.paidOperations||{}).some((a:any)=>!['done','rejected'].includes(a.state)||Object.values(a.children||{}).some((v:any)=>!['done','rejected'].includes(v.state))))return false;
+ const completionStatus=child.snapshot.deliveryComplete===false?'partial':'succeeded';
  const images=child.snapshot.images;
  if(!Array.isArray(images)||images.length<1||images.length>4||images.length!==plan.request.variants)return false;
  const ids=images.map((image:any)=>image.id);
@@ -66,11 +67,11 @@ export async function finalizeCompletedParent(parentId:string,owner:string,optio
    await tx.query('ROLLBACK');return false;
   }
   if(parent.snapshot.status==='done'){
-   if(parent.snapshot.result?.status!=='succeeded'){await tx.query('ROLLBACK');return false;}
+   if(parent.snapshot.result?.status!==completionStatus){await tx.query('ROLLBACK');return false;}
    await recordImageStateTx(tx,parentId,parent.snapshot);await tx.query('COMMIT');return true;
   }
   const warnings=[...new Set([...(parent.snapshot.result?.warnings||[]),...(child.snapshot.imagegenOutputWarning?[child.snapshot.imagegenOutputWarning]:[]),...(ratioNotice?[ratioNotice]:[])])];
-  const result={...parent.snapshot.result,status:'succeeded',stage:'done',artifacts,chargedCredits:charged,billingStatus:'confirmed',warnings};delete result.error;
+  const result={...parent.snapshot.result,status:completionStatus,stage:'done',artifacts,chargedCredits:charged,billingStatus:'confirmed',warnings};delete result.error;
   const snapshot={...parent.snapshot,status:'done',result,children:{...children,[step.key]:{...link,state:'done',ids}},
    completedChildReceipt:{version:1,childId:child.id,childSnapshotSha256:digest(child.snapshot),previousParentSnapshotSha256:digest(parent.snapshot),previousExpiredLeaseSha256:parent.lease_token?digest(parent.lease_token):null,observedAt:new Date().toISOString()}};
   await tx.query("UPDATE app_image_jobs SET snapshot=$3::jsonb,lease_token=NULL,lease_until=NULL,updated_at=now() WHERE id=$1 AND email=$2",[parentId,owner,JSON.stringify(snapshot)]);

@@ -4,7 +4,8 @@ import { resultMediaUrls, unsupportedMedia, unsupportedReview, evidenceOnlyReply
 import { agentRestrictionMessage } from "./public-status";
 import {createModelActivityTracker,type PublicModelPhase} from "./model-activity";
 import { publicToolDetails } from "./tool-presentation";
-import { FeatureAccessError, assertAgentToolAccess } from "@/lib/feature-access/server";
+import {assertAgentToolAccess} from "@/lib/feature-access/server";
+import {FeatureAccessError} from "@/lib/feature-access/repository";
 import type { Agent } from "@earendil-works/pi-agent-core";
 import { currentModelExecution, currentExecutionBundle } from "@/lib/model-config/context";
 import { signAcceptedModelContext } from "@/lib/model-config/accepted-context";
@@ -14,17 +15,14 @@ import { supplierCostFetch } from "@/lib/supplier-cost/collect";
 import { legacyAgentVision } from "@/lib/model-config/legacy-vision";
 import type { ImageContent, AssistantMessage, Model, createModels } from "@earendil-works/pi-ai";
 import type { UserMessage } from "@earendil-works/pi-ai";
-import {
-  dbEnabled,
-  getAgentSession,
-  getUser,
-  creditMeteringEnabled,
-  saveAgentSession,
-  knownAgentMedia,
-} from "@/lib/db";
+import {getAgentSession, saveAgentSession} from "@/lib/agent/session-repository";
+import {creditMeteringEnabled} from "@/lib/billing/runtime";
+import {dbEnabled} from "@/platform/db/pool";
+import {getUser} from "@/lib/accounts/session";
+import {knownAgentMedia} from "@/lib/artworks/repository";
 import { AGENT_SYSTEM_PROMPT, createNaumiTools } from "@/lib/agent/naumi-tools";
 import { getImageJob } from "@/lib/image-job-repository";
-import { recordBiModelCompletion, modelExecutionTelemetry } from "@/lib/bi/model-observer";
+import {recordBiModelCompletion, modelExecutionTelemetry} from "@/lib/bi/model-calls";
 import {agentBillingPrecheck} from "@/lib/billing/agent";
 import {fingerprint} from "@/lib/billing/fingerprint";
 import type { CanvasAgentContext } from "./canvas-context";
@@ -38,7 +36,8 @@ import { releaseProcessRegistry } from "@/lib/release-runtime/identity";
 import { startAgentActivity, endAgentActivity, type AgentActivity } from "@/lib/release-runtime/agent-activity";
 import { withAcceptedExecution } from "@/lib/release-runtime/accepted-context";
 import { accountKey, releaseIdentity } from "@/lib/release-runtime/identity";
-import {currentCreationContext,withFrozenCreation,bindCreationParent,assertCreationFeature,type CreationContext} from '@/lib/saas/creation-context';
+import {currentCreationContext,withFrozenCreation,type CreationContext} from "@/lib/saas/creation-scope";
+import {bindCreationParent,assertCreationFeature} from "@/lib/saas/creation-access";
 import {startCreation,finishCreation,recordAgentToolEvidence} from '@/lib/saas/creation-writer';
 import {enterpriseCreationRead} from '@/lib/enterprise/server';
 

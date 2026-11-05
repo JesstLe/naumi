@@ -1,15 +1,18 @@
 import "server-only";
 import {createHash} from "node:crypto";
-import {getPool,ensureSchema} from "../db";
-import {getMediaAsset,registerMediaAsset} from "../media-assets";
-import {readManagedObject,writeStoredObject,storageEnabled} from "../storage";
+import {getPool} from "@/platform/db/pool";
+import {ensureSchema} from "@/lib/persistence/schema";
+import { getMediaAsset } from "../media-assets-reader";
+import { registerMediaAsset } from "../media-assets";
+import { readManagedObject } from "../object-storage/managed-read";
+import { writeStoredObject, storageEnabled } from "../object-storage/runtime";
 import {probeMedia} from "./media";
 import {mediaExtension,inspectedMediaMime,recordMediaProbe} from "./media-inspection";
 import {getVideoProviderConfig} from "./providers/config";
 import {downloadVideoResultAsset} from "./providers/result-fetch";
 import type {VideoResultAssetSource} from "./providers/result-fetch";
 import type {VideoProviderAdapter,VideoProviderPollResult,VideoTaskSnapshot,VideoProviderFetchResult} from "./types";
-import type {VideoTaskRow} from "../db";
+import type {VideoTaskRow} from "@/lib/video/task-types";
 import type {MediaJobOutput} from "./media-job-schema";
 
 export type SavedVideoResultAsset=MediaJobOutput&{kind:"video"|"image"|"audio";sourceIndex:number};

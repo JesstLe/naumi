@@ -1,6 +1,8 @@
+import {webBytes} from "@/platform/bytes/web";
 import JSZip from "jszip";
 import path from "path";
-import { isManagedImageUrl, readManagedObject, privateMedia, storageKeyFromManagedUrl } from "@/lib/storage";
+import { isManagedImageUrl, privateMedia, storageKeyFromManagedUrl } from "@/lib/object-storage/runtime";
+import { readManagedObject } from "@/lib/object-storage/managed-read";
 import {authenticatedEmail} from '@/lib/request-auth';
 import {canReadMedia} from '@/lib/media-assets';
 
@@ -92,7 +94,7 @@ export async function POST(request: Request) {
   }
 
   const blob = await zip.generateAsync({ type: "nodebuffer" });
-  return new Response(blob, {
+  return new Response(webBytes(blob), {
     status: 200,
     headers: {
       "content-type": "application/zip",

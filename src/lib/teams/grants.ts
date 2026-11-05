@@ -2,9 +2,11 @@ import "server-only";
 import { createHmac } from "node:crypto";
 import type { PoolClient } from "pg";
 import { z } from "zod";
-import { getPool } from "@/lib/db";
+import { getPool } from "@/platform/db/pool";
 import { settingsSecret } from "@/lib/settings-secret";
-import { ensureTeamSchema, TeamError } from "./server";
+import { TeamError } from "./errors";
+import {ensureTeamSchema} from "@/lib/teams/schema";
+
 import type { TeamAccessGrant, TeamAccessStatus } from "./contracts";
 
 export type TeamActor = { email: string; admin: boolean; consoleAdmin?: boolean };

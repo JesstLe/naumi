@@ -1,7 +1,7 @@
 import 'server-only';
 import type {PoolClient} from 'pg';
-import {getPool} from '../db';
-import {ensureMediaSchema} from '../media-assets';
+import {getPool} from '@/platform/db/pool';
+import {ensureMediaSchema} from '@/lib/media-assets-schema';
 
 /** Metadata only. Transaction callers initialize the schema before BEGIN and
  * supply their own client; no pool checkout or storage I/O is allowed here. */

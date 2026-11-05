@@ -1,5 +1,6 @@
 import "server-only";
-import { dbEnabled, getSetting, setSetting } from "@/lib/db";
+import {dbEnabled} from "@/platform/db/pool";
+import {getSetting,setSetting} from "@/lib/settings/repository";
 import {
   TRYON_MODELS,
   TRYON_SCENES,

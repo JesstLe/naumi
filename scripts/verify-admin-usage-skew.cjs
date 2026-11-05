@@ -43,8 +43,8 @@ function load(relative) {
   const filename = path.resolve(sourceRoot, relative);
   assert.ok(filename.startsWith(sourceRoot + path.sep), 'Module must remain in the selected source root');
   if (cache.has(filename)) return cache.get(filename).exports;
-  const bytes = fs.readFileSync(filename), module = { exports: {} };
-  cache.set(filename, module);
+  const bytes = fs.readFileSync(filename), loadedModule = { exports: {} };
+  cache.set(filename, loadedModule);
   report.sourceModules.push({ path: filename, relativePath: relative, sha256: digest(bytes) });
   const code = ts.transpileModule(bytes.toString('utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
@@ -56,8 +56,8 @@ function load(relative) {
     if (name === './usage-contracts') return load('src/lib/bi/usage-contracts.ts');
     throw new Error(`Unexpected application import ${name}`);
   };
-  new vm.Script(`(function(require,module,exports){${code}\n})`, { filename }).runInThisContext()(req, module, module.exports);
-  return module.exports;
+  new vm.Script(`(function(require,module,exports){${code}\n})`, { filename }).runInThisContext()(req, loadedModule, loadedModule.exports);
+  return loadedModule.exports;
 }
 async function check(name, work) {
   await work(); report.checks.push(name); console.log('PASS ' + name);
@@ -223,7 +223,7 @@ async function run() {
       else assert.ok(loops <= bound, `Repeated JSON expansion: ${loops} loops exceeds ${bound}`);
     });
     await check('LOADED_MODULE_BYTES_STABLE_AND_NO_EXTERNAL_CALLS', async () => {
-      for (const module of report.sourceModules) assert.equal(digest(fs.readFileSync(module.path)), module.sha256, 'Loaded module changed during test');
+      for (const loadedModule of report.sourceModules) assert.equal(digest(fs.readFileSync(loadedModule.path)), loadedModule.sha256, 'Loaded module changed during test');
       assert.equal(report.externalNetworkCalls, 0); assert.equal(report.supplierCalls, 0);
     });
     report.result = baseline ? 'REPRODUCED' : 'PASS'; report.exit = baseline ? 1 : 0;

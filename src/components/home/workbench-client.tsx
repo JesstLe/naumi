@@ -4,8 +4,8 @@ import { downloadImage } from "@/lib/download";
 import { useFeatureAccess, FeatureVisible } from "@/lib/feature-access/client";
 
 import { agentMediaUrl } from "@/lib/agent/media-policy";
+import { createWorkbenchSession, type WorkbenchMessage as Msg, type WorkbenchRecoveryContext, type WorkbenchSendContext, type WorkbenchCatalogContext, type WorkbenchAttachmentContext } from "@/lib/agent/workbench-session";
 import { loadAccountSnapshot, invalidateBrowserData } from "@/lib/browser-data-cache";
-import {toolImageError} from "@/lib/tool-ui";
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -52,34 +52,6 @@ import { TemplatesClient } from "@/components/templates/templates-client";
 // 对话逻辑:PUT /api/agent SSE + steering + 会话持久化 + 历史会话抽屉(二期收编)。
 // ---------------------------------------------------------------------------
 
-type Msg = {
-  role: "user" | "assistant";
-  content: string;
-  steps?: { tool: string; summary: string }[];
-  pending?: boolean;
-};
-
-type SavedStep = {
-  type?: string;
-  tool?: string;
-  summary?: string;
-  items?: string[];
-};
-
-// A recovery is a read-only observer, never the owner of the accepted task.
-type RecoveryScope = { account: string; active: boolean };
-type RecoveryOwner = {
-  id: string;
-  generation: number;
-  scope: RecoveryScope;
-  controller: AbortController;
-  phase: "loading" | "observing" | "settled" | "unavailable";
-  installed: boolean;
-  previousUnavailable: boolean;
-};
-
-type AttachmentUploadOwner = { scope: RecoveryScope; generation: number; controller: AbortController };
-
 type RecentWork = {
   id: string;
   image: string;
@@ -89,19 +61,8 @@ type RecentWork = {
   createdAt?: string;
 };
 
-const MAX_UPLOAD = 12 * 1024 * 1024;
 const MAX_REF_FILES = 6;
 const MAX_REF_BYTES = 12 * 1024 * 1024;
-
-/** URL 归一化:取路径末段做作品库匹配(CDN 域名/协议差异不影响)。 */
-function imageKey(url: string): string {
-  try {
-    const path = decodeURIComponent(new URL(url, "http://x").pathname);
-    return path.split("/").pop() || path;
-  } catch {
-    return url.split("?")[0].split("/").pop() || url;
-  }
-}
 
 type ImageLinkResolver = (url: string) => Promise<string | null>;
 
@@ -338,55 +299,13 @@ export function WorkbenchClient() {
   const [activeTitle, setActiveTitle] = useState("");
   const [previewUrl, setPreviewUrl] = useState("");
   const sessionIdRef = useRef("");
-  const sessionLoadRef = useRef(0);
-  const recoveryRef = useRef<RecoveryOwner | null>(null);
-  const recoveryScopeRef = useRef<RecoveryScope | null>(null);
-  const sessionListAbortRef = useRef<AbortController | null>(null);
-  const streamAbortRef = useRef<AbortController | null>(null);
+  const [sessionRecovery] = useState(createWorkbenchSession);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  // 图片 URL → 作品 id 缓存(送画布/再生成的深链依据);上传响应直接登记,其余懒反查
-  const artworkIdRef = useRef<Record<string, string>>({});
-  const attachmentGenerationRef = useRef(0);
-  const attachmentUploadsRef = useRef(new Set<AttachmentUploadOwner>());
-
-  function ownsAccount(scope: RecoveryScope | null): scope is RecoveryScope {
-    return Boolean(scope?.active && recoveryScopeRef.current === scope);
+  function attachmentContext(): WorkbenchAttachmentContext {
+    return { headers: authHeader, request: (input, init) => fetch(input, init), setBusy: setUploading, setError };
   }
-
-  function resetAttachmentUploads(updateState = true) {
-    attachmentGenerationRef.current += 1;
-    for (const owner of attachmentUploadsRef.current) owner.controller.abort();
-    attachmentUploadsRef.current.clear();
-    if (updateState) setUploading(false);
-  }
-
-  function beginAttachmentUpload(): AttachmentUploadOwner | null {
-    const scope = recoveryScopeRef.current;
-    if (!ownsAccount(scope)) return null;
-    const owner = { scope, generation: attachmentGenerationRef.current, controller: new AbortController() };
-    attachmentUploadsRef.current.add(owner);
-    setUploading(true);
-    return owner;
-  }
-
-  function ownsAttachmentUpload(owner: AttachmentUploadOwner) {
-    return ownsAccount(owner.scope) && owner.generation === attachmentGenerationRef.current &&
-      attachmentUploadsRef.current.has(owner) && !owner.controller.signal.aborted;
-  }
-
-  function finishAttachmentUpload(owner: AttachmentUploadOwner) {
-    const current = ownsAttachmentUpload(owner);
-    attachmentUploadsRef.current.delete(owner);
-    if (current) setUploading(attachmentUploadsRef.current.size > 0);
-  }
-
-  function cancelRecovery() {
-    sessionLoadRef.current += 1;
-    const owner = recoveryRef.current;
-    recoveryRef.current = null;
-    owner?.controller.abort();
-  }
+  function resetAttachmentUploads() { sessionRecovery.attachments.reset({ setBusy: setUploading }); }
 
   // Layout cleanup fences continuations before a newly committed account can
   // interact. A fresh scope also distinguishes account A -> B -> A/StrictMode.
@@ -394,14 +313,12 @@ export function WorkbenchClient() {
     // Cached identity can already own an accepted send while auth hydrates.
     // Readiness is not an account change.
     const account = user?.email || "";
-    const previous = recoveryScopeRef.current;
-    const scope: RecoveryScope = { account, active: true };
-    recoveryScopeRef.current = scope;
+    const {previous, scope} = sessionRecovery.activateAccount(account);
     if (previous && previous.account !== account) {
       sessionIdRef.current = "";
       setMessages([]);
       setAttachments([]);
-      artworkIdRef.current = {};
+      sessionRecovery.attachments.resetIndex();
       setInput("");
       setInterject("");
       setActiveTitle("");
@@ -425,107 +342,31 @@ export function WorkbenchClient() {
       setError(null);
     }
     return () => {
-      scope.active = false;
-      resetAttachmentUploads(false);
-      cancelRecovery();
-      // Detach the UI handle without aborting the older SSE's server task.
-      streamAbortRef.current = null;
-      sessionListAbortRef.current?.abort();
-      sessionListAbortRef.current = null;
+      sessionRecovery.deactivateAccount(scope);
+      sessionRecovery.cancel();
+      // The application owner detaches the old stream without cancelling it.
     };
-  }, [user?.email]);
+  }, [user?.email, sessionRecovery]);
 
   useLayoutEffect(() => {
     if (ready) return;
-    const owner = recoveryRef.current;
-    if (owner) {
-      recoveryFailed(owner);
-      cancelRecovery();
-      setSessionLoadingId("");
-      setMessages(previous => previous.map(m => m.pending ? { ...m, pending: false } : m));
-    }
-    sessionListAbortRef.current?.abort();
-    sessionListAbortRef.current = null;
+    sessionRecovery.readinessLost(recoveryContext());
     setSessionsLoading(false);
     // Readiness loss detaches read-only observation, not an accepted SSE run.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
 
-  function ownsRecovery(owner: RecoveryOwner) {
-    return owner.scope.active && recoveryScopeRef.current === owner.scope &&
-      recoveryRef.current === owner && sessionLoadRef.current === owner.generation &&
-      !owner.controller.signal.aborted;
+  function recoveryContext(): WorkbenchRecoveryContext {
+    return {ready, busy, unavailable:recoveryUnavailable, sessionId:()=>sessionIdRef.current,
+      headers:authHeader, request:(input,init)=>fetch(input,init),
+      setMessages, setBusy, setRunning, setLoadingId:setSessionLoadingId,
+      setUnavailable:setRecoveryUnavailable, setError, setComposerError,
+      setTitle:setActiveTitle, setInput, setAttachments, setSessionsOpen,
+      installSession:id=>{sessionIdRef.current=id;}, resetAttachmentUploads, refreshSessions};
   }
 
-  async function recoveryJson(owner: RecoveryOwner, url: string) {
-    const headers = await authHeader();
-    if (!ownsRecovery(owner)) throw new DOMException("Recovery detached", "AbortError");
-    const response = await fetch(url, { headers, signal: owner.controller.signal, cache: "no-store" });
-    if (!ownsRecovery(owner) || !response.ok) {
-      await response.body?.cancel().catch(() => {});
-      throw new Error(`历史会话读取失败 (${response.status})`);
-    }
-    const data = await response.json();
-    if (!ownsRecovery(owner)) throw new DOMException("Recovery detached", "AbortError");
-    return data;
-  }
-
-  function recoveryDelay(owner: RecoveryOwner) {
-    return new Promise<void>((resolve) => {
-      const signal = owner.controller.signal;
-      if (signal.aborted) { resolve(); return; }
-      const finish = () => {
-        clearTimeout(timer);
-        signal.removeEventListener("abort", finish);
-        resolve();
-      };
-      const timer = setTimeout(finish, 1200);
-      signal.addEventListener("abort", finish, { once: true });
-    });
-  }
-
-  function recoveryFailed(owner: RecoveryOwner) {
-    if (!ownsRecovery(owner)) return;
-    if (!owner.installed) {
-      // This target was never installed. Keep any uncertainty of the displayed
-      // session, but do not make an unrelated failed read its send fence.
-      setSessionLoadingId("");
-      cancelRecovery();
-      setRecoveryUnavailable(owner.previousUnavailable);
-      setError("历史会话读取失败，请重试");
-      if (!sessionIdRef.current) setComposerError("历史会话读取失败，请重试");
-      return;
-    }
-    owner.phase = "unavailable";
-    // Release client busy, not the backend task. Sending remains fenced until
-    // an explicit read-only reopen succeeds or the user leaves this session.
-    setRecoveryUnavailable(true);
-    setBusy(false);
-    setRunning(false);
-    setMessages(previous => ownsRecovery(owner) ? previous.map(m => m.pending ? { ...m, pending: false } : m) : previous);
-    setError("任务状态暂未确认，请从历史会话重新打开；不会重新提交任务");
-  }
-
-  /** 反查图片的作品 id:先查缓存,未命中拉一次作品库全量匹配并回填。 */
-  async function resolveArtworkId(url: string): Promise<string | null> {
-    const key = imageKey(url);
-    if (!key) return null;
-    if (artworkIdRef.current[key]) return artworkIdRef.current[key];
-    if (!user?.email) return null;
-    try {
-      const r = await fetch(
-        `/api/account?email=${encodeURIComponent(user.email)}`,
-        { headers: await authHeader() }
-      );
-      if (!r.ok) return null;
-      const d = await r.json();
-      for (const a of (d.artworks ?? []) as { id: string; image: string }[]) {
-        if (a.id && a.image) artworkIdRef.current[imageKey(a.image)] = a.id;
-      }
-    } catch {
-      return null;
-    }
-    return artworkIdRef.current[key] ?? null;
+  function resolveArtworkId(url: string): Promise<string | null> {
+    return sessionRecovery.attachments.resolveArtworkId(url, attachmentContext());
   }
 
   // 问候语随本地时段
@@ -550,7 +391,7 @@ export function WorkbenchClient() {
 
   // Summary key contains day bounds, so yesterday's counts cannot be reused.
   useEffect(() => {
-    setRecent(null); setStats({ today: 0, total: 0 }); artworkIdRef.current = {};
+    setRecent(null); setStats({ today: 0, total: 0 }); sessionRecovery.attachments.resetIndex();
     if (!ready || !user?.email) return;
     let cancelled = false;
     const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
@@ -566,7 +407,7 @@ export function WorkbenchClient() {
       if (!cancelled) { setRecent([]); setStats({ today: 0, total: 0 }); }
     });
     return () => { cancelled = true; };
-  }, [user?.email, ready]);
+  }, [user?.email, ready, sessionRecovery]);
 
   // 参考图预览的对象 URL:卸载时回收
   useEffect(() => {
@@ -602,60 +443,12 @@ export function WorkbenchClient() {
 
   // ── 对话核心 ──
 
-  /** 载入的历史消息:把保存的 steps 轨迹挂回最后一条 assistant。 */
-  function restoreMessages(rawMessages: Msg[], savedSteps: SavedStep[]) {
-    const restored = rawMessages.map((message) => ({
-      role: message.role === "assistant" ? "assistant" : "user",
-      content: message.content,
-    })) as Msg[];
-    const visibleSteps = savedSteps.map((step) => ({
-      tool: step.type === "plan" ? "任务计划" : step.tool || "工具",
-      summary:
-        step.type === "plan"
-          ? (step.items ?? []).join(" → ")
-          : step.summary || "执行完成",
-    }));
-    if (visibleSteps.length && restored.at(-1)?.role === "assistant") {
-      restored[restored.length - 1] = {
-        ...restored[restored.length - 1],
-        steps: visibleSteps,
-      };
-    }
-    return restored;
+  function catalogContext(): WorkbenchCatalogContext {
+    return { ready, headers: authHeader, request: (input, init) => fetch(input, init),
+      setSessions, setLoading: setSessionsLoading, setError,
+      sessionId: () => sessionIdRef.current, setTitle: setActiveTitle, deletedCurrent: newConversation };
   }
-
-  async function refreshSessions() {
-    const scope = recoveryScopeRef.current;
-    if (!ready || !scope?.active || !scope.account) return;
-    sessionListAbortRef.current?.abort();
-    const controller = new AbortController();
-    sessionListAbortRef.current = controller;
-    const current = () => scope.active && recoveryScopeRef.current === scope &&
-      sessionListAbortRef.current === controller && !controller.signal.aborted;
-    setSessionsLoading(true);
-    try {
-      const headers = await authHeader();
-      if (!current()) return;
-      const response = await fetch("/api/agent/session", {
-        headers, signal: controller.signal, cache: "no-store",
-      });
-      if (!response.ok || !current()) {
-        await response.body?.cancel().catch(() => {});
-        if (current()) throw new Error("Session list read failed");
-        return;
-      }
-      const data = await response.json();
-      if (!current()) return;
-      setSessions((data.sessions ?? []) as SessionSummary[]);
-    } catch {
-      if (current()) setError("历史会话列表读取失败，请重试");
-    } finally {
-      if (current()) {
-        setSessionsLoading(false);
-        sessionListAbortRef.current = null;
-      }
-    }
-  }
+  function refreshSessions() { return sessionRecovery.catalog.refresh(catalogContext()); }
 
   // 打开抽屉时刷新列表;登录后也预拉一次
   useEffect(() => {
@@ -663,226 +456,14 @@ export function WorkbenchClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionsOpen, user]);
 
-  /** 载入历史会话:恢复消息与轨迹;运行中的任务接上事件轮询。 */
-  async function loadSession(id: string) {
-    const existing = recoveryRef.current;
-    if (!id || (existing?.id === id && (existing.phase === "loading" || existing.phase === "observing"))) {
-      setSessionsOpen(false);
-      return;
-    }
-    if (busy && !existing) {
-      setError("当前会话正在执行，请先停止任务再切换");
-      return;
-    }
-    const scope = recoveryScopeRef.current;
-    if (!ready || !scope?.active || !scope.account) return;
-    const previousUnavailable = recoveryUnavailable || Boolean(existing?.previousUnavailable) || Boolean(
-      existing?.installed && existing.id === sessionIdRef.current && existing.phase !== "settled"
-    );
-    resetAttachmentUploads();
-    cancelRecovery();
-    const owner: RecoveryOwner = {
-      id, generation: sessionLoadRef.current, scope, controller: new AbortController(),
-      phase: "loading", installed: false, previousUnavailable,
-    };
-    recoveryRef.current = owner;
-    setSessionLoadingId(id);
-    setRecoveryUnavailable(previousUnavailable);
-    setBusy(false);
-    setRunning(false);
-    setError(null);
-    try {
-      const data = await recoveryJson(owner, `/api/agent/session?id=${encodeURIComponent(id)}`);
-      if (!ownsRecovery(owner)) return;
-      if (!Array.isArray(data?.session?.messages)) throw new Error("Invalid session history");
-      const nextMessages = restoreMessages(
-        (data.session?.messages ?? []) as Msg[],
-        (data.session?.steps ?? []) as SavedStep[]
-      );
-      sessionIdRef.current = id;
-      owner.installed = true;
-      owner.previousUnavailable = false;
-      setRecoveryUnavailable(false);
-      setActiveTitle(
-        ((data.session?.title as string) || "").slice(0, 60) || "历史会话"
-      );
-      setMessages(nextMessages);
-      setAttachments([]);
-      setInput("");
+  function loadSession(id: string) { return sessionRecovery.load(id,recoveryContext()); }
 
-      const state = await recoveryJson(owner, `/api/agent?sessionId=${encodeURIComponent(id)}&since=0`);
-      if (!ownsRecovery(owner)) return;
-      if (typeof state?.running !== "boolean") throw new Error("Invalid recovery state");
-      setSessionsOpen(false);
-      if (state.running) {
-        owner.phase = "observing";
-        setBusy(true);
-        setRunning(true);
-        setMessages((previous) => ownsRecovery(owner) ? [
-          ...previous,
-          { role: "assistant", content: "正在恢复运行中的任务…", pending: true },
-        ] : previous);
-        void pollRecoveredRun(owner, Number(state.total) || 0);
-      } else {
-        owner.phase = "settled";
-        setBusy(false);
-        setRunning(false);
-      }
-    } catch {
-      recoveryFailed(owner);
-    } finally {
-      if (ownsRecovery(owner)) setSessionLoadingId("");
-    }
+  function renameSession(id: string, title: string): Promise<boolean> {
+    return sessionRecovery.catalog.rename(id, title, catalogContext());
   }
-
-  /** 运行中任务的恢复轮询:跟随 assistant 事件直到结束,再拉一次持久化结果。 */
-  async function pollRecoveredRun(owner: RecoveryOwner, since: number) {
-    let cursor = since;
-    try {
-      for (;;) {
-        await recoveryDelay(owner);
-        if (!ownsRecovery(owner)) return;
-        const data = await recoveryJson(owner, `/api/agent?sessionId=${encodeURIComponent(owner.id)}&since=${cursor}`);
-        if (!ownsRecovery(owner)) return;
-        if (typeof data?.running !== "boolean") throw new Error("Invalid recovery state");
-        cursor = Number.isInteger(data.total) && data.total >= 0 ? data.total : cursor;
-        const events = Array.isArray(data.events) ? data.events : [];
-        const lastAssistant = [...events]
-          .reverse()
-          .find((event) => event.type === "assistant");
-        if (lastAssistant?.data?.text) {
-          setMessages((prev) => {
-            if (!ownsRecovery(owner)) return prev;
-            const copy = [...prev];
-            copy[copy.length - 1] = {
-              role: "assistant",
-              content: String(lastAssistant.data.text),
-            };
-            return copy;
-          });
-        }
-        if (!data.running) break;
-      }
-      const data = await recoveryJson(owner, `/api/agent/session?id=${encodeURIComponent(owner.id)}`);
-      if (!ownsRecovery(owner)) return;
-      if (!Array.isArray(data?.session?.messages)) throw new Error("Invalid session history");
-      setMessages(previous => ownsRecovery(owner) ?
-          restoreMessages(
-            (data.session?.messages ?? []) as Msg[],
-            (data.session?.steps ?? []) as SavedStep[]
-          ) : previous);
-      owner.phase = "settled";
-      setBusy(false);
-      setRunning(false);
-      void refreshSessions();
-    } catch {
-      recoveryFailed(owner);
-    }
-  }
-
-  async function renameSession(id: string, title: string): Promise<boolean> {
-    const clean = title.trim().replace(/\s+/g, " ");
-    const scope = recoveryScopeRef.current;
-    if (!clean || !ownsAccount(scope)) return false;
-    try {
-      const headers = await authHeader();
-      if (!ownsAccount(scope)) return false;
-      const response = await fetch("/api/agent/session", {
-        method: "PATCH", headers: { "Content-Type": "application/json", ...headers },
-        body: JSON.stringify({ id, title: clean }),
-      });
-      if (!ownsAccount(scope)) {
-        await response.body?.cancel().catch(() => {});
-        return false;
-      }
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        if (ownsAccount(scope)) setError(data.error || "会话重命名失败");
-        return false;
-      }
-      await response.body?.cancel().catch(() => {});
-      if (!ownsAccount(scope)) return false;
-      setSessions(previous => ownsAccount(scope) ? previous.map(session =>
-        session.id === id ? { ...session, title: clean } : session) : previous);
-      if (id === sessionIdRef.current) setActiveTitle(clean);
-      return true;
-    } catch {
-      if (ownsAccount(scope)) setError("会话重命名失败");
-      return false;
-    }
-  }
-
-  async function removeSession(id: string) {
-    const scope = recoveryScopeRef.current;
-    if (!ownsAccount(scope)) return;
-    try {
-      const headers = await authHeader();
-      if (!ownsAccount(scope)) return;
-      const response = await fetch(`/api/agent/session?id=${encodeURIComponent(id)}`, { method: "DELETE", headers });
-      if (!ownsAccount(scope)) {
-        await response.body?.cancel().catch(() => {});
-        return;
-      }
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        if (ownsAccount(scope)) setError(data.error || "会话删除失败");
-        return;
-      }
-      await response.body?.cancel().catch(() => {});
-      if (!ownsAccount(scope)) return;
-      setSessions(previous => ownsAccount(scope) ? previous.filter(session => session.id !== id) : previous);
-      if (id === sessionIdRef.current) newConversation();
-    } catch {
-      if (ownsAccount(scope)) setError("会话删除失败");
-    }
-  }
-
-  /** Upload transport belongs to this attachment view, not to a background task. */
-  async function uploadOne(f: File, owner: AttachmentUploadOwner): Promise<string | null> {
-    if (!ownsAttachmentUpload(owner)) return null;
-    if (toolImageError(f,MAX_UPLOAD)) {setError("请选择12MB以内的PNG / JPG / WebP图片");return null;}
-    try {
-      const fd = new FormData();
-      fd.append("image", f);
-      fd.append("title", "Agent 上传");
-      fd.append("entry", "agent");
-      const headers = await authHeader();
-      if (!ownsAttachmentUpload(owner)) return null;
-      const res = await fetch("/api/artworks/add", {
-        method: "POST", headers, body: fd, signal: owner.controller.signal,
-      });
-      if (!ownsAttachmentUpload(owner)) {
-        await res.body?.cancel().catch(() => {});
-        return null;
-      }
-      const d = await res.json();
-      if (!ownsAttachmentUpload(owner)) return null;
-      if (!res.ok) throw new Error(d.error || "图片上传失败，请重试");
-      const url = d?.artwork?.image || d?.image || d?.url;
-      const id = d?.artwork?.id || d?.id || null;
-      if (url && id) artworkIdRef.current[imageKey(url)] = id;
-      return url || null;
-    } catch (caught) {
-      if (ownsAttachmentUpload(owner)) setError(caught instanceof Error ? caught.message : "图片上传失败，请重试");
-      return null;
-    }
-  }
-
-  async function uploadAttachments(files: File[]) {
-    const owner = beginAttachmentUpload();
-    if (!owner) return;
-    try {
-      const urls: string[] = [];
-      for (const file of files) {
-        const url = await uploadOne(file, owner);
-        if (!ownsAttachmentUpload(owner)) return;
-        if (url) urls.push(url);
-      }
-      if (urls.length) setAttachments(previous => ownsAccount(owner.scope) &&
-        owner.generation === attachmentGenerationRef.current ? [...previous, ...urls] : previous);
-    } finally {
-      finishAttachmentUpload(owner);
-    }
+  function removeSession(id: string) { return sessionRecovery.catalog.remove(id, catalogContext()); }
+  function uploadAttachments(files: File[]) {
+    return sessionRecovery.attachments.append(files, { ...attachmentContext(), setAttachments });
   }
 
   // 对话输入框 Ctrl+V 截图 → 上传为附件(带 [商品图] 上下文)
@@ -891,280 +472,32 @@ export function WorkbenchClient() {
     void uploadAttachments(imgs);
   });
 
-  async function send(text?: string, attachmentUrls?: string[], onAccepted?: () => void) {
-    if (!can("agent")) return;
-    const content = (text ?? input).trim();
-    if (!content || busy || uploading || recoveryUnavailable ||
-        (recoveryRef.current && recoveryRef.current.phase !== "settled")) return;
-    const scope = recoveryScopeRef.current;
-    const entryGeneration = sessionLoadRef.current;
-    if (!scope?.active) return;
-    // 未登录:先确认登录态再弹登录框,避免发出去吃 401
-    if (!user) {
-      if (!ready) return;
-      const session = await fetch("/api/auth/session")
-        .then((response) => response.json())
-        .catch(() => null);
-      if (!session?.user) {
-        openAuth("sign-in");
-        return;
-      }
-    }
-    if (!scope.active || recoveryScopeRef.current !== scope || entryGeneration !== sessionLoadRef.current) return;
-    cancelRecovery();
-    const generation = sessionLoadRef.current;
-    const current = () => scope.active && recoveryScopeRef.current === scope && sessionLoadRef.current === generation;
-    let runSessionId = sessionIdRef.current;
-    setError(null);
-    const urls = attachmentUrls ?? attachments;
-    const parts = [content, ...urls.map((u) => `[商品图] ${u}`)];
-    const userMsg: Msg = { role: "user", content: parts.join("\n") };
-    const history = messages
-      .filter((m) => !m.pending && m.content)
-      .map((m) => ({ role: m.role, content: m.content }));
-    const runSteps: { tool: string; summary: string }[] = [];
-    setMessages((prev) => [
-      ...prev,
-      userMsg,
-      { role: "assistant", content: "", pending: true },
-    ]);
-    setInput("");
-    setAttachments([]);
-    setBusy(true);
-    setRunning(true);
-    // The prompt is now retained in the conversation. A rejected entry must not
-    // consume its caller's draft (this is local admission, not a server receipt).
-    onAccepted?.();
-
-    const controller = new AbortController();
-    let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
-    try {
-      streamAbortRef.current = controller;
-      const headers = await authHeader();
-      if (!current()) return;
-      const res = await fetch("/api/agent", {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          ...headers,
-        },
-        body: JSON.stringify({
-          message: userMsg.content,
-          skill: imageSkill ? { id: imageSkill.id, revision: imageSkill.revision } : null,
-          sessionId: runSessionId || undefined,
-          history,
-          // 视觉输入:服务端按模型自动判定,支持时随消息直喂模型
-          images: urls,
-        }),
-        signal: controller.signal,
-      });
-      if (!res.ok || !res.body) {
-        const d = await res.json().catch(() => ({}));
-        if (!current()) return;
-        throw new Error(d.error || "Agent 执行失败");
-      }
-      reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buf = "";
-      let reply = "";
-      let streamed = "";
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        // Do not cancel this SSE from observer cleanup: cancellation has an
-        // existing server meaning. Detached sends drain without changing UI or
-        // saving with a different account/session's identity.
-        if (!current()) continue;
-        buf += decoder.decode(value, { stream: true });
-        const chunks = buf.split("\n\n");
-        buf = chunks.pop() ?? "";
-        for (const chunk of chunks) {
-          const evLine = chunk.split("\n").find((l) => l.startsWith("event: "));
-          const dataLine = chunk.split("\n").find((l) => l.startsWith("data: "));
-          if (!evLine || !dataLine) continue;
-          const type = evLine.slice(7).trim();
-          const data = JSON.parse(dataLine.slice(6)) as Record<string, unknown>;
-          if (type === "open" && typeof data.sessionId === "string") {
-            runSessionId = data.sessionId;
-            sessionIdRef.current = data.sessionId;
-          } else if (type === "delta") {
-            // 流式正文:逐段追加,工具状态文案不再覆盖已流出的内容
-            streamed += (data.text as string) || "";
-            setMessages((prev) => {
-              if (!current()) return prev;
-              const copy = [...prev];
-              const last = copy[copy.length - 1];
-              if (last?.pending) {
-                copy[copy.length - 1] = { ...last, content: streamed };
-              }
-              return copy;
-            });
-          } else if (type === "plan") {
-            const items = Array.isArray(data.items) ? data.items.map(String) : [];
-            runSteps.push({ tool: "任务计划", summary: items.join(" → ") });
-            setMessages((prev) => {
-              if (!current()) return prev;
-              const copy = [...prev];
-              const last = copy[copy.length - 1];
-              if (last?.pending) {
-                copy[copy.length - 1] = { ...last, steps: [...runSteps] };
-              }
-              return copy;
-            });
-          } else if (type === "tool_start") {
-            setMessages((prev) => {
-              if (!current()) return prev;
-              const copy = [...prev];
-              const last = copy[copy.length - 1];
-              if (last?.pending && !streamed) {
-                copy[copy.length - 1] = {
-                  ...last,
-                  content: `🔧 正在调用 ${data.tool || "工具"}…`,
-                };
-              }
-              return copy;
-            });
-          } else if (type === "tool_end") {
-            invalidateBrowserData(user?.email);
-            const step = {
-              tool: (data.tool as string) || "",
-              summary: (data.summary as string) || "执行完成",
-            };
-            runSteps.push(step);
-            setMessages((prev) => {
-              if (!current()) return prev;
-              const copy = [...prev];
-              const last = copy[copy.length - 1];
-              if (last?.pending) {
-                copy[copy.length - 1] = {
-                  ...last,
-                  ...(streamed
-                    ? {}
-                    : { content: `✓ ${step.tool} ${step.summary}` }),
-                  steps: [...(last.steps ?? []), step],
-                };
-              }
-              return copy;
-            });
-          } else if (type === "final") {
-            reply = (data.reply as string) || streamed;
-          } else if (type === "error") {
-            throw new Error((data.message as string) || "执行失败");
-          }
-        }
-      }
-      if (!current()) return;
-      setMessages((prev) => {
-        if (!current()) return prev;
-        const copy = [...prev];
-        const last = copy[copy.length - 1];
-        copy[copy.length - 1] = {
-          role: "assistant",
-          content: reply || "(无回复)",
-          steps: last?.steps ?? runSteps,
-        };
-        return copy;
-      });
-      // 持久化
-      const saveHeaders = await authHeader();
-      if (!current()) return;
-      void fetch("/api/agent/session", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...saveHeaders,
-        },
-        body: JSON.stringify({
-          id: runSessionId,
-          title: content.slice(0, 40),
-          messages: [
-            ...history,
-            { role: "user", content: userMsg.content },
-            { role: "assistant", content: reply || "(无回复)" },
-          ],
-        }),
-      }).catch(() => {});
-    } catch (e) {
-      if (!current()) return;
-      if ((e as { name?: string })?.name !== "AbortError") {
-        setError(e instanceof Error ? e.message : "Agent 执行失败");
-      }
-      setMessages((prev) => {
-        if (!current()) return prev;
-        const copy = [...prev];
-        copy[copy.length - 1] = { role: "assistant", content: "(执行失败)" };
-        return copy;
-      });
-    } finally {
-      reader?.releaseLock();
-      if (streamAbortRef.current === controller) streamAbortRef.current = null;
-      if (current()) {
-        setBusy(false);
-        setRunning(false);
-        void refreshSessions();
-      }
-    }
+  function sendContext(): WorkbenchSendContext {
+    return { ...recoveryContext(), headers: authHeader,
+      allowed: can("agent"), authenticated: Boolean(user), uploading,
+      input, attachments, messages,
+      skill: imageSkill ? { id: imageSkill.id, revision: imageSkill.revision } : null,
+      requestSignIn: () => openAuth("sign-in"),
+      invalidateAccount: () => invalidateBrowserData(user?.email) };
   }
 
-  async function stopRun() {
-    if (!sessionIdRef.current) return;
-    const id = sessionIdRef.current;
-    const scope = recoveryScopeRef.current;
-    const previousRecovery = recoveryRef.current;
-    cancelRecovery();
-    const recovery: RecoveryOwner | null = previousRecovery ? {
-      ...previousRecovery, generation: sessionLoadRef.current,
-      controller: new AbortController(), phase: "unavailable",
-    } : null;
-    if (recovery) {
-      recoveryRef.current = recovery;
-    }
-    const generation = sessionLoadRef.current;
-    const headers = await authHeader();
-    if (!scope?.active || scope !== recoveryScopeRef.current || generation !== sessionLoadRef.current) return;
-    const res = await fetch(
-      `/api/agent?sessionId=${encodeURIComponent(id)}`,
-      { method: "DELETE", headers }
-    ).catch(() => null);
-    if (!scope.active || scope !== recoveryScopeRef.current || generation !== sessionLoadRef.current) return;
-    if (!previousRecovery) streamAbortRef.current?.abort();
-    setRunning(false);
-    setBusy(false);
-    setMessages(previous => previous.map(message => message.pending ? {
-      ...message, pending: false, ...(!previousRecovery ? { content: "(执行失败)" } : {}),
-    } : message));
-    if (recovery) recovery.phase = res?.ok ? "settled" : "unavailable";
-    setRecoveryUnavailable(!res?.ok);
-    if (!res?.ok) setError("停止任务失败，请重试");
+  function send(text?: string, attachmentUrls?: string[], onAccepted?: () => void) {
+    return sessionRecovery.send(sendContext(), text, attachmentUrls, onAccepted);
   }
 
-  async function sendInterject() {
-    const text = interject.trim();
-    if (!text || !running || !sessionIdRef.current) return;
-    const id = sessionIdRef.current;
-    const scope = recoveryScopeRef.current;
-    const generation = sessionLoadRef.current;
-    const current = () => scope?.active && scope === recoveryScopeRef.current && generation === sessionLoadRef.current;
-    const headers = await authHeader();
-    if (!current()) return;
-    await fetch("/api/agent", {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        ...headers,
-      },
-      body: JSON.stringify({
-        sessionId: id,
-        message: text,
-      }),
-    }).catch(() => {});
-    if (current()) setInterject("");
+  function stopRun() { return sessionRecovery.stop(recoveryContext()); }
+
+  function sendInterject() {
+    return sessionRecovery.interject(interject, {
+      running, sessionId: () => sessionIdRef.current, headers: authHeader,
+      request: (input, init) => fetch(input, init), clear: () => setInterject(""),
+    });
   }
 
   function newConversation() {
-    if (running && !recoveryRef.current) return;
+    if (running && !sessionRecovery.hasObserver()) return;
     resetAttachmentUploads();
-    cancelRecovery();
+    sessionRecovery.cancel();
     setSessionLoadingId("");
     setRecoveryUnavailable(false);
     setBusy(false);
@@ -1190,13 +523,13 @@ export function WorkbenchClient() {
     queueMicrotask(() => {
       if (!active || bootstrapRef.current) return;
       bootstrapRef.current = true;
-      const scope = recoveryScopeRef.current;
+      const scope = sessionRecovery.accountScope;
       let accepted = false;
       void send(prompt, undefined, () => {
         accepted = true;
         window.history.replaceState(null, "", window.location.pathname);
       }).finally(() => {
-        if (!accepted && recoveryScopeRef.current === scope) bootstrapRef.current = false;
+        if (!accepted && sessionRecovery.accountScope === scope) bootstrapRef.current = false;
       });
     });
     return () => { active = false; };
@@ -1248,28 +581,21 @@ export function WorkbenchClient() {
     if (!can("agent")) return;
     const text = composerText.trim();
     if (!text || composerSubmitting || busy) return;
-    const scope = recoveryScopeRef.current;
-    const generation = sessionLoadRef.current;
-    const current = () => scope?.active && recoveryScopeRef.current === scope && sessionLoadRef.current === generation;
+    const scope = sessionRecovery.accountScope;
+    const generation = sessionRecovery.generation;
+    const current = () => scope?.active && sessionRecovery.accountScope === scope && sessionRecovery.generation === generation;
     setComposerError(null);
     setComposerSubmitting(true);
-    let uploadOwner: AttachmentUploadOwner | null = null;
     try {
       const urls: string[] = [];
       if (composerFiles.length) {
-        uploadOwner = beginAttachmentUpload();
-        if (!uploadOwner) return;
-        for (const f of composerFiles) {
-          const u = await uploadOne(f, uploadOwner);
-          if (!current()) return;
-          if (!u) {
-            setComposerError(L("参考图上传失败，请重试", "Reference upload failed; retry"));
-            return;
-          }
-          urls.push(u);
+        const uploaded = await sessionRecovery.attachments.upload(composerFiles, attachmentContext(), true);
+        if (!current() || !uploaded.current()) return;
+        if (!uploaded.complete) {
+          setComposerError(L("参考图上传失败，请重试", "Reference upload failed; retry"));
+          return;
         }
-        finishAttachmentUpload(uploadOwner);
-        uploadOwner = null;
+        urls.push(...uploaded.urls);
       }
       if (!current()) return;
       let accepted = false;
@@ -1284,8 +610,7 @@ export function WorkbenchClient() {
       });
       if (!accepted && current()) setComposerError("暂未发送，请稍后重试");
     } finally {
-      if (uploadOwner) finishAttachmentUpload(uploadOwner);
-      if (scope?.active && recoveryScopeRef.current === scope) {
+      if (scope?.active && sessionRecovery.accountScope === scope) {
         setComposerSubmitting(false);
       }
     }
@@ -1323,7 +648,7 @@ export function WorkbenchClient() {
           <button
             type="button"
             onClick={newConversation}
-            disabled={running && !recoveryRef.current}
+            disabled={running && !sessionRecovery.hasObserver()}
             className="inline-flex h-9 items-center gap-1.5 rounded-full px-3 text-[12.5px] font-medium text-c-text2 transition-colors hover:bg-secondary hover:text-c-text disabled:opacity-50"
           >
             <MessageSquarePlus className="h-4 w-4" />
@@ -1539,7 +864,7 @@ export function WorkbenchClient() {
           sessions={sessions}
           loading={sessionsLoading}
           activeSessionId={sessionIdRef.current}
-          busy={busy && !recoveryRef.current}
+          busy={busy && !sessionRecovery.hasObserver()}
           loadingId={sessionLoadingId}
           onLoad={(id) => void loadSession(id)}
           onRename={renameSession}
@@ -1830,7 +1155,7 @@ export function WorkbenchClient() {
         sessions={sessions}
         loading={sessionsLoading}
         activeSessionId={sessionIdRef.current}
-        busy={busy && !recoveryRef.current}
+        busy={busy && !sessionRecovery.hasObserver()}
         loadingId={sessionLoadingId}
         onLoad={(id) => void loadSession(id)}
         onRename={renameSession}
