@@ -6,12 +6,20 @@ import {ensureSchema} from "@/lib/persistence/schema";
 import { requireAdmin, resolveUserEmail } from '@/lib/admin-auth';
 import { sameSiteBillingMutation, PRIVATE_HEADERS } from '@/lib/billing/access';
 import { digest, canonical, signCommand, operationSchema, pollSchema, ackSchema, commandCapability, type FleetOperation, type FleetActor } from './contracts';
+import {FLEET_BUSINESS_QUERY_MAX_AGE_MS} from './business-contracts';
+import {signFleetBusinessSupport} from './business-support';
 import type { PoolClient } from 'pg';
 import { rateLimit } from '@/lib/rate-limit';
 import { checkRateLimit, rateLimitFailureResponse } from "@/lib/rate-limit-http";
 import { clientIp } from '@/lib/ip';
 
 export class FleetError extends Error { constructor(message: string, readonly status = 400) { super(message); } }
+export const FLEET_BUSINESS_ADMISSION_HOLD='跨站业务查询仍处于兼容准备阶段';
+/** Closed until a real producer/legacy-consumer release admission is implemented.
+ * No environment flag, heartbeat or caller authority opens this write boundary. */
+export function requireFleetBusinessAdmission(operation:FleetOperation){
+  if(operation.type==='business.query')throw new FleetError(FLEET_BUSINESS_ADMISSION_HOLD,503);
+}
 export const fleetJson = (data: unknown, status = 200) => Response.json(data, { status, headers: PRIVATE_HEADERS });
 export async function fleetAdmin(request: Request, mutation = false):Promise<FleetActor|Response> {
   if (process.env.FLEET_CONTROL_ENABLED !== '1') return fleetJson({ error: '中央控制台未启用' }, 404);
@@ -101,16 +109,33 @@ export async function changeInstance(actor: string, instanceId: string, action: 
     await tx.query('INSERT INTO app_fleet_audit(instance_id,actor,action) VALUES($1,$2,$3)',[instanceId,actor,action]); await tx.query('COMMIT'); return token ? { token } : { ok:true };
   } catch(error) { await tx.query('ROLLBACK'); throw error; } finally { tx.release(); }
 }
+/** Return actor-scoped Fleet control history and registry metadata; exclude every business-query row before the command-history limit. */
 export async function fleetSnapshot(actor:FleetActor={actor:'internal',root:true}) {
   await ensureFleetSchema();
   const scope=actor.root?null:actor.actor;
   const [instances,commands,audit,grants] = await Promise.all([
     getPool().query(`SELECT i.id,i.name,i.kind,i.enabled,i.last_seen,i.status,i.created_at,COALESCE(g.allowed,'[]') AS capabilities FROM app_fleet_instances i LEFT JOIN app_fleet_grants g ON g.instance_id=i.id AND g.email=$1 WHERE $1::text IS NULL OR (g.allowed ? 'read' AND (g.expires_at IS NULL OR g.expires_at>now())) ORDER BY i.created_at LIMIT 200`,[scope]),
-    getPool().query(`SELECT c.id,c.instance_id,c.actor,c.operation,c.state,c.result,c.created_at,c.finished_at FROM app_fleet_commands c WHERE $1::text IS NULL OR EXISTS(SELECT 1 FROM app_fleet_grants g WHERE g.instance_id=c.instance_id AND g.email=$1 AND g.allowed ? 'read' AND ((c.operation->>'type') NOT IN ('creations.list','creations.media') OR g.allowed ? 'creations') AND (g.expires_at IS NULL OR g.expires_at>now())) ORDER BY c.created_at DESC LIMIT 100`,[scope]),
+    // Business payloads have a dedicated scoped getter. Exclude their rows
+    // before LIMIT so frequent dashboard reads cannot evict control history.
+    getPool().query(`SELECT c.id,c.instance_id,c.actor,c.operation,c.state,c.result,c.created_at,c.finished_at FROM app_fleet_commands c WHERE c.operation->>'type'<>'business.query' AND ($1::text IS NULL OR EXISTS(SELECT 1 FROM app_fleet_grants g WHERE g.instance_id=c.instance_id AND g.email=$1 AND g.allowed ? 'read' AND ((c.operation->>'type') NOT IN ('creations.list','creations.media') OR g.allowed ? 'creations') AND (g.expires_at IS NULL OR g.expires_at>now()))) ORDER BY c.created_at DESC LIMIT 100`,[scope]),
     getPool().query(`SELECT a.instance_id,a.actor,a.action,a.command_id,a.created_at FROM app_fleet_audit a WHERE $1::text IS NULL OR EXISTS(SELECT 1 FROM app_fleet_grants g WHERE g.instance_id=a.instance_id AND g.email=$1 AND g.allowed ? 'read' AND (g.expires_at IS NULL OR g.expires_at>now())) ORDER BY a.id DESC LIMIT 100`,[scope]),
     actor.root?getPool().query('SELECT instance_id,email,allowed,version,expires_at FROM app_fleet_grants ORDER BY instance_id,email LIMIT 500'):Promise.resolve({rows:[]}),
   ]);
   return { instances:instances.rows, commands:commands.rows, audit:audit.rows, grants:grants.rows, root:actor.root, now:Date.now() };
+}
+/** Narrow read-side boundary for central business aggregation; no credential
+ * columns or unrelated command results leave the fleet owner. */
+export async function fleetBusinessInstances(actor:FleetActor){
+  await ensureFleetSchema();
+  return (await getPool().query(`SELECT i.id,i.name,i.kind,i.enabled,i.last_seen,i.status FROM app_fleet_instances i WHERE $1::text IS NULL OR EXISTS(SELECT 1 FROM app_fleet_grants g JOIN app_users u ON u.email=g.email WHERE g.instance_id=i.id AND g.email=$1 AND NOT u.banned AND g.allowed ? 'read' AND g.allowed ? 'business' AND (g.expires_at IS NULL OR g.expires_at>now())) ORDER BY i.created_at,i.id LIMIT 200`,[actor.root?null:actor.actor])).rows as {id:string;name:string;kind:'main'|'enterprise';enabled:boolean;last_seen:Date|null;status:Record<string,unknown>}[];
+}
+/** Recheck the enabled instance and current business grant before returning only the requested source-scoped business receipt. */
+export async function fleetReadCommand(actor:FleetActor,instanceId:string,id:string){
+  z.string().uuid().parse(instanceId);z.string().uuid().parse(id);await ensureFleetSchema();
+  const pool=getPool();const instance=(await pool.query('SELECT enabled FROM app_fleet_instances WHERE id=$1',[instanceId])).rows[0];
+  if(!instance||!instance.enabled)throw new FleetError('实例未启用',409);
+  await assertInstanceAccess(pool,actor,instanceId,'business');
+  return (await pool.query(`SELECT c.id,c.instance_id,c.operation,c.state,c.result,c.created_at,c.finished_at FROM app_fleet_commands c JOIN app_fleet_instances i ON i.id=c.instance_id AND i.enabled WHERE c.id=$1 AND c.instance_id=$2 AND c.operation->>'type'='business.query' AND ($3::text IS NULL OR EXISTS(SELECT 1 FROM app_fleet_grants g JOIN app_users u ON u.email=g.email WHERE g.instance_id=c.instance_id AND g.email=$3 AND NOT u.banned AND g.allowed ? 'read' AND g.allowed ? 'business' AND (g.expires_at IS NULL OR g.expires_at>now())))`,[id,instanceId,actor.root?null:actor.actor])).rows[0]??null;
 }
 export async function saveGrant(actor:string,command:{instanceId:string;email:string;allowed:string[];expectedVersion:number;expiresAt:string|null}) {
   await ensureFleetSchema();const tx=await getPool().connect();
@@ -124,8 +149,13 @@ export async function saveGrant(actor:string,command:{instanceId:string;email:st
     await tx.query('INSERT INTO app_fleet_audit(instance_id,actor,action) VALUES($1,$2,$3)',[command.instanceId,actor,'grant:'+command.email+':'+command.allowed.join(',')]);await tx.query('COMMIT');return {version:command.expectedVersion+1};
   }catch(error){await tx.query('ROLLBACK');throw error;}finally{tx.release();}
 }
+/** Validate and authorize a command under its stable ID, preserving fingerprint-based idempotency in one transaction.
+ * Reject business queries at the hard admission boundary before schema initialization or database I/O.
+ */
 export async function enqueueCommand(actor: string, instanceId: string, id: string, raw: FleetOperation,authority:FleetActor={actor,root:true}) {
-  await ensureFleetSchema(); const operation = operationSchema.parse(raw), fingerprint = digest(canonical({instanceId,actor,operation}));
+  const operation=operationSchema.parse(raw);
+  requireFleetBusinessAdmission(operation);
+  await ensureFleetSchema(); const fingerprint = digest(canonical({instanceId,actor,operation}));
   const tx = await getPool().connect();
   try { await tx.query('BEGIN'); await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))',[id]);
     const instance = await tx.query('SELECT enabled FROM app_fleet_instances WHERE id=$1 FOR UPDATE',[instanceId]); if(!instance.rowCount || !instance.rows[0].enabled) throw new FleetError('实例未启用',409);
@@ -136,6 +166,9 @@ export async function enqueueCommand(actor: string, instanceId: string, id: stri
     await tx.query("INSERT INTO app_fleet_audit(instance_id,actor,action,command_id) VALUES($1,$2,'enqueue',$3)",[instanceId,actor,id]); await tx.query('COMMIT'); return {id,state:'queued',replayed:false};
   } catch(error) { await tx.query('ROLLBACK'); throw error; } finally {tx.release();}
 }
+/** Authenticate poll/ACK per instance. Controls precede fresh business reads;
+ * each class retains FIFO and active control leases. Read expiry filters only
+ * dispatch candidates; durable state and original ACK lease checks stay intact. */
 export async function connectorExchange(request: Request, ack = false) {
   if(process.env.FLEET_CONTROL_ENABLED!=='1') throw new FleetError('实例连接未启用',404);
   if(!(await rateLimit('fleet-connect-ip:'+(clientIp(request)||'local'),600,60000)))throw new FleetError('连接过于频繁',429);
@@ -146,7 +179,7 @@ export async function connectorExchange(request: Request, ack = false) {
   const token = request.headers.get('authorization')?.match(/^Bearer ([A-Za-z0-9_-]{43})$/)?.[1]; if(!token) throw new FleetError('实例认证失败',401);
   await ensureFleetSchema();
   const tx = await getPool().connect();
-  try { await tx.query('BEGIN'); const instance = await tx.query('SELECT token_hash,enabled FROM app_fleet_instances WHERE id=$1 FOR UPDATE',[instanceId]);
+  try { await tx.query('BEGIN'); const instance = await tx.query('SELECT token_hash,enabled,status FROM app_fleet_instances WHERE id=$1 FOR UPDATE',[instanceId]);
     const actual = digest(token); if(!instance.rowCount || !instance.rows[0].enabled || !timingSafeEqual(Buffer.from(actual),Buffer.from(instance.rows[0].token_hash))) throw new FleetError('实例认证失败',401);
     const body = ack ? ackSchema.parse(await limitedJson(request)) : pollSchema.parse(await limitedJson(request,12000));
     if(Math.abs(Date.now()-body.timestamp)>120000) throw new FleetError('连接时间失效',409);
@@ -162,8 +195,25 @@ export async function connectorExchange(request: Request, ack = false) {
       await tx.query('COMMIT'); return {ok:true};
     }
     if(!('status' in body)) throw new FleetError('连接格式无效');
-    await tx.query('UPDATE app_fleet_instances SET last_seen=now(),status=$2 WHERE id=$1',[instanceId,JSON.stringify(body.status)]);
-    const pending = await tx.query("SELECT * FROM app_fleet_commands WHERE instance_id=$1 AND state IN ('queued','leased') ORDER BY created_at,id LIMIT 1 FOR UPDATE",[instanceId]);
+    const businessSupport=signFleetBusinessSupport(instanceId,body.nonce,token);
+    // A compatibility probe is not a downgrade. Carry forward only an already
+    // advertised capability for the same source/version, never other stale data.
+    // Dispatch still depends on this request's actual status below.
+    const previous=instance.rows[0].status;
+    const retainBusiness=body.status.business===undefined&&request.headers.get('x-naumi-fleet-business-probe')==='1'
+      &&previous?.business===1&&previous.source===body.status.source&&previous.version===body.status.version;
+    const storedStatus=retainBusiness?{...body.status,business:1}:body.status;
+    await tx.query('UPDATE app_fleet_instances SET last_seen=now(),status=$2 WHERE id=$1',[instanceId,JSON.stringify(storedStatus)]);
+    // Match datetime()'s UTC spelling (required seconds, optional fraction),
+    // then let PostgreSQL validate its calendar/range before entering the cast.
+    const businessAsOfFormat='^[0-9]{4}-[0-9]{2}-[0-9]{2}T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]+)?Z$';
+    // CASE protects the cast even when PostgreSQL reorders other predicates.
+    // Retained malformed rows stay intact and cannot block control or read dispatch.
+    const pending = await tx.query(`SELECT * FROM app_fleet_commands WHERE instance_id=$1 AND state IN ('queued','leased')
+      AND (operation->>'type'<>'business.query' OR CASE
+        WHEN $2::boolean AND (operation->>'asOf') ~ $4::text AND pg_input_is_valid(operation->>'asOf','timestamp with time zone')
+        THEN (operation->>'asOf')::timestamptz > $3::timestamptz ELSE false END)
+      ORDER BY (COALESCE(operation->>'type','')='business.query'),created_at,id LIMIT 1 FOR UPDATE`,[instanceId,body.status.business===1,new Date(Date.now()-FLEET_BUSINESS_QUERY_MAX_AGE_MS).toISOString(),businessAsOfFormat]);
     let command = null, leaseId: string | null = null;
     const row = pending.rows[0];
     if(row&&!row.requested_by_root&&(row.state==='queued'||new Date(row.leased_until).getTime()<=Date.now())){
@@ -178,6 +228,6 @@ export async function connectorExchange(request: Request, ack = false) {
       await tx.query("UPDATE app_fleet_commands SET state='leased',lease_id=$2,leased_until=$3 WHERE id=$1",[row.id,leaseId,new Date(expiresAt)]);
       command=signCommand({id:row.id,instanceId,actor:row.actor,expiresAt,operation:row.operation},token);
     }
-    await tx.query('COMMIT'); return {command,leaseId};
+    await tx.query('COMMIT'); return {command,leaseId,businessSupport};
   } catch(error) {await tx.query('ROLLBACK');throw error;} finally {tx.release();}
 }

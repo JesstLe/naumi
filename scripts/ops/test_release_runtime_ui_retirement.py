@@ -47,10 +47,11 @@ class RuntimeFixture(unittest.TestCase):
         with patch.object(r,'require_lock'),patch.object(r,'fresh_gateway_and_static'),patch.object(r.time,'sleep'),patch.object(r.time,'monotonic_ns',side_effect=[0,31_000_000_000]):
             return r.retire_one(tx,self.m,self.root,lambda *a:copy.deepcopy(self.obs),lambda *a:copy.deepcopy(self.proof),lambda *a:self.report_desc,lambda *a:copy.deepcopy(self.obs))
     def test_single_exact_cid_stop_and_restore_original_policy(self):
+        """Verify one exact-CID stop/restore preserves restart policy without a gateway reload."""
         tx=self.tx();result=self.retire(tx);self.assertTrue(result['stopped']);self.assertEqual([c for c in tx.commands if c[:2]==['docker','stop']],[['docker','stop','--time=-1',self.pin['id']]])
         intent=json.loads((self.root/r.journal_name(self.m,'intent')).read_text())
-        with patch.object(r,'require_lock'):
-            restored=r.restore_one(tx,self.m,intent,lambda *a:{'health':True,'staticHashVerified':True,'version':self.m['expectedVersion'],'commit':self.m['expectedCommit']},required_available_mib=2048)
+        with patch.object(r,'require_lock'),patch.object(r.old,'assert_legacy_fleet_rollback_clear',return_value={'businessRows':0}):
+            restored=r.restore_one(tx,self.m,intent,lambda *a:{'health':True,'staticHashVerified':True,'version':self.m['expectedVersion'],'commit':self.m['expectedCommit']},required_available_mib=2048,database_identity={'fixture':'mocked-guard-only'})
         self.assertTrue(restored['restored']);self.assertEqual(tx.row['HostConfig']['RestartPolicy'],intent['originalRestartPolicy']);self.assertFalse(restored['originalGatewayReloaded']);self.assertIsNone(restored['ordinaryDrainReceipt'])
     def test_fixed_host_port_image_boot_rejected(self):
         for key,value in [('target','47.105.59.142'),('port',13012)]:
@@ -93,23 +94,25 @@ class RuntimeFixture(unittest.TestCase):
             with self.assertRaisesRegex(r.Hold,'POST_STOP_TASK'):r.retire_one(tx,self.m,self.root,lambda *a:copy.deepcopy(self.obs),proof,lambda *a:self.report_desc,lambda *a:copy.deepcopy(self.obs))
         self.assertTrue((self.root/r.journal_name(self.m,'intent')).is_file());self.assertFalse(tx.row['State']['Running'])
     def test_on_failure_policy_exact_and_start_unknown_no_repeat(self):
+        """Verify an unknown original-CID start is journaled and never retried on reconciliation."""
         tx=self.tx();tx.row['HostConfig']['RestartPolicy']={'Name':'on-failure','MaximumRetryCount':3};self.retire(tx)
         intent=json.loads((self.root/r.journal_name(self.m,'intent')).read_text());tx.fail='start'
-        with patch.object(r,'require_lock'):
-            with self.assertRaisesRegex(r.Hold,'RESTORE_OUTCOME_UNKNOWN'):r.restore_one(tx,self.m,intent,lambda *a:{},required_available_mib=2048)
-            with self.assertRaisesRegex(r.Hold,'EXPLICIT_RECONCILIATION'):r.restore_one(tx,self.m,intent,lambda *a:{},required_available_mib=2048)
+        with patch.object(r,'require_lock'),patch.object(r.old,'assert_legacy_fleet_rollback_clear',return_value={'businessRows':0}):
+            with self.assertRaisesRegex(r.Hold,'RESTORE_OUTCOME_UNKNOWN'):r.restore_one(tx,self.m,intent,lambda *a:{},required_available_mib=2048,database_identity={'fixture':'mocked-guard-only'})
+            with self.assertRaisesRegex(r.Hold,'EXPLICIT_RECONCILIATION'):r.restore_one(tx,self.m,intent,lambda *a:{},required_available_mib=2048,database_identity={'fixture':'mocked-guard-only'})
         self.assertEqual(sum(c[:2]==['docker','start'] for c in tx.commands),1)
     def test_restore_runtime_endpoint_change_allowed_config_change_rejected(self):
+        """Allow runtime endpoint allocation drift but reject a changed network configuration."""
         for changed in (False,True):
             tx=self.tx();self.retire(tx)
             intent=json.loads((self.root/r.journal_name(self.m,'intent')).read_text())
             tx.row['NetworkSettings']['Networks']['fixture']['EndpointID']='new-runtime-endpoint'
             if changed:tx.row['NetworkSettings']['Networks']['fixture']['Aliases']=['changed-alias']
-            with patch.object(r,'require_lock'):
+            with patch.object(r,'require_lock'),patch.object(r.old,'assert_legacy_fleet_rollback_clear',return_value={'businessRows':0}):
                 if changed:
-                    with self.assertRaisesRegex(r.Hold,'NETWORK_CONFIGURATION'):r.restore_one(tx,self.m,intent,lambda *a:{},required_available_mib=1024)
+                    with self.assertRaisesRegex(r.Hold,'NETWORK_CONFIGURATION'):r.restore_one(tx,self.m,intent,lambda *a:{},required_available_mib=1024,database_identity={'fixture':'mocked-guard-only'})
                 else:
-                    result=r.restore_one(tx,self.m,intent,lambda *a:{'health':True,'staticHashVerified':True,'version':self.m['expectedVersion'],'commit':self.m['expectedCommit']},required_available_mib=1024)
+                    result=r.restore_one(tx,self.m,intent,lambda *a:{'health':True,'staticHashVerified':True,'version':self.m['expectedVersion'],'commit':self.m['expectedCommit']},required_available_mib=1024,database_identity={'fixture':'mocked-guard-only'})
                     self.assertTrue(result['networkRuntimeAllocationsChanged'])
             for path in self.root.glob('runtime-ui-*.json'):path.unlink()
 
@@ -136,10 +139,11 @@ class RuntimeFixture(unittest.TestCase):
             for path in self.root.glob('runtime-ui-*.json'):path.unlink()
 
     def test_original_on_failure_policy_successfully_restored(self):
+        """Verify successful restoration reinstates the exact on-failure retry-count policy."""
         tx=self.tx();tx.row['HostConfig']['RestartPolicy']={'Name':'on-failure','MaximumRetryCount':3};self.retire(tx)
         intent=json.loads((self.root/r.journal_name(self.m,'intent')).read_text())
-        with patch.object(r,'require_lock'):
-            r.restore_one(tx,self.m,intent,lambda *a:{'health':True,'staticHashVerified':True,'version':self.m['expectedVersion'],'commit':self.m['expectedCommit']},required_available_mib=1024)
+        with patch.object(r,'require_lock'),patch.object(r.old,'assert_legacy_fleet_rollback_clear',return_value={'businessRows':0}):
+            r.restore_one(tx,self.m,intent,lambda *a:{'health':True,'staticHashVerified':True,'version':self.m['expectedVersion'],'commit':self.m['expectedCommit']},required_available_mib=1024,database_identity={'fixture':'mocked-guard-only'})
         self.assertEqual(tx.row['HostConfig']['RestartPolicy'],{'Name':'on-failure','MaximumRetryCount':3})
 
     @unittest.skipUnless(__import__('os').name=='posix','real HostTransaction kernel locks require Linux')

@@ -14,6 +14,10 @@ import os
 from pathlib import Path
 import re
 import time
+try:
+    from .release_fleet_business_guard import assert_legacy_fleet_rollback_clear
+except ImportError:
+    from release_fleet_business_guard import assert_legacy_fleet_rollback_clear
 
 
 class RetirementHold(ValueError): pass
@@ -248,12 +252,16 @@ def resources(tx):
     return {key+'KiB':rows[key] for key in ('MemAvailable','SwapFree','SwapTotal')}|{'swapIsRamBudget':False}
 
 
-def restore_one(tx,manifest,intent,probe,*,required_available_mib):
+def restore_one(tx,manifest,intent,probe,*,required_available_mib,database_identity=None):
     """Never stops candidates automatically. Caller must first prove their empty
     ownership, stop only this release's candidates, then call this single-CID op.
     """
     require_binding_format(manifest);require_binding_format(intent)
     require_lock(tx,manifest);cid=manifest['identity']['id']
+    if manifest['target']=='103.30.76.93':
+        require(database_identity is not None,'FLEET_ROLLBACK_DATABASE_IDENTITY_REQUIRED')
+        try:assert_legacy_fleet_rollback_clear(tx,database_identity)
+        except Exception:raise RetirementHold('FLEET_LEGACY_ROLLBACK_BLOCKED_OR_UNVERIFIED') from None
     require(intent['identity']==manifest['identity'] and callable(probe),'PINNED_INTENT_AND_REAL_PROBE_REQUIRED')
     require(type(required_available_mib) is int and required_available_mib>=1024,'RESTORE_MEMORY_BUDGET_REQUIRED')
     require(resources(tx)['MemAvailableKiB']//1024>=required_available_mib,'RESTORE_MEMORY_SHORTFALL_KEEP_MAINTENANCE')

@@ -75,13 +75,14 @@ class Fixture(unittest.TestCase):
         return Tx()
 
     def test_explicit_single_stop_and_single_original_cid_restore_fixture(self):
+        """Verify one graceful stop and exact-CID restore preserve policy without deletion or reload."""
         tx=self.tx()
         with patch.object(r,'require_lock'),patch.object(r.time,'sleep'),patch.object(r.time,'monotonic_ns',side_effect=[0,31_000_000_000]):
             result=r.retire_one(tx,self.manifest,self.root,lambda *a:copy.deepcopy(self.obs),lambda *a:copy.deepcopy(self.proof))
         self.assertTrue(result['stopped']);self.assertEqual(sum(c[:2]==['docker','stop'] for c in tx.commands),1)
         intent=json.loads((self.root/('legacy-retire-intent-'+self.pin['id'][:12]+'.json')).read_text())
-        with patch.object(r,'require_lock'):
-            restored=r.restore_one(tx,self.manifest,intent,lambda *a:{'version':self.manifest['expectedVersion'],'commit':self.manifest['expectedCommit'],'health':True,'staticHashVerified':True},required_available_mib=2048)
+        with patch.object(r,'require_lock'),patch.object(r,'assert_legacy_fleet_rollback_clear',return_value={'businessRows':0}):
+            restored=r.restore_one(tx,self.manifest,intent,lambda *a:{'version':self.manifest['expectedVersion'],'commit':self.manifest['expectedCommit'],'health':True,'staticHashVerified':True},required_available_mib=2048,database_identity={'fixture':'mocked-guard-only'})
         self.assertTrue(restored['restored']);self.assertFalse(restored['originalGatewayReloaded']);self.assertEqual(tx.row['HostConfig']['RestartPolicy']['Name'],'unless-stopped')
         self.assertFalse(any('rm' in cmd or '-f' in cmd for cmd in tx.commands))
 

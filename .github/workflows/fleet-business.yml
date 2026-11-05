@@ -1,0 +1,111 @@
+name: Fleet business read regression
+on:
+  pull_request:
+    paths: ['src/lib/fleet/**', 'src/lib/billing/consumption-read.ts', 'src/lib/bi/usage-repository.ts', 'src/components/admin/business-data/**', 'src/components/admin/navigation.ts', 'src/app/admin/center/**', 'src/app/admin/usage/**', 'src/app/api/admin/business/**', 'scripts/verify-fleet-business*', 'scripts/verify-fleet-local-*', 'scripts/lib/fleet-business*', 'scripts/fixtures/fleet-business*', 'scripts/ops/release_fleet_business_guard.py', 'scripts/ops/test_release_fleet_business_guard.py', 'scripts/ops/release103*.py', 'scripts/ops/release_site_control.py', 'scripts/ops/release_*ui_retirement.py', 'scripts/verify-admin-ui-integration.cjs', 'scripts/verify-admin-usage-pg.cjs', 'scripts/verify-admin-usage-skew.cjs', 'prototypes/admin-console/fleet-business-navigation.json', '.github/workflows/fleet-business.yml', 'package*.json']
+  push:
+    branches: [main]
+    paths: ['src/lib/fleet/**', 'src/lib/billing/consumption-read.ts', 'src/lib/bi/usage-repository.ts', 'src/components/admin/business-data/**', 'src/components/admin/navigation.ts', 'src/app/admin/center/**', 'src/app/admin/usage/**', 'src/app/api/admin/business/**', 'scripts/verify-fleet-business*', 'scripts/verify-fleet-local-*', 'scripts/lib/fleet-business*', 'scripts/fixtures/fleet-business*', 'scripts/ops/release_fleet_business_guard.py', 'scripts/ops/test_release_fleet_business_guard.py', 'scripts/ops/release103*.py', 'scripts/ops/release_site_control.py', 'scripts/ops/release_*ui_retirement.py', 'scripts/verify-admin-ui-integration.cjs', 'scripts/verify-admin-usage-pg.cjs', 'scripts/verify-admin-usage-skew.cjs', 'prototypes/admin-console/fleet-business-navigation.json', '.github/workflows/fleet-business.yml', 'package*.json']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fleet-business:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: fleet_protocol_fixture
+          POSTGRES_DB: postgres
+        ports: ['65298:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 3s --health-timeout 3s --health-retries 20
+    env:
+      NAUMI_VERIFY_ISOLATED_DB: '1'
+      SETTINGS_SECRET: fleet-business-ci-fixture-only-20261104-not-production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Install browser for existing admin shell compatibility
+        run: npx --no-install playwright install --with-deps chromium
+      - name: Create explicitly named isolated databases
+        run: |
+          node --input-type=module - <<'NODE'
+          import pg from 'pg';
+          const client = new pg.Client({connectionString:'postgresql://postgres:fleet_protocol_fixture@127.0.0.1:65298/postgres'});
+          await client.connect();
+          try {
+            for (const name of ['fleet_protocol_fixture','fleet_central_103_20261104','fleet_source_47_20261104','usage_fixture']) await client.query('CREATE DATABASE '+name);
+          } finally { await client.end(); }
+          NODE
+      - name: Verify closed common business admission
+        run: node scripts/verify-fleet-business-admission.mjs
+      - name: Verify retained fixture URLs reject routing query overrides before checkout
+        run: node scripts/verify-fleet-business-retained-url.mjs
+      - name: Verify fixture entry isolation before Pool, DDL or product imports
+        run: node scripts/verify-fleet-business-fixture-entry.mjs
+      - name: Verify retained-state guards before tracked legacy restores
+        run: python3 -B -m unittest test_release_fleet_business_guard
+        env:
+          PYTHONPATH: scripts/ops
+      - name: Verify fixture read timestamps are fresh at each enqueue
+        run: node scripts/verify-fleet-business-enqueue-clock.mjs
+      - name: Verify nonce-bound central confirmation and legacy connector heartbeat compatibility
+        run: node scripts/verify-fleet-business-heartbeat-negotiation.mjs
+      - name: Verify malformed retained timestamps never block control dispatch
+        run: node scripts/verify-fleet-business-retained-timestamp.mjs
+      - name: Verify read-only source protocol and compatibility
+        run: node --require ./scripts/fixtures/fleet-business-delay-pg-close.cjs --import tsx --conditions react-server scripts/verify-fleet-business-protocol.ts
+        env:
+          DATABASE_URL: postgresql://postgres:fleet_protocol_fixture@127.0.0.1:65298/fleet_protocol_fixture
+      - name: Verify source-aware UI and rapid filter navigation
+        run: node --import tsx scripts/verify-fleet-business-data-ui.ts
+      - name: Verify actual center/usage local defaults and explicit Fleet reload routing
+        run: node scripts/verify-fleet-business-usage-entry.mjs
+      - name: Verify aggregate response budget through actual central assembly and client
+        run: node scripts/verify-fleet-business-response-budget.mjs
+      - name: Verify actual React hook refresh revisions and HTTP error states
+        run: node scripts/verify-fleet-business-data-review-hook.mjs . output/fleet-business-data-20261104/hook-review
+      - name: Verify existing admin shell and native management destinations
+        run: node scripts/verify-admin-ui-integration.cjs --output-root "$PWD/output/fleet-business-data-20261104/compat-shell"
+      - name: Verify existing usage SQL and source module dependencies
+        run: node scripts/verify-admin-usage-pg.cjs output/fleet-business-data-20261104/compat-usage-pg
+        env:
+          ADMIN_USAGE_FIXTURE_DATABASE_URL: postgresql://postgres:fleet_protocol_fixture@127.0.0.1:65298/usage_fixture
+      - name: Verify skewed legacy usage query and fail-closed test boundaries
+        run: node scripts/verify-admin-usage-skew.cjs --output-root "$PWD/output/fleet-business-data-20261104/compat-usage-skew"
+        env:
+          ADMIN_USAGE_FIXTURE_DATABASE_URL: postgresql://postgres:fleet_protocol_fixture@127.0.0.1:65298/usage_fixture
+      - name: Verify trusted local HTTPS identity
+        run: node --import tsx --conditions react-server scripts/verify-fleet-local-https.ts
+      - name: Verify central API through HTTP connector and independent source PG
+        run: node --import tsx --conditions react-server scripts/verify-fleet-business-central.ts
+        env:
+          DATABASE_URL: postgresql://postgres:fleet_protocol_fixture@127.0.0.1:65298/fleet_central_103_20261104
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fleet-business-read-${{ github.sha }}
+          path: |
+            output/fleet-business-data-20261104/central-integration/RESULT.json
+            output/fleet-business-data-20261104/compat-shell/RESULT.json
+            output/fleet-business-data-20261104/compat-usage-pg/RESULT.json
+            output/fleet-business-data-20261104/compat-usage-skew/RESULT.json
+            output/fleet-business-data-20261104/hook-review/HOOK_RESULT.json
+            output/fleet-business-usage-entry-20261105/MODIFIED_RESULT.json
+            output/fleet-business-enqueue-clock-20261105/MODIFIED_RESULT.json
+            output/fleet-business-heartbeat-negotiation-20261105/tests/MODIFIED_RESULT.json
+            output/fleet-business-retained-timestamp-20261105/tests/MODIFIED_RESULT.json
+            output/fleet-business-admission-guard-20261105/tests/MODIFIED_RESULT.json
+            output/fleet-business-retained-url-20261105/tests/MODIFIED_RESULT.json
+            output/fleet-business-fixture-entry-20261105/tests/MODIFIED_RESULT.json
+          if-no-files-found: warn

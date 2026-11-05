@@ -14,6 +14,7 @@ import release_client_compat as compat
 import release_runtime_recovery as startup
 import release47_task_snapshot as tasks
 from release47_saas_successor import syntax_check
+from release_fleet_business_guard import assert_legacy_fleet_rollback_clear
 
 CANON=base.CANON
 EVIDENCE_ROOT=pathlib.Path('/opt/naumi-staging/evidence')
@@ -310,6 +311,12 @@ class Release(base.Release):
         return {'files':len(files),'bytes':total,'sourceRetained':True,'bothWritersStoppedDuringCopy':True,'acceptedTasksReplayed':False}
 
     def rollback(self):
+        """Resume only an unchanged pre-switch worker, not a post-switch program cutback.
+
+        An unexpected gateway records UNKNOWN and returns. The 103 resume additionally
+        requires a clear retained-business guard; all other outcomes retain cleanup debt
+        without database restoration or task replay.
+        """
         # Before a switch the old site remains authoritative and can resume.
         # After a switch, older code cannot enforce the new tenant policy.
         if not self.switched and self.worker_paused:
@@ -317,6 +324,7 @@ class Release(base.Release):
             if observed!=self.c['nginxSha256']:
                 self.phase('UNKNOWN',gatewaySwitchAcknowledged=False,gatewayObservedSha256=observed,databaseRestored=False,tasksReplayed=False)
                 return
+            if self.c['target']=='103.30.76.93':assert_legacy_fleet_rollback_clear(self.tx,public_identity(self.db))
             self.worker(self.old['worker'],'resume')
         self.phase('CLEANUP_PENDING',gatewaySwitched=self.switched,oldProgramCutbackAllowed=False,databaseRestored=False,tasksReplayed=False)
 

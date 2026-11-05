@@ -12,15 +12,43 @@ import { BillingError } from '@/lib/billing/types';
 import { operationSchema, commandSchema, canonical, digest, centralUrl, verifyCommand, resultSchema, statusSchema, type FleetCommand, type FleetResult, type SignedFleetCommand } from './contracts';
 import { ensureFleetSchema } from './server';
 import {fleetFetch} from './transport';
+import {readFleetBusinessQuery} from './business-read-model';
+import type {FleetBusinessQuery} from './business-contracts';
+import {verifyFleetBusinessSupport} from './business-support';
+
+/** Read-only duplication is harmless; the first metadata receipt remains the
+ * stable winner. No outer checkout/lock is held while the RR reader uses a pool
+ * connection, including pools configured with max=1. */
+async function applyBusinessQuery(command:FleetCommand,operation:FleetBusinessQuery,fingerprint:string):Promise<FleetResult>{
+  const pool=getPool();
+  const existing=await pool.query('SELECT fingerprint,result FROM app_fleet_applied WHERE id=$1',[command.id]);
+  if(existing.rowCount){if(existing.rows[0].fingerprint!==fingerprint)throw Error('FLEET_ID_CONFLICT');return resultSchema.parse(existing.rows[0].result);}
+  let result:FleetResult;
+  try{result={status:'succeeded',data:{business:await readFleetBusinessQuery(pool,operation)}};}
+  catch{result={status:'failed',code:'UNAVAILABLE'};}
+  result=resultSchema.parse(result);
+  await pool.query('INSERT INTO app_fleet_applied(id,fingerprint,result,instance_id,actor,operation) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(id) DO NOTHING',[command.id,fingerprint,JSON.stringify(result),command.instanceId,command.actor,JSON.stringify(operation)]);
+  const winner=(await pool.query('SELECT fingerprint,result FROM app_fleet_applied WHERE id=$1',[command.id])).rows[0];
+  if(!winner||winner.fingerprint!==fingerprint)throw Error('FLEET_ID_CONFLICT');
+  return resultSchema.parse(winner.result);
+}
 
 /** Persistent receipts and existing billing idempotency survive connector restarts. */
 export async function applyFleetCommand(input: FleetCommand, localInstanceId: string): Promise<FleetResult> {
   const command = commandSchema.parse(input);
   if(command.instanceId!==localInstanceId || command.expiresAt<Date.now()) throw new Error('FLEET_WRONG_INSTANCE_OR_EXPIRED');
   const operation=operationSchema.parse(command.operation);
-  await ensureFleetSchema();
+  // A read-only connector upgrade must not bootstrap/refactor the enterprise
+  // application's schema. Fleet receipt metadata already belongs to this
+  // installed connector. Missing read metadata is acknowledged as unavailable
+  // without writing a receipt, so a dashboard query cannot block controls.
+  if(operation.type==='business.query'){
+    const columns=(await getPool().query("SELECT column_name FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='app_fleet_applied'")).rows.map(r=>r.column_name);
+    if(!['id','fingerprint','result','instance_id','actor','operation'].every(c=>columns.includes(c)))return {status:'failed',code:'UNAVAILABLE'};
+  }else await ensureFleetSchema();
   if(operation.type.startsWith('site.policy.')) await ensureSitePolicySchema();
   const fingerprint=digest(canonical({id:command.id,instanceId:command.instanceId,actor:command.actor,operation}));
+  if(operation.type==='business.query')return applyBusinessQuery(command,operation,fingerprint);
   const tx=await getPool().connect();
   try {
     await tx.query('BEGIN'); await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))',['fleet:'+command.id]);
@@ -73,21 +101,41 @@ export async function applyFleetCommand(input: FleetCommand, localInstanceId: st
   } catch(error) {await tx.query('ROLLBACK');throw error;} finally {tx.release();}
 }
 
-export async function connectorTick(options: {central: string; instanceId: string; token: string; status: unknown; isolated?: boolean}) {
+/** Probe with the legacy status shape on every tick; never cache central support
+ * across ticks or origins. Only a nonce-bound confirmation admits business. */
+export async function connectorTick(options: {central: string; instanceId: string; token: string; status: unknown; isolated?: boolean; business?: boolean}) {
   const central=centralUrl(options.central,options.isolated),status=statusSchema.parse(options.status);
   if(!/^[A-Za-z0-9_-]{43}$/.test(options.token)) throw new Error('FLEET_INVALID_TOKEN');
-  async function send(endpoint: string, data: unknown) {
-    const response=await fleetFetch(central+'/api/fleet/'+endpoint,{method:'POST',redirect:'error',signal:AbortSignal.timeout(30000),headers:{'content-type':'application/json','authorization':'Bearer '+options.token,'x-naumi-instance':options.instanceId},body:JSON.stringify({nonce:randomUUID(),timestamp:Date.now(),...data as object})});
-    if(!response.ok) throw new Error('FLEET_CONNECTION_'+response.status);
+  /** Send one nonce-bound authenticated poll or ACK with a timeout and bounded response body.
+   * Expose explicit HTTP rejection status for the narrowly allowed legacy-shape retry.
+   */
+  async function send(endpoint: string, data: unknown, probe=false) {
+    const nonce=randomUUID();
+    const response=await fleetFetch(central+'/api/fleet/'+endpoint,{method:'POST',redirect:'error',signal:AbortSignal.timeout(30000),headers:{'content-type':'application/json','authorization':'Bearer '+options.token,'x-naumi-instance':options.instanceId,...(probe?{'x-naumi-fleet-business-probe':'1'}:{})},body:JSON.stringify({nonce,timestamp:Date.now(),...data as object})});
+    if(!response.ok) throw Object.assign(new Error('FLEET_CONNECTION_'+response.status),{fleetResponseStatus:response.status});
     const reader=response.body?.getReader();if(!reader)throw new Error('FLEET_EMPTY_RESPONSE');const chunks:Uint8Array[]=[];let bytes=0;
     try {for(;;){const next=await reader.read();if(next.done)break;bytes+=next.value.byteLength;if(bytes>48000)throw new Error('FLEET_RESPONSE_TOO_LARGE');chunks.push(next.value);}}
     finally{await reader.cancel().catch(()=>{});}
-    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    return {data:JSON.parse(Buffer.concat(chunks).toString('utf8')),nonce};
   }
-  const response=await send('poll',{status});
+  const {business,...legacyStatus}=status;
+  const supportsBusiness=options.business===true||business===1;
+  let exchange=await send('poll',{status:legacyStatus},supportsBusiness),businessAdvertised=false;
+  if(!exchange.data.command&&supportsBusiness&&verifyFleetBusinessSupport(exchange.data.businessSupport,options.instanceId,exchange.nonce,options.token)){
+    try{exchange=await send('poll',{status:{...legacyStatus,business:1}});businessAdvertised=true;}
+    catch(error){
+      // A pre-PR central can replace the confirmed peer between these polls.
+      // Only an explicit HTTP schema rejection retries the legacy shape; timeouts,
+      // authentication/rate-limit and unknown service failures remain unknown.
+      if(!(error instanceof Error)||!('fleetResponseStatus' in error)||error.fleetResponseStatus!==400)throw error;
+      exchange=await send('poll',{status:legacyStatus},supportsBusiness);
+    }
+  }
+  const response=exchange.data;
   if(!response.command) return {state:'idle'};
   if(typeof response.leaseId!=='string') throw new Error('FLEET_INVALID_LEASE');
   const command=verifyCommand(response.command as SignedFleetCommand,options.token,options.instanceId);
+  if(command.operation.type==='business.query'&&!businessAdvertised)throw new Error('FLEET_BUSINESS_NOT_NEGOTIATED');
   const result=await applyFleetCommand(command,options.instanceId);
   await send('ack',{commandId:command.id,leaseId:response.leaseId,result});
   return {state:result.status,commandId:command.id};

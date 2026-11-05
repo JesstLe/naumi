@@ -12,6 +12,7 @@ import time
 import urllib.request
 
 from release47_host import HostTransaction, environment, public_identity
+from release_fleet_business_guard import assert_legacy_fleet_rollback_clear
 from release_legacy_ui_retirement import immutable, network_binding, identity
 import release_legacy_ui_retirement as old
 
@@ -196,6 +197,13 @@ def restore_probe(original, port):
 
 
 def execute(plan):
+    """Retire only enough pinned historical UI containers to satisfy the plan.
+
+    Validate the explicit plan, hold the host transaction, and preserve readable
+    backup and durable intents before stopping any candidate. On failure, attempt
+    only guarded restoration of observed stopped CIDs and re-raise the original
+    error; never claim ordinary drain, restore database bytes, or replay tasks.
+    """
     require(plan['authorization'] == AUTHORIZATION and plan['target'] == '103.30.76.93', 'EXPLICIT_AUTHORIZATION_REQUIRED')
     require(plan['ordinaryDrainReceipt'] is None and plan['historicalVolatileStateAccepted'] is True, 'DO_NOT_CLAIM_COMPLETE_DRAIN')
     require(plan['requiredAvailableMiB'] == 5120, 'MEMORY_GATE_CHANGED')
@@ -267,6 +275,7 @@ def execute(plan):
                     if row['State']['Running']:
                         entry = {'id': cid, 'status': 'STOP_OUTCOME_REQUIRES_RECONCILIATION'}
                     else:
+                        assert_legacy_fleet_rollback_clear(tx, public_identity(database))
                         tx.save('restore-intent-' + cid[:12] + '.json', intent)
                         tx.run(['docker', 'start', cid])
                         row = tx.inspect(cid)

@@ -3,6 +3,7 @@ import type { PoolClient } from "pg";
 import { getPool } from "@/platform/db/pool";
 import { ensureBiSchema } from "./schema";
 import { USAGE_DEFINITIONS, type UsageMetrics, type UsageQuery, type UsageResponse, type UsageUser } from "./usage-contracts";
+import {ADMIN_CREDIT_ADJUSTMENT_FEATURE,administrativeDebitPredicate} from '@/lib/billing/consumption-read';
 
 type ReadClient = Pick<PoolClient, "query">;
 export type UsageReadScope = { allowedEmails: readonly string[]; tenantId: string; tenantName: string };
@@ -111,8 +112,8 @@ export async function readUserUsage(tx: ReadClient, query: UsageQuery, scope?: U
     sourceCtes.push(`candidate_ledger AS MATERIALIZED (SELECT l.id,l.email,l.created_at,l.kind,l.delta,l.reason FROM app_ledger l
       WHERE ${range("l")} AND (l.kind='consume' AND l.delta<0 OR l.kind='refund' AND l.delta>0))`);
     sourceCtes.push(`admin_adjustment_keys AS MATERIALIZED (${has("app_billing_operations") ? `SELECT DISTINCT o.email,o.ledger_id FROM app_billing_operations o
-      JOIN candidate_ledger l ON l.email=o.email AND l.id=o.ledger_id WHERE o.feature='credits.adjust'` : "SELECT NULL::text email,NULL::text ledger_id WHERE false"})`);
-    sourceCtes.push(`classified_ledger AS MATERIALIZED (SELECT l.email,l.created_at,l.kind,l.delta,(l.reason='管理员调整积分' OR a.ledger_id IS NOT NULL) admin_debit
+      JOIN candidate_ledger l ON l.email=o.email AND l.id=o.ledger_id WHERE o.feature='${ADMIN_CREDIT_ADJUSTMENT_FEATURE}'` : "SELECT NULL::text email,NULL::text ledger_id WHERE false"})`);
+    sourceCtes.push(`classified_ledger AS MATERIALIZED (SELECT l.email,l.created_at,l.kind,l.delta,${administrativeDebitPredicate('l.reason','a.ledger_id IS NOT NULL')} admin_debit
       FROM candidate_ledger l LEFT JOIN admin_adjustment_keys a ON a.email=l.email AND a.ledger_id=l.id)`);
     facts.push(selectFact("l.email", "l.created_at", "ledger", {
     consumed: "CASE WHEN l.kind='consume' AND l.delta<0 AND NOT l.admin_debit THEN -l.delta::bigint ELSE 0 END",

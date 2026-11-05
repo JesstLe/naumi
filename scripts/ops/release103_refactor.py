@@ -14,6 +14,7 @@ import release_client_compat as compat
 import release_runtime_recovery as startup
 import worker_handoff
 import release47_task_snapshot as tasks
+from release_fleet_business_guard import assert_legacy_fleet_rollback_clear
 from release47_saas_successor import syntax_check
 
 TARGET='103.30.76.93'
@@ -261,6 +262,12 @@ class Release:
             self.tx.save('router-callback-acceptance.json',{'at':now(),'sourcePid':4460,'privateOnly':True,'malformedAuthenticated':400,'anonymous':404,'capacityAcquireCalls':0,'routerRestarted':False,'targetCommit':self.c['commit']})
         else:self.tx.save('router-callback-preflight.json',{'at':now(),'sourcePid':4460,'tokenMatches':True,'sameHostNetwork':True,'existingPrivatePort':13012})
     def gateway(self,forward=True):
+        """CAS-switch the reviewed gateway bundle forward or through a guarded inverse.
+
+        Legacy rollback checks run before inverse writes, and the transaction evidence
+        folder is restored even when bundle switching raises.
+        """
+        if not forward:assert_legacy_fleet_rollback_clear(self.tx,public_identity(self.db))
         before,after,dump,afterdump=(self.before,self.after,self.dump,self.afterdump)if forward else(self.after,self.before,self.afterdump,self.dump)
         patches=[{'path':p,'beforeSha256':sha(before[p]),'afterSha256':sha(after[p])}for p in before if before[p]!=after[p]]
         folder=self.tx.folder;self.tx.folder=self.root/(('gateway-forward'if forward else'gateway-rollback')+'-'+str(self.state['revision']));self.tx.folder.mkdir(mode=0o700)
@@ -315,7 +322,13 @@ class Release:
         self.phase('COMPLETE',new={k:public_identity(self.tx.inspect(r['Id']))for k,r in self.new.items()},old={k:public_identity(self.tx.inspect(r['Id']))for k,r in self.old.items()},sameImage=True,allInternalOriginsVerified=True,configurationPreserved=True,legacyHistoricalUncertaintyRetained=True)
         self.tx.save('FINAL_STATUS.json',self.record)
     def rollback(self):
+        """Guard legacy compatibility before any candidate drain or old-instance restart.
+
+        When ingress switched, restore the retained program entry and resume its roles;
+        keep candidates for reconciliation and never restore data or replay tasks.
+        """
         # Only program/entry rollback. Never overwrite database or media bytes.
+        assert_legacy_fleet_rollback_clear(self.tx,public_identity(self.db))
         for role,r in self.new.items():
             if self.tx.inspect(r['Id'])['State']['Running']:
                 if role=='worker':self.worker(r,'drain')
