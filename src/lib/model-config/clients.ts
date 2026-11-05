@@ -7,7 +7,7 @@ import {executionFetch} from "./execution-fetch";
 export {executionFetch} from "./execution-fetch";
 import type {ValidationOptions} from "./schema";
 import {ModelConfigError} from "./types";
-import {appendImageGatewayFields} from "../image-gateway";
+import {appendImageGatewayFields,currentImageOperationId,withImageOperation} from "../image-gateway";
 import {supplierCostFetch} from "../supplier-cost/collect";
 import {chatCompletionResponseFetch} from "./chat-completion-response";
 
@@ -24,6 +24,21 @@ export async function managedImageEditFetch(baseUrl: string, apiKey: string, for
   if (connection?.protocol === "router-images") appendImageGatewayFields(form, scope!.frozen.publicModelId);
   const {observeModelCall, modelExecutionTelemetry} = await import("@/lib/bi/model-calls");
   return observeModelCall(connection?.wireModel || String(form.get("model") || "unrecorded"), () => transport(`${(connection?.baseUrl || baseUrl).replace(/\/$/, "")}/images/edits`, { method: "POST", headers: { Authorization: `Bearer ${connection?.apiKey || apiKey}` }, body: form, signal }), modelExecutionTelemetry(scope) || null);
+}
+
+const toolImageCalls = new WeakMap<object, number>();
+/** Toolbox routes call the SDK directly, without the operation context that
+ * editImage/imagegen establish. Managed image channels (APIMart, Jimeng, Router)
+ * need a stable unit for their supplier ledger and channel pin: derive it from
+ * the enclosing billing operation, one index per image call. Without a billing
+ * operation the call is unchanged. */
+async function withToolImageOperation<T>(model: string, run: () => Promise<T>): Promise<T> {
+  const { currentSynchronousBilling } = await import("../billing/synchronous-operation");
+  const billing = currentSynchronousBilling();
+  if (!billing?.id || currentImageOperationId()) return run();
+  const index = toolImageCalls.get(billing) ?? 0;
+  toolImageCalls.set(billing, index + 1);
+  return withImageOperation(model, { id: `${billing.id}:tool-image:${index}` }, run);
 }
 
 export function modelAwareOpenAI(options: ConstructorParameters<typeof OpenAI>[0], managed = true): OpenAI {
@@ -45,7 +60,8 @@ export function modelAwareOpenAI(options: ConstructorParameters<typeof OpenAI>[0
       let client = clients.get(scope);
       if (!client) { client = executionOpenAI(scope, { trustedOrigins: (process.env.MODEL_CONFIG_TRUSTED_ORIGINS || "").split(/[\s,]+/).filter(Boolean) }); clients.set(scope, client); }
       const target = role === "image" ? client.images : client.chat.completions;
-      return (target as unknown as Record<string, (...values: any[]) => any>)[method](...args);
+      const call = () => (target as unknown as Record<string, (...values: any[]) => any>)[method](...args);
+      return role === "image" && !currentImageOperationId() ? withToolImageOperation(scope.frozen.publicModelId, call) : call();
     };
   }
   return legacy;
