@@ -11,14 +11,24 @@ import type {ManagedModelRow,ManagedModelCreditGrid} from "./management";
 import {publicModelCatalog} from "@/lib/model-config/public-catalog";
 import {selectedImagePreset,effectiveImageParameters} from "./image-preset";
 import {imageModelDisplayId} from "../image-model-routing";
+import {selectedBusinessOption} from "./business";
 
+export type CreditSourceKind="model-rule"|"preset"|"feature-option"|"tariff-rule"|"tariff";
+export type CreditSource={kind:CreditSourceKind;label:string};
+const SOURCE_LABELS:Record<CreditSourceKind,string>={"model-rule":"本页积分设置","preset":"成本预设 × 系数","feature-option":"功能定价（完整配置）","tariff-rule":"价目表规则","tariff":"价目表默认价"};
+/** Which layer actually priced this quote, in the same precedence the quote engine applies:
+ * this page's model credit rule > cost preset > feature-model option > tariff rule > tariff default. */
+export function creditSource(billing:ConfigSnapshot,models:ModelSnapshot,facts:BillingFacts,matchedRuleId?:string|null):CreditSource{
+  const kind:CreditSourceKind=managedModelCreditRule(billing,facts)?"model-rule":selectedImagePreset(models.config,facts.feature,facts.modelId)?"preset":selectedBusinessOption(models.config,facts.feature,facts.modelId)?.pricing?"feature-option":matchedRuleId?"tariff-rule":"tariff";
+  return {kind,label:SOURCE_LABELS[kind]};
+}
 export function modelCreditView(billing:ConfigSnapshot,models:ModelSnapshot,feature:FeatureId,modelId:string,quality="medium",resolution="1K"){
   const facts:BillingFacts={feature,modelId,quantity:1,quality,resolution,ratio:"1:1",metered:true,byok:false,paidFen:0,userGroup:"default"};
   const override=managedModelCreditRule(billing,facts)?.pricing;
   try{
     const q=freezeImagePresetQuote(billing,models,facts,quote) || quote(businessBillingSnapshot(billing,models,facts),facts);
-    return {feature,unit:q.tariff.unit,credits:q.requestedCredits,estimated:["usage","api-cost-plus","cost-plus"].includes(q.tariff.pricing.mode),override:override as ManagedModelCreditPricing|undefined};
-  }catch{return {feature,unit:billing.config.features[feature].unit,credits:null,estimated:true,override:override as ManagedModelCreditPricing|undefined};}
+    return {feature,unit:q.tariff.unit,credits:q.requestedCredits,estimated:["usage","api-cost-plus","cost-plus"].includes(q.tariff.pricing.mode),override:override as ManagedModelCreditPricing|undefined,source:creditSource(billing,models,facts,q.matchedRuleId)};
+  }catch{return {feature,unit:billing.config.features[feature].unit,credits:null,estimated:true,override:override as ManagedModelCreditPricing|undefined,source:creditSource(billing,models,facts)};}
 }
 export function managedModelPriceViews(billing:ConfigSnapshot,models:ModelSnapshot,row:ManagedModelRow){
   return row.features.map(f=>({...modelCreditView(billing,models,f.id as FeatureId,row.publicIds[0]),label:f.label}));
@@ -32,7 +42,7 @@ export function modelCreditGrid(billing:ConfigSnapshot,models:ModelSnapshot,row:
     const available=row.modality!=="image"?quality==="medium"&&resolution==="1K":qualities.includes(quality as never)&&resolutions.includes(resolution as never);
     const effectiveQuality=preset?effectiveImageParameters(preset,{quality,resolution,ratio:"1:1"}).effective.quality:quality;
     const view=available?modelCreditView(billing,models,feature,model.id,quality,resolution):null;
-    return {quality,resolution,available,effectiveQuality,credits:view?.credits ?? null,estimated:view?.estimated ?? false};
+    return {quality,resolution,available,effectiveQuality,credits:view?.credits ?? null,estimated:view?.estimated ?? false,...(view?{source:view.source.kind}:{})};
   }));
 }
 export function editManagedModelCredits(billing:ConfigSnapshot,models:ModelSnapshot,row:ManagedModelRow,features:FeatureId[],pricing:ManagedModelCreditPricing|null){

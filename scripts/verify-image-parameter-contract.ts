@@ -111,6 +111,10 @@ throws(() => mapResolution({}, fixture().upstreamModels[0].parameterMap.resoluti
   const kept = applyImageMappingEditor(on, ["image-a"], ["u1"], input());
   eq(kept.upstreamModels[0].parameterMap.parameterContract, "conventional", "omitted contract keeps published value");
   throws(() => applyImageMappingEditor(on, ["image-a"], ["u1"], input(null)), /填写上游值/, "clearing contract restores strict rule");
+  const legacyInput = { ...input("conventional"), routes: [{ ...route("conventional"), resolution: null }] };
+  const legacy = applyImageMappingEditor(on, ["image-a"], ["u1"], legacyInput as any);
+  eq(legacy.upstreamModels[0].parameterMap.resolutionPolicy, undefined, "沿用协议 removes the resolution override");
+  validateModelConfig(legacy); checks++;
 }
 
 console.log(`IMAGE_PARAMETER_CONTRACT=PASS CHECKS=${checks} QUALITY_EMPTY=TIER RESOLUTION_EMPTY=PROTOCOL METADATA=NON_BLOCKING STRUCTURAL=KEPT STRICT_DEFAULT=UNCHANGED PUBLISH_RULES=ENFORCED SUPPLIER_CALLS=0`);

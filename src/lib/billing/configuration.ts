@@ -29,6 +29,8 @@ export function getBillingConfiguration(){
                 if (Number.isSafeInteger(video) && video > 0 && video <= 2147483647)
                     config.features["video.generate"].pricing = { mode: "fixed", credits: video };
                 return config;
-            } });
+            },
+            // Assembly boundary: model pricing must stay compilable after a billing change.
+            checkPublication: async (next, current, tx) => (await import("@/lib/model-config/billing-publication-check")).assertBillingKeepsModelPricing(next, current, tx) });
  configurations.set(pool,configuration);return configuration;
 }

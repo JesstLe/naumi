@@ -21,7 +21,7 @@ export const featureNames: Record<string, string> = {
   "tool.inpaint": "局部重绘", "tool.extract": "提取", "tool.garment3d": "服装 3D", "tool.packaging3d": "包装 3D",
 };
 export type ManagedModelRow = {
-  parameterSources?:{id:string;model:string;protocol:string;provider:string;nativeResolutions:string[];parameterMap:import("./types").UpstreamModel["parameterMap"]}[];
+  parameterSources?:{id:string;model:string;protocol:string;provider:string;enabled?:boolean;nativeResolutions:string[];parameterMap:import("./types").UpstreamModel["parameterMap"]}[];
   id: string; label: string; alias: string; modality: Modality; supplierRouting?:ModelConfig["publicModels"][number]["supplierRouting"]; channelsEditable?:boolean; displayResolutions?: string[]; publicIds: string[];
   features: { id: string; label: string }[];
   routes: { upstreamId: string; model: string; providerId: string; provider: string; kind: string; enabled: boolean }[];
@@ -33,10 +33,10 @@ export type ManagedModelRow = {
 
   imagegenConfig?: {routes:import("./imagegen-policy").ImagegenRoutePolicy[]};
   scopeOptions: {id:string;label:string;selected:boolean;available:boolean;adminDefault:boolean;reason?:string}[];
-  pricing?: {feature:string;label:string;unit:string;credits:number|null;estimated:boolean;override?:import("./credit-overrides").ManagedModelCreditPricing}[];
+  pricing?: {feature:string;label:string;unit:string;credits:number|null;estimated:boolean;override?:import("./credit-overrides").ManagedModelCreditPricing;source?:import("./management-pricing").CreditSource}[];
 };
 export type ManagedModelCandidate = { id: string; model: string; label: string; providerId: string; provider: string; modality: string; verified: boolean; channelCompatible?: boolean };
-export type ManagedModelCreditGrid = {quality:string;resolution:string;credits:number|null;available:boolean;effectiveQuality:string;estimated:boolean}[];
+export type ManagedModelCreditGrid = {quality:string;resolution:string;credits:number|null;available:boolean;effectiveQuality:string;estimated:boolean;source?:import("./management-pricing").CreditSourceKind}[];
 export type ModelManagementState = {
   version: number; managed: boolean; rows: ManagedModelRow[]; candidates: ManagedModelCandidate[];
   billingVersion?:number;channelHealth?:Record<string,{state:string;failures:number;retryAt:string|null;lastStatus:number|null}>;providerCapacity?:Record<string,{maxConcurrent:number;inFlight:number;unlimited?:boolean}>;
@@ -95,7 +95,7 @@ export function managedModelRows(snapshot: ModelSnapshot, catalogs: { feature: s
     }).map(c => c.id);
     row.scopeOptions = managedModelScopeOptions(row,eligibleCatalogs);
     row.canvasUnified = row.publicIds.every(id=>config.publicModels.find(m=>m.id===id)?.toolScope?.systems?.includes("canvas"));
-    if (row.modality === "image") {const ids=[...new Set(row.routes.map(r=>r.upstreamId))];row.parameterSources=ids.map(id=>{const u=config.upstreamModels.find(u=>u.id===id)!,p=config.providers.find(p=>p.id===u.providerId)!;return {id:u.id,model:u.model,protocol:p.protocol,provider:p.name,nativeResolutions:u.capabilities.nativeResolutions,parameterMap:structuredClone(u.parameterMap)};});row.qualityConfig=qualityConfiguration(config,ids);row.resolutionConfig=resolutionConfiguration(config,ids);}
+    if (row.modality === "image") {const ids=[...new Set(row.routes.map(r=>r.upstreamId))];row.parameterSources=ids.map(id=>{const u=config.upstreamModels.find(u=>u.id===id)!,p=config.providers.find(p=>p.id===u.providerId)!;return {id:u.id,model:u.model,protocol:p.protocol,provider:p.name,enabled:u.enabled&&p.enabled,nativeResolutions:u.capabilities.nativeResolutions,parameterMap:structuredClone(u.parameterMap)};});row.qualityConfig=qualityConfiguration(config,ids);row.resolutionConfig=resolutionConfiguration(config,ids);}
   }
   return Array.from(rows.values());
 }
