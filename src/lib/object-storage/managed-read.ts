@@ -18,7 +18,9 @@ export async function readManagedObjectInternal(url:string,maxBytes=Number.POSIT
       const {getMediaAsset}=await import('../media-assets-reader');
       const asset=await getMediaAsset(key);
       if(await hasVerifiedStoredMirror(key,asset)){
-        const saved=await readLocalMirror(key,maxBytes);return {...saved,contentType:asset!.content_type||saved.contentType};
+        // A NAS-acknowledged local copy may be evicted between check and read.
+        try{const saved=await readLocalMirror(key,maxBytes);return {...saved,contentType:asset!.content_type||saved.contentType};}
+        catch(error){if((error as NodeJS.ErrnoException)?.code!=='ENOENT'||!asset?.remote_ready)throw error;}
       }
       // A pending upload has not been acknowledged by the remote store. Its
       // durable mirror must be usable immediately, including as a model input.
