@@ -32,7 +32,7 @@
 本机隔离 PostgreSQL 16（127.0.0.1:65442）+ 本机 HTTP APIB 夹具（上传/提交/任务查询/结果下载），`NODE_OPTIONS=--conditions=react-server`：
 
 - `verify-tool-image-operation-apib.ts`：**基线（不含修复）复现失败**：`/api/cutout` 返回 500“抠图服务暂时不可用”，未发生供应商提交；**修复后 11 项 PASS**：真实 `/api/cutout` 路由经 APIB 适配器成功返回透明结果，1 次上传 + 1 次付费提交，供应商单位 `tool-<op>:tool-image:0`，带派生幂等键，按冻结价 settled 1 积分；同操作重放返回原回执且无新提交；新操作获得独立单位；`/api/dewatermark` 同样成功。
-- 相邻回归：`verify-cutout-execution-boundary.ts` 49 项 PASS、`verify-tool-image-receipts.cjs` 43 项 PASS、`verify-apimart-async-images.ts`、`verify-apimart-single-pass.ts`（63 项）、`verify-apimart-single-pass-pg.ts`（52 项）、`verify-image-gateway.ts`、`verify-apimart-async-contract.ts` 均 PASS。
+- 相邻回归：`verify-cutout-execution-boundary.ts` 49 项 PASS（**该用例本机不稳定**：并发断言“concurrent loser is pending”在未改动的 main `f3a67db2` 上 3 次中失败 2 次，带本修复 4 次中失败 1 次，失败点相同，与本改动无关，未计为稳定通过，需另行处理）、`verify-tool-image-receipts.cjs` 43 项 PASS、`verify-apimart-async-images.ts`、`verify-apimart-single-pass.ts`（63 项）、`verify-apimart-single-pass-pg.ts`（52 项）、`verify-image-gateway.ts`、`verify-apimart-async-contract.ts` 均 PASS。
 - `tsc --noEmit` 全量 exit 0；变更文件 eslint exit 0。
 - 证据层级：隔离 PG/HTTP 夹具，未调用真实 APIB、未在 47 运行新代码；换色/头像/提取/风格四个路由未单独测，依据为同一入口、同一缺陷形态（直接调用托管 `images.edit`）。
 
