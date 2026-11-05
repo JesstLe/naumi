@@ -2,6 +2,16 @@
 import { CANVAS_TEXT_CONTENT_LIMIT } from "./text-content";
 export { CANVAS_TEXT_CONTENT_LIMIT } from "./text-content";
 
+export const CANVAS_TEXT_POLISH_INSTRUCTION =
+  "润色当前正文，改善表达、语句通顺和结构。保留原意、事实、数字与必要细节，不编造或增添未经提供的信息。只输出润色后的正文，不添加解释、前言或总结。";
+
+/** Resolve an explicit writing action; typing or saving alone never invokes it. */
+export function resolveCanvasTextInstruction(instruction: string, content: string): string {
+  const explicit = instruction.trim();
+  if (explicit) return explicit;
+  return content.trim() ? CANVAS_TEXT_POLISH_INSTRUCTION : "";
+}
+
 export class CanvasTextContentError extends Error {
   constructor(readonly code: "TEXT_CONTENT_INVALID" | "TEXT_CONTENT_TOO_LONG", message: string) {
     super(message);

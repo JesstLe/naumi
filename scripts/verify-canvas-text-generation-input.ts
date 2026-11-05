@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import {
   CANVAS_TEXT_CONTENT_LIMIT,
+  CANVAS_TEXT_POLISH_INSTRUCTION,
   CanvasTextContentError,
   canvasTextGenerationInput,
   parseCanvasTextContent,
+  resolveCanvasTextInstruction,
 } from "../src/lib/canvas/text-generation-input";
 import { CanvasTextReferenceError, canvasTextReferenceContext, splitCanvasTextReferences } from "../src/lib/canvas/text-generation-references";
 
@@ -11,6 +13,33 @@ let checks = 0;
 function check(name: string, run: () => void) {
   run(); checks++; console.log(`CHECK=${name}`);
 }
+
+check("EXPLICIT_INSTRUCTION_TAKES_PRECEDENCE_OVER_DEFAULT_POLISH", () => {
+  assert.equal(resolveCanvasTextInstruction("  写成三条卖点\n", "已有正文"), "写成三条卖点");
+  assert.equal(resolveCanvasTextInstruction("从头写一首诗", ""), "从头写一首诗");
+});
+check("BODY_WITHOUT_INSTRUCTION_USES_DEFAULT_POLISH", () => {
+  for (const instruction of ["", " \n\t "]) {
+    assert.equal(resolveCanvasTextInstruction(instruction, "当前正文"), CANVAS_TEXT_POLISH_INSTRUCTION);
+  }
+  assert.ok(CANVAS_TEXT_POLISH_INSTRUCTION.includes("保留原意、事实、数字"));
+  assert.ok(CANVAS_TEXT_POLISH_INSTRUCTION.includes("不编造"));
+  assert.ok(CANVAS_TEXT_POLISH_INSTRUCTION.includes("只输出润色后的正文"));
+});
+check("EMPTY_BODY_AND_INSTRUCTION_REMAIN_EMPTY", () => {
+  for (const content of ["", " \n\t "]) {
+    assert.equal(resolveCanvasTextInstruction(" \n ", content), "");
+  }
+});
+check("DEFAULT_POLISH_PRESERVES_COMPLETE_BODY_AND_LIMIT_VALIDATION", () => {
+  const content = "正文".repeat(CANVAS_TEXT_CONTENT_LIMIT / 2 - 1) + "结尾";
+  const parsed = parseCanvasTextContent(content);
+  const instruction = resolveCanvasTextInstruction("", parsed);
+  assert.equal(instruction, CANVAS_TEXT_POLISH_INSTRUCTION);
+  assert.ok(canvasTextGenerationInput(instruction, parsed).endsWith(content));
+  assert.throws(() => parseCanvasTextContent(content + "超"),
+    (error: unknown) => error instanceof CanvasTextContentError && error.code === "TEXT_CONTENT_TOO_LONG");
+});
 
 check("OMITTED_CONTENT_COMPATIBLE_WITH_PROMPT_ONLY", () => {
   assert.equal(parseCanvasTextContent(undefined), "");
