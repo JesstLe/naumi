@@ -31,7 +31,7 @@
 | # | 问题 | 后果 |
 |---|---|---|
 | A1 | 同一份 ModelConfig 有两种写法：新 UI 每个动作在服务端新建私有草稿后直接发布（`management-access.ts:218,233`）；旧"完整配置中心"（`components/admin/model-config/manager.tsx`）走草稿 → 预览 → 发布。两者共用一个全局版本 | 改一个模型的名字，其他管理员持有的版本就会冲突返回 409；任何一次 UNKNOWN 发布会挡住后续所有发布（`repository.ts:141-142`）；每次操作留下一份草稿且没有清理 |
-| A2 | 积分售价有 4 个来源：成本预设、`mvp-credit-*` 规则、`business.options.pricing`、价目表（tariff）。生效优先级为 preset > credit 规则 > business option > tariff（`business-billing.ts:24-37,59-68`）。写入路径有 3 条，只有 `editManagedModelCredits` 校验价格矩阵是否完整 | 后台看到的价格不一定是实际扣费价格；计费发布不检查模型 projection，成本键改坏后要到执行时才报 INVALID_COST（`projection.ts:16-28`、`execution.ts:159`） |
+| A2 | 积分售价有 4 个来源：成本预设、`mvp-credit-*` 规则、`business.options.pricing`、价目表（tariff）。生效优先级为 本页模型积分规则 > 成本预设 > 功能定价 > 价目表规则 > 价目表默认价（`business-billing.ts:24-37,59-68`；P1-c 核对代码后更正，原记为 preset 优先）。写入路径有 3 条，只有 `editManagedModelCredits` 校验价格矩阵是否完整 | 新模型管理页显示的积分本身走真实报价路径（P1-c 核实），问题在于看不出由哪一层决定、修改低层不生效；计费发布不检查模型 projection，成本键改坏后要到执行时才报 INVALID_COST（`projection.ts:16-28`、`execution.ts:159`） |
 | A3 | `management-access.ts`（33KB）在一个闭包里分派 20 多个 action，并直接执行 SQL；另有 5 个路由直接写 SQL；`settings` 路由逐字段写入、不在事务内 | 修改容易牵连其他功能；请求中途失败会留下部分生效的状态 |
 | A4 | "上游来源"把账户、地址、协议、用途混成一条记录：tdhcodex 登记了 4 次，apimart 和 prompt-hubs 各 2 次 | 换密钥要改多处，余额和成本无法按供应商汇总 |
 | A5 | 过时的兼容代码和测试仍在：`assertQuotedVersion` 已是空操作，但 `scripts/verify-canvas-admin-runtime.ts` 仍断言 MODEL_CHANGED；`/api/admin/mvp*` 已无调用方；`settings` 的模型字段在部分状态下仍写入 `app_settings` | 测试结论不可信；旧路径在部分状态下可能被意外触发 |
@@ -58,10 +58,14 @@
 | P0 | 敏感后台接口加固：S2、S3、S4。补齐同源校验、二次验证、自我保护、审计；不改登录方式和密码 | 代码已合入 main，未发布；见 [P0 记录](../changes/2026-11-05-admin-route-hardening.md) |
 | P1-a | 图片参数约定优先模式的后端实现（见关联方案） | 代码已合入 main，未发布；见 [P1-a 记录](../changes/2026-11-05-image-parameter-conventional-contract.md) |
 | P1-b | 映射矩阵 UI：合并 4 个参数弹窗；以供应商资料作为下拉候选并标注不匹配；区分"默认"和"覆盖" | 部分完成并合入 main，未发布：资料显示/候选/标黄/填充/默认与覆盖/停用通道折叠/停用通道卡住保存的修复已完成；**合并 4 个弹窗与行×通道矩阵布局未做**。见 [P1-b 记录](../changes/2026-11-05-image-mapping-supplier-facts.md) |
-| P1-c | 价格统一显示"最终生效价"并标注来源层 | 待实施 |
+| P1-c | 价格统一显示"最终生效价"并标注来源层 | 代码已合入 main，未发布；见 [P1-c 记录](../changes/2026-11-05-model-credit-source.md) |
 | P1-d | 接入供应商向导：来源 → 模型 → 映射 → 价格 → 预览 → 一次发布；"新增模型"迁入新 UI；旧完整配置中心降级为只读审阅和回滚 | 待实施 |
 | P2 | 统一后台接口包装（鉴权、同源、限流、审计、统一状态码），逐个替换现有写法；按业务拆分 `management-access.ts`；计费发布时校验 projection；清理草稿；删除过时测试和接口 | 待实施 |
 | P3 | 供应商账户 / 接入端点 / 通道三层数据模型；收敛导航与用户管理页面 | 待实施 |
+
+## 主线同步记录
+
+- 2026-11-05 完成 P0、P1-a、P1-b 三个功能模块后同步一次：同步前分支 `3302400b`、main `66458b71`，同步后 `288bd8f3`；功能计数 3/3 → 0。
 
 ## 交接
 

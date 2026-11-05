@@ -29,6 +29,7 @@ export function PriceDialog({row,locked,error,onClose,onSave}:{row:ManagedModelR
     }catch(e){if(!cancelled)setLoadError(e instanceof Error?e.message:"读取失败");}finally{if(!cancelled)setLoading(false);}})();
     return()=>{cancelled=true;};
   },[active,drafts,row.id]);
+  const activeSource=views.find(v=>v.feature===active)?.source;
   const draft=drafts[active],validNumber=(n:unknown)=>typeof n==="number" && Number.isInteger(n)&&n>=0&&n<=2147483647;
   const valid=mode==="fixed"?validNumber(amount):!!draft && draft.cells.filter(c=>c.available).every(c=>validNumber(draft.prices[c.effectiveQuality]?.[c.resolution]));
   const editCell=(q:string,r:string,n:number)=>setDrafts(old=>({...old,[active]:{...old[active],prices:{...old[active].prices,[q]:{...old[active].prices[q],[r]:n}}}}));
@@ -37,6 +38,7 @@ export function PriceDialog({row,locked,error,onClose,onSave}:{row:ManagedModelR
   return <Dialog title="设置模型积分" locked={locked} onClose={onClose}><form onSubmit={e=>{e.preventDefault();if(valid && selected.length)onSave(selected,mode==="fixed"?{mode:"fixed",credits:amount}:{mode:"matrix",prices:draft.prices});}}><div className={styles.dialogBody}>
     {(error || loadError) && <p role="alert" className={styles.error}>{error || loadError}</p>}<div className={styles.scopeHeading}><b>{row.label}</b><span>{row.publicIds.length>1?"模型家族价格表":"模型价格表"}</span></div>
     <p className={styles.ruleNote}>每格是所选质量与分辨率的单价，按工具原单位（张/项/次）计费。比例沿用同一档价格，按张计费时再乘以张数。已开始的任务保留原报价。</p>
+    {activeSource && <p role="status" className={styles.ruleNote} data-source={activeSource.kind}>当前生效来源：<b>{activeSource.label}</b>{activeSource.kind!=="model-rule"?"。在此保存后，本页积分设置优先于其他来源。":"。"}</p>}
     <label className={styles.field}>查看工具价格<select aria-label="查看工具价格" value={active} disabled={locked} onChange={e=>{setActive(e.target.value);setSelected(old=>old.includes(e.target.value)?old:[...old,e.target.value]);}}>{views.map(v=><option key={v.feature} value={v.feature}>{v.label}</option>)}</select><small>切换查看各工具的当前售价；逐格修改后，可应用到下面勾选的多个工具。</small></label>
     <div className={styles.scopeControls}><b>本次更新 {selected.length} 个工具</b><button type="button" disabled={locked} onClick={()=>setSelected(views.map(v=>v.feature))}>全选应用工具</button><button type="button" disabled={locked} onClick={()=>setSelected([])}>清空</button></div>
     <div className={`${styles.scopeGrid} ${styles.priceTools}`}>{views.map(v=><label className={styles.scopeOption} data-selected={selected.includes(v.feature)} key={v.feature}><input type="checkbox" aria-label={v.label} disabled={locked} checked={selected.includes(v.feature)} onChange={()=>setSelected(old=>old.includes(v.feature)?old.filter(x=>x!==v.feature):[...old,v.feature])}/><span><b>{v.label}</b><small>{v.estimated?"预估":"参考"} {v.credits ?? "待核对"} 积分/{v.unit==="image"?"张":v.unit==="item"?"项":"次"}{v.override?" · 已自定义":""}</small></span></label>)}</div>

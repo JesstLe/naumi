@@ -33,10 +33,10 @@ export type ManagedModelRow = {
 
   imagegenConfig?: {routes:import("./imagegen-policy").ImagegenRoutePolicy[]};
   scopeOptions: {id:string;label:string;selected:boolean;available:boolean;adminDefault:boolean;reason?:string}[];
-  pricing?: {feature:string;label:string;unit:string;credits:number|null;estimated:boolean;override?:import("./credit-overrides").ManagedModelCreditPricing}[];
+  pricing?: {feature:string;label:string;unit:string;credits:number|null;estimated:boolean;override?:import("./credit-overrides").ManagedModelCreditPricing;source?:import("./management-pricing").CreditSource}[];
 };
 export type ManagedModelCandidate = { id: string; model: string; label: string; providerId: string; provider: string; modality: string; verified: boolean; channelCompatible?: boolean };
-export type ManagedModelCreditGrid = {quality:string;resolution:string;credits:number|null;available:boolean;effectiveQuality:string;estimated:boolean}[];
+export type ManagedModelCreditGrid = {quality:string;resolution:string;credits:number|null;available:boolean;effectiveQuality:string;estimated:boolean;source?:import("./management-pricing").CreditSourceKind}[];
 export type ModelManagementState = {
   version: number; managed: boolean; rows: ManagedModelRow[]; candidates: ManagedModelCandidate[];
   billingVersion?:number;channelHealth?:Record<string,{state:string;failures:number;retryAt:string|null;lastStatus:number|null}>;providerCapacity?:Record<string,{maxConcurrent:number;inFlight:number;unlimited?:boolean}>;

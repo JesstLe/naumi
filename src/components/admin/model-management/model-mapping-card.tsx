@@ -71,7 +71,7 @@ export function ModelMappingCard({ row, actions, scopeDisabled, onScope }: {
       <div className={styles.price}>
         <span className={styles.mobileLabel}>积分售价</span>
         <span>{priceKnown ? <><b>{price.credits}</b> 积分/{priceUnit}</> : "按工具配置"}</span>
-        {priceKnown && <small>{price.estimated ? "预估" : "参考"} · {price.label}</small>}
+        {priceKnown && <small>{price.estimated ? "预估" : "标准 1K"} · {price.label}{price.source ? ` · ${price.source.label}` : ""}</small>}
       </div>
       <button type="button" className={styles.configure} aria-expanded={expanded} aria-controls={panelId} onClick={() => setExpanded(value => !value)}>
         {expanded ? <ChevronDown size={15} /> : <Settings2 size={15} />}{expanded ? "收起" : "配置"}
