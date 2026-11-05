@@ -267,6 +267,12 @@ Object.assign(names, {
   "manage-role": "权限修改",
   "manage-adjust": "调整积分",
   "manage-reset-password": "重置密码",
+  delete: "删除账户",
+  note: "修改备注",
+  "ban-ip": "封禁 IP",
+  "unban-ip": "解除 IP 封禁",
+  "owner-account": "站长账号设置",
+  "artwork-delete": "删除作品",
 });
 Object.assign(names, ARTWORK_DETAIL_VALUES);
 const n = (value: unknown) =>

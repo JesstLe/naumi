@@ -1,22 +1,10 @@
 import "server-only";
 import { requireAdmin, resolveUserEmail } from "@/lib/admin-auth";
 import { dbEnabled } from "@/platform/db/pool";
+import { isSameOriginRequest } from "@/lib/request-origin";
 export const PRIVATE_HEADERS = { "Cache-Control": "private, no-store, max-age=0", Vary: "Cookie, Authorization", "X-Robots-Tag": "noindex, nofollow", "X-Content-Type-Options": "nosniff" };
 export function billingJson(data: unknown, status = 200) { return Response.json(data, { status, headers: PRIVATE_HEADERS }); }
-export function sameSiteBillingMutation(request: Request) {
-    if (request.headers.get("sec-fetch-site") === "cross-site")
-        return false;
-    const origin = request.headers.get("origin");
-    if (!origin)
-        return true;
-    try {
-        const source = new URL(origin), target = new URL(request.url);
-        return source.host === (request.headers.get("host") || target.host) && source.protocol === `${request.headers.get("x-forwarded-proto") || target.protocol.replace(":", "")}:`;
-    }
-    catch {
-        return false;
-    }
-}
+export function sameSiteBillingMutation(request: Request) { return isSameOriginRequest(request); }
 export async function billingAuthorize(request: Request, mutation = false) {
     if (!await requireAdmin(request))
         return billingJson({ error: "页面不存在" }, 404);

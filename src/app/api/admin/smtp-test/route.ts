@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin-auth";
+import { authorizeAdminMutation } from "@/lib/admin-mutation";
 import { sendMail } from "@/lib/mailer";
 import { BRAND } from "@/lib/brand";
 
@@ -10,9 +10,8 @@ export const dynamic = "force-dynamic";
 // 不用走完整的「忘记密码」流程。失败时把 SMTP 报错原样返回(认证失败/
 // 连接超时等信息对排错很关键,且仅管理员可见,不经 safeError 净化)。
 export async function POST(req: Request) {
-  if (!(await requireAdmin(req))) {
-    return NextResponse.json({ error: "需要管理员身份" }, { status: 403 });
-  }
+  const mutation = await authorizeAdminMutation(req, "smtp-test", 10);
+  if (mutation instanceof Response) return mutation;
   let body: { to?: string };
   try {
     body = await req.json();

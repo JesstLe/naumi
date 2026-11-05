@@ -101,6 +101,8 @@ Prompt Hubs正式文档提供 https://console.prompt-hubs.com/docs/catalog.json�
 
 仅从documentation.values_confirmed为true的分辨率路径与枚举推导默认映射；与模型名、价格标签无关。香蕉正式定义的resolution为1k/2k/4k，size为比例；resolutionPolicy新增可选ratioField，分辨率映射和比例分开冻结并发送。更高显示档位可选择较低实际规格，界面直接展示所选值，不把资料声明等同原生验证。
 
+按通道开启的"约定优先"参数模式（零配置可生图、只配例外、资料不拦截）见[设计方案（待实现）](design/image-parameter-conventional-contract-20261105.md)。
+
 高级设置保留参数名/比例字段/自定义实际值覆盖。已保存配置不随元数据刷新自动改执行参数，需管理员保存才生效。本次兼容回滚71b97fecb545be76d8086624b6793e8c9e1f97d6保留ratioField解析与文档导入后端，禁止直接退到不理解该字段的82ec570镜像。
 
 ## 新上游与供应通道（2026-10-10 后续）

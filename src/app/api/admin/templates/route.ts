@@ -3,6 +3,7 @@ import {getTemplate, listTemplates, updateTemplate} from "@/lib/templates/reposi
 import {setTemplateImageCacheSuccess} from "@/lib/templates/cache-repository";
 import {dbEnabled} from "@/platform/db/pool";
 import { requireAdmin } from "@/lib/admin-auth";
+import { authorizeAdminMutation } from "@/lib/admin-mutation";
 import { storageEnabled } from "@/lib/object-storage/runtime";
 import { uploadImage } from "@/lib/media-upload";
 import {persistTemplateImage} from "@/lib/template-image-cache";
@@ -68,6 +69,8 @@ function parseTags(raw: string): string[] {
 export async function PATCH(req: Request) {
   const blocked = await guard(req);
   if (blocked) return blocked;
+  const mutation = await authorizeAdminMutation(req, "templates");
+  if (mutation instanceof Response) return mutation;
 
   const ct = req.headers.get("content-type") ?? "";
   let id = "";

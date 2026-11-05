@@ -7,9 +7,10 @@ import {listArtworks} from "@/lib/artworks/repository";
 import {getOrCreateUser, getUser} from "@/lib/accounts/session";
 import {setUserPassword, setUserRole, setUserBanned, setUserNote, banIp, unbanIp, listBannedIps} from "@/lib/accounts/repository";
 import { requireAdmin } from "@/lib/admin-auth";
-import {resolveUserEmail} from "@/lib/admin-auth";
-import {sameSiteBillingMutation} from "@/lib/billing/access";
-import {operationIdFor,billingErrorResponse} from "@/lib/billing/request";
+import {authorizeAdminMutation} from "@/lib/admin-mutation";
+import {AccountChangeError, assertAccountChangeAllowed} from "@/lib/accounts/change-policy";
+import {appendManagementLogAfterChange} from "@/lib/bi/management-log";
+import {operationIdFor} from "@/lib/billing/request";
 import { hashPassword } from "@/lib/pw";
 
 export const runtime = "nodejs";
@@ -59,7 +60,9 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const blocked = await guard(req);
   if (blocked) return blocked;
-  if(!sameSiteBillingMutation(req))return NextResponse.json({error:"请求来源无效"},{status:403});
+  const mutation = await authorizeAdminMutation(req, "users");
+  if (mutation instanceof Response) return mutation;
+  const { actor } = mutation;
 
   let body: {
     action?: string;
@@ -94,6 +97,7 @@ export async function POST(req: Request) {
       } else {
         await unbanIp(ip);
       }
+      await appendManagementLogAfterChange({ actor, subject: `ip:${ip}`, action, reason: (body.reason ?? "").trim(), changes: { ip } });
       return NextResponse.json(await snapshot());
     }
 
@@ -102,6 +106,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "缺少 email" }, { status: 400 });
     }
 
+    let changes: Record<string, unknown> = {};
     if (action === "create") {
       // 管理员创建用户:邮箱+姓名+初始密码(可选发放积分由后续 adjust 完成)
       const name = (body.name ?? "").trim().slice(0, 40);
@@ -115,6 +120,7 @@ export async function POST(req: Request) {
       }
       await getOrCreateUser(email, name);
       await setUserPassword(email, hashPassword(password));
+      changes = { name };
     } else if (action === "reset-password") {
       const password = (body.password ?? "").trim();
       if (password.length < 6) {
@@ -124,9 +130,13 @@ export async function POST(req: Request) {
       if (!existing) {
         return NextResponse.json({ error: "用户不存在" }, { status: 404 });
       }
+      await assertAccountChangeAllowed(actor, email, { kind: "reset-password" });
       await setUserPassword(email, hashPassword(password));
     } else if (action === "role") {
-      await setUserRole(email, body.role === "admin" ? "admin" : "user");
+      const role = body.role === "admin" ? "admin" : "user";
+      await assertAccountChangeAllowed(actor, email, { kind: "role", role });
+      await setUserRole(email, role);
+      changes = { role };
     } else if (action === "adjust") {
       const d = Math.trunc(Number(body.delta) || 0);
       if (!d) {
@@ -140,12 +150,18 @@ export async function POST(req: Request) {
         body.months === undefined || body.months === null
           ? undefined
           : Math.trunc(Number(body.months));
-      await adjustUserCredits(email, d, "管理员调整积分", { months,id:operationIdFor(req),actor:await resolveUserEmail(req)??"local-admin" });
+      await adjustUserCredits(email, d, "管理员调整积分", { months,id:operationIdFor(req),actor });
+      changes = { delta: d, ...(months === undefined ? {} : { months }) };
     } else if (action === "ban") {
-      await setUserBanned(email, body.banned === true);
+      const banned = body.banned === true;
+      await assertAccountChangeAllowed(actor, email, { kind: "ban", banned });
+      await setUserBanned(email, banned);
+      changes = { banned };
     } else if (action === "note") {
       await setUserNote(email, body.note ?? "");
+      changes = { noteLength: String(body.note ?? "").length };
     } else if (action === "delete") {
+      await assertAccountChangeAllowed(actor, email, { kind: "delete" });
       await deleteUser(email);
     } else {
       return NextResponse.json(
@@ -153,8 +169,10 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
+    await appendManagementLogAfterChange({ actor, subject: email, action, changes });
     return NextResponse.json(await snapshot());
   } catch (e) {
+    if (e instanceof AccountChangeError) return NextResponse.json({ error: e.message }, { status: e.status });
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "操作失败" },
       { status: 500 }

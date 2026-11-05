@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/admin-auth";
+import { adminPasswordState, authenticateAdminPassword, requireAdmin } from "@/lib/admin-auth";
+import { authorizeAdminMutation } from "@/lib/admin-mutation";
+import { appendManagementLogAfterChange } from "@/lib/bi/management-log";
 import { OPERATOR_EMAIL } from "@/lib/operator";
 import {setOwnerAccount} from "@/lib/accounts/administration";
 import {dbEnabled} from "@/platform/db/pool";
@@ -17,18 +19,18 @@ export async function GET(req: Request) {
   if (!(await requireAdmin(req))) {
     return NextResponse.json({ error: "需要管理员身份" }, { status: 403 });
   }
-  if (!dbEnabled) return NextResponse.json({ ownerEmail: null });
-  return NextResponse.json({ ownerEmail: await getOwnerEmail() });
+  if (!dbEnabled) return NextResponse.json({ ownerEmail: null, reauthRequired: false });
+  const { configured } = await adminPasswordState(req);
+  return NextResponse.json({ ownerEmail: await getOwnerEmail(), reauthRequired: configured });
 }
 
 export async function POST(req: Request) {
-  if (!(await requireAdmin(req))) {
-    return NextResponse.json({ error: "需要管理员身份" }, { status: 403 });
-  }
+  const mutation = await authorizeAdminMutation(req, "owner-account", 10);
+  if (mutation instanceof Response) return mutation;
   if (!dbEnabled) {
     return NextResponse.json({ error: "未配置数据库" }, { status: 503 });
   }
-  let body: { email?: string; password?: string };
+  let body: { email?: string; password?: string; adminPassword?: string };
   try {
     body = await req.json();
   } catch {
@@ -42,6 +44,11 @@ export async function POST(req: Request) {
   if (password.length < 6) {
     return NextResponse.json({ error: "密码至少 6 位" }, { status: 400 });
   }
+  // Rebinding moves every operator asset; when a console password exists the
+  // operator re-enters it here instead of relying on a long-lived session.
+  if ((await adminPasswordState(req)).configured && !(await authenticateAdminPassword(String(body.adminPassword ?? "")))) {
+    return NextResponse.json({ error: "请输入当前后台访问密码以确认", code: "ADMIN_REAUTH_REQUIRED" }, { status: 403 });
+  }
   try {
     // 已设过站长邮箱 → 本次视为改绑:从旧站长邮箱迁到新邮箱;否则从 operator 迁。
     const prev = (await getOwnerEmail()) || OPERATOR_EMAIL;
@@ -49,9 +56,11 @@ export async function POST(req: Request) {
       // 同邮箱重设 = 改密码
       const {setUserPassword} = await import("@/lib/accounts/repository");
       await setUserPassword(email, hashPassword(password));
+      await appendManagementLogAfterChange({ actor: mutation.actor, subject: email, action: "owner-account", changes: { mode: "password" } });
       return NextResponse.json({ ok: true, ownerEmail: email });
     }
     await setOwnerAccount(prev, email, hashPassword(password));
+    await appendManagementLogAfterChange({ actor: mutation.actor, subject: email, action: "owner-account", changes: { mode: "rebind", previous: prev, next: email } });
     return NextResponse.json({ ok: true, ownerEmail: email });
   } catch (e) {
     return NextResponse.json(

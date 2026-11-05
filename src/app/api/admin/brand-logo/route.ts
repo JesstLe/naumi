@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { dbEnabled } from "@/platform/db/pool";
-import { requireAdmin } from "@/lib/admin-auth";
+import { authorizeAdminMutation } from "@/lib/admin-mutation";
 import { storageEnabled } from "@/lib/object-storage/runtime";
 import { uploadImage } from "@/lib/media-upload";
 
@@ -15,8 +15,8 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   if (!dbEnabled)
     return NextResponse.json({ error: "未配置数据库" }, { status: 503 });
-  if (!(await requireAdmin(req)))
-    return NextResponse.json({ error: "需要管理员身份" }, { status: 403 });
+  const mutation = await authorizeAdminMutation(req, "brand-logo");
+  if (mutation instanceof Response) return mutation;
 
   if (!storageEnabled)
     return NextResponse.json({ error: "未配置对象存储,无法上传" }, { status: 503 });

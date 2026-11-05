@@ -7,7 +7,7 @@ export function resolveConfiguredImageQuality(requested: unknown) {
   const scope = currentModelExecution("image"), policy = scope?.parameterMap.qualityPolicy;
   if (policy) {
     const req = scope?.frozen.facts?.quality || (typeof requested === "string" && requested ? requested : "medium");
-    const wire = policyQuality(policy, req);
+    const wire = policyQuality(policy, req, scope?.parameterMap.parameterContract);
     return {requested:req,executed:wire===undefined?"auto":(IMAGE_QUALITY_IDS as readonly string[]).includes(wire)||wire==="auto"?wire as ExecutedQuality:req as ExecutedQuality,upstreamValue:wire??null,fallbackReason:wire===undefined?"configured-omit":wire!==req?"configured-mapping":null} satisfies ResolvedImageQuality;
   }
   const preset = scope?.imagePreset;

@@ -107,7 +107,7 @@ export function freezeBusinessQuoteForModel(snapshot:ConfigSnapshot,models:Model
   const model = models.config.publicModels.find(m => m.id === facts.modelId);
   const upstream = models.config.upstreamModels.find(u => u.id === (scope?.frozen.target.type === "upstream" && scope.frozen.publicModelId === facts.modelId ? scope.frozen.target.id : model?.target.id));
   if (!model?.supplierRouting && upstream?.parameterMap.qualityPolicy) {
-    const wire = policyQuality(upstream.parameterMap.qualityPolicy, facts.quality);
+    const wire = policyQuality(upstream.parameterMap.qualityPolicy, facts.quality, upstream.parameterMap.parameterContract);
     q.requestedParameters = {quality:facts.quality,resolution:facts.resolution,ratio:facts.ratio||"1:1"};
     q.effectiveParameters = {...q.requestedParameters,quality:wire||"auto"};
   }
