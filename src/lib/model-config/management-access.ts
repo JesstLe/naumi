@@ -1,4 +1,5 @@
 import {imageMappingEditorSchema,applyImageMappingEditor} from './image-mapping-editor';
+import {pruneAppliedOperationDrafts} from "./draft-retention";
 import { readImageModelMetadata } from "../supplier-models/image-model-metadata";
 import {applyResolutionParameters,resolutionParametersSchema} from "./resolution-policy";
 import {imagegenRoutePolicySchema,applyImagegenModelParameters} from "./imagegen-policy";
@@ -295,6 +296,8 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
       publication = await admin.runtime.publish({ id: body.id, draftId: draft.id, expectedRevision: draft.revision, expectedVersion: body.expectedVersion, actor, reason: `MVP ${body.action === "video-capability-upgrade" ? "更新已核对的视频能力" : body.action === "image-mapping" ? `图片参数映射 ${body.rowId}` : body.action === "video-parameters" ? `视频能力 ${body.rowId}` : body.action === "imagegen-parameters" ? `图像高级参数 ${body.rowId}` : body.action === "scope-compat" ? "回滚兼容：展开画布系统范围" : body.action === "order" ? "模型展示排序" : body.action === "channels" ? `供应通道 ${body.rowId}` : body.action === "resolutions" ? `分辨率选项 ${body.rowId}` : body.action === "parameters" ? `参数映射 ${body.rowId}` : body.action === "scope" ? `工具范围 ${body.rowId}` : body.action === "switch" ? `切换 ${body.rowId} → ${body.upstreamId}` : body.action === "rename" ? `改名 ${body.rowId} → ${body.label}` : body.action === "connect" ? `接入来源 ${body.name}` : `添加模型 ${body.model}`}` });
       }
       if(!publication)throw new ModelConfigError("PUBLICATION_UNAVAILABLE","发布记录不存在",404);
+      // Bounded, best-effort retention: each applied operation clears older applied operation drafts.
+      if(publication.phase==="applied")await pruneAppliedOperationDrafts(admin.pool).catch(()=>0);
       return await publicationResponse(publication);
     } catch (e) {
       // A lock/permit timeout proves no rejection of this operation. Another
