@@ -30,6 +30,7 @@ import { authorizeAdminMutation } from "@/lib/admin-mutation";
 import { appendManagementLogAfterChange } from "@/lib/bi/management-log";
 import { setSettingsAtomically } from "@/lib/settings/repository";
 import { updateBillingCompatibility } from "@/lib/billing/runtime";
+import { BillingError } from "@/lib/billing/types";
 import { settingsMutationSchema } from "@/lib/settings/mutation-schema";
 import { modelConfigurationEnabled } from "@/lib/model-config/availability";
 import { ModelConfigError } from "@/lib/model-config/types";
@@ -301,11 +302,11 @@ export async function POST(req: Request) {
       }, write);
     }
     // All schema checks, RSA decryption and AES encryption have finished.
-    await setSettingsAtomically(entries);
-    // Billing owns version publication/CAS and opens its own transaction. It
-    // cannot join app_settings here. Group the compatibility fields in one
-    // publication. Runtime/CAS failures can leave ordinary settings committed;
-    // validation failures (400) always occur before either write boundary.
+    // Billing owns version publication/CAS and opens its own transaction, so it
+    // cannot join app_settings. It runs first: its likely failure (a concurrent
+    // billing edit, 409) then leaves nothing written. Only a database failure of
+    // the settings transaction after a successful billing publication can split
+    // the two; validation failures (400) always occur before either write.
     if (body.signupBonus !== undefined || body.payEnabled !== undefined || body.creditsMetering !== undefined) {
       await updateBillingCompatibility(actor, "更新系统计费设置", config => {
         if (body.signupBonus !== undefined) config.credits.signup.amount = Math.min(Math.max(0, Math.trunc(body.signupBonus)), 100000);
@@ -313,9 +314,12 @@ export async function POST(req: Request) {
         if (body.creditsMetering !== undefined) config.switches.metering = body.creditsMetering ? "on" : "off";
       });
     }
+    await setSettingsAtomically(entries);
     await appendManagementLogAfterChange({ actor, subject: "settings:system", action: "settings-update", changes: { fields: Object.keys(body).sort() } });
     return NextResponse.json(await getAdminView());
-  } catch {
+  } catch (error) {
+    // Billing conflicts/validation keep their own status (e.g. 409 刷新后重试); nothing was written.
+    if (error instanceof BillingError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
     return NextResponse.json(
       { error: "保存失败" },
       { status: 500 }

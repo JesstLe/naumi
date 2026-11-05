@@ -60,7 +60,7 @@
 | P1-b | 映射矩阵 UI：合并 4 个参数弹窗；以供应商资料作为下拉候选并标注不匹配；区分"默认"和"覆盖" | 部分完成并合入 main，未发布：资料显示/候选/标黄/填充/默认与覆盖/停用通道折叠/停用通道卡住保存的修复已完成；**合并 4 个弹窗与行×通道矩阵布局未做**。见 [P1-b 记录](../changes/2026-11-05-image-mapping-supplier-facts.md) |
 | P1-c | 价格统一显示"最终生效价"并标注来源层 | 代码已合入 main，未发布；见 [P1-c 记录](../changes/2026-11-05-model-credit-source.md) |
 | P1-d | 接入供应商向导：来源 → 模型 → 映射 → 价格 → 预览 → 一次发布；"新增模型"迁入新 UI；旧完整配置中心降级为只读审阅和回滚 | 待实施 |
-| P2 | 统一后台接口包装（鉴权、同源、限流、审计、统一状态码），逐个替换现有写法；按业务拆分 `management-access.ts`；计费发布时校验 projection；清理草稿；删除过时测试和接口 | 进行中：计费发布校验、操作草稿清理已合入（见 [计费记录](../changes/2026-11-05-billing-publication-check.md)、[草稿记录](../changes/2026-11-05-model-draft-retention.md)）；`management-access` 已按职责拆分（见 [拆分记录](../changes/2026-11-05-management-access-split.md)）；过时测试已核实并交画布负责人；系统设置接口加固、冻结计划不一致根因由协作模型并行处理中 |
+| P2 | 统一后台接口包装（鉴权、同源、限流、审计、统一状态码），逐个替换现有写法；按业务拆分 `management-access.ts`；计费发布时校验 projection；清理草稿；删除过时测试和接口 | 进行中：计费发布校验、操作草稿清理已合入（见 [计费记录](../changes/2026-11-05-billing-publication-check.md)、[草稿记录](../changes/2026-11-05-model-draft-retention.md)）；`management-access` 已按职责拆分（见 [拆分记录](../changes/2026-11-05-management-access-split.md)）；系统设置接口已加固（[记录](../changes/2026-11-05-admin-settings-hardening.md)，GPT-6.1 实现、主线程复核调整）；`quality-parameters` 失败已查明为测试过时并修正（[记录](../changes/2026-11-05-frozen-plan-mismatch.md)，GPT-6 Astra）；过时的画布测试已交负责人；feature-access、team-access 已有各自的守卫，保持现状 |
 | P3 | 供应商账户 / 接入端点 / 通道三层数据模型；收敛导航与用户管理页面 | 待实施 |
 
 ## 主线同步记录
