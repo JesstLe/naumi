@@ -1,7 +1,7 @@
 # 图片参数"约定优先"模式（按通道开启）设计方案
 
 - 日期：2026-11-05；基线 main `bbda7e3ee4221f1141be739aa9e930db064b8bf8`
-- 状态：**方案，待实现**。本文不代表代码已实现、已合并或已上线。
+- 状态：**第一轮（3.1、3.2、3.4 开关、第 5 节测试）已实现并合入 main，未发布**；记录见 [P1-a 实现记录](../changes/2026-11-05-image-parameter-conventional-contract.md)。3.4 的资料提示与一键建议、3.5 上游拒收反馈留待 P1-b。
 - 前置资料：[图片参数统一计划](../changes/2026-10-27-image-parameter-plan.md)、[参数护栏审计](../GUARDRAIL_AUDIT_20261024.md)、[供应商模型元数据](../supplier-model-metadata.md)、[模型管理](../admin-model-management.md)
 
 ## 1. 背景
@@ -65,7 +65,7 @@
 | 判断点 | 现行 | 约定优先模式 |
 |---|---|---|
 | 资料/能力白名单：`simulation.ts:53,54,60,63`，`resolution-fallback.ts:19,44` | 不在列表内就排除 | **跳过**。资料只在后台提示 |
-| 映射缺档：`simulation.ts:47,51`，`resolution-policy.ts:35`，`image-parameter-plan.ts:32` | 排除或报错 | **空格 = 按协议默认传法发送前端值** |
+| 映射缺档：`simulation.ts:47,51`，`resolution-policy.ts:35`，`image-parameter-plan.ts:32` | 排除或报错 | **质量空格（或未列出的档位）原样发送前端档位；分辨率空格不改动协议原有的尺寸与比例字段**（实现时确定：OpenAI 的 size 是像素，不能塞入 "4K"） |
 | 高级参数没有映射：`image-parameter-plan.ts:56` | 报错 | 丢弃该参数，写入审计警告 |
 | 已填写的覆盖（4K→2k、high→medium、不发送） | 生效 | 生效，以人工配置为准 |
 | 前端可选档位 | 由多处共同决定 | 由管理员设置的 `displayResolutions` / 质量展示档决定 |

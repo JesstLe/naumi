@@ -2,6 +2,7 @@ import { applicationAPIMartImages } from "./apimart-image-policy";
 import {z} from "zod";
 import {DISPLAY_RESOLUTIONS} from "./resolution-options";
 import {ModelConfigError, type ModelConfig} from "./types";
+import {conventionalContract,type ParameterContract} from "./parameter-contract";
 import type {MetadataResolutionDefaults} from "../supplier-models/resolution-defaults";
 
 export const RESOLUTION_FIELDS = ["size", "resolution", "image_size", "image_config.image_size", "generationConfig.imageConfig.imageSize"] as const;
@@ -21,8 +22,10 @@ export const resolutionParametersSchema=z.strictObject({routes:z.array(z.strictO
 export type ResolutionParameters=z.infer<typeof resolutionParametersSchema>;
 
 /** Only resolution fields can be replaced; model, auth and other parameters are untouched. */
-export function mapResolution(body:Record<string,any>,policy:ResolutionPolicy|undefined,requested:unknown,ratio?:string){
+export function mapResolution(body:Record<string,any>,policy:ResolutionPolicy|undefined,requested:unknown,ratio?:string,contract?:ParameterContract){
   if(!policy)return body;
+  // Conventional: an empty tier keeps the protocol's own size and ratio fields untouched.
+  if(contract==="conventional"&&policy.mode==="map"&&!policy.values[requested as keyof typeof policy.values])return body;
   // Remove conflicting legacy fields, including nested variants, before applying this channel's contract.
   for(const field of RESOLUTION_FIELDS){const keys=field.split(".");let parent=body;
     for(const key of keys.slice(0,-1)){parent=parent?.[key];if(!parent||typeof parent!=="object")break;}
@@ -60,7 +63,7 @@ export function applyResolutionParameters(source:ModelConfig,row:{id:string;moda
     if(!value||value.mode==="legacy"){delete u.parameterMap.resolutionPolicy;continue;}
     if(!route.editable)throw new ModelConfigError("MODEL_PARAMETERS_ADAPTER","此供应通道不能覆盖适配器的分辨率契约");
     if((route.protocol==="openai-images"||applicationAPIMartImages(route.protocol,u.parameterMap))&&(value.field.includes(".")||value.ratioField?.includes(".")))throw new ModelConfigError("INVALID_REQUEST","OpenAI 图片接口请选择 size、resolution 或 image_size 字段");
-    if(value.mode==="map"&&resolutions.some(id=>!value.values[id]?.trim()))throw new ModelConfigError("INVALID_REQUEST","请为每个开放的分辨率填写实际上游值");
+    if(value.mode==="map"&&!conventionalContract(u.parameterMap)&&resolutions.some(id=>!value.values[id]?.trim()))throw new ModelConfigError("INVALID_REQUEST","请为每个开放的分辨率填写实际上游值");
     const ratioField=value.ratioField===undefined?(u.parameterMap.resolutionPolicy?.field===value.field?u.parameterMap.resolutionPolicy?.ratioField:undefined):value.ratioField||undefined;
     u.parameterMap.resolutionPolicy=resolutionPolicySchema.parse({mode:value.mode,field:value.field,...(ratioField?{ratioField}:{}),values:Object.fromEntries(DISPLAY_RESOLUTIONS.filter(id=>value.values[id]?.trim()).map(id=>[id,value.values[id]]))});
   }

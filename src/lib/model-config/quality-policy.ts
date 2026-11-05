@@ -2,6 +2,7 @@ import { applicationAPIMartImages } from "./apimart-image-policy";
 import type {MetadataQualityDefaults} from "../supplier-models/quality-defaults";
 import { z } from "zod";
 import { ModelConfigError, type ModelConfig, type UpstreamModel } from "./types";
+import type { ParameterContract } from "./parameter-contract";
 
 export const DISPLAY_QUALITY_IDS = ["low", "medium", "high", "xhigh", "max"] as const;
 export const DEFAULT_QUALITY_LABELS = { low: "低", medium: "标准", high: "高", xhigh: "超高", max: "最高" };
@@ -11,14 +12,16 @@ export const qualityPolicySchema = z.strictObject({
   evidence: z.strictObject({ status: z.enum(["unverified", "documented", "accepted", "rejected"]), source: z.string().trim().max(1000), checkedAt: z.string().max(30) }).optional(),
 }).superRefine((p, ctx) => {
   if (new Set(p.choices.map(c => c.id)).size !== p.choices.length) ctx.addIssue({ code: "custom", message: "质量档位不能重复" });
-  if (p.mode === "map" && p.choices.some(c => !c.value)) ctx.addIssue({ code: "custom", message: "每个显示档位需要填写上游值" });
+  // Completeness of map values depends on the upstream's parameter contract; validateModelConfig enforces it.
   if (p.evidence?.status !== undefined && p.evidence.status !== "unverified" && !p.evidence.source) ctx.addIssue({ code: "custom", message: "请记录参数核对依据" });
 });
 export type QualityPolicy = z.infer<typeof qualityPolicySchema>;
-export function policyQuality(policy: QualityPolicy | undefined, requested: unknown): string | undefined {
+export function policyQuality(policy: QualityPolicy | undefined, requested: unknown, contract?: ParameterContract): string | undefined {
   if (!policy) return typeof requested === "string" ? requested : undefined;
   const id = typeof requested === "string" ? requested : "medium";
   const choice = policy.choices.find(c => c.id === id);
+  // Conventional: an unlisted tier or an empty cell sends the selected tier unchanged.
+  if (contract === "conventional") return policy.mode === "omit" ? undefined : policy.mode === "map" && choice?.value ? choice.value : id;
   if (!choice) throw new ModelConfigError("MODEL_PARAMETER_UNAVAILABLE", "该模型未开放此质量档位，请刷新参数列表", 409);
   return policy.mode === "omit" ? undefined : policy.mode === "passthrough" ? choice.id : choice.value;
 }

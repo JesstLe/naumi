@@ -124,11 +124,11 @@ export async function generateNewApiImage(input: {
   const scope = input.execution || currentModelExecution("image");
   const managed = scope?.connection.protocol === "new-api-flow" && (!input.settings || input.settings.baseUrl === scope.connection.baseUrl && input.settings.apiKey === scope.connection.apiKey);
   const wireModel = managed ? scope.connection.wireModel : input.model;
-  const quality = managed && scope.parameterMap.qualityPolicy ? policyQuality(scope.parameterMap.qualityPolicy, scope.frozen.facts?.quality || input.quality) : undefined;
+  const quality = managed && scope.parameterMap.qualityPolicy ? policyQuality(scope.parameterMap.qualityPolicy, scope.frozen.facts?.quality || input.quality, scope.parameterMap.parameterContract) : undefined;
   const requestedResolution=scope?.frozen.facts?.requestedResolution;
   const legacyResolution=requestedResolution && (scope?.capabilities.nativeResolutions as string[]|undefined)?.includes(requestedResolution) ? requestedResolution : scope?.frozen.facts?.resolution;
   const parameterPlan=managed?executionImageParameterPlan(scope,{}):undefined;
-  const mapSize=(body:Record<string,any>)=>parameterPlan?applyImageParameterPlan(body,parameterPlan):mapResolution(body,managed?scope.parameterMap.resolutionPolicy:undefined,scope?.frozen.facts?.requestedResolution||scope?.frozen.facts?.resolution,scope?.frozen.facts?.ratio);
+  const mapSize=(body:Record<string,any>)=>parameterPlan?applyImageParameterPlan(body,parameterPlan):mapResolution(body,managed?scope.parameterMap.resolutionPolicy:undefined,scope?.frozen.facts?.requestedResolution||scope?.frozen.facts?.resolution,scope?.frozen.facts?.ratio,managed?scope.parameterMap.parameterContract:undefined);
   const submit = managed ? modelEndpointFetch(settings.baseUrl, { trustedOrigins: input.trustedOrigins || (process.env.MODEL_CONFIG_TRUSTED_ORIGINS || "").split(/[\s,]+/).filter(Boolean) }, {...scope.connection,costScope:scope}) : supplierCostFetch(fetch,{providerId:"legacy-flow",apiKey:settings.apiKey,baseUrl:settings.baseUrl,wireModel,protocol:"new-api-flow"});
   if (!settings.baseUrl || !settings.apiKey) {
     throw new Error("New API 生图分组尚未配置");

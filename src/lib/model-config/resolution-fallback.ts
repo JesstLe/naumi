@@ -8,6 +8,7 @@ import {simulateModel} from "@/lib/model-config/simulation";
 import { imageRequestAdmission } from "../imagegen/request-admission";
 import { exactRatioPixels } from "../imagegen/request-size";
 import {acceptsAPIMartRatio} from "./apimart-image-policy";
+import {conventionalContract} from "./parameter-contract";
 
 export const IMAGE_RESOLUTION_TIERS = ["1K", "2K", "4K"] as const;
 export type ImageResolutionTier = typeof IMAGE_RESOLUTION_TIERS[number];
@@ -18,7 +19,8 @@ export type ResolutionContext = { snapshot: ModelSnapshot; billing: ConfigSnapsh
  * size map may omit 1K (the normal API size), so retain its native tier list. */
 export function upstreamResolutionTiers(upstream: UpstreamModel, ratio?: string): string[] {
   const map = upstream.parameterMap;
-  let tiers = map.resolutionPolicy?.mode === "omit" ? [...IMAGE_RESOLUTION_TIERS] : map.resolutionPolicy?.mode === "map"
+  // Conventional: every display tier is sendable (empty cells keep the protocol default).
+  let tiers = conventionalContract(map) || map.resolutionPolicy?.mode === "omit" ? [...IMAGE_RESOLUTION_TIERS] : map.resolutionPolicy?.mode === "map"
     ? Object.keys(map.resolutionPolicy.values).filter(k => !!map.resolutionPolicy!.values[k as ImageResolutionTier])
     : Array.from(new Set([...upstream.capabilities.nativeResolutions, ...Object.keys(map.resolution || {})]));
   if (map.apimartImages && ratio && ratio !== "auto") {
@@ -43,7 +45,7 @@ export function resolutionFacts(facts: ModelFacts, tier: string): ModelFacts {
  * promise. Keep its existing execution path; declared contracts remain strict. */
 export function upstreamAcceptsResolution(upstream: UpstreamModel, tier: string, ratio?: string): boolean {
   const map = upstream.parameterMap;
-  const declared = map.resolutionPolicy?.mode === "map" || upstream.capabilities.nativeResolutions.length > 0
+  const declared = conventionalContract(map) || map.resolutionPolicy?.mode === "map" || upstream.capabilities.nativeResolutions.length > 0
     || Object.keys(map.resolution || {}).length > 0 || !!map.apimartImages;
   return !declared || upstreamResolutionTiers(upstream, ratio).includes(tier);
 }

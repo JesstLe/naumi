@@ -51,12 +51,12 @@ export function providerExecutionTransport(scope: ModelExecutionScope, options: 
       if ((scope.businessOption?.pricing?.mode === "usage" || scope.procurement?.basis === "tokens") && body.stream && connection.protocol === "openai-chat") body.stream_options = { ...body.stream_options, include_usage: true };
       if (connection.protocol !== "router-images") {
         if (parameterMap.qualityPolicy) {
-          const wire = policyQuality(parameterMap.qualityPolicy, frozen.facts?.quality || body.quality);
+          const wire = policyQuality(parameterMap.qualityPolicy, frozen.facts?.quality || body.quality, parameterMap.parameterContract);
           if (wire === undefined) delete body.quality; else body.quality = wire;
         } else if (typeof body.quality === "string" && parameterMap.quality?.[body.quality as keyof typeof parameterMap.quality]) body.quality = parameterMap.quality[body.quality as keyof typeof parameterMap.quality];
         const requestedResolution=frozen.facts?.requestedResolution;
         const resolution = (!parameterMap.resolutionPolicy && requestedResolution && (scope.capabilities.nativeResolutions as string[]).includes(requestedResolution) ? requestedResolution : frozen.facts?.resolution) as keyof NonNullable<typeof parameterMap.resolution>;
-        if(parameterMap.resolutionPolicy)mapResolution(body,parameterMap.resolutionPolicy,frozen.facts?.requestedResolution||resolution,frozen.facts?.ratio);
+        if(parameterMap.resolutionPolicy)mapResolution(body,parameterMap.resolutionPolicy,frozen.facts?.requestedResolution||resolution,frozen.facts?.ratio,parameterMap.parameterContract);
         else if (resolution && parameterMap.resolution?.[resolution]) body.size = parameterMap.resolution[resolution];
       }
       const advanced=currentImagegenStep();

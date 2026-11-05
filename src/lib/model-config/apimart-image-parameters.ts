@@ -1,4 +1,5 @@
 import {executionImageParameterPlan} from './image-plan-runtime';
+import { conventionalContract } from "./parameter-contract";
 import {applyImageParameterPlan} from './image-parameter-plan';
 import "server-only";
 import type { ModelExecutionScope } from "./context";
@@ -20,11 +21,11 @@ export function apimartImageParameters(scope: ModelExecutionScope, requested: { 
   // dimensions (probed 2026-10-27), so the ratio itself never reaches the wire.
   const named = policy.ratios.includes(requested.ratio);
   const exactPixels = named ? undefined : exactRatioPixels(requested.ratio, scope.frozen.publicModelId);
-  if ((!named && !exactPixels) || !scope.capabilities.qualities.includes(requested.quality as never) ||
-      !scope.capabilities.nativeResolutions.includes(requested.resolution as never))
+  if ((!named && !exactPixels) || !conventionalContract(map) && (!scope.capabilities.qualities.includes(requested.quality as never) ||
+      !scope.capabilities.nativeResolutions.includes(requested.resolution as never)))
     throw new ModelConfigError("MODEL_INCOMPATIBLE", "异步图片通道未开放此质量、尺寸或比例", 422);
   const upstream: Record<string, string | number | boolean> = {};
-  const quality = policyQuality(map.qualityPolicy, requested.quality);
+  const quality = policyQuality(map.qualityPolicy, requested.quality, map.parameterContract);
   if (quality !== undefined) upstream.quality = quality;
   if (exactPixels) {
     // Pixel sizes fully determine the output; pairing them with the tier
@@ -33,7 +34,7 @@ export function apimartImageParameters(scope: ModelExecutionScope, requested: { 
       ? map.resolutionPolicy.ratioField : "size";
     upstream[sizeField] = `${exactPixels.width}x${exactPixels.height}`;
   } else {
-    mapResolution(upstream, map.resolutionPolicy, requested.resolution, requested.ratio);
+    mapResolution(upstream, map.resolutionPolicy, requested.resolution, requested.ratio, map.parameterContract);
   }
   const advanced = currentImagegenStep();
   if (advanced) Object.assign(upstream, mapImagegenParameters(imagegenWireRequest(advanced.request), publishedImagegenCapabilities(scope.capabilities), map.imagegen || {}));

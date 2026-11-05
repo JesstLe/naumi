@@ -2,6 +2,7 @@ import {z} from 'zod';
 import {acceptsAPIMartRatio} from './apimart-image-policy';
 import {ModelConfigError,type UpstreamModel} from './types';
 import {policyQuality} from './quality-policy';
+import {conventionalContract} from './parameter-contract';
 import {mapResolution,RESOLUTION_FIELDS} from './resolution-policy';
 import {exactRatioPixels} from '../imagegen/request-size';
 import {IMAGEGEN_FIELDS_BY_CAPABILITY} from '../imagegen/capabilities';
@@ -28,8 +29,9 @@ export function compileImageParameterPlan(source:Pick<UpstreamModel,'id'|'model'
   wire[field]=value;clear.add(field);
  };
  let quality:string|undefined;
- if(map.qualityPolicy){clear.add('quality');quality=policyQuality(map.qualityPolicy,requested.quality);if(quality!==undefined)put('quality',quality!);}
- else if(map.quality&&Object.keys(map.quality).length){quality=map.quality[requested.quality as keyof typeof map.quality];if(quality===undefined)fail('未配置质量映射：'+requested.quality);put('quality',quality!);}
+ const conventional=conventionalContract(map);
+ if(map.qualityPolicy){clear.add('quality');quality=policyQuality(map.qualityPolicy,requested.quality,map.parameterContract);if(quality!==undefined)put('quality',quality!);}
+ else if(map.quality&&Object.keys(map.quality).length){quality=map.quality[requested.quality as keyof typeof map.quality];if(quality===undefined){if(!conventional)fail('未配置质量映射：'+requested.quality);}else put('quality',quality!);}
  // With no manual mapping the existing protocol default remains unchanged.
  let resolution:string|undefined,expectedPixels:{width:number;height:number}|undefined;
  const adapter=map.apimartImages;
@@ -40,6 +42,8 @@ export function compileImageParameterPlan(source:Pick<UpstreamModel,'id'|'model'
   RESOLUTION_FIELDS.forEach(f=>clear.add(f));
   const field=map.resolutionPolicy?.ratioField&&map.resolutionPolicy.ratioField!==map.resolutionPolicy.field?map.resolutionPolicy.ratioField:'size';
   put(field,`${pixels.width}x${pixels.height}`);expectedPixels=pixels;
+ }else if(conventional&&map.resolutionPolicy?.mode==='map'&&!map.resolutionPolicy.values[requested.resolution as '1K']){
+  // Conventional empty tier: the protocol's own size/ratio fields stay as built.
  }else if(map.resolutionPolicy){
   if(map.resolutionPolicy.mode==='map'&&map.resolutionPolicy.field===map.resolutionPolicy.ratioField)fail('分辨率与比例不能写入同一字段');
   RESOLUTION_FIELDS.forEach(f=>clear.add(f));
@@ -53,7 +57,7 @@ export function compileImageParameterPlan(source:Pick<UpstreamModel,'id'|'model'
   const fields=IMAGEGEN_FIELDS_BY_CAPABILITY[key as CapabilityKey];if(!fields)fail('未知图片参数：'+key);
   const field=map.imagegen?.[key as CapabilityKey];
   if(field==='omit'){fields.filter(f=>f!=='omit').forEach(f=>clear.add(f));continue;}
-  if(!field){if(['outputFormat','outputCompression','transparent'].includes(key))continue;fail('未配置参数映射：'+key);}
+  if(!field){if(conventional||['outputFormat','outputCompression','transparent'].includes(key))continue;fail('未配置参数映射：'+key);}
   if(!fields.includes(field!))fail('实际参数字段不匹配：'+key);
   put(field!,value);
  }
