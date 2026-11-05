@@ -38,7 +38,7 @@ const TYPES: Record<string, string> = {
   vtt: "text/vtt",
 };
 
-export async function serveMedia(request:Request,segs:string[]) {
+export async function serveMedia(request:Request,segs:string[],options:{skipMirror?:boolean}={}) {
   // 防目录穿越:段内不允许 .. / 空字节 / 分隔符
   if (
     !segs.length ||
@@ -65,7 +65,7 @@ export async function serveMedia(request:Request,segs:string[]) {
       remoteVersion=storageDriver!=="local"&&asset?.remote_ready ? asset.sha256 : undefined;
       const requestedVersion=new URL(request.url).searchParams.get("cacheVersion");
       if(remoteVersion&&requestedVersion&&requestedVersion!==remoteVersion)return new Response("Media changed",{status:409,headers:{"cache-control":"no-store"}});
-      verifiedMirror=privateMedia&&await hasVerifiedStoredMirror(rel,asset);
+      verifiedMirror=!options.skipMirror&&privateMedia&&await hasVerifiedStoredMirror(rel,asset);
       // Keep manifest URLs on the authenticated App origin so their relative
       // segment/key references resolve through the same per-file authorization.
       if(privateMedia&&remoteMediaAccess==='redirect'&&asset?.remote_ready && storageDriver!=='local'&&!/\.(m3u8|mpd)$/i.test(rel)) {
@@ -164,7 +164,9 @@ export async function serveMedia(request:Request,segs:string[]) {
         "content-length": String(info.size),
       },
     });
-  } catch {
+  } catch (error) {
+    // A NAS-acknowledged local copy evicted after the mirror check: serve the NAS original.
+    if(verifiedMirror&&remoteReadable&&(error as NodeJS.ErrnoException)?.code==='ENOENT')return serveMedia(request,segs,{skipMirror:true});
     return new Response(remoteFailure ? "Storage unavailable" : "Not found", { status: remoteFailure ? 503 : 404, headers: {"cache-control":"no-store"} });
   }
 }

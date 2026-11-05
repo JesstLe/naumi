@@ -10,7 +10,7 @@ export type OriginalMediaSet={owner:string;driver:StorageDriver;original:Prepare
 export async function registerMediaMetadata(db:Pick<Pool,"query">,input:{key:string;owner:string|null;public:boolean;driver:StorageDriver;remoteReady:boolean;contentType:string;sha256:string;bytes:number}){
  await db.query(`INSERT INTO app_media_assets(key,owner,public,driver,remote_ready,content_type,sha256,bytes)
  VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(key) DO UPDATE SET
- owner=COALESCE(app_media_assets.owner,EXCLUDED.owner),remote_ready=EXCLUDED.remote_ready,
+ owner=COALESCE(app_media_assets.owner,EXCLUDED.owner),remote_ready=EXCLUDED.remote_ready,local_evict_after=NULL,
  thumbnail_key=CASE WHEN app_media_assets.sha256=EXCLUDED.sha256 THEN app_media_assets.thumbnail_key ELSE NULL END,
  preview_key=CASE WHEN app_media_assets.sha256=EXCLUDED.sha256 THEN app_media_assets.preview_key ELSE NULL END,
  sha256=EXCLUDED.sha256,bytes=EXCLUDED.bytes,content_type=EXCLUDED.content_type`,
@@ -27,7 +27,7 @@ export async function registerOriginalWithPreviewsTx(tx:PoolClient,input:Origina
  const owner=input.owner.toLowerCase();
  for(const item of [input.original,input.thumbnail,input.preview]){
   const registered=await tx.query(`INSERT INTO app_media_assets(key,owner,public,driver,remote_ready,content_type,sha256,bytes,width,height)
-   VALUES($1,$2,false,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(key) DO UPDATE SET remote_ready=EXCLUDED.remote_ready
+   VALUES($1,$2,false,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(key) DO UPDATE SET remote_ready=EXCLUDED.remote_ready,local_evict_after=NULL
    WHERE app_media_assets.owner=EXCLUDED.owner AND app_media_assets.sha256=EXCLUDED.sha256 RETURNING key`,
    [item.key,owner,input.driver,item.remoteReady,item.contentType,item.sha256,item.bytes,item.width,item.height]);
   if(!registered.rowCount)throw Error("素材归属或内容不匹配");

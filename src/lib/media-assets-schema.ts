@@ -13,6 +13,10 @@ export async function ensureMediaSchema() {
       thumbnail_key text, preview_key text, retry_after timestamptz NOT NULL DEFAULT now(), created_at timestamptz NOT NULL DEFAULT now()
     );
     CREATE INDEX IF NOT EXISTS app_media_asset_pending_idx ON app_media_assets(retry_after) WHERE NOT remote_ready;
+    -- Expand-only: NULL = local copy not yet checked; 'infinity' = no local copy remains.
+    ALTER TABLE app_media_assets ADD COLUMN IF NOT EXISTS local_evict_after timestamptz;
+    CREATE INDEX IF NOT EXISTS app_media_asset_local_evict_idx ON app_media_assets(created_at)
+      WHERE remote_ready AND local_evict_after IS DISTINCT FROM 'infinity'::timestamptz;
     CREATE TABLE IF NOT EXISTS app_media_uploads (
       id uuid PRIMARY KEY, owner text NOT NULL, staging_key text NOT NULL, content_type text NOT NULL,
       bytes integer NOT NULL CHECK(bytes>0 AND bytes<=67108864), expires_at timestamptz NOT NULL,

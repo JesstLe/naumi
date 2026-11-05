@@ -5,6 +5,7 @@ import {ensureMediaSchema} from "../media-assets-schema";
 import {withBackgroundActivity,bindBackgroundClaim} from "../release-runtime/background-activity";
 import {readManagedObject,readManagedObjectInternal} from "../object-storage/managed-read";
 import {readPendingStoredObject,mirrorStoredObject,privateMedia,storageDriver} from "../object-storage/runtime";
+import {evictVerifiedLocalMirrors} from "./mirror-eviction";
 
 // Only retry saving bytes, never repeat a model request or touch billing.
 async function recoverMediaMirrorsLocal(limit=2) {
@@ -42,5 +43,11 @@ async function recoverMediaMirrorsLocal(limit=2) {
 }
 
 export async function recoverMediaMirrors(limit=2) {
-  return withBackgroundActivity("media-mirror", `media-mirror-scan:${randomUUID()}`, "claim", () => recoverMediaMirrorsLocal(limit), () => 0);
+  return withBackgroundActivity("media-mirror", `media-mirror-scan:${randomUUID()}`, "claim", async () => {
+    const uploaded=await recoverMediaMirrorsLocal(limit);
+    // Same single-flight lane: once the NAS holds the bytes, the local copy is
+    // only a cache. Eviction failure never fails or delays the upload pass.
+    await evictVerifiedLocalMirrors().catch(()=>console.warn('MEDIA_MIRROR_EVICTION_DEFERRED'));
+    return uploaded;
+  }, () => 0);
 }
