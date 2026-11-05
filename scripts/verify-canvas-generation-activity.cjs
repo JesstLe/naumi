@@ -15,8 +15,9 @@ async function main(){
  for(const kind of ['derived','blank','detail']){
   const setup=()=>kind==='detail'?detail.setup('detail','done',db):image.setup(kind,'done',ib);
   const f=setup();
-  if(f.c.generationPresentation&&kind!=='blank')f.c.generationPresentation={...f.c.generationPresentation,start:fail};else if(kind==='blank')f.c.generationPositionForTask=fail;else f.c.reserveGenerationPosition=fail;
-  await assert.rejects(f.run(),/fixture-view-preparation/);checks++;
+  if(f.c.generationPresentation&&kind!=='blank')f.c.generationPresentation={...f.c.generationPresentation,start:fail};else if(kind==='blank')f.c.generationPositionForTask=vm.runInContext('()=>{throw new Error("fixture-view-preparation")}',f.c);else f.c.reserveGenerationPosition=fail;
+  if(!baseline&&kind==='blank'){eq(await f.run(),false,'preparation boundary reports failure without an unhandled rejection');assert.match(f.state.error,/fixture-view-preparation/);checks++;eq(f.c.preparingPendingImagesRef.current.size,0,'preparation lock releases on inner failure');}
+  else {await assert.rejects(f.run(),/fixture-view-preparation/);checks++;}
   eq(f.c.generationOperationRef.current.size,baseline?1:0,kind+' setup exception does not strand a busy key');
   eq(f.state.post??f.state.posts,0,kind+' setup exception never submits');
   rows.push({name:kind+'-setup-exception',busy:f.c.generationOperationRef.current.size,posts:f.state.post??f.state.posts});
@@ -53,7 +54,8 @@ async function main(){
   const delegated={runGen:['runCanvasDerivedImage','image-runs.ts'],generatePend:['runCanvasBlankImage','image-runs.ts'],landEditResult:['runCanvasEdit','edit-run.ts'],generateDetailSequence:['runCanvasDetail','detail-run.ts'],runComfyWorkflow:['workflowRunsRef','workflow-runs.ts']}[name];
   let implementation=body;
   if(!baseline&&delegated&&fs.existsSync(path.join(root,'src/lib/canvas',delegated[1]))){
-    eq(body.includes(delegated[0]),true,name+' delegates actual application entry');
+    let entry=body;if(name==='generatePend'){eq(body.includes('prepareImageText(')&&body.includes('generatePreparedPend('),true,'blank entry awaits text ACK before application');let prepared;(function find(n){if(ts.isFunctionDeclaration(n)&&n.name?.text==='generatePreparedPend')prepared=n.getText(ast);ts.forEachChild(n,find);})(ast);assert.ok(prepared);entry=prepared;}
+    eq(entry.includes(delegated[0]),true,name+' delegates actual application entry');
     implementation=fs.readFileSync(path.join(root,'src/lib/canvas',delegated[1]),'utf8');
   }
   eq(implementation.includes('createCanvasGenerationActivity')||/\b(?:view|generationPresentation|ctx\.generation)\.activity\(/.test(implementation),!baseline,name+' invokes the actual lifecycle owner');

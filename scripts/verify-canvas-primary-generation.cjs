@@ -38,9 +38,9 @@ const fixture=require('./verify-canvas-image-task-refactor.cjs'),plain=v=>JSON.p
  const source=fs.readFileSync(path.join(root,'src/components/canvas/canvas-client.tsx'),'utf8'),ast=ts.createSourceFile('canvas.tsx',source,99,true,4),functions={};
  (function visit(n){if(ts.isFunctionDeclaration(n)&&n.name)functions[n.name.text]=n;ts.forEachChild(n,visit);})(ast);
  let factories=0,preparers=0,textWrites=0;
- for(const name of ['runGen','generatePend'])(function visit(n){if(ts.isCallExpression(n)){const fn=n.expression.getText(ast);if(fn==='createCanvasImageTask')factories++;if(fn==='prepareCanvasImageTask')preparers++;if(fn==='persistTextNode')textWrites++;}ts.forEachChild(n,visit);})(functions[name]);
+ for(const name of ['runGen','generatePend',...(!baseline?['generatePreparedPend']:[])])(function visit(n){if(ts.isCallExpression(n)){const fn=n.expression.getText(ast);if(fn==='createCanvasImageTask')factories++;if(fn==='prepareCanvasImageTask')preparers++;if(fn==='persistTextNode')textWrites++;}ts.forEachChild(n,visit);})(functions[name]);
  eq(factories,baseline?2:0,'private task composition leaves React');eq(preparers,baseline?2:0,'request composition leaves React');eq(textWrites,baseline?1:0,'text writes leave React');
- if(!baseline){assert.match(functions.runGen.getText(ast),/runCanvasDerivedImage\(/);assert.match(functions.generatePend.getText(ast),/runCanvasBlankImage\(/);assert.match(functions.canvasImageRunContext.getText(ast),/canvasTextDocument\.attachImageResults/);checks+=3;}
+ if(!baseline){assert.match(functions.runGen.getText(ast),/runCanvasDerivedImage\(/);assert.match(functions.generatePend.getText(ast),/prepareImageText\(/);assert.match(functions.generatePend.getText(ast),/generatePreparedPend\(/);assert.match(functions.generatePreparedPend.getText(ast),/runCanvasBlankImage\(/);assert.match(functions.canvasImageRunContext.getText(ast),/canvasTextDocument\.attachImageResults/);checks+=5;}
  const comparison=arg('--compare');if(comparison)eq(rows,JSON.parse(fs.readFileSync(comparison,'utf8')).rows,'complete original/current request/result/placement/history/error trace');
  // Exercise the actual text-document owner independently of the Canvas VM ports.
  let textOwnerChecks=0;

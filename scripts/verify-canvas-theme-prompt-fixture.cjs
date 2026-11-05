@@ -19,7 +19,7 @@ assert(relativeOut === '..' || relativeOut.startsWith('..' + path.sep) || path.i
 fs.mkdirSync(out, { recursive: true });
 const report = { sourceRoot, baselineRoot, sources: {}, baselineSources: {}, checks: [], projections: {},
   evidenceTier: 'actual source callbacks + actual ImagePromptClient + extracted consumer; external route/HTTP/React-lifecycle/creation ports; no browser, PG, supplier or billing proof',
-  mockedPorts: ['Playwright route transport over native Request/Response', 'HTTP request/response adapter without network', 'successful open -> React loaded-state transition', 'submission lock and creation-executor ports'],
+  mockedPorts: ['Playwright route transport over native Request/Response', 'HTTP request/response adapter without network', 'successful open -> React loaded-state transition', 'submission lock and creation-executor ports', 'stable artwork scope and selected-node existence', 'empty linked-text document and save acknowledgements', 'inactive text/history write barriers and node locks'],
   realSupplierCalls: 0, realPurchaseCalls: 0 };
 const oracleBytes = fs.readFileSync(__filename);
 report.oracle = { file: __filename, sha256: crypto.createHash('sha256').update(oracleBytes).digest('hex'), bytes: oracleBytes.length };
@@ -127,19 +127,31 @@ function consumer(root, client, key, address, document, loaded) {
   const canvasFile = 'src/components/canvas/canvas-client.tsx', canvas = parse(root, canvasFile);
   const selectedFunction = all(canvas, node => ts.isFunctionDeclaration(node) && node.name?.text === 'generateSelectedImage')[0];
   const flushFunction = all(canvas, node => ts.isFunctionDeclaration(node) && node.name?.text === 'flushImagePrompts')[0];
-  assert(selectedFunction && flushFunction, 'actual selected-image consumer functions');
+  const prepareFunction = all(canvas, node => ts.isFunctionDeclaration(node) && node.name?.text === 'prepareImageText')[0];
+  assert(selectedFunction && flushFunction && prepareFunction, 'actual selected-image consumer functions');
+  const { resolveLinkedImageText } = load(root, 'src/lib/canvas/linked-image-text.ts');
+  const { prepareLinkedImageText } = load(root, 'src/lib/canvas/prepare-linked-image-text.ts');
   const state = { creationPortCalls: 0, errors: [], locks: 0, releases: 0 };
   const canvasAccountRef = { current: 'fixture-account' }, canvasContextEpochRef = { current: 1 };
-  const scope = { selected: { id: address.nodeId }, canvasAccountRef, canvasContextEpochRef, canvasOwnerEpochRef: { current: { revision: 1 } },
+  // This theme fixture has no linked text. Keep that boundary explicit while
+  // executing the real shared resolver and ACK preparation rather than bypassing
+  // the newly extracted consumer dependencies with a precomposed prompt.
+  const selected = { id: address.nodeId };
+  const scope = { selected, canvasAccountRef, canvasContextEpochRef, canvasOwnerEpochRef: { current: { revision: 1 } },
+    canvasArtworkDocument: { scope: { viewCurrent: () => true }, getSnapshot: () => ({ nodes: [selected] }) },
+    canvasTextDocument: { getSnapshot: () => ({ nodes: [] }), flush: async () => [], hasUnsaved: () => false },
+    textAutosave: { flush: async () => null, hasPending: () => false }, textTasks: { state: () => ({ busy: false }) },
+    resolveLinkedImageText, prepareLinkedImageText,
+    textWriteBarrierRef: { current: 0 }, historyBusyRef: { current: false }, isNodeLocked: () => false,
     currentWorkspace: () => address.workspace, activeProjectRef: { current: { key: address.projectKey } }, imageSubmissionRef: { current: new Map() },
     canvasImageSubmissionKey: (...values) => values.join('|'), beginCanvasImageSubmission: () => { state.locks++; let released = false; return () => { if (released) return false; released = true; state.releases++; return true; }; },
     setImageSubmissionEpoch: () => {}, referenceUploadLock: { current: false }, promptSync, setGenError: error => state.errors.push(error),
     canvasImageCreationServices: () => ({ isCurrent: () => true }), executeCanvasImageCreation: async () => { state.creationPortCalls++; return null; },
     editPrompt: document.prompt, generationMode: 'standard', genRatio: '1:1', genStyle: null, genCount: 1, genResolution: '1K', visibleDockRefs: [], extraFiles: [], composerReferences: [], dockReferenceState: { error: null }, referenceError: null,
     newCanvasImageAttempt: () => 'narrow-creation-port' };
-  const run = evaluate(transpile(flushFunction.getText(canvas) + '\n' + selectedFunction.getText(canvas), canvasFile) + '\nreturn generateSelectedImage;', scope, canvasFile);
+  const run = evaluate(transpile(flushFunction.getText(canvas) + '\n' + prepareFunction.getText(canvas) + '\n' + selectedFunction.getText(canvas), canvasFile) + '\nreturn generateSelectedImage;', scope, canvasFile);
   report.extractions ||= {}; report.extractions.hookReady = extraction(hookFile, readyDeclaration.initializer); report.extractions.hookFlush = extraction(hookFile, flushProperty.initializer);
-  report.extractions.generateSelectedImage = extraction(canvasFile, selectedFunction); report.extractions.flushImagePrompts = extraction(canvasFile, flushFunction);
+  report.extractions.generateSelectedImage = extraction(canvasFile, selectedFunction); report.extractions.flushImagePrompts = extraction(canvasFile, flushFunction); report.extractions.prepareImageText = extraction(canvasFile, prepareFunction);
   return { run, state, ready: promptSync.ready };
 }
 const doc = (prompt = '保持【图1】商品，参考【图2】构图。') => ({ version: 1, prompt, bindings: [{ key: 'node:regeneration-root', number: 1, role: 'edit-target' }, { key: 'node:reference-neighbor', number: 2, role: 'reference' }], activeKeys: ['node:regeneration-root', 'node:reference-neighbor'], additionalKeys: ['node:reference-neighbor'], hiddenReferenceIds: [] });
