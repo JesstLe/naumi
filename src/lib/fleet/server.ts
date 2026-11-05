@@ -204,7 +204,13 @@ export async function connectorExchange(request: Request, ack = false) {
       &&previous?.business===1&&previous.source===body.status.source&&previous.version===body.status.version;
     const storedStatus=retainBusiness?{...body.status,business:1}:body.status;
     await tx.query('UPDATE app_fleet_instances SET last_seen=now(),status=$2 WHERE id=$1',[instanceId,JSON.stringify(storedStatus)]);
-    const pending = await tx.query("SELECT * FROM app_fleet_commands WHERE instance_id=$1 AND state IN ('queued','leased') AND (operation->>'type'<>'business.query' OR ($2::boolean AND (operation->>'asOf')::timestamptz > $3::timestamptz)) ORDER BY (COALESCE(operation->>'type','')='business.query'),created_at,id LIMIT 1 FOR UPDATE",[instanceId,body.status.business===1,new Date(Date.now()-FLEET_BUSINESS_QUERY_MAX_AGE_MS).toISOString()]);
+    // CASE protects the cast even when PostgreSQL reorders other predicates.
+    // Retained malformed rows stay intact and cannot block control dispatch.
+    const pending = await tx.query(`SELECT * FROM app_fleet_commands WHERE instance_id=$1 AND state IN ('queued','leased')
+      AND (operation->>'type'<>'business.query' OR CASE
+        WHEN $2::boolean AND pg_input_is_valid(operation->>'asOf','timestamp with time zone')
+        THEN (operation->>'asOf')::timestamptz > $3::timestamptz ELSE false END)
+      ORDER BY (COALESCE(operation->>'type','')='business.query'),created_at,id LIMIT 1 FOR UPDATE`,[instanceId,body.status.business===1,new Date(Date.now()-FLEET_BUSINESS_QUERY_MAX_AGE_MS).toISOString()]);
     let command = null, leaseId: string | null = null;
     const row = pending.rows[0];
     if(row&&!row.requested_by_root&&(row.state==='queued'||new Date(row.leased_until).getTime()<=Date.now())){
