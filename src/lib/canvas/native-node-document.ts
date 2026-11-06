@@ -53,14 +53,21 @@ export function createCanvasNativeNodeDocument<K extends CanvasNativeKind>(kind:
     const refresh=async()=>{
       if(!email||!current())return;const ticket=++state.read,writes=state.writes;if(state.snapshot.phase==="idle")publish(state,{phase:"loading",error:""});
       try{
-        const data=await request(`${url}?includeDeleted=1&email=${encodeURIComponent(email)}`,{cache:"no-store"});
+        // Project bindings may select a different actual creation scope than
+        // the site's workspace default. Reads need the same context as writes.
+        const data=await request(`${url}?includeDeleted=1&email=${encodeURIComponent(email)}`,{cache:"no-store"},scope.project);
         if(!current()||ticket!==state.read)return;
         if(!Array.isArray(data.nodes)||!data.nodes.every((value:unknown)=>node(value)))throw new Error(`${label}响应格式异常`);
         const incoming=new Map<string,N>((data.nodes as N[]).map(value=>[value.id,value]));
         // A read started before a receipt may not erase that receipt, including
         // a new/deleted node absent from the older read snapshot.
         for(const saved of state.snapshot.nodes)if((state.written.get(saved.id)||0)>writes||state.pending.has(saved.id)||state.video?.queue.hasUnconfirmed(saved.id))incoming.set(saved.id,saved);
-        const base=state.snapshot.nodes.some(value=>!incoming.has(value.id))?state.snapshot.nodes.filter(value=>incoming.has(value.id)):state.snapshot.nodes;
+        // This list is authoritative only for the requested project, not the
+        // entire actor/workspace cache. In particular, a workspace overview
+        // cannot prove absence in a differently bound project. Explicit server
+        // tombstones still merge normally, including on an unscoped read.
+        const keep=(value:N)=>incoming.has(value.id)||!scope.project||value.projectKey!==scope.project;
+        const base=state.snapshot.nodes.every(keep)?state.snapshot.nodes:state.snapshot.nodes.filter(keep);
         const next=mergeCanvasNativeSnapshots(base,[...incoming.values()]);
         publish(state,{nodes:next,phase:"ready",error:""});
       }catch(cause){if(current()&&ticket===state.read)publish(state,{phase:"error",error:cause instanceof Error?cause.message:`${label}加载失败`});throw cause;}
