@@ -141,8 +141,11 @@ export async function creationEvidenceTx(tx:PoolClient,run:()=>Promise<void>,mar
  catch{await tx.query('ROLLBACK TO SAVEPOINT creation_evidence');await tx.query('RELEASE SAVEPOINT creation_evidence');if(markPending)await markPending();return false;}
 }
 export async function recordSourceOutcomeTx(tx:PoolClient,kind:string,sourceId:string,email:string,status:CreationStatus,payload:Parameters<typeof completeCreationTx>[4]={}) {
- const rows=(await tx.query(`SELECT DISTINCT c.id FROM app_creation_records c LEFT JOIN app_creation_links l ON l.creation_id=c.id
-   WHERE c.actor_email=$3 AND ((c.source_kind=$1 AND c.source_id=$2) OR (l.target_type=$1 AND l.target_id=$2 AND l.actor_email=$3))`,[kind,sourceId,email.toLowerCase()])).rows;
+ // Same set as the former OR over a LEFT JOIN, which seq-scanned every link (~85ms on 47
+ // per video patch/batch tick). Each branch now uses its own key; ORDER BY keeps row locks ordered.
+ const rows=(await tx.query(`SELECT id FROM app_creation_records WHERE actor_email=$3 AND source_kind=$1 AND source_id=$2
+   UNION SELECT c.id FROM app_creation_links l JOIN app_creation_records c ON c.id=l.creation_id
+   WHERE l.target_type=$1 AND l.target_id=$2 AND l.actor_email=$3 AND c.actor_email=$3 ORDER BY id`,[kind,sourceId,email.toLowerCase()])).rows;
  for(const row of rows)await completeCreationTx(tx,row.id,email,status,payload);
 }
 export async function finishCreation(id:string|undefined,email:string,status:CreationStatus,payload:Parameters<typeof completeCreationTx>[4]={}) {

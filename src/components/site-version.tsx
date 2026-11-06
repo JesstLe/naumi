@@ -24,10 +24,13 @@ function VersionControls({path,embedded}:{path:string;embedded:boolean}){
   const [open,setOpen]=useState(false),[latest,setLatest]=useState<{version:string;commit?:string}|null>(null),[failed,setFailed]=useState(false),[checking,setChecking]=useState(false);
   const [view,setView]=useState<"version"|"notes">("version");
   const [announcementCheck,setAnnouncementCheck]=useState(0);
-  const panel=useRef<HTMLDivElement>(null),button=useRef<HTMLDivElement>(null),opener=useRef<HTMLButtonElement>(null),inFlight=useRef(false);
+  const panel=useRef<HTMLDivElement>(null),button=useRef<HTMLDivElement>(null),opener=useRef<HTMLButtonElement>(null),inFlight=useRef(false),noticedVersion=useRef(loadedVersion);
   const check=useCallback(async()=>{
     if(inFlight.current)return;inFlight.current=true;setChecking(true);
-    try{const r=await fetch(versionEndpoint,{cache:"no-store",signal:AbortSignal.timeout(10000)});if(!r.ok)throw Error("Version unavailable");const data=await r.json();if(typeof data.version!=="string" || !/^\d{1,11}$/.test(data.version))throw Error("Invalid version");setLatest(data);setAnnouncementCheck(value=>value+1);setFailed(false);}
+    try{const r=await fetch(versionEndpoint,{cache:"no-store",signal:AbortSignal.timeout(10000)});if(!r.ok)throw Error("Version unavailable");const data=await r.json();if(typeof data.version!=="string" || !/^\d{1,11}$/.test(data.version))throw Error("Invalid version");setLatest(data);
+      // Notes are fixed per published version (the mount already fetched the loaded one):
+      // the minute/focus check must not re-download ~30KB each time.
+      if(noticedVersion.current!==data.version){noticedVersion.current=data.version;setAnnouncementCheck(value=>value+1);}setFailed(false);}
     catch{setFailed(true);}finally{setChecking(false);inFlight.current=false;}
   },[versionEndpoint]);
   useEffect(()=>{void check();const timer=setInterval(()=>{if(document.visibilityState==="visible")void check();},60000);const visible=()=>{if(document.visibilityState==="visible")void check();};document.addEventListener("visibilitychange",visible);window.addEventListener("focus",visible);return()=>{clearInterval(timer);document.removeEventListener("visibilitychange",visible);window.removeEventListener("focus",visible);};},[check]);

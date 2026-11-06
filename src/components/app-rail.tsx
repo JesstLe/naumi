@@ -116,7 +116,8 @@ export function AppRail() {
     if (!canPage(href)) return null;
     const active = isActive(href);
     return (
-      <Link href={href} className="group/nav flex h-[60px] items-center px-1.5">
+      // /enterprise prefetch measured 731KB per canvas load on 47 (1196/day, few real visits); load it on click.
+      <Link href={href} prefetch={href === "/enterprise" ? false : undefined} className="group/nav flex h-[60px] items-center px-1.5">
         <span
           className={cn(
             "rounded-[10px] px-3 py-1.5 text-[14px] transition-colors",
