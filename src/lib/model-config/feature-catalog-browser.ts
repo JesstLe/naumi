@@ -36,15 +36,19 @@ const store=createFeatureCatalog({
  version:rememberModelCatalogVersion,
  selectionChanged(){if(typeof window!=='undefined')window.dispatchEvent(new Event(FEATURE_MODEL_SELECTION));},
 });
-function reloadObserved(){for(const feature of store.subscribedFeatures())void store.load(feature).catch(()=>{});}
+let observedAt=0;
+function reloadObserved(){observedAt=Date.now();for(const feature of store.subscribedFeatures())void store.load(feature).catch(()=>{});}
+// Every window focus reloaded every subscribed catalog. A changed catalog is still
+// caught by MODEL_CHANGED (409) -> MODEL_CATALOG_REFRESH, which reloads immediately.
+function reloadOnReturn(){if(Date.now()-observedAt>=60_000)reloadObserved();}
 function synchronize(){store.activate(scope());}
 function install(){
  if(installed||typeof window==='undefined')return;installed=true;
  const changed=()=>{synchronize();reloadObserved();};
  window.addEventListener(WORKSPACE_SELECTION,changed);
  window.addEventListener(MODEL_CATALOG_REFRESH,reloadObserved);
- window.addEventListener('focus',reloadObserved);
- document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')reloadObserved();});
+ window.addEventListener('focus',reloadOnReturn);
+ document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')reloadOnReturn();});
  window.addEventListener(RELOAD,event=>{const feature=(event as CustomEvent<FeatureId>).detail;if(feature)void activeFeatureCatalog().load(feature).catch(()=>{});});
 }
 export function activeFeatureCatalog(){install();synchronize();return store;}

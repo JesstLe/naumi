@@ -86,8 +86,10 @@ export async function withSynchronousOperation(input:SynchronousOperation,action
         if (previous) {
             let receiptScopeVerified=false;
             const creation=currentCreationContext();
-            if(creation){const old=(await getPool().query(`SELECT DISTINCT c.scope_kind,c.tenant_id FROM app_creation_records c LEFT JOIN app_creation_links l ON l.creation_id=c.id
-              WHERE c.actor_email=$2 AND ((c.source_kind=$3 AND c.source_id=$1) OR (l.target_type='billing' AND l.target_id=$1 AND l.actor_email=$2))`,[id,email.toLowerCase(),feature])).rows;
+            // UNION of the two keyed lookups; the OR over a LEFT JOIN seq-scanned every creation link.
+            if(creation){const old=(await getPool().query(`SELECT scope_kind,tenant_id FROM app_creation_records WHERE actor_email=$2 AND source_kind=$3 AND source_id=$1
+              UNION SELECT c.scope_kind,c.tenant_id FROM app_creation_links l JOIN app_creation_records c ON c.id=l.creation_id
+              WHERE l.target_type='billing' AND l.target_id=$1 AND l.actor_email=$2 AND c.actor_email=$2`,[id,email.toLowerCase(),feature])).rows;
               if(old.some(r=>r.scope_kind!==creation.scopeKind||r.tenant_id!==creation.tenantId))throw new TeamError('原操作的工作空间已固定，不能跨空间重用',409);
               receiptScopeVerified=old.length>0;
             }
