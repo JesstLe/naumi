@@ -131,14 +131,20 @@ export async function withSynchronousOperation(input:SynchronousOperation,action
                 // A losing concurrent request must not change the winning operation.
                 if(context.operation){
                     const accepted=await getPool().query("UPDATE app_billing_operations SET state='manual',updated_at=now() WHERE id=$1 AND state IN ('reserved','hold','manual') RETURNING id",[id]);
-                    if(accepted.rowCount)return synchronousResult({code:"OPERATION_PENDING",error:"任务已经提交，结果及账务需要核查；不会重复执行",operationId:id},409);
+                    if(accepted.rowCount){
+                        await finishCreation(context.creationId,email,'needs_review',{summary:'任务已提交，结果及账务需要核查'});
+                        return synchronousResult({code:"OPERATION_PENDING",error:"任务已经提交，结果及账务需要核查；不会重复执行",operationId:id},409);
+                    }
                 }
+                // Rejected before any accepted reservation: nothing was executed or charged.
+                await finishCreation(context.creationId,email,'failed',{summary:context.error.message});
                 return synchronousFailure(context.error);
             }
             // A streaming handler owns completion/settlement. Reading a clone here
             // would buffer the entire reply and delay the first token.
             if (response.stream) return response;
             const payload = response.body;
+            let reviewPending = false;
             if (context.operation) {
                 // Keep the paid output before any final wallet transaction can fail.
                 if ((response.status>=200&&response.status<300) && payload)await checkpointSynchronousResult(payload);
@@ -154,19 +160,28 @@ export async function withSynchronousOperation(input:SynchronousOperation,action
                         if (failureCheckpoint) await tx.query("UPDATE app_billing_operations SET result_response=$2::jsonb WHERE id=$1 AND email=$3", [id, JSON.stringify(failureCheckpoint), email]);
                         return service.settleTx(tx, context.operation!, { state: known ? "failed" : "unknown", items: [] });
                     });
+                    reviewPending = settled.state === "hold" || settled.state === "manual";
                     if (known && !settled.replayed) {
                         const failed = settledSynchronousFailure({ id, state: settled.state, charged_credits: settled.charge,
                             settlement_result: { state: "failed", items: [] }, result_response: failureCheckpoint });
                         if (failed) response = synchronousResult(failed.body, failed.httpStatus);
                     }
-                    if (!known && context.operation.quote.modelVersion && ["cny-fixed","usage"].includes(context.operation.quote.tariff.pricing.mode)) return synchronousResult({code:"OPERATION_PENDING",error:"供应商结果及付费状态需要核查，请查询原任务；不会重复提交",operationId:id},409);
+                    if (!known && reviewPending && context.operation.quote.modelVersion && ["cny-fixed","usage"].includes(context.operation.quote.tariff.pricing.mode)) {
+                        await finishCreation(context.creationId,email,'needs_review',{summary:'供应商结果及付费状态需要核查'});
+                        return synchronousResult({code:"OPERATION_PENDING",error:"供应商结果及付费状态需要核查，请查询原任务；不会重复提交",operationId:id},409);
+                    }
                 }
                 } catch {
                     await getPool().query("UPDATE app_billing_operations SET state='manual',updated_at=now() WHERE id=$1 AND state IN ('reserved','hold','manual')",[id]);
+                    await finishCreation(context.creationId,email,'needs_review',{summary:context.resultCheckpointed?'结果已保留，账务需要核查':'任务结果及账务需要核查'});
                     return synchronousResult({code:"OPERATION_PENDING",error:context.resultCheckpointed?"结果已保留，账务需要核查；请勿重复创建任务":"任务结果及账务需要核查；请保留原操作，不要重复创建任务",operationId:id},409);
                 }
             }
-            await finishCreation(context.creationId,email,(response.status>=200&&response.status<300)?(payload?.jobId?'queued':'succeeded'):context.upstream==='unknown'?'needs_review':'failed',{
+            // An accepted async job owns its creation lifecycle from here; writing
+            // 'queued' now could regress a job that already advanced.
+            if ((response.status>=200&&response.status<300) && payload?.jobId) return response;
+            const failedStatus = context.operation ? (reviewPending ? 'needs_review' : 'failed') : context.upstream==='unknown' ? 'needs_review' : 'failed';
+            await finishCreation(context.creationId,email,(response.status>=200&&response.status<300)?'succeeded':failedStatus,{
                 text:typeof payload?.text==='string'?payload.text:typeof payload?.reply==='string'?payload.reply:typeof payload?.title==='string'?payload.title:undefined,
                 artworkIds:[...(Array.isArray(payload?.images)?payload.images.map((a:any)=>a.id||a.artworkId):[]),...(Array.isArray(payload?.artworks)?payload.artworks.map((a:any)=>a.id):[]),payload?.artworkId,payload?.id].filter((v):v is string=>typeof v==='string'),
             });
@@ -262,6 +277,31 @@ export async function configuredToolCost(resolution = "1K") {
         throw new BillingError("CONFIG_UNAVAILABLE", "工具计费上下文不可用", 503);
     return cost;
 }
+/** A background continuation of an accepted request (returned jobId) records its
+ * own terminal outcome; the HTTP wrapper no longer writes one for it. */
+export async function finishSynchronousCreation(artworkIds: string[]) {
+    const context = storage.getStore();
+    if (context) await finishCreation(context.creationId, context.email, "succeeded", { artworkIds });
+}
+/** The background continuation failed: settle like a failed synchronous reply. A
+ * rejected/unobserved supplier is a known failure; anything else stays reviewable. */
+export async function failSynchronousBackground(summary: string) {
+    const context = storage.getStore();
+    if (!context) return;
+    if (!context.operation || context.charge !== undefined) {
+        await finishCreation(context.creationId, context.email, context.charge !== undefined ? "needs_review" : "failed", { summary });
+        return;
+    }
+    const known = context.upstream === "rejected" || context.upstream === "unobserved";
+    let review = true;
+    try {
+        const settled = await withBillingTransaction(getPool(), tx => service.settleTx(tx, context.operation!, { state: known ? "failed" : "unknown", items: [] }));
+        review = settled.state === "hold" || settled.state === "manual";
+    } catch {
+        await getPool().query("UPDATE app_billing_operations SET state='manual',updated_at=now() WHERE id=$1 AND state IN ('reserved','hold','manual')", [context.id]).catch(() => {});
+    }
+    await finishCreation(context.creationId, context.email, review ? "needs_review" : "failed", { summary });
+}
 export function synchronousChargedCredits(fallback: number) { return storage.getStore()?.charge ?? fallback; }
 
 export async function completeSynchronousStream(payload: { text: string; model: string; agentFrames?: {type:string;data:unknown}[] }) {
@@ -282,6 +322,7 @@ export async function failSynchronousStream() {
     if (!context?.operation || context.charge !== undefined || context.upstream === "succeeded") return;
     // A supplier stream that breaks after opening has an uncertain outcome.
     // Keep authorization instead of retrying or charging for an incomplete reply.
-    await withBillingTransaction(getPool(), tx => service.settleTx(tx, context.operation!, { state: "unknown", items: [] }));
-    await finishCreation(context.creationId,context.email,'needs_review',{summary:'流式执行中断，已接受请求不会重新提交'});
+    const settled = await withBillingTransaction(getPool(), tx => service.settleTx(tx, context.operation!, { state: "unknown", items: [] }));
+    if (settled.state === "hold" || settled.state === "manual") await finishCreation(context.creationId,context.email,'needs_review',{summary:'流式执行中断，已接受请求不会重新提交'});
+    else await finishCreation(context.creationId,context.email,'failed',{summary:'流式执行中断，未交付完整结果，未扣费'});
 }

@@ -2,7 +2,7 @@ import {attachBillingCreationTx} from "../saas/creation-writer";
 import "server-only";
 import { BillingError, type BillingService, type OperationInput, type GrantInput, type Tx, type BillingQuote } from "./types";
 import { fingerprint } from "./fingerprint";
-import { settlementFor } from "./quote";
+import { isChargelessQuote, settlementFor } from "./quote";
 import * as repository from "./repository";
 import { operationApiCost } from "./api-cost-ledger";
 import { assertMutableStagingTask, isImportedHistory } from "../staging-history";
@@ -108,6 +108,16 @@ export function createBillingService(): BillingService {
         },
         grantTx: (tx, input) => grant(tx, input, false), adjustTx: (tx, input) => grant(tx, input, true),
     };
+}
+
+/** Older code held UNKNOWN outcomes of quotes that can never charge. Close one at
+ * zero through the normal settlement path; any other state or quote is refused. */
+export async function closeChargelessUnknownTx(tx:Tx,id:string,reason:string) {
+    await assertMutableStagingTask(tx, "app_billing_operations", id);
+    const row=(await tx.query<repository.OperationRow&{settlement_result:import("./types").BillingResult|null}>("SELECT * FROM app_billing_operations WHERE id=$1 FOR UPDATE",[id])).rows[0];
+    if(!row || !["hold","manual"].includes(row.state) || !isChargelessQuote(row.quote as BillingQuote))return null;
+    // Keep a recorded outcome; an abandoned reservation never recorded one.
+    return settleLocked(tx,row,row.settlement_result??{state:"unknown",items:[]},reason);
 }
 
 /** Fee compensation never submits generation. Serializes against normal settlement.

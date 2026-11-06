@@ -1,6 +1,6 @@
 import { modelAwareOpenAI } from "@/lib/model-config/clients";
 import {withBillingRequest} from "@/lib/billing/synchronous";
-import {configuredToolCost, synchronousChargedCredits} from "@/lib/billing/synchronous-operation";
+import {configuredToolCost, synchronousChargedCredits, finishSynchronousCreation, failSynchronousBackground} from "@/lib/billing/synchronous-operation";
 import {observeOpenAI} from "@/lib/bi/model-calls";
 import {withBiRequest} from "@/lib/bi/request";
 import { requestImageQuality, imageQualityCost, withQualityFallback, sdkImageQuality, settleToolImage } from "@/lib/image-quality-request";
@@ -252,6 +252,7 @@ async function runJob(
       creditsUsed: useDb ? synchronousChargedCredits(cost) : 0, quality: input.quality,
       user,
     });
+    if (useDb) await finishSynchronousCreation([id]);
   } catch (e) {
     console.error("[garment3d] job failed:", e instanceof Error ? e.message : e);
     JOBS.set(jobId, {
@@ -259,6 +260,7 @@ async function runJob(
       ts: Date.now(),
       error: safeError(e, "3D 服装图服务暂时不可用,请稍后重试"),
     });
+    if (useDb) await failSynchronousBackground("3D 服装图任务失败，未交付结果");
   }
 }
 

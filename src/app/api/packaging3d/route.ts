@@ -1,5 +1,5 @@
 import {withBillingRequest} from "@/lib/billing/synchronous";
-import {configuredToolCost, synchronousChargedCredits} from "@/lib/billing/synchronous-operation";
+import {configuredToolCost, synchronousChargedCredits, finishSynchronousCreation, failSynchronousBackground} from "@/lib/billing/synchronous-operation";
 import { managedImageEditFetch } from "@/lib/model-config/clients";
 import { requestImageQuality, imageQualityCost, withQualityFallback, settleToolImage, recordImageExecutionModel } from "@/lib/image-quality-request";
 import type { ResolvedImageQuality } from "@/lib/image-quality";
@@ -267,6 +267,7 @@ async function runJob(jobId: string, input: Input, cost: number, useDb: boolean)
       creditsUsed: charged ? cost : 0,
       user,
     });
+    if (useDb) await finishSynchronousCreation([id]);
   } catch (error) {
     if (useDb) {
       await refundCredits(input.email, cost).catch(() => {});
@@ -282,6 +283,7 @@ async function runJob(jobId: string, input: Input, cost: number, useDb: boolean)
       createdAt: Date.now(),
       error: safeError(error, "模切线 3D 可视化失败，请检查刀版图后重试"),
     });
+    if (useDb) await failSynchronousBackground("模切线 3D 任务失败，未交付结果");
   }
 }
 

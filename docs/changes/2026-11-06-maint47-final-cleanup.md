@@ -19,4 +19,17 @@
 
 - 修复（`src/lib/supplier-cost/scan.ts`）：该 key 为导入历史时，本站改用 `…:site` key；不触碰冻结行。
 - 回归 `scripts/verify-supplier-scan-imported-history.ts`（复刻 47 的冻结触发器）：**基线复现 55000**；修复后 4 项 PASS（扫描完成、冻结行逐字节不变、本站任务存在、重复扫描复用同一 key）。`verify-supplier-cost.ts` 原有全量 PASS；`tsc`、eslint exit 0。
-- 发布与 r3 上该 UNKNOWN 占位的收尾见后续 r4 记录。
+- 发布与 r3 上该 UNKNOWN 占位的收尾见下方 r4 记录。
+
+## r4 发布（`release47-main-20261106-r4`，COMPLETE）
+
+- 固定版本：commit `2527928c`，BUILD_VERSION `1793971090`，镜像 `sha256:72d9f8ea…`；蓝绿流程同 r3（三把锁、候选旁路启动、平滑 reload 切流、排空、旧槽 `restart=no` 停止）。
+- r3 上唯一的 UNKNOWN 占位（`supplier-scan`，即上文 55000 冲突所致）凭证据收尾：日志含 `scope=supplier-scan stage=action code=55000`、无成本任务租约、r3 Worker 已静止；之后 r3 Web/Worker 退役。
+- 受影响功能验收：r4 上供应商成本扫描完成、无新 UNKNOWN，本站使用 `…:site` 任务 key，冻结的导入行逐字节不变。
+- 保留轮次：删去最早的 1102-r1，保持最近 5 轮。
+- 最终只读核对：未完成活动、UNKNOWN 活动、非 idle 会话、未知 Worker 轮次均为 0；r4 后无 5xx。
+- 执行中的教训（已写入运行手记）：Worker 的 `lastTick` 可能为 null，读取前需判空；循环步骤要检查真实退出码，不能被管道掩盖；“未知轮次”应按 `phase='unknown'` 统计，不能把进行中的轮次计入。
+
+## 清理后复查发现的遗留（转入后续切片）
+
+- 63 笔挂起计费（60 笔 0 积分文字/助手/OCR，3 笔付费）及 140 余条停在排队/运行/待核查的创作记录；补传通道每轮固定 2 条，跟不上当日写入（积压约 5,100 条）。根因修复与清理见 `2026-11-06-sync-terminal-consistency.md`。

@@ -97,6 +97,11 @@ async function main(){
   const [x,y]=await Promise.all([eviction.evictVerifiedLocalMirrors({retentionHours:48}),eviction.evictVerifiedLocalMirrors({retentionHours:48})]);
   check(x.evicted+y.evicted===4,'four copies evicted exactly once across two scanners');
   for(const m of many){check(!await exists(m.key),'evicted');assert.deepEqual((await storage.readManagedObject(m.url,m.bytes.length)).bytes,m.bytes);checks++;}
+  // 10. A default pass drains several claims back to back (was a fixed two items per tick).
+  const backlog=await Promise.all(Array.from({length:10},(_,i)=>upload(['#101010','#202020','#303030','#404040','#505050','#606060','#707070','#808080','#909090','#a0a0a0'][i])));
+  const drained=await assets.recoverMediaMirrors();
+  check(drained>=10,'default pass drains a ten-item backlog');
+  for(const m of backlog)check((await assets.getMediaAsset(m.key))!.remote_ready,'backlog item acknowledged by NAS');
   check(puts>0,'fixture NAS exercised');
   console.log(`MEDIA_MIRROR_EVICTION PASS checks=${checks}`);
  }finally{

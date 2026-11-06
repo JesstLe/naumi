@@ -58,12 +58,20 @@ export function quote(snapshot: ConfigSnapshot, input: BillingFacts): BillingQuo
             authorizedCredits = Math.max(authorizedCredits, amount(tariff, { ...f, quality }, costRates));
     return { schemaVersion: 1, engineVersion: 1, configVersion: snapshot.version, facts: f, tariff, costRates, requestedCredits, authorizedCredits, reserveCredits: safe(Math.ceil(authorizedCredits * tariff.settlement.reserveBps / 10000)), matchedRuleId: matched?.id ?? null, debitOrder:snapshot.config.credits.debitOrder,staleReservationMinutes:snapshot.config.credits.staleReservationMinutes };
 }
+/** True when no outcome of this frozen quote can charge anything. Generic pricing
+ * never settles above authorizedCredits; usage and API cost derive the charge from
+ * actual supplier cost and therefore keep their configured review. */
+export function isChargelessQuote(q: BillingQuote) {
+    const costDerived = (q.tariff.pricing.mode === "usage" || q.tariff.pricing.mode === "api-cost-plus") && q.tariff.enabled && q.facts.metered;
+    return !costDerived && Number(q.authorizedCredits) === 0 && Number(q.reserveCredits) === 0;
+}
 export function settlementFor(q: BillingQuote, r: BillingResult): Settlement {
     const ids = new Set(r.items.map(x => x.id));
     if (ids.size !== r.items.length || r.items.length > q.facts.quantity || r.items.some(x => !x.id || !["succeeded", "failed", "unknown"].includes(x.state)) || !["succeeded", "failed", "unknown"].includes(r.state))
         throw new BillingError("INVALID_RESULT", "任务结果无效", 400);
     if (r.state === "unknown" || r.items.some(x => x.state === "unknown"))
-        return { state: q.tariff.settlement.unknown, charge: 0, release: 0 };
+        // An unknown outcome of a chargeless quote has nothing to review: close at zero.
+        return isChargelessQuote(q) ? { state: "settle", charge: 0, release: 0 } : { state: q.tariff.settlement.unknown, charge: 0, release: 0 };
     const succeeded = r.items.filter(x => x.state === "succeeded");
     const executedPrices = () => succeeded.map(item => {
         if (!item.executedQuality || !(QUALITY_IDS as readonly string[]).includes(item.executedQuality))

@@ -21,9 +21,11 @@ async function scoped<T>(reader:CreationReader,run:(tx:PoolClient,visible:string
 const fromDate=(s:string)=>`${s}T00:00:00+08:00`;
 const recordProjection=`SELECT c.*,COALESCE(u.name,c.actor_email) AS actor_name,
  (SELECT a.id FROM app_creation_assets a WHERE a.creation_id=c.id AND a.direction='output' AND a.media_type='image' ORDER BY position,id LIMIT 1) thumbnail_asset_id,`;
-const recordLiveSelect=`COALESCE(j.snapshot->'result'->>'status',j.snapshot->>'status',v.status,c.status) AS live_status
+// A terminal result snapshot stays authoritative. A job that failed at its top
+// level only overrides a result left mid-run (47: imagegen error, result 'running').
+const recordLiveSelect=`COALESCE(j.failed_status,j.snapshot->'result'->>'status',j.snapshot->>'status',v.status,c.status) AS live_status
  FROM app_creation_records c LEFT JOIN app_users u ON u.email=c.actor_email
- LEFT JOIN LATERAL(SELECT x.snapshot FROM app_creation_links l JOIN app_image_jobs x ON x.id=l.target_id AND x.email=l.actor_email WHERE l.creation_id=c.id AND l.target_type LIKE 'image:%' LIMIT 1)j ON true
+ LEFT JOIN LATERAL(SELECT x.snapshot,CASE WHEN x.snapshot->>'status' IN ('error','failed','cancelled','canceled') AND COALESCE(x.snapshot->'result'->>'status','') NOT IN ('succeeded','done','completed','success','partial','failed','error','cancelled','canceled') THEN x.snapshot->>'status' END AS failed_status FROM app_creation_links l JOIN app_image_jobs x ON x.id=l.target_id AND x.email=l.actor_email WHERE l.creation_id=c.id AND l.target_type LIKE 'image:%' LIMIT 1)j ON true
  LEFT JOIN LATERAL(SELECT x.status FROM app_creation_links l JOIN app_video_tasks x ON x.id=l.target_id AND x.email=l.actor_email WHERE l.creation_id=c.id AND l.target_type='video' LIMIT 1)v ON true`;
 const recordBillingJoin=` LEFT JOIN LATERAL(WITH RECURSIVE family AS(SELECT c.id,c.actor_email,c.tenant_id UNION ALL SELECT child.id,child.actor_email,child.tenant_id FROM app_creation_records child JOIN family p ON child.parent_id=p.id AND child.actor_email=p.actor_email AND child.tenant_id IS NOT DISTINCT FROM p.tenant_id), operations AS(
  SELECT DISTINCT o.id,o.state,o.charged_credits FROM family f JOIN app_creation_links l ON l.creation_id=f.id AND l.target_type='billing' JOIN app_billing_operations o ON o.id=l.target_id AND o.email=l.actor_email)
@@ -34,7 +36,7 @@ async function recordSelect(tx:PoolClient,includeBilling=true){
  if(!await videoWorkflowEvidenceAvailable(tx))return baseRecordSelect;
  // Optional workflow schemas are initialized by their owning module. Its exact
  // durable node states remain authoritative if secondary evidence writing fails.
- return baseRecordSelect.replace('COALESCE(j.snapshot', 'COALESCE(wf.status,j.snapshot')+` LEFT JOIN LATERAL(
+ return baseRecordSelect.replace('COALESCE(j.failed_status', 'COALESCE(wf.status,j.failed_status')+` LEFT JOIN LATERAL(
  SELECT CASE WHEN count(n.node_id)=0 THEN 'needs_review' WHEN bool_and(n.status='completed') THEN 'succeeded'
  WHEN bool_and(n.status IN ('completed','blocked','cancelled')) THEN CASE WHEN bool_or(n.status='completed') THEN 'partial' WHEN bool_or(n.status='blocked') THEN 'failed' ELSE 'cancelled' END
  WHEN bool_or(n.status IN ('needs_attention','needs_confirmation')) THEN 'needs_review' WHEN r.cancellation_requested_at IS NOT NULL THEN 'cancel_requested' ELSE 'running' END AS status

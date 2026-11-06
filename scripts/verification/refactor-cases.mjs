@@ -109,6 +109,7 @@ export const refactorCases=[
  ts('tool-image-operation-apib','generation','scripts/verify-tool-image-operation-apib.ts','TOOL_IMAGE_OPERATION_APIB=PASS'),
  ts('enterprise-read-retry','runtime','scripts/verify-enterprise-read-retry.ts','ENTERPRISE_READ_RETRY=PASS'),
  ts('supplier-scan-imported-history','runtime','scripts/verify-supplier-scan-imported-history.ts','SUPPLIER_SCAN_IMPORTED_HISTORY=PASS'),
+ ts('sync-terminal-consistency','pricing','scripts/verify-sync-terminal-consistency.ts','SYNC_TERMINAL_CONSISTENCY=PASS'),
  node('flash-ratio-catalog','generation','scripts/verify-x6-flash-ratios.cjs','X6_FLASH_RATIOS=MODIFIED PASS'),
  node('canvas-fanout-owners','canvas','scripts/verify-canvas-fanout-owners.cjs','CANVAS_FANOUT_UPLOAD=PASS'),
  node('canvas-fanout-receipt','canvas','scripts/verify-canvas-fanout-receipt.cjs','CANVAS_FANOUT_RECEIPT=PASS'),
