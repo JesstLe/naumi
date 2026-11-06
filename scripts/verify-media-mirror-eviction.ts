@@ -30,7 +30,7 @@ async function main(){
  const age=(key:string,hours:number)=>admin.query(`UPDATE ${schema}.app_media_assets SET created_at=now()-($2::double precision*interval '1 hour') WHERE key=$1`,[key,hours]);
  let checks=0;const check=(ok:unknown,msg:string)=>{assert.ok(ok,msg);checks++;};
  try{
-  check(eviction.localMirrorRetentionHours(undefined)===48&&eviction.localMirrorRetentionHours('off')===null&&eviction.localMirrorRetentionHours('6')===6&&eviction.localMirrorRetentionHours('-1')===48&&eviction.localMirrorRetentionHours('x')===48,'retention parsing');
+  check(eviction.localMirrorRetentionHours(undefined)===12&&eviction.localMirrorRetentionHours('off')===null&&eviction.localMirrorRetentionHours('6')===6&&eviction.localMirrorRetentionHours('-1')===12&&eviction.localMirrorRetentionHours('x')===12,'retention parsing');
   const owner='owner@evict.test';await db.getOrCreateUser(owner);
   const image=async(color:string)=>sharp({create:{width:640,height:320,channels:3,background:color}}).png().toBuffer();
   const upload=async(color:string)=>{const bytes=await image(color),key='evict/'+randomUUID()+'.png';const url=await storage.uploadImage(bytes,'image/png',key,undefined,owner);return {bytes,key,url};};
@@ -40,7 +40,7 @@ async function main(){
   const a=await upload('orange');await age(a.key,72);
   check((await eviction.evictVerifiedLocalMirrors({retentionHours:48})).evicted===0&&await exists(a.key),'pending local copy retained');
   const uploaded=await assets.recoverMediaMirrors(50);check(uploaded>=3&&(await assets.getMediaAsset(a.key))!.remote_ready,'NAS upload acknowledged');
-  // The same recovery lane evicts the aged, now NAS-verified original (default 48h).
+  // The same recovery lane evicts the aged, now NAS-verified original (default 12h).
   check(!await exists(a.key)&&await marker(a.key)==='infinity','recovery lane evicts aged NAS-verified copy');
   const aAsset=(await assets.getMediaAsset(a.key))!;
   check(aAsset.thumbnail_key&&await exists(aAsset.thumbnail_key),'fresh derivative copies stay within retention');

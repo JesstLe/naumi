@@ -1,4 +1,6 @@
-import {executionImageParameterPlan} from './image-plan-runtime';
+import {executionImageParameterPlan,assertCutoutTransparencyMapped} from './image-plan-runtime';
+import {localImageRejectionResponse} from './local-image-rejection';
+import {ModelConfigError} from './types';
 import "server-only";
 import {chatCompletionResponseFetch} from "./chat-completion-response";
 import type {ModelExecutionScope} from "./context";
@@ -17,6 +19,8 @@ export function executionFetch(scope: ModelExecutionScope, options: ValidationOp
   return async(input,init)=>{
     const request=new Request(input,init);
     if(request.method==="POST"){
+      // Definite local rejection before any supplier byte: never paid, never unknown.
+      try{assertCutoutTransparencyMapped(scope);}catch(error){if(error instanceof ModelConfigError)return localImageRejectionResponse(error);throw error;}
       const plan=executionImageParameterPlan(scope);
       if(plan)try{
         const {recordImageParameterPlan}=await import("../saas/creation-writer");

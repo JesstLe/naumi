@@ -90,8 +90,22 @@ async function scope(tx:PoolClient,actor:TeamActor,id:string,allowSelf=false):Pr
   return {team:{id:team.id,name:team.name,owner_email:team.owner_email,authorized_until:accessExpiry,owner},owner,level:owner?0:role?.level??999,manageMembers:owner||!!role?.manage_members,viewRecords:owner||!!role?.view_records,roles,nodes,visible,manageable,entitlement};
 }
 /** Workflow creation picker: ordinary employees get self only; never elevates existing analytics routes. */
+/** Read-only snapshot: membership rows are share-locked under REPEATABLE READ, so a
+ * concurrent committed update to the same row (e.g. app_users) raises 40001.
+ * Every caller only SELECTs and asserts, so the whole snapshot is retried. */
+const ENTERPRISE_READ_ATTEMPTS=3;
 export async function enterpriseCreationRead<T>(email:string,id:string,run:(tx:PoolClient,s:Scope)=>Promise<T>){
- await ensureEnterpriseSchema();const tx=await getPool().connect();try{await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ');await tx.query("SET LOCAL statement_timeout='10s'");const s=await scope(tx,{email,admin:false},id,true);if(s.owner)s.visible.add(s.team.owner_email);const result=await run(tx,s);await tx.query('COMMIT');return result;}catch(e){await tx.query('ROLLBACK');throw e;}finally{tx.release();}
+ await ensureEnterpriseSchema();
+ for(let attempt=1;;attempt++){
+  const tx=await getPool().connect();
+  try{await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ');await tx.query("SET LOCAL statement_timeout='10s'");const s=await scope(tx,{email,admin:false},id,true);if(s.owner)s.visible.add(s.team.owner_email);const result=await run(tx,s);await tx.query('COMMIT');return result;}
+  catch(e){
+   await tx.query('ROLLBACK').catch(()=>{});
+   const code=(e as {code?:unknown})?.code;
+   if((code==='40001'||code==='40P01')&&attempt<ENTERPRISE_READ_ATTEMPTS){await new Promise(r=>setTimeout(r,15*attempt+Math.floor(Math.random()*20)));continue;}
+   throw e;
+  }finally{tx.release();}
+ }
 }
 /** Analytics never trusts client member lists. Recheck the live hierarchy/grant in
  * the same consistent snapshot used for every aggregate and export. Shared

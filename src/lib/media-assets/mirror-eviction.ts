@@ -7,13 +7,14 @@ import {dbEnabled,getPool} from "@/platform/db/pool";
 import {ensureMediaSchema} from "../media-assets-schema";
 import {MEDIA_DIR,fetchStoredObject,privateMedia,safeKey,storageDriver} from "../object-storage/runtime";
 
-/** Hours a NAS-acknowledged object keeps its local copy. Unset → 48, "off" → never evict. */
+/** Hours a NAS-acknowledged object keeps its local copy. Unset → 12, "off" → never evict.
+ * 47 measured ~1.2 GiB/hour of new media at peak, so 48h would fill the disk. */
 export function localMirrorRetentionHours(value=process.env.NAUMI_NAS_LOCAL_MIRROR_RETENTION_HOURS):number|null{
   const raw=(value??"").trim().toLowerCase();
   if(raw==="off")return null;
-  if(raw==="")return 48;
+  if(raw==="")return 12;
   const hours=Number(raw);
-  return Number.isFinite(hours)&&hours>=0&&hours<=24*365?hours:48;
+  return Number.isFinite(hours)&&hours>=0&&hours<=24*365?hours:12;
 }
 
 const DONE="infinity",CLAIM_MINUTES=10,RETRY_MISMATCH_HOURS=24,RETRY_REMOTE_MINUTES=60;

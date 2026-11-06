@@ -58,9 +58,24 @@ async function main(){
     const cutout=(operationId:string)=>{const form=new FormData();form.set("image",new File([new Uint8Array(input)],"photo.png",{type:"image/png"}));form.set("quality","medium");form.set("category","cutout");
       return POST(new Request("http://internal/api/cutout",{method:"POST",headers:{cookie:`${USER_COOKIE}=${signUserSession(email,Date.now())}`,origin:"http://internal","x-naumi-billing-operation-id":operationId},body:form}));};
 
+    // A. Channel without a transparency mapping: rejected before any supplier byte,
+    // definitively not charged (not an UNKNOWN hold).
+    const unmappedId=randomUUID(),unmapped=await cutout(unmappedId),unmappedBody=await unmapped.json();
+    check([unmapped.ok,posts.length,uploads],[false,0,0],`unmapped cutout channel is rejected before submission (got ${unmapped.status} ${JSON.stringify(unmappedBody).slice(0,160)})`);
+    check(String(unmappedBody.error).includes("透明背景参数"),true,`rejection names the missing mapping (got ${unmappedBody.error})`);
+    const rejected=(await f.sql.query("SELECT state,charged_credits,settlement_result->>'state' AS settled FROM app_billing_operations WHERE id=$1",[`tool-${unmappedId}`])).rows[0];
+    check([rejected.state,Number(rejected.charged_credits),rejected.settled],["settled",0,"failed"],"pre-submission rejection settles as failed with zero charge");
+
+    // B. Administrator maps transparency to the protocol's background field.
+    const models=await f.repo.current(),mc=structuredClone(models.config);
+    for(const upstream of mc.upstreamModels)if(upstream.providerId===mc.providers[0].id)upstream.parameterMap={...upstream.parameterMap,imagegen:{...(upstream.parameterMap as any).imagegen,transparent:"background"}} as any;
+    const draft=await f.repo.draft("fixture"),next=await f.repo.saveDraft({id:draft.id,expectedRevision:draft.revision,config:mc,actor:"fixture"});
+    const pub=await f.repo.stage({id:randomUUID(),draftId:next.id,expectedRevision:next.revision,expectedVersion:models.version,actor:"fixture",reason:"map cutout transparency"});await f.repo.markApplied(pub.id,pub.digest);
+
     const operationId=randomUUID(),first=await cutout(operationId),body=await first.json();
     check([first.status,body.ok,typeof body.id],[200,true,"string"],`toolbox cutout on APIB succeeds (got ${first.status} ${JSON.stringify(body).slice(0,200)})`);
     check([posts.length,uploads],[1,1],"one upload and one paid generation POST");
+    check(posts[0].payload.background,"transparent","cutout submission explicitly requests a transparent background");
     const unit=(await f.sql.query("SELECT billing_unit_id FROM app_supplier_calls ORDER BY updated_at")).rows.map((r:any)=>r.billing_unit_id);
     check(unit,[`tool-${operationId}:tool-image:0`],"supplier unit derives from the billing operation");
     const call=(await f.sql.query("SELECT task_id,parameters->>'requestHash' AS hash FROM app_supplier_calls")).rows;
