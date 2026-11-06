@@ -36,6 +36,7 @@ import { TextModelProvider } from "@/lib/text-model-context";
 import { ImageQualityProvider } from "@/lib/image-quality-context";
 import { BillingProvider } from "@/lib/billing/client";
 import { SiteVersion } from "@/components/site-version";
+import { BrowserStorageHygiene } from "@/components/browser-storage-hygiene";
 import { CollaborationProvider } from "@/components/collaboration/collaboration-provider";
 
 // 站点字体:Geist(拉丁/数字,Vercel)+ 系统中文栈(见 tailwind sans),数字 tabular-nums。
@@ -122,6 +123,7 @@ export default async function RootLayout({
                   {authMode === "supabase" && <SessionBridge />}
                   <AppShell>{children}</AppShell>
                   <SiteVersion />
+                  <BrowserStorageHygiene />
                   <Suspense fallback={null}>
                     <AuthModal />
                   </Suspense>

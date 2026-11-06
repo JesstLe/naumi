@@ -58,6 +58,7 @@ import {PendContext} from "./nodes/pending-node";
 import {TextNodeContext} from "./nodes/text-node";
 import {canvasNodeTypes,canvasEdgeTypes} from "./nodes/registry";
 import {useCanvasSceneActions} from "./use-canvas-scene-actions";
+import { resilientLocalStorage } from "@/lib/browser-storage/local";
 import {useCanvasScene} from "./use-canvas-scene";
 import {useCanvasSelection} from "./use-canvas-selection";
 import {canvasSelectionTargets,canvasContextTargets,canvasSelectionProperties} from "@/lib/canvas/selection-projection";
@@ -1446,7 +1447,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if(!user||readOnly)throw new Error("无法修改此画布");
     const scope=canvasHistory.scope;
     return generateCanvasVideo({email:user.email,nodeId:id,draft,quote,onPersisted,count},{assertCurrent:scope.assertView,isCurrent:scope.viewCurrent},{
-      storage:localStorage,request:(url,init)=>canvasDocumentFetch(scope,url,init,true),
+      storage:resilientLocalStorage,request:(url,init)=>canvasDocumentFetch(scope,url,init,true),
       submit:async(url,init,quote,onIdentity)=>billing.submit(url,{...init,headers:await canvasDocumentHeaders(scope,init.headers,true)},quote,onIdentity),
       node:videoNodesStore.getNode,save:saveVideoDraft,
       refreshNodes:videoNodesStore.refresh,refreshTasks:videoTaskStore.refresh,refreshCredits,
@@ -1497,7 +1498,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   if(!workflowRunsRef.current)workflowRunsRef.current=createCanvasWorkflowRuns();
   async function runComfyWorkflow(source:Artwork,payload:ComfyRunPayload):Promise<ComfyRunResult>{
     if(readOnly||!user)throw new Error("只读画布不能执行工作流");
-    return workflowRunsRef.current!.run(source,payload,{...canvasGenerationRunContext(),storage:localStorage,submitted:()=>videoTaskStore.refresh()});
+    return workflowRunsRef.current!.run(source,payload,{...canvasGenerationRunContext(),storage:resilientLocalStorage,submitted:()=>videoTaskStore.refresh()});
   }
 
   async function submitAnnotations(formData: FormData) {

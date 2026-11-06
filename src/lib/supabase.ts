@@ -34,7 +34,8 @@ export async function authHeader(): Promise<Record<string, string>> {
   const headers: Record<string, string> = {};
   if (typeof window !== "undefined") {
     headers["x-naumi-workspace"]=currentWorkspace();
-    const textModel = window.localStorage.getItem("naumi:text-model")?.trim();
+    let textModel: string | undefined;
+    try { textModel = window.localStorage.getItem("naumi:text-model")?.trim(); } catch { /* blocked storage: server default model */ }
     if (textModel) headers["x-naumi-text-model"] = textModel;
     const quality = currentImageQuality();
     if (quality) headers["x-naumi-image-quality"] = quality;

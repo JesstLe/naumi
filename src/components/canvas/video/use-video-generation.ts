@@ -6,6 +6,7 @@ import type {PublicQuote} from "@/lib/billing/client";
 import {inputReference,type VideoNodeConfig} from "@/lib/video/client-settings";
 import type {OrderedInput} from "@/lib/video/references";
 import type {VideoPrivateFetch} from "./use-video-nodes";
+import {setLocalItem} from "@/lib/browser-storage/local";
 type Receipt={ids:string[];completed:Record<string,{taskId:string;cost:number}>};
 export class VideoGenerationPriceChanged extends Error{constructor(){super("价格已更新，请重新确认生成");}}
 async function json(response:Response){try{return await response.json();}catch{throw new Error("创建响应尚未核实，操作编号已保留");}}
@@ -23,7 +24,7 @@ export function useVideoGeneration({email,request}:{email?:string;request:VideoP
       const key=(await clientIntentKey(email,"/video/generation-batch",{body:JSON.stringify({body,count})})).replace("naumi:billing-intent:","naumi:video-generation:");if(!current())throw new Error("账号已切换");
       let receipt:Receipt|undefined;try{const saved=JSON.parse(localStorage.getItem(key)||"null");if(saved?.ids?.length===count&&saved.ids.every((id:unknown)=>typeof id==="string"&&/^[0-9a-f-]{36}$/.test(id))&&saved.completed&&typeof saved.completed==="object")receipt=saved;}catch{/* An invalid local receipt cannot identify a server operation. */}
       receipt=receipt||{ids:Array.from({length:count},()=>browserRandomUUID()),completed:{}};
-      const save=()=>localStorage.setItem(key,JSON.stringify(receipt));save();
+      const save=()=>setLocalItem(key,JSON.stringify(receipt));save();
       const result:{taskId:string;cost:number}[]=[];
       for(const id of receipt.ids){
         if(!current())throw new Error("账号已切换，返回原账号查看已创建任务");

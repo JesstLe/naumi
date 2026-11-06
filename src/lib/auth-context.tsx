@@ -96,10 +96,26 @@ function makeUser(name: string, email: string): SessionUser {
   };
 }
 
+// The cached copy is rendered before the server answers, so a corrupt or
+// foreign value must never reach components that read user.email/name.
+function isSessionUser(value: unknown, email: string): value is SessionUser {
+  const user = value as Partial<SessionUser> | null;
+  return !!user && typeof user === "object" && !Array.isArray(user)
+    && typeof user.email === "string" && user.email.toLowerCase() === email.toLowerCase()
+    && typeof user.name === "string" && typeof user.plan === "string"
+    && Number.isFinite(user.creditsTotal) && Number.isFinite(user.creditsUsed)
+    && typeof user.joinedAt === "string" && typeof user.renewsAt === "string"
+    && Array.isArray(user.invoices);
+}
+
 function loadUser(email: string): SessionUser | null {
   try {
     const raw = localStorage.getItem(keyFor(email));
-    return raw ? (JSON.parse(raw) as SessionUser) : null;
+    if (!raw) return null;
+    const value: unknown = JSON.parse(raw);
+    if (isSessionUser(value, email)) return value;
+    localStorage.removeItem(keyFor(email));
+    return null;
   } catch {
     return null;
   }

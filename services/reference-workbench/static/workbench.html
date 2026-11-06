@@ -295,9 +295,15 @@ function readPromptOverrides(){
   }
   try{promptOverrides=JSON.parse(WorkbenchEnvironment.storage().getItem(promptStoreKey)||"{}"); if(!promptOverrides||typeof promptOverrides!=="object"||Array.isArray(promptOverrides))promptOverrides={};}catch(e){promptOverrides={};}
 }
-function writePromptOverrides(){WorkbenchEnvironment.storage().setItem(promptStoreKey,JSON.stringify(promptOverrides));}
+// Edits re-insert their key so the newest prompts are last; the native bridge keeps the newest within budget.
+// Writes are coalesced: a keystroke used to re-serialize every saved prompt.
+let promptWriteTimer=0;
+function flushPromptOverrides(){clearTimeout(promptWriteTimer);promptWriteTimer=0;WorkbenchEnvironment.storage().setItem(promptStoreKey,JSON.stringify(promptOverrides));}
+function writePromptOverrides(){if(!promptWriteTimer)promptWriteTimer=setTimeout(flushPromptOverrides,400);}
+window.addEventListener("pagehide",()=>{if(promptWriteTimer)flushPromptOverrides();});
+window.addEventListener("naumi-workbench-storage-full",()=>{status.textContent="浏览器本地空间不足，部分提示词或设置未保存到本机。";});
 function promptForItem(item){const saved=promptOverrides[item.ref_path]; return saved!==undefined ? saved : cleanPrompt(item.prompt);}
-function setPromptOverride(refPath,text){promptOverrides[refPath]=String(text??""); writePromptOverrides();}
+function setPromptOverride(refPath,text){delete promptOverrides[refPath]; promptOverrides[refPath]=String(text??""); writePromptOverrides();}
 function mergePromptOverrides(list){return list.map(item=>promptOverrides[item.ref_path]!==undefined ? {...item,prompt:promptOverrides[item.ref_path]} : item);}
 function rememberPrompt(el){const card=el.closest(".card"); if(card)setPromptOverride(card.dataset.ref,el.value);}
 function currentRoot(){return String(document.getElementById("workbench_root")?.value||"");}
@@ -407,7 +413,7 @@ async function uploadLocalFolder(files){
   }
 }
 async function saveAndLoad(){WorkbenchEnvironment.storage().setItem(rootStoreKey,currentRoot()); await saveSettings(); await loadRefs(true);}
-function readProjects(){try{projects=JSON.parse(WorkbenchEnvironment.storage().getItem(projectStoreKey)||"[]"); if(!Array.isArray(projects))projects=[];}catch(e){projects=[];} renderProjects();}
+function readProjects(){try{projects=JSON.parse(WorkbenchEnvironment.storage().getItem(projectStoreKey)||"[]"); if(!Array.isArray(projects))projects=[]; projects=projects.filter(p=>p&&typeof p==="object"&&typeof p.root==="string");}catch(e){projects=[];} renderProjects();}
 function writeProjects(){WorkbenchEnvironment.storage().setItem(projectStoreKey,JSON.stringify(projects)); renderProjects();}
 function projectName(path){return String(path||"").split(/[\\/]/).filter(Boolean).pop()||"未命名项目";}
 function currentProjectSnapshot(state){
@@ -641,9 +647,9 @@ function syncDefaultPromptToCards(){
   document.querySelectorAll(".card textarea.prompt").forEach(el=>{
     el.value=text;
     const card=el.closest(".card");
-    if(card)promptOverrides[card.dataset.ref]=text;
+    if(card){delete promptOverrides[card.dataset.ref]; promptOverrides[card.dataset.ref]=text;}
   });
-  items=items.map(it=>{promptOverrides[it.ref_path]=text; return {...it,prompt:text};});
+  items=items.map(it=>{delete promptOverrides[it.ref_path]; promptOverrides[it.ref_path]=text; return {...it,prompt:text};});
   writePromptOverrides();
 }
 async function inferSelectedPrompts(){

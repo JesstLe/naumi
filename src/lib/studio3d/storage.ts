@@ -46,9 +46,15 @@ export async function listProjects(owner: string): Promise<StudioProject[]> {
   const rows = await transaction<Row[]>("readonly", (store) =>
     store.index("owner").getAll(owner),
   );
-  return rows
-    .map((row) => projectSchema.parse(row.project))
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  // One project saved by an older schema must not hide every other project.
+  // Unreadable rows stay in IndexedDB untouched; they are only left out of the list.
+  const projects: StudioProject[] = [];
+  for (const row of rows) {
+    const parsed = projectSchema.safeParse(row.project);
+    if (parsed.success) projects.push(parsed.data);
+    else console.warn("studio3d: skipped unreadable local project", row.key);
+  }
+  return projects.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 export async function saveProject(owner: string, project: StudioProject) {
   if (!owner) throw Error("请先登录后保存工程");

@@ -183,7 +183,8 @@ export function GenerateClient({
           ? config.imageModels.filter((item) => item?.id && item?.label)
           : [];
         const fallback = config.defaultImageModel || options[0]?.id || "";
-        const saved = window.localStorage.getItem("naumi:generate-image-model") || "";
+        let saved = "";
+        try { saved = window.localStorage.getItem("naumi:generate-image-model") || ""; } catch { /* optional preference */ }
         const normalized = compactImageModelOptions(options, [fallback, saved]);
         setImageModels(normalized);
         setModel((current) => {
@@ -196,7 +197,7 @@ export function GenerateClient({
 
   function pickModel(value: string) {
     setModel(value);
-    window.localStorage.setItem("naumi:generate-image-model", value);
+    try { window.localStorage.setItem("naumi:generate-image-model", value); } catch { /* in-memory selection still applies */ }
   }
 
   // 把一张远程图(模板原图 / 作品库源图或上一版)下载进左侧「产品图(底图)」。

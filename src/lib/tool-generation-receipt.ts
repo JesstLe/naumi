@@ -5,6 +5,7 @@ import {readCanvasGenerationReceipt} from "./canvas/generation-receipt";
 import {currentWorkspace,currentWorkspaceRevision,WORKSPACE_SELECTION} from "./saas/workspace-client";
 import {authHeader} from "./supabase";
 import {validToolImages} from "./tool-ui";
+import {TOOL_RECEIPT_PREFIX} from "./tool-generation-receipt-keys";
 
 type Tool = "fusion" | "variation";
 type Receipt = {version:1;owner:string;workspace:string;tool:Tool;key:string;jobId:string;acceptedAt:number};
@@ -13,7 +14,7 @@ type Options = {tool:Tool;owner?:string;modelId?:string;draftKey:string;restoreD
 const memory = new Map<string,Receipt>();
 const pointers = new Map<string,string>();
 const latestMemory = new Map<string,string>();
-const prefix = "naumi:tool-generation-receipt:v1:";
+const prefix = TOOL_RECEIPT_PREFIX;
 const latestKey = (owner:string,workspace:string,tool:Tool) => prefix+"latest:"+JSON.stringify([owner,workspace,tool]);
 function valid(value:unknown):value is Receipt {
   const r=value as Receipt;
@@ -41,11 +42,17 @@ function latest(owner:string,workspace:string,tool:Tool){
   return key?load(key,owner,workspace,tool):undefined;
 }
 function clear(receipt:Receipt){
-  // Delete only this immutable job leaf. A concurrent tab may already point the
-  // same input to a newer accepted job; never erase its pointer or receipt.
+  // Delete this immutable job leaf and the pointer only while it still names this
+  // job. A concurrent tab may already point the same input to a newer accepted
+  // job; never erase that pointer or its receipt.
   const leaf=receipt.key+":job:"+receipt.jobId;
   memory.delete(leaf);
-  try{localStorage.removeItem(leaf);}catch{}
+  if(pointers.get(receipt.key)===receipt.jobId)pointers.delete(receipt.key);
+  try{
+    localStorage.removeItem(leaf);
+    // The pointer only names this job's leaf; drop it unless another tab re-pointed it.
+    if(localStorage.getItem(receipt.key)===receipt.jobId)localStorage.removeItem(receipt.key);
+  }catch{}
 }
 const delay=()=>new Promise<void>(resolve=>setTimeout(resolve,2500));
 

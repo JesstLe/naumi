@@ -70,6 +70,11 @@ function mergeUnique(
 const CACHE_KEY = "naumi:templatesCacheV1";
 const CACHE_TTL_MS = 60 * 60 * 1000;
 type CacheEntry = { templates: PromptTemplate[]; total: number; ts: number };
+const isCachedTemplate = (value: unknown): value is PromptTemplate => {
+  const t = value as Partial<PromptTemplate> | null;
+  return !!t && typeof t === "object" && typeof t.id === "string" && typeof t.title === "string" && typeof t.description === "string"
+    && typeof t.industry === "string" && typeof t.prompt === "string" && typeof t.image === "string" && Array.isArray(t.tags) && t.tags.every(tag => typeof tag === "string");
+};
 function cacheKeyOf(filter: string, q: string, favsKey: string): string {
   return `${filter}|${q}|${favsKey}`;
 }
@@ -79,9 +84,10 @@ function loadCache(key: string): CacheEntry | null {
     const raw = localStorage.getItem(CACHE_KEY);
     if (!raw) return null;
     const all = JSON.parse(raw) as Record<string, CacheEntry>;
-    const entry = all[key];
+    const entry = all?.[key];
     if (!entry) return null;
-    if (Date.now() - entry.ts > CACHE_TTL_MS) return null;
+    // Rendered before the live fetch: an old or corrupt entry would crash the page.
+    if (!Number.isFinite(entry.ts) || Date.now() - entry.ts > CACHE_TTL_MS || !Number.isFinite(entry.total) || !Array.isArray(entry.templates) || !entry.templates.every(isCachedTemplate)) return null;
     return entry;
   } catch {
     return null;

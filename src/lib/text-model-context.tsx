@@ -30,7 +30,9 @@ export function TextModelProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    const saved = window.localStorage.getItem(TEXT_MODEL_STORAGE_KEY)?.trim();
+    let saved: string | undefined;
+    // Runs in a root provider: blocked storage must not blank every page.
+    try { saved = window.localStorage.getItem(TEXT_MODEL_STORAGE_KEY)?.trim(); } catch { /* optional preference */ }
     if (saved) setModelState(saved);
     void fetch("/api/text-models", { cache: "no-store" })
       .then((response) => response.json())
@@ -58,7 +60,7 @@ export function TextModelProvider({ children }: { children: ReactNode }) {
     if (!normalized) return;
     setModelState(normalized);
     setModels((current) => (current.includes(normalized) ? current : [normalized, ...current]));
-    window.localStorage.setItem(TEXT_MODEL_STORAGE_KEY, normalized);
+    try { window.localStorage.setItem(TEXT_MODEL_STORAGE_KEY, normalized); } catch { /* in-memory selection still applies */ }
   }, []);
 
   const value = useMemo(
