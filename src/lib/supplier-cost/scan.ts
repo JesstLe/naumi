@@ -10,8 +10,15 @@ import { getAPIMartTask, queryAPIMartUsage } from "./apimart";
 import { importRouterOperation } from "./router";
 import { reconcileUsage } from "./reconciliation";
 import { costPolicy } from "./policy";
-import { excludeImportedHistory, stagingHistoryGuardEnabled } from "../staging-history";
+import { excludeImportedHistory, isImportedHistory, stagingHistoryGuardEnabled } from "../staging-history";
 
+/** A staging copy can carry another site's usage job under this site's key; that
+ * imported row is read-only (history freeze trigger). Upserting it aborted the
+ * whole scan, so this site keeps its own usage job under a distinct key. */
+async function usageJobKey(db: Parameters<typeof isImportedHistory>[0], accountId: string) {
+  const base = `${stagingHistoryGuardEnabled() ? "staging:" : ""}usage:${accountId}`;
+  return await isImportedHistory(db, "app_supplier_cost_jobs", base) ? `${base}:site` : base;
+}
 export async function scanSupplierCostJobs(ledger: ReturnType<typeof createSupplierLedger> = supplierLedger(), options: { fetcher?: typeof fetch; batch?: number } = {}) {
   await ensureSupplierSchema(ledger.pool);
   // Recover a process crash after task_id was durably stored but before the outbox enqueue.
@@ -25,7 +32,7 @@ export async function scanSupplierCostJobs(ledger: ReturnType<typeof createSuppl
   const accounts = (await ledger.pool.query("SELECT * FROM app_supplier_accounts WHERE protocol IN('apimart-images','apimart') AND credential_ref IS NOT NULL AND usage_enabled")).rows;
   for (const account of accounts) {
     const p = costPolicy(account.policy);
-    if (!account.last_usage_at || Date.now() - new Date(account.last_usage_at).getTime() >= p.intervalSeconds * 1000) await ledger.pool.query("INSERT INTO app_supplier_cost_jobs(key,kind,account_id,payload) VALUES($1,'usage',$2,'{}') ON CONFLICT(key) DO UPDATE SET state=CASE WHEN app_supplier_cost_jobs.state='done' THEN 'queued' ELSE app_supplier_cost_jobs.state END", [`${stagingHistoryGuardEnabled() ? "staging:" : ""}usage:${account.id}`,account.id]);
+    if (!account.last_usage_at || Date.now() - new Date(account.last_usage_at).getTime() >= p.intervalSeconds * 1000) await ledger.pool.query("INSERT INTO app_supplier_cost_jobs(key,kind,account_id,payload) VALUES($1,'usage',$2,'{}') ON CONFLICT(key) DO UPDATE SET state=CASE WHEN app_supplier_cost_jobs.state='done' THEN 'queued' ELSE app_supplier_cost_jobs.state END", [await usageJobKey(ledger.pool,account.id),account.id]);
   }
   const jobs = (await ledger.pool.query(`WITH due AS (SELECT key FROM app_supplier_cost_jobs WHERE state='queued' AND due_at<=now() AND (lease_until IS NULL OR lease_until<now()) ${excludeImportedHistory("app_supplier_cost_jobs")} ORDER BY due_at LIMIT $1 FOR UPDATE SKIP LOCKED) UPDATE app_supplier_cost_jobs j SET lease_id=$2,lease_until=now()+interval '120 seconds',attempts=attempts+1,updated_at=now() FROM due WHERE j.key=due.key RETURNING j.*`, [Math.min(10,Math.max(1,options.batch||3)),randomUUID()])).rows;
   let processed = 0;
