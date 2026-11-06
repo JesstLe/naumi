@@ -15,13 +15,14 @@ import type {CanvasDirectorNode} from "./director-node-schema";
 import type {CanvasVideoNode} from "./video-node-schema";
 import type {CanvasPendingNode} from "./scene-types";
 import {browserRandomUUID} from "../browser-crypto";
-import {videoModeRoles,type VideoInputChoice} from "../video/client-settings";
+import {catalogCapability,selectedVideoCatalogModel,videoModeRoles,type VideoInputChoice,type VideoCatalogModel} from "../video/client-settings";
+import {attachVideoInputs} from "../video/mode-selection";
 import {explicitCanvasParent} from "./input-references";
 import {canvasParentCycle} from "./parent-link";
 import {textPatchOf,type CanvasTextNode,type CanvasHistoryAction} from "./history-model";
 
 type Snapshot={project:string|null;artworks:Artwork[];texts:CanvasTextNode[];videos:CanvasVideoNode[];directors?:CanvasDirectorNode[];characters?:CanvasCharacterNode[];scenes?:CanvasSceneNode[];audios?:CanvasAudioNode[];timelines?:CanvasTimelineNode[];timelineMaterials?:TimelineMaterial[];pending:CanvasPendingNode[];
-  selected:string[];choices:VideoInputChoice[];locked:(id:string)=>boolean;
+  selected:string[];choices:VideoInputChoice[];videoModels?:VideoCatalogModel[];locked:(id:string)=>boolean;
   productTitle:string;referenceLimit:string;cycleMessage:string;productMention:(content:string,title:string)=>string};
 export type CanvasLinkIntent={source:string;target:string;add:boolean;edgeId?:string;product?:boolean};
 /** Resolve only the canvas identity. Media ownership, duration and hashes must
@@ -105,7 +106,14 @@ export function compileCanvasLink(s:Snapshot,intent:CanvasLinkIntent):CanvasHist
     const inputs=add?[...video.inputs,{id:`ref-${browserRandomUUID()}`,nodeId:choice!.nodeId,kind:choice!.kind,
       role:choice!.kind==="text"?"context" as const:choice!.kind==="video"?"source_video" as const:choice!.kind==="audio"?"source_audio" as const:"reference" as const,value:choice!.value}]
       :video.inputs.filter(input=>removed?input.id!==removed.id:!matches(input.nodeId));
-    return {kind:"video-patch",id:video.id,from:{inputs:video.inputs},to:{inputs:videoModeRoles(inputs,video.config.mode)}};
+    // A canvas wire is the same explicit attach as the composer's picker. Commit
+    // its mode/roles together, even while that composer is closed. Never pick a
+    // different model or infer capabilities for an unavailable/own workflow.
+    const model=add&&!video.config.comfyWorkflowId?selectedVideoCatalogModel(s.videoModels||[],video.config):undefined;
+    const attached=model?attachVideoInputs(video.config,inputs,catalogCapability(model)):undefined;
+    return {kind:"video-patch",id:video.id,
+      from:{inputs:video.inputs,...(attached?.changed?{config:video.config}:{})},
+      to:{inputs:attached?.inputs??videoModeRoles(inputs,video.config.mode),...(attached?.changed?{config:attached.config}:{})}};
   }
   const pending=s.pending.find(node=>node.id===target);
   if(pending){

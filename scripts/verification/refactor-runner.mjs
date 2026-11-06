@@ -129,6 +129,7 @@ export async function runRefactorVerification({root,out,cases,commandFor,expecte
    if(spec.id==='image-size')stageEnv.CANVAS_SIZE_EVIDENCE=evidence;
    if(spec.id==='apimart-polling-boundary')stageEnv.X6_OUT=evidence;
    if(spec.id==='native-documents')stageEnv.NATIVE_DOCUMENT_EVIDENCE=evidence;
+   if(['native-project-refresh','video-image-link'].includes(spec.id))stageEnv.VIDEO_CONNECT_EVIDENCE=evidence;
    if(spec.id==='native-documents-pg')stageEnv.NATIVE_DOCUMENT_PG_EVIDENCE=evidence;
    if(spec.id==='reference-retention')stageEnv.REFERENCE_RETENTION_EVIDENCE=evidence;
    if(spec.id==='admin-user-usage-pg')stageEnv.ADMIN_USER_USAGE_EVIDENCE=evidence;

@@ -65,7 +65,7 @@ try{
     await reset();h=window.h;const before=h.stores[kind].allNodes;await h.stores[kind].refresh();eq(window.h.stores[kind].allNodes===before,true,kind+' unchanged array reference');
     h.state.readError=true;await window.h.stores[kind].refresh().catch(()=>{});eq(window.h.stores[kind].error,'read unavailable',kind+' read error visible');eq(window.h.stores[kind].allNodes.length,1,kind+' failure retains nodes');groups++;
     console.log('NATIVE_PHASE='+kind+' DEDUP');await reset();h=window.h;const hold=gate();h.state.afterPost=async()=>{hold.enter();await hold.promise;};const one=h.stores[kind].save(kind,{title:'dedup'}),two=h.stores[kind].save(kind,{title:'dedup'});await hold.entered;eq(h.state.posts.length,1,kind+' in-flight dedup');hold.release();await Promise.all([one,two]);groups++;
-    await reset();h=window.h;const stable=h.stores[kind].allNodes,readCount=h.state.reads.length;h.change({project:'tree:Q'});await new Promise(r=>setTimeout(r,10));eq(window.h.stores[kind].allNodes===stable,true,kind+' project retains document');eq(h.state.reads.length,readCount,kind+' project does not reload all nodes');groups++;
+    await reset();h=window.h;const stable=h.stores[kind].allNodes,readCount=h.state.reads.length;h.change({project:'tree:Q'});await wait(()=>h.state.reads.length===readCount+kinds.length);eq(window.h.stores[kind].allNodes===stable,true,kind+' project retains document');eq(h.state.reads.length,readCount+kinds.length,kind+' project loads its context once without restarting document');groups++;
    }
   }
   for(const kind of ['audio','timeline']){

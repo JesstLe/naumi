@@ -16,9 +16,11 @@ export function useCanvasNativeNodeDocument<K extends CanvasNativeKind>(kind:K,i
   const document=useMemo(()=>owner.current!.bind(scoped,input.email||"",input.readOnly),[scoped,input.email,input.readOnly]);
   const snapshot=useSyncExternalStore(document.subscribe,document.getSnapshot,()=>EMPTY as NativeNodeSnapshot<NativeNodeFor<K>>);
   const latest=useRef(document);latest.current=document;
+  const loadedView=useRef<typeof document|null>(null);
   const revision=currentWorkspaceRevision();
   useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
   useEffect(()=>{
+    loadedView.current=latest.current;
     const deactivate=latest.current.activate();
     let stopped=false,timer:ReturnType<typeof setTimeout>|undefined;
     const warn=(event:BeforeUnloadEvent)=>{if(latest.current.getSnapshot().unsavedCount){event.preventDefault();event.returnValue="";}};
@@ -28,5 +30,12 @@ export function useCanvasNativeNodeDocument<K extends CanvasNativeKind>(kind:K,i
     window.addEventListener("focus",resume);window.document.addEventListener("visibilitychange",resume);
     return()=>{stopped=true;deactivate();window.removeEventListener("beforeunload",warn);if(timer)clearTimeout(timer);window.removeEventListener("focus",resume);window.document.removeEventListener("visibilitychange",resume);};
   },[kind,input.scope.account,input.scope.workspace,input.email,input.readOnly,revision]);
+  // Navigation changes the read context, not the document/write lifetime. Load
+  // that project's receipts immediately without disposing or replaying saves.
+  useEffect(()=>{
+    if(loadedView.current===document)return;
+    loadedView.current=document;
+    void document.refresh().catch(()=>{});
+  },[document]);
   return {...document,allNodes:snapshot.nodes,nodes:useMemo(()=>snapshot.nodes.filter(node=>!node.deletedAt),[snapshot.nodes]),ready:snapshot.phase==="ready"||snapshot.phase==="error",error:snapshot.error,unsavedCount:snapshot.unsavedCount,saving:snapshot.saving>0};
 }
