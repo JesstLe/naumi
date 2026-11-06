@@ -5,6 +5,7 @@ import type {PublicMediaJob,MediaJobRequest} from "@/lib/video/media-job-schema"
 import {mediaIntent,readMediaReceipt,writeMediaReceipt,clearMediaReceipt,clearTerminalMediaReceipts,type MediaJobIntent} from "@/lib/video/media-client-intent";
 import type {VideoPrivateFetch} from "./use-video-nodes";
 import {resilientLocalStorage} from "@/lib/browser-storage/local";
+import {visibleTimeout} from "@/lib/visible-timeout";
 export class MediaQuoteRequired extends Error{constructor(public quote:NonNullable<MediaJobRequest["billingConfirmation"]>){super("请确认本次媒体处理积分");}}
 type Cursor={createdAt:string;id:string};
 type Options={email?:string;projectKey?:string|null;source?:MediaJobRequest["source"];readOnly:boolean;request:VideoPrivateFetch;onCompleted:(job:PublicMediaJob)=>Promise<void>};
@@ -23,10 +24,10 @@ export function useMediaJobs({email,projectKey,source,readOnly,request,onComplet
     const response=await request(`/api/video/media-jobs?${params}`,{cache:"no-store"}),data=await body(response);if(!response.ok)throw new Error(data.error||"媒体任务恢复失败");if(contextRef.current!==context)return;await merge(data.jobs||[],context);if(contextRef.current===context){if(cursor||!paginationInitialized.current){setNextCursor(data.nextCursor||null);paginationInitialized.current=true;}setError("");}
   },[email,projectKey,source,readOnly,request,context,merge]);
   useEffect(()=>{jobsRef.current=[];setJobs([]);setError("");setNextCursor(null);paginationInitialized.current=false;completed.current.clear();busy.current.clear();if(!email||readOnly)return;
-    let stopped=false,timer:ReturnType<typeof setTimeout>,round=0;const run=async()=>{try{if(round++%5===0)await refresh();if(stopped||contextRef.current!==context)return;
+    let stopped=false,timer:(()=>void)|undefined,round=0;const run=async()=>{try{if(round++%5===0)await refresh();if(stopped||contextRef.current!==context)return;
       // Get performs durable Worker recovery/publication; its elapsed media seconds are real, not a percentage estimate.
       for(const job of jobsRef.current.filter(pending)){const response=await request(`/api/video/media-jobs/${encodeURIComponent(job.id)}`,{cache:"no-store"}),data=await body(response);if(!response.ok)throw new Error(data.error||"媒体任务暂不可用，等待恢复");if(stopped||contextRef.current!==context)return;await merge([data.job],context);}if(!stopped&&contextRef.current===context)setError("");
-    }catch(cause){if(!stopped&&contextRef.current===context)setError(cause instanceof Error?cause.message:"媒体任务恢复失败");}if(!stopped)timer=setTimeout(run,jobsRef.current.some(pending)?2500:10000);};void run();return()=>{stopped=true;clearTimeout(timer);};
+    }catch(cause){if(!stopped&&contextRef.current===context)setError(cause instanceof Error?cause.message:"媒体任务恢复失败");}if(!stopped)timer=visibleTimeout(run,jobsRef.current.some(pending)?2500:10000);};void run();return()=>{stopped=true;timer?.();};
   },[email,readOnly,context,refresh,request,merge]);
   const submit=useCallback(async(raw:MediaJobIntent,confirmation?:MediaJobRequest["billingConfirmation"]):Promise<PublicMediaJob>=>{if(!email||readOnly)throw new Error("无法处理此媒体");const actor=email,{intent,fingerprint}=await mediaIntent(raw);if(contextRef.current!==context)throw new Error("账号或项目已切换");
     const active=busy.current.get(fingerprint);if(active)return active;

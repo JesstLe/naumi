@@ -10,6 +10,7 @@ import type {Artwork} from "../mock-data";
 
 export type {OcrBox as CanvasOcrBox} from "../canvas-ocr";
 import type {OcrBox as CanvasOcrBox} from "../canvas-ocr";
+import {visibleTimeout} from "../visible-timeout";
 export type CanvasOcrSegment={id:string;text:string;editedText:string;confidence:number;box:CanvasOcrBox};
 export type CanvasImageTextState={artworkId:string|null;segments:CanvasOcrSegment[];status:"idle"|"scanning"|"ready"|"applying"|"done"|"error";engine:string;error:string|null;applyingId:string|null;progress:number;imageSize:{width:number;height:number}|null;focusedId:string|null};
 const initial=():CanvasImageTextState=>({artworkId:null,segments:[],status:"idle",engine:"",error:null,applyingId:null,progress:0,imageSize:null,focusedId:null});
@@ -87,7 +88,7 @@ export function createCanvasImageTextEditor(){
       else publish({progress:0,status:"error",error:task.error||"在线改字失败，请稍后重试"});
     }
     function follow(context:CanvasImageTextContext){
-      doc.context=context;let stopped=false,timer:ReturnType<typeof setTimeout>|undefined;const active=()=>!stopped&&current();
+      doc.context=context;let stopped=false,timer:(()=>void)|undefined;const active=()=>!stopped&&current();
       const sync=async()=>{try{
         if(!active())return;const sourceIds=context.members().map(a=>a.id),chunks=Array.from({length:Math.max(1,Math.ceil(sourceIds.length/80))},(_,index)=>sourceIds.slice(index*80,index*80+80));
         const responses=await Promise.all(chunks.map(ids=>context.read(`/api/canvas/image-tasks?limit=500&sourceIds=${encodeURIComponent(ids.join(","))}`)));if(!active())return;if(responses.some(r=>!r.ok))throw Error("图片编辑任务查询失败");
@@ -107,9 +108,9 @@ export function createCanvasImageTextEditor(){
           }
           if((task.status==="failed"||task.status==="needs_attention")&&!doc.failed.has(task.id)){doc.failed.add(task.id);for(const [slot,attempt] of doc.attempts)if(attempt.taskId===task.id)doc.attempts.delete(slot);doc.segments.delete(task.id);receive(task,running);context.notice(task.error||"在线改字失败，请稍后重试");}
         }
-        if(active())timer=setTimeout(sync,running.length?3000:15000);
-      }catch{if(active())timer=setTimeout(sync,10000);}};
-      void sync();return()=>{stopped=true;if(timer!==undefined)clearTimeout(timer);};
+        if(active())timer=visibleTimeout(sync,running.length?3000:30000);
+      }catch{if(active())timer=visibleTimeout(sync,10000);}};
+      void sync();return()=>{stopped=true;timer?.();};
     }
     return {getSnapshot:()=>state,subscribe:(fn:()=>void)=>{listeners.add(fn);return()=>{listeners.delete(fn);};},open,close,edit,focus,apply,follow};
   }

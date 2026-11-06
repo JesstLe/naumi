@@ -31,7 +31,7 @@ export function useCanvasCredits({ user, ready, targetEmail, request }: {
     const context = identity.current;
     const serial = ++context.serial;
     try {
-      const response = await request(`/api/account?email=${encodeURIComponent(email)}`, { cache: "no-store" });
+      const response = await request(`/api/account?email=${encodeURIComponent(email)}&view=user`, { cache: "no-store" });
       if (!response.ok) return;
       const data = await response.json();
       const value = accountCredits(data?.user, email);

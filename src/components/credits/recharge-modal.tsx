@@ -92,7 +92,7 @@ export function RechargeModal() {
     try {
       if (user) {
         const ar = await fetch(
-          `/api/account?email=${encodeURIComponent(user.email)}`,
+          `/api/account?email=${encodeURIComponent(user.email)}&view=user`,
           { headers: await authHeader() }
         );
         const ad = await ar.json();

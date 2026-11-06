@@ -72,7 +72,7 @@ export function createCanvasVideoTaskFollower(){
           if(!current())return;document.failed.add(task.id);await ports.credits();if(!current())return;
           ports.notice(task.error||"视频生成失败，积分已退回");
         }
-        later(runningIds.size?8000:15000);
+        later(runningIds.size?8000:30000);
       }catch{later(12000);}
     }
     void sync();

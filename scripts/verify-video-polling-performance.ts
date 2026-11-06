@@ -23,9 +23,10 @@ const nodesHook = readFileSync('src/components/canvas/video/use-video-nodes.ts',
 assert.match(nodesHook, /useCanvasNativeNodeDocument\("video",input,makeError\)/);
 const nativeHook = readFileSync('src/components/canvas/use-canvas-native-node-document.ts', 'utf8');
 assert.match(nativeHook, /input.scope.documentCurrent\(\)/);
-assert.match(nativeHook, /setTimeout\(load,6000\)/);
+// 2026-11-07: video documents poll at the caller's interval (6s while video work runs, 30s idle), paused while hidden.
+assert.match(nativeHook, /visibleTimeout\(load,pollRef.current\?\.\(\)\?\?6000\)/);
 // The shared native document owns account/workspace/read-only epochs.
 const tasksHook = readFileSync('src/components/canvas/video/use-video-tasks.ts', 'utf8');
-assert.match(tasksHook, /contextRef.current!==context/); assert.match(tasksHook, /setTimeout\(run,4000\)/);
+assert.match(tasksHook, /contextRef.current!==context/); assert.match(tasksHook, /schedule\(activeRef.current\?4000:30000\)/); assert.match(tasksHook, /visibleTimeout\(run,delay\)/);
 assert.match(tasksHook, /onCompletedRef.current\(task,projectKey\)/);
-console.log('VIDEO_POLLING_STATE=PASS SAME_NODE_TASK_SNAPSHOT100_NO_ROOT_UPDATES CHANGED_PROGRESS_RESULT_LOCK_DELETE_REFERENCE_ORDER=RETAINED REVISION_CONTEXT_GUARDS=RETAINED POLL4S6S_AND_COMPLETION_CALLBACKS=UNCHANGED');
+console.log('VIDEO_POLLING_STATE=PASS SAME_NODE_TASK_SNAPSHOT100_NO_ROOT_UPDATES CHANGED_PROGRESS_RESULT_LOCK_DELETE_REFERENCE_ORDER=RETAINED REVISION_CONTEXT_GUARDS=RETAINED POLL_ACTIVE4S6S_IDLE30S_HIDDEN_PAUSED_AND_COMPLETION_CALLBACKS=RETAINED');
