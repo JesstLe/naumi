@@ -5,6 +5,7 @@ import {type PublicVideoTaskView} from "@/lib/video/queries";
 import type {PublicVideoTaskSnapshot} from "@/lib/video/task-snapshot";
 import type {PublicQuote} from "@/lib/billing/client";
 import type {VideoPrivateFetch} from "./use-video-nodes";
+import {setLocalItem} from "@/lib/browser-storage/local";
 export type VideoTaskDetail={task:PublicVideoTaskView;snapshot:PublicVideoTaskSnapshot};
 export type CanvasVideoSend={artworkId:string;artworkIds?:string[];inputArtworkIds?:string[];nodeId:string;projectKey:string;reused:boolean;replayed?:boolean};
 export class VideoRetryPriceChanged extends Error{constructor(public quote:PublicQuote){super("价格已更新，请重新确认重试");}}
@@ -33,7 +34,7 @@ export function useVideoHistory({email,projectKey,source,nodeId,readOnly=false,r
   const quote=useCallback(async(value:VideoTaskDetail):Promise<PublicQuote|null>=>{if(value.snapshot.byoc)return null;const config=value.snapshot.config,response=await request("/api/billing/quote",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({feature:"video.generate",quantity:1,modelId:config.modelId||value.task.model,providerId:config.providerId,resolution:config.resolution,quality:"medium"})}),data=await json(response);if(!response.ok)throw new Error(data.error||"重试报价失败");if(contextRef.current!==context)throw new Error("账号或项目已切换");return data as PublicQuote;},[request,context]);
   const retry=useCallback(async(value:VideoTaskDetail,confirmed:PublicQuote|null)=>{if(!email||readOnly||!['failed','cancelled'].includes(value.task.status))throw new Error("此任务暂不可重试");if(!value.snapshot.byoc&&!confirmed)throw new Error("请先确认重试报价");
     const actor=email,key=`naumi:video-retry:v1:${actor.toLowerCase()}:${value.task.id}`,running=busy.current.get(key);if(running)return running;
-    const run=async()=>{const saved=localStorage.getItem(key),operationId=saved&&/^[0-9a-f-]{36}$/.test(saved)?saved:browserRandomUUID();localStorage.setItem(key,operationId);
+    const run=async()=>{const saved=localStorage.getItem(key),operationId=saved&&/^[0-9a-f-]{36}$/.test(saved)?saved:browserRandomUUID();setLocalItem(key,operationId);
       const lookup=await request(`/api/video/tasks?idempotencyKey=${encodeURIComponent(operationId)}`,{cache:"no-store"}),known=await json(lookup);if(contextRef.current!==context)throw new Error("账号或项目已切换");
       if(lookup.ok&&known.task){if(known.task.retryOf!==value.task.id)throw new Error("操作编号已用于其他任务");await merge([known.task],context);if(localStorage.getItem(key)===operationId)localStorage.removeItem(key);return {taskId:String(known.task.id),cost:Number(known.task.cost)};}
       if(lookup.status!==404)throw new Error(known.error||"上次重试尚未核实，操作编号已保留");

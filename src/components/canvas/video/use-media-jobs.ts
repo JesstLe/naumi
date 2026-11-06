@@ -4,6 +4,7 @@ import {browserRandomUUID} from "@/lib/browser-crypto";
 import type {PublicMediaJob,MediaJobRequest} from "@/lib/video/media-job-schema";
 import {mediaIntent,readMediaReceipt,writeMediaReceipt,clearMediaReceipt,clearTerminalMediaReceipts,type MediaJobIntent} from "@/lib/video/media-client-intent";
 import type {VideoPrivateFetch} from "./use-video-nodes";
+import {resilientLocalStorage} from "@/lib/browser-storage/local";
 export class MediaQuoteRequired extends Error{constructor(public quote:NonNullable<MediaJobRequest["billingConfirmation"]>){super("请确认本次媒体处理积分");}}
 type Cursor={createdAt:string;id:string};
 type Options={email?:string;projectKey?:string|null;source?:MediaJobRequest["source"];readOnly:boolean;request:VideoPrivateFetch;onCompleted:(job:PublicMediaJob)=>Promise<void>};
@@ -30,11 +31,11 @@ export function useMediaJobs({email,projectKey,source,readOnly,request,onComplet
   const submit=useCallback(async(raw:MediaJobIntent,confirmation?:MediaJobRequest["billingConfirmation"]):Promise<PublicMediaJob>=>{if(!email||readOnly)throw new Error("无法处理此媒体");const actor=email,{intent,fingerprint}=await mediaIntent(raw);if(contextRef.current!==context)throw new Error("账号或项目已切换");
     const active=busy.current.get(fingerprint);if(active)return active;
     const run=async()=>{let receipt=readMediaReceipt(localStorage,actor,fingerprint);if(receipt){const response=await request(`/api/video/media-jobs?operationId=${encodeURIComponent(receipt.operationId)}`,{cache:"no-store"}),data=await body(response);if(!response.ok)throw new Error(data.error||"上次提交尚未核实，请稍后重试");if(contextRef.current!==context)throw new Error("账号或项目已切换");const recovered=(data.jobs||[])[0] as PublicMediaJob|undefined;
-      if(recovered){writeMediaReceipt(localStorage,actor,{...receipt,jobId:recovered.id});await merge([recovered],context);if(!pending(recovered))clearMediaReceipt(localStorage,actor,receipt);return recovered;}}
-      receipt=receipt||{fingerprint,operationId:browserRandomUUID()};writeMediaReceipt(localStorage,actor,receipt);
+      if(recovered){writeMediaReceipt(resilientLocalStorage,actor,{...receipt,jobId:recovered.id});await merge([recovered],context);if(!pending(recovered))clearMediaReceipt(localStorage,actor,receipt);return recovered;}}
+      receipt=receipt||{fingerprint,operationId:browserRandomUUID()};writeMediaReceipt(resilientLocalStorage,actor,receipt);
       const response=await request("/api/video/media-jobs",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({...intent,operationId:receipt.operationId,billingConfirmation:confirmation})}),data=await body(response);
       if(!response.ok){if(response.status===409&&data.code==="PRICE_CHANGED"&&data.quote)throw new MediaQuoteRequired(data.quote);if(response.status>=400&&response.status<500&&response.status!==409)clearMediaReceipt(localStorage,actor,receipt);throw new Error(data.error||"媒体处理提交尚未核实，操作编号已保留");}
-      const job=data.job as PublicMediaJob;writeMediaReceipt(localStorage,actor,{...receipt,jobId:job.id});if(contextRef.current!==context)throw new Error("任务已提交，返回原项目查看进度");await merge([job],context);if(!pending(job))clearMediaReceipt(localStorage,actor,receipt);return job;
+      const job=data.job as PublicMediaJob;writeMediaReceipt(resilientLocalStorage,actor,{...receipt,jobId:job.id});if(contextRef.current!==context)throw new Error("任务已提交，返回原项目查看进度");await merge([job],context);if(!pending(job))clearMediaReceipt(localStorage,actor,receipt);return job;
     };const promise=run();busy.current.set(fingerprint,promise);try{return await promise;}finally{if(busy.current.get(fingerprint)===promise)busy.current.delete(fingerprint);}
   },[email,readOnly,request,context,merge]);
   const cancel=useCallback(async(id:string)=>{if(!email||readOnly)throw new Error("无法停止此任务");const response=await request(`/api/video/media-jobs/${encodeURIComponent(id)}`,{method:"DELETE"}),data=await body(response);if(!response.ok)throw new Error(data.error||"停止请求失败");await merge([data.job],context);},[email,readOnly,request,merge,context]);

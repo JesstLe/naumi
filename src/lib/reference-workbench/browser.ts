@@ -1,6 +1,8 @@
 import {authHeader} from "../supabase";
 import {workbenchModelOptions,workbenchModelSelection} from "./model-options";
 import {workbenchErrorText} from "./http";
+import {setLocalItem,trimWorkbenchPromptStores} from "../browser-storage/local";
+import {boundedWorkbenchPrompts,WORKBENCH_PROMPTS_KEY} from "./local-prompts";
 
 declare global {interface Window {NaumiWorkbenchStorage:Pick<Storage,"getItem"|"setItem"|"removeItem">;NaumiWorkbenchReady:Promise<void>;NaumiWorkbenchModels:(select:HTMLSelectElement)=>void;NaumiWorkbenchError:typeof workbenchErrorText;}}
 window.NaumiWorkbenchError=workbenchErrorText;
@@ -64,11 +66,16 @@ window.NaumiWorkbenchReady=(async()=>{
  const response=await nativeFetch(base+"auth/status");if(!response.ok){location.assign("/sign-in");return;}
  const auth=await response.json();if(!auth.id)throw Error("账号标识缺失");
  sessionIdentity=auth.id;
- const prefix="naumi-reference:"+auth.id+":";window.NaumiWorkbenchStorage={getItem:k=>localStorage.getItem(prefix+k),setItem:(k,v)=>localStorage.setItem(prefix+k,v),removeItem:k=>localStorage.removeItem(prefix+k)};
+ const prefix="naumi-reference:"+auth.id+":";// Native pages share the site's localStorage quota: prompt history stays bounded
+ // and a full quota first releases rebuildable space (see browser-storage/local).
+ window.NaumiWorkbenchStorage={getItem:k=>localStorage.getItem(prefix+k),setItem:(k,v)=>{try{setLocalItem(prefix+k,k===WORKBENCH_PROMPTS_KEY?boundedWorkbenchPrompts(v):v);}catch(error){/* Page settings only; startup must not abort on a full quota. */console.warn("workbench storage write skipped",k,error);window.dispatchEvent(new Event("naumi-workbench-storage-full"));}},removeItem:k=>localStorage.removeItem(prefix+k)};
+ try{trimWorkbenchPromptStores();}catch{/* optional upkeep before the page reads its prompts */}
  const choices=await nativeFetch(base+"settings").then(r=>r.json());
  const modelChoices=workbenchModelOptions(choices.models||[]);
  window.NaumiWorkbenchModels=model=>{model.innerHTML="";model.add(new Option("服务器自动分配",""));for(const m of modelChoices)model.add(new Option(m.label,m.id));model.disabled=false;model.value=workbenchModelSelection(window.NaumiWorkbenchStorage.getItem("native-model")||"",modelChoices);if(!model.dataset.nativeModels){model.dataset.nativeModels="1";model.addEventListener("change",()=>window.NaumiWorkbenchStorage.setItem("native-model",model.value));}};
- const patchImage=(node:Element)=>{if(!(node instanceof HTMLImageElement))return;const src=node.getAttribute("src");if(!src||![base+"image",canonicalBase+"image"].some(prefix=>src.startsWith(prefix)))return;privateBlob(src).then(blob=>{if(node.getAttribute("src")===src)node.src=blob;}).catch(()=>{});};
+ const patchImage=(node:Element)=>{if(!(node instanceof HTMLImageElement))return;const src=node.getAttribute("src");if(!src||![base+"image",canonicalBase+"image"].some(prefix=>src.startsWith(prefix)))return;const history=(window as any).WorkbenchHistory;
+  // The history cache downloads each image once and keeps it for later visits; other pages keep the session blob.
+  (history?.localUrl?(history.localUrl(src) as Promise<string>).catch(()=>privateBlob(src)):privateBlob(src)).then(blob=>{if(node.getAttribute("src")===src)node.src=blob;}).catch(()=>{});};
  const observer=new MutationObserver(changes=>{for(const change of changes){if(change.type==="attributes")patchImage(change.target as Element);else for(const node of change.addedNodes)if(node instanceof Element){patchImage(node);node.querySelectorAll("img").forEach(patchImage);}}});observer.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:["src"]});
  for(const old of Array.from(document.querySelectorAll<HTMLScriptElement>('script[type="text/naumi-workbench"]'))){const script=document.createElement("script");if(old.src){script.src=old.src;await new Promise<void>((resolve,reject)=>{script.onload=()=>resolve();script.onerror=()=>reject(Error("工作台脚本读取失败"));document.body.append(script);});}else{script.textContent=old.textContent;document.body.append(script);}old.remove();}
  // Preserve original download controls while attaching native bearer auth.

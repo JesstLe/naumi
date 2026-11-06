@@ -1,8 +1,14 @@
-/* 用户本机的版本图片/提示词/模板归档；账号分库，不清除旧版本，不将失败称为已缓存。 */
+/* 用户本机的版本清单/模板归档与图片缓存；账号分库，不将失败称为已缓存。
+   版本清单与模板永不清除；图片只是服务器原图的本机副本，按容量淘汰最早保存的（当前项目除外）。 */
 (function () {
   'use strict';
   let database, identity = '', lastRoot = '', failed = false;
   const urls = new Map(), originals = new Map(), loading = new Map();
+  // Originals reach 32MB each: keep the copy bounded and never pin the origin's whole quota.
+  const IMAGE_BUDGET_BYTES = 512 * 1024 * 1024, IMAGE_BUDGET_ROWS = 3000, NETWORK_SLOTS = 4, HYDRATE_WAIT_MS = 1500, RETRY_AFTER_MS = 60000;
+  const failedAt = new Map();
+  let active = 0, stored = 0, pruneTimer = 0, pruned = false; const waiting = [];
+  async function slot() { if (active >= NETWORK_SLOTS) await new Promise(resolve => waiting.push(resolve)); active++; return () => { active--; const next = waiting.shift(); if (next) next(); }; }
   function release() { for (const value of urls.values()) URL.revokeObjectURL(value); urls.clear(); originals.clear(); loading.clear(); if (database) database.close(); database = null; identity = ''; }
   const request = req => new Promise((resolve, reject) => { req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); });
   function finished(transaction) { return new Promise((resolve, reject) => { transaction.oncomplete = resolve; transaction.onerror = () => reject(transaction.error); transaction.onabort = () => reject(transaction.error); }); }
@@ -18,6 +24,7 @@
       opening.onsuccess = () => resolve(opening.result); opening.onerror = () => reject(opening.error);
     });
     database.onversionchange = () => { database.close(); database = null; };
+    // Templates exist only here; the image copy is bounded below, so persistence no longer pins unbounded growth.
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => false);
   }
   async function get(store, key) { await init(); return request(database.transaction(store, 'readonly').objectStore(store).get(key)); }
@@ -32,11 +39,16 @@
     const job = (async () => {
       const saved = await get('images', key);
       if (saved && saved.blob) return saved.blob;
-      const response = await fetch(key, { cache: 'no-store' });
-      if (!response.ok) throw Error('图片缓存失败：' + response.status);
-      const value = await response.blob(); if (!value.type.startsWith('image/') || value.size > 32 * 1024 * 1024) throw Error('图片缓存格式或大小无效');
-      const bitmap = await createImageBitmap(value); const dimensions = { width: bitmap.width, height: bitmap.height }; bitmap.close();
-      await put('images', { key, blob: value, dimensions, savedAt: Date.now() }); return value;
+      const leave = await slot();
+      try {
+        const response = await fetch(key, { cache: 'no-store' });
+        if (!response.ok) throw Error('图片缓存失败：' + response.status);
+        const value = await response.blob(); if (!value.type.startsWith('image/') || value.size > 32 * 1024 * 1024) throw Error('图片缓存格式或大小无效');
+        const bitmap = await createImageBitmap(value); const dimensions = { width: bitmap.width, height: bitmap.height }; bitmap.close();
+        // A failed local save (quota) still shows the downloaded image.
+        try { await put('images', { key, blob: value, dimensions, savedAt: Date.now() }); stored++; } catch (_) {}
+        return value;
+      } finally { leave(); }
     })().finally(() => loading.delete(key)); loading.set(key, job); return job;
   }
   async function localUrl(url) {
@@ -44,19 +56,48 @@
     if (urls.has(key)) return urls.get(key);
     const value = await blob(url), local = URL.createObjectURL(value); urls.set(key, local); originals.set(local, key); return local;
   }
+  function imagesOf(rows) {
+    const images = new Set();
+    for (const item of rows) {
+      images.add(item.ref_url); for (const url of item.product_urls || [item.product_url]) images.add(url);
+      for (const version of item.versions || []) { images.add(version.url); if (version.meta && version.meta.annotated_url) images.add(version.meta.annotated_url); }
+    }
+    return [...images].filter(Boolean);
+  }
+  // One readonly transaction finds the images already on this machine; nothing waits on the network.
+  async function known(keys) {
+    const found = new Map(); if (!keys.length) return found;
+    await init(); const tx = database.transaction('images', 'readonly'), done = finished(tx), store = tx.objectStore('images');
+    for (const key of keys) { const req = store.get(key); req.onsuccess = () => { if (req.result && req.result.blob) found.set(key, req.result.blob); }; }
+    await done; return found;
+  }
+  // Synchronous: local copies where present. Anything still downloading gets this
+  // page's own image endpoint (desktop keeps its prefix); the native bridge then
+  // joins the same in-flight download through localUrl, so bytes arrive once.
+  function attach(rows) {
+    for (const item of rows) {
+      let local = true;
+      const pick = url => {
+        const key = source(url); if (!key) return url;
+        const value = urls.get(key); if (value) return value;
+        local = false; return WorkbenchEnvironment.api('image') + key.slice(key.indexOf('?'));
+      };
+      item.ref_url = pick(item.ref_url);
+      item.product_urls = (item.product_urls || [item.product_url]).map(pick); item.product_url = item.product_urls[0];
+      for (const v of item.versions || []) {
+        v.original_url = v.original_url || v.url; const lv = pick(v.url); if (lv !== v.url) v.local_url = lv; else delete v.local_url;
+        if (v.meta && v.meta.annotated_url) { const la = pick(v.meta.annotated_url); if (la !== v.meta.annotated_url) v.meta.annotated_local_url = la; }
+      }
+      item.local_cached = local;
+    }
+    return rows;
+  }
   async function remember(root, rows) {
     const check = await fetch(WorkbenchEnvironment.api('auth/status'), { cache: 'no-store' });
     if (!check.ok) { release(); throw Error('登录失效，本机历史未读取'); }
     const auth = await check.json(); if (identity && auth.id !== identity) release();
     await init(); lastRoot = root;
     const copy = JSON.parse(JSON.stringify(rows));
-    const images = new Set();
-    for (const item of copy) {
-      images.add(item.ref_url); for (const url of item.product_urls || []) images.add(url);
-      for (const version of item.versions || []) { images.add(version.url); if (version.meta && version.meta.annotated_url) images.add(version.meta.annotated_url); }
-    }
-    const unique = [...images].filter(Boolean);
-    for (let i = 0; i < unique.length; i += 3) await Promise.all(unique.slice(i, i + 3).map(localUrl));
     const previous = await get('projects', root);
     // 即使服务器清单缩短，已经保存在本机的旧版本仍保留。
     if (previous) for (const item of copy) {
@@ -64,7 +105,41 @@
       if (old) { const versions = new Map((old.versions || []).map(v => [v.path, v])); for (const v of item.versions || []) versions.set(v.path, v); item.versions = [...versions.values()]; }
     }
     await put('projects', { key: root, items: copy, savedAt: Date.now() });
-    return hydrate(copy);
+    const keys = [...new Set(imagesOf(copy).map(source).filter(Boolean))];
+    for (const [key, value] of await known(keys.filter(key => !urls.has(key)))) {
+      if (urls.has(key)) continue; const local = URL.createObjectURL(value); urls.set(key, local); originals.set(local, key);
+    }
+    // History size no longer gates the first paint: wait briefly for missing images, then render.
+    const now = Date.now(), missing = keys.filter(key => !urls.has(key) && !(now - (failedAt.get(key) || 0) < RETRY_AFTER_MS));
+    if (missing.length) {
+      const downloads = Promise.all(missing.map(key => localUrl(key).then(() => failedAt.delete(key), () => failedAt.set(key, Date.now()))));
+      await Promise.race([downloads, new Promise(resolve => setTimeout(resolve, HYDRATE_WAIT_MS))]);
+    }
+    schedulePrune(new Set(keys));
+    return attach(copy);
+  }
+  // Evict the oldest saved images over budget, after downloads settle. The current project stays.
+  // Throttled, not debounced: the page refreshes every few seconds while tasks run.
+  let protectedKeys = new Set();
+  function schedulePrune(protect) {
+    protectedKeys = protect; if (pruneTimer) return;
+    pruneTimer = setTimeout(() => { prune(protectedKeys).catch(() => {}).finally(() => { pruneTimer = 0; }); }, 8000);
+  }
+  async function prune(protect) {
+    if (!stored && pruned) return; await init();
+    const rows = [], scan = database.transaction('images', 'readonly'), scanned = finished(scan), cursor = scan.objectStore('images').openCursor();
+    cursor.onsuccess = () => { const c = cursor.result; if (!c) return; rows.push({ key: c.value.key, at: c.value.savedAt || 0, bytes: c.value.blob ? c.value.blob.size : 0 }); c.continue(); };
+    await scanned; pruned = true; stored = 0;
+    let bytes = rows.reduce((sum, row) => sum + row.bytes, 0), count = rows.length; const victims = [];
+    for (const row of rows.sort((a, b) => a.at - b.at)) {
+      if (bytes <= IMAGE_BUDGET_BYTES && count <= IMAGE_BUDGET_ROWS) break;
+      if (protect.has(row.key) || loading.has(row.key) || urls.has(row.key)) continue;
+      victims.push(row.key); bytes -= row.bytes; count--;
+    }
+    if (!victims.length) return;
+    const tx = database.transaction('images', 'readwrite'), done = finished(tx), store = tx.objectStore('images');
+    for (const key of victims) store.delete(key);
+    await done;
   }
   function resolve(url) { return urls.get(source(url)) || url; }
   async function hydrate(rows) {

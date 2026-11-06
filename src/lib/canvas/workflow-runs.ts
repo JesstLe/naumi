@@ -6,7 +6,7 @@ import {createCanvasResultAttachment} from './result-attachment';
 import type {CanvasGenerationRunContext} from './generation-run-context';
 import type {CanvasPendingNode} from './scene-types';
 
-type Context=CanvasGenerationRunContext&{storage:Storage;submitted:()=>Promise<unknown>};
+type Context=CanvasGenerationRunContext&{storage:Pick<Storage,"getItem"|"setItem"|"removeItem">;submitted:()=>Promise<unknown>};
 type Retained={task:ReturnType<typeof createCanvasComfyWorkflow>;context:Context;node:CanvasPendingNode};
 
 /** Session ownership of the existing Comfy controller, keyed by its original
