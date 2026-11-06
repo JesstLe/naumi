@@ -23,9 +23,15 @@ export function FeatureAccessProvider({ children }: { children: React.ReactNode 
         if (live && serial === revision) { setSnapshot({ email, policy: data.policy }); setFailed(""); }
       } catch { if (live && serial === revision) { setSnapshot(null); setFailed(email); } }
     };
-    void refresh(); const focus = () => { void refresh(); }, timer = setInterval(focus, 30000);
-    window.addEventListener("focus", focus); window.addEventListener("naumi:feature-access-changed", focus);
-    return () => { live = false; clearInterval(timer); window.removeEventListener("focus", focus); window.removeEventListener("naumi:feature-access-changed", focus); };
+    // Routes enforce the policy; this copy only shapes the UI. Refresh while someone
+    // is looking (focus/visible at most every 10s, otherwise each minute), not from hidden tabs.
+    let last = Date.now();
+    void refresh();
+    const changed = () => { last = Date.now(); void refresh(); };
+    const focus = () => { if (document.visibilityState === "visible" && Date.now() - last >= 10_000) changed(); };
+    const timer = setInterval(() => { if (document.visibilityState === "visible") changed(); }, 60_000);
+    window.addEventListener("focus", focus); document.addEventListener("visibilitychange", focus); window.addEventListener("naumi:feature-access-changed", changed);
+    return () => { live = false; clearInterval(timer); window.removeEventListener("focus", focus); document.removeEventListener("visibilitychange", focus); window.removeEventListener("naumi:feature-access-changed", changed); };
   }, [email, authReady, persistMode]);
   const publicMode = authReady && (!email || persistMode === "local");
   const policy = publicMode ? DEFAULT_POLICY : snapshot?.email === email ? snapshot.policy : null;

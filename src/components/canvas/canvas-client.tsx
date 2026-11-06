@@ -78,6 +78,7 @@ import {createCanvasPendingAtScreen,createCanvasMultiReferenceNode,createCanvasT
 import {useCanvasDrag} from "./use-canvas-drag";
 import {compileCanvasLink,canvasLinkMediaSource,type CanvasLinkIntent} from "@/lib/canvas/link-command";
 import {compileCanvasMove} from "@/lib/canvas/drag-controller";
+import { visibleTimeout } from "@/lib/visible-timeout";
 
 import {useCanvasAssistant} from "./use-canvas-assistant";
 import {useCanvasImageTextEditor} from "./use-canvas-image-text-editor";
@@ -543,7 +544,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const [videoHistoryId,setVideoHistoryId]=useState<string|null>(null);
   const videoResultAttempts=useRef(new Map<string,Extract<UndoAct,{kind:"video-result"}>>());
   const [videoMedia,setVideoMedia]=useState<{id:string;projectKey:string;initial:VideoPlayerAction}|null>(null);
-  const videoNodesStore=useVideoNodes({email:targetEmail||user?.email,readOnly,scope:canvasArtworkDocument.scope});
+  const videoWorkActive=useRef(false);
+  const videoNodesStore=useVideoNodes({email:targetEmail||user?.email,readOnly,scope:canvasArtworkDocument.scope,pollIntervalMs:()=>videoWorkActive.current?6000:30000});
   const directorNodesStore=useDirectorNodes({email:targetEmail||user?.email,readOnly,scope:canvasArtworkDocument.scope});
   useEffect(()=>{if(directorNodesStore.error)flashTip(directorNodesStore.error);},[directorNodesStore.error]);
   const [directorActionsOwner]=useState(createCanvasDirectorActions);
@@ -981,6 +983,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if(task.sourceId&&user){const receipt=readVideoReceipt(localStorage,user.email,task.sourceId);if(receipt?.taskId===task.id)clearVideoReceipt(localStorage,user.email,task.sourceId,receipt.idempotencyKey);}
     await refreshCredits();
   }});
+  useEffect(()=>{videoWorkActive.current=videoTaskStore.tasks.some(task=>task.status==="queued"||task.status==="processing");},[videoTaskStore.tasks]);
   const mediaJobStore=useMediaJobs({email:user?.email,projectKey:active?.key,readOnly,request:privateFetchRaw,onCompleted:async job=>{
     const project=activeProjectRef.current?.key;
     if(!project||job.projectKey!==project||job.source==="workbench")return;
@@ -1062,7 +1065,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     position:source=>{const node=source?rfRef.current?.getNode(source.id):null,size=node&&source?flowNodeSize(node):source?artworkNodeSize(source):{width:NODE_W,height:NODE_H};return{x:(node?.position.x??source?.canvasX??0)+size.width+X_GAP,y:node?.position.y??source?.canvasY??0};},
     merge:mergeWorks,credits:refreshCredits,notice:flashTip,
     messages:{attention:t("canvas.videoNeedsAttention"),attentionHint:t("canvas.videoNeedsAttentionHint"),openTasks:t("canvas.videoOpenTasks")},
-    timer:{set:(run,delay)=>window.setTimeout(run,delay),clear:id=>window.clearTimeout(id as number)},
+    timer:{set:(run,delay)=>visibleTimeout(run,delay),clear:cancel=>(cancel as ()=>void)()},
   });
 
   // The owner observes the existing durable tasks; opening/closing OCR does not restart its task identity.
@@ -1550,7 +1553,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       read:(url,init)=>canvasDocumentFetch(scope,url,init,true),merge:ids=>mergeWorks(ids,scope.viewCurrent),history:pushAddUndoMany,
       upload:(files,options)=>uploadRoot(files,options),cue:orbCue,
       selectAnchor:id=>{setSelectedId(id);setSelectedTextId(null);},
-      video:async(nodes,isCurrent)=>{if(isCurrent()&&nodes.some(node=>node.projectKey===scope.project))await videoNodesStore.refresh();},
+      video:async(nodes,isCurrent)=>{if(isCurrent()&&nodes.some(node=>node.projectKey===scope.project)){await videoNodesStore.refresh();void videoTaskStore.refresh().catch(()=>{});}},
       storyboard:async(result,isCurrent)=>{await videoNodesStore.refresh();if(isCurrent())setStoryboardPanel(result);},
       text:(nodes,signal,isCurrent)=>canvasTextDocument.refreshSaved(nodes,signal,isCurrent),
       revealVideo:async(result,isCurrent)=>{if(activeProjectRef.current?.key||!isCurrent())return;await videoNodesStore.refresh();if(isCurrent()){projectNavigation.open(result.key);canvasSelection.selectInProject(result.key,{selectedId:result.nodeId,selectedTextId:null,selectedPendId:null});}},

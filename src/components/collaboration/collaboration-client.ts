@@ -5,6 +5,7 @@ import type {
   CollaborationSend, CollaborationShareIntent, CollaborationUpload, CollaborationConversationPage, CollaborationConversationSnapshot,
 } from "@/lib/collaboration/contracts";
 import { aborted, attachmentPath, CollaborationError, errorText, isAbort, newOperationId, readEvents } from "./transport";
+import { visibleTimeout } from "@/lib/visible-timeout";
 
 export type Draft = { body: string; replyTo?: string; mentionIds: string[]; attachments: CollaborationAttachment[] };
 export type UploadTask = { id: string; clientId: string; conversationId: string; file: File; upload?: CollaborationUpload; progress: number; status: "uploading" | "paused" | "error" | "complete" | "cancelled" | "cancelling" | "cancel-failed"; error?: string };
@@ -51,6 +52,12 @@ export class CollaborationClient {
   private retries = 0;
   private disposed = false;
   private memberSequence = 0;
+  // Presence flips broadcast a "members" event to everyone in the enterprise; reloading
+  // the list on each one made requests grow with members². Coalesce instead.
+  private membersTimer: (() => void) | null = null;
+  private membersTimerFast = false;
+  private membersStale = false;
+  private membersLoadedAt = 0;
   private requestsSequence = new Map<string, number>();
   private historyPages = new Map<string, number>();
   private conversationSequence = 0;
@@ -80,6 +87,7 @@ export class CollaborationClient {
     this.stream?.abort(); this.stream = null;
     if (this.reconnect) clearTimeout(this.reconnect); this.reconnect = null;
     if (this.heartbeat) clearInterval(this.heartbeat); this.heartbeat = null;
+    this.membersTimer?.(); this.membersTimer = null; this.membersStale = false;
     this.presenceCleanup?.(); this.presenceCleanup = null;
     for (const url of this.urls) URL.revokeObjectURL(url); this.urls.clear();
     this.operations.clear(); this.seenEvents.clear(); this.eventCursor = null; this.retries = 0; this.memberSequence++; this.requestsSequence.clear(); this.historyPages.clear(); this.conversationSequence++; this.conversationPages = 1;
@@ -164,6 +172,7 @@ export class CollaborationClient {
     else if (intent.conversationId) this.selectConversation(intent.conversationId);
     else if ((!intent.section || intent.section === "conversations") && this.state.activeId) void this.loadMessages(this.state.activeId).catch(e => this.report(e));
     if (intent.section === "requests") void this.loadShares().catch(e => this.report(e));
+    if (intent.section === "members" && this.membersStale) this.scheduleMembers();
   }
   close() { this.update({ visible: false }); }
   expand() { this.update({ expanded: !this.state.expanded }); }
@@ -173,8 +182,26 @@ export class CollaborationClient {
   }
   clearShare() { this.update({ pendingShare: null, approval: null }); }
   chooseApproval(share: CanvasShare) { this.update({ approval: share, pendingShare: null, visible: true }); }
+  /** Open members panel: within ~2s. Otherwise names only, so at most once a minute.
+   * Hidden pages wait until visible (visibleTimeout). */
+  private scheduleMembers() {
+    this.membersStale = true;
+    const showing = this.state.visible && this.state.section === "members";
+    // A pending timer already covers this event unless the panel just opened.
+    if (this.membersTimer && (this.membersTimerFast || !showing)) return;
+    this.membersTimer?.();
+    const delay = showing ? 2_000 : Math.max(2_000, 60_000 - (Date.now() - this.membersLoadedAt));
+    this.membersTimerFast = showing;
+    const epoch = this.epoch;
+    this.membersTimer = visibleTimeout(() => {
+      this.membersTimer = null;
+      if (epoch !== this.epoch || !this.membersStale) return;
+      void this.loadMembers().catch(e => { if (!isAbort(e)) this.report(e); });
+    }, delay);
+  }
   async loadMembers(query = this.state.memberQuery, more = false) {
     const seq = ++this.memberSequence;
+    if (!more) { this.membersStale = false; this.membersLoadedAt = Date.now(); }
     const data = await this.page<CollaborationMember>("/members", { q: query || undefined, cursor: more ? this.state.memberCursor || undefined : undefined });
     if (seq !== this.memberSequence) return;
     this.update({ members: more ? merge(this.state.members, data.items) : data.items, memberCursor: data.nextCursor, memberQuery: query });
@@ -415,13 +442,18 @@ export class CollaborationClient {
   private sourceWire(source: CanvasShareSource): CanvasShareSource { return { projectKey: source.projectKey, kind: source.kind, ...(source.nodeIds ? { nodeIds: source.nodeIds } : {}) }; }
   private startPresence() {
     this.sessionId = newOperationId();
-    let lastActivity = Date.now();
+    let lastActivity = Date.now(), hiddenSince = document.hidden ? Date.now() : 0, reported = "";
     const activity = () => { lastActivity = Date.now(); };
     const heartbeat = () => {
-      const state = document.hidden || Date.now() - lastActivity > 120_000 ? "away" : "online";
+      // Switching windows used to flip online/away (and every member's list) each time.
+      const state = (hiddenSince && Date.now() - hiddenSince > 60_000) || Date.now() - lastActivity > 120_000 ? "away" : "online";
+      reported = state;
       void this.request("/presence", { method: "POST", body: JSON.stringify({ sessionId: this.sessionId, state }) }).catch(e => { if (!isAbort(e)) this.update({ streamError: errorText(e) }); });
     };
-    const visibility = () => { heartbeat(); };
+    const visibility = () => {
+      if (document.hidden) { hiddenSince = Date.now(); return; }
+      hiddenSince = 0; lastActivity = Date.now(); if (reported !== "online") heartbeat();
+    };
     window.addEventListener("pointerdown", activity, { passive: true }); window.addEventListener("keydown", activity); document.addEventListener("visibilitychange", visibility);
     this.presenceCleanup = () => { window.removeEventListener("pointerdown", activity); window.removeEventListener("keydown", activity); document.removeEventListener("visibilitychange", visibility); };
     heartbeat(); this.heartbeat = setInterval(heartbeat, 30_000);
@@ -439,7 +471,8 @@ export class CollaborationClient {
           if (reset || event.topics.includes("conversations") || event.topics.includes("messages")) {
             if (!reset && event.conversationId) await this.loadConversation(event.conversationId); else await this.loadConversations();
           }
-          if (reset || event.topics.includes("members")) await this.loadMembers();
+          if (reset) await this.loadMembers();
+          else if (event.topics.includes("members")) this.scheduleMembers();
           if ((reset || event.topics.includes("messages")) && this.state.visible && this.state.section === "conversations" && this.state.activeId && (!event.conversationId || event.conversationId === this.state.activeId)) {
             await this.loadMessages(this.state.activeId);
             if (this.state.files[this.state.activeId]) await this.loadMessages(this.state.activeId, false, true);

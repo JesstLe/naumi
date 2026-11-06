@@ -44,6 +44,9 @@ export async function GET(request: Request) {
     // 防越权读:作品列表(图 URL + 提示词,较敏感)只返回给本人或管理员。
     const access = await requestFeaturePolicy(request);
     const canReadWorks = access.admin || !!access.policy && (allows(access.policy, "works") || allows(access.policy, "canvas"));
+    // view=user: balance/profile refreshes (canvas credits, checkout) need no work list;
+    // the full list is up to 1000 rows with prompts and provenance (~0.5MB per call).
+    if (query.get("view") === "user") return NextResponse.json({ persisted: true, user, artworks: [] }, {headers:{"Cache-Control":"private, no-store"}});
     const result = !canReadWorks ? { artworks: [] } : dayStart && dayEnd
       ? await getWorkbenchArtworks(email, dayStart, dayEnd)
       : {artworks: await listArtworks(email)};

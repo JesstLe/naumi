@@ -4,8 +4,11 @@ import {currentWorkspaceRevision} from "@/lib/saas/workspace-client";
 import type {CanvasDocumentScope} from "@/lib/canvas/document-scope";
 import type {CanvasNativeKind} from "@/lib/canvas/native-node-records";
 import {createCanvasNativeNodeDocument,NativeNodeClientError,type NativeNodeFor,type NativeNodeSnapshot} from "@/lib/canvas/native-node-document";
+import {visibleTimeout} from "@/lib/visible-timeout";
 
-export type CanvasNativeNodeHookInput={email?:string;readOnly:boolean;scope:CanvasDocumentScope};
+export type CanvasNativeNodeHookInput={email?:string;readOnly:boolean;scope:CanvasDocumentScope;
+  /** Video documents only: next refresh delay. Completion already refreshes the document. */
+  pollIntervalMs?:()=>number};
 const EMPTY:NativeNodeSnapshot<never>={nodes:[],phase:"idle",error:"",saving:0,unsavedCount:0};
 /** React subscription/scheduling only. The existing document scope owns actor,
  * workspace and view epochs; project navigation never empties the node store. */
@@ -18,17 +21,18 @@ export function useCanvasNativeNodeDocument<K extends CanvasNativeKind>(kind:K,i
   const latest=useRef(document);latest.current=document;
   const loadedView=useRef<typeof document|null>(null);
   const revision=currentWorkspaceRevision();
+  const pollRef=useRef(input.pollIntervalMs);pollRef.current=input.pollIntervalMs;
   useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
   useEffect(()=>{
     loadedView.current=latest.current;
     const deactivate=latest.current.activate();
-    let stopped=false,timer:ReturnType<typeof setTimeout>|undefined;
+    let stopped=false,cancel:(()=>void)|undefined;
     const warn=(event:BeforeUnloadEvent)=>{if(latest.current.getSnapshot().unsavedCount){event.preventDefault();event.returnValue="";}};
     window.addEventListener("beforeunload",warn);
-    const load=async()=>{try{await latest.current.refresh();}catch{/* The document exposes the actual read error. */}if(kind==="video"&&!stopped)timer=setTimeout(load,6000);};
+    const load=async()=>{try{await latest.current.refresh();}catch{/* The document exposes the actual read error. */}if(kind==="video"&&!stopped)cancel=visibleTimeout(load,pollRef.current?.()??6000);};
     void load();const resume=()=>{if(window.document.visibilityState==="visible")void latest.current.refresh().catch(()=>{});};
     window.addEventListener("focus",resume);window.document.addEventListener("visibilitychange",resume);
-    return()=>{stopped=true;deactivate();window.removeEventListener("beforeunload",warn);if(timer)clearTimeout(timer);window.removeEventListener("focus",resume);window.document.removeEventListener("visibilitychange",resume);};
+    return()=>{stopped=true;deactivate();window.removeEventListener("beforeunload",warn);cancel?.();window.removeEventListener("focus",resume);window.document.removeEventListener("visibilitychange",resume);};
   },[kind,input.scope.account,input.scope.workspace,input.email,input.readOnly,revision]);
   // Navigation changes the read context, not the document/write lifetime. Load
   // that project's receipts immediately without disposing or replaying saves.

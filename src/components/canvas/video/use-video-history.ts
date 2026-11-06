@@ -6,6 +6,7 @@ import type {PublicVideoTaskSnapshot} from "@/lib/video/task-snapshot";
 import type {PublicQuote} from "@/lib/billing/client";
 import type {VideoPrivateFetch} from "./use-video-nodes";
 import {setLocalItem} from "@/lib/browser-storage/local";
+import {visibleTimeout} from "@/lib/visible-timeout";
 export type VideoTaskDetail={task:PublicVideoTaskView;snapshot:PublicVideoTaskSnapshot};
 export type CanvasVideoSend={artworkId:string;artworkIds?:string[];inputArtworkIds?:string[];nodeId:string;projectKey:string;reused:boolean;replayed?:boolean};
 export class VideoRetryPriceChanged extends Error{constructor(public quote:PublicQuote){super("价格已更新，请重新确认重试");}}
@@ -26,9 +27,9 @@ export function useVideoHistory({email,projectKey,source,nodeId,readOnly=false,r
     const response=await request(`/api/video/tasks?${params}`,{cache:"no-store"}),data=await json(response);if(!response.ok)throw new Error(data.error||"视频历史恢复失败");if(contextRef.current!==context)return;await merge(data.tasks||[],context);if(contextRef.current===context){if(cursor||!paginationInitialized.current){setNextCursor(data.nextCursor||null);paginationInitialized.current=true;}setError("");}
   },[email,projectKey,source,nodeId,readOnly,request,context,merge]);
   useEffect(()=>{tasksRef.current=[];setTasks([]);setError("");setNextCursor(null);completed.current.clear();busy.current.clear();paginationInitialized.current=false;if(!email)return;
-    let stopped=false,timer:ReturnType<typeof setTimeout>,round=0;const run=async()=>{try{if(round++%4===0)await refresh();if(stopped||contextRef.current!==context)return;
+    let stopped=false,timer:(()=>void)|undefined,round=0;const run=async()=>{try{if(round++%4===0)await refresh();if(stopped||contextRef.current!==context)return;
       if(!readOnly)for(const task of tasksRef.current.filter(active)){const response=await request(`/api/video/tasks?id=${encodeURIComponent(task.id)}`,{cache:"no-store"}),data=await json(response);if(!response.ok)throw new Error(data.error||"视频任务暂不可用，等待恢复");if(stopped||contextRef.current!==context)return;await merge([data.task],context);}if(!stopped&&contextRef.current===context)setError("");
-    }catch(cause){if(!stopped&&contextRef.current===context)setError(cause instanceof Error?cause.message:"视频历史恢复失败");}if(!stopped)timer=setTimeout(run,tasksRef.current.some(active)?4000:12000);};void run();return()=>{stopped=true;clearTimeout(timer);};
+    }catch(cause){if(!stopped&&contextRef.current===context)setError(cause instanceof Error?cause.message:"视频历史恢复失败");}if(!stopped)timer=visibleTimeout(run,tasksRef.current.some(active)?4000:12000);};void run();return()=>{stopped=true;timer?.();};
   },[email,readOnly,context,refresh,request,merge]);
   const detail=useCallback(async(id:string):Promise<VideoTaskDetail>=>{if(!email)throw new Error("请先登录");const response=await request(`/api/video/tasks/${encodeURIComponent(id)}?email=${encodeURIComponent(email)}`,{cache:"no-store"}),data=await json(response);if(!response.ok)throw new Error(data.error||"任务详情读取失败");if(contextRef.current!==context)throw new Error("账号或项目已切换");await merge([data.task],context);return data;},[email,request,context,merge]);
   const quote=useCallback(async(value:VideoTaskDetail):Promise<PublicQuote|null>=>{if(value.snapshot.byoc)return null;const config=value.snapshot.config,response=await request("/api/billing/quote",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({feature:"video.generate",quantity:1,modelId:config.modelId||value.task.model,providerId:config.providerId,resolution:config.resolution,quality:"medium"})}),data=await json(response);if(!response.ok)throw new Error(data.error||"重试报价失败");if(contextRef.current!==context)throw new Error("账号或项目已切换");return data as PublicQuote;},[request,context]);

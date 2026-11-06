@@ -78,7 +78,7 @@ export function CheckoutClient({ pack }: { pack?: string } = {}) {
     try {
       if (user) {
         const ar = await fetch(
-          `/api/account?email=${encodeURIComponent(user.email)}`
+          `/api/account?email=${encodeURIComponent(user.email)}&view=user`
         );
         const ad = await ar.json();
         if (ad?.user) applyServerUser(ad.user);
