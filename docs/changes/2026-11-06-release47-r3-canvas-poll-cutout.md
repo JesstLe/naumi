@@ -55,3 +55,14 @@
 ### 整体状态
 
 r3 已上线并通过验收；r2 已退役。整站仍为 `SWITCHED_CLEANUP_PENDING`：r1（20261103）的 615 条历史未知观测及其 Web/Worker 按 r2 记录继续保留，需另行授权裁决后才能退役。
+
+## r1 遗留记录收尾与退役（47，2026-11-06 20:41–20:46 CST）
+
+用户授权“授权，全部做完；两个排队任务都照常执行”。维护会话 `maint47-r1-adjudication-20261106`，证据 `/opt/naumi-staging/evidence/maint47-r1-adjudication-20261106/`，本地步骤 `output/maint47-r1-adjudication-20261106/steps/`；全程持三把锁，结束已释放。
+
+- **只读核实（31）**：r1（`naumi47-web-main-20261103-r1`）615 条未完成 `accepted-work` 与 r3 记录的 SHA 一致。参考图同步 603 条（36 个操作全部 `done`）；媒体变体 10 条（缩略/预览均存在且已上 NAS）；画布扫描占位 `canvas-image/claim:0` 1 条（无进行中的画布任务，仅 2 个从未提交的排队任务，各预占 6）；批次 `d1c99c6b…` 1 条（10-23 起 `running`，子任务 `00ada5f7…` 无任务/计费/预占/供应商记录）。r1 Web draining、无活跃请求，Worker 暂停静止。
+- **备份（32）**：`pg_dump` 1,387,897,199 字节，复核可读，未恢复。
+- **收尾（33）**：单事务、逐条 CAS 与条数校验：批次子任务 → `failed`（`NOT_ACCEPTED`，扣 0），批次 → `failed`；615 条记录 → `finished`，outcome 分别为 `adjudicated:reference-operation-done`(603)、`adjudicated:media-variants-present`(10)、`adjudicated:scan-claim-no-inflight-task`(1)、`adjudicated:batch-closed-child-never-accepted`(1)；对应 session owner 置 idle。SQL SHA256 `48e430c3…`。未改作品、账本、余额。
+- **效果（34）**：r1 `unknownLeases` 615→0。占位解除后 r3 扫描器执行两个排队的画布改字任务：今日 17:09 的完成（供应商 1 次，结算 6 积分）；11-05 的 3 次均为“源图片已不存在”失败，未调用供应商，扣 0、预占释放。批次保持 `failed`，子任务无新任务/供应商调用。
+- **退役（35）**：r1 排空证明 8 项通过（含开放事务不来自 r1 容器、网关无 13130 引用、无回环连接），`restart=no` + `docker stop --time=-1`。r3 发布记录 `SWITCHED_CLEANUP_PENDING` → **`COMPLETE`**。MemAvailable 5,119MiB；切流后 0 个 5xx。
+- 根状态 `MIGRATED_CLEANUP_PENDING` 未改：仍有更早已停止实例（10-17～10-28）遗留的未完成记录，未在本次授权范围内。
