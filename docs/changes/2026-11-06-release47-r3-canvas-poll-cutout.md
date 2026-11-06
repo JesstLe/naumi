@@ -30,3 +30,28 @@
 
 - 代码以 r3 蓝绿发布到 47；r2 退役，r1（20261103）继续按 r2 记录保留其 615 条未知观测。
 - APIB 抠图通道（`apib:gpt-image-2.5-sunburst`、`-flare`）需管理员映射 `imagegen.transparent=background`，并用自备测试图做一次真实抠图透明验收；未通过则抠图通道需改用核验过透明输出的通道。
+
+## 执行记录（47，2026-11-06 20:13–20:25 CST，已上线）
+
+用户授权“全部修复然后发布上线就行，现在没人使用”。发布会话 `release47-main-20261106-r3`，证据 `/opt/naumi-staging/evidence/release47-main-20261106-r3/`（COMMAND_SOURCE/RESULT、PUBLICATION_RECEIPT.json）；本地产物与步骤 `output/release47-main-20261106-r3/`。全程持 47 三把部署锁，结束已释放。
+
+- 固定版本：commit `9c55bb4e`、BUILD_VERSION `1793966370`、镜像 `sha256:1cb09eef…`（WSL 构建 321s；冒烟：版本接口、40/40 静态资源、Worker 语法、server actions=0）。47 导入后镜像 ID 与构建一致。
+- 备份：`pg_dump -Fc` 1,387,655,976 字节，`pg_restore --list` 复核可读，未恢复。
+- 候选：r3 Web/Worker 从 r2 克隆，端口 13132，准入 draining 启动；内存门槛按 Web 1536 + Worker 1024 + 保留 1024 = 3584 ≤ 3828 通过，r2 退役后 `docker update` 在线调回 Web 2048MiB（身份不变）。
+- 就绪：10 个关键页面/接口 200；网关正向与保留旧静态资源的回切配置均生成并通过语法检查。
+- 受影响功能：画布 6 类节点列表 GET 候选 120/120 200、0 次 40001；公网入口 60/60 200。r2 同批也 120/120（当前无并发写入，无法在线复现冲突，修复以本地确定性用例为证）。
+- 切流：r2 Worker 静止 → r3 准入开放 → 网关平滑 reload → r2 Web draining → r3 Worker 恢复并完成任务。
+- 退役 r2：新 Worker 设退役屏障，r2 排空证明（transport/admission/observations/owners/unfinished/domain/worker）两次通过，网关与运行容器无引用、13131 无连接，`restart=no` + `docker stop --time=-1` 先 Worker 后 Web。
+- 保全：8 张任务/供应商绑定表原有身份全部保持；r1（20261103）615 条未完成观测逐字节一致，继续保留，r1 Web/Worker 未动。
+- 恢复监管重新绑定 r3 并试运行成功，定时器已启用。
+- **抠图映射与真实验收**：在 r3 Web 容器内以同代码/环境运行 `scripts/ops/repair-cutout-transparency.ts`（esbuild 单文件）PLAN→APPLY，模型配置 v152→**v153**（publication `2453d82c-05b7-443c-9a2f-c7fcde17545c`），仅 `apib:gpt-image-2.5-sunburst`、`-flare` 增加 `imagegen.transparent=background`，计费未变。随后用自绘图（白底蓝方块）真实抠图一次：wire `size=1:1, quality=medium, background=transparent, resolution=1k`，返回 1024×1024，全透明 812,857 / 不透明 229,104 像素，计费 settled 1 积分，单位 `tool-13023d31-…:tool-image:0`。
+- 发布后 5 分钟：切流后 658 个请求全部 200、0 个 5xx、0 次 40001；恢复监管两次运行成功；内存可用 4,297MiB；磁盘 67%（23G 可用）。
+
+### 发布中的问题与处置（如实记录）
+
+1. **主机 Worker 看门狗干扰发布**：`/opt/naumi-staging/releases/worker-watchdog.sh`（每 60s）只看 `docker ps --filter name=worker` 的第一个（最新）容器，见到 paused 就第 1 轮发 resume、第 2 轮“硬复活”（停容器、删 `/release-state/*.json`、启动、resume）。它在 20:17:03 resume 了按设计暂停的候选 Worker（早于切流约 20 秒；期间 r2 20:17:10–13、r3 20:17:13 各一轮 tick，均 completed，r3 那轮针对仍在 draining 的候选，无 unknown），并在 20:17:54 硬复活了已设退役屏障的 r3 Worker。处置：在会话内记录并暂停看门狗定时器，重新固定同一容器身份（仅 startedAt 变化）、对未发送的屏障操作对账为 `RECONCILED_NOT_SENT`，再执行屏障与退役；发布结束已恢复看门狗定时器。**后续发布须在候选创建前暂停该看门狗**，或改造看门狗识别发布控制的暂停。
+2. 退役步骤的排空检查在停掉旧 Worker 后仍去读其状态导致失败（脚本顺序问题），续接步骤改为“已退役且已停止”后完成。
+
+### 整体状态
+
+r3 已上线并通过验收；r2 已退役。整站仍为 `SWITCHED_CLEANUP_PENDING`：r1（20261103）的 615 条历史未知观测及其 Web/Worker 按 r2 记录继续保留，需另行授权裁决后才能退役。
