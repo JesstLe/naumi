@@ -8,6 +8,7 @@ import { canonicalConfig } from "../model-config/snapshot-value";
 import { ModelConfigError } from "../model-config/types";
 import { imagePromptReadSchema, imagePromptWriteSchema, type ImagePromptState } from "./image-prompt-schema";
 import { ensureImagePromptSchema, readImagePromptTx } from "./image-prompt-repository";
+import {canvasPrimaryParentIsInput} from "./parent-link";
 
 type Row = Record<string, any>;
 const fail = (code: string, message: string, status = 409): never => { throw new ModelConfigError(code, message, status); };
@@ -19,16 +20,24 @@ function actorScope(actor: string): CreationContext {
 /** Physical project identities cannot be replaced with a client-supplied artwork-id alias. */
 async function actualProjectKeys(tx: PoolClient, actor: string, row: Row) {
   const chain = (await tx.query(`WITH RECURSIVE ancestry AS (
-    SELECT id,parent_id,group_id,batch_id,ARRAY[id] AS seen,0 AS depth FROM app_artworks WHERE email=$1 AND id=$2 AND deleted_at IS NULL
-    UNION ALL SELECT p.id,p.parent_id,p.group_id,p.batch_id,a.seen||p.id,a.depth+1 FROM ancestry a
+    SELECT id,parent_id,group_id,batch_id,parent_ids,source_url='canvas-add' AS project_anchor,ARRAY[id] AS seen,0 AS depth FROM app_artworks WHERE email=$1 AND id=$2 AND deleted_at IS NULL
+    UNION ALL SELECT p.id,p.parent_id,p.group_id,p.batch_id,p.parent_ids,p.source_url='canvas-add',a.seen||p.id,a.depth+1 FROM ancestry a
       JOIN app_artworks p ON p.id=a.parent_id AND p.email=$1 AND p.deleted_at IS NULL WHERE a.depth<200 AND NOT p.id=ANY(a.seen)
     ) SELECT * FROM ancestry ORDER BY depth`, [actor, row.id])).rows;
   if (!chain.length) fail("IMAGE_PROMPT_NODE_UNAVAILABLE", "图片节点不存在或无权访问", 404);
   const last = chain[chain.length - 1];
-  if (last.parent_id && (last.depth >= 200 || last.seen.includes(last.parent_id))) fail("IMAGE_PROMPT_PROJECT_AMBIGUOUS", "图片项目关系异常，请重新整理");
-  const locked = (await tx.query("SELECT id,parent_id,group_id,batch_id FROM app_artworks WHERE email=$1 AND id=ANY($2::text[]) AND deleted_at IS NULL ORDER BY id FOR SHARE", [actor, chain.map(r => r.id)])).rows;
+  const cycleAt = last.parent_id ? chain.findIndex(r => r.id === last.parent_id) : -1;
+  const cycle = cycleAt >= 0 ? chain.slice(cycleAt) : [];
+  // Uploaded B may anchor to project root A while A uses B as an explicit
+  // input. Only this same-project, hidden-anchor cycle has a stable identity;
+  // actual input cycles, mixed projects and unanchored legacy cycles still fail.
+  const anchoredCycle = !!row.group_id && cycle.length > 0 && cycle.every(r => r.group_id === row.group_id) &&
+    cycle.some(r => !canvasPrimaryParentIsInput({parentId:r.parent_id,parentIds:r.parent_ids,source:r.project_anchor?"canvas-add":undefined}));
+  if (last.parent_id && (last.depth >= 200 || cycleAt >= 0 && !anchoredCycle)) fail("IMAGE_PROMPT_PROJECT_AMBIGUOUS", "图片项目关系异常，请重新整理");
+  const locked = (await tx.query("SELECT id,parent_id,group_id,batch_id,parent_ids,source_url='canvas-add' AS project_anchor FROM app_artworks WHERE email=$1 AND id=ANY($2::text[]) AND deleted_at IS NULL ORDER BY id FOR SHARE", [actor, chain.map(r => r.id)])).rows;
   const byId = new Map(locked.map(r => [r.id, r]));
-  if (chain.some(r => !byId.has(r.id) || ["parent_id", "group_id", "batch_id"].some(k => byId.get(r.id)![k] !== r[k]))) fail("IMAGE_PROMPT_SOURCE_CHANGED", "图片来源已变化，请重试");
+  if (chain.some(r => !byId.has(r.id) || ["parent_id", "group_id", "batch_id", "project_anchor"].some(k => byId.get(r.id)![k] !== r[k]) ||
+    canonicalConfig(byId.get(r.id)!.parent_ids ?? []) !== canonicalConfig(r.parent_ids ?? []))) fail("IMAGE_PROMPT_SOURCE_CHANGED", "图片来源已变化，请重试");
   const keys = new Set<string>([`tree:${row.group_id || last.id}`]);
   for (const r of chain) { if (r.group_id) keys.add(`tree:${r.group_id}`); if (typeof r.batch_id === "string" && r.batch_id.startsWith("suite-")) keys.add(`batch:${r.batch_id}`); }
   return [...keys];

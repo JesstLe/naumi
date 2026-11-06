@@ -8,6 +8,8 @@ export const refactorCases=[
  {...ts('prepare-linked-image-text','canvas','scripts/verify-prepare-linked-image-text.ts','PREPARE_LINKED_IMAGE_TEXT=PASS'),pg:false},
  {...ts('canvas-node-drafts','canvas','scripts/verify-canvas-node-drafts.ts','PASS CANVAS_NODE_DRAFTS'),pg:false},
  node('canvas-text-prompt-reuse-functions','canvas','scripts/verify-canvas-text-prompt-reuse-functions.cjs','CANVAS_TEXT_PROMPT_REUSE_FUNCTIONS=PASS'),
+ {...ts('image-prompt-project-anchor','canvas','scripts/verify-image-prompt-project-anchor.ts','IMAGE_PROMPT_PROJECT_ANCHOR=PASS'),pg:false},
+ node('image-prompt-client','canvas','scripts/verify-inline-image-prompt-client.mjs','INLINE_PROMPT_CLIENT=PASS'),
  node('business-canvas-readiness','foundation','scripts/verify-business-canvas-readiness.cjs','BUSINESS_CANVAS_READINESS=PASS'),
  node('model-ui-production','foundation','scripts/verify-model-ui-production.mjs','MODEL_UI_PRODUCTION=PASS'),
  node('billing-ui-production-isolation','foundation','scripts/verify-billing-ui-production-isolation.mjs','BILLING_UI_PRODUCTION_ISOLATION=PASS'),

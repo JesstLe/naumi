@@ -7,7 +7,7 @@ type Request = (input: string, init?: RequestInit) => Promise<Response>;
 type Attempt = { document: ImagePromptDocument; operationId: string; expectedRevision: number };
 type Entry = {
   address: ImagePromptAddress; receipt?: ImagePromptReceipt; desired?: ImagePromptDocument;
-  loading?: Promise<ImagePromptReceipt>; saving?: Promise<void>; attempt?: Attempt;
+  loading?: Promise<ImagePromptReceipt>; reloading?: Promise<ImagePromptReceipt>; saving?: Promise<void>; attempt?: Attempt;
   timer?: ReturnType<typeof setTimeout>; error?: Error;
 };
 type DraftStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
@@ -46,6 +46,14 @@ export class ImagePromptClient {
     if (!Number.isSafeInteger(value.revision) || value.revision < 0 || !('document' in value)) throw new Error('提示词保存回执不完整');
     return { document: value.document, revision: value.revision,...(typeof value.workspace==='string'?{workspace:value.workspace}:{}),...(value.persisted===false?{persisted:false}:{}) };
   }
+  private async read(address:ImagePromptAddress):Promise<ImagePromptReceipt>{
+    const query = new URLSearchParams({ projectKey: address.projectKey, nodeId: address.nodeId });
+    this.assertCurrent();
+    // Existing projects own their scope, not the desktop's current default.
+    const headers:Record<string,string>={...this.headers(address)};delete headers['x-naumi-workspace'];
+    const response=await this.request(`/api/canvas/image-prompts?${query}`,{cache:'no-store',headers,signal:AbortSignal.timeout(15_000)});
+    const receipt=await this.body(response);this.assertCurrent();return receipt;
+  }
   open(key: string, address: ImagePromptAddress): Promise<ImagePromptReceipt> {
     this.assertCurrent();
     let entry = this.entries.get(key);
@@ -63,14 +71,7 @@ export class ImagePromptClient {
     if (entry.loading) return entry.loading;
     const target = entry;
     target.loading = (async () => {
-      const query = new URLSearchParams({ projectKey: address.projectKey, nodeId: address.nodeId });
-      this.assertCurrent();
-      // Existing projects own their scope; a desktop navigation may have changed
-      // the default workspace. Discover through the authorized receipt read,
-      // not by rebinding the project to that default.
-      const headers:Record<string,string>={...this.headers(address)};delete headers['x-naumi-workspace'];
-      const response = await this.request(`/api/canvas/image-prompts?${query}`, { cache: 'no-store', headers, signal: AbortSignal.timeout(15_000) });
-      const receipt = await this.body(response); this.assertCurrent();
+      const receipt=await this.read(address);
       if(receipt.workspace)target.address={...target.address,workspace:receipt.workspace};
       target.receipt = receipt; target.error = undefined; return { ...receipt, document:target.desired??receipt.document };
     })().catch(error => { target.error = error instanceof Error ? error : new Error('提示词读取失败'); throw error; })
@@ -94,6 +95,7 @@ export class ImagePromptClient {
   async flushKey(key: string): Promise<void> {
     this.assertCurrent(); const entry = this.entries.get(key); if (!entry) return;
     if (entry.timer) { clearTimeout(entry.timer); entry.timer = undefined; }
+    if(entry.reloading){await entry.reloading;return this.flushKey(key);}
     if (entry.loading) await entry.loading;
     if(entry.receipt?.persisted===false)return;
     if (entry.saving) { await entry.saving; return this.flushKey(key); }
@@ -125,11 +127,28 @@ export class ImagePromptClient {
     if (failure) throw failure.reason;
   }
   async reloadSaved(key:string,address:ImagePromptAddress){
-    const entry=this.entries.get(key);
-    if(entry?.saving)await entry.saving.catch(()=>{});
-    if(entry?.timer)clearTimeout(entry.timer);
-    this.entries.delete(key);try{this.storage()?.removeItem(this.storageKey(key));}catch{}
-    return this.open(key,address);
+    this.assertCurrent();
+    let entry=this.entries.get(key);
+    if(!entry){entry={address};this.entries.set(key,entry);}
+    if(entry.reloading)return entry.reloading;
+    const target=entry,desired=target.desired;
+    if(target.timer){clearTimeout(target.timer);target.timer=undefined;}
+    // "Use saved" only discards the queue after an authoritative read succeeds.
+    // A rejected GET must retain even an uncertain original operation and its ID.
+    target.reloading=(async()=>{
+      if(target.saving)await target.saving.catch(()=>{});
+      if(target.loading)await target.loading.catch(()=>{});
+      const receipt=await this.read(address);
+      if(this.entries.get(key)!==target||target.desired!==desired)throw new Error('提示词已继续编辑，当前草稿已保留');
+      const nextAddress=receipt.workspace?{...address,workspace:receipt.workspace}:address;
+      this.entries.set(key,{address:nextAddress,receipt});
+      try{this.storage()?.removeItem(this.storageKey(key));}catch{/* The accepted read still replaces only the in-memory queue. */}
+      return receipt;
+    })().catch(error=>{
+      if(this.entries.get(key)===target)target.error=error instanceof Error?error:new Error('提示词读取失败');
+      throw error;
+    }).finally(()=>{target.reloading=undefined;if(!this.disposed)this.notify();});
+    return target.reloading;
   }
   dispose() {
     this.disposed = true;
