@@ -34,12 +34,17 @@ export type SlimClient={query:Query;release?:()=>void};
 /** One-time slimming of records written before inline images left the record.
  * Each row is rewritten under FOR UPDATE; a concurrent sync that read the row
  * earlier can only overwrite the slimming, never lose its own state change.
- * updated_at is kept: the workbench shows it as the version time. */
+ * updated_at is kept: the workbench shows it as the version time. History rows
+ * imported into a staging site (naumi_staging_guard.origin_rows) are frozen by a
+ * trigger and are left exactly as imported. */
 export async function slimStoredOperations(connect:()=>Promise<SlimClient>,options:{apply:boolean;batch?:number}){
  const client=await connect();let scanned=0,changed=0,bytesBefore=0,bytesAfter=0;
  try{
-  const ids=(await client.query(`SELECT id FROM app_reference_operations WHERE body ?| $1::text[]
-   OR jsonb_path_exists(plans,'$[*].settings.images') OR jsonb_path_exists(plans,'$[*].settings.annotated_data_url') ORDER BY created_at`,[INLINE_IMAGE_FIELDS])).rows.map(r=>String(r.id));
+  const guarded=(await client.query("SELECT to_regclass('naumi_staging_guard.origin_rows') IS NOT NULL AS guarded")).rows[0]?.guarded===true;
+  const imported="EXISTS (SELECT 1 FROM naumi_staging_guard.origin_rows h WHERE h.table_name='app_reference_operations' AND h.row_key=o.id::text)";
+  const rows=(await client.query(`SELECT o.id,${guarded?imported:"false"} AS imported FROM app_reference_operations o WHERE (o.body ?| $1::text[]
+   OR jsonb_path_exists(o.plans,'$[*].settings.images') OR jsonb_path_exists(o.plans,'$[*].settings.annotated_data_url')) ORDER BY o.created_at`,[INLINE_IMAGE_FIELDS])).rows;
+  const ids=rows.filter(r=>r.imported!==true).map(r=>String(r.id)),skippedImported=rows.length-ids.length;
   for(const id of ids.slice(0,options.batch??ids.length)){
    // Plan mode takes no row locks: it only reads.
    await client.query(options.apply?"BEGIN":"BEGIN READ ONLY");
@@ -53,6 +58,6 @@ export async function slimStoredOperations(connect:()=>Promise<SlimClient>,optio
     await client.query(options.apply?"COMMIT":"ROLLBACK");
    }catch(error){await client.query("ROLLBACK").catch(()=>{});throw error;}
   }
-  return {candidates:ids.length,scanned,changed,bytesBefore,bytesAfter};
+  return {candidates:ids.length,skippedImported,scanned,changed,bytesBefore,bytesAfter};
  }finally{client.release?.();}
 }

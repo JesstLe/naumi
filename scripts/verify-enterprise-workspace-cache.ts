@@ -35,6 +35,10 @@ async function main(){
   const rail=await readFile(join(root,"src/components/app-rail.tsx"),"utf8");
   assert.match(rail,/href === "\/enterprise"\s*\?\s*<a href=\{href\}/,"company workspace rail entry is a plain link");
   assert.ok(!/prefetch=\{href === "\/enterprise"/.test(rail));
-  console.log(`ENTERPRISE_WORKSPACE_CACHE=PASS bytes=${body.length} revalidate=304 changedSite=200 securityHeaders=kept railPlainLink=1`);
+  // Middleware headers win over the route's: the dedicated /enterprise rewrite must not force no-store.
+  const middleware=await readFile(join(root,"src/middleware.ts"),"utf8");
+  assert.match(middleware,/target\.pathname='\/enterprise\/workspace';\s*return NextResponse\.rewrite\(target,\{request:\{headers\},headers:WORKSPACE_PAGE_HEADERS\}\)/);
+  assert.match(middleware,/WORKSPACE_PAGE_HEADERS = \{ \.\.\.ACCESS_HEADERS, "Cache-Control": "private, no-cache" \}/);
+  console.log(`ENTERPRISE_WORKSPACE_CACHE=PASS bytes=${body.length} revalidate=304 changedSite=200 securityHeaders=kept railPlainLink=1 middlewareNoCache=1`);
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

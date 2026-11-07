@@ -4137,7 +4137,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                     onClick={() => void assistWriteForNodes(productPicker.textNodeIds, member)}
                     className="group flex flex-col items-stretch gap-1.5 rounded-lg border border-border bg-background p-1.5 text-left transition-colors hover:border-primary/60"
                   >
-                    <CachedImage src={cdnThumb(member.image,512)} alt="" className="block h-20 w-full rounded object-cover" />
+                    <CachedImage src={cdnThumb(member.image,1600)} alt="" className="block h-20 w-full rounded object-cover" />
                     <span className="truncate text-[11px] font-medium text-foreground">
                       {member.title || t("canvas.imageNode")}
                     </span>
@@ -4222,7 +4222,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <CachedImage
-                        src={cdnThumb(w.image,512)}
+                        src={cdnThumb(w.image,1600)}
                         alt={w.title}
                         loading="lazy"
                         className="aspect-square w-full object-cover"

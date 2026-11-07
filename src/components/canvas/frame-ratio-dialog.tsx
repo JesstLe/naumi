@@ -45,7 +45,7 @@ export function FrameRatioDialog({choices,onChoose,english=false}:{choices:Canva
     <div className="grid grid-cols-2 gap-3 p-5 sm:grid-cols-3">
       {choices.map((choice,index)=><button type="button" key={choice.artworkId} aria-pressed={selected===choice.artworkId} onClick={()=>setSelected(choice.artworkId)}
         className={`relative min-w-0 rounded-xl border-2 p-2 text-left transition-colors focus-visible:outline-[var(--canvas-ui-accent)] ${selected===choice.artworkId?"border-[var(--canvas-ui-accent)] bg-[var(--canvas-ui-accent-soft)]":"border-[var(--canvas-ui-border)] bg-[var(--canvas-ui-panel-solid)] hover:border-[var(--canvas-ui-border-strong)]"}`}>
-        <CachedImage src={cdnThumb(choice.url,512)} alt={english?`Reference ${index+1}`:choice.label} className="h-28 w-full rounded-lg bg-[var(--canvas-ui-soft)] object-contain"/>
+        <CachedImage src={cdnThumb(choice.url,1600)} alt={english?`Reference ${index+1}`:choice.label} className="h-28 w-full rounded-lg bg-[var(--canvas-ui-soft)] object-contain"/>
         <div className="mt-2 truncate text-xs font-medium">{english?`Reference ${index+1}`:choice.label}</div>
         <div className="mt-0.5 text-xs canvas-ui-muted">{choice.ratio}</div>
         {selected===choice.artworkId&&<span className="absolute right-1.5 top-1.5 rounded-full bg-[var(--canvas-ui-text)] p-0.5 text-[var(--canvas-ui-panel-solid)]"><Check className="h-3 w-3"/></span>}
