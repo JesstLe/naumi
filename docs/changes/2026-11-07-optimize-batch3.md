@@ -62,7 +62,39 @@
 - 47 上 `app_reference_operations` 有被 `naumi_staging_history_freeze` 触发器冻结的导入历史行（`naumi_staging_guard.origin_rows`）。首次执行在第 81 行遇到冻结行报 `STAGING_IMPORTED_HISTORY_READ_ONLY`，已处理的 80 行逐行提交、其余未动。
 - `slimStoredOperations` 现跳过导入历史行（存在守护表时），输出 `skippedImported`；测试增加带同类触发器的冻结行，断言跳过且原样保留。
 
+## 47 发布（r6，2026-11-07 09:53–10:11 CST）
+
+- 用户授权：“全部搞定 指定目标”。三锁会话 `release47-main-20261107-r6`，候选 `7f08bad0` / `1794015971`，镜像 `sha256:ef3f8135…`；前任 r5（`5872a41b`）排空后停止（restart=no），保留 r6/r5/r4/r3/r2 五轮，移除 1103-r1。lifecycle `COMPLETE`，恢复监督已绑定新对并启用。
+- 03b 热点索引：8 个 `CONCURRENTLY` 共 10.8 s，全部 valid。
+- 04b 网关与日志：`naumi47-compression.conf`、`naumi_timing` 日志格式（`nginx -t` 通过、reload）；PG `log_min_duration_statement=500ms`、`log_lock_waits=on`、参数不入日志（`pg_reload_conf`，未重启）。
+- 06/06b 候选验收：画布节点轮询 120/120 200；`/enterprise` ETag 与 304；`view=user` 账户 231 B；工作台状态 200。**发现**：中间件 `ACCESS_HEADERS`（`private, no-store`）覆盖路由的 `private, no-cache`，浏览器不会回源校验，T5 只部分达成（`_rsc` 双取已去掉）；修复 `0f002de5` 已合入 main，随下次发布上线。
+- 10/10b/10c 退役：与 r5 相同，r5 旧 Web 上有 2 条长连接；10b 的等待条件不容许共享库里新版本正在跑的图片任务，10c 在新 Worker 运行期间等长连接自然结束，再屏障+两次完整排空证明后停止，失败路径先恢复新 Worker。
+- 13/13b 工作台记录：首次在冻结的导入历史行停止（见上），修复 `45b89b88` 后跳过 1 行导入历史，瘦身 193 行；表 847 MB → 12.7 MB，694 行、指纹/类型/创建时间身份一致，本地记录无内联图。
+- 14/14b 公网：节点轮询 60/60 200、版本一致；JSON 响应 gzip（更新说明 30 KB → 线上 11 KB）。
+- 发布后核查（只读 EXPLAIN）：待处理图片任务扫描 0.64 ms（60 个缓冲页，原 2,333 ms/约 1.9 GB）；发布状态检查 0.16 ms（7 页，原约 136 MB）；8 个索引中 7 个已被使用。切换后 >500 ms SQL 为 0。
+- 初步流量（10:05 起 8 分钟，周六、4 个 IP；旧标签页仍跑旧前端，需用户刷新）：成员列表每 IP 每分钟约 55 → 5 次、单次 10,142 → 1,302 B；无 5xx。完整对比需工作日全天数据。
+
+## 本地压测（隔离环境，T7）
+
+r6 同一镜像，WSL Docker 内部网络（无外联），Web 按 47 限制 `--cpus=1.5 --memory=2g`，PG16 种子 20 用户/企业/视频任务/节点/图片任务，autocannon；原始数据 `output/loadtest-20261107/`。
+
+| 接口 | c50 req/s | p99 ms |
+|---|---|---|
+| version / site-profile | 1,333 / 1,346 | 106 / 99 |
+| models / feature-access | 1,085 / 769 | 117 / 132 |
+| image-tasks / video-nodes / video-tasks | 588 / 558 / 542 | 156 / 166 / 164 |
+| members | 515 | 166 |
+| account view=user | 317 | 221 |
+| **生产比例混合** c10 / c50 / c100 / c200 | 672 / 655 / 621 / 599 | 31 / 201 / **411** / 855 |
+
+- 实测：单个 Web 在混合负载下约 640–670 req/s、p99<500 ms、0 错误，内存峰值 581 MiB。
+- 推断：瓶颈是 Node 单线程（Web CPU 恒定约 1 核、给 1.5 核也用不满），数据库约半核；每个混合请求约 1.5 ms Web CPU + 0.75 ms DB CPU。扩容靠多开 Web 进程/实例（即架构项 A1），加 CPU 无效。规划取 450–550 req/s/实例留余量。
+- 差异：种子库小（15 MB 全缓存，生产 DB 成本更高）、单一测试用户、无 nginx/TLS、模型配置走非托管路径、平台模式站点。
+- 新发现：`/api/account?view=user` 每次都执行 `expireDueBatches` 的 `SELECT … FOR UPDATE` + `UPDATE app_users`（22,442 次请求对应 22,442 次更新），读接口带写；生产占比约 1%，但多人同时刷新余额时会争锁。列入下一步，需按计费链路测试规则单独处理。
+
 ## 未完成与下一步
-- 上线、执行索引与工作台瘦身、nginx/PG 日志配置，次日按上表复测。
-- 本地压测：在隔离环境测单个 Web 的轮询读接口吞吐与延迟。
+- 工作日（下周一）全天对比 T1/T2/T6/T8；旧标签页刷新后前端轮询效果才完全体现。
+- T5：中间件修复 `0f002de5` 已合入 main，随下次发布上线后企业页重复打开才变 304。
+- `/api/account?view=user` 读路径写库（见压测）。
+- `pg_stat_statements` 需重启数据库，等维护窗口。
 - 是否把“100% 缩放原图”改为预览图，等用户决定。
