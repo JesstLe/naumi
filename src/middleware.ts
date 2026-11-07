@@ -75,10 +75,16 @@ export async function middleware(req: NextRequest) {
     // Keep the render destination separate from the legacy URL, which redirects
     // to /enterprise. Next may run middleware again after an internal rewrite.
     const target=req.nextUrl.clone();target.pathname='/enterprise/workspace';
-    return NextResponse.rewrite(target,{request:{headers},headers:ACCESS_HEADERS});
+    return NextResponse.rewrite(target,{request:{headers},headers:WORKSPACE_PAGE_HEADERS});
   }
   return NextResponse.next({ request: { headers }, ...(protectedRoute ? { headers: ACCESS_HEADERS } : {}) });
 }
+
+// The company workspace page is the same artifact for every member (business data
+// loads through authorized APIs). Each open still passes the login gate above
+// (no-cache), but the browser may keep the ~2MB page and revalidate it by ETag (304)
+// instead of downloading it again; ACCESS_HEADERS' no-store would forbid that.
+const WORKSPACE_PAGE_HEADERS = { ...ACCESS_HEADERS, "Cache-Control": "private, no-cache" };
 
 // API routes and pages share the gate; static assets do not query permissions.
 export const config = {
