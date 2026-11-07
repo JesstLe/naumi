@@ -126,6 +126,19 @@ export async function beginObservedActivity(kind: "request" | "accepted-work", d
     await db.query(`INSERT INTO app_release_activities(id,instance_id,boot_id,runtime_id,activity_kind,state,detail) VALUES($1,$2,$3,$4,$5,'active',$6)`, [id, identity.instanceId, identity.bootId, releaseProcessRegistry().runtimeId, kind, detail.slice(0, 200)]);
   }); return id;
 }
+/**
+ * Work accepted for one account without a resident session (agent gateway calls). Admission must be
+ * open; the row is tracked as accepted work, can parent signed continuations, and has no session owner.
+ */
+export async function beginAccountWork(email: string, detail: string): Promise<string> {
+  const identity = releaseIdentity(), id = randomUUID();
+  await transaction(async (db) => {
+    const boot = await register(db);
+    if (boot.admission !== "open") throw new ReleaseRuntimeError("RELEASE_DRAINING", 503);
+    await db.query(`INSERT INTO app_release_activities(id,instance_id,boot_id,runtime_id,activity_kind,account_key,state,detail) VALUES($1,$2,$3,$4,'accepted-work',$5,'active',$6)`, [id, identity.instanceId, identity.bootId, releaseProcessRegistry().runtimeId, accountKey(email), detail.slice(0, 200)]);
+  });
+  return id;
+}
 export type AcceptedParent = { id: string; account: string | null; instanceId: string; bootId: string };
 export async function activeAcceptedParent(parent: AcceptedParent): Promise<boolean> {
   await ensureReleaseSchema();
