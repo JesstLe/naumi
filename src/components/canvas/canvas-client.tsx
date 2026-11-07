@@ -233,7 +233,7 @@ import { useAuthModal } from "@/lib/auth-modal-context";
 import { useI18n } from "@/lib/i18n/locale-context";
 
 import { Textarea } from "@/components/ui/textarea";
-import { cdnUrl } from "@/lib/cdn";
+import { cdnThumb, cdnUrl } from "@/lib/cdn";
 import { ImageLightbox } from "@/components/image-lightbox";
 import type {ComfyRunPayload,ComfyRunResult} from "@/lib/comfyui/run-contract";
 import { BRAND, BRAND_CANVAS_LOGO } from "@/lib/brand";
@@ -1037,7 +1037,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     ...directorNodesStore.nodes.filter(node=>node.projectKey===activeKey).flatMap(node=>[node.project.panoramaArtworkId,...(node.project.sceneReference?.referenceArtworkIds||[])]),
   ].filter((id):id is string=>!!id)),[activeKey,characterNodesStore.nodes,sceneNodesStore.nodes,audioNodesStore.nodes,timelineNodesStore.nodes,directorNodesStore.nodes]);
   const baseVideoInputChoices:VideoInputChoice[]=useMemo(()=>Array.from(new Map([
-    ...Array.from(new Map([...(active?.members||[]),...(works||[]).filter(art=>visualReferenceIds.has(art.id))].map(art=>[art.id,art])).values()).filter(art=>art.category!=="media").map(art=>({id:art.id,nodeId:art.id,kind:art.category==="audio"?"audio" as const:art.videoUrl?"video" as const:"image" as const,title:art.title,value:art.videoUrl||art.image,thumbnail:!art.videoUrl?art.image:undefined,available:art.status==="completed"})),
+    ...Array.from(new Map([...(active?.members||[]),...(works||[]).filter(art=>visualReferenceIds.has(art.id))].map(art=>[art.id,art])).values()).filter(art=>art.category!=="media").map(art=>({id:art.id,nodeId:art.id,kind:art.category==="audio"?"audio" as const:art.videoUrl?"video" as const:"image" as const,title:art.title,value:art.videoUrl||art.image,thumbnail:!art.videoUrl?cdnThumb(art.image,128):undefined,available:art.status==="completed"})),
     ...textNodes.filter(node=>node.projectKey===activeKey).map(node=>({id:node.id,nodeId:node.id,kind:"text" as const,title:node.title,value:canvasTextContent(node)||" ",available:node.status!=="generating"&&!textTasks.state(node.id).busy})),
     ...videoNodesStore.nodes.filter(node=>node.projectKey===activeKey).map(node=>{const task=videoTaskStore.tasks.find(task=>task.id===node.lastTaskId),art=(works||[]).find(art=>art.id===(node.displayResultId||node.lastResultId));return {id:node.id,nodeId:node.id,kind:"video" as const,title:node.title,value:art?.videoUrl||(!node.displayResultId?task?.videoUrl:undefined)||"/media/pending",available:!!(node.displayResultId||node.lastResultId)&&(art?.status==="completed"||!node.displayResultId&&task?.status==="completed")};}),
     ...videoAssetStore.choices,
@@ -4137,7 +4137,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                     onClick={() => void assistWriteForNodes(productPicker.textNodeIds, member)}
                     className="group flex flex-col items-stretch gap-1.5 rounded-lg border border-border bg-background p-1.5 text-left transition-colors hover:border-primary/60"
                   >
-                    <CachedImage src={cdnUrl(member.image)} alt="" className="block h-20 w-full rounded object-cover" />
+                    <CachedImage src={cdnThumb(member.image,512)} alt="" className="block h-20 w-full rounded object-cover" />
                     <span className="truncate text-[11px] font-medium text-foreground">
                       {member.title || t("canvas.imageNode")}
                     </span>
@@ -4222,7 +4222,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <CachedImage
-                        src={cdnUrl(w.image)}
+                        src={cdnThumb(w.image,512)}
                         alt={w.title}
                         loading="lazy"
                         className="aspect-square w-full object-cover"

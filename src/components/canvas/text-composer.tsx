@@ -10,7 +10,7 @@ import {Textarea} from "@/components/ui/textarea";
 import {TextModelSelect} from "@/components/ui/text-model-select";
 import {FeatureVisible} from "@/lib/feature-access/client";
 import {useI18n} from "@/lib/i18n/locale-context";
-import {cdnUrl} from "@/lib/cdn";
+import {cdnThumb} from "@/lib/cdn";
 import {cn} from "@/lib/utils";
 import {isHostedImageUrl as hasRenderableImage} from "@/lib/media-url";
 import type {Artwork} from "@/lib/mock-data";
@@ -239,7 +239,7 @@ export function CanvasTextComposer({node:selectedText,members,light:lightCanvas,
                                 : "border-[#343842] bg-[#20232a] text-[#cdd2da] hover:border-[#6bd7ec] hover:text-[#8fe7f5]"
                             )}
                           >
-                            <CachedImage src={cdnUrl(member.image)} alt="" className="h-5 w-5 flex-none object-cover" />
+                            <CachedImage src={cdnThumb(member.image,128)} alt="" className="h-5 w-5 flex-none object-cover" />
                             <span className="truncate">@{member.title || t("canvas.imageNode")}</span>
                           </button>
                         ))}
@@ -296,7 +296,7 @@ export function CanvasTextComposer({node:selectedText,members,light:lightCanvas,
                                 : "border-[#343842] bg-[#20232a] text-[#cdd2da] hover:border-[#596170]"
                           )}
                         >
-                          <CachedImage src={cdnUrl(reference.image)} alt="" className="h-5 w-5 flex-none object-cover" />
+                          <CachedImage src={cdnThumb(reference.image,128)} alt="" className="h-5 w-5 flex-none object-cover" />
                           <span className="truncate">@{reference.title}</span>
                         </button>
                       );

@@ -43,7 +43,7 @@ async function browserChecks(){
    throw Error("Unexpected browser request "+url);
   };
   const window:any={fetch:native,addEventListener(){}},document={body:{},getElementById:()=>null,querySelectorAll:()=>[],querySelector:()=>null};
-  const sandbox={window,document,location:{pathname:"/batchshot/native/single",origin:"http://fixture.invalid",href:"http://fixture.invalid/batchshot/native/single",assign(){},reload(){}},localStorage:{getItem:()=>null,setItem(){},removeItem(){}},MutationObserver:class{observe(){}disconnect(){}},Headers,Request,Response,URL,crypto:{randomUUID},confirm:()=>{dialogs++;return true;},alert(){},HTMLImageElement:class{},Element:class{},exports:{},require:(id:string)=>id==="../supabase"?{authHeader:async()=>({})}:id==="./model-options"?{workbenchModelOptions:()=>[],workbenchModelSelection:()=>""}:id==="./http"?{workbenchErrorText:String}:(()=>{throw Error("Unexpected browser import "+id);})()};
+  const sandbox={window,document,location:{pathname:"/batchshot/native/single",origin:"http://fixture.invalid",href:"http://fixture.invalid/batchshot/native/single",assign(){},reload(){}},localStorage:{getItem:()=>null,setItem(){},removeItem(){}},MutationObserver:class{observe(){}disconnect(){}},Headers,Request,Response,URL,crypto:{randomUUID},confirm:()=>{dialogs++;return true;},alert(){},HTMLImageElement:class{},Element:class{},exports:{},require:(id:string)=>id==="../supabase"?{authHeader:async()=>({})}:id==="./model-options"?{workbenchModelOptions:()=>[],workbenchModelSelection:()=>""}:id==="./http"?{workbenchErrorText:String}:id==="../browser-storage/local"?{setLocalItem:()=>{},trimWorkbenchPromptStores:()=>{}}:id==="./local-prompts"?{boundedWorkbenchPrompts:(value:string)=>value,WORKBENCH_PROMPTS_KEY:"gpt-image-pil-workbench-prompts"}:(()=>{throw Error("Unexpected browser import "+id);})()};
   vm.runInNewContext(transpile(source,"browser.ts"),sandbox,{timeout:3000});await window.NaumiWorkbenchReady;
   const response=await window.fetch("/api/reference-workbench/single/start",{method:"POST",body:JSON.stringify({prompt:"fixture",count:1})}),result=await response.json();
   assert.equal(submissions.length,scenario==="quote-failure"?0:1,"No unknown-state rePOST");
@@ -142,6 +142,34 @@ async function main(){
    await db.getPool().query("UPDATE app_reference_operations SET plans=$2::jsonb WHERE id=$1",[missingTextQ.id,JSON.stringify(missingOp.plans)]);await error("chat-image/send",{...missingText,native_quote:{id:missingTextQ.id}},409,/原始执行报价/);
   }
   assert.equal(imageCalls,beforeNegative);passed("owner, action/content fingerprint, request-id conflict"+(!baseline?" and missing saved plan":"")+" negative cases");
+
+  if(!baseline){
+   // Inline reference images: the record keeps assets + a digest, never the bytes.
+   const tiny=async(mean:number)=>"data:image/png;base64,"+(await sharp({create:{width:160,height:160,channels:3,background:"#808080",noise:{type:"gaussian",mean,sigma:40}}}).png().toBuffer()).toString("base64");
+   const [imageA,imageB]=await Promise.all([tiny(110),tiny(150)]),connect=()=>db!.getPool().connect();
+   const {storedOperationBody,slimStoredOperations,INLINE_IMAGES_DIGEST}=await import("../src/lib/reference-workbench/operation-storage");
+   const inline={...single(),images:[imageA]},inlineQ=await quote("single/start",inline),stored=await repo.operation(owner,inlineQ.id);
+   assert.equal(stored.body.images,undefined);assert.match(String(stored.body[INLINE_IMAGES_DIGEST]),/^[0-9a-f]{64}$/);
+   assert.ok(!JSON.stringify(stored).includes("data:image"),"record keeps no inline image bytes");assert.equal(stored.plans[0].inputs.length,1);
+   const beforeInline=imageCalls;
+   await error("single/start",{...inline,images:[imageB],native_quote:{id:inlineQ.id}},409,/不一致/);assert.equal(imageCalls,beforeInline);
+   const inlineStarted=await submit("single/start",inline,inlineQ,owner,{});assert.equal((await complete(inlineStarted.id)).status,"done");assert.equal(imageCalls,beforeInline+1);
+   // A record written before this change (full body, images repeated in settings) still submits, then slims idempotently.
+   const legacy={...single(),images:[imageA]},legacyQ=await quote("single/start",legacy),legacyOp=await repo.operation(owner,legacyQ.id);
+   const legacyBody:Record<string,any>={...legacyOp.body,images:[imageA]};delete legacyBody[INLINE_IMAGES_DIGEST];
+   await db.getPool().query("UPDATE app_reference_operations SET body=$2::jsonb,plans=$3::jsonb WHERE id=$1",[legacyQ.id,JSON.stringify(legacyBody),JSON.stringify(legacyOp.plans.map((t:any)=>({...t,settings:{...t.settings,images:[imageA]}})))]);
+   assert.deepEqual(storedOperationBody(legacyBody),legacyOp.body);
+   await error("single/start",{...legacy,images:[imageB],native_quote:{id:legacyQ.id}},409,/不一致/);
+   const legacyStarted=await submit("single/start",legacy,legacyQ,owner,{});assert.equal((await complete(legacyStarted.id)).status,"done");
+   const beforeSlim=await repo.operation(owner,legacyQ.id),planned=await slimStoredOperations(connect,{apply:false});
+   assert.equal(planned.changed,1);assert.ok(JSON.stringify(await repo.operation(owner,legacyQ.id)).includes("data:image"),"plan mode writes nothing");
+   const slim=await slimStoredOperations(connect,{apply:true}),after=await repo.operation(owner,legacyQ.id);
+   assert.equal(slim.changed,1);assert.ok(slim.bytesAfter<slim.bytesBefore);assert.ok(!JSON.stringify(after).includes("data:image"));
+   assert.deepEqual(after.body,legacyOp.body);assert.equal(after.fingerprint,beforeSlim.fingerprint);assert.deepEqual(after.result,beforeSlim.result);assert.equal(after.state,beforeSlim.state);assert.equal(+after.updated_at,+beforeSlim.updated_at);
+   assert.deepEqual(after.plans.map((t:any)=>t.inputs),beforeSlim.plans.map((t:any)=>t.inputs));
+   assert.equal((await slimStoredOperations(connect,{apply:true})).changed,0);assert.equal((await json("single/status?id="+legacyStarted.id)).status,"done");
+   passed(`inline images kept as assets+digest; different image rejected; legacy full record submitted then slimmed idempotently bytes=${slim.bytesBefore}->${slim.bytesAfter}; fingerprint/result/updated_at unchanged`);
+  }
 
   const race=single(),raceQuotes=await Promise.all([quote("single/start",race),quote("single/start",race)]);assert.equal(raceQuotes[0].id,raceQuotes[1].id);
   if(!baseline){const saved=await repo.operation(owner,raceQuotes[0].id);assert.equal(saved.plans[0].plan.request.operationId,stableId(saved.id,saved.plans[0].key));passed("concurrent preview retains winning operation/plan identity");}

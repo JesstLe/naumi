@@ -7,6 +7,17 @@ import {canvasMediaVariant,type CanvasMediaVariant} from '@/lib/canvas/media-loa
 import {useI18n} from '@/lib/i18n/locale-context';
 import {observeCanvasImageSize,observeCanvasImageVisibility} from '@/lib/canvas/image-observers';
 
+/** Character/scene/director cards follow the image-node rule (source pixels at 100%+
+ * zoom) but show the 1600px preview below it instead of always the original. Sharper
+ * pixels already decoded are kept when zooming back out. */
+export function CanvasCardImage({source,className}:{source:string;className?:string}){
+  const inspect=useStore(s=>s.transform[2]>=1);
+  const [sharp,setSharp]=useState('');
+  const original=inspect||sharp===source;
+  return <CachedImage src={original?cdnUrl(source):cdnThumb(source,1600)} imageIdentity={source} alt="" className={className} decoding="async"
+    onLoad={()=>{if(original)setSharp(source);}} />;
+}
+
 export function CanvasImage({source,forceOriginal,hasDimensions,...props}:Omit<ImgHTMLAttributes<HTMLImageElement>,'src'> & {
   source:string;forceOriginal:boolean;hasDimensions:boolean;
 }) {
