@@ -1,0 +1,8 @@
+interface:
+  display_name: "Naumi 创作工具"
+  short_description: "通过 Naumi CLI / MCP 调用电商图片与视频创作工具"
+  brand_color: "#4F46E5"
+  default_prompt: "使用 $naumi-cli，用 Naumi 生成一张白底商品主图并下载到本地。"
+
+policy:
+  allow_implicit_invocation: true

@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   ShieldCheck,
+  Bot,
   LogOut,
   ChevronRight,
   ArrowRight,
@@ -88,6 +89,14 @@ export function AccountClient() {
       tint: "var(--c-tint-b)",
       color: "var(--c-blue)",
       href: "/account/security",
+    },
+    {
+      label: L("Agent 接入", "Agent access"),
+      desc: L("令牌、命令行与 MCP", "Tokens, CLI & MCP"),
+      Icon: Bot,
+      tint: "var(--c-tint-v)",
+      color: "var(--c-violet)",
+      href: "/account/agent",
     },
     {
       label: L("退出登录", "Sign out"),

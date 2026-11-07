@@ -1,0 +1,384 @@
+#!/usr/bin/env node
+// Naumi CLI: lets external agents call Naumi creative tools through the agent gateway.
+// Zero dependencies, Node.js >= 18. Every command prints JSON on stdout; progress goes to stderr.
+//
+//   node naumi.mjs login --site https://your-naumi-site --token nmk_...
+//   node naumi.mjs tools                      list callable tools
+//   node naumi.mjs call get_balance           run a tool (key=value / --args JSON / key=@local-file)
+//   node naumi.mjs mcp                        serve the same tools over MCP (stdio)
+//
+// Exit codes: 0 ok, 1 tool failed, 2 usage error, 3 authentication/permission, 4 budget or credits,
+// 5 result unknown or network failure (query `status <operationId>` before retrying a billed call).
+
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, writeFile, chmod, stat } from "node:fs/promises";
+import { homedir } from "node:os";
+import { basename, dirname, extname, join, resolve } from "node:path";
+import { createInterface } from "node:readline";
+
+const VERSION = "1.0.0";
+const API = "/api/agent-gateway/v1";
+const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
+const IMAGE_TYPES = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp" };
+const EXIT = { ok: 0, failed: 1, usage: 2, auth: 3, budget: 4, unknown: 5 };
+
+class CliError extends Error {
+  constructor(message, exit = EXIT.failed, detail) { super(message); this.exit = exit; this.detail = detail; }
+}
+
+// ── configuration ──────────────────────────────────────────────────────────
+const configPath = () => process.env.NAUMI_CONFIG || join(homedir(), ".naumi", "config.json");
+async function readConfig() {
+  try { return JSON.parse(await readFile(configPath(), "utf8")); } catch { return { profiles: {} }; }
+}
+async function writeConfig(config) {
+  const path = configPath();
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  await writeFile(path, JSON.stringify(config, null, 2) + "\n", { mode: 0o600 });
+  await chmod(path, 0o600).catch(() => undefined);
+}
+function normalizeSite(raw) {
+  let url;
+  try { url = new URL(String(raw || "").trim()); } catch { throw new CliError("站点地址无效，例如 --site https://naumi.example.com", EXIT.usage); }
+  if (url.protocol !== "https:" && !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) throw new CliError("站点必须使用 https（本机调试除外）", EXIT.usage);
+  return url.origin;
+}
+async function connection(options) {
+  const config = await readConfig();
+  const profile = config.profiles?.[options.profile || "default"] || {};
+  const site = options.site || process.env.NAUMI_SITE || profile.site;
+  const token = options.token || process.env.NAUMI_TOKEN || profile.token;
+  if (!site || !token) throw new CliError("尚未登录：先运行 naumi login --site <站点> --token <令牌>，或设置 NAUMI_SITE / NAUMI_TOKEN", EXIT.auth);
+  return { site: normalizeSite(site), token };
+}
+
+// ── HTTP ───────────────────────────────────────────────────────────────────
+function failureExit(status, code) {
+  if (status === 401 || status === 403) return EXIT.auth;
+  if (status === 402 || code === "BUDGET_EXCEEDED" || code === "INSUFFICIENT_CREDITS") return EXIT.budget;
+  if (status === 400 || status === 404 || status === 409 || status === 413) return EXIT.usage;
+  return EXIT.unknown;
+}
+async function request(conn, path, init = {}) {
+  let res;
+  try {
+    res = await fetch(conn.site + path, { ...init, headers: { authorization: `Bearer ${conn.token}`, "user-agent": `naumi-cli/${VERSION}`, ...(init.headers || {}) }, redirect: "error" });
+  } catch (error) {
+    throw new CliError(`无法连接 ${conn.site}：${error?.cause?.code || error?.message || "网络错误"}`, EXIT.unknown);
+  }
+  if (!res.ok) {
+    let body = {};
+    try { body = await res.json(); } catch { /* non-JSON error */ }
+    const error = body?.error && typeof body.error === "object" ? body.error : { code: `HTTP_${res.status}`, message: typeof body?.error === "string" ? body.error : `请求失败（HTTP ${res.status}）` };
+    throw new CliError(error.message || `请求失败（HTTP ${res.status}）`, failureExit(res.status, error.code), error);
+  }
+  return res;
+}
+const getJson = async (conn, path) => (await request(conn, path)).json();
+const postJson = async (conn, path, body) => (await request(conn, path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })).json();
+
+/** Reads the NDJSON call stream; returns the final call view. */
+async function streamCall(conn, body, onEvent) {
+  const res = await request(conn, `${API}/calls`, { method: "POST", headers: { "content-type": "application/json", accept: "application/x-ndjson" }, body: JSON.stringify(body) });
+  const decoder = new TextDecoder();
+  let buffered = "", final = null, streamError = null;
+  const handle = line => {
+    if (!line.trim()) return;
+    const event = JSON.parse(line);
+    if (event.type === "result") final = event.call;
+    if (event.type === "error") streamError = event.error;
+    onEvent?.(event);
+  };
+  try {
+    for await (const chunk of res.body) {
+      buffered += decoder.decode(chunk, { stream: true });
+      let index;
+      while ((index = buffered.indexOf("\n")) >= 0) { handle(buffered.slice(0, index)); buffered = buffered.slice(index + 1); }
+    }
+    handle(buffered + decoder.decode());
+  } catch (error) {
+    if (!final) throw new CliError(`连接中断，任务结果未知。不要重复提交，请查询：naumi status ${body.operationId}`, EXIT.unknown, { code: "RESULT_UNKNOWN", operationId: body.operationId, cause: error?.message });
+  }
+  if (!final) throw new CliError(`${streamError?.message ? `${streamError.message}；` : ""}未收到最终结果，任务状态未知。请查询：naumi status ${body.operationId}`, EXIT.unknown, { code: "RESULT_UNKNOWN", operationId: body.operationId, ...(streamError ? { cause: streamError } : {}) });
+  return final;
+}
+
+// ── tool arguments ─────────────────────────────────────────────────────────
+let toolCache;
+async function tools(conn) { return toolCache ||= (await getJson(conn, `${API}/tools`)).tools; }
+function schemaType(schema) {
+  if (!schema || typeof schema !== "object") return "string";
+  if (schema.type) return Array.isArray(schema.type) ? schema.type[0] : schema.type;
+  const variant = (schema.anyOf || schema.oneOf || [])[0];
+  if (variant?.const !== undefined) return typeof variant.const;
+  return schemaType(variant);
+}
+function coerce(value, type) {
+  if (type === "number" || type === "integer") { const n = Number(value); if (!Number.isFinite(n)) throw new CliError(`参数应为数字：${value}`, EXIT.usage); return n; }
+  if (type === "boolean") { if (!["true", "false"].includes(value)) throw new CliError(`参数应为 true/false：${value}`, EXIT.usage); return value === "true"; }
+  if (type === "object" || type === "array") { try { return JSON.parse(value); } catch { return value; } }
+  return value;
+}
+function isImagePath(value) { return typeof value === "string" && value.startsWith("@") && value.length > 1; }
+async function uploadFile(conn, path) {
+  const full = resolve(path);
+  const type = IMAGE_TYPES[extname(full).toLowerCase()];
+  if (!type) throw new CliError(`仅支持 png/jpg/webp 图片：${path}`, EXIT.usage);
+  const info = await stat(full).catch(() => null);
+  if (!info?.isFile()) throw new CliError(`文件不存在：${path}`, EXIT.usage);
+  if (info.size > MAX_UPLOAD_BYTES) throw new CliError(`图片超过 12MB：${path}`, EXIT.usage);
+  const form = new FormData();
+  form.append("file", new Blob([await readFile(full)], { type }), basename(full));
+  return (await request(conn, `${API}/uploads`, { method: "POST", body: form })).json();
+}
+/** key=value pairs, --args JSON, --args-file; `@./file.png` values upload a local image first. */
+async function buildArguments(conn, toolName, options, pairs) {
+  let args = {};
+  if (options.args) { try { args = JSON.parse(options.args); } catch { throw new CliError("--args 必须是 JSON 对象", EXIT.usage); } }
+  if (options["args-file"]) {
+    const raw = options["args-file"] === "-" ? await readStdin() : await readFile(options["args-file"], "utf8");
+    try { args = { ...args, ...JSON.parse(raw) }; } catch { throw new CliError("--args-file 内容必须是 JSON 对象", EXIT.usage); }
+  }
+  if (!args || typeof args !== "object" || Array.isArray(args)) throw new CliError("工具参数必须是 JSON 对象", EXIT.usage);
+  if (pairs.length) {
+    const tool = (await tools(conn)).find(t => t.name === toolName);
+    if (!tool) throw new CliError(`没有这个工具：${toolName}（naumi tools 查看）`, EXIT.usage);
+    const properties = tool.parameters?.properties || {};
+    for (const pair of pairs) {
+      const index = pair.indexOf("=");
+      if (index <= 0) throw new CliError(`参数格式应为 key=value：${pair}`, EXIT.usage);
+      const key = pair.slice(0, index), raw = pair.slice(index + 1), schema = properties[key];
+      if (!schema) throw new CliError(`工具 ${toolName} 没有参数 ${key}；可用参数：${Object.keys(properties).join(", ") || "无"}`, EXIT.usage);
+      const type = schemaType(schema);
+      if (type === "array") {
+        const itemType = schemaType(schema.items);
+        const values = raw.startsWith("[") ? coerce(raw, "array") : [coerce(raw, itemType)];
+        args[key] = [...(Array.isArray(args[key]) ? args[key] : []), ...(Array.isArray(values) ? values : [values])];
+      } else args[key] = coerce(raw, type);
+    }
+  }
+  return resolveUploads(conn, args);
+}
+async function resolveUploads(conn, value) {
+  if (isImagePath(value)) { const uploaded = await uploadFile(conn, value.slice(1)); log(`已上传 ${value.slice(1)}`); return uploaded.url; }
+  if (Array.isArray(value)) return Promise.all(value.map(item => resolveUploads(conn, item)));
+  if (value && typeof value === "object") return Object.fromEntries(await Promise.all(Object.entries(value).map(async ([k, v]) => [k, await resolveUploads(conn, v)])));
+  return value;
+}
+
+// ── media ──────────────────────────────────────────────────────────────────
+async function download(conn, url, out) {
+  const res = await request(conn, `${API}/media?url=${encodeURIComponent(url)}`);
+  const bytes = Buffer.from(await res.arrayBuffer());
+  let target = resolve(out || basename(new URL(url, conn.site).pathname) || "naumi-media");
+  if (out && (out.endsWith("/") || out.endsWith("\\") || (await stat(target).catch(() => null))?.isDirectory())) target = join(target, basename(new URL(url, conn.site).pathname) || "naumi-media");
+  await mkdir(dirname(target), { recursive: true });
+  await writeFile(target, bytes);
+  return { url, path: target, bytes: bytes.length, contentType: res.headers.get("content-type") || "" };
+}
+
+// ── commands ───────────────────────────────────────────────────────────────
+function log(message) { process.stderr.write(`[naumi] ${message}\n`); }
+function print(value) { process.stdout.write(JSON.stringify(value, null, 2) + "\n"); }
+async function readStdin() { const chunks = []; for await (const chunk of process.stdin) chunks.push(chunk); return Buffer.concat(chunks).toString("utf8"); }
+
+function exitForCall(call) {
+  if (call.state === "succeeded") return EXIT.ok;
+  if (call.state === "running" || call.state === "unknown") return EXIT.unknown;
+  if (["BUDGET_EXCEEDED", "INSUFFICIENT_CREDITS"].includes(call.error?.code)) return EXIT.budget;
+  if (["SCOPE_DENIED", "FEATURE_DENIED"].includes(call.error?.code)) return EXIT.auth;
+  return EXIT.failed;
+}
+
+async function runCall(conn, toolName, options, pairs) {
+  if (!toolName) throw new CliError("用法：naumi call <工具名> [key=value ...] [--args JSON]", EXIT.usage);
+  const args = await buildArguments(conn, toolName, options, pairs);
+  const operationId = options["operation-id"] || randomUUID();
+  log(`提交 ${toolName}（operationId ${operationId}）`);
+  const call = await streamCall(conn, { tool: toolName, arguments: args, operationId, ...(options.request ? { request: options.request } : {}) }, event => {
+    if (event.type === "accepted") log(event.replayed ? "同一 operationId 已提交过，返回原任务" : `已受理${event.credits ? `，报价 ${event.credits} 积分` : ""}`);
+    else if (event.type === "progress" && event.summary) log(event.summary);
+  });
+  if (options.out && call.output?.media?.length) call.downloads = await Promise.all(call.output.media.map(url => download(conn, url, options.out.endsWith("/") || options.out.endsWith("\\") ? options.out : options.out + "/")));
+  print(call);
+  return exitForCall(call);
+}
+
+const HELP = `Naumi CLI ${VERSION}: call Naumi creative tools from any agent.
+
+  naumi login --site <https://站点> --token <nmk_令牌>   保存连接（~/.naumi/config.json，权限 600）
+  naumi logout                                     删除保存的连接
+  naumi whoami                                     账号、余额、令牌权限与今日预算
+  naumi tools [工具名]                              列出工具；带工具名时输出完整参数 schema
+  naumi quote <工具> [key=value ...]               只报价，不执行
+  naumi call <工具> [key=value ...]                执行工具；收费任务在令牌每日预算内自动确认
+      --args '<JSON>'  --args-file <file|->        以 JSON 传参
+      key=@./图片.png                               先上传本地图片，再把地址填入参数
+      --operation-id <uuid>                         自定幂等编号；同编号重复提交不会重复执行
+      --out <目录>                                  完成后下载结果媒体到目录
+      --request '<用户原始需求>'                     供视觉检查等工具参考
+  naumi status <operationId>                       查询任务状态与结果
+  naumi upload <图片...>                            上传参考图，返回可传给工具的地址
+  naumi download <地址> [--out 路径]                下载结果媒体
+  naumi mcp                                        以 MCP（stdio）方式提供同一套工具
+
+通用选项：--profile <名称>  --site <站点>  --token <令牌>；环境变量 NAUMI_SITE / NAUMI_TOKEN / NAUMI_CONFIG
+退出码：0 成功，1 工具失败，2 参数错误，3 鉴权/权限，4 预算或余额不足，5 结果未知/网络中断`;
+
+async function main(argv) {
+  const options = {}, positional = [];
+  const flags = new Set(["json", "help", "version"]);
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--") { positional.push(...argv.slice(i + 1)); break; }
+    if (arg.startsWith("--")) {
+      const [key, inline] = arg.slice(2).split(/=(.*)/s, 2);
+      if (flags.has(key)) options[key] = true;
+      else if (inline !== undefined) options[key] = inline;
+      else { if (i + 1 >= argv.length) throw new CliError(`--${key} 缺少值`, EXIT.usage); options[key] = argv[++i]; }
+    } else positional.push(arg);
+  }
+  const [command, ...rest] = positional;
+  if (options.version) { print({ version: VERSION }); return EXIT.ok; }
+  if (!command || options.help || command === "help") { process.stdout.write(HELP + "\n"); return EXIT.ok; }
+  switch (command) {
+    case "login": {
+      const site = normalizeSite(options.site || process.env.NAUMI_SITE);
+      const token = options.token === "-" ? (await readStdin()).trim() : options.token || process.env.NAUMI_TOKEN;
+      if (!token) throw new CliError("缺少 --token（可用 --token - 从标准输入读取）", EXIT.usage);
+      const me = await getJson({ site, token }, `${API}/me`);
+      const config = await readConfig();
+      config.profiles = { ...(config.profiles || {}), [options.profile || "default"]: { site, token } };
+      await writeConfig(config);
+      print({ ok: true, site, profile: options.profile || "default", account: me.account, token: me.token });
+      return EXIT.ok;
+    }
+    case "logout": {
+      const config = await readConfig();
+      delete config.profiles?.[options.profile || "default"];
+      await writeConfig(config);
+      print({ ok: true });
+      return EXIT.ok;
+    }
+    case "whoami": print(await getJson(await connection(options), `${API}/me`)); return EXIT.ok;
+    case "tools": {
+      const list = await tools(await connection(options));
+      if (rest[0]) {
+        const tool = list.find(t => t.name === rest[0]);
+        if (!tool) throw new CliError(`没有这个工具：${rest[0]}`, EXIT.usage);
+        print(tool);
+      } else print(options.json ? list : list.map(({ name, description, write, billed }) => ({ name, write, billed, description })));
+      return EXIT.ok;
+    }
+    case "quote": {
+      const conn = await connection(options);
+      if (!rest[0]) throw new CliError("用法：naumi quote <工具名> [key=value ...]", EXIT.usage);
+      print(await postJson(conn, `${API}/quote`, { tool: rest[0], arguments: await buildArguments(conn, rest[0], options, rest.slice(1)) }));
+      return EXIT.ok;
+    }
+    case "call": return runCall(await connection(options), rest[0], options, rest.slice(1));
+    case "status": {
+      if (!rest[0]) throw new CliError("用法：naumi status <operationId>", EXIT.usage);
+      const call = await getJson(await connection(options), `${API}/calls/${encodeURIComponent(rest[0])}`);
+      print(call);
+      return exitForCall(call);
+    }
+    case "upload": {
+      const conn = await connection(options);
+      if (!rest.length) throw new CliError("用法：naumi upload <图片路径...>", EXIT.usage);
+      const uploaded = [];
+      for (const path of rest) uploaded.push({ file: path, ...(await uploadFile(conn, path)) });
+      print(uploaded);
+      return EXIT.ok;
+    }
+    case "download": {
+      if (!rest[0]) throw new CliError("用法：naumi download <地址> [--out 路径]", EXIT.usage);
+      print(await download(await connection(options), rest[0], options.out));
+      return EXIT.ok;
+    }
+    case "mcp": await serveMcp(await connection(options)); return EXIT.ok;
+    default: throw new CliError(`未知命令：${command}（naumi help 查看用法）`, EXIT.usage);
+  }
+}
+
+// ── MCP server (stdio, newline-delimited JSON-RPC 2.0) ─────────────────────
+const MCP_HELPERS = [
+  { name: "naumi_upload_image", description: "上传本机图片（png/jpg/webp，≤12MB），返回可传给 Naumi 工具图片参数的地址。", inputSchema: { type: "object", properties: { path: { type: "string", description: "本机图片的绝对路径" } }, required: ["path"], additionalProperties: false }, annotations: { readOnlyHint: false, openWorldHint: false } },
+  { name: "naumi_download_media", description: "把 Naumi 结果媒体地址下载到本机文件或目录。", inputSchema: { type: "object", properties: { url: { type: "string" }, out: { type: "string", description: "保存路径或目录（绝对路径）" } }, required: ["url", "out"], additionalProperties: false }, annotations: { readOnlyHint: false, openWorldHint: false } },
+  { name: "naumi_call_status", description: "按 operationId 查询 Naumi 任务状态与结果。结果未知时先查询，不要重复提交收费任务。", inputSchema: { type: "object", properties: { operationId: { type: "string" } }, required: ["operationId"], additionalProperties: false }, annotations: { readOnlyHint: true, openWorldHint: false } },
+];
+const MCP_INSTRUCTIONS = "Naumi 电商图片创作工具。图片参数只接受 Naumi 地址：本机图片先用 naumi_upload_image 上传。收费工具按系统报价扣积分，在令牌每日预算内自动确认，超出会被拒绝。结果未知时用 naumi_call_status 查询，不要重复提交。";
+
+function callText(call) {
+  const lines = [`operationId: ${call.operationId}`, `状态: ${call.state}`, `积分报价: ${call.credits ?? 0}`];
+  if (call.output?.text) lines.push("", call.output.text);
+  if (call.output?.media?.length) lines.push("", "结果媒体:", ...call.output.media);
+  if (call.error) lines.push("", `错误(${call.error.code}): ${call.error.message}`);
+  if (call.state === "unknown" || call.state === "running") lines.push("", "任务结果未知或仍在执行：请用 naumi_call_status 查询，不要重复提交。");
+  return lines.join("\n");
+}
+
+async function serveMcp(conn) {
+  const send = message => process.stdout.write(JSON.stringify(message) + "\n");
+  const reply = (id, result) => send({ jsonrpc: "2.0", id, result });
+  const fail = (id, code, message) => send({ jsonrpc: "2.0", id, error: { code, message } });
+  const toolResult = (text, isError = false, structured) => ({ content: [{ type: "text", text }], ...(structured ? { structuredContent: structured } : {}), isError });
+
+  async function listTools() {
+    const list = await tools(conn);
+    return [...list.map(tool => ({
+      name: tool.name,
+      description: `${tool.description}${tool.billed ? "（收费：按系统报价扣积分，令牌每日预算内自动确认）" : ""}`,
+      inputSchema: tool.parameters && tool.parameters.type === "object" ? tool.parameters : { type: "object", properties: {} },
+      annotations: { readOnlyHint: !tool.write, destructiveHint: false, idempotentHint: !tool.write, openWorldHint: true },
+    })), ...MCP_HELPERS];
+  }
+
+  async function callTool(name, args, progressToken) {
+    if (name === "naumi_upload_image") { const uploaded = await uploadFile(conn, String(args.path || "")); return toolResult(`已上传：${uploaded.url}`, false, uploaded); }
+    if (name === "naumi_download_media") { const saved = await download(conn, String(args.url || ""), String(args.out || "")); return toolResult(`已保存：${saved.path}（${saved.bytes} 字节）`, false, saved); }
+    if (name === "naumi_call_status") { const call = await getJson(conn, `${API}/calls/${encodeURIComponent(String(args.operationId || ""))}`); return toolResult(callText(call), call.state !== "succeeded", call); }
+    let progress = 0;
+    const call = await streamCall(conn, { tool: name, arguments: args || {}, operationId: randomUUID() }, event => {
+      if (progressToken === undefined) return;
+      if (event.type === "progress" || event.type === "accepted") send({ jsonrpc: "2.0", method: "notifications/progress", params: { progressToken, progress: ++progress, message: event.summary || (event.credits ? `已受理，报价 ${event.credits} 积分` : "已受理") } });
+    });
+    return toolResult(callText(call), call.state !== "succeeded", call);
+  }
+
+  const handlers = {
+    initialize: params => ({ protocolVersion: typeof params?.protocolVersion === "string" ? params.protocolVersion : "2025-06-18", capabilities: { tools: { listChanged: false } }, serverInfo: { name: "naumi", version: VERSION }, instructions: MCP_INSTRUCTIONS }),
+    ping: () => ({}),
+    "tools/list": async () => ({ tools: await listTools() }),
+    "tools/call": async params => {
+      try { return await callTool(String(params?.name || ""), params?.arguments || {}, params?._meta?.progressToken); }
+      catch (error) { return toolResult(error instanceof CliError ? `${error.message}${error.detail?.code ? `（${error.detail.code}）` : ""}` : `调用失败：${error?.message || error}`, true, error?.detail); }
+    },
+  };
+
+  const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
+  const pending = new Set();
+  for await (const line of lines) {
+    if (!line.trim()) continue;
+    let message;
+    try { message = JSON.parse(line); } catch { fail(null, -32700, "Parse error"); continue; }
+    const { id, method, params } = message || {};
+    if (typeof method !== "string") continue; // responses from the client are ignored
+    const handler = handlers[method];
+    if (id === undefined || id === null) continue; // notifications (initialized, cancelled, ...)
+    if (!handler) { fail(id, -32601, `Method not found: ${method}`); continue; }
+    const task = Promise.resolve().then(() => handler(params)).then(result => reply(id, result), error => fail(id, -32603, error?.message || "Internal error"));
+    pending.add(task); task.finally(() => pending.delete(task));
+  }
+  await Promise.allSettled([...pending]);
+}
+
+main(process.argv.slice(2)).then(code => { process.exitCode = code; }, error => {
+  if (error instanceof CliError) {
+    process.stdout.write(JSON.stringify({ error: { message: error.message, ...(error.detail || {}) } }, null, 2) + "\n");
+    process.exitCode = error.exit;
+  } else {
+    process.stderr.write(`[naumi] ${error?.stack || error}\n`);
+    process.exitCode = EXIT.unknown;
+  }
+});
