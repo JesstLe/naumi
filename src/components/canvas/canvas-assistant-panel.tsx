@@ -291,7 +291,7 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
           </div>
           {!!turn.artifacts?.length && <div className="mt-3 grid grid-cols-2 gap-2" data-testid="canvas-assistant-results">{turn.artifacts.map(art => <button type="button" key={art.id} onClick={() => onPreview(art)} className="overflow-hidden rounded-xl border border-[var(--canvas-ui-border)] text-left">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <CachedImage src={cdnThumb(art.image,512)} alt={art.title} className="aspect-square w-full object-contain" /><span className="block truncate px-2 py-1 text-[11px]">{art.title}</span>
+            <CachedImage src={cdnThumb(art.image,1600)} alt={art.title} className="aspect-square w-full object-contain" /><span className="block truncate px-2 py-1 text-[11px]">{art.title}</span>
           </button>)}</div>}
           {turn.content.trim() && !busy && <div className="mt-1 flex items-center gap-1"><button type="button" aria-label={copied === turn.id ? labels.copied : labels.copy} title={copied === turn.id ? labels.copied : labels.copy}
             className={cn(iconButton, "mt-1")} onClick={() => { void onCopy(turn.timeline?.filter(item => item.type === "text").map(item => item.text).join("\n\n") || turn.content).then(ok => { if (ok) setCopied(turn.id); }); }}>
