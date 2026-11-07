@@ -64,7 +64,7 @@ export function CanvasArtworkPicker({items,addingId,error,hasMore,light,locale,t
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <CachedImage
-                          src={cdnThumb(w.image,512)}
+                          src={cdnThumb(w.image,1600)}
                           alt={w.title}
                           loading="lazy"
                           className="block w-full"

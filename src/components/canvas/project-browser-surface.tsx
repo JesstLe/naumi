@@ -14,6 +14,6 @@ export function ProjectBrowserSurface({ visible, children }: { visible: boolean;
 }
 
 export function ProjectCover({ source, title }: { source: string; title: string }) {
-  return <CachedImage src={cdnThumb(source, 512)} alt={title} loading="lazy" decoding="async"
+  return <CachedImage src={cdnThumb(source, 1600)} alt={title} loading="lazy" decoding="async"
     className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.025]" />;
 }
