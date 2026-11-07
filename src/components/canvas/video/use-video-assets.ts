@@ -6,9 +6,10 @@ import type {VideoAssetView} from "@/lib/video/assets";
 import type {VideoInputChoice} from "@/lib/video/client-settings";
 import type {VideoPrivateFetch} from "./use-video-nodes";
 import {setLocalItem} from "@/lib/browser-storage/local";
+import {cdnThumb} from "@/lib/cdn";
 type Cursor={createdAt:string;id:string};
 export class VideoAssetImportError extends Error{constructor(message:string,public choices:VideoInputChoice[]){super(message);}}
-export function videoAssetChoice(asset:VideoAssetView):VideoInputChoice{return {id:asset.artworkId,nodeId:asset.artworkId,kind:asset.kind,title:asset.title,value:asset.url,thumbnail:asset.kind==="image"?asset.url:undefined,available:true};}
+export function videoAssetChoice(asset:VideoAssetView):VideoInputChoice{return {id:asset.artworkId,nodeId:asset.artworkId,kind:asset.kind,title:asset.title,value:asset.url,thumbnail:asset.kind==="image"?cdnThumb(asset.url,128):undefined,available:true};}
 export function useVideoAssets({email,request,readOnly=false}:{email?:string;request:VideoPrivateFetch;readOnly?:boolean}){
   const [assets,setAssets]=useState<VideoAssetView[]>([]),[error,setError]=useState(""),[nextCursor,setNextCursor]=useState<Cursor|null>(null),assetsRef=useRef(assets),identity=useRef({email,readOnly,revision:0});
   if(identity.current.email!==email||identity.current.readOnly!==readOnly)identity.current={email,readOnly,revision:identity.current.revision+1};const revision=identity.current.revision;

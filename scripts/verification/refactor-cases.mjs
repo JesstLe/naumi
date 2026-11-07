@@ -67,6 +67,7 @@ export const refactorCases=[
  node('polling-load','canvas','scripts/verify-polling-load.mjs','POLLING_LOAD=PASS'),
  node('refresh-throttle','foundation','scripts/verify-refresh-throttle.mjs','REFRESH_THROTTLE=PASS'),
  ts('hot-path-indexes','foundation','scripts/verify-hot-path-indexes.ts','HOT_PATH_INDEXES_VERIFY=PASS'),
+ {id:'enterprise-workspace-cache',group:'foundation',file:'scripts/verify-enterprise-workspace-cache.ts',args:[],expect:'ENTERPRISE_WORKSPACE_CACHE=PASS',pg:false,tsx:true},
  ts('account-user-view','foundation','scripts/verify-account-user-view.ts','ACCOUNT_USER_VIEW=PASS'),
  node('canvas-text-editing','canvas','scripts/verify-canvas-text-editing.cjs','CANVAS_TEXT_EDITING=PASS'),
  {...ts('canvas-text-content','canvas','scripts/verify-canvas-text-content.ts','CANVAS_TEXT_CONTENT=PASS'),pg:false},

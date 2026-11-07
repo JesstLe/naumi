@@ -115,21 +115,24 @@ export function AppRail() {
   const TopLink = ({ href, label }: Item) => {
     if (!canPage(href)) return null;
     const active = isActive(href);
-    return (
-      // /enterprise prefetch measured 731KB per canvas load on 47 (1196/day, few real visits); load it on click.
-      <Link href={href} prefetch={href === "/enterprise" ? false : undefined} className="group/nav flex h-[60px] items-center px-1.5">
-        <span
-          className={cn(
-            "rounded-[10px] px-3 py-1.5 text-[14px] transition-colors",
-            active
-              ? "bg-c-subtle font-semibold text-c-text"
-              : "font-medium text-c-text2 group-hover/nav:bg-c-subtle group-hover/nav:text-c-text"
-          )}
-        >
-          {L(label.zh, label.en)}
-        </span>
-      </Link>
+    const text = (
+      <span
+        className={cn(
+          "rounded-[10px] px-3 py-1.5 text-[14px] transition-colors",
+          active
+            ? "bg-c-subtle font-semibold text-c-text"
+            : "font-medium text-c-text2 group-hover/nav:bg-c-subtle group-hover/nav:text-c-text"
+        )}
+      >
+        {L(label.zh, label.en)}
+      </span>
     );
+    // On company sites /enterprise is a standalone HTML workspace, not an App Router
+    // page: a router Link fetched the whole page (~750KB) as "_rsc" before loading it
+    // again (and prefetched it on every canvas load). A plain link loads it once.
+    return href === "/enterprise"
+      ? <a href={href} className="group/nav flex h-[60px] items-center px-1.5">{text}</a>
+      : <Link href={href} className="group/nav flex h-[60px] items-center px-1.5">{text}</Link>;
   };
 
   // ── 移动底栏 Tab ──

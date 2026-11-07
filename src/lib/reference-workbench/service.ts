@@ -29,6 +29,7 @@ import {getOpenAISettings} from "../settings";
 import { dataUrlToBytes } from "../object-storage/runtime";
 import {DEFAULT_PROMPT,DEFAULT_INSTRUCTION,MODES,LABELS,settings,relativePath,classify,imageUrl,ratio,geometryMatches,stableId,requestId,digest,WorkbenchError,type Asset,type Project,type Settings} from "./contract";
 import {chatPlanInstruction,parseChatPlan,textFailureState,type TextFailureStage} from "./chat-plan";
+import {storedOperationBody,withoutInlineImages} from "./operation-storage";
 export {parseChatPlan} from "./chat-plan";
 import {document,putDocument,documents,transaction,operation,operations,type Operation} from "./repository";
 import {ensureWorkbench} from "@/lib/reference-workbench/schema";
@@ -95,7 +96,7 @@ export async function preview(owner:string,path:string,raw:Record<string,any>){
  const previous=(await getPool().query<Operation>("SELECT * FROM app_reference_operations WHERE owner=$1 AND kind=$2 AND request_id=$3",[owner,path,rid])).rows[0];
  // An operation owns its original quote. expires_at is maintenance metadata, not consent to reprice.
  if(previous){if(previous.fingerprint!==fingerprint)throw new WorkbenchError("请求编号已经用于其他内容",409);return quoteData(owner,previous);}
- const id=randomUUID(),tasks:TaskPlan[]=[],cfg=settings(body.config||body.settings||body,path.startsWith("chat")?8:20);
+ const id=randomUUID(),tasks:TaskPlan[]=[],cfg=settings(withoutInlineImages(body.config||body.settings||body),path.startsWith("chat")?8:20);
  if(path.startsWith("workbench/")){
   const {items,products}=await projectItems(owner,body.workbench_root,cfg),selected=path==="workbench/edit"?[body]:body.items;
   if(!Array.isArray(selected)||!selected.length||selected.length>500)throw new WorkbenchError("请先选择参考图");
@@ -124,7 +125,7 @@ export async function preview(owner:string,path:string,raw:Record<string,any>){
  }else throw new WorkbenchError("未知操作",404);
  let versions:{modelVersion:number;billingVersion:number}|undefined;
  for(const t of tasks){if(t.kind==="infer"||t.kind==="chat-plan"){t.quote=await quoteForRequest(await textRequest(owner,t,id),{feature:"canvas.text-generate",quantity:1});if(t.kind==="chat-plan"&&t.settings.task_mode==="auto"){const image=await imagePlan(owner,{...t,kind:"generate",geometry:undefined},id);t.autoAuthorization={modelVersion:image.modelVersion,billingVersion:image.billingVersion};}}else{t.plan=await imagePlan(owner,t,id,versions);versions={modelVersion:t.plan.modelVersion,billingVersion:t.plan.billingVersion};}}
- await getPool().query(`INSERT INTO app_reference_operations(id,owner,kind,request_id,fingerprint,body,plans) VALUES($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb) ON CONFLICT(owner,kind,request_id) DO NOTHING`,[id,owner,path,rid,fingerprint,JSON.stringify({...body,request_id:rid}),JSON.stringify(tasks)]);
+ await getPool().query(`INSERT INTO app_reference_operations(id,owner,kind,request_id,fingerprint,body,plans) VALUES($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb) ON CONFLICT(owner,kind,request_id) DO NOTHING`,[id,owner,path,rid,fingerprint,JSON.stringify(storedOperationBody({...body,request_id:rid})),JSON.stringify(tasks)]);
  const saved=(await getPool().query<Operation>("SELECT * FROM app_reference_operations WHERE owner=$1 AND kind=$2 AND request_id=$3",[owner,path,rid])).rows[0];if(saved.fingerprint!==fingerprint)throw new WorkbenchError("请求编号已经用于其他内容",409);return quoteData(owner,saved);
 }
 async function quoteData(owner:string,op:Operation){const row=(await getPool().query("SELECT GREATEST(0,(SELECT COALESCE(sum(remaining),0) FROM app_credit_batches WHERE email=$1 AND NOT expired AND expires_at>now())-credits_used)::int AS available FROM app_users WHERE email=$1",[owner])).rows[0];return {...publicQuote(op),availableCredits:row?.available||0};}
@@ -134,7 +135,8 @@ export async function accept(owner:string,path:string,body:Record<string,any>){
  const op=await operation(owner,String(q.id));const actual:Record<string,any>={...body,request_id:op.request_id};delete actual.native_quote;
  // Chat new-session/context are server-generated and not supplied by the browser.
  const original={...op.body};delete original.context;if(path==="chat-image/send"&&!actual.session_id)original.session_id=actual.session_id;
- if(op.kind!==path||digest({path,body:actual})!==digest({path,body:original}))throw new WorkbenchError("报价与提交内容不一致",409);
+ // Records keep a digest instead of inline images; full legacy bodies normalize the same way.
+ if(op.kind!==path||digest({path,body:storedOperationBody(actual)})!==digest({path,body:storedOperationBody(original)}))throw new WorkbenchError("报价与提交内容不一致",409);
  await transaction(`reference-owner:${owner}`,async tx=>{
   const current=await operation(owner,op.id,tx);if(current.state!=="preview")return;
   if(q.confirmed===false)throw new WorkbenchError("已取消提交",400);

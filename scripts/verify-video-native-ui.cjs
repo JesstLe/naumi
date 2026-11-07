@@ -45,7 +45,7 @@ const source = `
 async function main() {
  fs.mkdirSync(out,{recursive:true});
  const current=process.cwd();
- const bundle=await esbuild.build({stdin:{contents:source,loader:'tsx',sourcefile:'video-native-fixture.tsx',resolveDir:current},bundle:true,write:false,outfile:path.join(out,mode.toLowerCase()+'.js'),platform:'browser',format:'iife',jsx:'automatic',
+ const bundle=await esbuild.build({stdin:{contents:source,loader:'tsx',sourcefile:'video-native-fixture.tsx',resolveDir:current},bundle:true,write:false,outfile:path.join(out,mode.toLowerCase()+'.js'),platform:'browser',format:'iife',jsx:'automatic',define:{'process.env.NEXT_PUBLIC_IMAGE_BASE_URL':'""','process.env.NEXT_PUBLIC_MEDIA_VARIANTS':'"1"'},
   alias:{react:path.join(current,'node_modules/react'),'react-dom':path.join(current,'node_modules/react-dom')},nodePaths:[path.join(current,'node_modules')],
   tsconfigRaw:{compilerOptions:{baseUrl:root,paths:{'@/*':['./src/*']}}},plugins:[{name:'isolated-boundaries',setup(build){
    build.onResolve({filter:/^@\/components\/cached-image$/},()=>({path:'image',namespace:'fixture'}));
