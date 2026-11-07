@@ -58,6 +58,10 @@
 - 画布节点/视频/助手：node-renderers 32、character/scene/director integration 39/51/34、video-mode-ui 11、video-submission 121、assistant-session 55、image-version-integration 9、native-editors-dom 9、dock-layout、render-isolation 11 通过。`verify-video-native-ui`、`verify-assistant-live-feedback`、`verify-inline-node-references-e2e` 在未改动的 main 上同样失败（失败点一致），与本批无关。
 - `tsc --noEmit` 0 错误；`next build` 通过（91/91 页）。
 
+## 上线中发现并修复
+- 47 上 `app_reference_operations` 有被 `naumi_staging_history_freeze` 触发器冻结的导入历史行（`naumi_staging_guard.origin_rows`）。首次执行在第 81 行遇到冻结行报 `STAGING_IMPORTED_HISTORY_READ_ONLY`，已处理的 80 行逐行提交、其余未动。
+- `slimStoredOperations` 现跳过导入历史行（存在守护表时），输出 `skippedImported`；测试增加带同类触发器的冻结行，断言跳过且原样保留。
+
 ## 未完成与下一步
 - 上线、执行索引与工作台瘦身、nginx/PG 日志配置，次日按上表复测。
 - 本地压测：在隔离环境测单个 Web 的轮询读接口吞吐与延迟。
