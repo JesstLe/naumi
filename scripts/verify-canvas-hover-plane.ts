@@ -39,7 +39,7 @@ assert.equal(geometryReads,0);
 root.querySelector=()=>edge;
 const secondBinding=bindCanvasHoverPlane(root); assert.equal(stored.canvasEdgeHover,'true','stationary hovered edge survives guard remount');secondBinding.dispose();
 const css=readFileSync('src/app/globals.css','utf8');
-assert.match(css,/composite"\]:not\(\[data-canvas-edge-hover\]\) \.react-flow__nodes/);
+assert.match(css,/\.canvas-render-layers \.react-flow__nodes \{ will-change: auto; \}/);
 assert.match(css,/composite"\]:not\(\[data-canvas-edge-hover\]\) \.react-flow__edges/);
 assert.doesNotMatch(css,/canvas-render-layers[^\n]*:has/);
 assert.match(css,/react-flow__edge:hover path\.cw-base/,'per-edge original highlight stays');
