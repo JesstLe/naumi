@@ -50,7 +50,7 @@ async function main(){
  const c2=vm.createContext({forceOriginal:false,hasDimensions:true,localWidth:320,pixelRatio:1,canvasMediaVariant:media.canvasMediaVariant});
  vm.runInContext(compile('globalThis.select='+selector),c2);
  check(c2.select({transform:[0,0,1]})===(baseline?'thumbnail':'original'),'whole-board original request at 100%');
- check(c2.select({transform:[0,0,.25]})===(baseline?'thumbnail':'preview'),'zoomed out uses the 4x-oversampled preview, never the soft thumbnail');
+ check(c2.select({transform:[0,0,.25]})==='thumbnail','zoomed out remains bandwidth-bounded');
  console.log(`${baseline?'BASELINE':'MODIFIED'}=PASS PDF_SOURCE_CHECKS=${checks} EXPLICIT_REFS=${baseline?'MISSING':'PRESENT'} DEFERRED_MERGE=${baseline?'PARTIAL':'COMPLETE'} HTTP500=${baseline?'CLEARS_BOARD':'RETAINS_BOARD'} ORIGINAL_100=${baseline?'THUMBNAIL':'ORIGINAL'} SUPPLIER_CALLS=0`);
 }
 main().catch(error=>{console.error(error);process.exitCode=1});

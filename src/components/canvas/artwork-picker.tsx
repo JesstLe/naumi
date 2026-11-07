@@ -3,7 +3,7 @@ import {useEffect} from 'react';
 import {X,Loader2} from 'lucide-react';
 import type {Artwork} from '@/lib/mock-data';
 import {CachedImage} from '@/components/cached-image';
-import {cdnThumb} from '@/lib/cdn';
+import {cdnUrl} from '@/lib/cdn';
 import {cn} from '@/lib/utils';
 
 type Props={items:readonly Artwork[];addingId:string|null;error:string|null;hasMore:boolean;light:boolean;locale:string;
@@ -64,7 +64,7 @@ export function CanvasArtworkPicker({items,addingId,error,hasMore,light,locale,t
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <CachedImage
-                          src={cdnThumb(w.image,1600)}
+                          src={cdnUrl(w.image)}
                           alt={w.title}
                           loading="lazy"
                           className="block w-full"

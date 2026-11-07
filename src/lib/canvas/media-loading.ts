@@ -1,9 +1,9 @@
 export type CanvasMediaVariant = 'thumbnail'|'preview'|'original';
-export function canvasMediaVariant(_screenWidth:number, _pixelRatio=1):CanvasMediaVariant {
-  // Design nodes always use source bytes. A downsampled lossy preview is not
-  // a fidelity guarantee, even when its dimensions exceed the display size.
-  // Visibility, byte concurrency and the decoded cache still bound loading.
-  return 'original';
+export function canvasMediaVariant(screenWidth:number, pixelRatio=1):CanvasMediaVariant {
+  // High-DPI screens need their real pixel density; capping at 2 leaves a
+  // 3x/4x display on a preview after it has already outgrown that preview.
+  const pixels=screenWidth*(Number.isFinite(pixelRatio)?Math.max(1,pixelRatio):1);
+  return pixels<=512?'thumbnail':pixels<=1600?'preview':'original';
 }
 
 /** A ticket owns one slot until load/error, or cancels before the image starts. */

@@ -134,8 +134,7 @@ async function ready(width) { await page.waitForFunction(width => { const i = do
 async function current() { return page.locator('[data-testid=subject]').evaluate(i => ({ src: i.getAttribute('src'), width: i.naturalWidth, complete: i.complete })); }
 async function watch() { await page.evaluate(() => { window.probe.watch = true; window.probe.blanks = 0; window.probe.blankFrames = 0; }); }
 try {
-  if (baseline) {
-  await start(); await page.evaluate(() => window.fixture.canvas()); await ready(1600); // 320 device px: 4x-oversampled preview, never the 512 thumbnail
+  await start(); await page.evaluate(() => window.fixture.canvas()); await ready(512);
   assert.ok(!metrics.requests.some(s => s.includes('unseen')), 'offscreen node never fetched'); checks.push('UNSEEN_NODE_NO_BYTES');
   // Old and new use identical preloaded IDB data. Block metadata, not images.
   const before = await current(), requestBefore = metrics.requests.length;
@@ -154,22 +153,6 @@ try {
   if (baseline) { assert.equal(evidence.upgrade.retained, false); assert.ok(evidence.upgrade.blanks.frames > 0); }
   else { assert.equal(evidence.upgrade.retained, true); assert.deepEqual(evidence.upgrade.blanks, { mutations: 0, frames: 0 }); }
   checks.push('QUALITY_UPGRADE_' + (baseline ? 'BLANK_REPRODUCED' : 'DECODED_SWAP_NO_BLANK'));
-  } else {
-  await start(); await page.evaluate(() => window.fixture.canvas()); await ready(2048);
-  assert.ok(!metrics.requests.some(s => s.includes('unseen')), 'offscreen node never fetched');
-  checks.push('SOURCE_PIXELS_AT_LOW_ZOOM_UNSEEN_NODE_NO_BYTES');
-  const initialFrame = await current(), initialRequests = metrics.requests.length;
-  await watch();
-  for (const zoom of [.2348, .5, 1.1]) {
-    await page.evaluate(zoom => window.flow.setViewport({ x: 50, y: 50, zoom }), zoom);
-    await wait(80); await ready(2048);
-  }
-  assert.equal((await current()).src, initialFrame.src);
-  assert.equal(metrics.requests.length, initialRequests);
-  assert.deepEqual(await page.evaluate(() => ({mutations:window.probe.blanks,frames:window.probe.blankFrames})), {mutations:0,frames:0});
-  checks.push('ZOOM_SOURCE_FRAME_REUSED_WITHOUT_DOWNGRADE_OR_BLANK');
-  evidence.upgrade={blanks:await page.evaluate(()=>({mutations:window.probe.blanks,frames:window.probe.blankFrames})),sourceOnly:true};
-  }
   const sharpFrame = await current(), stableBytes = metrics.requests.length, stableManifests = metrics.manifests;
   await page.evaluate(() => { window.probe.watch = false; return window.flow.setViewport({ x: -5000, y: 50, zoom: .4 }); });
   await page.waitForFunction(() => document.querySelector('[data-testid=subject]')?.dataset.mediaVisible === 'false');
@@ -189,7 +172,7 @@ try {
   await page.waitForFunction(() => [...document.querySelectorAll('.cover:not(.far) img')].length === 3 && [...document.querySelectorAll('.cover:not(.far) img')].every(i => i.complete && i.naturalWidth > 0));
   const projectBytes = metrics.requests.slice(projectStart);
   evidence.projectInitial = { requests: projectBytes, originalRequests: projectBytes.filter(s => !s.includes('variant=')).length };
-  if (!baseline) { assert.equal(evidence.projectInitial.originalRequests, 0); assert.ok(projectBytes.every(s => s.includes('variant=preview'))); assert.ok(!projectBytes.some(s => s.includes('cover-3'))); }
+  if (!baseline) { assert.equal(evidence.projectInitial.originalRequests, 0); assert.ok(projectBytes.every(s => s.includes('variant=thumbnail'))); assert.ok(!projectBytes.some(s => s.includes('cover-3'))); }
   else assert.ok(evidence.projectInitial.originalRequests > 0);
   checks.push('PROJECT_' + (baseline ? 'ORIGINAL_FETCH_REPRODUCED' : 'LAZY_THUMBNAILS'));
   await page.evaluate(() => { window.savedCover = document.querySelector('.cover img'); window.savedSrc = window.savedCover.src; window.fixture.projects(false); });
@@ -204,7 +187,7 @@ try {
   else assert.deepEqual(evidence.projectReturn, { sameElement: true, sameSrc: true, decoded: true, metadataRequests: 0, imageRequests: 0 });
   checks.push('PROJECT_RETURN_' + (baseline ? 'IDB_HIT_BUT_BLANK' : 'DECODED_DOM_REUSED'));
   if (!baseline) {
-    await page.evaluate(() => window.fixture.projects(false)); await wait(30); state.deny.add('/media/cover-0.png?variant=preview');
+    await page.evaluate(() => window.fixture.projects(false)); await wait(30); state.deny.add('/media/cover-0.png?variant=thumbnail');
     await page.evaluate(() => window.dispatchEvent(new Event('focus')));
     await page.waitForFunction(() => !document.querySelector('.cover img').getAttribute('src'));
     assert.ok(await page.locator('.cover img').nth(1).getAttribute('src')); checks.push('HIDDEN_COVER_REVOKE_TARGETED');
