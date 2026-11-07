@@ -168,7 +168,17 @@ async function main(){
    assert.deepEqual(after.body,legacyOp.body);assert.equal(after.fingerprint,beforeSlim.fingerprint);assert.deepEqual(after.result,beforeSlim.result);assert.equal(after.state,beforeSlim.state);assert.equal(+after.updated_at,+beforeSlim.updated_at);
    assert.deepEqual(after.plans.map((t:any)=>t.inputs),beforeSlim.plans.map((t:any)=>t.inputs));
    assert.equal((await slimStoredOperations(connect,{apply:true})).changed,0);assert.equal((await json("single/status?id="+legacyStarted.id)).status,"done");
-   passed(`inline images kept as assets+digest; different image rejected; legacy full record submitted then slimmed idempotently bytes=${slim.bytesBefore}->${slim.bytesAfter}; fingerprint/result/updated_at unchanged`);
+   // A history record imported into a staging site is frozen by trigger: skipped and untouched, never a failed run.
+   assert.equal((await db.getPool().query("SELECT to_regnamespace('naumi_staging_guard') IS NOT NULL AS e")).rows[0].e,false);
+   const frozen={...single(),images:[imageA]},frozenQ=await quote("single/start",frozen),frozenOp=await repo.operation(owner,frozenQ.id);
+   const frozenBody:Record<string,any>={...frozenOp.body,images:[imageA]};delete frozenBody[INLINE_IMAGES_DIGEST];
+   await db.getPool().query("UPDATE app_reference_operations SET body=$2::jsonb WHERE id=$1",[frozenQ.id,JSON.stringify(frozenBody)]);
+   await db.getPool().query(`CREATE SCHEMA naumi_staging_guard;CREATE TABLE naumi_staging_guard.origin_rows(table_name text,row_key text);INSERT INTO naumi_staging_guard.origin_rows VALUES('app_reference_operations','${frozenQ.id}');
+    CREATE FUNCTION naumi_staging_guard.fixture_freeze() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN IF EXISTS(SELECT 1 FROM naumi_staging_guard.origin_rows WHERE table_name=TG_TABLE_NAME AND row_key=OLD.id::text) THEN RAISE EXCEPTION 'STAGING_IMPORTED_HISTORY_READ_ONLY' USING ERRCODE='55000'; END IF; RETURN NEW; END$$;
+    CREATE TRIGGER fixture_history_freeze BEFORE UPDATE ON app_reference_operations FOR EACH ROW EXECUTE FUNCTION naumi_staging_guard.fixture_freeze();`);
+   try{const guardedRun=await slimStoredOperations(connect,{apply:true});assert.equal(guardedRun.skippedImported,1);assert.equal(guardedRun.changed,0);assert.deepEqual((await repo.operation(owner,frozenQ.id)).body,frozenBody);}
+   finally{await db.getPool().query("DROP TRIGGER fixture_history_freeze ON app_reference_operations;DROP SCHEMA naumi_staging_guard CASCADE");}
+   passed(`inline images kept as assets+digest; different image rejected; legacy full record submitted then slimmed idempotently bytes=${slim.bytesBefore}->${slim.bytesAfter}; fingerprint/result/updated_at unchanged; frozen imported history skipped untouched`);
   }
 
   const race=single(),raceQuotes=await Promise.all([quote("single/start",race),quote("single/start",race)]);assert.equal(raceQuotes[0].id,raceQuotes[1].id);

@@ -19,7 +19,7 @@ async function main(){
     if(apply){const left=await slimStoredOperations(()=>pool.connect(),{apply:false});assert.equal(left.changed,0,"slimming must be complete and idempotent");}
     if(apply&&vacuum){await pool.query("SET lock_timeout='3s'");await pool.query("SET statement_timeout='120s'");const started=Date.now();await pool.query("VACUUM (FULL, ANALYZE) app_reference_operations");console.log(`VACUUM_FULL=DONE ms=${Date.now()-started}`);}
     const after=await size();
-    console.log(`REFERENCE_OPERATION_SLIM=${apply?"APPLIED":"PLANNED"} candidates=${result.candidates} changed=${result.changed} recordBytesBefore=${result.bytesBefore} recordBytesAfter=${result.bytesAfter} tableBytesBefore=${before.bytes} tableBytesAfter=${after.bytes} rows=${after.rows} supplierCalls=0 billingWrites=0`);
+    console.log(`REFERENCE_OPERATION_SLIM=${apply?"APPLIED":"PLANNED"} candidates=${result.candidates} skippedImported=${result.skippedImported} changed=${result.changed} recordBytesBefore=${result.bytesBefore} recordBytesAfter=${result.bytesAfter} tableBytesBefore=${before.bytes} tableBytesAfter=${after.bytes} rows=${after.rows} supplierCalls=0 billingWrites=0`);
   }finally{await pool.end();}
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});
