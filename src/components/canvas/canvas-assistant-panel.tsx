@@ -1,7 +1,6 @@
 "use client";
 import type { AssistantTimelineTurn } from "@/lib/canvas/assistant-timeline";
 import { CachedImage } from "@/components/cached-image";
-import { cdnThumb } from "@/lib/cdn";
 import { CanvasAgentToolCard } from "./canvas-agent-tool-card";
 
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
@@ -291,7 +290,7 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
           </div>
           {!!turn.artifacts?.length && <div className="mt-3 grid grid-cols-2 gap-2" data-testid="canvas-assistant-results">{turn.artifacts.map(art => <button type="button" key={art.id} onClick={() => onPreview(art)} className="overflow-hidden rounded-xl border border-[var(--canvas-ui-border)] text-left">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <CachedImage src={cdnThumb(art.image,1600)} alt={art.title} className="aspect-square w-full object-contain" /><span className="block truncate px-2 py-1 text-[11px]">{art.title}</span>
+            <CachedImage src={art.image} alt={art.title} className="aspect-square w-full object-contain" /><span className="block truncate px-2 py-1 text-[11px]">{art.title}</span>
           </button>)}</div>}
           {turn.content.trim() && !busy && <div className="mt-1 flex items-center gap-1"><button type="button" aria-label={copied === turn.id ? labels.copied : labels.copy} title={copied === turn.id ? labels.copied : labels.copy}
             className={cn(iconButton, "mt-1")} onClick={() => { void onCopy(turn.timeline?.filter(item => item.type === "text").map(item => item.text).join("\n\n") || turn.content).then(ok => { if (ok) setCopied(turn.id); }); }}>
@@ -331,7 +330,7 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
             className="canvas-ui-action flex min-w-0 max-w-[160px] items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[11px]" onClick={() => setReferencesOpen(open => !open)}>
             <span className="flex shrink-0 -space-x-2" aria-hidden="true">{contextImages.slice(0, 2).map(image => <span key={image.id} className="canvas-ui-surface-solid h-5 w-5 overflow-hidden rounded border border-[var(--canvas-ui-border)]">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <CachedImage src={cdnThumb(image.image,128)} alt="" className="h-full w-full object-cover" /></span>)}</span><span className="truncate">{anchorTitle}</span><span className="canvas-ui-section shrink-0 rounded px-1 text-[10px] tabular-nums">{contextImages.length}</span>
+              <CachedImage src={image.image} alt="" className="h-full w-full object-cover" /></span>)}</span><span className="truncate">{anchorTitle}</span><span className="canvas-ui-section shrink-0 rounded px-1 text-[10px] tabular-nums">{contextImages.length}</span>
           </button>}
         </div>
         {referencesOpen && <div data-testid="canvas-assistant-references" className="canvas-ui-surface canvas-ui-surface-solid absolute bottom-[calc(100%+8px)] left-0 right-0 rounded-[16px] border p-3 shadow-lg">
@@ -340,7 +339,7 @@ export function CanvasAssistantPanel({ light, anchorTitle, contextImages, turns,
             {contextImages.map((image, index) => <div key={image.id} className="relative shrink-0"><button type="button" onClick={() => onPreview(image)} title={`${english ? "Image" : "图"} ${index + 1}: ${image.title}`}
               className={cn("h-12 w-12 shrink-0 overflow-hidden rounded-lg border", index === 0 ? "border-[#16849a]" : "border-[var(--canvas-ui-border)]")}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <CachedImage src={cdnThumb(image.image,128)} alt={image.title || (index === 0 ? labels.currentImage : labels.upstreamImage)} className="h-full w-full object-cover" />
+              <CachedImage src={image.image} alt={image.title || (index === 0 ? labels.currentImage : labels.upstreamImage)} className="h-full w-full object-cover" />
             </button><span className="canvas-ui-surface-solid absolute bottom-0 left-0 rounded px-1 text-[10px]">{index + 1}</span>{onRemoveReference && <button type="button" disabled={busy || uploadingImages} aria-label={`${english ? "Remove image" : "移除图片"} ${index + 1}`} className="canvas-ui-surface-solid absolute -right-1 -top-1 rounded-full border p-0.5" onClick={() => onRemoveReference(image.id)}><X className="h-3 w-3" /></button>}</div>)}
           </div>
         </div>}

@@ -4,7 +4,6 @@ import { useSurfaceAppearance } from "@/components/ui/surface-appearance";
 import {useCallback,useEffect,useRef,useState} from "react";
 import {Check,History,Loader2,X} from "lucide-react";
 import {CanvasActionPanel} from "./canvas-action-menu";
-import {cdnThumb} from "@/lib/cdn";
 import {WORKSPACE_SELECTION} from "@/lib/saas/workspace-client";
 import type {CanvasImageVersion,CanvasImageVersionList} from "@/lib/canvas/image-versions";
 
@@ -47,7 +46,7 @@ export function ImageVersionControl({contextKey,revision,disabled,english,iconOn
           className={`overflow-hidden rounded-xl border bg-[var(--canvas-ui-panel-solid)] text-[var(--canvas-ui-text)] text-left disabled:opacity-60 ${version.id===data.currentVersionId?"border-[var(--canvas-ui-accent)] ring-1 ring-[var(--canvas-ui-accent)]":"border-[var(--canvas-ui-border)] hover:border-[var(--canvas-ui-border-strong)]"}`}>
           {/* Immutable version URLs are intentionally not routed through a stale node-thumbnail key. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={cdnThumb(version.image,1600)} alt={version.id==="initial"?L("原图","Original"):L(`版本 ${data.versions.length-index}`,`Version ${data.versions.length-index}`)} className="h-28 w-full bg-[var(--canvas-ui-soft)] object-contain"/>
+          <img src={version.image} alt={version.id==="initial"?L("原图","Original"):L(`版本 ${data.versions.length-index}`,`Version ${data.versions.length-index}`)} className="h-28 w-full bg-[var(--canvas-ui-soft)] object-contain"/>
           <span className="flex items-center justify-between px-2.5 py-2 text-xs"><span>{version.id==="initial"?L("原图","Original"):L(`版本 ${data.versions.length-index}`,`Version ${data.versions.length-index}`)}</span>{version.id===data.currentVersionId&&<Check size={14} className="text-[var(--canvas-ui-text)]"/>}</span>
         </button>)}
       </div>

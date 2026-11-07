@@ -3,7 +3,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Check, ChevronRight, CircleHelp, Clock3, Loader2, Wrench, X } from "lucide-react";
 import { CachedImage } from "@/components/cached-image";
-import { cdnThumb } from "@/lib/cdn";
 import type { AgentOrbStep } from "@/lib/canvas/agent-orb";
 import { toolDuration } from "@/lib/canvas/agent-progress";
 import { cn } from "@/lib/utils";
@@ -58,9 +57,9 @@ export function CanvasAgentToolCard({ step, busy, english = false, sources, resu
     {open && <div id={detailsId} className="canvas-ui-section space-y-3 border-t px-3 py-3" data-testid="tool-details">
       <div className="canvas-ui-muted flex min-w-0 items-start gap-1.5 text-[10px]"><Wrench className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" /><span className="break-all">{step.tool || (english ? "Tool" : "工具")}</span></div>
       {step.startedAt && <div className="canvas-ui-muted text-[10px]">{english ? "Started " : "开始于 "}<time dateTime={new Date(step.startedAt).toISOString()}>{new Date(step.startedAt).toLocaleTimeString(english ? "en-GB" : "zh-CN", { hour12: false })}</time></div>}
-      {source && <button type="button" onClick={() => onPreview(source)} className="canvas-ui-action flex w-full items-center gap-2 rounded-lg text-left"><CachedImage src={cdnThumb(source.image,128)} alt="" className="h-10 w-10 shrink-0 rounded-lg border border-[var(--canvas-ui-border)] object-contain" /><span className="min-w-0 break-words text-[11px]">{source.title}</span></button>}
+      {source && <button type="button" onClick={() => onPreview(source)} className="canvas-ui-action flex w-full items-center gap-2 rounded-lg text-left"><CachedImage src={source.image} alt="" className="h-10 w-10 shrink-0 rounded-lg border border-[var(--canvas-ui-border)] object-contain" /><span className="min-w-0 break-words text-[11px]">{source.title}</span></button>}
       {!!step.details?.parameters.length && <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[11px]">{step.details.parameters.map(parameter => <div key={parameter.name} className="contents"><dt className="canvas-ui-muted">{fields[parameter.name]?.[english ? 1 : 0] || parameter.name}</dt><dd className="flex min-w-0 items-center justify-end gap-1.5 break-all text-right">{parameter.name === "color" && /^#[\da-f]{6}$/i.test(parameter.value) && <span aria-hidden="true" className="h-3 w-3 shrink-0 rounded-full border border-black/10" style={{ background: parameter.value }} />}{!english && values[parameter.value] || parameter.value}</dd></div>)}</dl>}
-      {output.map(image => <button key={image.id} type="button" onClick={() => onPreview(image)} className="canvas-ui-action flex w-full items-center gap-2 rounded-lg text-left" aria-label={`${english ? "View result" : "查看结果"}：${image.title}`}><CachedImage src={cdnThumb(image.image,128)} alt="" className="h-12 w-12 shrink-0 rounded-lg border border-[var(--canvas-ui-border)] object-contain" /><span className="min-w-0 break-words text-[11px]">{image.title}<span className="canvas-ui-muted block text-[10px]">{english ? "View result" : "查看结果"}</span></span></button>)}
+      {output.map(image => <button key={image.id} type="button" onClick={() => onPreview(image)} className="canvas-ui-action flex w-full items-center gap-2 rounded-lg text-left" aria-label={`${english ? "View result" : "查看结果"}：${image.title}`}><CachedImage src={image.image} alt="" className="h-12 w-12 shrink-0 rounded-lg border border-[var(--canvas-ui-border)] object-contain" /><span className="min-w-0 break-words text-[11px]">{image.title}<span className="canvas-ui-muted block text-[10px]">{english ? "View result" : "查看结果"}</span></span></button>)}
       {!step.details?.parameters.length && !source && !output.length && <p className="canvas-ui-muted text-[11px]">{english ? "No additional details recorded." : "暂无更多调用详情"}</p>}
     </div>}
   </section>;

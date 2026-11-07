@@ -2,7 +2,6 @@
 import {useEffect,useRef,useState,type ReactNode} from "react";
 import {Clapperboard,Plus,X,ChevronDown,AtSign,Upload,Film,Music2,Type,SlidersHorizontal,Volume2,VolumeX,RectangleHorizontal,Clock3,UserRound,Mountain} from "lucide-react";
 import {CachedImage} from "@/components/cached-image";
-import {cdnThumb} from "@/lib/cdn";
 import {CanvasComposerFooter} from "../composer-shell";
 import {SelectMenu} from "@/components/ui/select-menu";
 import {CanvasModelSelect} from "../model-select";
@@ -77,7 +76,7 @@ export function VideoCompactComposer({config,inputs,models,choices,nodeId,light,
   <div data-composer-body="true">
   {numbered.length>0&&<div className="mb-2 flex items-start gap-2">
    <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-1" data-testid="video-reference-strip">
-    {numbered.map(input=>{const choice=choices.find(c=>c.nodeId===input.nodeId),thumbnail=choice?.thumbnail||(input.kind==='image'?cdnThumb(input.value,128):undefined),name=names.get(input.id)!;
+    {numbered.map(input=>{const choice=choices.find(c=>c.nodeId===input.nodeId),thumbnail=choice?.thumbnail||(input.kind==='image'?input.value:undefined),name=names.get(input.id)!;
      const scene=input.nodeId.startsWith('scene:'),character=input.nodeId.startsWith('character:'),visual=scene||character;
      const roles:OrderedInput['role'][]=visual?['context']:input.nodeId.startsWith('audio-node:')?['source_audio']:input.nodeId.startsWith('timeline-node:')?['source_video']:input.kind==='text'?['context','author']:input.kind==='image'?['reference','first_frame','last_frame','element']:input.kind==='video'?['source_video','reference','element']:['source_audio','reference','element'];
      return <div key={input.id} data-testid="video-compact-reference" className="group relative w-28 shrink-0 rounded-[10px] border border-[var(--canvas-ui-border)] bg-[var(--canvas-ui-soft)] p-1.5" title={name}>
