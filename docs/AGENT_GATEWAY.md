@@ -113,6 +113,6 @@ public/agent/naumi.mjs             CLI + MCP（零依赖）
 `scripts/agent-gateway-smoke.ts` 是端到端验收，运行环境是真实 Next 服务、隔离的 PostgreSQL schema、已发布的模型配置和假供应商。验收全部通过 CLI 和 MCP 进行，`NAUMI_SMOKE_RELEASE_RUNTIME=1` 时同时开启发布运行时：
 
 ```bash
-NAUMI_VERIFY_ISOLATED_DB=1 DATABASE_URL=postgres://postgres@127.0.0.1:<port>/<db> NAUMI_SMOKE_RELEASE_RUNTIME=1 \
+NAUMI_SMOKE_PROD=1 NAUMI_VERIFY_ISOLATED_DB=1 DATABASE_URL=postgres://postgres@127.0.0.1:<port>/<db> NAUMI_SMOKE_RELEASE_RUNTIME=1 \
   NODE_OPTIONS=--conditions=react-server node node_modules/tsx/dist/cli.mjs --conditions react-server scripts/agent-gateway-smoke.ts
 ```
