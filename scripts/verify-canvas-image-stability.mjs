@@ -134,7 +134,7 @@ async function ready(width) { await page.waitForFunction(width => { const i = do
 async function current() { return page.locator('[data-testid=subject]').evaluate(i => ({ src: i.getAttribute('src'), width: i.naturalWidth, complete: i.complete })); }
 async function watch() { await page.evaluate(() => { window.probe.watch = true; window.probe.blanks = 0; window.probe.blankFrames = 0; }); }
 try {
-  await start(); await page.evaluate(() => window.fixture.canvas()); await ready(512);
+  await start(); await page.evaluate(() => window.fixture.canvas()); await ready(baseline ? 512 : 2048);
   assert.ok(!metrics.requests.some(s => s.includes('unseen')), 'offscreen node never fetched'); checks.push('UNSEEN_NODE_NO_BYTES');
   // Old and new use identical preloaded IDB data. Block metadata, not images.
   const before = await current(), requestBefore = metrics.requests.length;
@@ -143,7 +143,9 @@ try {
   await page.evaluate(() => { const timer = window.setTimeout.bind(window); window.setTimeout = (fn, ms, ...args) => timer(fn, ms === 20000 ? 120 : ms, ...args); });
   await watch(); state.hold = true; const manifestBefore = metrics.manifests;
   await page.evaluate(() => window.flow.setViewport({ x: 50, y: 50, zoom: 1.1 }));
-  await until(() => metrics.manifests > manifestBefore); await wait(180);
+  if(baseline) await until(() => metrics.manifests > manifestBefore);
+  await wait(180);
+  if(!baseline) assert.equal(metrics.manifests,manifestBefore,'zoom never changes the original-source request');
   const during = await current();
   await page.screenshot({ path: path.join(out, 'zoom-upgrade.png') });
   evidence.upgrade = { before, during, retained: during.src === before.src, downloadedWhileBlocked: metrics.requests.length - requestBefore };
@@ -152,7 +154,7 @@ try {
   evidence.upgrade.blanks = await page.evaluate(() => ({ mutations: window.probe.blanks, frames: window.probe.blankFrames }));
   if (baseline) { assert.equal(evidence.upgrade.retained, false); assert.ok(evidence.upgrade.blanks.frames > 0); }
   else { assert.equal(evidence.upgrade.retained, true); assert.deepEqual(evidence.upgrade.blanks, { mutations: 0, frames: 0 }); }
-  checks.push('QUALITY_UPGRADE_' + (baseline ? 'BLANK_REPRODUCED' : 'DECODED_SWAP_NO_BLANK'));
+  checks.push(baseline ? 'QUALITY_UPGRADE_BLANK_REPRODUCED' : 'ZOOM_INDEPENDENT_ORIGINAL_NO_FETCH_NO_BLANK');
   const sharpFrame = await current(), stableBytes = metrics.requests.length, stableManifests = metrics.manifests;
   await page.evaluate(() => { window.probe.watch = false; return window.flow.setViewport({ x: -5000, y: 50, zoom: .4 }); });
   await page.waitForFunction(() => document.querySelector('[data-testid=subject]')?.dataset.mediaVisible === 'false');

@@ -24,8 +24,8 @@ const invalid=imageDraftKey(scope,'invalid')!;memory.set(invalid,JSON.stringify(
 const custom=imageDraftKey(scope,'custom')!;memory.set(custom,JSON.stringify({ratio:'4:9'}));check(remount.read(custom),{ratio:'4:9'});
 const broken=new ImageNodeDraftStore(()=>{throw Error('storage disabled')});broken.write(a,{prompt:'in memory',ratio:'3:4'});check(broken.read(a),{prompt:'in memory',ratio:'3:4'});
 const full=new ImageNodeDraftStore(()=>({getItem:()=>null,setItem:()=>{throw Error('quota')}}));full.write(a,{prompt:'quota fallback'});check(full.read(a),{prompt:'quota fallback'});
-for(const dpr of [1,1.25,1.5,2,3,4])for(const pixels of [512,513,1600,1601])check(canvasMediaVariant(pixels/dpr,dpr),pixels<=512?'thumbnail':pixels<=1600?'preview':'original');
-check(canvasMediaVariant(600,3),'original');check(canvasMediaVariant(600,2),'preview');check(canvasMediaVariant(1800,NaN),'original');
+for(const dpr of [1,1.25,1.5,2,3,4])for(const pixels of [512,513,1600,1601])check(canvasMediaVariant(pixels/dpr,dpr),'original');
+check(canvasMediaVariant(600,3),'original');check(canvasMediaVariant(600,2),'original');check(canvasMediaVariant(1800,NaN),'original');
 const client=readFileSync('src/components/canvas/canvas-client.tsx','utf8');
 // Scene equality now belongs to the complete-value reconciliation owner, not
 // a handwritten JSON field list in CanvasClient. Both visual fields must still
