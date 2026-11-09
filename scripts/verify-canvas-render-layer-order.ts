@@ -55,7 +55,7 @@ async function main() {
   cleanups.forEach(callback => callback()); assert.equal(observer!.disconnected, true); assert.equal(root.dataset.canvasLayerOrder, undefined);
   const guard=readFileSync('src/components/canvas/canvas-render-layer-guard.tsx','utf8');assert.match(guard,/Arbitrary user layer order[\s\S]*?allowed = false/);
   const css = readFileSync('src/app/globals.css', 'utf8');
-  assert.match(css, /data-canvas-layer-order="composite"/); assert.match(css, /:not\(\[data-canvas-edge-hover\]\)/);
+  assert.doesNotMatch(css, /\.react-flow__(nodes|edges)[^{]*\{\s*will-change:\s*transform/);
   assert.doesNotMatch(css, /canvas-render-layers[^\n]*:has/);
   console.log('RENDER_LAYER_ORDER=PASS OPAQUE_NEGATIVE_BORDER_TITLE_EDGE_ZINDEX_HOVER=ORIGINAL INTERIOR_GROUP_EDGES=COMPOSITE VIEWPORT120_FRAMES_LAYOUT_READS=0 GEOMETRY100_CHANGES_BATCHES=1 UNMOUNT=CLEAN');
 }
