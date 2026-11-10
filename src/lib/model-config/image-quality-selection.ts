@@ -1,3 +1,4 @@
+import {canonicalPublicModelId} from "./public-identity";
 import {IMAGE_QUALITY_IDS} from "../image-quality";
 import {selectedBusinessOption} from "./business";
 import {publicUpstreamIds} from "./channel-policy";
@@ -8,7 +9,8 @@ import type {ModelConfig} from "./types";
 
 /** One quality decision for new quotes, planners and HTTP preparation. Saved quotes bypass it. */
 export function selectImageQuality(config:ModelConfig,feature:string|undefined,modelId:string|undefined,value:unknown,binding?:string,environmentQuality=process.env.OPENAI_IMAGE_QUALITY||"medium"){
-  const preset=selectedImagePreset(config,feature,modelId,binding),option=selectedBusinessOption(config,feature,modelId);
+  modelId=canonicalPublicModelId(config.publicModels,modelId);
+ const preset=selectedImagePreset(config,feature,modelId,binding),option=selectedBusinessOption(config,feature,modelId);
   const model=config.publicModels.find(m=>m.id===modelId),ids=model?publicUpstreamIds(config,model):[];
   const upstreams=config.upstreamModels.filter(u=>ids.includes(u.id)&&u.enabled&&config.providers.some(p=>p.id===u.providerId&&p.enabled));
   const qualities:readonly string[]=preset?[...DISPLAY_QUALITIES]:qualityPresentation(upstreams)?.qualities||option?.parameters?.qualities||Array.from(new Set(upstreams.flatMap(u=>u.capabilities.qualities)));

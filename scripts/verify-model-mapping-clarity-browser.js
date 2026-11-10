@@ -17,7 +17,7 @@ window.runMappingChecks = async function(mode = 'modified') {
     return {RESULT:'BASELINE_REPRODUCED',INLINE_ACTIONS:'VISIBLE',DISABLED_ROUTES:'VISIBLE',CHECKS:checks,SUPPLIER_CALLS:0};
   }
   assert([...document.querySelectorAll('[data-testid^="managed-model-"]')].length===5,'all rows');
-  assert(!button('修改显示名称',card('gpt-image')),'actions collapsed');
+  assert(!button('名称与公开 ID',card('gpt-image')),'actions collapsed');
   assert(!card('banana').innerText.includes('gemini-3.0-pro-image-landscape'),'inactive collapsed');
   assert(card('gpt-image').innerText.includes('2 个启用通道'),'active channels counted');
   assert(card('no-route').innerText.includes('暂无启用通道'),'no enabled route truthful');
@@ -26,7 +26,7 @@ window.runMappingChecks = async function(mode = 'modified') {
   await click('配置',card('gpt-image'));assert(button('收起',card('gpt-image')).getAttribute('aria-expanded')==='true','expanded state');
   const disabled=card('gpt-image').querySelector('details');assert(disabled&&!disabled.open,'inactive nested collapsed');
   disabled.open=true;assert(disabled.innerText.includes('gpt-image-2.5'),'inactive retained');disabled.open=false;
-  for(const [name,title] of [['修改显示名称','修改前端显示名称'],['参数设置','模型参数设置'],['分辨率设置','分辨率显示与实际参数'],['供应通道','供应通道与分流'],['设置积分','设置模型积分'],['更换模型','更换实际模型'],['图像高级参数','图像高级参数']]) {
+  for(const [name,title] of [['名称与公开 ID','名称与公开 ID'],['参数设置','模型参数设置'],['分辨率设置','分辨率显示与实际参数'],['供应通道','供应通道与分流'],['设置积分','设置模型积分'],['更换模型','更换实际模型'],['图像高级参数','图像高级参数']]) {
     await click(name,card('gpt-image'));await until(()=>document.querySelector('dialog[open]'));
     const d=document.querySelector('dialog[open]');assert(d.querySelector('h2').textContent===title,'dialog: '+name);
     await click('关闭',d);await until(()=>!document.querySelector('dialog[open]'));
@@ -39,14 +39,14 @@ window.runMappingChecks = async function(mode = 'modified') {
   const search=document.querySelector('[aria-label="搜索模型"]');await fill(search,'gemini-3.0-pro-image-landscape');assert(!!card('banana')&&!card('gpt-image'),'search hidden inactive ID');
   await fill(search,'__missing__');assert(document.body.innerText.includes('没有匹配的模型'),'empty search');await fill(search,'');
   await click('调整排序');await until(()=>document.querySelector('dialog[open]'));assert(document.querySelector('dialog h2').textContent==='调整模型排序','order dialog');await click('关闭',document.querySelector('dialog'));
-  await click('配置',card('gpt-image'));await click('修改显示名称',card('gpt-image'));await until(()=>document.querySelector('dialog[open]'));
+  await click('配置',card('gpt-image'));await click('名称与公开 ID',card('gpt-image'));await until(()=>document.querySelector('dialog[open]'));
   await fill(document.querySelector('[aria-label="显示名称"]'),'摄影模型');await click('保存并生效',document.querySelector('dialog'));await until(()=>card('gpt-image')?.innerText.includes('摄影模型'));
-  const after=await(await fetch('/__fixture/state')).json(),op=after.posts.find(p=>p.action==='rename');
-  assert(op?.rowId==='gpt-image'&&op.label==='摄影模型'&&op.expectedVersion===117&&!!op.id,'rename original payload');
+  const after=await(await fetch('/__fixture/state')).json(),op=after.posts.find(p=>p.action==='identity');
+  assert(op?.rowId==='gpt-image'&&op.publicId==='gpt-image'&&op.label==='摄影模型'&&op.expectedVersion===117&&!!op.id,'rename original payload');
   assert(after.posts.length===1,'only explicit save writes');
   assert(JSON.stringify(after.state.rows[0].routes)===JSON.stringify(before.state.rows[0].routes),'route config unchanged');
   assert(JSON.stringify(after.state.rows[0].pricing)===JSON.stringify(before.state.rows[0].pricing),'pricing unchanged');
-  await click('收起',card('gpt-image'));assert(!button('修改显示名称',card('gpt-image')),'collapse after reload');
+  await click('收起',card('gpt-image'));assert(!button('名称与公开 ID',card('gpt-image')),'collapse after reload');
   assert(document.documentElement.scrollWidth<=innerWidth,'no horizontal overflow');
   return {RESULT:'MODIFIED_PASS',CHECKS:checks,DIALOGS:8,RENAME:'REAL_COMPONENT_PAYLOAD',READ_ONLY_WRITES:0,EXPLICIT_SAVES:1,SUPPLIER_CALLS:0};
 };

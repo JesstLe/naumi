@@ -1,3 +1,4 @@
+import {imageExecutionSizingModel} from "../model-config/context";
 import "server-only";
 import {inheritedImageRatio, imageAspectInstruction} from "@/lib/imagegen/aspect";
 import {sourceImageDimensions} from "@/lib/imagegen/output-shape";
@@ -81,7 +82,7 @@ export async function openaiImages(
   const basePrompt = p.compiledPrompt || (p.ratiogen ? ratioPrompt(p) : buildPrompt(p, await getStyleGuide()));
   const effectiveRatio = inheritedImageRatio(p.ratio, targetDimensions);
   const prompt = `${basePrompt}\n\n${imageAspectInstruction(effectiveRatio, targetDimensions)}`;
-  const sizingModel = p.ratioContractVersion ? currentModelExecution("image")?.connection.wireModel || model : model;
+  const sizingModel = p.ratioContractVersion ? imageExecutionSizingModel(currentModelExecution("image")) || model : model;
   const size = sizeFor(effectiveRatio, sizingModel, !!p.ratioContractVersion, p.ratioContractVersion === 2);
   const canEdit = p.images.length > 0 && (currentModelExecution("image")?.capabilities.edit || isOpenAIImagesEditModel(model));
   // 出图质量:解析结果=实际执行档。通道未接入质量参数时在提交前回退为默认档

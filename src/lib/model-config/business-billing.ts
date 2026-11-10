@@ -1,3 +1,5 @@
+import {billingForModelIdentities} from "./billing-identity";
+import {parameterModelIdentity} from "./public-identity";
 import {compileImageParameterPlan,imagePlanSelection} from './image-parameter-plan';
 import {publicUpstreamIds} from './channel-policy';
 import {resolveImageResolution} from "./resolution-fallback";
@@ -15,6 +17,7 @@ import {managedModelCreditRule,applyCreditOverride} from "./credit-overrides";
 import {policyQuality} from "./quality-policy";
 
 export function freezeImagePresetQuote(snapshot: ConfigSnapshot, models: ModelSnapshot, facts: BillingFacts, create: (s:ConfigSnapshot,f:BillingFacts)=>BillingQuote): BillingQuote | null {
+  snapshot=billingForModelIdentities(snapshot,models.config);
   assertDisplayResolution(models.config.publicModels.find(m=>m.id===facts.modelId),facts.resolution);
   const preset = facts.byok ? undefined : selectedImagePreset(models.config,facts.feature,facts.modelId);
   if (!preset) return null;
@@ -42,6 +45,7 @@ export function freezeImagePresetQuote(snapshot: ConfigSnapshot, models: ModelSn
 }
 
 function originalBusinessBillingSnapshot(snapshot: ConfigSnapshot, models: ModelSnapshot, facts: BillingFacts): ConfigSnapshot {
+  snapshot=billingForModelIdentities(snapshot,models.config);
   assertDisplayResolution(models.config.publicModels.find(m=>m.id===facts.modelId),facts.resolution);
   const preset = selectedImagePreset(models.config, facts.feature, facts.modelId);
   if (preset) {
@@ -65,6 +69,7 @@ function originalBusinessBillingSnapshot(snapshot: ConfigSnapshot, models: Model
   return { version: snapshot.version, config };
 }
 export function businessBillingSnapshot(snapshot:ConfigSnapshot,models:ModelSnapshot,facts:BillingFacts){
+  snapshot=billingForModelIdentities(snapshot,models.config);
   return applyCreditOverride(snapshot,originalBusinessBillingSnapshot(snapshot,models,facts),facts);
 }
 export async function freezeBusinessQuote(request: Request, snapshot: ConfigSnapshot, facts: BillingFacts, create: (s: ConfigSnapshot, f: BillingFacts) => BillingQuote, options:{allowResolutionFallback?:boolean;effectiveResolution?:string;effectiveRatio?:string;deferImageFrame?:boolean}={}) {
@@ -73,6 +78,7 @@ export async function freezeBusinessQuote(request: Request, snapshot: ConfigSnap
 /** Pure pricing against the same selected model snapshot used to prepare facts. */
 export function freezeBusinessQuoteForModel(snapshot:ConfigSnapshot,models:ModelSnapshot|null,facts:BillingFacts,create:(s:ConfigSnapshot,f:BillingFacts)=>BillingQuote,options:{allowResolutionFallback?:boolean;effectiveResolution?:string;effectiveRatio?:string;deferImageFrame?:boolean;accepted?:boolean}={}){
   if(facts.byok||!models)return create(snapshot,facts);
+  snapshot=billingForModelIdentities(snapshot,models.config);
   const scope = currentModelExecution("image");
   const originalFacts = facts;
   // Display has no reference pixels. Frozen/accepted execution never uses this path.
@@ -131,7 +137,7 @@ export function freezeBusinessQuoteForModel(snapshot:ConfigSnapshot,models:Model
     for(const id of publicUpstreamIds(models.config,model)){
       const u=models.config.upstreamModels.find(u=>u.id===id),p=models.config.providers.find(p=>p.id===u?.providerId);
       if(!u?.enabled||!p?.enabled)continue;
-      try{q.imageParameterPlans[id]=compileImageParameterPlan(u,imagePlanSelection({...facts,resolution:choice.effective,ratio:options.effectiveRatio||facts.ratio}),{publicModelId:model.id,protocol:p.protocol,modelVersion:models.version,adapter:p.options?.imageAdapter});}
+      try{q.imageParameterPlans[id]=compileImageParameterPlan(u,imagePlanSelection({...facts,resolution:choice.effective,ratio:options.effectiveRatio||facts.ratio}),{publicModelId:parameterModelIdentity(models.config,model.id),protocol:p.protocol,modelVersion:models.version,adapter:p.options?.imageAdapter});}
       catch(error){if(!model.supplierRouting)throw error;}
     }
     if(!Object.keys(q.imageParameterPlans).length)throw new ModelConfigError('IMAGE_MAPPING_INVALID','没有完整的图片参数映射',422);
