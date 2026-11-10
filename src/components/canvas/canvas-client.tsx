@@ -3946,6 +3946,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
           {storyboardPanel&&storyboardPanel.projectKey===activeKey&&!readOnly&&canFeature("video")&&<StoryboardPanel
             key={JSON.stringify([user?.email,targetEmail,storyboardPanel])} projectKey={storyboardPanel.projectKey} scope={JSON.stringify([user?.email,targetEmail])}
+            choices={videoInputChoices} onOpenTimeline={async id=>{await timelineNodesStore.refresh();setStoryboardPanel(null);openTimelineEditor(id);}}
             nodes={videoNodesStore.nodes} initialNodeIds={storyboardPanel.nodeIds} request={privateFetchRaw} english={locale==='en'}
             onClose={()=>setStoryboardPanel(null)} onEditNode={id=>{setStoryboardPanel(null);openVideoEditor(id);}}
             onChanged={run=>{void videoNodesStore.refresh();const ids=(run.assembly?.outputs||[]).map(output=>output.artworkId).filter((id):id is string=>!!id);if(ids.length)void mergeWorks(ids);}}/>}

@@ -17,9 +17,9 @@ export function mapSceneNode(row: Record<string, any>): CanvasSceneNode {
     createdAt: new Date(row.created_at).toISOString(), updatedAt: new Date(row.updated_at).toISOString(),
   };
 }
-export async function getSceneNode(actor: string, id: string, includeDeleted = false) {
+export async function getSceneNode(actor: string, id: string, includeDeleted = false, tx?:Pick<PoolClient,"query">) {
   await ensureSceneNodeSchema();
-  const row = (await getPool().query("SELECT * FROM app_canvas_scene_nodes WHERE email=$1 AND id=$2 AND ($3 OR deleted_at IS NULL)", [actor.toLowerCase(), id, includeDeleted])).rows[0];
+  const row = (await (tx||getPool()).query("SELECT * FROM app_canvas_scene_nodes WHERE email=$1 AND id=$2 AND ($3 OR deleted_at IS NULL)", [actor.toLowerCase(), id, includeDeleted])).rows[0];
   return row ? mapSceneNode(row) : null;
 }
 export async function listSceneNodes(actor: string, includeDeleted = false) {
