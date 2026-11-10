@@ -49,7 +49,7 @@ export async function buildCanvasVideoWorkflow(actor:string,raw:unknown):Promise
     const request=workflowVideoRequestSchema.parse({...generationConfig,prompt:resolved.prompt,references:resolved.inputs.length?references:current.config.references,orderedInputs:ordered.length?ordered:undefined,billingConfirmation:requested.billingConfirmation});
     nodes.push({id:current.id,canvasNodeId:current.id,canvasNodeRevision:current.revision,request,dependsOn:[...dependsOn],mediaBindings:bindings});
   }
-  return {id:input.id,projectKey:input.projectKey,nodes,...(reviewOrigin?{reviewOrigin}:{}),...(input.assembly?{assembly:input.assembly}:{})};
+  return {id:input.id,projectKey:input.projectKey,nodes,...(storyboard?{storyboard:{id:storyboard.id,revision:storyboard.revision}}:{}),...(reviewOrigin?{reviewOrigin}:{}),...(input.assembly?{assembly:input.assembly}:{})};
 }
 export async function scheduleCanvasVideoWorkflow(actor:string,raw:unknown,prepared?:PreparedCanvasVideoWorkflow,signal?:AbortSignal){const input=canvasWorkflowSchema.parse(raw);
   // Stable node-list operation survives later revisions; the persisted run owns the frozen plan.

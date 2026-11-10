@@ -101,6 +101,7 @@ async function main(){
   await verifyStoryboardIndependentApplication(h,project,story.planId,pass);
   await verifyStoryboardReviewApplication(h,project,story.planId,pass);
   await verifyStoryboardDialogueApplication(h,project,story.planId,path.join(out,"dialogue"),pass);
+  for(const check of (await h.verifyStoryboardCosts(project,story.planId)).checks)pass("cost_"+check);
   await writeFile(path.join(out,"RESULT.json"),JSON.stringify({checks,realApp:true,realPostgres:true,actualAgentTools:true,actualMediaWorker:true,realBilling:true,simulatedSupplierCreates:h.supplierCalls().filter(call=>call.phase==="create").length,realSupplierCalls:0,creativeModelNotTested:true,root:process.cwd()},null,2));
   console.log(`STORYBOARD_APPLICATION=PASS CHECKS=${checks.length} REAL_APP_DB_WORKER_STORAGE_BILLING=PASS PLANNING=FREE REUSE=PASS REPLAY=PASS FAILED_ASSEMBLY_RETRY=MEDIA_ONLY CANCEL=PASS NATIVE_SHOTS=PASS REAL_SUPPLIER_CALLS=0`);
  }finally{if(fixture)await fixture.stop();if(listening)await new Promise<void>(r=>router.close(()=>r()));if(pool)await pool.end();if(container){assert.equal(docker(["inspect","--format",'{{index .Config.Labels "naumi.task"}}',container]),owner);docker(["rm","--force",container])}await unlink(envFile);console.log("STORYBOARD_APP_CLEANUP=OWN_FIXTURE_REMOVED");}
