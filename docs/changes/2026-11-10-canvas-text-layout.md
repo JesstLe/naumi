@@ -46,6 +46,7 @@
 
 - 已整合最新 main `5bf0d9195954a2339e160452a869b084ee1a4e72`，整合提交 `ea8864e0b6530e8226e7806ef13718fd5235b41a`，无冲突，保留同事画布清晰度、引用节点创建与 Agent 平台文档。
 - 整合后全量 TypeScript、文字布局 11 项、图片双引用 6 项与视频三种视口回归全部通过。证据为 `tsc-integrated.log`、`integrated-text/`、`integrated-image/`、`integrated-video/`；最终截图已打开检查。该段之后仅修改文档。
+- 首次普通 push 遇到同事同时更新 main 的 ref-lock 拒绝；重新 fetch 并普通合入 `0dd4a392dab18fa3eed60cc1fda63fd13b515a95` 的管理员查询改动，无冲突。该次整合未改变本轮画布文件；最终类型检查记录在 `tsc-final-main.log`，不强推。
 - 完成后普通 merge 推送 main，并清理本任务短命分支/worktree。证据归档到共享仓库独立忽略目录 `output/canvas-text-layout-20261110/`，与当前共享 checkout 的源码版本分开。
 - 本轮功能模块计数 1/3；已在合并前同步主线。成功发布计数增量 0，不触发服务器清理。
 - 本轮不发布，不能将本地浏览器及 Git 合并记为线上生效。后续发布需按目标站现行蓝绿流程执行。
