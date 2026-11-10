@@ -27,6 +27,11 @@ try{
  await pool.query("INSERT INTO app_settings(k,v) VALUES('admin_password_hash',$1) ON CONFLICT(k) DO UPDATE SET v=EXCLUDED.v",[hash]);
  await pool.query(`INSERT INTO app_users(email,name,plan,credits_total,credits_used,banned,joined_at,renews_at)
  SELECT 'fixture-'||lpad(g::text,2,'0')||'@example.test','Query Fixture '||lpad(g::text,2,'0'),'free',100,0,false,now()-g*interval '1 hour',now()+interval '1 month' FROM generate_series(1,65)g ON CONFLICT(email) DO NOTHING`);
+ await pool.query(`INSERT INTO app_agent_sessions(id,email,title,messages,created_at,updated_at)
+ VALUES('admin-detail-audit','fixture-01@example.test','Detail retry fixture',$1::jsonb,now(),now()) ON CONFLICT DO NOTHING`,[JSON.stringify([{role:'user',content:'Actual conversation retry evidence'}])]);
+ const metadata={family:'Fixture',brand:'Fixture',modality:'image',capabilityState:'unknown',capabilitySource:'fixture',capabilityUrl:'',checkedAt:'',prices:[],notes:'fixture metadata preserved',parameterMetadata:{fixtureEvidence:'FULL_EXPORT'},capabilities:{generate:null,edit:null,mask:null,vision:null,streaming:null,qualities:null,resolutions:['1K'],ratios:null,maxReferences:null,contextTokens:null}};
+ await pool.query(`INSERT INTO app_supplier_model_metadata(id,provider_id,provider_name,model_id,label,family,brand,modality,capability_state,metadata,updated_by)
+ VALUES('11111111-1111-4111-8111-111111111111','fixture-audit','Fixture audit provider','fixture-audit','Fixture metadata audit','Fixture','Fixture','image','unknown',$1::jsonb,'fixture') ON CONFLICT DO NOTHING`,[JSON.stringify(metadata)]);
  browser=await chromium.launch({headless:true,channel:process.platform==='win32'?'msedge':undefined});const context=await browser.newContext({viewport:{width:1440,height:1000}});
  const anon=await context.request.get(origin+'/api/admin/usage?page=1');assert.equal(anon.status(),403);
  const login=await context.request.post(origin+'/api/admin/login',{headers:{origin},data:{password}});assert.equal(login.status(),200);checks.push('Actual admin login and anonymous rejection');
@@ -60,6 +65,19 @@ try{
  await filtersPage.getByLabel('成员账号').fill('fixture-01@example.test');assert.ok((await memberSearch).ok());
  filtered=new URL(filtersPage.url());assert.equal(filtered.searchParams.get('q'),'scene');assert.equal(filtered.searchParams.get('user'),'fixture-01@example.test');assert.equal(filtered.searchParams.get('keep'),'1');assert.equal(filtered.hash,'#section');assert.equal(filtered.searchParams.has('creationId'),false);assert.equal(filtered.searchParams.has('assetPage'),false);assert.equal(rsc.length,0);
  await filtersPage.screenshot({path:path.join(out,'creation-filters.png'),fullPage:true});await filtersPage.close();checks.push('Actual Next History: creation/member filters compose and clear prior detail without RSC');
+ const detailsPage=await context.newPage();detailsPage.on('pageerror',error=>errors.push(error.message));
+ await detailsPage.goto(origin+'/admin/center?section=conversations&period=all');
+ await detailsPage.route('**/api/admin/bi/conversation?**',route=>route.fulfill({status:503,contentType:'application/json',body:'{"error":"fixture failure"}'}));
+ await detailsPage.getByRole('button',{name:'查看',exact:true}).first().click();await detailsPage.getByText('无法读取对话内容',{exact:true}).waitFor();
+ await detailsPage.unroute('**/api/admin/bi/conversation?**');await detailsPage.getByRole('button',{name:'重试',exact:true}).click();await detailsPage.getByText('Actual conversation retry evidence',{exact:true}).waitFor();
+ await detailsPage.screenshot({path:path.join(out,'conversation-retry.png'),fullPage:true});checks.push('Conversation 503 retry recovers actual authorized database messages');
+ await detailsPage.goto(origin+'/admin/model-management/library');await detailsPage.getByText('Fixture metadata audit',{exact:true}).waitFor();
+ await detailsPage.route('**/api/admin/model-management/library?**',route=>route.fulfill({status:403,contentType:'text/html',body:'<h1>Denied</h1>'}));
+ await detailsPage.getByRole('button',{name:'刷新元数据库'}).click();await detailsPage.getByRole('alert').filter({hasText:'读取失败'}).waitFor();assert.equal(await detailsPage.getByText('Fixture metadata audit',{exact:true}).count(),0);assert.equal(await detailsPage.getByRole('button',{name:'导出当前页'}).isDisabled(),true);
+ await detailsPage.screenshot({path:path.join(out,'library-denied.png'),fullPage:true});await detailsPage.unroute('**/api/admin/model-management/library?**');await detailsPage.getByRole('button',{name:'刷新元数据库'}).click();await detailsPage.getByText('Fixture metadata audit',{exact:true}).waitFor();
+ const downloadPromise=detailsPage.waitForEvent('download');await detailsPage.getByRole('button',{name:'导出当前页'}).click();const download=await downloadPromise;
+ const exported=JSON.parse(await fs.readFile(await download.path(),'utf8')),record=exported.models.find(row=>row.modelId==='fixture-audit');assert.equal(record.notes,metadata.notes);assert.equal(record.parameterMetadata.fixtureEvidence,'FULL_EXPORT');
+ await detailsPage.close();checks.push('Library non-JSON 403 clears rows; recovery and full export preserve metadata');
  // Deliberately fail a different page; its label must not borrow page 2 rows.
  await page.route('**/api/admin/usage?**',route=>new URL(route.request().url()).searchParams.get('page')==='3'
    ?route.fulfill({status:503,contentType:'application/json',body:'{"error":"fixture transient failure"}'}) :route.continue());

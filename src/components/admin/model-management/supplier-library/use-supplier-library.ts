@@ -8,28 +8,34 @@ import type {Filter,Listing} from "./contracts";
 /** Queries and curation writes only. This owner never publishes execution config. */
 export function useSupplierLibrary(){
   const [filter,setFilter]=useState<Filter>({q:"",provider:"",family:"",brand:"",basis:"",state:"",page:1});
-  const [listing,setListing]=useState<Listing|null>(null),[loading,setLoading]=useState(false);
+  const [snapshot,setSnapshot]=useState<{key:string;data:Listing}|null>(null),[loading,setLoading]=useState(false);
   const [busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState("");
   const [edit,setEdit]=useState<SupplierModelRecord|null>(null),[opening,setOpening]=useState<string|null>(null),[exporting,setExporting]=useState(false);
   const scope=useRef({active:true,generation:0,read:0,detail:0}),filterRef=useRef(filter),syncing=useRef(false),exportGuard=useRef(false);
-  const readAbort=useRef<AbortController|null>(null),detailAbort=useRef<AbortController|null>(null);
+  const readAbort=useRef<AbortController|null>(null),detailAbort=useRef<AbortController|null>(null),exportAbort=useRef<AbortController|null>(null);
   const queryKey=filterParams(filter).toString();
+  const listing=snapshot?.key===queryKey?snapshot.data:null,choices=snapshot?.data??null;
   filterRef.current=filter;
   const load=useCallback(async()=>{
     readAbort.current?.abort();const abort=new AbortController();readAbort.current=abort;
     const owner=scope.current,generation=owner.generation,read=++owner.read;
     const current=()=>!abort.signal.aborted && owner.active && owner.generation===generation && owner.read===read;
-    setLoading(true);
+    setLoading(true);setError("");
     try{
-      const params=filterParams(filterRef.current);params.set("view","summary");
+      const params=filterParams(filterRef.current),key=params.toString();params.set("view","summary");
       const data=await libraryRequest<Listing>(params,undefined,"读取失败",abort.signal);
-      if(current()){setListing(data);setError("");}
-    }catch(error){if(current())setError(error instanceof Error?error.message:"读取失败");}
+      if(current()){setSnapshot({key,data});setError("");}
+    }catch(error){if(current()){
+      setError(error instanceof Error?error.message:"读取失败");
+      if(error&&typeof error==='object'&&'status' in error&&[401,403,404].includes(Number(error.status))){
+        setSnapshot(null);detailAbort.current?.abort();exportAbort.current?.abort();owner.detail++;setOpening(null);setEdit(null);
+      }
+    }}
     finally{if(current())setLoading(false);}
   },[]);
   useEffect(()=>{
     const owner=scope.current;owner.active=true;owner.generation++;
-    return()=>{owner.active=false;owner.generation++;owner.read++;owner.detail++;readAbort.current?.abort();detailAbort.current?.abort();};
+    return()=>{owner.active=false;owner.generation++;owner.read++;owner.detail++;readAbort.current?.abort();detailAbort.current?.abort();exportAbort.current?.abort();};
   },[]);
   useEffect(()=>{
     scope.current.detail++;detailAbort.current?.abort();setOpening(null);
@@ -51,11 +57,12 @@ export function useSupplierLibrary(){
   const exportPage=async()=>{
     if(exportGuard.current)return;exportGuard.current=true;
     const owner=scope.current,generation=owner.generation,requested=filterRef.current;
+    const abort=new AbortController();exportAbort.current=abort;
     setExporting(true);
     try{
-      const data=await libraryRequest<{models:SupplierModelRecord[]}>(filterParams(requested),undefined,"导出失败");
-      if(owner.active && owner.generation===generation)download("supplier-model-metadata.json",{schemaVersion:1,exportedAt:new Date().toISOString(),filter:requested,models:data.models});
-    }catch(error){if(owner.active && owner.generation===generation)setError(error instanceof Error?error.message:"导出失败");}
+      const data=await libraryRequest<{models:SupplierModelRecord[]}>(filterParams(requested),undefined,"导出失败",abort.signal);
+      if(!abort.signal.aborted && owner.active && owner.generation===generation)download("supplier-model-metadata.json",{schemaVersion:1,exportedAt:new Date().toISOString(),filter:requested,models:data.models});
+    }catch(error){if(!abort.signal.aborted && owner.active && owner.generation===generation)setError(error instanceof Error?error.message:"导出失败");}
     finally{exportGuard.current=false;if(owner.active && owner.generation===generation)setExporting(false);}
   };
   const change=(key:keyof Filter,value:string)=>setFilter(old=>({...old,[key]:value,page:1}));
@@ -78,5 +85,5 @@ export function useSupplierLibrary(){
     if(!owner.active || owner.generation!==generation)return;
     setEdit(null);setNotice(`已保存 v${data.revision}`);await load();
   };
-  return {filter,setFilter,listing,loading,busy,error,notice,edit,opening,exporting,load,openModel,closeModel,exportPage,change,sync,save};
+  return {filter,setFilter,listing,choices,loading,busy,error,notice,edit,opening,exporting,load,openModel,closeModel,exportPage,change,sync,save};
 }

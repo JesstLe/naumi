@@ -428,9 +428,16 @@ export function BiDashboard({ initialSection = "overview", embedded = false }: {
     row: BiRow;
   } | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const sourceRead = useRef<AbortController | null>(null), selectedOwner = useRef(selected);
+  const [sourceLoading, setSourceLoading] = useState(false);
+  selectedOwner.current = selected;
   // URL synchronization creates new filter objects; only a changed query should
   // start a read. Navigation previously sent the same expensive request twice.
   const requestQuery = new URLSearchParams({ ...filter, section, page: String(page), size: "30" }).toString();
+  useEffect(() => {
+    setSourceLoading(false);
+    return () => sourceRead.current?.abort();
+  }, [selected, requestQuery]);
   const navigatedSection = useRef(initialSection);
   useEffect(() => {
     navigatedSection.current = initialSection;
@@ -505,15 +512,19 @@ export function BiDashboard({ initialSection = "overview", embedded = false }: {
     setSelected(null);
   }
   async function openSourceArtwork(id: string, email: string) {
+    const owner=selectedOwner.current;if(!owner)return;
+    sourceRead.current?.abort();const abort=new AbortController();sourceRead.current=abort;setSourceLoading(true);
+    const current=()=>!abort.signal.aborted&&selectedOwner.current===owner;
     try {
       const params = new URLSearchParams({ section: "artworks", id, email, status: "all" });
-      const response = await fetch(`/api/admin/bi?${params}`, { cache: "no-store" });
+      const response = await fetch(`/api/admin/bi?${params}`, { cache: "no-store", signal: abort.signal });
       const body = await response.json();
+      if(!current())return;
       if (!response.ok || !body.rows?.[0]) throw new Error(body.error || "源作品已清理或不存在");
       setSelected({ section: "artworks", row: body.rows[0] });
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "读取源作品失败");
-    }
+      if(current())setNotice(error instanceof Error ? error.message : "读取源作品失败");
+    } finally { if(current())setSourceLoading(false); }
   }
   function exportPage() {
     if (!data || section === "overview") return;
@@ -921,8 +932,8 @@ export function BiDashboard({ initialSection = "overview", embedded = false }: {
             )}
             {selected.section === "artworks" && <ArtworkMedia key={String(selected.row.id)} row={selected.row} detail />}
             {selected.section === "artworks" && selected.row.source_artwork_id && (
-              <button className={styles.textButton} onClick={() => void openSourceArtwork(String(selected.row.source_artwork_id), String(selected.row.email))}>
-                查看复制源作品
+              <button className={styles.textButton} disabled={sourceLoading} onClick={() => void openSourceArtwork(String(selected.row.source_artwork_id), String(selected.row.email))}>
+                {sourceLoading ? "正在读取源作品…" : "查看复制源作品"}
               </button>
             )}
             {selected.section === "users" && (
@@ -1056,7 +1067,7 @@ export function BiDashboard({ initialSection = "overview", embedded = false }: {
             )}
             {selected.section === "conversations" && (
               <ConversationViewer
-                key={String(selected.row.id)}
+                key={JSON.stringify([selected.row.email,selected.row.source,selected.row.id])}
                 id={String(selected.row.id)}
                 email={String(selected.row.email)}
                 kind={selected.row.source === "agent" ? "agent" : "genchat"}
@@ -1065,6 +1076,7 @@ export function BiDashboard({ initialSection = "overview", embedded = false }: {
             {(selected.section === "operations" ||
               selected.section === "models" || (selected.section === "artworks" && selected.row.job_id)) && (
               <ExecutionTrace
+                key={JSON.stringify([selected.row.email,selected.row.job_id||selected.row.id])}
                 id={String(selected.row.job_id || selected.row.id)}
                 email={String(selected.row.email)}
               />
@@ -1421,7 +1433,7 @@ function ExecutionTrace({ id, email }: { id: string; email: string }) {
   const [data, setData] = useState<TraceAttempt[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const current = useRef({ version: 0 });
+  const current = useRef<{version:number;abort:AbortController|null}>({ version: 0, abort: null });
   useEffect(() => {
     const state = current.current;
     state.version++;
@@ -1430,20 +1442,22 @@ function ExecutionTrace({ id, email }: { id: string; email: string }) {
     setError("");
     return () => {
       state.version++;
+      state.abort?.abort();
     };
   }, [id, email]);
   async function load() {
-    const version = current.current.version;
+    const version = ++current.current.version;
+    current.current.abort?.abort();const abort=new AbortController();current.current.abort=abort;
     setBusy(true);
     setError("");
     try {
       const response = await fetch(
         `/api/admin/bi/trace?${new URLSearchParams({ id, email })}`,
-        { cache: "no-store" },
+        { cache: "no-store", signal: abort.signal },
       );
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || "读取失败");
-      if (current.current.version === version) setData(body.attempts);
+      if (!abort.signal.aborted && current.current.version === version) setData(body.attempts);
     } catch (e) {
       if (current.current.version === version)
         setError(e instanceof Error ? e.message : "读取失败");
@@ -1529,6 +1543,7 @@ function ConversationViewer({
   kind: "agent" | "genchat";
 }) {
   const [page, setPage] = useState(1);
+  const [reload,setReload] = useState(0);
   const [result, setResult] = useState<{
     messages: { role: string; text: string; truncated: boolean }[];
     total: number;
@@ -1548,17 +1563,17 @@ function ConversationViewer({
         if (!response.ok) throw new Error("无法读取对话内容");
         return response.json();
       })
-      .then(setResult)
+      .then(value=>{if(!controller.signal.aborted)setResult(value);})
       .catch((e) => {
-        if (e.name !== "AbortError") setError(e.message);
+        if (!controller.signal.aborted && e.name !== "AbortError") setError(e.message);
       });
     return () => controller.abort();
-  }, [id, email, kind, page]);
+  }, [id, email, kind, page, reload]);
   return (
     <section className={styles.trace}>
       <h3>对话文字内容</h3>
       {error ? (
-        <p role="alert">{error}</p>
+        <div><p role="alert">{error}</p><button className={styles.button} onClick={()=>setReload(value=>value+1)}>重试</button></div>
       ) : !result ? (
         <p>正在读取…</p>
       ) : (
