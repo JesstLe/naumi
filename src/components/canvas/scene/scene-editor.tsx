@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, Loader2, Plus, Redo2, Save, Sparkles, Star, Trash2, Undo2, Upload, Mountain, X } from "lucide-react";
+import {CanvasGrowingTextarea} from "../growing-textarea";
 import { CachedImage } from "@/components/cached-image";
 import { browserRandomUUID } from "@/lib/browser-crypto";
 import { sceneStateWithReferences, sceneProjectSchema, type SceneState, type SceneProject } from "@/lib/scene/project";
@@ -95,12 +96,12 @@ export function SceneEditor({ node, images, english = false, readOnly, draftScop
         </aside>
         <main className={s.main}><fieldset disabled={disabled} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
           <label className={s.field}>{L("名称", "Name")}<input aria-label={L("场景名称", "Scene name")} value={draft.name} maxLength={100} onChange={event => change(scene => ({ ...scene, name: event.target.value }))}/></label>
-          <label className={s.field}>{L("场景设定", "Scene identity")}<textarea aria-label={L("场景设定", "Scene identity")} rows={3} value={draft.description} maxLength={8000} onChange={event => change(scene => ({ ...scene, description: event.target.value }))}/></label>
+          <label className={s.field}>{L("场景设定", "Scene identity")}<CanvasGrowingTextarea aria-label={L("场景设定", "Scene identity")} rows={3} value={draft.description} maxLength={8000} onChange={event => change(scene => ({ ...scene, description: event.target.value }))}/></label>
         </fieldset>
           <div className={s.section}><div className={s.heading}><span>{L("状态", "States")}</span><button type="button" className={s.button} disabled={disabled} aria-label={L("添加状态", "Add state")} onClick={() => { const id = browserRandomUUID(); change(scene => ({ ...scene, states: [...scene.states, { id, name: `${L("状态", "State")} ${scene.states.length + 1}`, description: "", referenceArtworkIds: [...state.referenceArtworkIds], background: state.background ? {...state.background} : null }] })); setStateId(id); }}><Plus size={13}/></button></div>
             <div className={s.states}>{draft.states.map(item => <button type="button" key={item.id} className={`${s.button} ${item.id === state.id ? s.active : ""}`} disabled={!!busy} onClick={() => setStateId(item.id)}>{item.id === draft.defaultStateId && <Star size={11}/>}<span>{item.name}</span></button>)}</div>
             <fieldset disabled={disabled} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}><div className={s.stateHeader}><label className={s.field}>{L("状态名称", "State name")}<input aria-label={L("状态名称", "State name")} value={state.name} maxLength={80} onChange={event => patchState({ name: event.target.value })}/></label><button type="button" className={s.button} aria-label={L("设为默认状态", "Set default state")} disabled={disabled || state.id === draft.defaultStateId} onClick={() => change(scene => ({ ...scene, defaultStateId: state.id }))}><Star size={13}/></button><button type="button" className={s.button} aria-label={L("删除当前状态", "Delete state")} disabled={disabled || draft.states.length === 1} onClick={() => { change(scene => ({ ...scene, defaultStateId: scene.defaultStateId === state.id ? scene.states.find(item => item.id !== state.id)!.id : scene.defaultStateId, states: scene.states.filter(item => item.id !== state.id) })); setStateId(draft.states.find(item => item.id !== state.id)!.id); }}><Trash2 size={13}/></button></div>
-              <label className={s.field}>{L("状态设定", "State details")}<textarea aria-label={L("状态设定", "State details")} rows={2} value={state.description} maxLength={4000} onChange={event => patchState({ description: event.target.value })}/></label>
+              <label className={s.field}>{L("状态设定", "State details")}<CanvasGrowingTextarea aria-label={L("状态设定", "State details")} rows={2} value={state.description} maxLength={4000} onChange={event => patchState({ description: event.target.value })}/></label>
             </fieldset>
           </div>
           <div className={s.section}><div className={s.heading}><span>{L("参考图片", "Reference images")}</span><button type="button" className={s.button} disabled={disabled} onClick={() => upload.current?.click()}><Upload size={13}/>{L("上传", "Upload")}</button></div>

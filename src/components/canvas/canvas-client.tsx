@@ -1441,6 +1441,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   function createTimelineNode(at:{x:number;y:number}){return timelineActions.create(at).catch(error=>{flashTip(error instanceof Error?error.message:L("多轨创建失败","Multitrack creation failed"));});}
   function patchTimelineNode(id:string,patch:TimelinePatchFields&{expectedRevision?:number}){return timelineActions.patch(id,patch);}
   function createAudioNode(at:{x:number;y:number}){return audioActions.create(at).catch(error=>{flashTip(error instanceof Error?error.message:L("音频创建失败","Audio creation failed"));});}
+  function editAudioResult(art:Artwork){
+    if(readOnly||!user||!nodeSettingsReady||isNodeLocked(art.id)||art.category!=="audio")return;
+    const existing=audioNodesStore.nodes.find(node=>node.projectKey===activeKey&&!node.deletedAt&&node.audio.sourceArtworkId===art.id);
+    if(existing){openAudioEditor(existing.id);return;}
+    void audioActions.create(centerScreen(),{artworkId:art.id,title:art.title}).catch(error=>flashTip(error instanceof Error?error.message:L("音频创建失败","Audio creation failed")));
+  }
   function patchAudioNode(id:string,patch:AudioPatchFields&{expectedRevision?:number},resultAdoption=false){return audioActions.patch(id,patch,resultAdoption);}
   function openSceneEditor(id:string,project?:string){return nativeEditors.open("scene",id,project);}
   function createSceneNode(at:{x:number;y:number}){if(readOnly||!user)return;return sceneNodeActions.create(at).catch(error=>flashTip(error instanceof Error?error.message:L("场景创建失败","Scene creation failed")));}
@@ -3526,7 +3532,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           {selected?.videoUrl&&selectedBatchArts.length<=1&&multiSel.length<=1&&!propertiesOpen&&topbarStyle&&<VideoNodeToolbar
             ref={nodeToolbarRef} style={{left:topbarStyle.left,top:topbarStyle.top}} light={lightCanvas}
             readOnly={readOnly} locked={isNodeLocked(selected.id)} busy={!nodeSettingsReady||historySaving} hasResult hasHistory={false}
-            settingsLabel={L("视频处理","Video tools")} onSettings={()=>extractVideoToCanvas(selected.id,{action:'trim'})} onHistory={()=>{}}
+            settingsLabel={selected.category==="audio"?L("编辑音频","Edit audio"):L("视频处理","Video tools")}
+            downloadLabel={selected.category==="audio"?L("下载音频","Download audio"):undefined}
+            onSettings={()=>selected.category==="audio"?editAudioResult(selected):extractVideoToCanvas(selected.id,{action:'trim'})} onHistory={()=>{}}
             onRename={()=>{setNodeRenameValue(selected.title);setRenamingNodeId(selected.id);}}
             onCopy={()=>clipboard.copySelection([selected.id])} onDuplicate={()=>void duplicateArt(selected)} onDownload={()=>downloads.video(selected.videoUrl!)}
             onDelete={()=>void deleteTree(selected.id)} onProperties={openProperties} management={nodeManagementItems(selected.id)}/>}
@@ -3959,6 +3967,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           {selected?.videoUrl&&selectedBatchArts.length<=1&&multiSel.length<=1&&!propertiesOpen&&<VideoResultDock
             ref={panelRef} style={dockStyle??{left:12,bottom:12,maxHeight:"60%"}} prompt={selected.prompt||""}
             readOnly={readOnly||!nodeSettingsReady||isNodeLocked(selected.id)} canGenerate={canFeature("video")}
+            kind={selected.category==="audio"?"audio":"video"} onEditAudio={()=>editAudioResult(selected)}
             onProcess={action=>extractVideoToCanvas(selected.id,action)} onContinue={()=>void openVideoNodeFromSelection()}/>}
           {canFeature("generate") && selected && !selected.videoUrl && selectedBatchArts.length <= 1 && !propertiesOpen && (
             <CanvasImageComposer linkedText={linkedImageText} key={`dock-${imageDraft.key||selected.id}`} pending={false} title={selected.title}

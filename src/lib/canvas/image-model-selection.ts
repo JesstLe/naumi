@@ -1,3 +1,4 @@
+import {canonicalPublicModelId} from "../model-config/public-identity";
 import type {FeatureCatalog} from '../model-config/feature-catalog';
 import type {PublicImageConfiguration,PublicImageModel} from '../model-config/public-client';
 import {compactImageModelOptions} from '../image-model-routing';
@@ -18,16 +19,17 @@ export function canvasImageCatalogMode(catalog:Catalog,config:PublicImageConfigu
 /** Keep model identity and its visible options in one projection. Family
  * compaction retains the original metadata and current/saved/default order. */
 export function canvasImageModelSelection(input:{catalog:Catalog;selected:string;config:PublicImageConfiguration|null;previous:string;saved:string}):CanvasImageModels|undefined{
- const {catalog,selected,config,previous,saved}=input,mode=canvasImageCatalogMode(catalog,config);
+ const {catalog,selected,config}=input;let {previous,saved}=input;const mode=canvasImageCatalogMode(catalog,config);
  if(mode==='managed'){
   const models=catalog!.models;
-  return {models,model:models.find(item=>item.id===selected)?.id||catalog!.defaultModelId||models[0]?.id||''};
+  return {models,model:models.find(item=>item.id===canonicalPublicModelId(models,selected))?.id||catalog!.defaultModelId||models[0]?.id||''};
  }
  if(mode==='waiting')return {models:[],model:''};
  if(mode==='unchanged')return;
  const options=Array.isArray(config!.imageModels)?config!.imageModels.filter(item=>item?.id&&item?.label):[];
  const fallback=config!.defaultImageModel||options[0]?.id||'';
  const models:PublicImageModel[]=options.length?compactImageModelOptions(options,[fallback,saved]):fallback?[{id:fallback,label:fallback,supportsEdit:fallback.startsWith('gpt-image')}]:[];
+ previous=canonicalPublicModelId(models,previous);saved=canonicalPublicModelId(models,saved);
  const model=models.some(item=>item.id===previous)?previous:models.some(item=>item.id===saved)?saved:models.find(item=>item.id===fallback)?.id||models[0]?.id||'';
  return {models,model};
 }

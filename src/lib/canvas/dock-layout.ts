@@ -90,6 +90,17 @@ function compactImageDockLayout(node:NodeScreen|undefined,canvas:CanvasSize,metr
   const titleRect={left:node.left,right:nodeRight,top:titleTop,bottom:node.top};
   const fallback=clearToolbar(splitAround({left,width,start:topBound,end:bottomBound,align:'end'},titleRect));
   chosen=[...slots,...fallback].sort((a,b)=>capacity(b)-capacity(a))[0];
+  // A title/tool-bar split can leave only a header-sized sliver despite there
+  // being room for a useful scrollable sheet. In that constrained case stack
+  // the toolbar at the safe top and give the composer the remaining interval.
+  // This is independent of the previous measured height, so it converges.
+  const stackedSpace=bottomBound-topBound-toolbarHeight-gap;
+  // Keyboard-height windows cannot also reserve the selected picture/title.
+  // Normal desktop/tablet/phone heights retain the existing title exclusion.
+  if(canvas.height<=360&&stackedSpace>0&&(!chosen||capacity(chosen)<Math.min(112,stackedSpace))){
+   toolbar.left=toolbarLeft+toolbarWidth/2;toolbar.top=topBound;
+   chosen={left,width,start:topBound+toolbarHeight+gap,end:bottomBound,align:'start'};
+  }
  }
  const slot=chosen??{left,width,start:topBound,end:topBound+1,align:'start' as const};
  const maxHeight=Math.max(1,capacity(slot)),height=Math.min(desired,maxHeight);

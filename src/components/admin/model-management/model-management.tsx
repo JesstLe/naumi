@@ -21,7 +21,7 @@ export function ModelManagement() {
   const [editor,setEditor]=useState<EditorState|null>(null);
   async function run(operation: Operation) {
     const refreshed=await publish(operation,{
-      onDispatch:()=>setEditor(dispatchedEditor),
+      onDispatch:()=>{if(operation.action!=="identity")setEditor(dispatchedEditor);},
       onSettled:()=>setEditor(null)
     });
     if(operation.action==="register" && refreshed) setEditor(registeredEditor(editor,refreshed));
@@ -39,7 +39,7 @@ export function ModelManagement() {
       <div className={`${styles.toolbar} ${clarity.toolbar}`}><div className={styles.filters} aria-label="模型类型">{[["all", "全部"], ["image", "图片"], ["text", "文字"], ["video", "视频"]].map(([id, label]) => <button key={id} aria-pressed={filter === id} onClick={() => setFilter(id)}>{label}</button>)}</div><button className={styles.secondary} disabled={locked} onClick={()=>setEditor({kind:"order"})}>调整排序</button>{state.managed&&state.rows.some(row=>row.modality==="video")&&<button className={styles.secondary} disabled={locked} onClick={()=>{setError("");setEditor({kind:"video-upgrade"});}}>更新视频能力</button>}<label className={styles.search}><Search size={16} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="搜索名称、模型 ID 或功能" aria-label="搜索模型" /></label></div>
       <div className={`${styles.mapping} ${clarity.mapping}`}><ModelMappingHeader />{rows.map(r => {
         const actions: MappingAction[] = [
-          { label: "修改显示名称", group: "display", disabled: locked || !state.managed, onClick: () => setEditor({kind:"rename",row:r}) },
+          { label: "名称与公开 ID", group: "display", disabled: locked || !state.managed, onClick: () => setEditor({kind:"rename",row:r}) },
           { label: "设置积分", group: "display", disabled: locked || !state.managed || !r.features.length, onClick: () => { setError(""); setEditor({kind:"price",row:r}); } },
           { label: r.modality === "image" ? "更换模型" : "更换通道 / 模型", group: "routing", disabled: locked || !state.managed, onClick: () => { setEditor({kind:"switch",row:r,initialProvider:r.routes[0]?.providerId || ""}); } },
         ];

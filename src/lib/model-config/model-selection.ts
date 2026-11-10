@@ -1,3 +1,4 @@
+import {canonicalPublicModelId} from "./public-identity";
 import {MODEL_BINDINGS,type ModelBinding} from "./bindings";
 import {selectedBusinessOption} from "./business";
 import {selectedImagePreset,presetPublicId} from "./image-preset";
@@ -9,7 +10,7 @@ import {ModelConfigError,type ModelConfig} from "./types";
 export function selectFeatureModel(config:ModelConfig,input:{feature?:string;binding:string;requestedModelId?:string;scopeSystem?:"canvas";requireVisible?:boolean;allowUnboundCutout?:boolean}){
   const purpose=MODEL_BINDINGS[input.binding as ModelBinding];
   if(!purpose)throw new ModelConfigError("INVALID_REQUEST","未知模型用途");
-  const requested=requestedFeatureModel(input.feature,input.requestedModelId);
+  const requested=canonicalPublicModelId(config.publicModels,requestedFeatureModel(input.feature,input.requestedModelId));
   const preset=selectedImagePreset(config,input.feature,requested,input.binding);
   const option=selectedBusinessOption(config,input.feature,requested);
   if(input.allowUnboundCutout&&input.feature==="tool.cutout"&&!preset&&!option&&!config.bindings[input.binding as ModelBinding])return null;

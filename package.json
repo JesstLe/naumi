@@ -23,6 +23,7 @@
     "verify:imagegen-postprocess-db": "tsx --conditions react-server scripts/verify-imagegen-postprocess-db.ts",
     "verify:image-skills": "tsx --conditions react-server scripts/verify-image-skills.ts",
     "verify:image-skills-execution": "tsx --conditions react-server scripts/verify-image-skills-execution.ts",
+    "verify:public-model-identity": "tsx --conditions react-server scripts/verify-public-model-identity.ts",
     "verify:model-management": "tsx --conditions react-server scripts/verify-model-management.ts",
     "verify:image-parameter-contract": "tsx --conditions react-server scripts/verify-image-parameter-contract.ts",
     "verify:image-parameter-contract-ui": "node scripts/verify-image-parameter-contract-ui.cjs",

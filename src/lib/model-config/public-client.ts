@@ -4,6 +4,7 @@ export const MODEL_CATALOG_REFRESH = "naumi:model-catalog-refresh";
 export type PublicImageModel = {
   creditHint?:string;
   id: string;
+  previousIds?: string[];
   label: string;
   supportsEdit: boolean;
   provider?: string;

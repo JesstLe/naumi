@@ -1,3 +1,4 @@
+import {billingForModelIdentities} from "./billing-identity";
 import "server-only";
 import {createHash} from "node:crypto";
 import type {BillingFacts,ConfigSnapshot} from "../billing/types";
@@ -19,10 +20,12 @@ const SOURCE_LABELS:Record<CreditSourceKind,string>={"model-rule":"本页积分�
 /** Which layer actually priced this quote, in the same precedence the quote engine applies:
  * this page's model credit rule > cost preset > feature-model option > tariff rule > tariff default. */
 export function creditSource(billing:ConfigSnapshot,models:ModelSnapshot,facts:BillingFacts,matchedRuleId?:string|null):CreditSource{
+  billing=billingForModelIdentities(billing,models.config);
   const kind:CreditSourceKind=managedModelCreditRule(billing,facts)?"model-rule":selectedImagePreset(models.config,facts.feature,facts.modelId)?"preset":selectedBusinessOption(models.config,facts.feature,facts.modelId)?.pricing?"feature-option":matchedRuleId?"tariff-rule":"tariff";
   return {kind,label:SOURCE_LABELS[kind]};
 }
 export function modelCreditView(billing:ConfigSnapshot,models:ModelSnapshot,feature:FeatureId,modelId:string,quality="medium",resolution="1K"){
+  billing=billingForModelIdentities(billing,models.config);
   const facts:BillingFacts={feature,modelId,quantity:1,quality,resolution,ratio:"1:1",metered:true,byok:false,paidFen:0,userGroup:"default"};
   const override=managedModelCreditRule(billing,facts)?.pricing;
   try{
@@ -56,11 +59,17 @@ export function editManagedModelCredits(billing:ConfigSnapshot,models:ModelSnaps
     }
     if(QUALITY_IDS.some(q=>RESOLUTION_IDS.some(r=>pricing.prices[q][r]!==null && !allowed.has(q+":"+r))))throw new ModelConfigError("INVALID_PRICE","本系统未开放的规格不能设置积分");
   }
-  const config=structuredClone(billing.config);
+  const config=structuredClone(billingForModelIdentities(billing,models.config).config);
   const ids=models.config.publicModels.filter(m=>m.modality===row.modality && (row.modality==="image"?imageModelDisplayId(m.id)===row.id:m.id===row.id)).map(m=>m.id);
   const ruleId=MANAGED_MODEL_CREDIT_PREFIX+createHash("sha256").update(row.modality+":"+row.id).digest("hex").slice(0,32);
   for(const feature of features){
-    const tariff=config.features[feature];tariff.rules=tariff.rules.filter(r=>r.id!==ruleId);
+    const tariff=config.features[feature];
+    tariff.rules=tariff.rules.flatMap(rule=>{
+      if(rule.id===ruleId)return [];
+      if(!rule.id.startsWith(MANAGED_MODEL_CREDIT_PREFIX)||!rule.when.modelId?.some(id=>ids.includes(id)))return [rule];
+      const remaining=rule.when.modelId.filter(id=>!ids.includes(id));
+      return remaining.length?[{...rule,when:{...rule.when,modelId:remaining}}]:[];
+    });
     if(pricing){const priority=Math.max(0,...tariff.rules.map(r=>r.priority))+1;if(priority>2147483647)throw new ModelConfigError("INVALID_PRICE","规则优先级已达上限，请在完整计费中心核对");tariff.rules.push({id:ruleId,priority,when:{modelId:ids,byok:false},pricing:structuredClone(pricing),settlement:{qualityBasis:"requested",successBasis:"successful-units",failureBps:0,reserveBps:10000}});}
   }
   return validateBillingConfig(config);

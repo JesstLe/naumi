@@ -1,3 +1,4 @@
+import {parameterModelIdentity} from "../model-config/public-identity";
 import {assertCanvasRegeneration} from "../canvas/image-version-store";
 import {resolveImageResolution,resolutionFallbackMessage,resolutionFacts,upstreamAcceptsResolution} from "../model-config/resolution-fallback";
 import "server-only";
@@ -115,7 +116,7 @@ export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{m
    const provider=models.config.providers.find(p=>p.id===source.providerId);
    if(frameChoice?.method==='provider-auto'&&!source.parameterMap.apimartImages?.automaticRatio?.enabled){candidates.excluded.push({upstreamId:candidate.upstreamId,codes:['IMAGEGEN_RATIO_UNSUPPORTED']});return false;}
    if(!versions && !selectedImagePresetForPlan(modelId) && !request.parameters.width && !upstreamAcceptsResolution(source,stageFacts.resolution,stageFacts.ratio)) {candidates.excluded.push({upstreamId:candidate.upstreamId,codes:["RESOLUTION_UNSUPPORTED"]});return false;}
-   const codes=imageRequestAdmission(request.parameters.ratio||"1:1",modelId,!!selected.supplierRouting,source,provider?.options?.imageAdapter);
+   const codes=imageRequestAdmission(request.parameters.ratio||"1:1",parameterModelIdentity(models.config,modelId),!!selected.supplierRouting,source,provider?.options?.imageAdapter);
    if(codes.includes("REVERSE_HUB_RATIO_UNSUPPORTED"))hubRatioRejected=true;
    if(codes.includes("EXACT_RATIO_UNSUPPORTED"))exactRatioRejected=true;
    if(codes.length)candidates.excluded.push({upstreamId:candidate.upstreamId,codes});
@@ -144,7 +145,7 @@ export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{m
   assertToolScope(models.config,featureId,modelId);
   if(model.target.type!=="upstream"&&!model.supplierRouting&&candidates.excluded.length)throw new ImagegenPlanError("当前聚合通道尚不能限制高级参数候选，请管理员维护全部候选能力");
   const q=await runExecutionBundle({frozen:{modelVersion:models.version,billingVersion:billing.version},billing,models},()=>quoteForActor(owner,{feature:featureId,quantity:operation==="cutout"?1:request.variants,modelId,quality:requestedQuality,resolution:requestedResolution,ratio:targetRatio},{effectiveResolution:stageFacts.resolution,...(frameChoice?{effectiveRatio:request.parameters.ratio}:{})}));
-  if(q.imageParameterPlanVersion===1)q.imageParameterPlans=Object.fromEntries(candidates.eligible.map(c=>{const u=models.config.upstreamModels.find(u=>u.id===c.upstreamId)!,p=models.config.providers.find(p=>p.id===u.providerId)!;return [u.id,compileImageParameterPlan(u,imagePlanSelection({...stageFacts,requestedResolution:stageFacts.resolution},{...request,output:{...request.output,background:operation==="cutout"?"transparent":requirements.background||undefined}}),{publicModelId:modelId,protocol:p.protocol,modelVersion:models.version,adapter:p.options?.imageAdapter})];}));
+  if(q.imageParameterPlanVersion===1)q.imageParameterPlans=Object.fromEntries(candidates.eligible.map(c=>{const u=models.config.upstreamModels.find(u=>u.id===c.upstreamId)!,p=models.config.providers.find(p=>p.id===u.providerId)!;return [u.id,compileImageParameterPlan(u,imagePlanSelection({...stageFacts,requestedResolution:stageFacts.resolution},{...request,output:{...request.output,background:operation==="cutout"?"transparent":requirements.background||undefined}}),{publicModelId:parameterModelIdentity(models.config,modelId),protocol:p.protocol,modelVersion:models.version,adapter:p.options?.imageAdapter})];}));
   if(stageResolution?.changed)warnings.push(resolutionFallbackMessage(stageResolution));
   const eligibleUpstreamIds=candidates.eligible.map(c=>c.upstreamId);
   preparedImage.eligibleUpstreamIds=eligibleUpstreamIds;

@@ -1,3 +1,4 @@
+import {imageExecutionSizingModel} from "../model-config/context";
 import "server-only";
 import {exactImageRequestSize, ExactImageSizeError} from "@/lib/imagegen/request-size";
 import {unsupportedReverseHubRatio, REVERSE_HUB_RATIO_MESSAGE} from "@/lib/imagegen/ratio-support";
@@ -124,7 +125,7 @@ export async function submitGeneration(p: GenParams, context: GenerationContext)
       return generationResult({error:REVERSE_HUB_RATIO_MESSAGE,code:"IMAGEGEN_RATIO_UNSUPPORTED",accepted:false},{status:422});
   }
   if (p.ratioContractVersion && imageModel.provider !== "user-openai-images" && imageModel.provider !== "user-chat-completions") {
-    try { exactImageRequestSize(p.ratio, imageScope?.connection.wireModel || model, p.ratioContractVersion === 2); }
+    try { exactImageRequestSize(p.ratio, imageExecutionSizingModel(imageScope) || model, p.ratioContractVersion === 2); }
     catch (error) {
       if (error instanceof ExactImageSizeError) return generationResult({error:error.message,code:error.code,accepted:false},{status:400});
       throw error;

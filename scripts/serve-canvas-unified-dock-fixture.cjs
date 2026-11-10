@@ -13,6 +13,7 @@ const text={id:'text-dock-fixture',projectKey:'tree:placement-root',title:'分�
 const definition={sources:{},limits:{images:2},supportsFirstFrame:true,modes:['text','single_image'],durationResolutionMap:[{durations:[4,8],resolutions:['720p','1080p']}],aspectRatios:['16:9','9:16','1:1'],audio:'optional',defaultDurationSeconds:4,defaultResolution:'720p',defaultAspectRatio:'16:9'};
 const videoModel={id:'video-a',providerId:'managed-video',modelId:'video-a',label:'视频模型 A',definition};
 const state={videoWrites:[],generations:[],videoTasks:[],submissions:[],positions:[],history:[],jobs:{},paidCalls:0,apiErrors:[],failNextPosition:false,promptCalls:[],promptMode:"success",promptDelay:100,pendingPromptResponses:[]};
+const allDocks=process.env.CANVAS_ALL_DOCKS_FIXTURE==='1'?require('./verification/canvas-all-docks-fixture.cjs')({arts,videos,text,state}):null;
 const app=process.env.VIDEO_DOCK_EXISTING_NEXT==='1'?null:cp.spawn(process.execPath,['node_modules/next/dist/bin/next','dev','-p',String(nextPort)],{env:{...process.env,DATABASE_URL:'',NAUMI_MULTI_USER:'0',SETTINGS_SECRET:crypto.randomUUID(),VIDEO_WORKER_SECRET:crypto.randomUUID(),NAUMI_VIDEO_WORKER:'0',OPENAI_API_KEY:'fixture-not-a-key',OPENAI_BASE_URL:'http://127.0.0.1:1/v1',NEXT_PUBLIC_SUPABASE_URL:'',NEXT_PUBLIC_SUPABASE_ANON_KEY:'',NEXT_TELEMETRY_DISABLED:'1',NEXT_DIST_DIR:process.env.NEXT_DIST_DIR||'.next-canvas-unified-fixture'},windowsHide:true,stdio:['ignore','pipe','pipe']});
 app?.stdout.on('data',b=>process.stdout.write(b));app?.stderr.on('data',b=>process.stderr.write(b));
 const json=(res,v,status=200)=>{res.writeHead(status,{'content-type':'application/json','cache-control':'no-store'});res.end(JSON.stringify(v))};
@@ -21,6 +22,7 @@ const server=http.createServer(async(req,res)=>{
  const u=new URL(req.url,'http://localhost'),p=u.pathname;
  let raw='';if(req.method==='POST')for await(const b of req)raw+=b;
  if(req.method==='PATCH')for await(const b of req)raw+=b;const body=raw.startsWith('{')?JSON.parse(raw):{};
+ if(allDocks&&await allDocks({req,res,url:u,body,json}))return;
  if(p==='/__fixture/state')return json(res,{...state,pendingPromptResponses:state.pendingPromptResponses.length,artworks:arts,videos});
  if(process.env.CANVAS_PROMPT_FIXTURE==='1'){
   if(p==='/__fixture/prompt-mode'){state.promptMode=u.searchParams.get('mode')||'success';state.promptDelay=Number(u.searchParams.get('delay')||100);return json(res,{ok:true});}

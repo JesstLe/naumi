@@ -1,3 +1,4 @@
+import {canonicalPublicModelId} from "./public-identity";
 import {resolveImageResolution,resolutionFacts} from "./resolution-fallback";
 import {selectImageQuality} from "./image-quality-selection";
 import {selectFeatureModel} from "./model-selection";
@@ -26,7 +27,7 @@ export function prepareImageOperation(input:ImagePreparationInput,snapshot:Model
     const explicit = input.featureModel || selected || "";
     const explicitModelId = requestedFeatureModel(mainFeature, explicit.startsWith("byok:") ? undefined : explicit || undefined);
     const featureDefault = featureDefaultModel(snapshot.config,mainFeature,purpose.image);
-    const configuredModelId = quotedImage?.facts.modelId || explicitModelId || featureDefault || snapshot.config.bindings[purpose.image];
+    const configuredModelId = canonicalPublicModelId(snapshot.config.publicModels, quotedImage?.facts.modelId || explicitModelId || featureDefault || snapshot.config.bindings[purpose.image]);
     const outputResolution = quotedImage?.effectiveParameters?.resolution || quotedImage?.requestedParameters?.resolution || quotedImage?.facts.resolution || (Number(parsed.body.targetWidth) > 0 && Number(parsed.body.targetHeight) > 0 ? resolutionForLongSide(Math.max(Number(parsed.body.targetWidth), Number(parsed.body.targetHeight))) : String(parsed.body.resolution || "1K"));
     const ratio = input.resolvedFrame?.ratio || quotedImage?.facts.ratio || (/^\d+:\d+$/.test(String(parsed.body.ratio||parsed.body.size||"")) ? String(parsed.body.ratio||parsed.body.size) : Number(parsed.body.targetWidth)>0&&Number(parsed.body.targetHeight)>0 ? imageRatio(Number(parsed.body.targetWidth),Number(parsed.body.targetHeight)) : "1:1");
     // A server quote already selected its priced public identity. Routing a
