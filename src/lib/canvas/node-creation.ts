@@ -82,9 +82,9 @@ export function createCanvasTextAtScreen(point:Point,options:CanvasTextCreationO
 }
 
 export function dispatchCanvasNodeCreation(kind:CanvasCreatableNodeKind,point:Point,ports:{
- readOnly:boolean;canVideo:()=>boolean;actions:Record<CanvasCreatableNodeKind,(point:Point)=>unknown>;
+ readOnly:boolean;canVideo:()=>boolean;actions:Record<CanvasCreatableNodeKind,(point:Point)=>{id:string}|void|Promise<{id:string}|void>>;
 }){
  if(ports.readOnly)return;
  if(kind==='video'&&!ports.canVideo())return;
- void ports.actions[kind](point);
+ return ports.actions[kind](point);
 }

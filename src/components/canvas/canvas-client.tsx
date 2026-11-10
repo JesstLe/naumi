@@ -453,6 +453,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     x: number;
     y: number;
     sourceId: string;
+    cx: number;
+    cy: number;
   } | null>(null);
   // 右键菜单(5c):nodeId 有值=节点菜单,无值=空白菜单
   const [ctxMenu, setCtxMenu] = useState<{
@@ -1422,7 +1424,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   async function openVideoNodeFromSelection(blank=false,at?:{x:number;y:number}){
     if(readOnly||!user)return;
     const ids=blank?new Set<string>():new Set([...multiSel,...(selectedId?[selectedId]:[]),...(selectedTextId?[selectedTextId]:[])]);
-    try{await videoNodeActions.create({at:at??centerScreen(),blank,prompt:selected?.prompt||"",choices:videoInputChoices.filter(choice=>ids.has(choice.nodeId))});}
+    try{return await videoNodeActions.create({at:at??centerScreen(),blank,prompt:selected?.prompt||"",choices:videoInputChoices.filter(choice=>ids.has(choice.nodeId))});}
     catch(error){flashTip(error instanceof Error?error.message:"新增视频节点失败");}
   }
   function openVideoEditor(id:string,project=canvasHistory.scope.project){
@@ -1875,10 +1877,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     params: { nodeId?: string | null; handleId?: string | null }
   ) {
     connectedRef.current = false;
-    spawnSourceRef.current = (params.nodeId&&directorNodesStore.getNode(params.nodeId)?.outputs.at(-1)?.artworkId)||params.nodeId||null;
+    spawnSourceRef.current = params.nodeId || null;
     setLinking(true);
   }
-  async function submitCanvasLink(intent:CanvasLinkIntent) {
+  async function submitCanvasLink(intent:CanvasLinkIntent,notifyNoop=false) {
     if(readOnly||!user||preparingPendingImagesRef.current.has(intent.target))return false;
     const scope=canvasHistory.scope;
     // Drain current drafts before snapshotting link fields. The history owner
@@ -1889,12 +1891,14 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         const memberIds=new Set(active?.members.map(node=>node.id)||[]);
         return {
         project:scope.project,artworks:(canvasArtworkDocument.getSnapshot().nodes||[]).filter(node=>memberIds.has(node.id)),texts:canvasTextDocument.getSnapshot().nodes,
-        videos:videoNodesStore.nodes.map(node=>videoNodesStore.getNode(node.id)||node),directors:directorNodesStore.nodes.map(node=>directorNodesStore.getNode(node.id)||node),characters:characterNodesStore.nodes.map(node=>characterNodesStore.getNode(node.id)||node),scenes:sceneNodesStore.nodes.map(node=>sceneNodesStore.getNode(node.id)||node),audios:audioNodesStore.nodes.map(node=>audioNodesStore.getNode(node.id)||node),timelines:timelineNodesStore.nodes.map(node=>timelineNodesStore.getNode(node.id)||node),pending:pendNodesRef.current,selected:multiSel,choices:videoInputChoices,
+        videos:videoNodesStore.getSnapshot().nodes.filter(node=>!node.deletedAt),directors:directorNodesStore.getSnapshot().nodes.filter(node=>!node.deletedAt),characters:characterNodesStore.getSnapshot().nodes.filter(node=>!node.deletedAt),scenes:sceneNodesStore.getSnapshot().nodes.filter(node=>!node.deletedAt),audios:audioNodesStore.getSnapshot().nodes.filter(node=>!node.deletedAt),timelines:timelineNodesStore.getSnapshot().nodes.filter(node=>!node.deletedAt),pending:pendingPresentation.getSnapshot(),selected:multiSel,choices:videoInputChoices,
         videoModels:videoCreationCatalogRef.current.models,
         locked:(id:string)=>isNodeLocked(id)||preparingPendingImagesRef.current.has(id),productTitle:t("canvas.productNode"),referenceLimit:t("canvas.textReferenceLimit"),cycleMessage:t("canvas.linkCycle"),productMention:withProductMention,
       };};
       const timelineMaterials=intent.add&&timelineNodesStore.getNode(intent.target)?await timelineActions.inspect(intent.target,[canvasLinkMediaSource(snapshot(),intent.source)]):[];scope.assertView();
-      return await canvasHistory.submit(scope,()=>compileCanvasLink({...snapshot(),timelineMaterials},intent));
+      const linked=await canvasHistory.submit(scope,()=>compileCanvasLink({...snapshot(),timelineMaterials},intent));
+      if(!linked&&notifyNoop&&scope.viewCurrent())flashTip(L("节点已创建，当前来源无法引用到此节点","Node created; this source cannot be referenced by it"));
+      return linked;
     }catch(error){if(scope.viewCurrent())flashTip(error instanceof Error?error.message:t("canvas.saveFailed"));return false;}
   }
   async function onConnect(conn:{source?:string|null;target?:string|null}) {
@@ -1930,29 +1934,14 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const y = box ? pt.clientY - box.top : pt.clientY;
     setCtxMenu(null);
     // 拉线落空白 → 在落点弹「新建节点」菜单(选类型后再建节点)
-    setSpawnMenu({ x, y, sourceId: src });
+    setSpawnMenu({ x, y, cx: pt.clientX, cy: pt.clientY, sourceId: src });
   }
-  // 拉线落空白后的「新建节点」菜单动作:图片 / 上传图片 / 文字生成。
-  // 图片 → 文字会把源图记录为结构化上下文，并在文字输入区显示 @图片名。
-  function spawnNode(type: string) {
+  // Reference creation shares both the node catalogue and ordinary link commands.
+  function spawnNode(kind:CanvasCreatableNodeKind) {
     if (!spawnMenu) return;
     const { sourceId, x, y } = spawnMenu;
     setSpawnMenu(null);
-    if (type === "text") {
-      if (sourceId.startsWith("text-")) return;
-      addTextNodeAtScreen(x, y, { sourceIds: [sourceId] });
-      return;
-    }
-    const pend = addPendAtScreen(x, y, sourceId, true);
-    if (type === "upload") {
-      // 节点 + 立刻弹出上传窗口
-      onPendUpload(pend.id);
-    } else {
-      // 「图片」:落点建好节点后,把光标落进提示词框,写"改什么"→点生成出衍生(img2img)
-      // Direct edges resolve live content; the draft is only additional input.
-      imageDraft.seed(pend.id, { prompt: "" });
-      wantFocusPendPrompt.current = true;
-    }
+    return createCanvasNode(kind,{x,y},sourceId);
   }
   // 右键菜单(5c):算出相对画布区的坐标后弹出
   function relPoint(e: { clientX: number; clientY: number }) {
@@ -2093,11 +2082,15 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     viewControls.capture(canvasArtworkDocument.scope).area(area);
   }
   function focusCanvasNode(id:string,project?:string){viewControls.focusNode(id,project);}
-  function createCanvasNode(kind:CanvasCreatableNodeKind,point=centerScreen()){
-    dispatchCanvasNodeCreation(kind,point,{readOnly,canVideo:()=>canFeature("video"),actions:{
+  async function createCanvasNode(kind:CanvasCreatableNodeKind,point=centerScreen(),sourceId?:string){
+    const scope=sourceId?canvasHistory.scope:undefined;
+    if(sourceId&&(!scope?.viewCurrent()||isNodeLocked(sourceId)))return;
+    const node=await dispatchCanvasNodeCreation(kind,point,{readOnly,canVideo:()=>canFeature("video"),actions:{
       timeline:createTimelineNode,audio:createAudioNode,scene:createSceneNode,character:createCharacterNode,director:createDirectorNode,
       text:at=>addTextNodeAtScreen(at.x,at.y),image:at=>addPendAtScreen(at.x,at.y,null,false),video:at=>openVideoNodeFromSelection(true,at),
     }});
+    if(sourceId&&node&&scope?.viewCurrent())await submitCanvasLink({source:sourceId,target:node.id,add:true},true);
+    return node;
   }
   // 底部工具条:＋ 添加空白节点(画布中心)
   function toolAddNode() {
@@ -2119,7 +2112,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     };
   }
   function addTextNodeAtScreen(screenX:number,screenY:number,options?:CanvasTextCreationOptions){
-    createCanvasTextAtScreen({x:screenX,y:screenY},options,textNodeCreationPorts());
+    return createCanvasTextAtScreen({x:screenX,y:screenY},options,textNodeCreationPorts());
   }
   async function removeTextNode(id: string) {
     await runDelete([id]);
@@ -3186,53 +3179,14 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             <CanvasViewToolbar controls={viewControls} zoom={viewport.zoom} readOnly={readOnly} tidyDisabled={historySaving||!nodeSettingsReady||!textNodesReady} onTidy={tidyLayout} t={t}/>
           )}
 
-          {/* 拉线落空白:新建节点菜单(基于源图衍生) */}
-          {spawnMenu &&
-            (() => {
-              const src =
-                active?.members.find((m) => m.id === spawnMenu.sourceId) ??
-                textNodes.find((node) => node.id === spawnMenu.sourceId);
-              if (!src) return null;
-              return (
-                <>
-                  <div
-                    className="absolute inset-0 z-40"
-                    onPointerDown={() => setSpawnMenu(null)}
-                  />
-                  <div
-                    onPointerDown={(e) => e.stopPropagation()}
-                    style={{
-                      left: Math.max(8, Math.min(spawnMenu.x, (canvasAreaRef.current?.clientWidth ?? 9999) - 212)),
-                      top: Math.max(8, Math.min(spawnMenu.y, (canvasAreaRef.current?.clientHeight ?? 9999) - 230)),
-                    }}
-                    className="canvas-ui-surface menu-pop absolute z-50 w-[204px] overflow-hidden rounded-2xl border p-1.5"
-                  >
-                    <p className="px-2 pb-1 pt-1.5 text-[11px] font-semibold text-muted-foreground">
-                      {t("canvas.spawnTitle")}
-                    </p>
-                    {[
-                      { key: "image", icon: ImageIcon, label: t("canvas.spawnImage") },
-                      { key: "upload", icon: Upload, label: t("canvas.spawnUpload") },
-                      ...(!spawnMenu.sourceId.startsWith("text-")
-                        ? [{ key: "text", icon: Type, label: t("canvas.textGenerate") }]
-                        : []),
-                    ].map((it) => (
-                      <button
-                        key={it.key}
-                        type="button"
-                        onClick={() => void spawnNode(it.key)}
-                        className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left text-sm text-foreground transition-colors hover:bg-secondary"
-                      >
-                        <span className="flex h-7 w-7 flex-none items-center justify-center rounded-md bg-secondary text-[15px]">
-                          <it.icon aria-hidden="true" className="h-4 w-4 shrink-0" />
-                        </span>
-                        {it.label}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              );
-            })()}
+          {/* 拉线新建与添加节点共用清单、权限和创建入口。 */}
+          {spawnMenu && (
+            <ContextMenuSurface x={spawnMenu.cx} y={spawnMenu.cy} light={lightCanvas} onClose={() => setSpawnMenu(null)}>
+              {canvasNodeMenuItems({ L, readOnly, videoDisabled: !canFeature("video") || videoNodeCreateDisabled, onCreate: kind => void spawnNode(kind) }).map(item => (
+                <Item key={item.id} action={item.id} label={item.label} icon={item.icon} disabled={item.disabled} onClick={item.onSelect} />
+              ))}
+            </ContextMenuSurface>
+          )}
 
           {/* 上传图片作根节点(隐藏 input,右键「上传图片/添加节点」触发) */}
           <input
