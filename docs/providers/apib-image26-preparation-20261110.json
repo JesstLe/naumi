@@ -1,0 +1,1491 @@
+{
+  "schemaVersion": 1,
+  "baseUrl": "https://api.apib.ai/v1",
+  "providerId": "apib-image",
+  "observedAt": "2026-11-10T02:19:13.639Z",
+  "baselineVersion": "153",
+  "baselineDigest": "6715ff299048d3919b485708cec40d841ecae5e2cd92c9a7b330aba4829d2b62",
+  "catalog": {
+    "source": "https://api.apib.ai/v1/models",
+    "httpStatus": 200,
+    "sha256": "30f2970c6e6c5b849de7fcaf7729f6f77ed40e611303652eb2b338d39d82534f",
+    "count": 319,
+    "models": [
+      {
+        "id": "gpt-image-2.6-ext"
+      },
+      {
+        "id": "gpt-image-2.6-flare"
+      },
+      {
+        "id": "gpt-image-2.6-sunburst"
+      },
+      {
+        "id": "mai-image-2.6"
+      },
+      {
+        "id": "mai-image-2.6-flash"
+      }
+    ]
+  },
+  "productionWrites": 0,
+  "generationCalls": 0,
+  "models": [
+    {
+      "id": "gpt-image-2.6-ext",
+      "family": "GPT-Image-2.6",
+      "documentation": {
+        "url": "https://docs.apimart.ai/en/api-reference/images/gpt-image-2.6-ext/generation.md",
+        "sha256": "8266d181fb2954b1f21eb4f8e586fd30b51ff28d4cdeb2608683f3152f1cee83"
+      },
+      "upstream": {
+        "id": "apib:gpt-image-2.6-ext",
+        "providerId": "apib-image",
+        "model": "gpt-image-2.6-ext",
+        "label": "gpt-image-2.6-ext",
+        "modality": "image",
+        "enabled": false,
+        "capabilities": {
+          "verified": false,
+          "generate": true,
+          "edit": true,
+          "vision": false,
+          "transparent": false,
+          "preserveIdentity": false,
+          "textAccuracy": false,
+          "qualityRank": 1,
+          "qualities": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "nativeResolutions": [
+            "1K",
+            "2K",
+            "4K"
+          ],
+          "maxReferenceImages": 16,
+          "expectedLatencyMs": 0,
+          "imagegen": {
+            "edit": {
+              "state": "supported",
+              "source": "https://docs.apimart.ai/en/api-reference/images/gpt-image-2.6-ext/generation.md (related docs; no APIB paid execution proof)",
+              "checkedAt": "2026-11-10"
+            },
+            "mask": {
+              "state": "unknown",
+              "source": "https://docs.apimart.ai/en/api-reference/images/gpt-image-2.6-ext/generation.md (related docs; no APIB paid execution proof)",
+              "checkedAt": "2026-11-10"
+            },
+            "transparent": {
+              "state": "unknown",
+              "source": "https://docs.apimart.ai/en/api-reference/images/gpt-image-2.6-ext/generation.md (related docs; no APIB paid execution proof)",
+              "checkedAt": "2026-11-10"
+            },
+            "outputFormat": {
+              "state": "supported",
+              "source": "https://docs.apimart.ai/en/api-reference/images/gpt-image-2.6-ext/generation.md (related docs; no APIB paid execution proof)",
+              "checkedAt": "2026-11-10",
+              "values": [
+                "png",
+                "jpeg",
+                "webp"
+              ]
+            },
+            "pixelSize": {
+              "state": "unknown",
+              "source": "https://docs.apimart.ai/en/api-reference/images/gpt-image-2.6-ext/generation.md (related docs; no APIB paid execution proof)",
+              "checkedAt": "2026-11-10"
+            }
+          }
+        },
+        "parameterMap": {
+          "apimartImages": {
+            "schemaVersion": 1,
+            "maxOutputs": 1,
+            "supportsMask": false,
+            "ratios": [
+              "1:1",
+              "3:2",
+              "2:3",
+              "4:3",
+              "3:4",
+              "5:4",
+              "4:5",
+              "16:9",
+              "9:16",
+              "21:9"
+            ],
+            "automaticRatio": {
+              "enabled": true,
+              "source": "https://docs.apimart.ai/en/api-reference/images/gpt-image-2.6-ext/generation.md (related docs; no APIB paid execution proof)",
+              "checkedAt": "2026-11-10"
+            },
+            "outputDimensions": {
+              "1K:1:1": {
+                "width": 1024,
+                "height": 1024
+              },
+              "2K:1:1": {
+                "width": 2048,
+                "height": 2048
+              },
+              "4K:1:1": {
+                "width": 2880,
+                "height": 2880
+              },
+              "1K:3:2": {
+                "width": 1536,
+                "height": 1024
+              },
+              "2K:3:2": {
+                "width": 2048,
+                "height": 1360
+              },
+              "4K:3:2": {
+                "width": 3520,
+                "height": 2336
+              },
+              "1K:2:3": {
+                "width": 1024,
+                "height": 1536
+              },
+              "2K:2:3": {
+                "width": 1360,
+                "height": 2048
+              },
+              "4K:2:3": {
+                "width": 2336,
+                "height": 3520
+              },
+              "1K:4:3": {
+                "width": 1024,
+                "height": 768
+              },
+              "2K:4:3": {
+                "width": 2048,
+                "height": 1536
+              },
+              "4K:4:3": {
+                "width": 3312,
+                "height": 2480
+              },
+              "1K:3:4": {
+                "width": 768,
+                "height": 1024
+              },
+              "2K:3:4": {
+                "width": 1536,
+                "height": 2048
+              },
+              "4K:3:4": {
+                "width": 2480,
+                "height": 3312
+              },
+              "1K:5:4": {
+                "width": 1280,
+                "height": 1024
+              },
+              "2K:5:4": {
+                "width": 2560,
+                "height": 2048
+              },
+              "4K:5:4": {
+                "width": 3216,
+                "height": 2576
+              },
+              "1K:4:5": {
+                "width": 1024,
+                "height": 1280
+              },
+              "2K:4:5": {
+                "width": 2048,
+                "height": 2560
+              },
+              "4K:4:5": {
+                "width": 2576,
+                "height": 3216
+              },
+              "1K:16:9": {
+                "width": 1536,
+                "height": 864
+              },
+              "2K:16:9": {
+                "width": 2048,
+                "height": 1152
+              },
+              "4K:16:9": {
+                "width": 3840,
+                "height": 2160
+              },
+              "1K:9:16": {
+                "width": 864,
+                "height": 1536
+              },
+              "2K:9:16": {
+                "width": 1152,
+                "height": 2048
+              },
+              "4K:9:16": {
+                "width": 2160,
+                "height": 3840
+              },
+              "1K:21:9": {
+                "width": 2016,
+                "height": 864
+              },
+              "2K:21:9": {
+                "width": 2688,
+                "height": 1152
+              },
+              "4K:21:9": {
+                "width": 3840,
+                "height": 1648
+              }
+            }
+          },
+          "qualityPolicy": {
+            "mode": "map",
+            "choices": [
+              {
+                "id": "low",
+                "label": "low",
+                "value": "low"
+              },
+              {
+                "id": "medium",
+                "label": "medium",
+                "value": "medium"
+              },
+              {
+                "id": "high",
+                "label": "high",
+                "value": "high"
+              },
+              {
+                "id": "xhigh",
+                "label": "xhigh",
+                "value": "xhigh"
+              },
+              {
+                "id": "max",
+                "label": "max",
+                "value": "max"
+              }
+            ],
+            "evidence": {
+              "status": "documented",
+              "source": "https://docs.apimart.ai/en/api-reference/images/gpt-image-2.6-ext/generation.md (related docs; no APIB paid execution proof)",
+              "checkedAt": "2026-11-10"
+            }
+          },
+          "resolutionPolicy": {
+            "mode": "map",
+            "field": "resolution",
+            "ratioField": "size",
+            "values": {
+              "1K": "1k",
+              "2K": "2k",
+              "4K": "4k"
+            }
+          },
+          "imagegen": {
+            "outputFormat": "output_format"
+          },
+          "version": "flare"
+        }
+      },
+      "readiness": "OFFLINE_DISABLED_UNVERIFIED",
+      "gates": [
+        "apib-actual-wire-and-output",
+        "actual-media-save-parent-receipt",
+        "procurement-and-customer-billing-review",
+        "approved-paid-batch",
+        "versioned-publication"
+      ],
+      "deferredFeatures": [
+        "custom-pixels",
+        "GIF",
+        "SVG",
+        "markup-overlay",
+        "complexity",
+        "web-grounding"
+      ],
+      "notes": "n=1; 10 named ratios/auto only; version=flare pinned; no assumed mask/transparent; documentation contradicts itself on SVG support."
+    },
+    {
+      "id": "gpt-image-2.6-flare",
+      "family": "GPT-Image-2.6",
+      "documentation": {
+        "url": "https://docs.apimart.ai/en/api-reference/images/gpt-image-2.6/generation.md",
+        "sha256": "637f97204f7549c4468a5c3fe1f6dfcdca2ecd5b00303b1bad2f8e1379705874"
+      },
+      "upstream": {
+        "id": "apib:gpt-image-2.6-flare",
+        "providerId": "apib-image",
+        "model": "gpt-image-2.6-flare",
+        "label": "gpt-image-2.6-flare",
+        "modality": "image",
+        "enabled": false,
+        "capabilities": {
+          "verified": false,
+          "generate": true,
+          "edit": true,
+          "vision": false,
+          "transparent": true,
+          "preserveIdentity": false,
+          "textAccuracy": false,
+          "qualityRank": 1,
+          "qualities": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "nativeResolutions": [
+            "1K",
+            "2K",
+            "4K"
+          ],
+          "maxReferenceImages": 16,
+          "expectedLatencyMs": 0,
+          "imagegen": {
+            "edit": {
+              "state": "supported",
+              "source": "https://docs.apimart.ai/en/api-reference/images/gpt-image-2.6/generation.md (related docs; no APIB paid execution proof)",
+              "checkedAt": "2026-11-10"
+            },
+            "mask": {
+              "state": "supported",
+              "source": "https://docs.apimart.ai/en/api-reference/images/gpt-image-2.6/generation.md (related docs; no APIB paid execution proof)",
+              "checkedAt": "2026-11-10"
+            },
+            "transparent": {
+              "state": "supported",
+              "source": "https://docs.apimart.ai/en/api-reference/images/gpt-image-2.6/generation.md (related docs; no APIB paid execution proof)",
+              "checkedAt": "2026-11-10"
+            },
+            "outputFormat": {
+              "state": "supported",
+              "source": "https://docs.apimart.ai/en/api-reference/images/gpt-image-2.6/generation.md (related docs; no APIB paid execution proof)",
+              "checkedAt": "2026-11-10",
+              "values": [
+                "png",
+                "jpeg",
+                "webp"
+              ]
+            },
+            "pixelSize": {
+              "state": "unknown",
+              "source": "https://docs.apimart.ai/en/api-reference/images/gpt-image-2.6/generation.md (related docs; no APIB paid execution proof)",
+              "checkedAt": "2026-11-10"
+            }
+          }
+        },
+        "parameterMap": {
+          "apimartImages": {
+            "schemaVersion": 1,
+            "maxOutputs": 4,
+            "supportsMask": true,
+            "ratios": [
+              "1:1",
+              "3:2",
+              "2:3",
+              "4:3",
+              "3:4",
+              "5:4",
+              "4:5",
+              "16:9",
+              "9:16",
+              "2:1",
+              "1:2",
+              "21:9",
+              "9:21",
+              "3:1",
+              "1:3"
+            ],
+            "automaticRatio": {
+              "enabled": true,
+              "source": "https://docs.apimart.ai/en/api-reference/images/gpt-image-2.6/generation.md (related docs; no APIB paid execution proof)",
+              "checkedAt": "2026-11-10"
+            },
+            "outputDimensions": {
+              "1K:1:1": {
+                "width": 1024,
+                "height": 1024
+              },
+              "2K:1:1": {
+                "width": 2048,
+                "height": 2048
+              },
+              "4K:1:1": {
+                "width": 2880,
+                "height": 2880
+              },
+              "1K:3:2": {
+                "width": 1536,
+                "height": 1024
+              },
+              "2K:3:2": {
+                "width": 2048,
+                "height": 1360
+              },
+              "4K:3:2": {
+                "width": 3520,
+                "height": 2336
+              },
+              "1K:2:3": {
+                "width": 1024,
+                "height": 1536
+              },
+              "2K:2:3": {
+                "width": 1360,
+                "height": 2048
+              },
+              "4K:2:3": {
+                "width": 2336,
+                "height": 3520
+              },
+              "1K:4:3": {
+                "width": 1024,
+                "height": 768
+              },
+              "2K:4:3": {
+                "width": 2048,
+                "height": 1536
+              },
+              "4K:4:3": {
+                "width": 3312,
+                "height": 2480
+              },
+              "1K:3:4": {
+                "width": 768,
+                "height": 1024
+              },
+              "2K:3:4": {
+                "width": 1536,
+                "height": 2048
+              },
+              "4K:3:4": {
+                "width": 2480,
+                "height": 3312
+              },
+              "1K:5:4": {
+                "width": 1280,
+                "height": 1024
+              },
+              "2K:5:4": {
+                "width": 2560,
+                "height": 2048
+              },
+              "4K:5:4": {
+                "width": 3216,
+                "height": 2576
+              },
+              "1K:4:5": {
+                "width": 1024,
+                "height": 1280
+              },
+              "2K:4:5": {
+                "width": 2048,
+                "height": 2560
+              },
+              "4K:4:5": {
+                "width": 2576,
+                "height": 3216
+              },
+              "1K:16:9": {
+                "width": 1536,
+                "height": 864
+              },
+              "2K:16:9": {
+                "width": 2048,
+                "height": 1152
+              },
+              "4K:16:9": {
+                "width": 3840,
+                "height": 2160
+              },
+              "1K:9:16": {
+                "width": 864,
+                "height": 1536
+              },
+              "2K:9:16": {
+                "width": 1152,
+                "height": 2048
+              },
+              "4K:9:16": {
+                "width": 2160,
+                "height": 3840
+              },
+              "1K:2:1": {
+                "width": 2048,
+                "height": 1024
+              },
+              "2K:2:1": {
+                "width": 2688,
+                "height": 1344
+              },
+              "4K:2:1": {
+                "width": 3840,
+                "height": 1920
+              },
+              "1K:1:2": {
+                "width": 1024,
+                "height": 2048
+              },
+              "2K:1:2": {
+                "width": 1344,
+                "height": 2688
+              },
+              "4K:1:2": {
+                "width": 1920,
+                "height": 3840
+              },
+              "1K:21:9": {
+                "width": 2016,
+                "height": 864
+              },
+              "2K:21:9": {
+                "width": 2688,
+                "height": 1152
+              },
+              "4K:21:9": {
+                "width": 3840,
+                "height": 1648
+              },
+              "1K:9:21": {
+                "width": 864,
+                "height": 2016
+              },
+              "2K:9:21": {
+                "width": 1152,
+                "height": 2688
+              },
+              "4K:9:21": {
+                "width": 1648,
+                "height": 3840
+              },
+              "1K:3:1": {
+                "width": 1536,
+                "height": 512
+              },
+              "2K:3:1": {
+                "width": 3072,
+                "height": 1024
+              },
+              "4K:3:1": {
+                "width": 3840,
+                "height": 1280
+              },
+              "1K:1:3": {
+                "width": 512,
+                "height": 1536
+              },
+              "2K:1:3": {
+                "width": 1024,
+                "height": 3072
+              },
+              "4K:1:3": {
+                "width": 1280,
+                "height": 3840
+              }
+            }
+          },
+          "qualityPolicy": {
+            "mode": "map",
+            "choices": [
+              {
+                "id": "low",
+                "label": "low",
+                "value": "low"
+              },
+              {
+                "id": "medium",
+                "label": "medium",
+                "value": "medium"
+              },
+              {
+                "id": "high",
+                "label": "high",
+                "value": "high"
+              },
+              {
+                "id": "xhigh",
+                "label": "xhigh",
+                "value": "xhigh"
+              },
+              {
+                "id": "max",
+                "label": "max",
+                "value": "max"
+              }
+            ],
+            "evidence": {
+              "status": "documented",
+              "source": "https://docs.apimart.ai/en/api-reference/images/gpt-image-2.6/generation.md (related docs; no APIB paid execution proof)",
+              "checkedAt": "2026-11-10"
+            }
+          },
+          "resolutionPolicy": {
+            "mode": "map",
+            "field": "resolution",
+            "ratioField": "size",
+            "values": {
+              "1K": "1k",
+              "2K": "2k",
+              "4K": "4k"
+            }
+          },
+          "imagegen": {
+            "outputFormat": "output_format",
+            "transparent": "background"
+          }
+        }
+      },
+      "readiness": "OFFLINE_DISABLED_UNVERIFIED",
+      "gates": [
+        "apib-actual-wire-and-output",
+        "actual-media-save-parent-receipt",
+        "procurement-and-customer-billing-review",
+        "approved-paid-batch",
+        "versioned-publication"
+      ],
+      "deferredFeatures": [
+        "custom-pixels",
+        "GIF",
+        "SVG",
+        "markup-overlay",
+        "complexity",
+        "web-grounding"
+      ],
+      "notes": "15 named ratios/auto; 1-4 outputs; keep explicit quality, do not default auto to low; exact pixels/markup/GIF/SVG not enabled by this candidate."
+    },
+    {
+      "id": "gpt-image-2.6-sunburst",
+      "family": "GPT-Image-2.6",
+      "documentation": {
+        "url": "https://docs.apimart.ai/en/api-reference/images/gpt-image-2.6/generation.md",
+        "sha256": "637f97204f7549c4468a5c3fe1f6dfcdca2ecd5b00303b1bad2f8e1379705874"
+      },
+      "upstream": {
+        "id": "apib:gpt-image-2.6-sunburst",
+        "providerId": "apib-image",
+        "model": "gpt-image-2.6-sunburst",
+        "label": "gpt-image-2.6-sunburst",
+        "modality": "image",
+        "enabled": false,
+        "capabilities": {
+          "verified": false,
+          "generate": true,
+          "edit": true,
+          "vision": false,
+          "transparent": true,
+          "preserveIdentity": false,
+          "textAccuracy": false,
+          "qualityRank": 1,
+          "qualities": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "nativeResolutions": [
+            "1K",
+            "2K",
+            "4K"
+          ],
+          "maxReferenceImages": 16,
+          "expectedLatencyMs": 0,
+          "imagegen": {
+            "edit": {
+              "state": "supported",
+              "source": "https://docs.apimart.ai/en/api-reference/images/gpt-image-2.6/generation.md (related docs; no APIB paid execution proof)",
+              "checkedAt": "2026-11-10"
+            },
+            "mask": {
+              "state": "supported",
+              "source": "https://docs.apimart.ai/en/api-reference/images/gpt-image-2.6/generation.md (related docs; no APIB paid execution proof)",
+              "checkedAt": "2026-11-10"
+            },
+            "transparent": {
+              "state": "supported",
+              "source": "https://docs.apimart.ai/en/api-reference/images/gpt-image-2.6/generation.md (related docs; no APIB paid execution proof)",
+              "checkedAt": "2026-11-10"
+            },
+            "outputFormat": {
+              "state": "supported",
+              "source": "https://docs.apimart.ai/en/api-reference/images/gpt-image-2.6/generation.md (related docs; no APIB paid execution proof)",
+              "checkedAt": "2026-11-10",
+              "values": [
+                "png",
+                "jpeg",
+                "webp"
+              ]
+            },
+            "pixelSize": {
+              "state": "unknown",
+              "source": "https://docs.apimart.ai/en/api-reference/images/gpt-image-2.6/generation.md (related docs; no APIB paid execution proof)",
+              "checkedAt": "2026-11-10"
+            }
+          }
+        },
+        "parameterMap": {
+          "apimartImages": {
+            "schemaVersion": 1,
+            "maxOutputs": 4,
+            "supportsMask": true,
+            "ratios": [
+              "1:1",
+              "3:2",
+              "2:3",
+              "4:3",
+              "3:4",
+              "5:4",
+              "4:5",
+              "16:9",
+              "9:16",
+              "2:1",
+              "1:2",
+              "21:9",
+              "9:21",
+              "3:1",
+              "1:3"
+            ],
+            "automaticRatio": {
+              "enabled": true,
+              "source": "https://docs.apimart.ai/en/api-reference/images/gpt-image-2.6/generation.md (related docs; no APIB paid execution proof)",
+              "checkedAt": "2026-11-10"
+            },
+            "outputDimensions": {
+              "1K:1:1": {
+                "width": 1024,
+                "height": 1024
+              },
+              "2K:1:1": {
+                "width": 2048,
+                "height": 2048
+              },
+              "4K:1:1": {
+                "width": 2880,
+                "height": 2880
+              },
+              "1K:3:2": {
+                "width": 1536,
+                "height": 1024
+              },
+              "2K:3:2": {
+                "width": 2048,
+                "height": 1360
+              },
+              "4K:3:2": {
+                "width": 3520,
+                "height": 2336
+              },
+              "1K:2:3": {
+                "width": 1024,
+                "height": 1536
+              },
+              "2K:2:3": {
+                "width": 1360,
+                "height": 2048
+              },
+              "4K:2:3": {
+                "width": 2336,
+                "height": 3520
+              },
+              "1K:4:3": {
+                "width": 1024,
+                "height": 768
+              },
+              "2K:4:3": {
+                "width": 2048,
+                "height": 1536
+              },
+              "4K:4:3": {
+                "width": 3312,
+                "height": 2480
+              },
+              "1K:3:4": {
+                "width": 768,
+                "height": 1024
+              },
+              "2K:3:4": {
+                "width": 1536,
+                "height": 2048
+              },
+              "4K:3:4": {
+                "width": 2480,
+                "height": 3312
+              },
+              "1K:5:4": {
+                "width": 1280,
+                "height": 1024
+              },
+              "2K:5:4": {
+                "width": 2560,
+                "height": 2048
+              },
+              "4K:5:4": {
+                "width": 3216,
+                "height": 2576
+              },
+              "1K:4:5": {
+                "width": 1024,
+                "height": 1280
+              },
+              "2K:4:5": {
+                "width": 2048,
+                "height": 2560
+              },
+              "4K:4:5": {
+                "width": 2576,
+                "height": 3216
+              },
+              "1K:16:9": {
+                "width": 1536,
+                "height": 864
+              },
+              "2K:16:9": {
+                "width": 2048,
+                "height": 1152
+              },
+              "4K:16:9": {
+                "width": 3840,
+                "height": 2160
+              },
+              "1K:9:16": {
+                "width": 864,
+                "height": 1536
+              },
+              "2K:9:16": {
+                "width": 1152,
+                "height": 2048
+              },
+              "4K:9:16": {
+                "width": 2160,
+                "height": 3840
+              },
+              "1K:2:1": {
+                "width": 2048,
+                "height": 1024
+              },
+              "2K:2:1": {
+                "width": 2688,
+                "height": 1344
+              },
+              "4K:2:1": {
+                "width": 3840,
+                "height": 1920
+              },
+              "1K:1:2": {
+                "width": 1024,
+                "height": 2048
+              },
+              "2K:1:2": {
+                "width": 1344,
+                "height": 2688
+              },
+              "4K:1:2": {
+                "width": 1920,
+                "height": 3840
+              },
+              "1K:21:9": {
+                "width": 2016,
+                "height": 864
+              },
+              "2K:21:9": {
+                "width": 2688,
+                "height": 1152
+              },
+              "4K:21:9": {
+                "width": 3840,
+                "height": 1648
+              },
+              "1K:9:21": {
+                "width": 864,
+                "height": 2016
+              },
+              "2K:9:21": {
+                "width": 1152,
+                "height": 2688
+              },
+              "4K:9:21": {
+                "width": 1648,
+                "height": 3840
+              },
+              "1K:3:1": {
+                "width": 1536,
+                "height": 512
+              },
+              "2K:3:1": {
+                "width": 3072,
+                "height": 1024
+              },
+              "4K:3:1": {
+                "width": 3840,
+                "height": 1280
+              },
+              "1K:1:3": {
+                "width": 512,
+                "height": 1536
+              },
+              "2K:1:3": {
+                "width": 1024,
+                "height": 3072
+              },
+              "4K:1:3": {
+                "width": 1280,
+                "height": 3840
+              }
+            }
+          },
+          "qualityPolicy": {
+            "mode": "map",
+            "choices": [
+              {
+                "id": "low",
+                "label": "low",
+                "value": "low"
+              },
+              {
+                "id": "medium",
+                "label": "medium",
+                "value": "medium"
+              },
+              {
+                "id": "high",
+                "label": "high",
+                "value": "high"
+              },
+              {
+                "id": "xhigh",
+                "label": "xhigh",
+                "value": "xhigh"
+              },
+              {
+                "id": "max",
+                "label": "max",
+                "value": "max"
+              }
+            ],
+            "evidence": {
+              "status": "documented",
+              "source": "https://docs.apimart.ai/en/api-reference/images/gpt-image-2.6/generation.md (related docs; no APIB paid execution proof)",
+              "checkedAt": "2026-11-10"
+            }
+          },
+          "resolutionPolicy": {
+            "mode": "map",
+            "field": "resolution",
+            "ratioField": "size",
+            "values": {
+              "1K": "1k",
+              "2K": "2k",
+              "4K": "4k"
+            }
+          },
+          "imagegen": {
+            "outputFormat": "output_format",
+            "transparent": "background"
+          }
+        }
+      },
+      "readiness": "OFFLINE_DISABLED_UNVERIFIED",
+      "gates": [
+        "apib-actual-wire-and-output",
+        "actual-media-save-parent-receipt",
+        "procurement-and-customer-billing-review",
+        "approved-paid-batch",
+        "versioned-publication"
+      ],
+      "deferredFeatures": [
+        "custom-pixels",
+        "GIF",
+        "SVG",
+        "markup-overlay",
+        "complexity",
+        "web-grounding"
+      ],
+      "notes": "15 named ratios/auto; 1-4 outputs; keep explicit quality, do not default auto to low; exact pixels/markup/GIF/SVG not enabled by this candidate."
+    },
+    {
+      "id": "mai-image-2.6",
+      "family": "MAI-Image-2.6",
+      "documentation": {
+        "url": "https://docs.apimart.ai/en/api-reference/images/mai-image-2.6/generation.md",
+        "sha256": "c7ac8e4831af4feb45af9d33a89bedafc829ee775aec1b90d41ecbea42896e87"
+      },
+      "upstream": {
+        "id": "apib:mai-image-2.6",
+        "providerId": "apib-image",
+        "model": "mai-image-2.6",
+        "label": "mai-image-2.6",
+        "modality": "image",
+        "enabled": false,
+        "capabilities": {
+          "verified": false,
+          "generate": true,
+          "edit": false,
+          "vision": false,
+          "transparent": false,
+          "preserveIdentity": false,
+          "textAccuracy": false,
+          "qualityRank": 1,
+          "qualities": [
+            "medium"
+          ],
+          "nativeResolutions": [
+            "1K",
+            "2K"
+          ],
+          "maxReferenceImages": 5,
+          "expectedLatencyMs": 0,
+          "imagegen": {
+            "edit": {
+              "state": "unknown",
+              "source": "https://docs.apimart.ai/en/api-reference/images/mai-image-2.6/generation.md (related docs; no APIB paid execution proof)",
+              "checkedAt": "2026-11-10"
+            },
+            "mask": {
+              "state": "unknown",
+              "source": "https://docs.apimart.ai/en/api-reference/images/mai-image-2.6/generation.md (related docs; no APIB paid execution proof)",
+              "checkedAt": "2026-11-10"
+            },
+            "transparent": {
+              "state": "unknown",
+              "source": "https://docs.apimart.ai/en/api-reference/images/mai-image-2.6/generation.md (related docs; no APIB paid execution proof)",
+              "checkedAt": "2026-11-10"
+            },
+            "outputFormat": {
+              "state": "unknown",
+              "source": "https://docs.apimart.ai/en/api-reference/images/mai-image-2.6/generation.md (related docs; no APIB paid execution proof)",
+              "checkedAt": "2026-11-10"
+            },
+            "pixelSize": {
+              "state": "unknown",
+              "source": "https://docs.apimart.ai/en/api-reference/images/mai-image-2.6/generation.md (related docs; no APIB paid execution proof)",
+              "checkedAt": "2026-11-10"
+            }
+          }
+        },
+        "parameterMap": {
+          "apimartImages": {
+            "schemaVersion": 1,
+            "maxOutputs": 1,
+            "supportsMask": false,
+            "ratios": [
+              "1:1",
+              "4:3",
+              "3:4",
+              "3:2",
+              "2:3",
+              "16:9",
+              "9:16",
+              "2:1",
+              "1:2",
+              "21:9",
+              "9:21",
+              "4:1",
+              "1:4"
+            ],
+            "automaticRatio": {
+              "enabled": true,
+              "source": "https://docs.apimart.ai/en/api-reference/images/mai-image-2.6/generation.md (related docs; no APIB paid execution proof)",
+              "checkedAt": "2026-11-10"
+            },
+            "outputDimensions": {
+              "1K:1:1": {
+                "width": 1024,
+                "height": 1024
+              },
+              "2K:1:1": {
+                "width": 1536,
+                "height": 1536
+              },
+              "1K:4:3": {
+                "width": 1152,
+                "height": 864
+              },
+              "2K:4:3": {
+                "width": 1760,
+                "height": 1312
+              },
+              "1K:3:4": {
+                "width": 864,
+                "height": 1152
+              },
+              "2K:3:4": {
+                "width": 1312,
+                "height": 1760
+              },
+              "1K:3:2": {
+                "width": 1248,
+                "height": 832
+              },
+              "2K:3:2": {
+                "width": 1856,
+                "height": 1248
+              },
+              "1K:2:3": {
+                "width": 832,
+                "height": 1248
+              },
+              "2K:2:3": {
+                "width": 1248,
+                "height": 1856
+              },
+              "1K:16:9": {
+                "width": 1344,
+                "height": 768
+              },
+              "2K:16:9": {
+                "width": 2048,
+                "height": 1152
+              },
+              "1K:9:16": {
+                "width": 768,
+                "height": 1344
+              },
+              "2K:9:16": {
+                "width": 1152,
+                "height": 2048
+              },
+              "1K:2:1": {
+                "width": 1536,
+                "height": 768
+              },
+              "2K:2:1": {
+                "width": 2144,
+                "height": 1056
+              },
+              "1K:1:2": {
+                "width": 768,
+                "height": 1536
+              },
+              "2K:1:2": {
+                "width": 1056,
+                "height": 2144
+              },
+              "1K:21:9": {
+                "width": 1792,
+                "height": 768
+              },
+              "2K:21:9": {
+                "width": 2336,
+                "height": 992
+              },
+              "1K:9:21": {
+                "width": 768,
+                "height": 1792
+              },
+              "2K:9:21": {
+                "width": 992,
+                "height": 2336
+              },
+              "1K:4:1": {
+                "width": 3072,
+                "height": 768
+              },
+              "2K:4:1": {
+                "width": 3072,
+                "height": 768
+              },
+              "1K:1:4": {
+                "width": 768,
+                "height": 3072
+              },
+              "2K:1:4": {
+                "width": 768,
+                "height": 3072
+              }
+            }
+          },
+          "qualityPolicy": {
+            "mode": "omit",
+            "choices": [
+              {
+                "id": "medium",
+                "label": "medium"
+              }
+            ],
+            "evidence": {
+              "status": "documented",
+              "source": "https://docs.apimart.ai/en/api-reference/images/mai-image-2.6/generation.md (related docs; no APIB paid execution proof)",
+              "checkedAt": "2026-11-10"
+            }
+          },
+          "resolutionPolicy": {
+            "mode": "map",
+            "field": "resolution",
+            "ratioField": "size",
+            "values": {
+              "1K": "1K",
+              "2K": "2K"
+            }
+          }
+        }
+      },
+      "readiness": "OFFLINE_DISABLED_UNVERIFIED",
+      "gates": [
+        "apib-actual-wire-and-output",
+        "actual-media-save-parent-receipt",
+        "procurement-and-customer-billing-review",
+        "approved-paid-batch",
+        "versioned-publication",
+        "mai-32px-grid-delivery-validation",
+        "operation-sensitive-reference-edit-size-contract"
+      ],
+      "deferredFeatures": [
+        "custom-pixels",
+        "GIF",
+        "SVG",
+        "markup-overlay",
+        "complexity",
+        "web-grounding"
+      ],
+      "notes": "Independent Microsoft MAI family, not a GPT route; n=1; 1K/2K only; quality omitted. Editing held because reference edits ignore requested size/resolution; max 5 references. Only the 13 ratio entries with documented dimension tables are prepared. Several outputs use a 32px grid and do not exactly match nominal ratios; delivery verification must be adapted and accepted before enablement."
+    },
+    {
+      "id": "mai-image-2.6-flash",
+      "family": "MAI-Image-2.6",
+      "documentation": {
+        "url": "https://docs.apimart.ai/en/api-reference/images/mai-image-2.6/generation.md",
+        "sha256": "c7ac8e4831af4feb45af9d33a89bedafc829ee775aec1b90d41ecbea42896e87"
+      },
+      "upstream": {
+        "id": "apib:mai-image-2.6-flash",
+        "providerId": "apib-image",
+        "model": "mai-image-2.6-flash",
+        "label": "mai-image-2.6-flash",
+        "modality": "image",
+        "enabled": false,
+        "capabilities": {
+          "verified": false,
+          "generate": true,
+          "edit": false,
+          "vision": false,
+          "transparent": false,
+          "preserveIdentity": false,
+          "textAccuracy": false,
+          "qualityRank": 1,
+          "qualities": [
+            "medium"
+          ],
+          "nativeResolutions": [
+            "1K",
+            "2K"
+          ],
+          "maxReferenceImages": 5,
+          "expectedLatencyMs": 0,
+          "imagegen": {
+            "edit": {
+              "state": "unknown",
+              "source": "https://docs.apimart.ai/en/api-reference/images/mai-image-2.6/generation.md (related docs; no APIB paid execution proof)",
+              "checkedAt": "2026-11-10"
+            },
+            "mask": {
+              "state": "unknown",
+              "source": "https://docs.apimart.ai/en/api-reference/images/mai-image-2.6/generation.md (related docs; no APIB paid execution proof)",
+              "checkedAt": "2026-11-10"
+            },
+            "transparent": {
+              "state": "unknown",
+              "source": "https://docs.apimart.ai/en/api-reference/images/mai-image-2.6/generation.md (related docs; no APIB paid execution proof)",
+              "checkedAt": "2026-11-10"
+            },
+            "outputFormat": {
+              "state": "unknown",
+              "source": "https://docs.apimart.ai/en/api-reference/images/mai-image-2.6/generation.md (related docs; no APIB paid execution proof)",
+              "checkedAt": "2026-11-10"
+            },
+            "pixelSize": {
+              "state": "unknown",
+              "source": "https://docs.apimart.ai/en/api-reference/images/mai-image-2.6/generation.md (related docs; no APIB paid execution proof)",
+              "checkedAt": "2026-11-10"
+            }
+          }
+        },
+        "parameterMap": {
+          "apimartImages": {
+            "schemaVersion": 1,
+            "maxOutputs": 1,
+            "supportsMask": false,
+            "ratios": [
+              "1:1",
+              "4:3",
+              "3:4",
+              "3:2",
+              "2:3",
+              "16:9",
+              "9:16",
+              "2:1",
+              "1:2",
+              "21:9",
+              "9:21",
+              "4:1",
+              "1:4"
+            ],
+            "automaticRatio": {
+              "enabled": true,
+              "source": "https://docs.apimart.ai/en/api-reference/images/mai-image-2.6/generation.md (related docs; no APIB paid execution proof)",
+              "checkedAt": "2026-11-10"
+            },
+            "outputDimensions": {
+              "1K:1:1": {
+                "width": 1024,
+                "height": 1024
+              },
+              "2K:1:1": {
+                "width": 1536,
+                "height": 1536
+              },
+              "1K:4:3": {
+                "width": 1152,
+                "height": 864
+              },
+              "2K:4:3": {
+                "width": 1760,
+                "height": 1312
+              },
+              "1K:3:4": {
+                "width": 864,
+                "height": 1152
+              },
+              "2K:3:4": {
+                "width": 1312,
+                "height": 1760
+              },
+              "1K:3:2": {
+                "width": 1248,
+                "height": 832
+              },
+              "2K:3:2": {
+                "width": 1856,
+                "height": 1248
+              },
+              "1K:2:3": {
+                "width": 832,
+                "height": 1248
+              },
+              "2K:2:3": {
+                "width": 1248,
+                "height": 1856
+              },
+              "1K:16:9": {
+                "width": 1344,
+                "height": 768
+              },
+              "2K:16:9": {
+                "width": 2048,
+                "height": 1152
+              },
+              "1K:9:16": {
+                "width": 768,
+                "height": 1344
+              },
+              "2K:9:16": {
+                "width": 1152,
+                "height": 2048
+              },
+              "1K:2:1": {
+                "width": 1536,
+                "height": 768
+              },
+              "2K:2:1": {
+                "width": 2144,
+                "height": 1056
+              },
+              "1K:1:2": {
+                "width": 768,
+                "height": 1536
+              },
+              "2K:1:2": {
+                "width": 1056,
+                "height": 2144
+              },
+              "1K:21:9": {
+                "width": 1792,
+                "height": 768
+              },
+              "2K:21:9": {
+                "width": 2336,
+                "height": 992
+              },
+              "1K:9:21": {
+                "width": 768,
+                "height": 1792
+              },
+              "2K:9:21": {
+                "width": 992,
+                "height": 2336
+              },
+              "1K:4:1": {
+                "width": 3072,
+                "height": 768
+              },
+              "2K:4:1": {
+                "width": 3072,
+                "height": 768
+              },
+              "1K:1:4": {
+                "width": 768,
+                "height": 3072
+              },
+              "2K:1:4": {
+                "width": 768,
+                "height": 3072
+              }
+            }
+          },
+          "qualityPolicy": {
+            "mode": "omit",
+            "choices": [
+              {
+                "id": "medium",
+                "label": "medium"
+              }
+            ],
+            "evidence": {
+              "status": "documented",
+              "source": "https://docs.apimart.ai/en/api-reference/images/mai-image-2.6/generation.md (related docs; no APIB paid execution proof)",
+              "checkedAt": "2026-11-10"
+            }
+          },
+          "resolutionPolicy": {
+            "mode": "map",
+            "field": "resolution",
+            "ratioField": "size",
+            "values": {
+              "1K": "1K",
+              "2K": "2K"
+            }
+          }
+        }
+      },
+      "readiness": "OFFLINE_DISABLED_UNVERIFIED",
+      "gates": [
+        "apib-actual-wire-and-output",
+        "actual-media-save-parent-receipt",
+        "procurement-and-customer-billing-review",
+        "approved-paid-batch",
+        "versioned-publication",
+        "mai-32px-grid-delivery-validation",
+        "operation-sensitive-reference-edit-size-contract"
+      ],
+      "deferredFeatures": [
+        "custom-pixels",
+        "GIF",
+        "SVG",
+        "markup-overlay",
+        "complexity",
+        "web-grounding"
+      ],
+      "notes": "Independent Microsoft MAI family, not a GPT route; n=1; 1K/2K only; quality omitted. Editing held because reference edits ignore requested size/resolution; max 5 references. Only the 13 ratio entries with documented dimension tables are prepared. Several outputs use a 32px grid and do not exactly match nominal ratios; delivery verification must be adapted and accepted before enablement."
+    }
+  ]
+}
