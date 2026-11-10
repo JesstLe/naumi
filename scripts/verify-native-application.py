@@ -11,7 +11,7 @@ root=Path.cwd().resolve()
 parser=argparse.ArgumentParser()
 sub=parser.add_subparsers(dest='action',required=True)
 prepare=sub.add_parser('prepare');prepare.add_argument('--image-manifest',required=True);prepare.add_argument('--out',required=True)
-execute=sub.add_parser('run');execute.add_argument('--sdk-manifest',required=True);execute.add_argument('--case',choices=['audio','timeline','timeline-api','timeline-matrix','scene','character','director','storyboard','storyboard-flow'],required=True);execute.add_argument('--out',required=True)
+execute=sub.add_parser('run');execute.add_argument('--sdk-manifest',required=True);execute.add_argument('--case',choices=['audio','timeline','timeline-api','timeline-matrix','scene','character','director','storyboard','storyboard-flow','storyboard-recovery'],required=True);execute.add_argument('--out',required=True)
 args=parser.parse_args();out=Path(args.out).resolve()
 assert root/'output' in out.parents,'OUTPUT_MUST_BE_UNDER_WORKSPACE_OUTPUT'
 out.mkdir(parents=True,exist_ok=True);assert not any(out.iterdir()),'OUTPUT_MUST_BE_NEW_OR_EMPTY'
@@ -78,13 +78,17 @@ else:
    test_adapter=dict(path=str(adapter),sha256=digest(adapter),fixtures={p.name:digest(p) for p in sorted(recordings.iterdir()) if p.is_file()},reason='Portable imported speech fixtures; fixed App unchanged and original business assertions retained')
    test_mounts=mount(adapter,'/fixture/scripts/verify-storyboard-dialogue-application.ts')+mount(recordings,'/fixture/scripts/video-trials/fixtures')
    test_mounts=[part+',readonly' if part.startswith('type=bind,') else part for part in test_mounts]
-  if args.case=='storyboard-flow':
+  if args.case in ['storyboard-flow','storyboard-recovery']:
    adapter=Path(__file__).resolve().parent/'verify-storyboard-flow-native-application.ts'
    recordings=Path(__file__).resolve().parent/'video-trials/fixtures'
    test_adapter=dict(path=str(adapter),sha256=digest(adapter),fixtures={p.name:digest(p) for p in sorted(recordings.iterdir()) if p.is_file()},reason='Full native Canvas flow test only; fixed App bytes unchanged')
    test_mounts=mount(adapter,'/fixture/scripts/verify-storyboard-flow-native-application.ts')+mount(recordings,'/fixture/scripts/video-trials/fixtures')
+   if args.case=='storyboard-recovery':
+    companion=Path(__file__).resolve().parent/'verify-storyboard-recovery-native.ts'
+    test_adapter['companionScripts']={companion.name:digest(companion)}
+    test_mounts+=mount(companion,'/fixture/scripts/verify-storyboard-recovery-native.ts')
    test_mounts=[part+',readonly' if part.startswith('type=bind,') else part for part in test_mounts]
-  start('sdk',['docker','run','-d','--init','--name',names['sdk'],'--label','naumi.task='+token,'--network','none','--read-only','--memory','3g','--cpus','2','--shm-size','256m','--tmpfs',('/tmp:rw,size=1536m,mode=1777' if args.case in ['storyboard','storyboard-flow'] else '/tmp:rw,size=512m,mode=1777'),'--tmpfs','/fixed-app/.next/cache:rw,size=128m,mode=777',*mount(out,'/fixture/output'),*test_mounts,sdk['sdkImageId']])
+  start('sdk',['docker','run','-d','--init','--name',names['sdk'],'--label','naumi.task='+token,'--network','none','--read-only','--memory','3g','--cpus','2','--shm-size','256m','--tmpfs',('/tmp:rw,size=1536m,mode=1777' if args.case in ['storyboard','storyboard-flow','storyboard-recovery'] else '/tmp:rw,size=512m,mode=1777'),'--tmpfs','/fixed-app/.next/cache:rw,size=128m,mode=777',*mount(out,'/fixture/output'),*test_mounts,sdk['sdkImageId']])
   start('pg',['docker','run','-d','--name',names['pg'],'--label','naumi.task='+token,'--network','container:'+ids['sdk'],'--memory','768m','--cpus','2','--tmpfs','/var/lib/postgresql/data:rw,size=1g','-e','POSTGRES_USER=fixture','-e','POSTGRES_PASSWORD='+password,'-e','POSTGRES_DB='+database,'postgres:16-alpine','-c','listen_addresses=127.0.0.1'])
   deadline=time.monotonic()+60
   while run(['docker','exec',ids['pg'],'pg_isready','-h','127.0.0.1','-U','fixture','-d',database],required=False).returncode:
@@ -101,7 +105,9 @@ else:
   for k,v in env.items():command+=['-e',k+'='+v]
   entry='timeline'if args.case.startswith('timeline')else args.case
   script='scripts/verify-storyboard-application.ts' if args.case=='storyboard' else 'scripts/verify-'+entry+'-native-application.ts'
+  if args.case=='storyboard-recovery':script='scripts/verify-storyboard-flow-native-application.ts'
   command+=[ids['sdk'],'node','--conditions=react-server','--import','tsx',script,'/fixture/output/case']
+  if args.case=='storyboard-recovery':command+=['--with-recovery']
   if args.case=='timeline':command+=['--ui-only']
   if args.case=='timeline-matrix':command+=['--matrix-only']
   if args.case=='audio':command+=['--with-matrix']
@@ -114,15 +120,18 @@ else:
    assert 'STORYBOARD_APP_CLEANUP=OWN_FIXTURE_REMOVED' in child.stdout,'STORYBOARD_CHILD_CLEANUP_MISSING'
   else:
    cleanup=json.loads((out/'case/CLEANUP.json').read_text('utf-8'));assert cleanup['status']=='PASS'
-  if args.case=='storyboard-flow':
+  if args.case in ['storyboard-flow','storyboard-recovery']:
    flow_result=json.loads((out/'case/RESULT.json').read_text('utf-8'))
    assert flow_result['status']=='PASS' and len(flow_result['checks'])>=13 and flow_result['realBrowser'] and flow_result['realApp'] and flow_result['realPostgres'] and flow_result['realSupplierCalls']==0,'FULL_FLOW_RESULT_REQUIRED'
    assert digest(adapter)==test_adapter['sha256'] and {p.name:digest(p) for p in sorted(recordings.iterdir()) if p.is_file()}==test_adapter['fixtures'],'TEST_ADAPTER_CHANGED'
   elif test_adapter:
    assert digest(adapter)==test_adapter['sha256'] and {p.name:digest(p) for p in sorted(recordings.iterdir()) if p.is_file()}==test_adapter['fixtures'],'TEST_ADAPTER_CHANGED'
+  if args.case=='storyboard-recovery':
+   assert digest(companion)==test_adapter['companionScripts'][companion.name],'TEST_COMPANION_CHANGED'
+   assert len(flow_result['checks'])>=19 and json.loads((out/'case/recovery/RESULT.json').read_text('utf-8'))['status']=='PASS','RECOVERY_MATRIX_REQUIRED'
   source_unchanged(before)
-  write('RESULT.json',dict(status='PASS',case=args.case,source=before['commit'],sourceDigest=before['digest'],applicationImage=sdk['applicationImageId'],sdkImage=sdk['sdkImageId'],testAdapter=test_adapter,originalAssertions=args.case!='storyboard-flow',fullFlowAssertions=args.case=='storyboard-flow',actualFullApplication=True,realPG=True,parentDatabaseRetainedUntilCaseExit=True,paidProviderCalls=0,externalNetwork=False))
-  print('NATIVE_FIXED_APPLICATION=PASS CASE='+args.case+' SOURCE='+before['commit']+(' FULL_FLOW_ASSERTIONS=1' if args.case=='storyboard-flow' else ' ORIGINAL_ASSERTIONS=1')+' FULL_APP=1 REAL_PG=1 EXTERNAL_NETWORK=0')
+  write('RESULT.json',dict(status='PASS',case=args.case,source=before['commit'],sourceDigest=before['digest'],applicationImage=sdk['applicationImageId'],sdkImage=sdk['sdkImageId'],testAdapter=test_adapter,originalAssertions=args.case not in ['storyboard-flow','storyboard-recovery'],fullFlowAssertions=args.case in ['storyboard-flow','storyboard-recovery'],actualFullApplication=True,realPG=True,parentDatabaseRetainedUntilCaseExit=True,paidProviderCalls=0,externalNetwork=False))
+  print('NATIVE_FIXED_APPLICATION=PASS CASE='+args.case+' SOURCE='+before['commit']+(' FULL_FLOW_ASSERTIONS=1' if args.case in ['storyboard-flow','storyboard-recovery'] else ' ORIGINAL_ASSERTIONS=1')+' FULL_APP=1 REAL_PG=1 EXTERNAL_NETWORK=0')
  except Exception as error:
   write('FAILURE.json',dict(status='FAIL',case=args.case,error=str(error)));raise
  finally:
