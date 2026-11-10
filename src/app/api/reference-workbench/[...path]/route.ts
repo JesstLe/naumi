@@ -1,3 +1,4 @@
+import {workbenchStatus} from "@/lib/reference-workbench/status";
 import {ZodError} from "zod";
 import {createHash} from "node:crypto";
 import {resolveUserEmail} from "@/lib/admin-auth";
@@ -36,14 +37,16 @@ async function handler(request:Request){
   }
   if(action==="workbench/upload-folder"&&!get){return json(await uploadFolder(owner,request));}
   if(get&&action==="settings")return json({...defaults,...await document<Record<string,any>>(owner,"settings","default").catch(()=>({})),provider_templates:[],models:await publicModels(),settings_editable:(await getPool().query("SELECT role FROM app_users WHERE email=$1",[owner])).rows[0]?.role==="admin",auth_id:"native-"+createHash("sha256").update(owner).digest("hex"),auth_username:owner});
-  if(get&&action==="workbench/items")return json(await projectItems(owner,url.searchParams.get("root")||"",settings(Object.fromEntries(url.searchParams))));
+  if(get&&action==="workbench/items")return json(await projectItems(owner,url.searchParams.get("root")||"",settings(Object.fromEntries(url.searchParams)),true,url.searchParams.get("operation_id")||undefined));
   if(get&&action==="single/status")return json(await singleState(owner,url.searchParams.get("id")||""));
   if(get&&action==="receipt"){const op=await operation(owner,url.searchParams.get("id")||"");if(op.state==="preview")return json({error:"尚未查到受理回执，请稍后查询原任务",state:"preview",operationId:op.id},409);return json(op.kind==="single/start"?await singleState(owner,op.id):op.kind.startsWith("chat-image")?await chatState(owner,op.plans[0].sessionId):{ok:true,id:op.id,accepted:op.plans.length});}
   if(get&&action==="single/tasks")return json({ok:true,tasks:await Promise.all((await operations(owner,"single/start")).map(o=>singleState(owner,o.id)))});
   if(get&&action==="chat-image/state")return json(await chatState(owner,url.searchParams.get("session_id")||""));
   if(get&&action==="status"){
-   const ops=await operations(owner);for(const o of ops.slice(0,10))await synchronize(o);const fresh=await operations(owner),running=fresh.filter(o=>o.state!=="done"),latest=fresh[0],items=fresh.flatMap(o=>o.result.items||[]);
-   return json({running:!!running.length,progress:{current:running.length?"运行中":"等待",product:latest?.body.workbench_root||"",size:latest?.plans[0]?.settings.resolution||"",ref:latest?.plans[0]?.ref||"",done:items.filter(i=>i.state==="succeeded").length,failed:items.filter(i=>["failed","needs_attention"].includes(i.state)).length,last_error:items.find(i=>i.result?.error)?.result?.error?.message||""},queue:{running:items.filter(i=>i.state==="submitted").length,waiting:items.filter(i=>i.state==="queued").length,global_limit:2,user_limit:2}});
+   const root=url.searchParams.has("root")?url.searchParams.get("root")||"":undefined,operationId=url.searchParams.get("operation_id")||undefined;
+   const ops=await operations(owner,undefined,root);const scoped=ops.filter(o=>root===undefined||o.body.workbench_root===root).filter(o=>!operationId||o.id===operationId);
+   for(const o of scoped.slice(0,10))await synchronize(o);
+   return json(workbenchStatus(await operations(owner,undefined,root),{root,operationId}));
   }
   if(get&&action==="workbench/templates")return json(await listWorkbenchTemplates(owner));
   if(get)return json({error:"接口不存在"},404);

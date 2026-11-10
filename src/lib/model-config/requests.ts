@@ -39,7 +39,8 @@ async function requestFacts(request: Request) {
         const general = body.mode !== "reverse" && body.mode !== "assist";
         const sourceIds = (Array.isArray(body.sourceIds) ? body.sourceIds : []).map((id: unknown) => String(id).trim()).filter(Boolean);
         const productIds = (Array.isArray(body.productIds) ? body.productIds : []).map((id: unknown) => String(id).trim()).filter(Boolean);
-        references = new Set([...sourceIds.filter((id: string) => !general || !id.startsWith("text-")), ...productIds]).size;
+        const inlineImages = Array.isArray(body.images) ? body.images.filter((image: unknown) => typeof image === "string" && image.trim()).length : 0;
+        references = inlineImages + new Set([...sourceIds.filter((id: string) => !general || !id.startsWith("text-")), ...productIds]).size;
       }
     }
   } catch { /* The route owns detailed payload validation; no generation is performed here. */ }
@@ -134,7 +135,7 @@ async function runModelOperation<T>(input:ModelOperationInput,run:()=>Promise<T>
   const requestedTextModelId = requestedFeatureModel(mainFeature, purpose.primary === "text" || purpose.primary === "vision" ? input.featureModel?.trim() || input.textModel?.trim() || String(parsed.body.modelId || parsed.body.model || "").trim() || undefined : undefined);
   if (purpose.video) bundle.video = await executor.resolve({ feature, binding: purpose.video, requestedModelId: input.featureModel?.trim() || parsed.body.modelId || undefined, snapshot, billing });
   if (purpose.text && (requestedTextModelId || snapshot.config.bindings[purpose.text] || purpose.primary === "text" && mainFeature && snapshot.config.business?.[mainFeature])) bundle.text = await executor.resolve({ ...(purpose.primary === "text" ? { feature: mainFeature } : {}), binding: purpose.text, requestedModelId: requestedTextModelId, snapshot, billing, facts: { task: "product", quality: "medium", resolution: "1K", needsEdit: false, needsText: false, preserveIdentity: false, nativeResolution: false, references: parsed.references, inputLength: JSON.stringify(parsed.body.messages || parsed.body.prompt || "").length } });
-  if (purpose.primary === "text" && purpose.text && mainFeature && snapshot.config.business?.[mainFeature] && bundle.text) {
+  if (purpose.primary === "text" && purpose.text && mainFeature && (snapshot.config.business?.[mainFeature] || input.path === "/api/canvas/text-generate" && ["infer","chat-plan"].includes(parsed.body.referenceTask)) && bundle.text) {
     const scope = await executor.describe(bundle.text);
     if (parsed.references && scope.businessOption?.parameters?.inputTypes && !scope.businessOption.parameters.inputTypes.includes("image")) throw new ModelConfigError("MODEL_INCOMPATIBLE", "本功能未开放图片输入", 400);
     if (scope.capabilities.vision) bundle.vision = bundle.text;
