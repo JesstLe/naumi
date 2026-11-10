@@ -59,6 +59,8 @@ async function main(){
   plan=(await invoke("save_video_storyboard",{...write,expected_revision:plan.revision,operation_id:randomUUID(),document:reviewed})).plan;
   const changed=await invoke("apply_video_storyboard_roughcut",{...update,operation_id:randomUUID(),revision:plan.revision});const expected=structuredClone(cut.node.timeline);expected.tracks[0].clips[2].artworkId=take.artworkId;assert.deepEqual(changed.node.timeline,expected);assert.deepEqual(changed.changes.map((c:any)=>c.nodeId),[nodeIds[2]]);assert.deepEqual(await state(),after);assert.deepEqual(await get(planId),original);pass("explicitly_adopt_new_third_take_update_exact_cut_preserve_other_shots_and_audio");
   assert.equal((await getPool().query("SELECT count(*)::int AS n FROM app_ledger WHERE email=$1 AND id=$2",[actor,`led-video-${taskId}`])).rows[0].n,1);pass("one_new_generation_one_ledger_charge");
+  const {forkStoryboardPlan}=await import("../src/lib/storyboard/fork-service");
+  await withFrozenCreation({actorEmail:actor,scopeKind:"tenant",tenantId:randomUUID(),workspaceExplicit:true},async()=>{await assert.rejects(()=>forkStoryboardPlan(actor,{projectKey:project,planId:plan.id,revision:plan.revision,operationId:randomUUID(),title:"跨空间分叉",nodes:remake.nodes.map((n:any)=>({id:n.id,revision:n.revision}))}));});pass("fork_cross_workspace_rejected_before_node_copy");
   for(const check of (await verifyStoryboardAgentGateway({actor,project,planId,origin,cookie})).checks)pass("gateway_"+check);
   console.log(JSON.stringify({checks,realApp:true,realPostgres:true,actualBillingPrecheck:true,actualToolExecution:true,generatedTasks:2,mediaJobs:0}));
  }finally{await closeDatabasePools();}

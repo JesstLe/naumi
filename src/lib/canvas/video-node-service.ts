@@ -9,6 +9,7 @@ import {bindActualCreationProject,assertCreationProjectInput} from "@/lib/saas/c
 import {currentCreationContext} from "@/lib/saas/creation-scope";
 import {assertCreationObjectRefs,acceptCreationTx,creationLinkTx,completeCreationTx} from "../saas/creation-writer";
 import {createHash} from "node:crypto";
+import type {PoolClient} from "pg";
 import {getVideoTask} from "@/lib/video/task-repository";
 import {getPool} from "@/platform/db/pool";
 import {listArtworksByIds} from "@/lib/artworks/repository";
@@ -75,18 +76,24 @@ export async function saveVideoNode(actorRaw:string,raw:unknown):Promise<CanvasV
     const node=await saveVideoNodeTx(client,actor,input,key);await client.query("COMMIT");return node;}
   catch(error){await client.query("ROLLBACK");throw error;}finally{client.release();}
 }
-export async function copyVideoNodes(actor:string,ids:string[],targetProject:string,operationId:string){
+export async function copyVideoNodes(actor:string,ids:string[],targetProject:string,operationId:string,options:{tx?:PoolClient;expectedRevisions?:Record<string,number>;offset?:{x:number;y:number}}={}){
   actor=actor.toLowerCase();
   await authorizeVideoProject(actor,targetProject);if(!ids.length||ids.length>100||new Set(ids).size!==ids.length)throw new ModelConfigError("INVALID_VIDEO_NODE_COPY","请选择不重复的视频节点",422);
-  await bindActualCreationProject(actor,targetProject);
-  const originals:CanvasVideoNode[]=[];for(const id of ids){const node=await getVideoNode(actor,id);if(!node)throw new ModelConfigError("VIDEO_NODE_UNAVAILABLE","视频节点不存在",404);await assertCreationProjectInput(actor,node.projectKey);await assertCreationObjectRefs(actor,[node.id]);originals.push(node);}
-  for(const node of originals)await authorizeNodeInputs(actor,{id:node.id,expectedRevision:node.revision,operationId,config:node.config,inputs:node.inputs});
-  const mapping=new Map(originals.map(node=>[node.id,`vnode-copy-${createHash("sha256").update(`${operationId}:${node.id}`).digest("hex").slice(0,40)}`]));
-  const digest=createHash("sha256").update(canonicalConfig({ids,targetProject})).digest("hex"),client=await getPool().connect();
+  const client=options.tx||await getPool().connect();
+  const digest=createHash("sha256").update(canonicalConfig({ids,targetProject,...(options.expectedRevisions?{expectedRevisions:options.expectedRevisions}:{}),...(options.offset?{offset:options.offset}:{})})).digest("hex");
   try{
-    await client.query("BEGIN");await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`video-node-copy:${actor}:${operationId}`]);
+    if(!options.tx)await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`video-node-graph:${actor}`]);
+    await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`video-node-copy:${actor}:${operationId}`]);
+    await bindActualCreationProject(actor,targetProject,{tx:client});
     const previous=(await client.query("SELECT input_digest,result FROM app_canvas_video_node_copies WHERE email=$1 AND operation_id=$2",[actor,operationId])).rows[0];
-    if(previous){if(previous.input_digest!==digest)throw new ModelConfigError("NODE_OPERATION_CONFLICT","复制操作编号已用于另一请求",409);await client.query("COMMIT");return previous.result as {nodes:CanvasVideoNode[];idMap:Record<string,string>};}
+    if(previous){if(previous.input_digest!==digest)throw new ModelConfigError("NODE_OPERATION_CONFLICT","复制操作编号已用于另一请求",409);if(!options.tx)await client.query("COMMIT");return previous.result as {nodes:CanvasVideoNode[];idMap:Record<string,string>};}
+    const originals:CanvasVideoNode[]=[];
+    for(const id of ids){const node=await getVideoNode(actor,id,false,client);if(!node)throw new ModelConfigError("VIDEO_NODE_UNAVAILABLE","视频节点不存在",404);
+      if(options.expectedRevisions&&node.revision!==options.expectedRevisions[id])throw new ModelConfigError("VIDEO_NODE_REVISION_CONFLICT","分叉镜头已改变，请重新读取后创建版本",409);
+      await assertCreationProjectInput(actor,node.projectKey,client);await assertCreationObjectRefs(actor,[node.id],client);originals.push(node);}
+    for(const node of originals)await authorizeNodeInputs(actor,{id:node.id,expectedRevision:node.revision,operationId,config:node.config,inputs:node.inputs});
+    const mapping=new Map(originals.map(node=>[node.id,`vnode-copy-${createHash("sha256").update(`${operationId}:${node.id}`).digest("hex").slice(0,40)}`]));
     const scope=currentCreationContext(),record=await acceptCreationTx(client,'canvas-video-copy',operationId,actor,{prompt:scope?.requestText});
     for(const node of originals)if(record)await creationLinkTx(client,record,actor,'video-node',node.id,'input');
     const nodes:CanvasVideoNode[]=[];
@@ -94,15 +101,15 @@ export async function copyVideoNodes(actor:string,ids:string[],targetProject:str
       const bytes=createHash("sha256").update(`${operationId}:node:${node.id}`).digest().subarray(0,16);bytes[6]=(bytes[6]&15)|64;bytes[8]=(bytes[8]&63)|128;
       const hex=bytes.toString("hex"),op=`${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
       const copied=videoNodeWriteSchema.parse({id:mapping.get(node.id)!,projectKey:targetProject,expectedRevision:0,operationId:op,title:node.title,
-        x:node.x+40,y:node.y+40,width:node.width,height:node.height,config:node.config,
+        x:node.x+(options.offset?.x??40),y:node.y+(options.offset?.y??40),width:node.width,height:node.height,config:node.config,
         inputs:node.inputs.map(input=>{const prefix=input.nodeId.match(/^(?:video|image|audio):/)?.[0]||"",id=input.nodeId.slice(prefix.length);return {...input,nodeId:mapping.has(id)?`${prefix}${mapping.get(id)}`:input.nodeId};})});
       nodes.push(await saveVideoNodeTx(client,actor,copied,targetProject));
     }
     if(record){for(const node of nodes)await creationLinkTx(client,record,actor,'video-node',node.id,'output');await creationLinkTx(client,record,actor,'no-charge',operationId,'explicit-no-charge');await completeCreationTx(client,record,actor,'succeeded',{summary:'视频节点复制已完成'});}
     const result={nodes,idMap:Object.fromEntries(mapping)};
     await client.query("INSERT INTO app_canvas_video_node_copies(email,operation_id,input_digest,result) VALUES($1,$2,$3,$4::jsonb)",[actor,operationId,digest,JSON.stringify(result)]);
-    await client.query("COMMIT");return result;
-  }catch(error){await client.query("ROLLBACK");throw error;}finally{client.release();}
+    if(!options.tx)await client.query("COMMIT");return result;
+  }catch(error){if(!options.tx)await client.query("ROLLBACK");throw error;}finally{if(!options.tx)client.release();}
 }
 function stableOperation(value:string){const bytes=createHash("sha256").update(value).digest().subarray(0,16);bytes[6]=(bytes[6]&15)|64;bytes[8]=(bytes[8]&63)|128;
   const hex=bytes.toString("hex");return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;}

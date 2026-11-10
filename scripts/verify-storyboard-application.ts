@@ -1,4 +1,5 @@
 import {verifyStoryboardProductionApplication} from "./verify-storyboard-production-application";
+import {verifyStoryboardIndependentApplication} from "./verify-storyboard-independent-application";
 import assert from "node:assert/strict";
 import {randomBytes,randomUUID,createHash} from "node:crypto";
 import {spawnSync} from "node:child_process";
@@ -95,6 +96,7 @@ async function main(){
   const native=await invoke("plan_video_storyboard",{mode:"multi_shot",config,shots:[{id:"native-a",prompt:"Red cube",durationSeconds:2},{id:"native-b",prompt:"Blue cube",durationSeconds:2}]});assert.equal(native.node.config.shots.length,2);const generated=await h.request<any>("a","POST",`/api/canvas/video-nodes/${native.node.id}/generate`,{expectedRevision:native.node.revision,idempotencyKey:randomUUID()});assert.equal(generated.status,202,JSON.stringify(generated.body));let task:any;const nativeDeadline=Date.now()+120000;while(Date.now()<nativeDeadline){await h.forceVideoPollDue(generated.body.taskId);await h.tick();task=(await h.request<any>("a","GET",`/api/video/tasks?id=${generated.body.taskId}`)).body.task;if(task.status==="completed")break;assert.ok(!["failed","cancelled","needs_attention"].includes(task.status),JSON.stringify(task));await new Promise(r=>setTimeout(r,250))}assert.equal(task.status,"completed");const nativeCall=h.supplierCalls().filter(call=>call.phase==="create").at(-1) as any;assert.equal(nativeCall.body.multi_prompt.length,2);assert.equal(nativeCall.body.multi_shot,true);pass("native_multi_shot_actual_task_and_wire");
   await verifyStoryboardProductionApplication(h,project,story.planId,pass);
   for(const check of (await h.verifyStoryboardAgent(project,story.planId)).checks)pass("agent_"+check);
+  await verifyStoryboardIndependentApplication(h,project,story.planId,pass);
   await writeFile(path.join(out,"RESULT.json"),JSON.stringify({checks,realApp:true,realPostgres:true,actualAgentTools:true,actualMediaWorker:true,realBilling:true,simulatedSupplierCreates:h.supplierCalls().filter(call=>call.phase==="create").length,realSupplierCalls:0,creativeModelNotTested:true,root:process.cwd()},null,2));
   console.log(`STORYBOARD_APPLICATION=PASS CHECKS=${checks.length} REAL_APP_DB_WORKER_STORAGE_BILLING=PASS PLANNING=FREE REUSE=PASS REPLAY=PASS FAILED_ASSEMBLY_RETRY=MEDIA_ONLY CANCEL=PASS NATIVE_SHOTS=PASS REAL_SUPPLIER_CALLS=0`);
  }finally{if(fixture)await fixture.stop();if(listening)await new Promise<void>(r=>router.close(()=>r()));if(pool)await pool.end();if(container){assert.equal(docker(["inspect","--format",'{{index .Config.Labels "naumi.task"}}',container]),owner);docker(["rm","--force",container])}await unlink(envFile);console.log("STORYBOARD_APP_CLEANUP=OWN_FIXTURE_REMOVED");}

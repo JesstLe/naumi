@@ -36,7 +36,8 @@ export type StoryboardDocument=z.infer<typeof storyboardDocumentSchema>;
 export type StoryboardShot=z.infer<typeof storyboardShotSchema>;
 export type StoryboardTake=z.infer<typeof storyboardTakeSchema>;
 export type StoryboardWrite=z.infer<typeof storyboardWriteSchema>;
-export type StoryboardPlan={id:string;projectKey:string;revision:number;document:StoryboardDocument;createdAt:string;updatedAt:string};
+export type StoryboardLineage={sourcePlanId:string;sourceRevision:number;operationId:string;sourceNodes?:Array<{id:string;revision:number}>};
+export type StoryboardPlan={id:string;projectKey:string;revision:number;document:StoryboardDocument;lineage?:StoryboardLineage;createdAt:string;updatedAt:string};
 
 /** Schema-normalized key order prevents equivalent HTTP receipts from resaving forever. */
 export function storyboardDocumentSignature(document:StoryboardDocument){

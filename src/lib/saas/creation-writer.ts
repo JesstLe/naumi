@@ -83,14 +83,15 @@ export async function assertCreationInputsTx(tx:PoolClient,email:string,ids:stri
   if(foreign)throw new Error('不能直接引用其他企业的素材');
  }
 }
-export async function assertCreationObjectRefs(email:string,ids:string[]) {
+export async function assertCreationObjectRefs(email:string,ids:string[],client?:PoolClient) {
  const scope=currentCreationContext();if(!scope||!dbEnabled)return;
- await creationTransaction(async tx=>{
+ const verify=async(tx:PoolClient)=>{
   const row=(await tx.query(`SELECT 1 FROM app_creation_links l JOIN app_creation_records c ON c.id=l.creation_id
     WHERE l.target_id=ANY($1::text[]) AND l.target_type IN('artwork','text-node','video-node') AND l.relation='output'
     AND c.actor_email=$3 AND c.tenant_id IS NOT NULL AND c.tenant_id IS DISTINCT FROM $2::uuid LIMIT 1`,[ids,scope.tenantId,email.toLowerCase()])).rows[0];
   if(row)throw new Error('不能直接引用其他企业的素材');
- });
+ };
+ if(client)await verify(client);else await creationTransaction(verify);
 }
 export async function captureCreationMediaTx(tx:PoolClient,id:string,email:string,refs:{artworkId?:string;storageKey?:string;url?:string;role?:string;kind?:string;mimeType?:string}[]) {
  const context=currentCreationContext();

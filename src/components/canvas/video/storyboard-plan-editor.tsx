@@ -6,6 +6,7 @@ import {nextShotNumber,restructureStoryboardShots,type StoryboardDocument,type S
 import type {StoryboardSelection} from "@/lib/video/storyboard-client";
 import type {VideoPrivateFetch} from "./use-video-nodes";
 import {useStoryboardPlan} from "./use-storyboard-plan";
+import {useStoryboardFork} from "./use-storyboard-fork";
 import {StoryboardProductionPanel} from "./storyboard-production-panel";
 import type {VideoInputChoice} from "@/lib/video/client-settings";
 import {StoryboardRestructure} from "./storyboard-restructure";
@@ -16,8 +17,9 @@ export function StoryboardPlanEditor({scope,projectKey,nodes,initialNodeIds,requ
   const [createdNodes,setCreatedNodes]=useState<CanvasVideoNode[]>([]),[restructure,setRestructure]=useState<{nodes:CanvasVideoNode[];document:StoryboardDocument}|null>(null);
   const available=[...nodes,...createdNodes.filter(node=>!nodes.some(item=>item.id===node.id))];
   const store=useStoryboardPlan({scope,projectKey,nodes:available,initialNodeIds,request});
+  const fork=useStoryboardFork(scope,projectKey,request);
   const [open,setOpen]=useState<string|null>(null),[adding,setAdding]=useState(""),[execution,setExecution]=useState<Record<string,"generate"|"reuse"|"skip">>({}),[actionError,setActionError]=useState(""),[acting,setActing]=useState(false);
-  const doc=store.draft?.document,locked=blocked||store.busy||acting||!!store.draft?.pending||!!restructure;
+  const doc=store.draft?.document,locked=blocked||store.busy||acting||!!store.draft?.pending||!!restructure||!!fork.pending;
   const css="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs text-slate-700 disabled:opacity-40";
   const update=(next:StoryboardDocument)=>{try{store.update(next);}catch(cause){setActionError(cause instanceof Error?cause.message:"草稿保存失败");}};
   const patch=(shot:StoryboardShot)=>{if(doc)update({...doc,shots:doc.shots.map(item=>item.nodeId===shot.nodeId?shot:item)});};
@@ -34,7 +36,11 @@ export function StoryboardPlanEditor({scope,projectKey,nodes,initialNodeIds,requ
     {store.error&&<p role="alert" className="text-xs text-red-600">{store.error}</p>}{actionError&&<p role="alert" className="text-xs text-red-600">{actionError}</p>}
     {doc&&<><div className="flex flex-wrap gap-2">
       <select aria-label={L("已保存方案","Saved plans")} className={`${css} min-w-0 flex-1`} value={store.plans.some(plan=>plan.id===store.draft?.id)?store.draft!.id:""} disabled={locked} onChange={event=>{const plan=store.plans.find(plan=>plan.id===event.target.value);if(plan)void act(async()=>{if(store.dirty)await store.save();store.select(plan);setExecution({});});}}><option value="">{L("新方案","New plan")}</option>{store.plans.map(plan=><option key={plan.id} value={plan.id}>{plan.document.title}</option>)}</select>
-      <button type="button" className={css} disabled={locked} onClick={()=>void act(async()=>{if(store.dirty)await store.save();store.copy();})}><Copy size={13}/>{L("复制方案","Copy plan")}</button>
+      <button type="button" className={css} disabled={locked} onClick={()=>void act(async()=>{if(store.dirty)await store.save();store.copy();})}><Copy size={13}/>{L("共享副本","Shared copy")}</button>
+      <button type="button" className={css} disabled={blocked||store.busy||acting||!!store.draft?.pending||!!restructure||!doc.shots.length} onClick={()=>void act(async()=>{
+        const value=await fork.submit(async()=>{const plan=store.dirty||!store.draft?.revision?await store.save():store.draft;return {planId:plan.id,revision:plan.revision,title:`${plan.document.title.slice(0,190)} 独立版`,nodes:plan.document.shots.map(shot=>{const node=available.find(node=>node.id===shot.nodeId);if(!node)throw new Error("分叉镜头已移除，请重新读取");return {id:node.id,revision:node.revision};})};});
+        setCreatedNodes(old=>[...old.filter(node=>!value.nodes.some(item=>item.id===node.id)),...value.nodes]);onNodesCreated(value.nodes);store.select(value.plan);setExecution({});setOpen(null);
+      })}>{fork.pending?L("核对独立版本","Check independent version"):L("独立版本","Independent version")}</button>
       <button type="button" className={css} disabled={blocked||store.busy||acting||!store.dirty&&!store.draft?.pending} onClick={()=>void act(store.save)}><Save size={13}/>{store.draft?.pending?L("核对保存","Check save"):L("保存","Save")}</button>
     </div>
     {!!store.error&&store.plans.some(plan=>plan.id===store.draft?.id)&&!store.draft?.pending&&<button type="button" className={css} disabled={locked} onClick={()=>void act(store.reload)}>{L("载入已保存方案","Load saved plan")}</button>}

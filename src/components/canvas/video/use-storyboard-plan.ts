@@ -23,7 +23,7 @@ export function useStoryboardPlan({scope,projectKey,nodes,initialNodeIds,request
       let restored:Draft|null=null;try{const raw=JSON.parse(localStorage.getItem(key)||"null");if(raw?.id&&Number.isSafeInteger(raw.revision)&&raw.revision>=0)restored={id:raw.id,revision:raw.revision,document:storyboardDocumentSchema.parse(raw.document),...(raw.pending?{pending:storyboardWriteSchema.parse(raw.pending)}:{})};}catch{}
       const relevant=(plan:{document:StoryboardDocument})=>!ports.current.initialNodeIds.length||ports.current.initialNodeIds.some(id=>plan.document.shots.some(shot=>shot.nodeId===id));
       // A pending write must be resolved even if opened from a different shot.
-      if(restored&&!restored.pending&&!relevant(restored))restored=null;
+      if(restored&&!restored.pending&&!relevant(restored)&&!loaded.some(plan=>plan.id===restored!.id&&plan.lineage))restored=null;
       const server=restored?loaded.find(plan=>plan.id===restored!.id):loaded.find(relevant);
       const same=server&&restored&&storyboardDocumentSignature(server.document)===storyboardDocumentSignature(restored.document);
       const value:Draft=restored&&(!server||restored.pending||!same)?restored:server?{id:server.id,revision:server.revision,document:server.document}:{id:browserRandomUUID(),revision:0,document:newStoryboardDocument(ports.current.nodes,ports.current.initialNodeIds)};
@@ -53,7 +53,7 @@ export function useStoryboardPlan({scope,projectKey,nodes,initialNodeIds,request
   },[cache,projectKey,workspace]);
   const dirty=!!draft&&storyboardDocumentSignature(draft.document)!==saved.current;
   useEffect(()=>{if(loading||busy||error||!dirty||draft?.pending)return;const timer=setTimeout(()=>void(async()=>{try{await save();}catch(cause){if(alive.current)setError(cause instanceof Error?cause.message:"请检查方案名称与镜号");}})(),800);return()=>clearTimeout(timer);},[loading,busy,error,dirty,draft,save]);
-  const select=useCallback((plan:StoryboardPlan)=>{if(operation.current||current.current?.pending)return;const next={id:plan.id,revision:plan.revision,document:plan.document};saved.current=storyboardDocumentSignature(plan.document);current.current=next;cache(next);setDraft(next);setError("");},[cache]);
+  const select=useCallback((plan:StoryboardPlan)=>{if(operation.current||current.current?.pending)return;const next={id:plan.id,revision:plan.revision,document:plan.document};saved.current=storyboardDocumentSignature(plan.document);current.current=next;cache(next);setDraft(next);setPlans(old=>[plan,...old.filter(item=>item.id!==plan.id)]);setError("");},[cache]);
   const copy=useCallback(()=>{const value=current.current;if(!value||operation.current||value.pending)return;const next={id:browserRandomUUID(),revision:0,document:{...structuredClone(value.document),title:`${value.document.title} 副本`}};saved.current="";current.current=next;cache(next);setDraft(next);setError("");},[cache]);
   const reload=useCallback(async()=>{
     if(operation.current||current.current?.pending)return;

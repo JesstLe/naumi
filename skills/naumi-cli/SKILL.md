@@ -58,6 +58,7 @@ Naumi 提供电商图片和视频创作工具。你通过 `node naumi.mjs`（或
 3. `inspect_video_storyboard` 检查实际报价、连续性及已有粗剪身份，不启动生成。`run_video_workflow` 传 `storyboard: {id, revision}`，并明确每个节点的 `reuseCompleted`；只返工03镜时其他镜头复用方案明确采用版。
 4. 创建／更新粗剪用 `apply_video_storyboard_roughcut`。更新必须填写确切的 `timeline_id`、`timeline_revision` 和选中的 `node_ids`；不要用新建粗剪代替更新用户指定工程。
 5. 外层 CLI `--operation-id` 对应网关回执；工具参数内的 `operation_id` 对应领域写操作，两者都保留。断网先 `status <外层编号>`，必要时以原业务编号及完全相同参数恢复；方案保存可用 `get_video_storyboard_operation` 查询原业务回执。401不丢弃原意图。
+6. 需要独立尝试创意方向时调用 `fork_video_storyboard`，传源 `plan_id`、`revision`、全部节点当前 `revision`、新标题和固定 `operation_id`。它创建新节点、重写内部依赖并保留分叉点已有采用，不提交生成；历史任务仍属于原节点。共享方案副本仍共享节点，不能冒充独立版本。分叉未知时原完整参数重试，不读取新版本后换参数复用旧编号。
 
 可复用指令：
 
