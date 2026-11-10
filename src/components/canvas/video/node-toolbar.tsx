@@ -6,7 +6,7 @@ import { useI18n } from "@/lib/i18n/locale-context";
 
 /** Same anchored surface and overflow/menu behavior as image and text nodes. */
 export const VideoNodeToolbar=forwardRef<HTMLDivElement,{
-  style:CSSProperties;light:boolean;readOnly:boolean;locked:boolean;busy:boolean;hasResult:boolean;hasHistory?:boolean;settingsLabel?:string;
+  style:CSSProperties;light:boolean;readOnly:boolean;locked:boolean;busy:boolean;hasResult:boolean;hasHistory?:boolean;settingsLabel?:string;downloadLabel?:string;
   onSettings:()=>void;onHistory:()=>void;onRename:()=>void;onCopy:()=>void;
   onDuplicate:()=>void;onDownload:()=>void;onDelete:()=>void;onProperties:()=>void;
   management:CanvasActionMenuItem[];
@@ -20,7 +20,7 @@ export const VideoNodeToolbar=forwardRef<HTMLDivElement,{
     {props.hasHistory!==false&&<button type="button" className={button} onClick={props.onHistory}><History size={16}/>{L("历史","History")}</button>}
     <button type="button" className={button} onClick={props.onRename} disabled={blocked}><Pencil size={16}/>{L("重命名","Rename")}</button>
     <button type="button" className={button} onClick={props.onCopy}><Copy size={16}/>{L("复制节点","Copy node")}</button>
-    <button type="button" className={button} onClick={props.onDownload} disabled={!props.hasResult}><Download size={16}/>{L("下载视频","Download video")}</button>
+    <button type="button" className={button} onClick={props.onDownload} disabled={!props.hasResult}><Download size={16}/>{props.downloadLabel||L("下载视频","Download video")}</button>
     <button type="button" className={button} onClick={props.onDelete} disabled={blocked}><Trash2 size={16}/>{L("删除","Delete")}</button>
     <CanvasActionMenu iconOnly label={L("更多节点操作","More node actions")} light={props.light} items={[
       {id:"duplicate",icon:Copy,label:L("创建副本","Duplicate"),disabled:blocked,onSelect:props.onDuplicate},

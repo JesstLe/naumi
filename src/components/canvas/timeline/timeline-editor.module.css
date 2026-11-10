@@ -5,3 +5,16 @@
 @media(max-width:760px){.toolbar{display:grid;grid-template-columns:1fr 1fr}.toolbar .select{grid-column:1 / -1;width:100%;max-width:none}.toolbar .button{width:100%}.trackControls input{width:40px;min-width:0;flex:1}.master input{width:52px}.topWide{grid-template-rows:minmax(170px,1fr)}.preview canvas{max-height:calc(100% - 44px)}}
 
 .clipBody{position:absolute;inset:0;padding:7px 8px;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:transparent;border:0;color:inherit;font:inherit;cursor:grab;touch-action:none}.trimHandle{position:absolute;top:0;bottom:0;width:6px;border:0;background:#7181bd2b;padding:0;cursor:ew-resize;touch-action:none;z-index:1}.trimStart{left:0;border-radius:5px 0 0 5px}.trimEnd{right:0;border-radius:0 5px 5px 0}.trimHandle:hover,.trimHandle:focus-visible{background:#7181bd88;outline:1px solid #7181bd}.trimHandle:disabled{cursor:default;opacity:.3}
+
+.workspace{display:flex;flex:1;flex-direction:column;min-height:0;overflow:hidden}
+.header,.footer,.toolbar,.error{flex-shrink:0}
+/* Small windows/onscreen keyboards must not clip the tracks and footer behind
+   fixed preview minima. Keep header/actions visible; scroll only the workspace. */
+@media(max-height:700px){
+  .workspace{overflow-y:auto;overscroll-behavior:contain}
+  .top{flex:0 0 auto;height:240px;min-height:180px}
+  .timeline{height:auto;min-height:150px;overflow-y:hidden}
+  .inspector{max-height:none;overflow-y:visible}
+  .top:not(.topWide){height:auto;min-height:240px;overflow:visible}
+  .top:not(.topWide) .preview{height:240px}
+}
