@@ -131,8 +131,38 @@
   ],
   "results": {
     "realPaidCalls": 0,
-    "state": "preflight-blocked-no-credit-and-candidate-not-deployed",
-    "quality": "unverified"
+    "state": "live-entry-verified-awaiting-normal-admin-funding",
+    "quality": "unverified",
+    "livePreflight": {
+      "commit": "3a043c6b84308bd542d3358831296fabcc478b2c",
+      "version": "1794310315",
+      "releaseId": "release103-refactor-home-20261110-r3",
+      "modelVersion": 117,
+      "billingVersion": 8,
+      "trialActorBalance": 0,
+      "trialActorPasswordPresent": false,
+      "normalQaLogin": "native-password-verified-readonly-and-own-unpaid-canvas-only",
+      "qaBalanceBeforeAfter": [
+        30,
+        30
+      ],
+      "qaLedgerBeforeAfter": [
+        1,
+        1
+      ],
+      "qaTasksBeforeAfter": [
+        0,
+        0
+      ],
+      "storyboardRoute": "200-on-owned-ui-created-project",
+      "agentTokenRoute": 200,
+      "sourceAndPlanReopened": true,
+      "qaProjectCleanup": "active0-text0-video-soft-deleted",
+      "normalAdminSecretRequest": "timed-out-no-value-received",
+      "funding": 0,
+      "evidence": "E:/Workspace/naumi-task-evidence/storyboard-live-acceptance-20261110",
+      "assistedReviewAndSpeechModulesInLiveImage": false
+    }
   },
   "excludedPaths": [
     {
