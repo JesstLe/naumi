@@ -1,8 +1,9 @@
 export type CanvasMediaVariant = 'thumbnail'|'preview'|'original';
-export function canvasMediaVariant(_screenWidth=0, _pixelRatio=1):CanvasMediaVariant {
-  // Compatibility for existing callers: the pre-performance canvas always
-  // renders the original source, independently of zoom and display density.
-  return 'original';
+export function canvasMediaVariant(screenWidth:number, pixelRatio=1):CanvasMediaVariant {
+  // High-DPI screens need their real pixel density; capping at 2 leaves a
+  // 3x/4x display on a preview after it has already outgrown that preview.
+  const pixels=screenWidth*(Number.isFinite(pixelRatio)?Math.max(1,pixelRatio):1);
+  return pixels<=512?'thumbnail':pixels<=1600?'preview':'original';
 }
 
 /** A ticket owns one slot until load/error, or cancels before the image starts. */
