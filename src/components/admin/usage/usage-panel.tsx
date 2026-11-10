@@ -1,33 +1,16 @@
 "use client";
-import {useCallback,useEffect,useMemo,useRef,useState} from "react";
+import {useMemo} from "react";
 import {Activity,CalendarDays,Eye,Loader2,RefreshCw,TrendingUp,Users} from "lucide-react";
 import {Button} from "@/components/ui/button";
-import type {UsageData,UsersData} from "./contracts";
 import {useMemberDetail} from "./use-member-detail";
+import {useUsageQuery} from "./use-usage-query";
 import {AdminMemberDetail} from "./member-detail";
 import {Pager} from "../pager";
 /** Only the usage panel reads member statistics. System configuration never
  * loads the old member/ledger payload merely because administrator auth passed. */
 export function AdminUsagePanel({token,usageDays,setUsageDays,onManageUsers}:{token:string|null;usageDays:number;setUsageDays:(days:number)=>void;onManageUsers:()=>void}){
- const [usersData,setUsersData]=useState<Pick<UsersData,"users">|null>(null),[usageData,setUsageData]=useState<UsageData|null>(null),[usageLoading,setUsageLoading]=useState(false),[usageError,setUsageError]=useState<string|null>(null),[page,setPage]=useState(1);
- const generation=useRef(0),owner=useRef(token),current=useRef<AbortController|null>(null);owner.current=token;
- const loadUsage=useCallback(async(tok:string,days:number,currentPage:number)=>{
-  const serial=++generation.current;current.current?.abort();const abort=new AbortController();current.current=abort;setUsageLoading(true);setUsageError(null);
-  try{const response=await fetch(`/api/admin/usage?days=${days}&page=${currentPage}&size=30`,{headers:{Authorization:`Bearer ${tok}`},signal:abort.signal});if(!response.ok)throw Error("读取用量失败");const data=await response.json();if(!abort.signal.aborted&&owner.current===tok&&generation.current===serial)setUsageData(data as UsageData);}
-  catch(error){if(!abort.signal.aborted&&owner.current===tok&&generation.current===serial)setUsageError(error instanceof Error?error.message:"读取用量失败");}
-  finally{if(!abort.signal.aborted&&owner.current===tok&&generation.current===serial)setUsageLoading(false);}
- },[]);
- useEffect(()=>{setUsageData(null);setUsersData(null);setPage(1);},[token]);
- const memberKey=JSON.stringify(usageData?.users.map(row=>row.email)??[]);
- useEffect(()=>{
-  if(!token||memberKey==='[]')return;const abort=new AbortController();const params=new URLSearchParams({view:'members'});
-  for(const email of JSON.parse(memberKey) as string[])params.append('member',email);
-  void fetch(`/api/admin/users?${params}`,{headers:{Authorization:`Bearer ${token}`},signal:abort.signal}).then(async response=>{if(!response.ok)return;const data=await response.json();if(!abort.signal.aborted&&owner.current===token)setUsersData(data);}).catch(()=>{});
-  return()=>abort.abort();
- },[token,memberKey]);
+ const {usersData,setUsersData,usageData,usageLoading,usageError,page,setPage,refresh}=useUsageQuery(token,usageDays);
  const usersByEmail=useMemo(()=>new Map(usersData?.users.map(user=>[user.email,user])??[]),[usersData]);
- const invalidateUsage=useCallback(()=>{generation.current++;current.current?.abort();},[]);
- useEffect(()=>{if(token)void loadUsage(token,usageDays,page);return invalidateUsage;},[token,usageDays,page,loadUsage,invalidateUsage]);
  const usagePeak=useMemo(()=>Math.max(1,...(usageData?.daily??[]).map(row=>row.credits)),[usageData]);
  const member=useMemberDetail(token,usersData,setUsersData),{openDetail}=member;
  return <>
@@ -63,7 +46,7 @@ export function AdminUsagePanel({token,usageDays,setUsageDays,onManageUsers}:{to
                 variant="outline"
                 size="sm"
                 disabled={usageLoading || !token}
-                onClick={() => token && void loadUsage(token, usageDays, page)}
+                onClick={refresh}
               >
                 {usageLoading ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />

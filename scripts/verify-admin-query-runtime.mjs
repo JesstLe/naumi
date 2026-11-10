@@ -41,6 +41,16 @@ try{
  await page.getByRole('button',{name:'下一页',exact:true}).click();await page.waitForResponse(response=>response.url().includes('/api/admin/usage?')&&new URL(response.url()).searchParams.get('page')==='2');
  await page.getByRole('button',{name:'查看明细',exact:true}).first().waitFor();await page.screenshot({path:path.join(out,'usage-production.png'),fullPage:true});checks.push('Legacy usage actual page/SQL/member directory: 30 rows and page 2');
  await page.setViewportSize({width:390,height:844});await page.screenshot({path:path.join(out,'usage-mobile.png'),fullPage:true});
+ // Deliberately fail a different page; its label must not borrow page 2 rows.
+ await page.route('**/api/admin/usage?**',route=>new URL(route.request().url()).searchParams.get('page')==='3'
+   ?route.fulfill({status:503,contentType:'application/json',body:'{"error":"fixture transient failure"}'}) :route.continue());
+ await page.getByRole('button',{name:'下一页',exact:true}).click();await page.getByRole('alert').filter({hasText:'读取用量失败'}).waitFor();assert.equal(await page.locator('tbody tr').count(),0);
+ await page.screenshot({path:path.join(out,'failed-page.png'),fullPage:true});await page.unroute('**/api/admin/usage?**');
+ const recovered=page.waitForResponse(response=>response.url().includes('/api/admin/usage?')&&new URL(response.url()).searchParams.get('page')==='3'&&response.ok());
+ await page.getByRole('button',{name:'刷新',exact:true}).click();await recovered;await page.getByRole('button',{name:'查看明细',exact:true}).first().waitFor();
+ assert.ok(await page.locator('tbody tr').count()>0);checks.push('Different-page 503 clears stale rows; retry recovers actual page 3');
+ await context.request.delete(origin+'/api/admin/login');await page.getByRole('button',{name:'刷新',exact:true}).click();await page.getByRole('alert').filter({hasText:'读取用量失败'}).waitFor();
+ assert.equal(await page.locator('tbody tr').count(),0);checks.push('Expired admin session clears retained same-page results');
  assert.deepEqual(errors,[]);await fs.writeFile(path.join(out,'RESULT.json'),JSON.stringify({checks,errors,requests,realNext:true,realPostgres:true,productionWrites:0,supplierCalls:0},null,2));console.log('ADMIN_QUERY_RUNTIME=PASS '+JSON.stringify(checks));
 }catch(error){if(page){await page.screenshot({path:path.join(out,'failure.png'),fullPage:true});await fs.writeFile(path.join(out,'failure.json'),JSON.stringify({errors,requests,url:page.url(),text:await page.locator('body').innerText()},null,2));}throw error;}
 finally{await browser?.close();server.kill();await new Promise(resolve=>{if(server.exitCode!==null)resolve();else server.once('exit',resolve)});await pool.end();await fs.writeFile(path.join(out,'server.log'),logs);}
