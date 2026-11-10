@@ -12,7 +12,8 @@ export async function libraryRequest<T>(params?:URLSearchParams,body?:unknown,fa
     headers:{...await authHeader(),...(body?{"content-type":"application/json"}:{})},
     ...(body?{body:JSON.stringify(body)}:{}),
   });
-  const data=await response.json();
-  if(!response.ok)throw Error(data.error||fallback);
+  const data=await response.json().catch(()=>null);
+  if(!response.ok)throw Object.assign(new Error(data?.error||fallback),{status:response.status});
+  if(data===null)throw new Error(fallback);
   return data;
 }
