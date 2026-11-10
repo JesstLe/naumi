@@ -135,7 +135,7 @@ async function main() {
     const limited = structuredClone(speechScope); limited.capabilities.audio!.speech!.maxOutputBytes = 100;
     await assert.rejects(() => executeSpeech(limited, speech, options), (e: unknown) => e instanceof AudioExecutionError && e.code === "AUDIO_RESULT_TOO_LARGE" && e.acceptance === "unknown"); pass();
     assert.deepEqual(config.upstreamModels[0], fixtureModelConfig(`${origin}/v1`, config.providers[0].credentialRef!).upstreamModels[0]); pass();
-    console.log(`AUDIO_MODEL=PASS CHECKS=${checks} HTTP_ATTEMPTS=${calls} RETRIES=0 FALLBACKS=0 REAL_VENDOR_CALLS=0 PUBLIC_GENERATION_ROUTES=0`);
+    console.log(`AUDIO_MODEL=PASS CHECKS=${checks} HTTP_ATTEMPTS=${calls} RETRIES=0 FALLBACKS=0 REAL_VENDOR_CALLS=0 PUBLIC_HTTP_TESTS=0`);
   } finally {
     server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve()));
   }

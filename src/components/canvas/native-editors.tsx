@@ -51,6 +51,7 @@ export function CanvasNativeEditors({sessions,legacyDraftScope,nodes,commands,in
     onGenerate={guard(character,(value,appearance)=>commands.character.reference(character.id,value,appearance))}/>);
   const timeline=sessions.timeline,nodeTimeline=timeline&&nodes.timelineNodes.find(node=>node.id===timeline.id&&node.projectKey===timeline.scope.project&&!node.deletedAt);
   if(timeline&&timeline.current()&&nodeTimeline)panels.push(<TimelineEditor key={timeline.key} {...common(timeline)} node={nodeTimeline} choices={inputs.filter(choice=>choice.kind!=='text')} jobs={media.jobs}
+    onAudioRequest={guard(timeline,(url,init)=>commands.timeline.audioRequest(timeline.id,url,init))}
     onSave={guard(timeline,(value,revision)=>commands.timeline.patch(timeline.id,{timeline:value,expectedRevision:revision}))}
     onInspect={guard(timeline,ids=>inspectTimeline(timeline.id,ids))} onUpload={guard(timeline,files=>commands.timeline.upload(timeline.id,files))}
     onRender={guard(timeline,revision=>commands.timeline.render(timeline.id,revision))} onCancel={guard(timeline,media.cancel)}

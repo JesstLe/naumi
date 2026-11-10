@@ -44,7 +44,10 @@ export async function billingRequestIdentity(request: Request) {
     }
     else
         entries.push(await copy.text());
-    return { hash: submissionFingerprint(new URL(request.url).pathname,request.headers.get("x-naumi-image-quality"),request.headers.get("x-naumi-text-model"),request.headers.get("x-naumi-feature-model"),entries), confirmation: requestQuoteConfirmation(request, body) };
+    const path=new URL(request.url).pathname,audio=/^\/api\/canvas\/audio-operations\/(?:speech|transcribe)$/.test(path);
+    // Image/text defaults belong to their own operations, not this saved line.
+    // All entries bind the same explicit audio public model and exact body.
+    return { hash: submissionFingerprint(path,audio?null:request.headers.get("x-naumi-image-quality"),audio?null:request.headers.get("x-naumi-text-model"),audio?String(body.modelId||""):request.headers.get("x-naumi-feature-model"),entries), confirmation: requestQuoteConfirmation(request, body) };
 }
 /** HTTP transport adapter. Streaming responses retain their original body and timing. */
 export async function withBillingRequest(request:Request,feature:FeatureId,action:()=>Promise<Response>):Promise<Response>{

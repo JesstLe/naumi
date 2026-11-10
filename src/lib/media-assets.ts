@@ -1,6 +1,7 @@
 import {withTransaction} from "@/platform/db/transaction";
 import {registerMediaMetadata,assertOwnedMediaVersion as assertOwnedMediaVersionWith,registerOriginalWithPreviewsTx,type OriginalMediaSet} from "./media-assets/writer";
 export {registerOriginalWithPreviewsTx,updateMediaDimensionsTx,type OriginalMediaSet,type PreparedMediaMetadata} from "./media-assets/writer";
+export {registerPrivateMediaTx} from "./media-assets/writer";
 import {ensureMediaSchema} from "@/lib/media-assets-schema";
 export {ensureMediaSchema};
 

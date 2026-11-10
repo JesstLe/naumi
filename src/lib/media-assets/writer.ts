@@ -16,6 +16,15 @@ export async function registerMediaMetadata(db:Pick<Pool,"query">,input:{key:str
  sha256=EXCLUDED.sha256,bytes=EXCLUDED.bytes,content_type=EXCLUDED.content_type`,
  [input.key,input.owner,input.public,input.driver,input.remoteReady,input.contentType,input.sha256,input.bytes]);
 }
+/** Publish a prepared private immutable result with its artwork/creation in the
+ * caller's transaction. Pending raw checkpoints have no public media ACL row. */
+export async function registerPrivateMediaTx(tx:PoolClient,input:{key:string;owner:string;driver:StorageDriver;remoteReady:boolean;contentType:string;sha256:string;bytes:number}){
+ const saved=await tx.query(`INSERT INTO app_media_assets(key,owner,public,driver,remote_ready,content_type,sha256,bytes)
+ VALUES($1,$2,false,$3,$4,$5,$6,$7) ON CONFLICT(key) DO UPDATE SET remote_ready=EXCLUDED.remote_ready,local_evict_after=NULL
+ WHERE app_media_assets.owner=EXCLUDED.owner AND app_media_assets.sha256=EXCLUDED.sha256 AND app_media_assets.public=false RETURNING key`,
+ [input.key,input.owner.toLowerCase(),input.driver,input.remoteReady,input.contentType,input.sha256,input.bytes]);
+ if(!saved.rowCount)throw new Error("素材归属或内容不匹配");
+}
 /** Read-only preflight before object I/O; the Tx writer repeats the same fence. */
 export async function assertOwnedMediaVersion(db:Pick<Pool,"query">,key:string,owner:string,sha256:string){
  const existing=(await db.query("SELECT owner,sha256 FROM app_media_assets WHERE key=$1",[key])).rows[0];

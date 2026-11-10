@@ -6,6 +6,7 @@ import type {PublicMediaJob} from "../video/media-job-schema";
 import type {CanvasTimelineNode,TimelineNodeWrite,TimelineMaterial} from "./timeline-node-schema";
 import type {CanvasDocumentScope} from "./document-scope";
 import type {TimelinePatchFields,CanvasHistoryAction} from "./history-model";
+import {canvasDocumentFetch} from "./document-scope";
 
 type Ports={
   english?:boolean;writable:()=>boolean;settingsReady:()=>boolean;locked:(id:string)=>boolean;
@@ -13,7 +14,8 @@ type Ports={
     save:(id:string,patch:Partial<Omit<TimelineNodeWrite,"id"|"operationId">>)=>Promise<CanvasTimelineNode>;
     render:(id:string,revision:number,operationId:string)=>Promise<{node:CanvasTimelineNode;job:PublicMediaJob}>;
     adopt:(id:string,revision:number,operationId:string,jobId:string)=>Promise<CanvasTimelineNode>;
-    inspect:(id:string,ids:string[])=>Promise<TimelineMaterial[]>};
+    inspect:(id:string,ids:string[])=>Promise<TimelineMaterial[]>;
+    accept?:(nodes:CanvasTimelineNode[],isCurrent:()=>boolean)=>void};
   location:(at:{x:number;y:number},id:string)=>{projectKey:string;x:number;y:number};
   created:(node:CanvasTimelineNode)=>void;history:(action:CanvasHistoryAction)=>void;
   upload:(files:File[],project:string)=>Promise<VideoInputChoice[]>;merge:(ids:string[])=>Promise<Artwork[]>;
@@ -34,6 +36,20 @@ export function createCanvasTimelineActions(){
     const editable=(id:string)=>{assert();if(!ports.settingsReady()||ports.locked(id))throw new Error(label("请先解锁多轨节点","Unlock this multitrack node first"));};
     const key=(id:string)=>JSON.stringify([scope.account,scope.workspace,scope.project,id]);
     return {
+      async audioRequest(id:string,url:string,init:RequestInit={}){
+        editable(id);if(!/^\/api\/canvas\/audio-operations(?:\/(?:catalog|quote|speech|transcribe|recover|adopt))?(?:\?|$)/.test(url))throw new Error("声音请求路径无效");
+        const before=ports.store.getNode(id);if(!before||before.projectKey!==scope.project)throw new Error("声音工程不属于当前项目");
+        const response=await canvasDocumentFetch(scope,url,init,true),data=await response.json();
+        if(!response.ok)throw Object.assign(new Error(data.error||"声音操作尚未完成"),{status:response.status,code:data.code});
+        if(data.node){
+          if(data.node.id!==id||data.node.projectKey!==scope.project)throw new Error("声音采用回执不属于当前工程");
+          if(scope.documentCurrent()){
+            ports.store.accept?.([data.node],scope.documentCurrent);
+            if(data.node.revision>before.revision&&JSON.stringify(before.timeline)!==JSON.stringify(data.node.timeline))ports.history({kind:"timeline-patch",id,from:{timeline:before.timeline},to:{timeline:data.node.timeline}});
+          }
+        }
+        return data;
+      },
       async inspect(id:string,ids:string[]){editable(id);const materials=await ports.store.inspect(id,ids);editable(id);return materials;},
       async create(at:{x:number;y:number}){
         assert();if(creating.has(scope.key))return;creating.add(scope.key);

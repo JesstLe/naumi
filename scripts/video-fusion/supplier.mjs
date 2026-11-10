@@ -12,8 +12,8 @@ export function publicFixtureValue(value, key = "") {
   if(typeof value==="string"&&(value.startsWith("data:")||value.length>4000))return {materialString:true,length:value.length};
   return value;
 }
-/** @param {{assetsRoot:string,manifest:{files:any[]},token?:string,validateWire?:(call:any)=>void|Promise<void>,validatePoll?:(call:any)=>void,objectHandler?:(req:any,res:any,origin:string)=>Promise<any>,agentReply?:(request:any)=>Promise<any>|any}} options */
-export async function createVideoSupplier({ assetsRoot, manifest, token = randomUUID(), validateWire, validatePoll, objectHandler, agentReply } = {}) {
+/** @param {{assetsRoot:string,manifest:{files:any[]},token?:string,validateWire?:(call:any)=>void|Promise<void>,validatePoll?:(call:any)=>void,objectHandler?:(req:any,res:any,origin:string)=>Promise<any>,audioReply?:(request:any)=>Promise<any>|any,agentReply?:(request:any)=>Promise<any>|any}} options */
+export async function createVideoSupplier({ assetsRoot, manifest, token = randomUUID(), validateWire, validatePoll, objectHandler, agentReply, audioReply } = {}) {
   if (!assetsRoot || !manifest?.files?.length) throw new Error("A verified video manifest is required");
   const calls = [], tasks = new Map(), keys = new Map();
   let scenario = "success", origin = "";
@@ -61,6 +61,13 @@ export async function createVideoSupplier({ assetsRoot, manifest, token = random
       if(declaredProtocol==="runninghub"&&body.apiKey!==token)return respond(res,{error:"fixture authentication required"},401);
       const protocol = url.pathname.match(/^\/protocol\/([^/]+)/)?.[1] || "openai-videos";
       const pathname = url.pathname.replace(/^\/protocol\/[^/]+/, "");
+      if(protocol==="audio"&&req.method==="POST"){
+        if(!audioReply)return respond(res,{error:"Audio fixture required"},422);
+        calls.push({phase:pathname.endsWith("speech")?"audio-speech":"audio-transcribe",model:body.model,body:publicFixtureValue(body)});
+        const reply=await audioReply({path:pathname,body});if(reply.drop){res.destroy();return;}
+        if(reply.bytes){res.writeHead(reply.status||200,{"content-type":reply.mimeType||"audio/wav"});return res.end(reply.bytes);}
+        return respond(res,reply.json||{},reply.status||200);
+      }
       if(protocol==="agent"&&req.method==="POST"&&pathname==="/v1/chat/completions"){
         if(!agentReply)return respond(res,{error:"Scripted fixture required"},422);
         calls.push({phase:"agent-chat",model:body.model,toolCount:body.tools?.length||0});
