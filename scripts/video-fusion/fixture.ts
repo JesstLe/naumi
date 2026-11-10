@@ -60,9 +60,9 @@ export async function seedVideoFixture() {
   if(process.env.VIDEO_FIXTURE_AGENT==="1"){
     const key=await credentials.importPlain({providerId:"fixture-agent-provider",plain:process.env.VIDEO_API_KEY!,actor:"fixture"});
     config.providers.push({id:"fixture-agent-provider",name:"Isolated scripted Agent",protocol:"openai-chat",baseUrl:process.env.VIDEO_FIXTURE_SUPPLIER_ORIGIN!+"/protocol/agent/v1",credentialRef:key.id,enabled:true,timeoutMs:120000,maxConcurrent:4});
-    config.upstreamModels.push({id:"fixture-agent-upstream",providerId:"fixture-agent-provider",model:"wire-agent",label:"Fixture Agent",modality:"text",enabled:true,capabilities:{...config.upstreamModels[0].capabilities,vision:false},parameterMap:{}});
+    config.upstreamModels.push({id:"fixture-agent-upstream",providerId:"fixture-agent-provider",model:"wire-agent",label:"Fixture Agent",modality:"text",enabled:true,capabilities:{...config.upstreamModels[0].capabilities,vision:process.env.VIDEO_FIXTURE_AGENT_VISION==="1"},parameterMap:{}});
     config.publicModels.push({id:"fixture-agent",label:"Fixture Agent",modality:"text",enabled:true,visible:true,target:{type:"upstream",id:"fixture-agent-upstream"}});
-    config.bindings["agent.text"]="fixture-agent";config.bindings["text.generate"]="fixture-agent";
+    config.bindings["agent.text"]="fixture-agent";config.bindings["text.generate"]="fixture-agent";if(process.env.VIDEO_FIXTURE_AGENT_VISION==="1")config.bindings["vision.reference"]="fixture-agent";
   }
   if(process.env.VIDEO_FIXTURE_UI_MODELS==="1"){
     const key=await credentials.importPlain({providerId:"fixture-motion-provider",plain:process.env.VIDEO_API_KEY!,actor:"fixture"});

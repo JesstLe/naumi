@@ -1,3 +1,4 @@
+import {verifyStoryboardAssistedApplication} from "./verify-storyboard-assisted-application";
 import {verifyStoryboardStructureApplication} from "./verify-storyboard-structure-application";
 import {verifyStoryboardProductionApplication} from "./verify-storyboard-production-application";
 import {verifyStoryboardIndependentApplication} from "./verify-storyboard-independent-application";
@@ -50,8 +51,9 @@ async function main(){
   const assetsRoot=path.join(out,"assets");await prepareVideoAssets(assetsRoot,[4]);
   const spec=STORYBOARD_VIDEO_FAMILIES.find(item=>item.model==="kling-v3")!;assert.ok(spec);
   console.log("STORYBOARD_APP_STAGE=real_app_worker_start");
-  const h=fixture=await createVideoFixture({startWorker:false,databaseUrl,assetsRoot,videoProfile:spec.profile,videoWireModel:spec.model,videoDefinition:spec.definition});
-  await h.setMediaPrice(3);
+  let assistedMode="valid";
+  const h=fixture=await createVideoFixture({...(process.env.STORYBOARD_ASSISTED_FIXTURE==="1"?{agentVision:true,agentReply:async(body:any)=>{assert.ok(body.messages[0].content.includes("抽样静帧"));assert.equal(body.messages[1].content.filter((part:any)=>part.type==="image_url").length,3);return {text:assistedMode==="invalid"?"{}":JSON.stringify({summary:"静帧中手机颜色待核对",findings:[{frameIndexes:[1],issue:"visual",observation:"1号帧的手中物体呈红色",uncertainty:"抽样帧不能核对完整动作，也没有角色参考图",suggestion:"人工确认手机是否应为红色"}],limitations:["仅3张静帧；未检查声音、对白或整片连续性"]})}}}:{}),startWorker:false,databaseUrl,assetsRoot,videoProfile:spec.profile,videoWireModel:spec.model,videoDefinition:spec.definition});
+  await h.setMediaPrice(3);if(process.env.STORYBOARD_ASSISTED_FIXTURE==="1")await h.setTextPrice(2);
   const project=`tree:${h.refs.image.id}`,canvas={anchorId:h.refs.image.id,imageUrls:[h.refs.image.url],ratio:"1:1",resolution:"2K",quality:"max",video:{projectKey:project}};
   const internal=async(api:string,signal?:AbortSignal,init:RequestInit={})=>{assertInternalAgentPath(api,init.method||"GET");const response=await fetch(h.baseUrl+api,{...init,signal,headers:{...Object.fromEntries(new Headers(init.headers)),cookie:h.cookies.a}});const body=await response.json();if(!response.ok)throw Object.assign(new Error(JSON.stringify(body)),{status:response.status});return body};
   const tools=createCanvasVideoTools({actor:h.accounts.a,canvas,internal});
@@ -104,6 +106,7 @@ async function main(){
   await verifyStoryboardDialogueApplication(h,project,story.planId,path.join(out,"dialogue"),pass);
   for(const check of (await h.verifyStoryboardCosts(project,story.planId)).checks)pass("cost_"+check);
   await verifyStoryboardStructureApplication(h,project,story.planId,path.join(out,"structure"),pass);
+  if(process.env.STORYBOARD_ASSISTED_FIXTURE==="1")await verifyStoryboardAssistedApplication(h,project,story.planId,value=>{assistedMode=value;},pass);
   await writeFile(path.join(out,"RESULT.json"),JSON.stringify({checks,realApp:true,realPostgres:true,actualAgentTools:true,actualMediaWorker:true,realBilling:true,simulatedSupplierCreates:h.supplierCalls().filter(call=>call.phase==="create").length,realSupplierCalls:0,creativeModelNotTested:true,root:process.cwd()},null,2));
   console.log(`STORYBOARD_APPLICATION=PASS CHECKS=${checks.length} REAL_APP_DB_WORKER_STORAGE_BILLING=PASS PLANNING=FREE REUSE=PASS REPLAY=PASS FAILED_ASSEMBLY_RETRY=MEDIA_ONLY CANCEL=PASS NATIVE_SHOTS=PASS REAL_SUPPLIER_CALLS=0`);
  }finally{if(fixture)await fixture.stop();if(listening)await new Promise<void>(r=>router.close(()=>r()));if(pool)await pool.end();if(container){assert.equal(docker(["inspect","--format",'{{index .Config.Labels "naumi.task"}}',container]),owner);docker(["rm","--force",container])}await unlink(envFile);console.log("STORYBOARD_APP_CLEANUP=OWN_FIXTURE_REMOVED");}

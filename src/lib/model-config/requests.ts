@@ -33,6 +33,7 @@ async function requestFacts(request: Request) {
       const parsed = await copy.json();
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) body = parsed;
       references = Array.isArray(body.images) ? body.images.length : Array.isArray(body.sourceIds) ? body.sourceIds.length : Array.isArray(body.contextIds) ? body.contextIds.length : body.anchorId ? 1 : body.image || body.imageUrl || body.originalUrl || body.artworkId ? 1 : 0;
+      if(new URL(request.url).pathname==="/api/canvas/storyboards/review")references=Array.isArray(body.samples)?body.samples.length:1;
       if (new URL(request.url).pathname === "/api/canvas/text-generate") {
         // Only this route supports text-node IDs as text context. Product
         // images still require vision, even when no source image was selected.
@@ -56,7 +57,7 @@ function purposeFor(path: string): { image?: ModelBinding; text?: ModelBinding; 
   if (path.includes("/canvas/ocr")) return { vision: "vision.ocr", primary: "vision" };
   if (path.includes("title-gen")) return { text: "text.title", primary: "text" };
   if (path.includes("replicate/analyze") || /\/competitors\/[^/]+\/action/.test(path) || path.includes("ipcheck")) return { text: "text.competitor", vision: "vision.reference", primary: "text" };
-  if (path.includes("/canvas/text-generate") || path.includes("/canvas/assistant") || path.includes("prompt-assist")) return { text: "text.generate", vision: "vision.reference", primary: "text" };
+  if (path==="/api/canvas/storyboards/review" || path.includes("/canvas/text-generate") || path.includes("/canvas/assistant") || path.includes("prompt-assist")) return { text: "text.generate", vision: "vision.reference", primary: "text" };
   if (path.includes("suite") || path.includes("aplus")) return { image: "image.generate", text: "text.generate", vision: "vision.reference", primary: "image" };
   return { image: path.includes("cutout") ? "image.cutout" : path.includes("generate-image") ? "image.generate" : "image.edit", primary: "image" };
 }
