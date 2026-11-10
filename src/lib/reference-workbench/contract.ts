@@ -1,3 +1,4 @@
+import {frameRatio} from "../imagegen/frame-ratio";
 import {createHash} from "node:crypto";
 
 export const DEFAULT_PROMPT="根据图一产品，参考图二的风格与设计理念，用你的专业知识去排版规划，生成类似风格的图片";
@@ -11,7 +12,7 @@ export type Settings={mode:string;quality:string;resolution:string;ratio:string;
 export const defaults:Settings={mode:"all",quality:"high",resolution:"2k",ratio:"1:1",count:1,timeout:900,card_height:640,sku_refs_dir_name:"SKU",prompt:DEFAULT_PROMPT,prompt_infer_instruction:DEFAULT_INSTRUCTION,task_mode:"confirm",ratio_mode:"smart"};
 export function settings(raw:Record<string,unknown>={},max=20):Settings {
  const s={...defaults,...raw};s.quality=String(s.quality);s.resolution=String(s.resolution).toLowerCase();s.count=Number(s.count);
- if(!["low","medium","high","auto"].includes(s.quality)||!["1k","2k","4k"].includes(s.resolution)||!MODES[s.mode]||!Number.isInteger(s.count)||s.count<1||s.count>max||!["confirm","auto"].includes(s.task_mode)||!["smart","manual","reference","product"].includes(s.ratio_mode)||!/^auto$|^[1-9]\d{0,2}:[1-9]\d{0,2}$/.test(s.ratio))throw new WorkbenchError("生图参数无效");
+ if(!["low","medium","high","auto"].includes(s.quality)||!["1k","2k","4k"].includes(s.resolution)||!MODES[s.mode]||!Number.isInteger(s.count)||s.count<1||s.count>max||!["confirm","auto"].includes(s.task_mode)||!["smart","manual","reference","product"].includes(s.ratio_mode)||!/^auto$|^[1-9]\d{0,5}:[1-9]\d{0,5}$/.test(s.ratio))throw new WorkbenchError("生图参数无效");
  for(const k of ["prompt","prompt_infer_instruction"] as const)if(typeof s[k]!=="string"||s[k].length>6000)throw new WorkbenchError("提示词需在6000字符内");
  return s;
 }
@@ -31,10 +32,9 @@ export function classify(relative:string,sku="SKU"){
 }
 export const imageUrl=(id:string)=>`/api/reference-workbench/image?path=${encodeURIComponent(id)}`;
 export function ratio(width:number,height:number){
- const gcd=(a:number,b:number):number=>b?gcd(b,a%b):a,g=gcd(width,height),a=width/g,b=height/g;
- if(a<=999&&b<=999)return `${a}:${b}`;
- // Native ratio vocabulary is bounded. No arbitrary nearest-aspect fallback.
- throw new WorkbenchError("此参考图比例超出已支持范围，请管理员配置精确像素能力后使用");
+ const value=frameRatio({width,height});
+ if(!value||!/^[1-9]\d{0,5}:[1-9]\d{0,5}$/.test(value))throw new WorkbenchError("参考图片尺寸无效，请重新读取图片");
+ return value;
 }
 export function geometryMatches(a:{width:number;height:number},b:{width:number;height:number}){return Math.abs((a.width/a.height)/(b.width/b.height)-1)<=0.035;}
 export function stableId(requestId:string,key:string){const h=createHash("sha256").update(`${requestId}:${key}`).digest("hex");return `${h.slice(0,8)}-${h.slice(8,12)}-5${h.slice(13,16)}-a${h.slice(17,20)}-${h.slice(20,32)}`;}
