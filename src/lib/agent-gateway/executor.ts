@@ -3,7 +3,8 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Errors } from "typebox/value";
 import { HarnessError, validateToolArguments } from "@/lib/agent/harness";
 import { describeNaumiTools } from "@/lib/agent/naumi-tools";
-import { resultMediaUrls } from "@/lib/agent/execution-evidence";
+import { resultMediaUrls, agentToolResultFailure } from "@/lib/agent/execution-evidence";
+import {AgentToolHttpError} from "@/lib/agent/tool-errors";
 import { agentBillingPrecheck } from "@/lib/billing/agent";
 import { getUser } from "@/lib/accounts/session";
 import { withFrozenExecutionBundle } from "@/lib/model-config/execution";
@@ -97,7 +98,7 @@ async function serverQuote(prepared: Prepared, callId: string): Promise<number> 
     if ("terminate" in blocked && blocked.terminate) throw new GatewayError("INSUFFICIENT_CREDITS", reason, 402);
     throw new GatewayError("QUOTE_UNAVAILABLE", reason, 422);
   }
-  return session.billing.preparedBilling?.billingCredits ?? 0;
+  return session.billing.preparedBudgetCredits ?? session.billing.preparedBilling?.billingCredits ?? 0;
 }
 
 export async function quoteGatewayCall(caller: GatewayCaller, input: Pick<CallInput, "tool" | "arguments">) {
@@ -143,7 +144,7 @@ function failure(error: unknown): { state: Exclude<CallState, "running" | "succe
   }
   if (error instanceof FeatureAccessError) return { state: "rejected", error: { code: "FEATURE_DENIED", message, submitted: false } };
   const detail = error as { deterministic?: boolean; status?: number; code?: string };
-  if (detail?.deterministic && typeof detail.status === "number" && detail.status >= 400 && detail.status < 500 && detail.status !== 409) {
+  if (error instanceof AgentToolHttpError && error.submitted === false && detail.status! >= 400 && detail.status! < 500 && detail.status !== 409) {
     return { state: "rejected", error: { code: detail.status === 402 ? "INSUFFICIENT_CREDITS" : typeof detail.code === "string" ? detail.code : "TOOL_REJECTED", message, submitted: false } };
   }
   return { state: "failed", error: { code: typeof detail?.code === "string" ? detail.code : "TOOL_FAILED", message, submitted: "unknown" } };
@@ -166,11 +167,12 @@ async function runReserved(caller: GatewayCaller, prepared: Prepared, input: Cal
           const details = (update as { details?: { publicSummary?: string; stage?: string } } | undefined)?.details;
           if (details?.publicSummary) emit({ type: "progress", summary: session.harness.publicText(String(details.publicSummary), false), ...(details.stage ? { stage: String(details.stage) } : {}) });
         }));
-        outcome = { state: "succeeded", output: toOutput(result, caller.origin) };
+        const resultFailure=agentToolResultFailure(result);
+        outcome = { state: resultFailure?"failed":"succeeded", output: toOutput(result, caller.origin), ...(resultFailure?{error:resultFailure}:{}) };
       } catch (error) { outcome = failure(error); }
       const summary = outcome.error?.message || outcome.output?.text.slice(0, 300) || "工具执行完成";
       const saved = await recordAgentToolEvidence(creationId || undefined, caller.email, [{ id: input.operationId, tool: tool.name, isError: outcome.state !== "succeeded", summary: summary.slice(0, 300), code: outcome.error?.code, ...(outcome.state === "rejected" ? { submissionState: "not_submitted" } : {}) }]);
-      await finishCreation(creationId || undefined, caller.email, !saved ? "needs_review" : outcome.state === "succeeded" ? "succeeded" : outcome.error?.submitted === "unknown" ? "needs_review" : "failed", { text: outcome.output?.text.slice(0, 2000), eventKey: `gateway:${input.operationId}:finished` });
+      await finishCreation(creationId || undefined, caller.email, !saved || outcome.error?.code==="VERIFICATION_UNAVAILABLE" ? "needs_review" : outcome.state === "succeeded" ? "succeeded" : outcome.error?.submitted === "unknown" ? "needs_review" : "failed", { text: outcome.output?.text.slice(0, 2000), eventKey: `gateway:${input.operationId}:finished` });
       return outcome;
     });
   } finally { session.harness.finish(); }
@@ -184,7 +186,8 @@ export type StartedCall = { replay: CallView } | { operationId: string; credits:
  */
 export async function beginGatewayCall(caller: GatewayCaller, input: CallInput): Promise<StartedCall> {
   const prepared = await prepare(caller, input);
-  const digest = argumentsDigest(prepared.tool.name, prepared.args);
+  const context=currentCreationContext();
+  const digest = argumentsDigest(prepared.tool.name, prepared.args, {request:input.request,scope:context?.tenantId?{kind:context.scopeKind,tenantId:context.tenantId}:undefined});
   const prior = await existingCall(caller.token, input.operationId, prepared.tool.name, digest);
   if (prior) return { replay: prior };
   const credits = await serverQuote(prepared, input.operationId);

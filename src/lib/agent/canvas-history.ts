@@ -1,3 +1,4 @@
+import {agentHistoryRunning,assertLocalAgentIdle,agentHistoryResponse} from "./session-lifecycle";
 import "server-only";
 import {createHash} from "node:crypto";
 import {NextResponse} from "next/server";
@@ -12,7 +13,7 @@ import {AgentHarness} from "./harness";
 export const canvasProjectSessionPrefix=(projectKey:string)=>canvasSessionPrefix("project:"+projectKey);
 export const canvasSessionPrefix=(anchorId:string)=>"cv-"+createHash("sha256").update(anchorId).digest("hex").slice(0,12)+"-";
 /** Server-scoped history, independent from the sidebar's mounting lifetime. */
-export async function canvasAgentHistory(request:Request){
+async function readCanvasAgentHistory(request:Request){
  const email=await authenticatedEmail(request);if(!email)return NextResponse.json({error:"请先登录"},{status:401});
  const url=new URL(request.url),requestedAnchor=url.searchParams.get("anchorId")||"",id=url.searchParams.get("id")||"",projectKey=url.searchParams.get("projectKey")||"";
  const owned = projectKey ? await listArtworks(email) : requestedAnchor ? await listArtworksByIds(email,[requestedAnchor]) : [];
@@ -51,7 +52,7 @@ export async function canvasAgentHistory(request:Request){
    const target=subsequent.slice(0,nextUser<0?undefined:nextUser).reverse().find(turn=>turn.role==="assistant");
    if(target)for(const reference of step.artifacts||[]){const art=byId.get(reference.id);if(art&&!target.artifacts.some(item=>item.id===art.id))target.artifacts.push({id:art.id,image:art.image,title:art.title});}
   }
-  const currentTurn=steps.findLastIndex((step:any)=>step.type==="canvas_turn"),error=(steps.slice(Math.max(0,currentTurn)) as any[]).findLast(step=>step.type==="error"),running=!!(getSession(email,id)?.running || getSession(email,id)?.canvasExecuting);
+  const currentTurn=steps.findLastIndex((step:any)=>step.type==="canvas_turn"),error=(steps.slice(Math.max(0,currentTurn)) as any[]).findLast(step=>step.type==="error"),running=await agentHistoryRunning(email,id);
   const interrupted=!running&&currentTurn>=0&&!steps.slice(currentTurn).some((step:any)=>step.type==="agent_end");
   const pending=(steps as any[])[currentTurn];if(pending&&pending.messageIndex>=turns.length)turns.push({id:id+"-pending",role:"user",content:String(pending.message),artifacts:[]});
   const terminal=steps.slice(Math.max(0,currentTurn)).findLast((step:any)=>step.type==="canvas_terminal") as any;
@@ -66,8 +67,10 @@ export async function canvasAgentHistory(request:Request){
  await getSession(email,id)?.persistPending?.catch(()=>undefined);
  if(request.method==="PATCH"){
   const body=await request.json().catch(()=>null),title=String(body?.title||"").trim().slice(0,120);if(!title)return NextResponse.json({error:"请输入会话名称"},{status:400});
-  if(!await renameAgentSession(email,id,title))return NextResponse.json({error:"会话不存在"},{status:404});renameRuntimeSession(email,id,title);return NextResponse.json({ok:true});
+  if(!await renameAgentSession(email,id,title,()=>assertLocalAgentIdle(email,id)))return NextResponse.json({error:"会话不存在"},{status:404});renameRuntimeSession(email,id,title);return NextResponse.json({ok:true});
  }
- if(request.method==="DELETE"){removeRuntimeSession(email,id);await deleteAgentSession(email,id);return NextResponse.json({ok:true});}
+ if(request.method==="DELETE"){await deleteAgentSession(email,id,()=>assertLocalAgentIdle(email,id));removeRuntimeSession(email,id);return NextResponse.json({ok:true});}
  return NextResponse.json({error:"不支持的操作"},{status:405});
 }
+
+export function canvasAgentHistory(request:Request){return agentHistoryResponse(()=>readCanvasAgentHistory(request));}

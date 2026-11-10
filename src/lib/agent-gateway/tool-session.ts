@@ -56,6 +56,6 @@ export function gatewayToolViews(tools: AgentTool[]): GatewayToolView[] {
       if (Array.isArray(schema.required)) schema.required = schema.required.filter((key: string) => key !== "confirm");
     }
     if (schema.type === "object") schema.additionalProperties = false;
-    return { ...view, parameters: schema, billed: !!AGENT_FEATURES[view.name] };
+    return { ...view, parameters: schema, billed: view.name!=="generate_aplus" && !!AGENT_FEATURES[view.name] };
   });
 }

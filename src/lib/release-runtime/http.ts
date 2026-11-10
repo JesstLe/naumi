@@ -53,7 +53,10 @@ export async function routeAgentToOwner(request: Request, email: string, session
     if (owner?.state === "unknown") throw new ReleaseRuntimeError("AGENT_OWNER_UNKNOWN", 409);
     // New turns may migrate an idle session using its already persisted history;
     // controls and retries for active work remain pinned to the original owner.
-    const pinned = owner && (owner.state === "running" || !newRun);
+    // An idle history observer can read the durable snapshot from the current
+    // slot even after the previous slot has drained and stopped.
+    const idleHistoryRead = owner?.state === "idle" && request.method === "GET" && url.pathname === "/api/agent";
+    const pinned = owner && !idleHistoryRead && (owner.state === "running" || !newRun);
     if (pinned && (owner.instance_id !== identity.instanceId || owner.boot_id !== identity.bootId)) {
       if (forwarded || owner.instance_id === identity.instanceId) throw new ReleaseRuntimeError("AGENT_OWNER_BOOT_UNAVAILABLE", 409);
       const peer = releasePeers().get(owner.instance_id);

@@ -70,6 +70,8 @@ export async function agentQuote(name: string, args: Record<string, any>, email:
     return { quote: await quoteForActor(email, { feature: entry.feature, quantity, quality: args.quality || canvas?.quality || cred.imageQuality || "medium", resolution: videoTool?args.resolution:args.resolution || canvas?.resolution || "1K", modelId: args.model || args.modelId || args.model_id || (CANVAS_IMAGE_TOOLS.has(name) ? canvas?.imageModelId : undefined), providerId: args.providerId || args.provider_id, ratio: videoTool?args.aspectRatio:args.ratio || canvas?.ratio },undefined,snapshot), label: entry.label, threshold };
 }
 export type AgentBillingSession = {
+    /** This step's budget exposure; may differ from a later stage's frozen quote. */
+    preparedBudgetCredits?:number;
     email: string;
     cred: {
         cookie: string;
@@ -90,6 +92,7 @@ export type AgentBillingSession = {
 };
 export async function agentBillingPrecheck(session: AgentBillingSession, name: string, args: Record<string, unknown>, callId: string) {
     session.preparedBilling = undefined;
+    session.preparedBudgetCredits = undefined;
     session.preparedImagegen=undefined;session.preparedVideoWorkflow=undefined;
     if (!dbEnabled)
         return undefined;
@@ -113,13 +116,14 @@ export async function agentBillingPrecheck(session: AgentBillingSession, name: s
     const meta = { cost: name === "generate_aplus" ? 0 : quoted.quote.requestedCredits, label: quoted.label };
     // Prepare the server quote once for this tool call; pricing is not a second user-confirmation flow.
     session.preparedBilling = { billingVersion: quoted.quote.configVersion, billingCredits: costPlus?cap:quoted.quote.requestedCredits, billingOperationId: fingerprint({ session: session.id, turn: session.turnId, call: callId }) };
+    session.preparedBudgetCredits = name === "generate_aplus" ? 0 : session.preparedBilling.billingCredits;
     if(quoted.videoWorkflow)session.preparedVideoWorkflow=quoted.videoWorkflow;
     if(quoted.imagegenPlan){const request={...quoted.imagegenPlan.request,operationId:imagegenStepId(session.preparedBilling.billingOperationId,"agent")};session.preparedImagegen={...quoted.imagegenPlan,request,fingerprint:imagegenFingerprint(request)};}
     const u = await getUser(session.email);
     if (!u)
         return { block: true, attention: "restricted" as const, reason: "积分账户不可用，请先登录后重试" };
     const balance = u.creditsTotal - u.creditsUsed;
-    if (balance < (costPlus?cap:meta.cost)) {
+    if (balance < session.preparedBudgetCredits) {
         return {
             block: true,
             attention: "restricted" as const,
