@@ -196,8 +196,9 @@ async function scenario(browser, dimensions, referenceCount) {
       assertBounds(normal);
       if (desktop) {
         assertDesktopGeometry(normal);
-        assert.equal(parseFloat(normal.editorStyle.minHeight), 56, 'short prompt editor has the compact 56px minimum');
-        assert(normal.dock.height <= (referenceCount ? 280 : 240), 'short prompt default dock is content-sized rather than a large sheet');
+        assert.equal(parseFloat(normal.editorStyle.minHeight), 112, 'short prompt editor reserves a comfortable multi-line input');
+        assert(normal.editor.height >= 112, 'the actual input must retain its minimum height');
+        assert(normal.dock.height <= (referenceCount ? 336 : 296), 'content-sized dock includes the additional 56px of input space');
         assert(normal.dock.height <= 360 + 1, 'normal image dock height cap');
         if (priorReport) {
           assert.equal(priorReport.status, 'REPRODUCED', 'comparison uses a real reproduced baseline');
