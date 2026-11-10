@@ -1,4 +1,5 @@
 "use client";
+import { useToolReference } from "@/components/tools/use-tool-reference";
 import { readBrowserImage } from "@/lib/browser-image-cache";
 import { CachedImage } from "@/components/cached-image";
 import { BRAND } from "@/lib/brand";
@@ -131,6 +132,8 @@ export function TryonClient() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [picker]);
+
+  useToolReference({account:user?.email,empty:!top,busy:processing,onFile:file=>pick("top",file),onError:setError});
 
   function pick(slot: "top" | "bottom", f: File) {
     if (processing) return;

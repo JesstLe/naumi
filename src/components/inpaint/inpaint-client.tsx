@@ -1,4 +1,5 @@
 "use client";
+import { useToolReference } from "@/components/tools/use-tool-reference";
 import { readBrowserImage } from "@/lib/browser-image-cache";
 import { CachedImage } from "@/components/cached-image";
 import {useObjectUrlCleanup} from "@/components/tools/use-object-url-cleanup";
@@ -77,6 +78,8 @@ export function InpaintClient() {
   }
 
   useObjectUrlCleanup([imgUrl]);
+
+  useToolReference({account:user?.email,empty:!file,busy:loading,onFile:loadFile,onError:setError});
 
   function loadFile(f: File) {
     if (loading) return;

@@ -11,5 +11,5 @@ export async function generateMetadata() {
 }
 
 export default function DashboardPage() {
-  return <WorkbenchClient />;
+  return <WorkbenchClient appearance="creation" />;
 }

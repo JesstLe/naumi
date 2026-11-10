@@ -1,4 +1,5 @@
 "use client";
+import { useToolReference } from "@/components/tools/use-tool-reference";
 import { readBrowserImage } from "@/lib/browser-image-cache";
 import { CachedImage } from "@/components/cached-image";
 import {useObjectUrlCleanup} from "@/components/tools/use-object-url-cleanup";
@@ -113,6 +114,8 @@ export function FuseClient() {
       },
     ]);
   }, []);
+
+  useToolReference({account:user?.email,empty:slots.length===0,busy:loading,onFile:file=>addFiles([file]),onError:setError});
 
   function addFiles(files: File[]) {
     if (loading) return;

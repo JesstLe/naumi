@@ -74,6 +74,8 @@ export const useSearchParams=()=>React.useMemo(()=>new URLSearchParams(window.lo
 export const loadAccountSnapshot=async()=>({artworks:[],stats:{today:0,total:0}});export const invalidateBrowserData=()=>{};
 export const cn=(...a)=>a.filter(x=>typeof x==='string').join(' ');export const agentMediaUrl=x=>x;export const cdnUrl=x=>x;
 export const toolBySlug=()=>undefined;export const toolImageError=()=>null;export const downloadImage=()=>{};export const useClipboardImagePaste=()=>()=>{};
+export const currentWorkspace=()=>"personal",WORKSPACE_SELECTION="fixture:workspace";
+export const CreationWorkbench=()=>null;
 export const CachedImage=()=>null,Media=()=>null,SkillBook=()=>null,TextModelSelect=()=>null,TemplatesClient=()=>null,WorkbenchSessions=()=>null;
 export const Check=()=>null,MessageSquare=()=>null,Pencil=()=>null,Trash2=()=>null;export const ArrowRight=()=>null,ArrowUp=()=>null,ArrowUpRight=()=>null,Bot=()=>null,History=()=>null,LayoutGrid=()=>null,Loader2=()=>null,MessageSquarePlus=()=>null,Network=()=>null,Plus=()=>null,Upload=()=>null,Wrench=()=>null,X=()=>null;
 export default function Link({children,...p}){return <a {...p}>{children}</a>}`;
@@ -94,6 +96,7 @@ window.holdJson=(match,method)=>{let release;const promise=new Promise(r=>releas
 window.holdAuth=()=>{window.authGate=new Promise(r=>window.releaseAuth=()=>{window.authGate=null;r()})};
 window.metrics=()=>({timers:timers.size,peakTimers,listeners:[...listeners.values()].reduce((n,s)=>n+s.size,0),peakListeners,activeFetch:active,peakFetch,jsonBytes:bytes,errors:window.errors});`, resolveDir: root, loader: 'tsx' }, bundle: true, write: false, jsx: 'automatic', platform: 'browser', nodePaths: [deps], define: { 'process.env.NODE_ENV': '"development"' }, plugins: [{ name: 'fixture-boundaries', setup(b) {
     b.onLoad({ filter: /.*/ }, args => path.resolve(args.path)===source ? ({ contents: fs.readFileSync(args.path, 'utf8').replace('  // ── 对话态(沉浸式:', instrument + '\n  // ── 对话态(沉浸式:'), loader: 'tsx', resolveDir: path.dirname(args.path) }) : undefined);
+    b.onResolve({filter:/^\.\/creation-workbench$/},()=>({path:'creation-workbench',namespace:'fixture'}));
     b.onResolve({ filter: /^(@\/|next\/|lucide-react$)/ }, args => args.path === '@/lib/clipboard-images' ? ({path:path.join(root,'src/lib/clipboard-images.ts')}) : args.path === '@/lib/agent/workbench-session' ? ({path:ownerPath}) : args.path === '@/components/home/workbench-sessions' ? ({path:path.join(root,'src/components/home/workbench-sessions.tsx')}) : ({ path: args.path, namespace: 'fixture' }));
     b.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({ contents: stubs, loader: 'tsx', resolveDir: root }));
   } }] });

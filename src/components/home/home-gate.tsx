@@ -1,12 +1,11 @@
 "use client";
 
-import { Landing } from "@/components/home/landing";
-import type { PickedTemplate } from "@/lib/homepage-picks";
+import { WorkbenchClient } from "@/components/home/workbench-client";
 
 /**
- * 首页对所有人一致 = 营销落地页 Landing(登录态无关,利于 SEO + 一致体验)。
- * 大 Agent 工作台在独立路由 /brain,不占首页。
+ * One creation entry for visitors and signed-in accounts. Identity, feature
+ * access and paid execution remain owned by the existing workbench modules.
  */
-export function HomeGate({ hot }: { hot: PickedTemplate[] }) {
-  return <Landing hot={hot} />;
+export function HomeGate() {
+  return <WorkbenchClient appearance="creation" />;
 }

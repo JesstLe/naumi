@@ -1,4 +1,5 @@
 "use client";
+import { useToolReference } from "@/components/tools/use-tool-reference";
 import { CachedImage } from "@/components/cached-image";
 import {downloadImage} from "@/lib/download";
 import {toolImageError} from "@/lib/tool-ui";
@@ -64,6 +65,7 @@ export function RetouchClient() {
   const [result, setResult] = useState<string | null>(null);
   const [viewing, setViewing] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  useToolReference({account:user?.email,empty:!file,busy:loading,onFile:pickFile,onError:setError});
 
   const cost = billing.cost;
 

@@ -122,9 +122,11 @@ const SKELETON_RATIOS: ReadonlyArray<readonly [number, number]> = [
 
 export function TemplatesClient({
   gridClass,
+  variant,
   initialTotal = 0,
   initialCategoryCount = 0,
 }: {
+  variant?: "creation";
   // 在窄容器(如画布弹窗)里渲染时,传入更少列的栅格类,避免太挤
   gridClass?: string;
   // 服务端预取的真实库存数/分类数:首屏直接显示真值,不再闪兜底大数字
@@ -468,8 +470,8 @@ export function TemplatesClient({
   };
 
   return (
-    <div className="w-full px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mb-8 space-y-2">
+    <div className={variant === "creation" ? "w-full" : "w-full px-4 py-8 sm:px-6 lg:px-8"} data-creation-templates={variant === "creation" || undefined}>
+      {variant !== "creation" && <div className="mb-8 space-y-2">
         {/* 大字横幅标题:实时库存数量(方案 A,2026-06-12 用户选定)。
             total 未到位时回退 16300,避免闪「0」。 */}
         <h1 className="text-[24px] font-black leading-snug tracking-tight sm:text-3xl">
@@ -491,16 +493,16 @@ export function TemplatesClient({
           )}
         </h1>
         <p className="text-muted-foreground">{tr("tpl.statsSub")}</p>
-      </div>
+      </div>}
 
-      <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div className="flex flex-wrap gap-2">
+      <div className={variant === "creation" ? "mb-6 flex min-w-0 flex-col gap-4 md:flex-row md:items-center md:justify-between" : "mb-8 flex flex-col gap-4 md:flex-row md:items-center md:justify-between"}>
+        <div className={variant === "creation" ? "flex min-w-0 flex-1 gap-2 overflow-x-auto whitespace-nowrap" : "flex flex-wrap gap-2"}>
           {FILTERS.map((f) => (
             <button
               key={f.key}
               onClick={() => setFilter(f.key)}
               className={cn(
-                "flex items-center gap-1 rounded-lg border px-3 py-1.5 text-sm transition-colors",
+                  "flex shrink-0 items-center gap-1 rounded-lg border px-3 py-1.5 text-sm transition-colors",
                 filter === f.key
                   ? "border-primary bg-primary/10 text-primary"
                   : "border-border text-muted-foreground hover:bg-secondary"
@@ -525,7 +527,7 @@ export function TemplatesClient({
             </button>
           ))}
         </div>
-        <div className="relative w-full md:w-72">
+        <div className="relative w-full shrink-0 md:w-64">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={query}
@@ -646,7 +648,7 @@ export function TemplatesClient({
                       </Badge>
                     )}
                   </div>
-                  <div className="flex flex-col space-y-3 p-5">
+                  {variant === "creation" ? <div className="flex items-center justify-between gap-3 px-2 py-3"><h3 className="min-w-0 truncate text-[13px] font-medium">{scrub(t.title)}</h3><button type="button" aria-label={`使用 ${scrub(t.title)}`} onClick={()=>{if(!user)openAuth("sign-in");else router.push(`/generate?template=${encodeURIComponent(t.id)}`);}}><ArrowRight className="h-4 w-4"/></button></div> : <div className="flex flex-col space-y-3 p-5">
                     <div className="flex min-w-0 items-center gap-2">
                       <span className="shrink-0 font-mono text-xs font-semibold text-primary">
                         No.{no2(t.id)}
@@ -700,7 +702,7 @@ export function TemplatesClient({
                         </Button>
                       )}
                     </div>
-                  </div>
+                  </div>}
                   </div>
                 ))}
               </div>

@@ -5,6 +5,16 @@ import type {ArtworkRecord} from "./types";
 import {rowToArtwork,type ArtworkRow} from "./row";
 export {rowToArtwork} from "./row";
 
+/** Canvas navigation needs grouping metadata only, never full prompts or
+ * provenance documents. The cap/order matches the existing Canvas catalogue. */
+export async function listCanvasCatalogueArtworks(email:string){
+  await ensureSchema();
+  const {rows}=await getPool().query(`SELECT id,title,category,status,COALESCE(canvas_image_version->>'image',image_url) AS image_url,gradient,created_at,source_url,batch_id,parent_id,group_id,origin,marked,video_url
+    FROM app_artworks WHERE email=$1 AND deleted_at IS NULL AND source_url IS DISTINCT FROM 'canvas-node-version'
+    ORDER BY created_at DESC LIMIT 1000`,[email.toLowerCase()]);
+  return rows.map(row=>rowToArtwork({...row,prompt:""} as ArtworkRow));
+}
+
 /** Workbench needs eight previews and counts, not prompts/source/canvas metadata. */
 export async function getWorkbenchArtworks(emailRaw: string, dayStart: Date, dayEnd: Date) {
   await ensureSchema();

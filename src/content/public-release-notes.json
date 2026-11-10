@@ -1,5 +1,27 @@
 [
   {
+    "version": "1794310093",
+    "title": {
+      "zh": "创作首页与对话体验更新",
+      "en": "New creation home and conversation experience"
+    },
+    "improvements": [
+      {
+        "zh": "登录前后使用统一创作首页，快捷进入模板、工具、作品和工作台。",
+        "en": "A unified creation home before and after sign-in, with direct access to templates, tools, work and workspaces."
+      },
+      {
+        "zh": "侧栏集中查看对话与画布，图片结果可直接带入编辑工具。",
+        "en": "Find conversations and canvases in the sidebar and open image results directly in editing tools."
+      },
+      {
+        "zh": "新增明暗主题切换，优化移动端布局，切换对话时保留各自草稿。",
+        "en": "Switch between light and dark themes, use a refined mobile layout and retain separate conversation drafts."
+      }
+    ],
+    "fixes": []
+  },
+  {
     "version": "1793937914",
     "title": {
       "zh": "画布编辑体验修复",

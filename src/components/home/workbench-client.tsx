@@ -45,6 +45,9 @@ import { authHeader } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { useClipboardImagePaste } from "@/lib/clipboard-images";
 import { TemplatesClient } from "@/components/templates/templates-client";
+import { CreationWorkbench } from "./creation-workbench";
+import type { CreationWorkbenchPort } from "./creation-contract";
+import { currentWorkspace,WORKSPACE_SELECTION } from "@/lib/saas/workspace-client";
 
 // ---------------------------------------------------------------------------
 // 统一工作台(一期收敛):空态 = 门户(问候/统计/大输入框/快捷入口/最近作品),
@@ -255,7 +258,7 @@ function renderContent(
   });
 }
 
-export function WorkbenchClient() {
+export function WorkbenchClient({appearance="legacy"}:{appearance?:"legacy"|"creation"}={}) {
   const site = useSiteProfile();
   const { can, canPage } = useFeatureAccess();
   const { t, locale } = useI18n();
@@ -263,6 +266,9 @@ export function WorkbenchClient() {
   const { openAuth } = useAuthModal();
   const L = (zh: string, en: string) => (locale === "en" ? en : zh);
   const params = useSearchParams();
+  const [creationWorkspace,setCreationWorkspace]=useState(()=>appearance==="creation"?currentWorkspace():"personal");
+  const recoveryWorkspaceRef=useRef(creationWorkspace);
+  useEffect(()=>{if(appearance!=="creation")return;const sync=()=>setCreationWorkspace(currentWorkspace());window.addEventListener(WORKSPACE_SELECTION,sync);return()=>window.removeEventListener(WORKSPACE_SELECTION,sync);},[appearance]);
   // ?prompt= 引导只执行一次(旧 /brain?prompt= 链接 302 过来的场景)
   const bootstrapRef = useRef(false);
 
@@ -275,6 +281,7 @@ export function WorkbenchClient() {
   const [composerText, setComposerText] = useState("");
   const [composerFiles, setComposerFiles] = useState<File[]>([]);
   const [composerPreviews, setComposerPreviews] = useState<string[]>([]);
+  const composerUrlsRef=useRef(composerPreviews);composerUrlsRef.current=composerPreviews;
   const [composerError, setComposerError] = useState<string | null>(null);
   const [composerSubmitting, setComposerSubmitting] = useState(false);
   const composerFileRef = useRef<HTMLInputElement>(null);
@@ -283,11 +290,15 @@ export function WorkbenchClient() {
   // ── 对话状态 ──
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
+  const [homeReferences,setHomeReferences]=useState<string[]>([]);
+  const drafts=useRef(new Map<string,{text:string;refs:string[];skill:ImageSkill|null}>());
+  const activeDraft=useRef({text:input,refs:[] as string[],skill:null as ImageSkill|null});
   const [imageSkill, setImageSkill] = useState<ImageSkill | null>(null);
   const [busy, setBusy] = useState(false);
   const [running, setRunning] = useState(false);
   const [interject, setInterject] = useState("");
   const [attachments, setAttachments] = useState<string[]>([]);
+  activeDraft.current={text:input,refs:attachments,skill:imageSkill};
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // 历史会话(自 /agent 收编)
@@ -313,13 +324,16 @@ export function WorkbenchClient() {
     // Cached identity can already own an accepted send while auth hydrates.
     // Readiness is not an account change.
     const account = user?.email || "";
+    const workspaceChanged=appearance==="creation"&&recoveryWorkspaceRef.current!==creationWorkspace;
+    recoveryWorkspaceRef.current=creationWorkspace;
     const {previous, scope} = sessionRecovery.activateAccount(account);
-    if (previous && previous.account !== account) {
+    if (previous && (previous.account !== account || workspaceChanged)) {
       sessionIdRef.current = "";
       setMessages([]);
       setAttachments([]);
       sessionRecovery.attachments.resetIndex();
       setInput("");
+      drafts.current.clear();setHomeReferences([]);setImageSkill(null);
       setInterject("");
       setActiveTitle("");
       setSessions([]);
@@ -346,7 +360,7 @@ export function WorkbenchClient() {
       sessionRecovery.cancel();
       // The application owner detaches the old stream without cancelling it.
     };
-  }, [user?.email, sessionRecovery]);
+  }, [user?.email, sessionRecovery,appearance,creationWorkspace]);
 
   useLayoutEffect(() => {
     if (ready) return;
@@ -412,7 +426,7 @@ export function WorkbenchClient() {
   // 参考图预览的对象 URL:卸载时回收
   useEffect(() => {
     return () => {
-      composerPreviews.forEach((u) => URL.revokeObjectURL(u));
+      composerUrlsRef.current.forEach((u) => URL.revokeObjectURL(u));
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -456,7 +470,21 @@ export function WorkbenchClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionsOpen, user]);
 
-  function loadSession(id: string) { return sessionRecovery.load(id,recoveryContext()); }
+  useEffect(()=>{
+    if(appearance==="creation"&&ready&&user?.email&&can("agent"))void refreshSessions();
+    // Account-scoped catalog owns cancellation and late response fencing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[appearance,ready,user?.email,can,creationWorkspace]);
+
+  async function loadSession(id: string) {
+    if(appearance!=="creation")return sessionRecovery.load(id,recoveryContext());
+    if(sessionIdRef.current)drafts.current.set(sessionIdRef.current,activeDraft.current);
+    const scope=sessionRecovery.accountScope;
+    await sessionRecovery.load(id,recoveryContext());
+    if(scope?.active&&scope===sessionRecovery.accountScope&&sessionIdRef.current===id&&!sessionRecovery.blocksSend()){
+      const draft=drafts.current.get(id);setInput(draft?.text||"");setAttachments(draft?.refs||[]);setImageSkill(draft?.skill||null);
+    }
+  }
 
   function renameSession(id: string, title: string): Promise<boolean> {
     return sessionRecovery.catalog.rename(id, title, catalogContext());
@@ -496,6 +524,7 @@ export function WorkbenchClient() {
 
   function newConversation() {
     if (running && !sessionRecovery.hasObserver()) return;
+    if(appearance==="creation"&&sessionIdRef.current)drafts.current.set(sessionIdRef.current,activeDraft.current);
     resetAttachmentUploads();
     sessionRecovery.cancel();
     setSessionLoadingId("");
@@ -579,6 +608,7 @@ export function WorkbenchClient() {
   /** 门户大输入框提交:参考图先上传换 URL,随后同页进入对话(不再跳转)。 */
   async function submitComposer() {
     if (!can("agent")) return;
+    if(appearance==="creation"&&!user){if(ready)openAuth("sign-in");return;}
     const text = composerText.trim();
     if (!text || composerSubmitting || busy) return;
     const scope = sessionRecovery.accountScope;
@@ -587,7 +617,7 @@ export function WorkbenchClient() {
     setComposerError(null);
     setComposerSubmitting(true);
     try {
-      const urls: string[] = [];
+      const urls: string[] = [...homeReferences];
       if (composerFiles.length) {
         const uploaded = await sessionRecovery.attachments.upload(composerFiles, attachmentContext(), true);
         if (!current() || !uploaded.current()) return;
@@ -602,6 +632,7 @@ export function WorkbenchClient() {
       await send(text, urls, () => {
         accepted = true;
         setComposerText("");
+        setHomeReferences([]);
         setComposerFiles([]);
         setComposerPreviews((prev) => {
           prev.forEach((u) => URL.revokeObjectURL(u));
@@ -617,6 +648,21 @@ export function WorkbenchClient() {
   }
 
   // ── 对话态(沉浸式:顶条 + 居中消息流 + 底部输入容器) ──
+  if(appearance==="creation"){
+    const conversation=messages.length>0||busy||!!sessionIdRef.current;
+    const stage=(text:string,refs:string[]=[])=>{
+      if(busy||uploading||sessionLoadingId||recoveryUnavailable)return;
+      if(conversation){setInput(text);setAttachments(refs.slice(0,MAX_REF_FILES));}
+      else{setComposerText(text);setHomeReferences(refs.slice(0,MAX_REF_FILES));setComposerFiles([]);setComposerPreviews(previous=>{previous.forEach(URL.revokeObjectURL);return [];});}
+    };
+    const port:CreationWorkbenchPort={conversation,messages,sessions,sessionsLoading,sessionId:sessionIdRef.current,title:activeTitle,loadingId:sessionLoadingId,busy:busy||composerSubmitting,running,unavailable:recoveryUnavailable,uploading,error:error||composerError,text:conversation?input:composerText,refs:conversation?attachments:[...homeReferences,...composerPreviews],skill:imageSkill,recent,canNavigate:!busy&&!composerSubmitting&&!uploading||sessionRecovery.hasObserver(),
+      setText:conversation?setInput:setComposerText,setSkill:setImageSkill,stage,
+      addReference:url=>{if(busy||uploading)return;if(conversation)setAttachments(previous=>[...previous,url].slice(0,MAX_REF_FILES));else setHomeReferences(previous=>[...previous,url].slice(0,Math.max(0,MAX_REF_FILES-composerFiles.length)));},
+      addFiles:files=>{if(conversation)void uploadAttachments(files.slice(0,Math.max(0,MAX_REF_FILES-attachments.length)));else{const accepted=files.slice(0,Math.max(0,MAX_REF_FILES-composerFiles.length-homeReferences.length));const transfer=new DataTransfer();accepted.forEach(file=>transfer.items.add(file));pickComposerFiles(transfer.files);}},
+      removeRef:index=>{if(conversation)setAttachments(previous=>previous.filter((_,i)=>i!==index));else if(index<homeReferences.length)setHomeReferences(previous=>previous.filter((_,i)=>i!==index));else removeComposerFile(index-homeReferences.length);},
+      send:()=>{if(conversation)void send();else void submitComposer();},regenerate:(text,refs)=>{if(!busy&&!uploading&&!sessionLoadingId&&!recoveryUnavailable)void send(text,refs);},stop:()=>void stopRun(),interject:text=>void sessionRecovery.interject(text,{running,sessionId:()=>sessionIdRef.current,headers:authHeader,request:(input,init)=>fetch(input,init),clear:()=>{}}),create:newConversation,load:id=>void loadSession(id),history:()=>setSessionsOpen(true),resolveArtwork:resolveArtworkId};
+    return <CreationWorkbench port={port}><WorkbenchSessions key={user?.email||""} open={can("agent")&&sessionsOpen} onClose={()=>setSessionsOpen(false)} sessions={sessions} loading={sessionsLoading} activeSessionId={sessionIdRef.current} busy={busy&&!sessionRecovery.hasObserver()} loadingId={sessionLoadingId} onLoad={id=>void loadSession(id)} onRename={renameSession} onDelete={removeSession}/></CreationWorkbench>;
+  }
   if (can("agent") && (messages.length > 0 || busy || composerSubmitting)) {
     const userInitial = (user?.name || user?.email || "U").trim().charAt(0).toUpperCase();
     return (

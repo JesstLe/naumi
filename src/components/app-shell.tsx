@@ -38,6 +38,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   if (noShell) return <main className="min-h-screen">{children}</main>;
 
+  // Creation owns its sidebar/header. Retain the shell's existing page grant;
+  // other tools and the canvas keep their established navigation and viewport.
+  if (["/", "/dashboard", "/agent"].includes(path)) return <main className="min-h-screen">
+    {user && !canPage(path) ? <section className="flex min-h-[60vh] flex-col items-center justify-center gap-4 p-6"><h1 className="text-xl font-semibold">{ready ? "此页面尚未授权" : "正在加载权限"}</h1>{ready && <Link href="/account" className="rounded-xl border px-5 py-2 text-sm">返回我的账户</Link>}</section> : children}
+  </main>;
+
   return (
     <div className={isToolPage ? "tool-page" : undefined}>
       <AppRail />

@@ -1,4 +1,5 @@
 "use client";
+import { useToolReference } from "@/components/tools/use-tool-reference";
 import { browserImageArchive } from "@/lib/browser-image-archive";
 import { readBrowserImage } from "@/lib/browser-image-cache";
 import { CachedImage } from "@/components/cached-image";
@@ -247,6 +248,8 @@ export function ToolWorkspace({
     window.addEventListener("paste", onWindowPaste as unknown as EventListener);
     return () => window.removeEventListener("paste", onWindowPaste as unknown as EventListener);
   }, [onWindowPaste]);
+
+  useToolReference({account:user?.email,empty:!preview,busy:processing,onFile:file=>{const dt=new DataTransfer();dt.items.add(file);pick(dt.files);},onError:setError});
 
   function pick(files: FileList | null) {
     if (processing) return;

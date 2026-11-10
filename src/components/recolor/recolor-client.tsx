@@ -1,4 +1,5 @@
 "use client";
+import { useToolReference } from "@/components/tools/use-tool-reference";
 import { CachedImage } from "@/components/cached-image";
 import {downloadImage} from "@/lib/download";
 import {toolImageError} from "@/lib/tool-ui";
@@ -64,6 +65,8 @@ export function RecolorClient() {
       if (preview) URL.revokeObjectURL(preview);
     };
   }, [preview]);
+
+  useToolReference({account:user?.email,empty:!file,busy:loading,onFile:pickFile,onError:setError});
 
   function pickFile(f: File | null) {
     if (!f || loading) return;
