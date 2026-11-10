@@ -41,12 +41,14 @@ async function bundle(entry, name, mocks = false) {
       '@/platform/db/pool':'export const dbEnabled=true;',
       '@/lib/bi/request':'export const withBiRequest=(r,run)=>run();',
       '@/lib/image-model-legacy-catalog':'export const IMAGE_MODELS=[];export const imageModelById=()=>undefined;',
-      '@/lib/rate-limit': 'export const rateLimit=()=>true;',
+      '@/lib/rate-limit-http': 'export const checkRateLimit=async()=>true;',
+      '@/lib/agent/session-repository': 'export const getAgentSession=async()=>null;',
+      '@/lib/agent/session-lifecycle': 'export const agentHistoryRunning=async()=>false;',
       '@/lib/settings': 'export const getOpenAISettings=async()=>({apiKey:"fixture-local-not-a-credential"});',
       '@/lib/text-models': 'export const requestedTextModel=()=>"fixture";',
-      '@/lib/agent/runtime': `const f=globalThis.__agentStreamFixture;export const MODEL_ID='fixture';
+      '@/lib/agent/runtime': `const f=globalThis.__agentStreamFixture;export const MODEL_ID='fixture';export class AgentVisionInputError extends Error{};
         export const getOrCreateSession=(email,id)=>f.create(email,id);export const getSession=(email,id)=>f.sessions.get(email+':'+id);
-        export const persistAgentSession=s=>f.persist(s);export const appendSessionEvent=(s,type,data)=>s.events.push({type,data,at:Date.now()});
+        export const persistAgentSession=s=>f.persist(s);export const appendSessionEvent=(s,type,data)=>s.events.push({type,data,at:Date.now(),sequence:(s.events.at(-1)?.sequence||s.events.length)+1});
         export const agentVisionEnabled=()=>false;export const resolveVisionImages=async()=>[];export const markVisionUnsupported=()=>false;
         export const primeAgentSystemPrompt=()=>{if(f.primeError)throw Error('fixture-prime-failure');};export const refreshSessionCredentials=()=>{};`,
     };

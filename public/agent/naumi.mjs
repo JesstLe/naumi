@@ -79,7 +79,13 @@ const postJson = async (conn, path, body) => (await request(conn, path, { method
 
 /** Reads the NDJSON call stream; returns the final call view. */
 async function streamCall(conn, body, onEvent) {
-  const res = await request(conn, `${API}/calls`, { method: "POST", headers: { "content-type": "application/json", accept: "application/x-ndjson" }, body: JSON.stringify(body) });
+  let res;
+  try {
+    res = await request(conn, `${API}/calls`, { method: "POST", headers: { "content-type": "application/json", accept: "application/x-ndjson" }, body: JSON.stringify(body) });
+  } catch(error) {
+    if(error instanceof CliError && error.detail?.submitted===false){error.detail={...error.detail,operationId:body.operationId};throw error;}
+    throw new CliError(`提交结果尚未核实。不要重新提交，请查询：naumi status ${body.operationId}`,EXIT.unknown,{code:"RESULT_UNKNOWN",submitted:"unknown",operationId:body.operationId});
+  }
   const decoder = new TextDecoder();
   let buffered = "", final = null, streamError = null;
   const handle = line => {
@@ -184,7 +190,7 @@ async function readStdin() { const chunks = []; for await (const chunk of proces
 
 function exitForCall(call) {
   if (call.state === "succeeded") return EXIT.ok;
-  if (call.state === "running" || call.state === "unknown") return EXIT.unknown;
+  if (call.state === "running" || call.state === "unknown" || call.error?.submitted === "unknown") return EXIT.unknown;
   if (["BUDGET_EXCEEDED", "INSUFFICIENT_CREDITS"].includes(call.error?.code)) return EXIT.budget;
   if (["SCOPE_DENIED", "FEATURE_DENIED"].includes(call.error?.code)) return EXIT.auth;
   return EXIT.failed;
@@ -314,7 +320,7 @@ function callText(call) {
   if (call.output?.text) lines.push("", call.output.text);
   if (call.output?.media?.length) lines.push("", "结果媒体:", ...call.output.media);
   if (call.error) lines.push("", `错误(${call.error.code}): ${call.error.message}`);
-  if (call.state === "unknown" || call.state === "running") lines.push("", "任务结果未知或仍在执行：请用 naumi_call_status 查询，不要重复提交。");
+  if (call.state === "unknown" || call.state === "running" || call.error?.submitted === "unknown") lines.push("", "任务结果未知或仍在执行：请用 naumi_call_status 查询，不要重复提交。");
   return lines.join("\n");
 }
 

@@ -39,6 +39,26 @@ export function streamInterruption(message: StreamMessage | undefined, output = 
   return new AgentStreamInterruption(streamDiagnostic(message, text.length), !!text.trim());
 }
 
+/** Both transports derive completion from the same model and tool facts. */
+export function agentTurnOutcome(message: StreamMessage | undefined, events: {type:string;data:Record<string,unknown>}[], output = "") {
+  if (message?.stopReason === "aborted") throw new DOMException("任务已停止", "AbortError");
+  const interruption = streamInterruption(message, output);
+  if (interruption) throw interruption;
+  const attention = events.findLast(event => event.type === "attention");
+  const authoritative = attention?.data.kind === "waiting" || attention?.data.kind === "restricted";
+  const modelReply = Array.isArray(message?.content) ? message.content.filter(part => part?.type === "text").map(part => String(part.text || "")).join("").trim() : output.trim();
+  const reply = authoritative ? String(attention!.data.message || "当前操作受限，请调整任务后继续。") : modelReply;
+  if (!reply || events.some(event => event.type === "error")) throw new Error("Agent 执行未完成，已产出的结果保留，请勿重复提交收费任务");
+  return {reply, attention, authoritative};
+}
+
+export function recordAuthoritativeReply(agent: Agent, reply: string, last: AgentMessage | undefined) {
+  const current = last?.role === "assistant" ? last.content.filter(part => part.type === "text").map(part => part.text).join("").trim() : "";
+  if (current === reply) return;
+  const messages = agent.state.messages.map(turn => turn === last && turn.role === "assistant" ? {...turn, content: turn.content.filter(part => part.type !== "text")} : turn);
+  agent.state.messages = [...messages, {role:"assistant",api:agent.state.model?.api||"openai-completions",provider:"naumi-local",model:"naumi-local-reply",content:[{type:"text",text:reply}],stopReason:"stop",timestamp:Date.now(),usage:{input:0,output:0,cacheRead:0,cacheWrite:0,totalTokens:0,cost:{input:0,output:0,cacheRead:0,cacheWrite:0,total:0}}}];
+}
+
 type Step = { type: string; turnId?: unknown; status?: unknown; canContinue?: unknown };
 /** A one-turn capability: stale/repeated continuation requests never restart a task. */
 export function continuationTurn(steps: Step[], messages: { role: string; content?: unknown }[]): string | undefined {

@@ -41,15 +41,16 @@ async function main() {
     f.config.publicModels.push({id:"text-family",label:"Text fixture",modality:"text",enabled:true,visible:true,target:{type:"upstream",id:"text"},toolScope:{features:["canvas.assistant"],defaultFor:[]}});
     Object.assign(f.config.bindings,{"agent.text":"text-family","vision.reference":"text-family"});await f.repo.current();
     await db.ensureSchema(); const email = `stream-recovery-${randomUUID()}@fixture.test`;await db.getOrCreateUser(email,"Stream fixture");
+    const projectKey=`tree:stream-${randomUUID()}`;await (await import("../src/lib/canvas/storage-schema")).ensureVideoNodeSchema();await db.getPool().query("INSERT INTO app_canvas_video_projects(email,project_key) VALUES($1,$2)",[email,projectKey]);
     const {getBillingRuntime} = await import("../src/lib/billing/server"), billing = await getBillingRuntime(), old = await billing.config.current(), config = structuredClone(old.config);
     config.switches.metering="on";config.features["canvas.assistant"].pricing={mode:"fixed",credits:0};
     const price = await billing.config.publish({id:randomUUID(),expectedVersion:old.version,config,actor:"fixture",reason:"Local stream recovery"});
     const cookie="nv_user="+(await import("../src/lib/native-auth")).signUserSession(email,Date.now());
     const api = await import("../src/app/api/canvas/assistant/route"), runtime = await import("../src/lib/agent/runtime");
-    const request = (payload: any) => new Request(f.origin+"/api/canvas/assistant",{method:"POST",headers:{cookie,"content-type":"application/json","x-naumi-feature-model":"text-family","x-naumi-billing-operation-id":randomUUID(),"x-naumi-billing-version":String(price.version),"x-naumi-billing-credits":"0"},body:JSON.stringify({mode:"agent",sessionId:randomUUID(),projectKey:"workspace",messages:[{role:"user",content:"先出初稿"}],...payload})});
+    const request = (payload: any) => new Request(f.origin+"/api/canvas/assistant",{method:"POST",headers:{cookie,"content-type":"application/json","x-naumi-feature-model":"text-family","x-naumi-billing-operation-id":randomUUID(),"x-naumi-billing-version":String(price.version),"x-naumi-billing-credits":"0"},body:JSON.stringify({mode:"agent",sessionId:randomUUID(),projectKey,messages:[{role:"user",content:"先出初稿"}],...payload})});
     const parse=(s:string)=>s.split("\n\n").filter(x=>x.startsWith("event:")).map(x=>({type:x.split("\n")[0].slice(7),data:JSON.parse(x.split("\ndata: ")[1])}));
     const send=async(payload:any={})=>{const response=await api.POST(request(payload));assert.equal(response.status,200,await response.clone().text());return parse(await response.text());};
-    const saved=async(id:string)=>(await(await api.GET(new Request(f.origin+"/api/canvas/assistant?projectKey=workspace&id="+id,{headers:{cookie}}))).json()).session;
+    const saved=async(id:string)=>(await(await api.GET(new Request(f.origin+"/api/canvas/assistant?projectKey="+encodeURIComponent(projectKey)+"&id="+id,{headers:{cookie}}))).json()).session;
     const broken=await send(), id=broken.find(e=>e.type==="open")!.data.sessionId, error=broken.findLast(e=>e.type==="error")!;
     assert(broken.some(e=>e.type==="delta"&&e.data.text.includes("配方徽章与")));
     assert(!broken.some(e=>e.type==="done"));

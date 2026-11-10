@@ -15,8 +15,8 @@ export function resultMediaUrls(result: unknown): string[] {
     if (Array.isArray(value)) { value.forEach(v => visit(v, depth + 1)); return; }
     if (typeof value !== "object") return;
     for (const [key, entry] of Object.entries(value)) {
-      if (["url", "image", "imageUrl", "videoUrl"].includes(key)) add(entry);
-      if (["urls", "images", "videos", "artifacts", "resultAssets", "details", "node", "nodes", "result", "task"].includes(key)) {
+      if (["url", "image", "imageUrl", "videoUrl", "audioUrl"].includes(key)) add(entry);
+      if (["urls", "images", "videos", "artifacts", "resultAssets", "details", "node", "nodes", "result", "task", "job", "outputs"].includes(key)) {
         if (Array.isArray(entry)) entry.forEach(add);
         visit(entry, depth + 1);
       }
@@ -25,6 +25,13 @@ export function resultMediaUrls(result: unknown): string[] {
   };
   visit(result, 0);
   return [...found];
+}
+
+export function agentToolResultFailure(result:unknown) {
+  const value=result as {isError?:boolean;details?:{verificationStatus?:string;publicSummary?:string}}|undefined;
+  if(value?.details?.verificationStatus==="unavailable")return {code:"VERIFICATION_UNAVAILABLE",message:value.details.publicSummary||"视觉检查暂未完成，图片已保留",submitted:false as const};
+  if(value?.isError)return {code:"TOOL_FAILED",message:value.details?.publicSummary||"工具执行未完成，请核对原任务",submitted:"unknown" as const};
+  return undefined;
 }
 
 export function unsupportedMedia(text: string, known: ReadonlySet<string>) {

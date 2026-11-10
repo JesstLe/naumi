@@ -27,8 +27,11 @@ const MAX_STORED_DETAILS_BYTES = 256 * 1024;
 export const MAX_RUNNING_PER_TOKEN = 4;
 
 export const OPERATION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-export function argumentsDigest(tool: string, args: unknown): string {
-  return createHash("sha256").update(canonical({ tool, args })).digest("hex");
+export function argumentsDigest(tool: string, args: unknown, semantics?:{request?:string;scope?:{kind:string;tenantId:string|null}}): string {
+  // Preserve the legacy digest when no extra execution semantics were supplied.
+  // A historical nonempty request cannot be proven identical: status remains
+  // readable, but replay must conflict rather than accept a changed instruction.
+  return createHash("sha256").update(canonical({ tool, args,...(semantics?.request?{request:semantics.request}:{}),...(semantics?.scope?{scope:semantics.scope}:{}) })).digest("hex");
 }
 function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
