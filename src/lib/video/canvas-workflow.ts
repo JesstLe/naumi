@@ -3,6 +3,7 @@ import {assertWorkflowCreationScope,bindWorkflowCreationProject,validateWorkflow
 import {z} from "zod";
 import { videoNodeIdSchema } from "../canvas/video-node-schema";
 import { videoProjectKeySchema } from "../canvas/project-key";
+import {storyboardAdoptedResult} from "../storyboard/service";
 import {getVideoNode} from "../canvas/video-node-repository";
 import {getVideoTask} from "@/lib/video/task-repository";
 import {listArtworksByIds} from "@/lib/artworks/repository";
@@ -17,13 +18,13 @@ import type {VideoReference} from "./types";
 import {resolveCanvasNodeInputs} from "../canvas/node-inputs";
 import {mediaBillingQuote} from "./media-billing";
 import type {BillingQuote} from "../billing/types";
-export const canvasWorkflowSchema=z.strictObject({id:z.uuid(),projectKey:videoProjectKeySchema,assembly:z.strictObject({nodeIds:z.array(videoNodeIdSchema).min(2).max(100)}).optional(),nodes:z.array(z.strictObject({id:videoNodeIdSchema,revision:z.number().int().nonnegative(),reuseCompleted:z.boolean().optional(),billingConfirmation:z.strictObject({version:z.number().int().positive(),credits:z.number().finite().nonnegative()}).optional()})).min(1).max(100).refine(nodes=>new Set(nodes.map(node=>node.id)).size===nodes.length,"节点不能重复")});
+export const canvasWorkflowSchema=z.strictObject({id:z.uuid(),projectKey:videoProjectKeySchema,storyboard:z.strictObject({id:z.uuid(),revision:z.number().int().positive()}).optional(),assembly:z.strictObject({nodeIds:z.array(videoNodeIdSchema).min(2).max(100)}).optional(),nodes:z.array(z.strictObject({id:videoNodeIdSchema,revision:z.number().int().nonnegative(),reuseCompleted:z.boolean().optional(),billingConfirmation:z.strictObject({version:z.number().int().positive(),credits:z.number().finite().nonnegative()}).optional()})).min(1).max(100).refine(nodes=>new Set(nodes.map(node=>node.id)).size===nodes.length,"节点不能重复")});
 export async function buildCanvasVideoWorkflow(actor:string,raw:unknown):Promise<VideoWorkflowPlan>{
   const input=canvasWorkflowSchema.parse(raw),selected=new Set(input.nodes.map(node=>node.id)),nodes:VideoWorkflowPlan["nodes"]=[];
   for(const requested of input.nodes){const current=await getVideoNode(actor,requested.id);if(!current||current.projectKey!==input.projectKey||current.revision!==requested.revision)throw new ModelConfigError("VIDEO_NODE_REVISION_CONFLICT","制作链节点不存在或已更新",409);
-    if(current.lastTaskId){const old=await getVideoTask(actor,current.lastTaskId);if(old&&["queued","processing","needs_attention"].includes(old.status))throw new ModelConfigError("VIDEO_NODE_BUSY","节点仍有正在执行或待核查的任务",409);}
+    if(current.lastTaskId&&!(input.storyboard&&requested.reuseCompleted)){const old=await getVideoTask(actor,current.lastTaskId);if(old&&["queued","processing","needs_attention"].includes(old.status))throw new ModelConfigError("VIDEO_NODE_BUSY","节点仍有正在执行或待核查的任务",409);}
     if(requested.reuseCompleted){
-      const existingArtworkId=current.displayResultId||current.lastResultId;
+      const existingArtworkId=input.storyboard?await storyboardAdoptedResult(actor,input.storyboard,input.projectKey,current.id):current.displayResultId||current.lastResultId;
       if(!existingArtworkId)throw new ModelConfigError("WORKFLOW_OUTPUT_UNAVAILABLE","镜头没有已完成结果，请选择生成",422);
       nodes.push({id:current.id,canvasNodeId:current.id,canvasNodeRevision:current.revision,existingArtworkId,request:{prompt:current.config.prompt||""},dependsOn:[]});continue;
     }

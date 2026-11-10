@@ -58,9 +58,9 @@ export function useStoryboardWorkflow({scope,projectKey,request,nodes,initialNod
     try{await action();}catch(cause){if(life.active&&state.current===life)setError(cause instanceof Error?cause.message:"操作结果尚未核实，请核对原制作记录");}
     finally{life.mutating=false;if(life.active&&state.current===life)setBusy(false);}
   },[key]);
-  const submit=useCallback((selection:readonly StoryboardSelection[],assemble:boolean)=>mutate(async()=>{
+  const submit=useCallback((selection:readonly StoryboardSelection[],assemble:boolean,storyboard?:{id:string;revision:number})=>mutate(async()=>{
     const life=state.current;if(life.pending)throw new Error("已有制作请求待核对，请沿用原操作");
-    const intent=storyboardIntent(browserRandomUUID(),projectKey,latest.current.nodes,selection,assemble);life.pending=intent;life.runId=intent.id;setPending(intent);persist();
+    const intent={...storyboardIntent(browserRandomUUID(),projectKey,latest.current.nodes,selection,assemble),...(storyboard?{storyboard}:{})};life.pending=intent;life.runId=intent.id;setPending(intent);persist();
     const response=await latest.current.request("/api/canvas/video-workflows",{method:"POST",headers:{"content-type":"application/json","x-naumi-workspace":workspace},body:JSON.stringify(intent)}),body=await response.json();
     // A status alone is not proof of nonacceptance: scheduling can persist a run
     // before continuation reports an error. Keep the same id and exact intent.
