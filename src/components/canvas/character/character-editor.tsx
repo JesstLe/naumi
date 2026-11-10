@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, Loader2, Plus, Redo2, Save, Sparkles, Star, Trash2, Undo2, Upload, UserRound, X } from "lucide-react";
+import {CanvasGrowingTextarea} from "../growing-textarea";
 import { CachedImage } from "@/components/cached-image";
 import { browserRandomUUID } from "@/lib/browser-crypto";
 import { characterProjectSchema, type CharacterAppearance, type CharacterProject } from "@/lib/character/project";
@@ -95,12 +96,12 @@ export function CharacterEditor({ node, images, english = false, readOnly, draft
         </aside>
         <main className={s.main}><fieldset disabled={disabled} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
           <label className={s.field}>{L("名称", "Name")}<input aria-label={L("角色名称", "Character name")} value={draft.name} maxLength={100} onChange={event => change(character => ({ ...character, name: event.target.value }))}/></label>
-          <label className={s.field}>{L("角色设定", "Character identity")}<textarea aria-label={L("角色设定", "Character identity")} rows={3} value={draft.description} maxLength={8000} onChange={event => change(character => ({ ...character, description: event.target.value }))}/></label>
+          <label className={s.field}>{L("角色设定", "Character identity")}<CanvasGrowingTextarea aria-label={L("角色设定", "Character identity")} rows={3} value={draft.description} maxLength={8000} onChange={event => change(character => ({ ...character, description: event.target.value }))}/></label>
         </fieldset>
           <div className={s.section}><div className={s.heading}><span>{L("外观", "Looks")}</span><button type="button" className={s.button} disabled={disabled} aria-label={L("添加外观", "Add look")} onClick={() => { const id = browserRandomUUID(); change(character => ({ ...character, appearances: [...character.appearances, { id, name: `${L("外观", "Look")} ${character.appearances.length + 1}`, description: "", referenceArtworkIds: [...appearance.referenceArtworkIds] }] })); setAppearanceId(id); }}><Plus size={13}/></button></div>
             <div className={s.looks}>{draft.appearances.map(item => <button type="button" key={item.id} className={`${s.button} ${item.id === appearance.id ? s.active : ""}`} disabled={!!busy} onClick={() => setAppearanceId(item.id)}>{item.id === draft.defaultAppearanceId && <Star size={11}/>}<span>{item.name}</span></button>)}</div>
             <fieldset disabled={disabled} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}><div className={s.lookHeader}><label className={s.field}>{L("外观名称", "Look name")}<input aria-label={L("外观名称", "Look name")} value={appearance.name} maxLength={80} onChange={event => patchAppearance({ name: event.target.value })}/></label><button type="button" className={s.button} aria-label={L("设为默认外观", "Set default look")} disabled={disabled || appearance.id === draft.defaultAppearanceId} onClick={() => change(character => ({ ...character, defaultAppearanceId: appearance.id }))}><Star size={13}/></button><button type="button" className={s.button} aria-label={L("删除当前外观", "Delete look")} disabled={disabled || draft.appearances.length === 1} onClick={() => { change(character => ({ ...character, defaultAppearanceId: character.defaultAppearanceId === appearance.id ? character.appearances.find(item => item.id !== appearance.id)!.id : character.defaultAppearanceId, appearances: character.appearances.filter(item => item.id !== appearance.id) })); setAppearanceId(draft.appearances.find(item => item.id !== appearance.id)!.id); }}><Trash2 size={13}/></button></div>
-              <label className={s.field}>{L("外观设定", "Look details")}<textarea aria-label={L("外观设定", "Look details")} rows={2} value={appearance.description} maxLength={4000} onChange={event => patchAppearance({ description: event.target.value })}/></label>
+              <label className={s.field}>{L("外观设定", "Look details")}<CanvasGrowingTextarea aria-label={L("外观设定", "Look details")} rows={2} value={appearance.description} maxLength={4000} onChange={event => patchAppearance({ description: event.target.value })}/></label>
             </fieldset>
           </div>
           <div className={s.section}><div className={s.heading}><span>{L("参考图片", "Reference images")}</span><button type="button" className={s.button} disabled={disabled} onClick={() => upload.current?.click()}><Upload size={13}/>{L("上传", "Upload")}</button></div>
