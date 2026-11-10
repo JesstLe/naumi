@@ -1,5 +1,32 @@
 [
   {
+    "version": "1794310315",
+    "title": {
+      "zh": "分镜创作与成片交付更新",
+      "en": "Storyboard creation and final delivery"
+    },
+    "improvements": [
+      {
+        "zh": "从原稿建立分镜方案，保留独立创意版本和明确选片。",
+        "en": "Create storyboards from a script while keeping independent creative versions and explicit shot selections."
+      },
+      {
+        "zh": "按时间点记录审片意见，定点返工并保留原有剪辑。",
+        "en": "Review at specific timecodes, remake selected shots and keep existing edits."
+      },
+      {
+        "zh": "支持独立录音、逐句字幕和分镜结构同步。",
+        "en": "Add recordings and line-by-line subtitles, and synchronize storyboard structure."
+      }
+    ],
+    "fixes": [
+      {
+        "zh": "完善中断恢复和合成失败后的单独重试，修复成片下载。",
+        "en": "Improved interruption recovery and assembly-only retry, and fixed final-video downloads."
+      }
+    ]
+  },
+  {
     "version": "1794310093",
     "title": {
       "zh": "创作首页与对话体验更新",
