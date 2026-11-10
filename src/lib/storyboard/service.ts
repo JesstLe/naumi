@@ -15,11 +15,17 @@ import {publicVideoTaskSnapshot} from "../video/task-snapshot";
 import {ModelConfigError} from "../model-config/types";
 import {canonicalConfig} from "../model-config/snapshot-value";
 import {storyboardWriteSchema,type StoryboardTake} from "./plan";
-import {ensureStoryboardSchema,readStoryboardPlan,readStoryboardPlans,saveStoryboardTx} from "./repository";
+import {ensureStoryboardSchema,readStoryboardPlan,readStoryboardPlans,readStoryboardOperation,saveStoryboardTx} from "./repository";
 
 export async function listStoryboardPlans(actor:string,projectKey:string){
   await authorizeCanvasProject(actor,projectKey);await assertCreationProjectInput(actor,projectKey,undefined,true);
   return readStoryboardPlans(actor,projectKey);
+}
+export async function getStoryboardOperation(actor:string,projectKey:string,operationId:string){
+  await authorizeCanvasProject(actor,projectKey);await assertCreationProjectInput(actor,projectKey,undefined,true);
+  const plan=await readStoryboardOperation(actor.toLowerCase(),operationId);
+  if(!plan||plan.projectKey!==projectKey)throw new ModelConfigError("STORYBOARD_OPERATION_UNAVAILABLE","此项目中没有该操作回执",404);
+  return plan;
 }
 /** A take is a completed video from this exact node/project, never an arbitrary owned asset. */
 export async function assertStoryboardTake(actor:string,projectKey:string,nodeId:string,take:Pick<StoryboardTake,"taskId"|"artworkId">,tx?:Pick<PoolClient,"query">){
