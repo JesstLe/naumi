@@ -152,6 +152,7 @@ export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot
       legacySchema,schemaColumns,legacyRowsBeforeDdl,legacySentinelState,
       fixtureDatabaseName:new URL(databaseUrl).pathname.slice(1),
       fixtureSchema:schemaName,
+      async verifyStoryboardAgent(projectKey:string,planId:string){return JSON.parse(await privateChild(["--conditions=react-server","--import","tsx","scripts/verify-storyboard-agent-runtime.ts"],{...env,VIDEO_FIXTURE_ACTION_ACTOR:seed.accounts.a,VIDEO_FIXTURE_ACTION_OTHER:seed.accounts.b,VIDEO_FIXTURE_ACTION_PROJECT:projectKey,VIDEO_FIXTURE_ACTION_PLAN:planId})) as {checks:string[]};},
       async shortLivedFixtureObjectUrl(key:string){
         if(!Object.values(seed.refs).some(ref=>ref.storageKey===key))throw new Error("Owned fixture source required");
         const {AwsV4Signer}=await import("aws4fetch");
