@@ -69,6 +69,14 @@ export async function agentQuote(name: string, args: Record<string, any>, email:
       const {material}=await requireReviewTarget(email,input);if(input.samples.some(time=>time>=material.durationSeconds!))throw new Error("抽帧超出实际原片时长");
       return {quote:await mediaBillingQuote(email,"ffmpeg"),label:entry.label,threshold};
     }
+    if(name==="generate_dialogue_speech"||name==="transcribe_dialogue_audio"){
+      const {speechOperationSchema,transcriptionOperationSchema}=await import("../audio/operation-schema"),{requireAudioTarget}=await import("../audio/operation-service"),{withModelOperation}=await import("../model-config/requests");
+      const kind=name==="generate_dialogue_speech"?"speech":"transcribe",input=(kind==="speech"?speechOperationSchema:transcriptionOperationSchema).parse(args.request);
+      if(canvas?.video?.projectKey&&canvas.video.projectKey!==input.target.projectKey)throw new Error("声音操作不属于当前项目");
+      await requireAudioTarget(email,input.target);
+      if(!snapshot.config.features[entry.feature].enabled)throw new Error("声音通道尚未配置明确售价");
+      return withModelOperation({path:`/api/canvas/audio-operations/${kind}`,body:input,references:0},async()=>({quote:await quoteForActor(email,{feature:entry.feature,modelId:input.modelId,quantity:1,quality:"medium",resolution:"1K"},undefined,snapshot),label:entry.label,threshold}));
+    }
     if(name==="review_video_storyboard_take"){
       const {assistedReviewRequestSchema}=await import("../storyboard/assisted-review"),{reviewEvidence}=await import("../storyboard/assisted-review-service"),{withModelOperation}=await import("../model-config/requests");
       const input=assistedReviewRequestSchema.parse({projectKey:canvas?.video?.projectKey||args.project_key,planId:args.plan_id,revision:args.revision,nodeId:args.node_id,taskId:args.task_id,artworkId:args.artwork_id,operationId:args.operation_id,samples:args.samples,frameJobId:args.frame_job_id});
@@ -134,7 +142,8 @@ export async function agentBillingPrecheck(session: AgentBillingSession, name: s
     const costPlus=quoted.quote.tariff?.pricing.mode==="api-cost-plus"||quoted.authorizationRequired===true, cap=quoted.quote.authorizedCredits??quoted.quote.requestedCredits;
     const meta = { cost: name === "generate_aplus" ? 0 : quoted.quote.requestedCredits, label: quoted.label };
     // Prepare the server quote once for this tool call; pricing is not a second user-confirmation flow.
-    session.preparedBilling = { billingVersion: quoted.quote.configVersion, billingCredits: costPlus?cap:quoted.quote.requestedCredits, billingOperationId: name==="review_video_storyboard_take"&&typeof args.operation_id==="string"?args.operation_id:fingerprint({ session: session.id, turn: session.turnId, call: callId }) };
+    const audioOperation=args.request&&typeof args.request==="object"&&typeof (args.request as {operationId?:unknown}).operationId==="string"?String((args.request as {operationId:string}).operationId):undefined;
+    session.preparedBilling = { billingVersion: quoted.quote.configVersion, billingCredits: costPlus?cap:quoted.quote.requestedCredits, billingOperationId: ["generate_dialogue_speech","transcribe_dialogue_audio"].includes(name)&&audioOperation?audioOperation:name==="review_video_storyboard_take"&&typeof args.operation_id==="string"?args.operation_id:fingerprint({ session: session.id, turn: session.turnId, call: callId }) };
     session.preparedBudgetCredits = name === "generate_aplus" ? 0 : session.preparedBilling.billingCredits;
     if(quoted.videoWorkflow)session.preparedVideoWorkflow=quoted.videoWorkflow;
     if(quoted.imagegenPlan){const request={...quoted.imagegenPlan.request,operationId:imagegenStepId(session.preparedBilling.billingOperationId,"agent")};session.preparedImagegen={...quoted.imagegenPlan,request,fingerprint:imagegenFingerprint(request)};}

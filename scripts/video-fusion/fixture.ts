@@ -64,6 +64,12 @@ export async function seedVideoFixture() {
     config.publicModels.push({id:"fixture-agent",label:"Fixture Agent",modality:"text",enabled:true,visible:true,target:{type:"upstream",id:"fixture-agent-upstream"}});
     config.bindings["agent.text"]="fixture-agent";config.bindings["text.generate"]="fixture-agent";if(process.env.VIDEO_FIXTURE_AGENT_VISION==="1")config.bindings["vision.reference"]="fixture-agent";
   }
+  if(process.env.VIDEO_FIXTURE_AUDIO==="1"){
+    const key=await credentials.importPlain({providerId:"fixture-audio-provider",plain:process.env.VIDEO_API_KEY!,actor:"fixture"});
+    config.providers.push({id:"fixture-audio-provider",name:"Fixture audio",protocol:"openai-audio",baseUrl:process.env.VIDEO_FIXTURE_SUPPLIER_ORIGIN!+"/protocol/audio/v1",credentialRef:key.id,enabled:true,timeoutMs:5000,maxConcurrent:4});
+    config.upstreamModels.push({id:"fixture-audio-upstream",providerId:"fixture-audio-provider",model:"wire-audio",label:"Fixture audio",modality:"audio",enabled:true,parameterMap:{},capabilities:{verified:true,generate:true,transcribe:true,edit:false,vision:false,transparent:false,preserveIdentity:false,textAccuracy:false,qualityRank:1,qualities:[],nativeResolutions:[],maxReferenceImages:0,expectedLatencyMs:1,audio:{speech:{enabled:true,voices:["voice-a","voice-b"],formats:["wav"],maxCharacters:4000,maxOutputBytes:10000000,instructions:false},transcription:{enabled:true,formats:["json","verbose_json"],timestamps:["segment"],inputFormats:["audio/wav"],maxInputBytes:10000000,maxDurationSeconds:60,language:true,prompt:false}}}});
+    config.publicModels.push({id:"audio-a",label:"Fixture audio",modality:"audio",enabled:true,visible:true,target:{type:"upstream",id:"fixture-audio-upstream"}});config.bindings["audio.speech"]="audio-a";config.bindings["audio.transcribe"]="audio-a";
+  }
   if(process.env.VIDEO_FIXTURE_UI_MODELS==="1"){
     const key=await credentials.importPlain({providerId:"fixture-motion-provider",plain:process.env.VIDEO_API_KEY!,actor:"fixture"});
     config.providers.push({id:"fixture-motion-provider",name:"Fixture motion supplier",protocol:"kie",baseUrl:process.env.VIDEO_FIXTURE_SUPPLIER_ORIGIN!+"/protocol/kie",credentialRef:key.id,enabled:true,timeoutMs:120000,maxConcurrent:4});

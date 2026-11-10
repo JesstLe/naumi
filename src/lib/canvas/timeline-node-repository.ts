@@ -19,6 +19,10 @@ export async function getTimelineNode(actor:string,id:string,includeDeleted=fals
 export async function listTimelineNodes(actor:string,includeDeleted=false){
   await ensureTimelineNodeSchema();return (await getPool().query("SELECT * FROM app_canvas_timeline_nodes WHERE email=$1 AND ($2 OR deleted_at IS NULL) ORDER BY created_at,id",[actor.toLowerCase(),includeDeleted])).rows.map(mapTimelineNode);
 }
+/** Read an already committed edit receipt without recomputing it from today's cut. */
+export async function readTimelineOperationResult(actor:string,operationId:string,tx?:PoolClient){
+  if(!tx)await ensureTimelineNodeSchema();return (await (tx??getPool()).query("SELECT result FROM app_canvas_timeline_operations WHERE email=$1 AND operation_id=$2",[actor.toLowerCase(),operationId])).rows[0]?.result as CanvasTimelineNode|undefined;
+}
 const digest=(value:unknown)=>createHash("sha256").update(canonicalConfig(value)).digest("hex");
 export async function findTimelineOperation(actor:string,operationId:string,input:unknown,tx?:PoolClient){
   if(!tx)await ensureTimelineNodeSchema();const row=(await (tx??getPool()).query("SELECT input_digest,result FROM app_canvas_timeline_operations WHERE email=$1 AND operation_id=$2",[actor,operationId])).rows[0];

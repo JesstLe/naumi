@@ -90,7 +90,7 @@ export async function addArtworksTx(
       const creation=currentCreationContext();
       if(creation?.creationId&&creation.actorEmail===email)await creationEvidenceTx(client,async()=>{
         await creationLinkTx(client,creation.creationId!,email,'artwork',a.id,'output');
-        await addCreationAssetTx(client,creation.creationId!,email,{direction:'output',role:'result',position:items.indexOf(a),storageRef:`artwork:${a.id}`,mediaType:a.videoUrl||a.category==='video'?'video':'image'});
+        await addCreationAssetTx(client,creation.creationId!,email,{direction:'output',role:'result',position:items.indexOf(a),storageRef:`artwork:${a.id}`,mediaType:a.category==='audio'?'audio':a.videoUrl||a.category==='video'?'video':'image'});
       });
     }
 }

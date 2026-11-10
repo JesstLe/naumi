@@ -49,7 +49,9 @@ async function requestFacts(request: Request) {
   // original pixels locally. User-supplied masks in other routes stay required.
   return { body, references: Math.min(32, references) };
 }
-function purposeFor(path: string): { image?: ModelBinding; text?: ModelBinding; vision?: ModelBinding; video?: ModelBinding; primary: "image" | "text" | "vision" | "video" } {
+function purposeFor(path: string): { image?: ModelBinding; text?: ModelBinding; vision?: ModelBinding; video?: ModelBinding; audio?:ModelBinding; primary: "image" | "text" | "vision" | "video" | "audio" } {
+  if(path==="/api/canvas/audio-operations/speech")return {audio:"audio.speech",primary:"audio"};
+  if(path==="/api/canvas/audio-operations/transcribe")return {audio:"audio.transcribe",primary:"audio"};
   if (path === "/api/packaging-strategy") return { text: "text.generate", primary: "text" };
   if (path === "/api/video/generate") return { video: "video.generate", primary: "video" };
   if (path === "/api/agent") return { text: "agent.text", vision: "agent.vision", primary: "text" };
@@ -134,6 +136,7 @@ async function runModelOperation<T>(input:ModelOperationInput,run:()=>Promise<T>
   }
 
   const requestedTextModelId = requestedFeatureModel(mainFeature, purpose.primary === "text" || purpose.primary === "vision" ? input.featureModel?.trim() || input.textModel?.trim() || String(parsed.body.modelId || parsed.body.model || "").trim() || undefined : undefined);
+  if(purpose.audio)bundle.audio=await executor.resolve({feature,binding:purpose.audio,requestedModelId:input.featureModel?.trim()||parsed.body.modelId||undefined,snapshot,billing});
   if (purpose.video) bundle.video = await executor.resolve({ feature, binding: purpose.video, requestedModelId: input.featureModel?.trim() || parsed.body.modelId || undefined, snapshot, billing });
   if (purpose.text && (requestedTextModelId || snapshot.config.bindings[purpose.text] || purpose.primary === "text" && mainFeature && snapshot.config.business?.[mainFeature])) bundle.text = await executor.resolve({ ...(purpose.primary === "text" ? { feature: mainFeature } : {}), binding: purpose.text, requestedModelId: requestedTextModelId, snapshot, billing, facts: { task: "product", quality: "medium", resolution: "1K", needsEdit: false, needsText: false, preserveIdentity: false, nativeResolution: false, references: parsed.references, inputLength: JSON.stringify(parsed.body.messages || parsed.body.prompt || "").length } });
   if (purpose.primary === "text" && purpose.text && mainFeature && (snapshot.config.business?.[mainFeature] || input.path === "/api/canvas/text-generate" && ["infer","chat-plan"].includes(parsed.body.referenceTask)) && bundle.text) {
@@ -145,7 +148,7 @@ async function runModelOperation<T>(input:ModelOperationInput,run:()=>Promise<T>
   // A visible, explicitly selected OCR model does not require an additional
   // legacy default binding. resolve still enforces vision capability/tool scope.
   if (!bundle.vision && purpose.vision && (snapshot.config.bindings[purpose.vision] || purpose.primary === "vision" && (requestedTextModelId || featureDefaultModel(snapshot.config, feature, purpose.vision)))) bundle.vision = await executor.resolve({ ...(purpose.primary === "vision" ? { feature, requestedModelId: requestedTextModelId } : {}), binding: purpose.vision, snapshot, billing });
-  if (purpose.primary === "vision" && !bundle.vision || purpose.primary === "text" && !bundle.text || purpose.primary === "video" && !bundle.video) throw new ModelConfigError("MODEL_UNAVAILABLE", "当前用途没有可用模型绑定，请联系管理员配置", 503);
+  if (purpose.primary === "vision" && !bundle.vision || purpose.primary === "text" && !bundle.text || purpose.primary === "video" && !bundle.video || purpose.primary === "audio" && !bundle.audio) throw new ModelConfigError("MODEL_UNAVAILABLE", "当前用途没有可用模型绑定，请联系管理员配置", 503);
   if (input.path === "/api/agent" && parsed.references > 0) {
     if (!bundle.vision) throw new ModelConfigError("MODEL_INCOMPATIBLE", "Agent 视觉用途尚未配置，请联系管理员", 400);
     bundle.primary = "vision"; bundle.text = bundle.vision;

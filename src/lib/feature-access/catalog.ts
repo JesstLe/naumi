@@ -37,6 +37,7 @@ export function requestRequirement(path: string, method = "GET"): AccessRequirem
   if(path.startsWith("/desktop/api/"))path=path.slice("/desktop".length);
   if (!path.startsWith("/api/")) { const id = pageFeature(path); return id ? { all: [id] } : undefined; }
   if (path.startsWith("/api/canvas/assistant")) return { all: ["canvas", "agent"] };
+  if(path==='/api/canvas/audio-operations'||path.startsWith('/api/canvas/audio-operations/'))return {all:['canvas','video']};
   if(path==='/api/canvas/storyboards'||path.startsWith('/api/canvas/storyboards/'))return {all:['canvas','video']};
   if(path==='/api/canvas/video-workflows'&&method==='POST')return {all:['canvas','video']};
   if (/^\/api\/canvas\/video-nodes\/[^/]+\/(?:generate|batch)$/.test(path) && method === "POST") return { all: ["canvas", "video"] };
@@ -62,6 +63,7 @@ export function requestRequirement(path: string, method = "GET"): AccessRequirem
   return undefined;
 }
 export const TOOL_ACCESS: Record<string, string> = {
+  list_dialogue_audio_models:"video",generate_dialogue_speech:"video",transcribe_dialogue_audio:"video",get_dialogue_audio_operation:"video",recover_dialogue_audio_operation:"video",adopt_dialogue_audio_operation:"video",
   search_templates: "templates", list_my_artworks: "works", generate_image: "generate",
   retouch_product: "retouch", recolor_product: "recolor", replicate_hot: "replicate",
   generate_suite: "suite", generate_aplus: "aplus", review_aplus_source: "aplus", continue_aplus_generation: "aplus",
