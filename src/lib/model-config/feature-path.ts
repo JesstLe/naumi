@@ -1,5 +1,6 @@
 import type { FeatureId } from "../billing/rules/registry";
 const paths: Record<string, FeatureId> = {
+  "/api/canvas/storyboards/review-audio":"audio.transcribe",
   "/api/canvas/audio-operations/speech":"audio.speech", "/api/canvas/audio-operations/transcribe":"audio.transcribe",
   "/api/canvas/storyboards/review": "canvas.text-generate",
   "/api/generate-image": "image.generate", "/api/suite": "image.suite", "/api/aplus": "image.aplus",

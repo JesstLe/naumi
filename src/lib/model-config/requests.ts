@@ -51,7 +51,7 @@ async function requestFacts(request: Request) {
 }
 function purposeFor(path: string): { image?: ModelBinding; text?: ModelBinding; vision?: ModelBinding; video?: ModelBinding; audio?:ModelBinding; primary: "image" | "text" | "vision" | "video" | "audio" } {
   if(path==="/api/canvas/audio-operations/speech")return {audio:"audio.speech",primary:"audio"};
-  if(path==="/api/canvas/audio-operations/transcribe")return {audio:"audio.transcribe",primary:"audio"};
+  if(path==="/api/canvas/audio-operations/transcribe"||path==="/api/canvas/storyboards/review-audio")return {audio:"audio.transcribe",primary:"audio"};
   if (path === "/api/packaging-strategy") return { text: "text.generate", primary: "text" };
   if (path === "/api/video/generate") return { video: "video.generate", primary: "video" };
   if (path === "/api/agent") return { text: "agent.text", vision: "agent.vision", primary: "text" };

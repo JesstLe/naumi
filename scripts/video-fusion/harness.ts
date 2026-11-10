@@ -152,9 +152,9 @@ export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot
       legacySchema,schemaColumns,legacyRowsBeforeDdl,legacySentinelState,
       fixtureDatabaseName:new URL(databaseUrl).pathname.slice(1),
       fixtureSchema:schemaName,
-      async withAudioFixtureFault<T>(kind:"artwork"|"settlement"|"adoption",action:()=>Promise<T>){
-        const table=kind==="artwork"?"app_artworks":kind==="settlement"?"app_billing_operations":"app_audio_adoption_links";
-        const event=kind==="settlement"?"UPDATE":"INSERT",condition=kind==="artwork"?"WHEN (NEW.category='audio')":kind==="settlement"?"WHEN (NEW.feature='audio.speech' AND NEW.state='settled')":"";
+      async withAudioFixtureFault<T>(kind:"artwork"|"settlement"|"transcription-settlement"|"adoption",action:()=>Promise<T>){
+        const table=kind==="artwork"?"app_artworks":kind==="settlement"||kind==="transcription-settlement"?"app_billing_operations":"app_audio_adoption_links";
+        const event=kind==="settlement"||kind==="transcription-settlement"?"UPDATE":"INSERT",condition=kind==="artwork"?"WHEN (NEW.category='audio')":kind==="settlement"||kind==="transcription-settlement"?`WHEN (NEW.feature='${kind==="settlement"?"audio.speech":"audio.transcribe"}' AND NEW.state='settled')`:"";
         await sql.query(`CREATE FUNCTION fixture_audio_write_fault() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'owned audio fixture write fault'; END $$;CREATE TRIGGER fixture_audio_write_fault BEFORE ${event} ON ${table} FOR EACH ROW ${condition} EXECUTE FUNCTION fixture_audio_write_fault();`);
         try{return await action();}finally{await sql.query(`DROP TRIGGER fixture_audio_write_fault ON ${table};DROP FUNCTION fixture_audio_write_fault()`);}
       },

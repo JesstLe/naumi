@@ -44,7 +44,7 @@ export async function billingRequestIdentity(request: Request) {
     }
     else
         entries.push(await copy.text());
-    const path=new URL(request.url).pathname,audio=/^\/api\/canvas\/audio-operations\/(?:speech|transcribe)$/.test(path);
+    const path=new URL(request.url).pathname,audio=/^\/api\/canvas\/audio-operations\/(?:speech|transcribe)$/.test(path)||path==="/api/canvas/storyboards/review-audio";
     // Image/text defaults belong to their own operations, not this saved line.
     // All entries bind the same explicit audio public model and exact body.
     return { hash: submissionFingerprint(path,audio?null:request.headers.get("x-naumi-image-quality"),audio?null:request.headers.get("x-naumi-text-model"),audio?String(body.modelId||""):request.headers.get("x-naumi-feature-model"),entries), confirmation: requestQuoteConfirmation(request, body) };

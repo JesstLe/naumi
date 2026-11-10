@@ -1,6 +1,6 @@
 # 画布视频创作剩余工作 PRD
 
-版本：v1.14 · 2026-11-10
+版本：v1.15 · 2026-11-10
 
 状态：按持续目标顺序实施；VV-03/04及VV-05人工审片已取得本地完整链路证据，其余层级分别跟踪。
 
@@ -147,7 +147,7 @@ P0表示当前交付应优先收口的证据，不是部署授权。执行顺序
 
 ### VV-05 时间码审片与辅助检查
 
-**当前实现**：P1复用方案take.annotations与既有制作链。时间点／区间按实际解码时长校验，返工只生成明确一镜，冻结plan.reviewOrigin并通过真实run/task追溯；旧采用与粗剪不自动替换。详见[模块交付](../changes/2026-11-10-storyboard-review.md)。P2抽样静帧视觉辅助已接入正式媒体任务、模型／账务和原回执，保留时间证据与不确定性；详见[辅助审片交付](../changes/2026-11-10-storyboard-assisted-review.md)。真实视觉质量和语音辅助检查仍待验，人工审片独立可用。
+**当前实现**：P1复用方案take.annotations与既有制作链。时间点／区间按实际解码时长校验，返工只生成明确一镜，冻结plan.reviewOrigin并通过真实run/task追溯；旧采用与粗剪不自动替换。详见[模块交付](../changes/2026-11-10-storyboard-review.md)。P2抽样静帧视觉辅助已接入正式媒体任务、模型／账务和原回执，保留时间证据与不确定性；详见[辅助审片交付](../changes/2026-11-10-storyboard-assisted-review.md)。语音辅助已接原片实际音轨提取、ASR、确切原稿对照、真实时间／不确定性、人工批注及跨入口原回执，见[语音审片交付](../changes/2026-11-10-storyboard-audio-review.md)。真实视觉／语音质量及新模块固定Linux／完整画布／生产层仍待验，人工审片独立可用。
 
 **产品要求**：
 
@@ -161,7 +161,7 @@ P0表示当前交付应优先收口的证据，不是部署授权。执行顺序
 
 ### VV-06 对白、配音与字幕闭环
 
-**现状与归属**：与Agent平台W11复用正式多轨／媒体job完成原稿逐句快照、真实录音绑定、人工校时、可编辑字幕、安全区、私有SRT与ASS烧录。详见[本阶段交付](../changes/2026-11-10-storyboard-dialogue.md)。已补独立audio模态、管理员显式能力及OpenAI-compatible TTS／ASR底层执行适配，并取得本地HTTP／PG／UI证据；详见[声音通道接入](../changes/2026-11-10-storyboard-speech.md)。已继续接通原同步计费operation的私有检查点、完整解码作品、句级显式采用及UI／Agent／CLI／MCP恢复，见[持久声音操作](../changes/2026-11-10-storyboard-speech-operations.md)。真实供应通道、中文／英文／双说话人朗读与转写质量、新模块固定Linux及生产验收仍未完成，不用fixture录音冒充真实模型结果。
+**现状与归属**：与Agent平台W11复用正式多轨／媒体job完成原稿逐句快照、真实录音绑定、人工校时、可编辑字幕、安全区、私有SRT与ASS烧录。详见[本阶段交付](../changes/2026-11-10-storyboard-dialogue.md)。已补独立audio模态、管理员显式能力及OpenAI-compatible TTS／ASR底层执行适配，并取得本地HTTP／PG／UI证据；详见[声音通道接入](../changes/2026-11-10-storyboard-speech.md)。已继续接通原同步计费operation的私有检查点、完整解码作品、句级显式采用及UI／Agent／CLI／MCP恢复，见[持久声音操作](../changes/2026-11-10-storyboard-speech-operations.md)。已取得[固定Linux完整Canvas声音链14项](../changes/2026-11-10-storyboard-speech-native.md)及原完整创作／恢复19项回归；真实供应通道、中文／英文／双说话人朗读与转写质量及生产验收仍未完成，不用fixture录音冒充真实模型结果。
 
 **产品要求**：
 
