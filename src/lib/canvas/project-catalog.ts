@@ -1,3 +1,4 @@
+import type {CanvasComfyNode} from "./comfy-node-schema";
 import type {CanvasTimelineNode} from "./timeline-node-schema";
 import type {CanvasAudioNode} from "./audio-node-schema";
 import {isCanvasImageVersion} from "./image-versions";
@@ -15,7 +16,7 @@ export type CanvasProject = {
   members: Artwork[];
   textNodes: CanvasTextNode[];
   videoNodes?: CanvasVideoNode[];
-  directorNodes?:CanvasDirectorNode[];characterNodes?:CanvasCharacterNode[];sceneNodes?:CanvasSceneNode[];audioNodes?:CanvasAudioNode[];timelineNodes?:CanvasTimelineNode[];
+  directorNodes?:CanvasDirectorNode[];characterNodes?:CanvasCharacterNode[];sceneNodes?:CanvasSceneNode[];audioNodes?:CanvasAudioNode[];timelineNodes?:CanvasTimelineNode[];comfyNodes?:CanvasComfyNode[];
   isSuite: boolean;
   cover: string;
   count: number;
@@ -49,7 +50,7 @@ function projectKey(a: Artwork, byId: Map<string, Artwork>, resolveRoot = (art: 
 export {projectKey as canvasArtworkProjectKey};
 
 /** Pure projection shared by browser cards and active project selection. */
-export function canvasProjects({works,names,t,readOnly,pinnedNode,textNodes,videoNodes,directorNodes=[],characterNodes=[],sceneNodes=[],audioNodes=[],timelineNodes=[]}:{works:Artwork[]|null;names:Record<string,string>;t:(key:string)=>string;readOnly:boolean;pinnedNode:string|null;textNodes:CanvasTextNode[];videoNodes:CanvasVideoNode[];directorNodes?:CanvasDirectorNode[];characterNodes?:CanvasCharacterNode[];sceneNodes?:CanvasSceneNode[];audioNodes?:CanvasAudioNode[];timelineNodes?:CanvasTimelineNode[]}):CanvasProject[]{
+export function canvasProjects({works,names,t,readOnly,pinnedNode,textNodes,videoNodes,directorNodes=[],characterNodes=[],sceneNodes=[],audioNodes=[],timelineNodes=[],comfyNodes=[]}:{works:Artwork[]|null;names:Record<string,string>;t:(key:string)=>string;readOnly:boolean;pinnedNode:string|null;textNodes:CanvasTextNode[];videoNodes:CanvasVideoNode[];directorNodes?:CanvasDirectorNode[];characterNodes?:CanvasCharacterNode[];sceneNodes?:CanvasSceneNode[];audioNodes?:CanvasAudioNode[];timelineNodes?:CanvasTimelineNode[];comfyNodes?:CanvasComfyNode[]}):CanvasProject[]{
     const arts = (works ?? []).filter(
       (a) => a.status === "completed" && a.origin!=="workbench" && !isCanvasImageVersion(a) && (hasRenderableImage(a.image) || Boolean(a.videoUrl))
     );
@@ -127,6 +128,11 @@ export function canvasProjects({works,names,t,readOnly,pinnedNode,textNodes,vide
       const existing=projectMap.get(videoNode.projectKey);
       if(existing){existing.videoNodes=[...(existing.videoNodes||[]),videoNode];existing.count++;if(videoNode.updatedAt>existing.latestAt)existing.latestAt=videoNode.updatedAt;}
       else projectMap.set(videoNode.projectKey,{key:videoNode.projectKey,members:[],textNodes:[],videoNodes:[videoNode],isSuite:false,cover:"",count:1,name:names[videoNode.projectKey]||videoNode.title,latestAt:videoNode.updatedAt});
+    }
+    for(const node of comfyNodes){
+      const existing=projectMap.get(node.projectKey);
+      if(existing){existing.comfyNodes=[...(existing.comfyNodes||[]),node];existing.count++;if(node.updatedAt>existing.latestAt)existing.latestAt=node.updatedAt;}
+      else projectMap.set(node.projectKey,{key:node.projectKey,members:[],textNodes:[],comfyNodes:[node],isSuite:false,cover:"",count:1,name:names[node.projectKey]||node.title,latestAt:node.updatedAt});
     }
     for(const node of directorNodes){
       const existing=projectMap.get(node.projectKey);

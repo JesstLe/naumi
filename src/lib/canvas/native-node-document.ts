@@ -2,6 +2,7 @@ import {VideoNodeSaveQueue,VideoNodeClientError} from "./video-node-save-queue";
 import {browserRandomUUID} from "../browser-crypto";
 import {canvasDocumentFetch,type CanvasDocumentScope} from "./document-scope";
 import {mergeCanvasNativeSnapshots,type CanvasNativeKind,type CanvasNativeNodeSet} from "./native-node-records";
+import type {ComfyNodeWrite} from "./comfy-node-schema";
 import type {VideoNodeWrite} from "./video-node-schema";
 import type {DirectorNodeWrite} from "./director-node-schema";
 import type {CharacterNodeWrite} from "./character-node-schema";
@@ -10,12 +11,12 @@ import type {AudioNodeWrite} from "./audio-node-schema";
 import type {TimelineNodeWrite} from "./timeline-node-schema";
 
 export type NativeNodeFor<K extends CanvasNativeKind> = CanvasNativeNodeSet[`${K}Nodes`][number];
-type Writes={video:VideoNodeWrite;director:DirectorNodeWrite;character:CharacterNodeWrite;scene:SceneNodeWrite;audio:AudioNodeWrite;timeline:TimelineNodeWrite};
+type Writes={comfy:ComfyNodeWrite;video:VideoNodeWrite;director:DirectorNodeWrite;character:CharacterNodeWrite;scene:SceneNodeWrite;audio:AudioNodeWrite;timeline:TimelineNodeWrite};
 export type NativeNodePatch<K extends CanvasNativeKind>=Partial<Omit<Writes[K],"id"|"operationId">>;
 export type NativeNodeSnapshot<N>={nodes:N[];phase:"idle"|"loading"|"ready"|"error";error:string;saving:number;unsavedCount:number};
 export class NativeNodeClientError extends Error{constructor(message:string,public status:number,public code?:string){super(message);}}
 type ErrorFactory=(message:string,status:number,code?:string)=>NativeNodeClientError;
-const labels={video:"视频节点",director:"导演工程",character:"角色",scene:"场景",audio:"音频",timeline:"多轨"};
+const labels={comfy:"工作流",video:"视频节点",director:"导演工程",character:"角色",scene:"场景",audio:"音频",timeline:"多轨"};
 type Attempt={key:string;url:string;method:"POST"|"PATCH";project:string|null;body:string};
 
 /** Document state for the six existing native kinds. Only reads, node write

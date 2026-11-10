@@ -22,19 +22,19 @@ export function canvasFlowSelection(state:CanvasSelection,nodes:Array<{id:string
   const current=[...state.multiSel].sort();
   return patchCanvasSelection(state,{...(edge&&!ids.length?focus:{}),multiSel:equalIds(current,ids)?state.multiSel:ids,selectedEdge:edge});
 }
-export function canvasSelectionIds(ids:string[],kinds:ReadonlyMap<string,"art"|"text"|"video"|"director"|"character"|"scene"|"audio"|"timeline">):Partial<CanvasSelection>{
+export function canvasSelectionIds(ids:string[],kinds:ReadonlyMap<string,"art"|"text"|"video"|"director"|"character"|"scene"|"audio"|"timeline"|"comfy">):Partial<CanvasSelection>{
   const valid=[...new Set(ids.filter(id=>kinds.has(id)))],one=valid.length===1?valid[0]:null;
   return {...focus,selectedEdge:null,multiSel:valid,selectedTextId:one&&kinds.get(one)==="text"?one:null,selectedId:one&&kinds.get(one)!=="text"?one:null};
 }
 
 type ProjectNode={id:string;projectKey:string;deletedAt?:string|null};
-export type CanvasSelectionCatalogue={project:string|null;artworks:readonly {id:string;canvasGroupId?:string|null}[];text:readonly ProjectNode[];video:readonly ProjectNode[];director:readonly ProjectNode[];character:readonly ProjectNode[];scene:readonly ProjectNode[];audio:readonly ProjectNode[];timeline:readonly ProjectNode[]};
+export type CanvasSelectionCatalogue={project:string|null;artworks:readonly {id:string;canvasGroupId?:string|null}[];text:readonly ProjectNode[];video:readonly ProjectNode[];director:readonly ProjectNode[];character:readonly ProjectNode[];scene:readonly ProjectNode[];audio:readonly ProjectNode[];timeline:readonly ProjectNode[];comfy?:readonly ProjectNode[]};
 
 /** Layout-independent membership of the existing current-project catalogue. */
 export function canvasSelectableNodeKinds(catalogue:CanvasSelectionCatalogue){
   const result=new Map<string,"art"|"text"|CanvasNativeKind>(catalogue.artworks.map(node=>[node.id,"art"]));
   for(const {kind} of CANVAS_NATIVE_NODE_KINDS)
-    for(const node of catalogue[kind])if(node.projectKey===catalogue.project)result.set(node.id,kind);
+    for(const node of catalogue[kind]||[])if(node.projectKey===catalogue.project)result.set(node.id,kind);
   for(const node of catalogue.text)if(node.projectKey===catalogue.project)result.set(node.id,"text");
   return result;
 }

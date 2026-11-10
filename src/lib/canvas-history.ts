@@ -1,3 +1,5 @@
+import {comfyNodeWriteSchema} from "./canvas/comfy-node-schema";
+import {saveComfyNodeTx} from "./canvas/comfy-node-repository";
 import {ensureNativeNodeSchemas,nativeHistoryIds,readNativeNodeReceiptsTx} from "./canvas/native-node-lifecycle";
 import {isCanvasNativeOperation,CANVAS_NATIVE_NODE_KINDS} from "./canvas/native-node-records";
 import {timelineNodeWriteSchema} from "./canvas/timeline-node-schema";
@@ -88,7 +90,7 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
     await client.query("BEGIN");
     // Serialize steps per owner, including concurrent retries of one request.
     await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [email]);
-    if(hasVideo||hasDirector||hasCharacter||hasScene||hasAudio||hasTimeline)await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`video-node-graph:${email}`]);
+    if(hasVideo||hasDirector||hasCharacter||hasScene||hasAudio||hasTimeline||nativeIds.comfyIds?.length)await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`video-node-graph:${email}`]);
     const previous = await client.query("SELECT fingerprint FROM app_canvas_history_ops WHERE email=$1 AND id=$2", [email,input.operationId]);
     if (previous.rows.length) {
       if (previous.rows[0].fingerprint !== fingerprint) throw new Error("操作编号已使用");
@@ -134,6 +136,15 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
         const write=characterNodeWriteSchema.parse({id:op.id,expectedRevision:op.type==="character-patch"?op.expectedRevision:Number(row.revision),operationId,...(op.type==="character-patch"?op.fields:{deleted:!op.visible})});
         await saveCharacterNodeTx(client,email,write,String(row.project_key));changedCharacters.add(op.id);continue;
       }
+      if(op.type==="comfy-patch"||op.type==="comfy-visibility"){
+        const row=(await client.query("SELECT revision,project_key FROM app_canvas_comfy_nodes WHERE email=$1 AND id=$2 FOR UPDATE",[email,op.id])).rows[0];
+        if(!row)throw new Error("工作流不存在或无权修改");
+        await assertCreationProjectInput(email,String(row.project_key),client);
+        const digest=createHash("sha256").update(`comfy:${input.operationId}:${index}:${op.id}`).digest().subarray(0,16);digest[6]=(digest[6]&15)|64;digest[8]=(digest[8]&63)|128;const hex=digest.toString("hex");
+        const operationId=`${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
+        const write=comfyNodeWriteSchema.parse({id:op.id,expectedRevision:op.type==="comfy-patch"?op.expectedRevision:Number(row.revision),operationId,...(op.type==="comfy-patch"?op.fields:{deleted:!op.visible})});
+        await saveComfyNodeTx(client,email,write,String(row.project_key));continue;
+      }
       if(op.type==="director-patch"||op.type==="director-visibility"){
         const row=(await client.query("SELECT revision,project_key FROM app_canvas_director_nodes WHERE email=$1 AND id=$2 FOR UPDATE",[email,op.id])).rows[0];
         if(!row)throw new Error("导演节点不存在或无权修改");
@@ -176,7 +187,7 @@ export async function saveCanvasHistory(email: string, input: z.infer<typeof his
       }
       const text = op.type === "text-delete" || op.type === "text-patch" || ((op.type === "position" || op.type === "node-settings") && op.text);
       const video=op.type==="node-settings"&&op.video===true;
-      const table = text ? "app_canvas_text_nodes" : video?"app_canvas_video_nodes":op.type==="node-settings"&&op.director?"app_canvas_director_nodes":op.type==="node-settings"&&op.character?"app_canvas_character_nodes":op.type==="node-settings"&&op.scene?"app_canvas_scene_nodes":op.type==="node-settings"&&op.timeline?"app_canvas_timeline_nodes":op.type==="node-settings"&&op.audio?"app_canvas_audio_nodes":"app_artworks";
+      const table = op.type==="node-settings"&&op.comfy?"app_canvas_comfy_nodes":text ? "app_canvas_text_nodes" : video?"app_canvas_video_nodes":op.type==="node-settings"&&op.director?"app_canvas_director_nodes":op.type==="node-settings"&&op.character?"app_canvas_character_nodes":op.type==="node-settings"&&op.scene?"app_canvas_scene_nodes":op.type==="node-settings"&&op.timeline?"app_canvas_timeline_nodes":op.type==="node-settings"&&op.audio?"app_canvas_audio_nodes":"app_artworks";
       const owned = await client.query(`SELECT * FROM ${table} WHERE email=$1 AND id=$2 FOR UPDATE`, [email,op.id]);
       if(!owned.rows.length&&(op.type==="text-patch"&&op.expected||op.type==="text-delete"&&op.expected||op.type==="position"&&op.text&&op.expected))throw new CanvasTextWriteConflict(op.id,["deleted"],null);
       if (!owned.rows.length) throw new Error("节点不存在或无权修改，请刷新画布");

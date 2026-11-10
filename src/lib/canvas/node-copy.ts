@@ -1,3 +1,6 @@
+import {listComfyNodes,saveComfyNodeTx} from "./comfy-node-repository";
+import {ensureComfyNodeSchema} from "./storage-schema";
+import type {CanvasComfyNode} from "./comfy-node-schema";
 import {withTransaction} from "@/platform/db/transaction";
 import {readNativeNodeReceiptsTx} from "./native-node-lifecycle";
 import {canvasNativeIds} from "./native-node-records";
@@ -64,7 +67,9 @@ export async function copyCanvasNodes(actorRaw:string,raw:CanvasNodeCopyInput):P
   if(previous){if(previous.input_digest!==digest)throw new ModelConfigError("NODE_OPERATION_CONFLICT","复制操作编号已用于另一请求",409);return currentCopyReceipt(previous.result);}
   const [artworks,textNodes,videoNodes,directorRecords,characterRecords,sceneRecords,audioRecords,timelineRecords]=await Promise.all([listArtworksByIds(actor,input.ids),listCanvasTextNodes(actor),listVideoNodes(actor),listDirectorNodes(actor),listCharacterNodes(actor),listSceneNodes(actor),listAudioNodes(actor),listTimelineNodes(actor)]);
   const wanted=new Set(input.ids),texts=textNodes.filter(node=>wanted.has(node.id)),videos=videoNodes.filter(node=>wanted.has(node.id)),directors=directorRecords.filter(node=>wanted.has(node.id)),characters=characterRecords.filter(node=>wanted.has(node.id)),scenes=sceneRecords.filter(node=>wanted.has(node.id)),audios=audioRecords.filter(node=>wanted.has(node.id)),timelines=timelineRecords.filter(node=>wanted.has(node.id));
-  const kinds=new Map([...artworks.map(node=>[node.id,"art"] as const),...texts.map(node=>[node.id,"text"] as const),...videos.map(node=>[node.id,"vnode"] as const),...directors.map(node=>[node.id,"director"] as const),...characters.map(node=>[node.id,"character"] as const),...scenes.map(node=>[node.id,"scene"] as const),...audios.map(node=>[node.id,"audio"] as const),...timelines.map(node=>[node.id,"timeline"] as const)]);
+  await ensureComfyNodeSchema();const comfies=(await listComfyNodes(actor)).filter(node=>input.ids.includes(node.id));
+  for(const node of comfies)await assertCreationProjectInput(actor,node.projectKey);
+  const kinds=new Map([...artworks.map(node=>[node.id,"art"] as const),...texts.map(node=>[node.id,"text"] as const),...videos.map(node=>[node.id,"vnode"] as const),...directors.map(node=>[node.id,"director"] as const),...characters.map(node=>[node.id,"character"] as const),...scenes.map(node=>[node.id,"scene"] as const),...audios.map(node=>[node.id,"audio"] as const),...timelines.map(node=>[node.id,"timeline"] as const),...comfies.map(node=>[node.id,"comfy"] as const)]);
   if(input.detached&&kinds.get(input.ids[0])!=="art")throw new ModelConfigError("INVALID_NODE_COPY","独立复制仅支持图片节点",422);
   if(input.ids.some(id=>!kinds.has(id)))throw new ModelConfigError("CANVAS_NODE_UNAVAILABLE","复制节点不存在或无权访问",404);
   if(input.singleArtwork&&artworks.length!==1)throw new ModelConfigError("CANVAS_NODE_UNAVAILABLE","单图复制来源不是作品",422);
@@ -161,9 +166,15 @@ export async function copyCanvasNodes(actorRaw:string,raw:CanvasNodeCopyInput):P
       await validateTimelineProject(actor,timeline,client);if(adopted)await validateTimelineAdoption(actor,adopted,client);
       timelineNodes.push(await saveTimelineNodeTx(client,actor,{id:mapping.get(node.id)!,operationId:stableUuid(`${actor}:${input.operationId}:${node.id}`),expectedRevision:0,title:node.title,x:node.x+40,y:node.y+40,width:node.width,height:node.height,timeline,adopted},key));
     }
+    const comfyNodes:CanvasComfyNode[]=[];
+    for(const node of comfies){
+      const current=(await client.query("SELECT revision FROM app_canvas_comfy_nodes WHERE email=$1 AND id=$2 AND deleted_at IS NULL FOR SHARE",[actor,node.id])).rows[0];
+      if(!current||Number(current.revision)!==node.revision)throw new ModelConfigError("COMFY_REVISION_CONFLICT","工作流已更新，请重新复制",409);
+      comfyNodes.push(await saveComfyNodeTx(client,actor,{id:mapping.get(node.id)!,operationId:stableUuid(`${actor}:${input.operationId}:${node.id}`),expectedRevision:0,title:node.title,x:node.x+40,y:node.y+40,workflow:node.workflow},key));
+    }
     // Copy shared properties only when that table already exists; do not initialize unrelated edit tables.
     if(!input.singleArtwork&&(await client.query("SELECT to_regclass('app_canvas_node_settings') AS name")).rows[0].name){for(const [oldId,newId] of mapping)await client.query("INSERT INTO app_canvas_node_settings(email,node_id,kind,settings) SELECT email,$3,kind,settings FROM app_canvas_node_settings WHERE email=$1 AND node_id=$2 ON CONFLICT(email,node_id) DO NOTHING",[actor,oldId,newId]);}
-    const result:CopyResult={nativeNodes:{videoNodes:nodes,directorNodes,characterNodes,sceneNodes,audioNodes,timelineNodes},artworkIds,textNodes:copiedTexts,nodes,...(directorNodes.length?{directorNodes}:{}),...(characterNodes.length?{characterNodes}:{}),...(sceneNodes.length?{sceneNodes}:{}),...(audioNodes.length?{audioNodes}:{}),...(timelineNodes.length?{timelineNodes}:{}),idMap:Object.fromEntries(mapping),projectKey:key};
+    const result:CopyResult={nativeNodes:{videoNodes:nodes,directorNodes,characterNodes,sceneNodes,audioNodes,timelineNodes,comfyNodes},comfyNodes,artworkIds,textNodes:copiedTexts,nodes,...(directorNodes.length?{directorNodes}:{}),...(characterNodes.length?{characterNodes}:{}),...(sceneNodes.length?{sceneNodes}:{}),...(audioNodes.length?{audioNodes}:{}),...(timelineNodes.length?{timelineNodes}:{}),idMap:Object.fromEntries(mapping),projectKey:key};
     await client.query("INSERT INTO app_canvas_node_copies(email,operation_id,input_digest,result) VALUES($1,$2,$3,$4::jsonb)",[actor,input.operationId,digest,JSON.stringify(result)]);await client.query("COMMIT");return result;
   }catch(error){await client.query("ROLLBACK");throw error;}finally{client.release();}
 }

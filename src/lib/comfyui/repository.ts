@@ -152,11 +152,11 @@ export async function getComfyWorkflow(
 
 export async function saveComfyWorkflow(
   email: string,
-  input: { id?: string; name: string; apiJson: unknown; inputs: unknown; required: unknown; note?: string }
+  input: { id?: string; newId?:string; name: string; apiJson: unknown; inputs: unknown; required: unknown; note?: string }
 ): Promise<ComfyWorkflowRow[]> {
   await ensureSchema();
   const lower = email.toLowerCase();
-  const id = input.id?.trim() || crypto.randomUUID();
+  const id = input.id?.trim() || input.newId || crypto.randomUUID();
   const existing = input.id ? await getComfyWorkflow(email, input.id) : null;
   if (input.id && !existing) throw new Error("工作流不存在");
   const { rows: countRows } = await getPool().query(

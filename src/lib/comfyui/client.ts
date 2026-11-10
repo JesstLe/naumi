@@ -1,4 +1,5 @@
 import "server-only";
+import {readBounded} from "../supplier-cost/io";
 
 import { assertUserImageBaseUrlAllowed } from "@/lib/user-image-provider";
 import type { ApiWorkflow } from "@/lib/comfyui/workflow";
@@ -54,6 +55,10 @@ export async function assertComfyEndpointAllowed(baseUrl: string): Promise<strin
 }
 
 /** 连接测试:GET /object_info,返回节点类名列表(缺件报告数据源)。 */
+export async function fetchObjectDefinitions(endpoint:Pick<ComfyEndpoint,"baseUrl"|"apiKey">){
+ const res=await comfyFetch(endpoint,"/object_info");if(!res.ok)throw new Error(`读取端点节点定义失败(${res.status})`);return JSON.parse(await readBounded(res,8*1024*1024)) as import("./document").ComfyObjectInfo;
+}
+
 export async function fetchObjectInfo(
   endpoint: Pick<ComfyEndpoint, "baseUrl" | "apiKey">,
   signal?: AbortSignal

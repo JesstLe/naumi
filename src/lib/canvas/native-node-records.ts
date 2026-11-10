@@ -1,3 +1,4 @@
+import type {CanvasComfyNode} from "./comfy-node-schema";
 import type {CanvasVideoNode} from "./video-node-schema";
 import type {CanvasDirectorNode} from "./director-node-schema";
 import type {CanvasCharacterNode} from "./character-node-schema";
@@ -14,9 +15,10 @@ export const CANVAS_NATIVE_NODE_KINDS=[
   {kind:"scene",records:"sceneNodes",ids:"sceneIds"},
   {kind:"audio",records:"audioNodes",ids:"audioIds"},
   {kind:"timeline",records:"timelineNodes",ids:"timelineIds"},
+  {kind:"comfy",records:"comfyNodes",ids:"comfyIds"},
 ] as const;
 export type CanvasNativeKind=typeof CANVAS_NATIVE_NODE_KINDS[number]["kind"];
-export type CanvasNativeNodeSet={videoNodes:CanvasVideoNode[];directorNodes:CanvasDirectorNode[];characterNodes:CanvasCharacterNode[];sceneNodes:CanvasSceneNode[];audioNodes:CanvasAudioNode[];timelineNodes:CanvasTimelineNode[]};
+export type CanvasNativeNodeSet={comfyNodes:CanvasComfyNode[];videoNodes:CanvasVideoNode[];directorNodes:CanvasDirectorNode[];characterNodes:CanvasCharacterNode[];sceneNodes:CanvasSceneNode[];audioNodes:CanvasAudioNode[];timelineNodes:CanvasTimelineNode[]};
 export type CanvasNativeRecords=Partial<CanvasNativeNodeSet>;
 export type CanvasNativeNode=CanvasNativeNodeSet[keyof CanvasNativeNodeSet][number];
 export type CanvasNativeIds=Partial<Record<typeof CANVAS_NATIVE_NODE_KINDS[number]["ids"],string[]>>;

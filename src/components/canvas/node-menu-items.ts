@@ -1,14 +1,15 @@
-import { Clapperboard, FileText, Film, Image, Mountain, Music2, UserRound, Video } from "lucide-react";
+import { Clapperboard, FileText, Film, Image, Mountain, Music2, UserRound, Video, Workflow } from "lucide-react";
 import type { CanvasActionMenuItem } from "./canvas-action-menu";
 import type { CanvasCreatableNodeKind } from "@/lib/canvas/node-creation";
 
 export type CreatableCanvasNode = CanvasCreatableNodeKind;
 
 /** One ordered list for toolbar, blank-canvas and reference creation. */
-export function canvasNodeMenuItems({ L, readOnly, videoDisabled, onCreate }: {
+export function canvasNodeMenuItems({ L, readOnly, videoDisabled, onCreate, onWorkflow }: {
   L: (zh: string, en: string) => string;
   readOnly: boolean;
   videoDisabled: boolean;
+  onWorkflow?:()=>void;
   onCreate: (kind: CreatableCanvasNode) => void;
 }): CanvasActionMenuItem[] {
   return [
@@ -19,6 +20,7 @@ export function canvasNodeMenuItems({ L, readOnly, videoDisabled, onCreate }: {
     { id: "image-node", icon: Image, label: L("图片", "Image"), disabled: readOnly, onSelect: () => onCreate("image") },
     { id: "video-node", icon: Video, label: L("视频", "Video"), disabled: readOnly || videoDisabled, onSelect: () => onCreate("video") },
     { id: "audio", icon: Music2, label: L("音频", "Audio"), disabled: readOnly, onSelect: () => onCreate("audio") },
+    ...(onWorkflow?[{id:"workflow",icon:Workflow,label:L("ComfyUI 工作流","ComfyUI workflow"),disabled:readOnly,onSelect:onWorkflow}]:[]),
     { id: "multitrack", icon: Film, label: L("多轨编辑器", "Multitrack editor"), disabled: readOnly, onSelect: () => onCreate("timeline") },
   ];
 }

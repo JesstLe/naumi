@@ -162,3 +162,16 @@ export async function ensureTimelineNodeSchema(){
   `).then(()=>undefined).catch(error=>{state.pending=undefined;throw error;});
  await state.pending;
 }
+
+export async function ensureComfyNodeSchema(){
+ await ensureVideoNodeSchema();const state=databaseSchemaReadiness(getPool(),"canvas-comfy-nodes");
+ if(!state.pending)state.pending=getPool().query(`
+ CREATE TABLE IF NOT EXISTS app_canvas_comfy_nodes (
+ email text NOT NULL,id text NOT NULL,project_key text NOT NULL,revision integer NOT NULL DEFAULT 1,
+ title text NOT NULL DEFAULT 'ComfyUI 工作流',x double precision NOT NULL DEFAULT 0,y double precision NOT NULL DEFAULT 0,
+ width double precision NOT NULL DEFAULT 380,height double precision NOT NULL DEFAULT 180,workflow jsonb NOT NULL,
+ deleted_at timestamptz,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(email,id));
+ CREATE INDEX IF NOT EXISTS app_canvas_comfy_project ON app_canvas_comfy_nodes(email,project_key);
+ CREATE TABLE IF NOT EXISTS app_canvas_comfy_operations(email text NOT NULL,operation_id text NOT NULL,input_digest text NOT NULL,result jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(email,operation_id));
+ `).then(()=>undefined).catch(error=>{state.pending=undefined;throw error;});await state.pending;
+}
