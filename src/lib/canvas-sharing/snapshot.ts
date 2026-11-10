@@ -181,6 +181,13 @@ export async function captureShareSnapshotTx(tx: PoolClient, author: string, ent
     if (all.has(row.id)) fail("SHARE_AMBIGUOUS_ID", "节点身份不唯一", 422);
     all.set(row.id, { id: row.id, kind: nodeKind, data: row, stamp: "" });
   }
+  // Comfy documents retain raw custom-node JSON; the media-oriented sharing
+  // contract must not silently omit them from mixed projects. JSON export is
+  // available on the native group until a document snapshot contract is added.
+  if(source.kind==="workflow"&&(await tx.query("SELECT to_regclass('app_canvas_comfy_nodes') AS present")).rows[0].present){
+    const comfies=(await tx.query("SELECT id FROM app_canvas_comfy_nodes WHERE email=$1 AND project_key=$2 AND deleted_at IS NULL",[author,source.projectKey])).rows;
+    if(comfies.some(node=>!source.nodeIds||source.nodeIds.includes(node.id)))fail("SHARE_COMFY_DOCUMENT","请通过工作流分组的导出按钮分享完整 JSON",422);
+  }
   if (!all.size) fail("SHARE_SOURCE_UNAVAILABLE", "源画布不存在或无权访问", 404);
   const pending = [...(source.nodeIds || all.keys())], nodes = new Map<string, FrozenNode>();
   if (source.kind === "artwork" && all.get(pending[0])?.kind !== "artwork") fail("SHARE_NOT_ARTWORK", "请选择一项作品", 422);

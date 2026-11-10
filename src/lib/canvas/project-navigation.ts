@@ -46,7 +46,7 @@ export function createCanvasProjectNavigation(identity:string,ports:Ports){
    if(initialProject&&desktop!==initialProject)requestedProject=initialProject;
    if(!pending&&!state.creatingNew&&!state.browsing&&loaded&&state.activeKey&&!projects.some(p=>p.key===state.activeKey)){browse(true);ports.missing();}
    if(pending&&(!requestedProject||loaded)){
-    const intent=pending,project=projects.find(p=>p.members.some(n=>n.id===intent.id)||p.textNodes.some(n=>n.id===intent.id)||[p.videoNodes,p.directorNodes,p.characterNodes,p.sceneNodes,p.audioNodes,p.timelineNodes].some(nodes=>nodes?.some(n=>n.id===intent.id)));
+    const intent=pending,project=projects.find(p=>p.members.some(n=>n.id===intent.id)||p.textNodes.some(n=>n.id===intent.id)||[p.videoNodes,p.directorNodes,p.characterNodes,p.sceneNodes,p.audioNodes,p.timelineNodes,p.comfyNodes].some(nodes=>nodes?.some(n=>n.id===intent.id)));
     if(project){ports.select(project.key,intent.select?intent.id:null);if(intent.focus)ports.focus(intent.id,project.key);open(project.key);}
     else if(loaded){pending=undefined;publish({pendingNode:null});}
    }

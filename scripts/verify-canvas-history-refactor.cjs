@@ -46,6 +46,7 @@ function setup(built){
  c.sceneNodesStore={saving:false,getNode:()=>undefined,flush:async()=>{},refresh:async()=>{}};
  c.audioNodesStore={saving:false,getNode:()=>undefined,flush:async()=>{},refresh:async()=>{}};
  c.timelineNodesStore={saving:false,getNode:()=>undefined,flush:async()=>{},refresh:async()=>{}};
+ c.comfyNodesStore={saving:false,getNode:()=>undefined,flush:async()=>{},refresh:async()=>{}};
  vm.createContext(c);vm.runInContext(built,c);Object.assign(c,projectedModule.exports);
  if(!baseline&&c.createCanvasPendingPresentation){
   const p=c.createCanvasPendingPresentation().bind('fixture'),g=c.createCanvasGenerationPresentation().bind('fixture');p.set(state.pending);

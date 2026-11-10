@@ -27,7 +27,7 @@ export {withByocVideoTask} from "./byoc-context";
 import {applicationTasksRunHere} from "../application/task-execution";
 import type {VideoGenerationRequest} from "./types";
 const num=z.number().finite().min(0).max(Number.MAX_SAFE_INTEGER),name=z.string().min(1).max(160);
-export const byocVideoInputSchema=z.strictObject({workflowId:name,idempotencyKey:z.string().min(1).max(100),mediaType:z.literal("video").optional(),artworkId:name.optional(),imageUrl:z.string().max(16384).optional(),
+export const byocVideoInputSchema=z.strictObject({workflowId:name,workflowRevision:z.number().int().nonnegative().optional(),idempotencyKey:z.string().min(1).max(100),mediaType:z.literal("video").optional(),artworkId:name.optional(),imageUrl:z.string().max(16384).optional(),
   source:z.enum(["canvas","workbench","agent","workflow"]).optional(),orderedInputs:z.array(orderedInputSchema).max(256).optional(),
   nodeId:name.optional(),expectedRevision:z.number().int().nonnegative().optional(),projectKey:z.string().max(166).optional(),
   prompt:z.string().max(16384).optional(),texts:z.record(name,z.string().max(16384)).optional(),seed:num.int().optional(),seeds:z.record(name,num.int()).optional(),

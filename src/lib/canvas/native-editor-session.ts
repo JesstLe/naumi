@@ -2,7 +2,7 @@ import type {CanvasDocumentScope} from './document-scope';
 import type {CanvasNativeKind} from './native-node-records';
 
 // The five existing full-screen native editors. Video keeps its selected-node dock.
-export type CanvasNativeEditorKind=Exclude<CanvasNativeKind,'video'>;
+export type CanvasNativeEditorKind=Exclude<CanvasNativeKind,'video'|'comfy'>;
 export type CanvasNativeEditorHandle={
   id:string;kind:CanvasNativeEditorKind;key:string;scope:CanvasDocumentScope;
   current:()=>boolean;assertCurrent:()=>void;close:()=>boolean;

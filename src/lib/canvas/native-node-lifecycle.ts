@@ -1,4 +1,5 @@
 import "server-only";
+import {ensureComfyNodeSchema,mapComfyNode} from "./comfy-node-repository";
 import type {PoolClient} from "pg";
 import {assertCreationProjectInput} from "../saas/creation-access";
 import {CANVAS_NATIVE_NODE_KINDS,type CanvasNativeIds,type CanvasNativeRecords} from "./native-node-records";
@@ -14,6 +15,7 @@ import {mapTimelineNode} from "./timeline-node-repository";
 // Kind-specific payloads, revisions, reference validation and render/task rules
 // stay in their original repositories/services.
 const storage={
+  comfy:{table:"app_canvas_comfy_nodes",ensure:ensureComfyNodeSchema,map:mapComfyNode},
   video:{table:"app_canvas_video_nodes",ensure:ensureVideoNodeSchema,map:mapVideoNode},
   director:{table:"app_canvas_director_nodes",ensure:ensureDirectorNodeSchema,map:mapDirectorNode},
   character:{table:"app_canvas_character_nodes",ensure:ensureCharacterNodeSchema,map:mapCharacterNode},
@@ -21,7 +23,7 @@ const storage={
   audio:{table:"app_canvas_audio_nodes",ensure:ensureAudioNodeSchema,map:mapAudioNode},
   timeline:{table:"app_canvas_timeline_nodes",ensure:ensureTimelineNodeSchema,map:mapTimelineNode},
 };
-export function nativeHistoryIds(operations:readonly {type:string;id?:string;video?:boolean;director?:boolean;character?:boolean;scene?:boolean;audio?:boolean;timeline?:boolean}[]):CanvasNativeIds{
+export function nativeHistoryIds(operations:readonly {type:string;id?:string;video?:boolean;director?:boolean;character?:boolean;scene?:boolean;audio?:boolean;timeline?:boolean;comfy?:boolean}[]):CanvasNativeIds{
   return Object.fromEntries(CANVAS_NATIVE_NODE_KINDS.map(({kind,ids})=>[ids,[...new Set(operations.filter(op=>op.type.startsWith(kind+"-")||op.type==="node-settings"&&op[kind]).flatMap(op=>op.id?[op.id]:[]))]]));
 }
 export async function ensureNativeNodeSchemas(ids?:CanvasNativeIds){

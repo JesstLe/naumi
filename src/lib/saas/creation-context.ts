@@ -69,7 +69,7 @@ export async function withCreationRequest<T extends Response>(request:Request,em
   if(request.headers.has('x-naumi-project-context'))await bindActualCreationProject(email,parent,{receipt:options.receipt});
   else if(body?.projectKey){
    // The owning video-node transaction alone can attest its genuinely new root.
-   const creatingRoot=['/api/canvas/video-nodes','/api/canvas/director-nodes','/api/canvas/character-nodes','/api/canvas/scene-nodes','/api/canvas/audio-nodes','/api/canvas/timeline-nodes'].includes(new URL(request.url).pathname)&&body.expectedRevision===0&&body.projectKey===`tree:${body.id}`;
+   const creatingRoot=['/api/canvas/comfy-nodes','/api/canvas/video-nodes','/api/canvas/director-nodes','/api/canvas/character-nodes','/api/canvas/scene-nodes','/api/canvas/audio-nodes','/api/canvas/timeline-nodes'].includes(new URL(request.url).pathname)&&body.expectedRevision===0&&body.projectKey===`tree:${body.id}`;
    if(!creatingRoot)await bindActualCreationProject(email,body.projectKey,{receipt:options.receipt});
   }
   return run();

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   Cloud,
@@ -14,6 +14,9 @@ import {
   Workflow as WorkflowIcon,
   X,
 } from "lucide-react";
+import {parseComfyDocument,type ComfyDocument} from "@/lib/comfyui/document";
+import {extractWorkflowInputs,type ApiWorkflow} from "@/lib/comfyui/workflow";
+import type {CanvasComfyNode} from "@/lib/canvas/comfy-node-schema";
 import { authHeader } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import type { Artwork } from "@/lib/mock-data";
@@ -61,14 +64,18 @@ export function CanvasComfyDialog({
   open,
   onClose,
   source,
-  onRun,
+  onRun, onAdd, canvasWorkflow, inputArtworks=[],
 }: {
   open: boolean;
   onClose: () => void;
-  source: Artwork | null;
+  source: Artwork | null;inputArtworks?:Artwork[];
+  onAdd?:(name:string,document:ComfyDocument)=>Promise<void>;
+  canvasWorkflow?:CanvasComfyNode|null;
   /** 由画布实现:占位节点 → 执行 → 图片产物挂树;返回结果供面板展示视频 */
-  onRun: (payload: ComfyRunPayload) => Promise<ComfyRunResult>;
+  onRun: (payload: ComfyRunPayload,artworkId?:string) => Promise<ComfyRunResult>;
 }) {
+  const [inputArtworkId,setInputArtworkId]=useState(source?.id||"");
+  useEffect(()=>{setInputArtworkId(source?.id||"");},[source?.id,canvasWorkflow?.id]);
   const [tab, setTab] = useState<"run" | "endpoint" | "import" | "market">("run");
   const [endpoints, setEndpoints] = useState<EndpointView[] | null>(null);
   const [workflows, setWorkflows] = useState<WorkflowView[] | null>(null);
@@ -95,15 +102,17 @@ export function CanvasComfyDialog({
   const [wfReport, setWfReport] = useState("");
 
   const activeEndpoint = endpoints?.find((e) => e.isActive) ?? null;
-  const current = workflows?.find((w) => w.id === workflowId) ?? null;
+  const canvasCurrent=useMemo(()=>canvasWorkflow?{id:`canvas-comfy:${canvasWorkflow.id}`,name:canvasWorkflow.title,inputs:canvasWorkflow.workflow.format==="api"?extractWorkflowInputs(canvasWorkflow.workflow.raw as ApiWorkflow):{images:[],texts:[],seeds:[],numerics:[]},required:[],note:"",isPublic:false,updatedAt:canvasWorkflow.updatedAt}:null,[canvasWorkflow]);
+  const current=canvasCurrent||workflows?.find(w=>w.id===workflowId)||null;
 
+  const canvasWorkflowId=canvasWorkflow?.id;
   const loadEndpoints = useCallback(async () => {
     try {
       const res = await fetch("/api/comfyui/endpoints", { headers: await authHeader() });
       const data = await res.json();
-      if (Array.isArray(data.endpoints)) setEndpoints(data.endpoints);
+      if (Array.isArray(data.endpoints)) {setEndpoints(data.endpoints);if(canvasWorkflowId&&!data.endpoints.some((e:EndpointView)=>e.isActive))setTab("endpoint");}
     } catch { /* keep */ }
-  }, []);
+  }, [canvasWorkflowId]);
 
   const loadWorkflows = useCallback(async () => {
     try {
@@ -139,7 +148,7 @@ export function CanvasComfyDialog({
     const nextTexts: Record<string, string> = {};
     for (const t of current.inputs.texts ?? []) nextTexts[t.nodeId] = t.current || "";
     const nextSeeds: Record<string, number> = {};
-    for (const s of current.inputs.seeds ?? []) nextSeeds[s.nodeId] = Math.floor(Math.random() * 1e15);
+    for (const s of current.inputs.seeds ?? []) nextSeeds[s.nodeId] = canvasWorkflow?s.current:Math.floor(Math.random() * 1e15);
     const nextNumerics: Record<string, Record<string, number>> = {};
     for (const n of current.inputs.numerics ?? []) {
       nextNumerics[n.nodeId] = { ...(nextNumerics[n.nodeId] ?? {}), [n.field]: n.current };
@@ -147,7 +156,7 @@ export function CanvasComfyDialog({
     setTexts(nextTexts);
     setSeeds(nextSeeds);
     setNumerics(nextNumerics);
-  }, [workflowId, current]);
+  }, [workflowId, current, canvasWorkflow]);
 
   if (!open) return null;
 
@@ -174,7 +183,7 @@ export function CanvasComfyDialog({
       } else {
         setEpUrl("");
         setEpKey("");
-        await loadEndpoints();
+        await loadEndpoints();setTab("run");
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "操作失败");
@@ -224,7 +233,8 @@ export function CanvasComfyDialog({
       setWfJson("");
       setWfName("");
       await loadWorkflows();
-      if (data.inputs) setWorkflowId((cur) => cur);
+      if(data.savedId)setWorkflowId(data.savedId);
+      if(onAdd){await onAdd(wfName||"ComfyUI 工作流",data.document||parseComfyDocument(wfJson));onClose();return;}
       const missing = (data.missing ?? []) as string[];
       setWfReport(
         missing.length
@@ -291,13 +301,14 @@ export function CanvasComfyDialog({
   }
 
   async function run() {
-    if (!workflowId || running) return;
+    if (!current || running) return;
+    if(!activeEndpoint){setTab("endpoint");return;}
     const original=view.current;
     setRunning(true);
     setError("");
     setResult(null);
     try {
-      const res = await onRun({ workflowId, texts, seeds, numerics });
+      const res = await onRun({workflowId:current.id,texts,seeds,numerics,...(canvasWorkflow?{workflowRevision:canvasWorkflow.revision}:{})},inputArtworkId||undefined);
       if(original===view.current&&res.state!=="stale")setResult(res);
     } catch (e) {
       if(original===view.current)setError(e instanceof Error ? e.message : "执行失败");
@@ -307,7 +318,7 @@ export function CanvasComfyDialog({
   }
 
   const tabs = [
-    { key: "run" as const, label: "运行" },
+    { key: "run" as const, label: canvasWorkflow?"运行":"工作流" },
     { key: "endpoint" as const, label: "端点" },
     { key: "import" as const, label: "导入" },
     { key: "market" as const, label: "市场" },
@@ -326,19 +337,15 @@ export function CanvasComfyDialog({
           </span>
           <div className="min-w-0 flex-1">
             <h3 className="text-[15px] font-bold text-[var(--canvas-ui-text)]">ComfyUI 工作流</h3>
-            <p className="truncate text-[11.5px] text-[var(--canvas-ui-muted)]">
-              {activeEndpoint
-                ? `${activeEndpoint.name} · ${activeEndpoint.baseUrl.replace(/^https?:\/\//, "")}`
-                : "先在「端点」页连接你的 ComfyUI"}
-            </p>
+
           </div>
-          <button type="button" aria-label="关闭" onClick={onClose} className="grid h-8 w-8 place-items-center rounded-md text-[var(--canvas-ui-muted)] hover:bg-[var(--canvas-ui-soft-hover)] hover:text-[var(--canvas-ui-text)]">
+          <button type="button" aria-label="关闭工作流面板" onClick={onClose} className="grid h-8 w-8 place-items-center rounded-md text-[var(--canvas-ui-muted)] hover:bg-[var(--canvas-ui-soft-hover)] hover:text-[var(--canvas-ui-text)]">
             <X className="h-4 w-4" />
           </button>
         </div>
 
         <div className="flex gap-1 border-b border-[var(--canvas-ui-border)] px-4 pt-3">
-          {tabs.map((item) => (
+          {tabs.filter(tab=>!canvasWorkflow||tab.key==="run"||tab.key==="endpoint").map((item) => (
             <button
               key={item.key}
               type="button"
@@ -437,13 +444,14 @@ export function CanvasComfyDialog({
             <div className="space-y-3">
               <input value={wfName} onChange={(e) => setWfName(e.target.value)} placeholder="工作流名称,如:商品图转视频"
                 className="canvas-ui-input h-9 w-full rounded-lg border border-[var(--canvas-ui-border)] bg-[var(--canvas-ui-soft)] px-3 text-[13px] outline-none focus:ring-1 focus:ring-primary" />
+              <input type="file" accept=".json,application/json" aria-label="选择工作流文件" className="block w-full text-xs" onChange={event=>{const file=event.target.files?.[0];if(!file)return;if(file.size>8*1024*1024){setError("工作流文件超过 8 MiB");return;}void file.text().then(text=>{parseComfyDocument(text);setWfJson(text);if(!wfName)setWfName(file.name.replace(/\.json$/i,""));}).catch(error=>setError(error instanceof Error?error.message:"读取失败"));}}/>
               <textarea value={wfJson} onChange={(e) => setWfJson(e.target.value)} rows={8}
-                placeholder="粘贴 ComfyUI 工作流 JSON(API 格式)。导出方法:ComfyUI 设置 → 勾选开发者模式 → 菜单「Save (API Format)」"
+                placeholder="粘贴工作流 JSON（API 或编辑器格式）"
                 className="canvas-ui-input w-full resize-y rounded-lg border border-[var(--canvas-ui-border)] bg-[var(--canvas-ui-soft)] px-3 py-2.5 font-mono text-[11.5px] leading-relaxed outline-none focus:ring-1 focus:ring-primary" />
               <button type="button" onClick={() => void importWorkflow()} disabled={!wfJson.trim() || wfBusy}
                 className="inline-flex h-9 items-center gap-1.5 rounded-lg canvas-ui-primary px-4 text-[12.5px] font-semibold text-white hover:opacity-90 disabled:opacity-50">
                 {wfBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <WorkflowIcon className="h-3.5 w-3.5" />}
-                导入工作流
+                {onAdd?"导入并添加到画布":"导入工作流"}
               </button>
             </div>
           )}
@@ -487,18 +495,13 @@ export function CanvasComfyDialog({
 
           {tab === "run" && (
             <div className="space-y-4">
-              {!activeEndpoint && (
-                <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-amber-700">
-                  还没有可用的 ComfyUI 端点。到「端点」页填一个 ComfyUI 地址(AutoDL 租卡或本机均可),再回来运行。
-                </p>
-              )}
-              <div>
+              {!canvasWorkflow&&<div>
                 <p className="mb-1.5 text-[12px] font-semibold text-[var(--canvas-ui-text)]">工作流</p>
                 {!workflows ? (
                   <p className="py-3 text-xs text-[var(--canvas-ui-muted)]">读取中…</p>
                 ) : workflows.length === 0 ? (
                   <p className="rounded-lg border border-dashed border-[var(--canvas-ui-border)] px-3 py-4 text-center text-xs leading-relaxed text-[var(--canvas-ui-muted)]">
-                    还没有工作流。到「导入」页粘贴 ComfyUI 的 API 格式 JSON。
+                    尚未导入工作流
                   </p>
                 ) : (
                   <div className="space-y-1.5">
@@ -535,13 +538,16 @@ export function CanvasComfyDialog({
                     ))}
                   </div>
                 )}
-              </div>
+              </div>}
 
+              {onAdd&&!canvasWorkflow&&current&&<button type="button" disabled={wfBusy} className="canvas-ui-primary w-full rounded-xl px-4 py-3 text-sm font-semibold" onClick={()=>{setWfBusy(true);void (async()=>{try{const res=await fetch(`/api/comfyui/workflows?id=${encodeURIComponent(current.id)}`,{headers:await authHeader()}),data=await res.json();if(!res.ok)throw new Error(data.error||"读取工作流失败");await onAdd(current.name,data.workflow.document);onClose();}catch(e){setError(e instanceof Error?e.message:"添加失败");}finally{setWfBusy(false);}})();}}>添加到画布</button>}
+              {canvasWorkflow&&<p className="text-sm font-semibold">{canvasWorkflow.title}</p>}
+              {!!inputArtworks.length&&<label className="block text-xs">输入图片<select className="canvas-ui-input mt-1 w-full rounded-lg border p-2" value={inputArtworkId} onChange={e=>setInputArtworkId(e.target.value)}><option value="">使用工作流中的输入</option>{inputArtworks.map(art=><option key={art.id} value={art.id}>{art.title}</option>)}</select></label>}
               {current?.inputs && (
                 <div className="space-y-3">
                   {(current.inputs.images?.length ?? 0) > 0 && (
                     <p className="rounded-lg bg-[var(--canvas-ui-soft)] px-3 py-2 text-[11.5px] leading-relaxed text-[var(--canvas-ui-muted)]">
-                      将把选中的画布图 <span className="font-semibold text-[var(--canvas-ui-text)]">{source?.title || "当前图片"}</span> 作为输入
+                      将把选中的画布图 <span className="font-semibold text-[var(--canvas-ui-text)]">{inputArtworks.find(art=>art.id===inputArtworkId)?.title || "工作流默认图片"}</span> 作为输入
                       ({current.inputs.images.length} 个图片槽共用这张图)。
                     </p>
                   )}
@@ -586,10 +592,10 @@ export function CanvasComfyDialog({
                 </div>
               )}
 
-              <button type="button" onClick={() => void run()} disabled={!workflowId || !activeEndpoint || running || !source}
+              <button type="button" onClick={() => void run()} disabled={!current || running || endpoints===null}
                 className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl canvas-ui-primary text-[13px] font-bold text-white shadow-btn transition-all hover:opacity-90 disabled:opacity-50">
                 {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                {running ? "正在执行…" : result?.state==="needs_review"||result?.state==="partial" ? "检查原任务" : "运行工作流"}
+                {running ? "正在执行…" : result?.state==="needs_review"||result?.state==="partial" ? "检查原任务" : !activeEndpoint?"连接端点并运行":"运行工作流"}
               </button>
 
               {result && (

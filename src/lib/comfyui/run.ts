@@ -1,3 +1,5 @@
+import {readComfyRunDocument,compileComfyRunDocument} from "./run-document";
+import {fetchObjectDefinitions,assertComfyEndpointAllowed} from "./client";
 import "server-only";
 import {currentCreationContext} from "@/lib/saas/creation-scope";
 import {claimCreation,finishCreation} from '@/lib/saas/creation-writer';
@@ -43,13 +45,17 @@ export async function executeComfyRun(email:string,body:ComfyRunInput|null,reque
     if (!endpoint) {
       return reply({ error: "还没有可用的 ComfyUI 端点，请先在「工作流」面板添加",accepted:false }, { status: 400 });
     }
-    const workflow = await getComfyWorkflow(email, workflowId);
-    if (!workflow) return reply({ error: "工作流不存在",accepted:false }, { status: 404 });
+    const saved=await readComfyRunDocument(email,workflowId,body?.workflowRevision);
+    await assertComfyEndpointAllowed(endpoint.baseUrl);
+    const definitions= saved.document.format==="ui"?await fetchObjectDefinitions(endpoint):undefined;
+    const workflow={id:saved.id,name:saved.name,apiJson:compileComfyRunDocument(saved.document,definitions)};
+    const inputs=extractWorkflowInputs(workflow.apiJson);
+    if(inputs.images.some(slot=>!slot.current)&&!artworkId&&!imageUrl)return reply({error:"请补充工作流输入图片",accepted:false},{status:400});
     if(body?.mediaType==="video"||knownComfyVideoOutput(workflow.apiJson as ApiWorkflow)){
       const result=await submitByocComfyVideo(email,{...body,source:body?.source|| (request.canvas?"canvas":"workflow"),idempotencyKey:body?.idempotencyKey||request.operationId||crypto.randomUUID()});
       return reply({ok:true,...result,images:[],videos:[]},{status:202});
     }
-    if(!artworkId&&!imageUrl)return reply({error:"请选择工作流输入图片",accepted:false},{status:400});
+
     const source = artworkId
       ? (await listArtworksByIds(email, [artworkId]))[0] ?? null
       : null;
@@ -63,8 +69,7 @@ export async function executeComfyRun(email:string,body:ComfyRunInput|null,reque
     const context=currentCreationContext();if(context&&creationRecord)context.creationId=creationRecord;
 
     // 缺件预检(运行前必检,导入时的预检可能已过期)
-    const available = await fetchObjectInfo(endpoint);
-    const inputs = extractWorkflowInputs(workflow.apiJson as ApiWorkflow);
+    const available = definitions?Object.keys(definitions):await fetchObjectInfo(endpoint);
     const missing = missingNodes(inputs.requiredNodes, available);
     if (missing.length) {
       await finishCreation(creationRecord,email,"failed",{summary:"工作流所需节点缺失，未排队执行"});
@@ -102,7 +107,7 @@ export async function executeComfyRun(email:string,body:ComfyRunInput|null,reque
     const seedAll = typeof body?.seed === "number" ? Math.floor(body.seed) : null;
     for (const seed of inputs.seeds) {
       seeds[seed.nodeId] =
-        body?.seeds?.[seed.nodeId] ?? seedAll ?? Math.floor(Math.random() * 1e15);
+        body?.seeds?.[seed.nodeId] ?? seedAll ?? (workflowId.startsWith("canvas-comfy:")?seed.current:Math.floor(Math.random() * 1e15));
     }
 
     // 尺寸覆盖:逐节点 numerics 优先,agent 按字段名的 numericDefaults 兜底
@@ -160,7 +165,8 @@ export async function executeComfyRun(email:string,body:ComfyRunInput|null,reque
           source: sourceImage || null,
           parentId: source?.id || null,
           parentIds: [],
-          origin: source ? "canvas" : "comfy-agent",
+          origin: request.canvas ? "canvas" : source ? "canvas" : "comfy-agent",
+          ...(saved.projectKey?.startsWith("tree:")?{groupId:saved.projectKey.slice(5)}:{}),
           width: 0,
           height: 0,
         }], `comfy-${Date.now()}`);
@@ -189,7 +195,8 @@ export async function executeComfyRun(email:string,body:ComfyRunInput|null,reque
             source: sourceImage || null,
             parentId: source?.id || null,
             parentIds: [],
-            origin: source ? "canvas" : "comfy-agent",
+            origin: request.canvas ? "canvas" : source ? "canvas" : "comfy-agent",
+          ...(saved.projectKey?.startsWith("tree:")?{groupId:saved.projectKey.slice(5)}:{}),
             width: 0,
             height: 0,
             videoUrl: url,
@@ -208,7 +215,7 @@ export async function executeComfyRun(email:string,body:ComfyRunInput|null,reque
     return reply({ ok: true, images, videos, videoArtworkId, promptId,creationId:creationRecord });
   } catch (error) {
     await finishCreation(creationRecord,email!,'needs_review',{summary:'工作流执行中断，按原任务核查，不重复提交'});
-    if(error instanceof ModelConfigError)return reply({error:error.message,code:error.code},{status:error.status});
+    if(error instanceof ModelConfigError)return reply({error:error.message,code:error.code,...(!creationRecord?{accepted:false}:{})},{status:error.status});
     return reply(
       { error: safeError(error, "工作流执行失败") },
       { status: 502 }

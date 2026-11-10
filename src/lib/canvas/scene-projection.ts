@@ -1,3 +1,4 @@
+import type {CanvasComfyNode,ComfyNodeActions} from "./comfy-node-schema";
 import type {CanvasTimelineNode} from "./timeline-node-schema";
 import type {CanvasAudioNode} from "./audio-node-schema";
 import type {CanvasSceneNode} from "./scene-node-schema";
@@ -157,6 +158,7 @@ export function lineageChain(
 
 import type {CanvasDirectorNode} from "./director-node-schema";
 export type CanvasSceneInput={
+  comfyNodes?:CanvasComfyNode[];comfyActions?:ComfyNodeActions;comfySaving?:boolean;
   nodes:Node[];edges:Edge[];active:{members:Artwork[]}|null;activeKey:string|null;
   generationTasks:Omit<CanvasGenerationTask,"isVisible">[];taskPositions:Record<string,CanvasPoint>;pendNodes:CanvasPendingNode[];
   textBusyIds?:ReadonlySet<string>;textNodes:CanvasTextNode[];videoNodes:CanvasVideoNode[];directorNodes?:CanvasDirectorNode[];characterNodes?:CanvasCharacterNode[];sceneNodes?:CanvasSceneNode[];audioNodes?:CanvasAudioNode[];timelineNodes?:CanvasTimelineNode[];videoTasks:PublicVideoTaskView[];works:Artwork[]|null;
@@ -409,6 +411,10 @@ export function projectCanvasScene(input:CanvasSceneInput):{displayNodes:Node[];
         displayNodes[index] = { ...node, position };
         occupied.push({ ...position, ...size });
       }
+    }
+    if(input.comfyActions)for(const node of input.comfyNodes||[]){if(node.projectKey!==activeKey)continue;
+      displayNodes.push({id:node.id,type:"comfy",position:{x:node.x,y:node.y},style:{width:node.width,height:node.height},dragHandle:".comfy-workflow-handle",connectable:false,
+        data:{node,actions:input.comfyActions,saving:input.comfySaving,readOnly}});
     }
     // 防御:节点/边按 id 去重,并丢弃指向不存在节点的悬空边
     for (let index=0;index<displayNodes.length;index++) {

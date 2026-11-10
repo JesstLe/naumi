@@ -19,9 +19,12 @@ import {useCanvasTextEditing} from "./use-canvas-text-editing";
 import {useCanvasProjectNavigation} from "./use-canvas-project-navigation";
 import {canvasHistoryFailureMessage} from '@/lib/canvas/history-scope';
 import {canvasDeletableIds,applyCanvasLocalHistory,type CanvasLocalHistoryAction} from '@/lib/canvas/node-commands';
+import {useComfyNodes} from "./comfy/use-comfy-nodes";
+import {editComfyField,projectComfyGraph,type ComfyDocument} from "@/lib/comfyui/document";
+import type {ComfyNodeActions} from "@/lib/canvas/comfy-node-schema";
 import {useCanvasWorkflowDocument} from "./use-canvas-workflow-document";
 import {canvasNativeDocuments} from "@/lib/canvas/native-document-lifecycle";
-import {canvasHistoryInsertionView} from "@/lib/canvas/history-model";
+import {canvasHistoryScope,canvasHistoryInsertionView} from "@/lib/canvas/history-model";
 import {useCanvasTemplateImports} from "./use-canvas-template-imports";
 import {createCanvasTimelineActions} from "@/lib/canvas/timeline-actions";
 import {useTimelineNodes} from "./timeline/use-timeline-nodes";
@@ -402,7 +405,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
   const frameChoice=useCanvasFrameChoice(imageDraftScope(user?.email,targetEmail,activeKey,currentWorkspace()));
   const canvasSelection=useCanvasSelection(canvasArtworkDocument.scope,()=>({
-    catalogue:()=>({project:activeKey,artworks:active?.members||[],text:textNodesRef.current,video:videoNodesStore.nodes,director:directorNodesStore.nodes,character:characterNodesStore.nodes,scene:sceneNodesStore.nodes,audio:audioNodesStore.nodes,timeline:timelineNodesStore.nodes}),
+    catalogue:()=>({project:activeKey,artworks:active?.members||[],text:textNodesRef.current,video:videoNodesStore.nodes,director:directorNodesStore.nodes,character:characterNodesStore.nodes,scene:sceneNodesStore.nodes,audio:audioNodesStore.nodes,timeline:timelineNodesStore.nodes,comfy:comfyNodesStore.nodes}),
     tool:()=>canvasTool,taskFailed:id=>!!generationPresentation.getSnapshot().tasks.find(task=>task.id===id)?.failure,nodes:()=>rfNodes,
     nodesSelection:select=>setRfNodes(current=>current.map(node=>{const selected=select(node.id,!!node.selected);return !!node.selected===selected?node:{...node,selected};})),
     edgesSelection:select=>setRfEdges(current=>current.map(edge=>{const selected=select(edge.id,!!edge.selected);return !!edge.selected===selected?edge:{...edge,selected};})),
@@ -548,6 +551,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const [videoMedia,setVideoMedia]=useState<{id:string;projectKey:string;initial:VideoPlayerAction}|null>(null);
   const videoWorkActive=useRef(false);
   const videoNodesStore=useVideoNodes({email:targetEmail||user?.email,readOnly,scope:canvasArtworkDocument.scope,pollIntervalMs:()=>videoWorkActive.current?6000:30000});
+  const comfyNodesStore=useComfyNodes({email:targetEmail||user?.email,readOnly,scope:canvasArtworkDocument.scope});
+  const [comfyRunId,setComfyRunId]=useState<string|null>(null);
+  useEffect(()=>{if(comfyNodesStore.error)flashTip(comfyNodesStore.error);},[comfyNodesStore.error]);
   const directorNodesStore=useDirectorNodes({email:targetEmail||user?.email,readOnly,scope:canvasArtworkDocument.scope});
   useEffect(()=>{if(directorNodesStore.error)flashTip(directorNodesStore.error);},[directorNodesStore.error]);
   const [directorActionsOwner]=useState(createCanvasDirectorActions);
@@ -660,7 +666,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     try{await templateImports.apply(templateId);}
     catch(error){if(scope.viewCurrent())flashTip(error instanceof Error?error.message:t("canvas.genFail"));}
   }
-  const nativeDocuments=canvasNativeDocuments({videoNodes:videoNodesStore,directorNodes:directorNodesStore,characterNodes:characterNodesStore,sceneNodes:sceneNodesStore,audioNodes:audioNodesStore,timelineNodes:timelineNodesStore});
+  const nativeDocuments=canvasNativeDocuments({videoNodes:videoNodesStore,directorNodes:directorNodesStore,characterNodes:characterNodesStore,sceneNodes:sceneNodesStore,audioNodes:audioNodesStore,timelineNodes:timelineNodesStore,comfyNodes:comfyNodesStore});
   const canvasHistory = useCanvasHistory({
     account: canvasAccountRef.current, project: activeKey, readOnly,
     artworkDocument:canvasArtworkDocument.history, works: setWorks, textDocument: {...canvasTextDocument.history,transaction:async(scope,work)=>{
@@ -670,7 +676,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     }}, settings: applyHistorySettings, selectedText: setSelectedTextId,
     native:nativeDocuments,flush:nativeDocuments.flush,
     validateOperations:operations=>{if(operations.some(op=>["text-patch","text-delete","text-restore"].includes(op.type)&&textTasks.state("id" in op?String(op.id):"node" in op?String(op.node.id):"").busy))throw new Error("文字正在生成或保存，请完成后再撤销");},
-    video: videoNodesStore.getNode,director:directorNodesStore.getNode,character:characterNodesStore.getNode,scene:sceneNodesStore.getNode,audio:audioNodesStore.getNode,timeline:timelineNodesStore.getNode,artwork:id=>canvasArtworkDocument.getSnapshot().nodes?.find(node=>node.id===id), refresh:nativeDocuments.refresh,
+    video: videoNodesStore.getNode,director:directorNodesStore.getNode,character:characterNodesStore.getNode,scene:sceneNodesStore.getNode,audio:audioNodesStore.getNode,timeline:timelineNodesStore.getNode,comfy:comfyNodesStore.getNode,artwork:id=>canvasArtworkDocument.getSnapshot().nodes?.find(node=>node.id===id), refresh:nativeDocuments.refresh,
     pending: applyPendingLinkHistory, applied: onHistoryApplied, warning: flashTip,
   });
   const {undoStack,redoStack,pushUndo,historyBusyRef,historySaving,setHistorySaving,historyCurrent} = canvasHistory;
@@ -808,12 +814,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, user]);
 
-  const projects=useMemo(()=>canvasProjects({works,names:projectCatalog.names,t,readOnly,pinnedNode,textNodes,videoNodes:videoNodesStore.nodes,directorNodes:directorNodesStore.nodes,characterNodes:characterNodesStore.nodes,sceneNodes:sceneNodesStore.nodes,audioNodes:audioNodesStore.nodes,timelineNodes:timelineNodesStore.nodes}),[works,projectCatalog.names,t,readOnly,pinnedNode,textNodes,videoNodesStore.nodes,directorNodesStore.nodes,characterNodesStore.nodes,sceneNodesStore.nodes,audioNodesStore.nodes,timelineNodesStore.nodes]);
+  const projects=useMemo(()=>canvasProjects({works,names:projectCatalog.names,t,readOnly,pinnedNode,textNodes,videoNodes:videoNodesStore.nodes,directorNodes:directorNodesStore.nodes,characterNodes:characterNodesStore.nodes,sceneNodes:sceneNodesStore.nodes,audioNodes:audioNodesStore.nodes,timelineNodes:timelineNodesStore.nodes,comfyNodes:comfyNodesStore.nodes}),[works,projectCatalog.names,t,readOnly,pinnedNode,textNodes,videoNodesStore.nodes,directorNodesStore.nodes,characterNodesStore.nodes,sceneNodesStore.nodes,audioNodesStore.nodes,timelineNodesStore.nodes,comfyNodesStore.nodes]);
   const projectMonths=useMemo(()=>canvasProjectMonths(projects,typeof navigator!=="undefined"&&navigator.language?navigator.language:"zh-CN"),[projects]);
 
   useEffect(()=>{
-    projectNavigation.reconcile(projects,works!==null&&textNodesReady&&videoNodesStore.ready&&directorNodesStore.ready&&characterNodesStore.ready&&sceneNodesStore.ready&&audioNodesStore.ready&&timelineNodesStore.ready&&projectView.requestedProjectReady,requestedProject);
-  },[projectNavigation,projects,works,textNodesReady,videoNodesStore.ready,directorNodesStore.ready,characterNodesStore.ready,sceneNodesStore.ready,audioNodesStore.ready,timelineNodesStore.ready,requestedProject,projectView.requestedProjectReady,pendingNode]);
+    projectNavigation.reconcile(projects,works!==null&&textNodesReady&&videoNodesStore.ready&&directorNodesStore.ready&&characterNodesStore.ready&&sceneNodesStore.ready&&audioNodesStore.ready&&timelineNodesStore.ready&&comfyNodesStore.ready&&projectView.requestedProjectReady,requestedProject);
+  },[projectNavigation,projects,works,textNodesReady,videoNodesStore.ready,directorNodesStore.ready,characterNodesStore.ready,sceneNodesStore.ready,audioNodesStore.ready,timelineNodesStore.ready,comfyNodesStore.ready,requestedProject,projectView.requestedProjectReady,pendingNode]);
 
   const active = useMemo(
     () => projects.find((p) => p.key === activeKey) ?? null,
@@ -1054,8 +1060,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     void (async()=>{for(let offset=0;offset<ids.length;offset+=100){if(account!==canvasAccountRef.current||epoch!==canvasContextEpochRef.current)return;await mergeWorks(ids.slice(offset,offset+100));}})().catch(()=>{});
   },[user?.email,targetEmail,activeKey,readOnly,works,videoNodesStore.nodes,directorNodesStore.nodes,characterNodesStore.nodes,sceneNodesStore.nodes,audioNodesStore.nodes,timelineNodesStore.nodes,visualReferenceIds]);
   const selectionCatalogue=useMemo(()=>({project:activeKey,artworks:active?.members||[],text:textNodes,pending:pendNodes,
-    video:videoNodesStore.nodes,director:directorNodesStore.nodes,character:characterNodesStore.nodes,scene:sceneNodesStore.nodes,audio:audioNodesStore.nodes,timeline:timelineNodesStore.nodes}),
-    [activeKey,active?.members,textNodes,pendNodes,videoNodesStore.nodes,directorNodesStore.nodes,characterNodesStore.nodes,sceneNodesStore.nodes,audioNodesStore.nodes,timelineNodesStore.nodes]);
+    video:videoNodesStore.nodes,director:directorNodesStore.nodes,character:characterNodesStore.nodes,scene:sceneNodesStore.nodes,audio:audioNodesStore.nodes,timeline:timelineNodesStore.nodes,comfy:comfyNodesStore.nodes}),
+    [activeKey,active?.members,textNodes,pendNodes,videoNodesStore.nodes,directorNodesStore.nodes,characterNodesStore.nodes,sceneNodesStore.nodes,audioNodesStore.nodes,timelineNodesStore.nodes,comfyNodesStore.nodes]);
   const selectionTargets=useMemo(()=>canvasSelectionTargets(selectionCatalogue,{selectedId,selectedTextId,selectedPendId}),[selectionCatalogue,selectedId,selectedTextId,selectedPendId]);
   const {artwork:selected,text:selectedText,pending:selectedPend,video:selectedVideo,director:selectedDirector,character:selectedCharacter,scene:selectedScene,audio:selectedAudio,timeline:selectedTimeline}=selectionTargets;
   const selectedProperties=canvasSelectionProperties(selectionTargets);
@@ -1214,11 +1220,37 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     autosave:{schedule:scheduleTextAutosave,flush:textAutosave.flush}}),textNodesReady,textNodes);
   const expandedTextIds=textEditing.expanded;
 
-  const {displayNodes,displayEdges}=useMemo(()=>projectCanvasScene({nodes,edges,active,activeKey,generationTasks:generationTasks.filter(task=>canvasArtworkDocument.scope.viewCurrent()&&(task.isVisible?.()??true)),taskPositions:generationPresentation.positions,
+  async function patchComfyDocument(id:string,update:(document:ComfyDocument)=>ComfyDocument){
+    const scope=canvasHistory.scope;
+    if(readOnly||!user||isNodeLocked(id))throw new Error("工作流为只读");
+    return canvasHistory.submit(scope,()=>{const node=comfyNodesStore.getNode(id);if(!node||node.deletedAt)throw new Error("工作流不存在");return {kind:"comfy-patch",id,from:{workflow:node.workflow},to:{workflow:update(node.workflow)}};});
+  }
+  const comfyActionsRef=useRef<ComfyNodeActions>(null!);
+  comfyActionsRef.current={
+    field:(id,nodeId,key,value)=>patchComfyDocument(id,doc=>editComfyField(doc,nodeId,key,value)),
+    move:(id,nodeId,x,y)=>patchComfyDocument(id,doc=>({...doc,positions:{...doc.positions,[nodeId]:{x,y}}})),
+    collapse:id=>patchComfyDocument(id,doc=>({...doc,collapsed:!doc.collapsed})),
+    run:id=>{setComfyRunId(id);setComfyOpen(true);},
+  };
+  const comfyActions=useMemo<ComfyNodeActions>(()=>({field:(...args)=>comfyActionsRef.current.field(...args),move:(...args)=>comfyActionsRef.current.move(...args),collapse:(...args)=>comfyActionsRef.current.collapse(...args),run:(...args)=>comfyActionsRef.current.run(...args)}),[]);
+  const comfyImportsRef=useRef(new Map<string,string>());
+  async function addComfyToCanvas(name:string,workflow:ComfyDocument){
+    const scope=canvasArtworkDocument.scope;scope.assertView();if(readOnly||!user)throw new Error("当前画布为只读");
+    const destination=(!browsing&&!creatingNew?activeKey:null),fingerprint=JSON.stringify([scope.account,scope.workspace,destination,name,workflow]);
+    const id=comfyImportsRef.current.get(fingerprint)||`comfy-${browserRandomUUID()}`;comfyImportsRef.current.set(fingerprint,id);
+    const projectKey=destination||`tree:${id}`,graph=projectComfyGraph(workflow);
+    const v=viewportRef.current,point={x:(canvasSize.width/2-v.x)/v.zoom,y:(canvasSize.height/2-v.y)/v.zoom};
+    const node=await comfyNodesStore.save(id,{projectKey,title:name,workflow,x:Math.round(point.x),y:Math.round(point.y),width:graph.width,height:graph.height+52});
+    comfyImportsRef.current.delete(fingerprint);if(!scope.viewCurrent())return;
+    canvasHistory.record({...scope,project:projectKey,key:canvasHistoryScope(scope.account,scope.workspace,projectKey)},{kind:"comfy-add",records:[node]});
+    projectNavigation.open(projectKey);canvasSelection.selectInProject(projectKey,{selectedId:node.id,selectedTextId:null,selectedPendId:null,multiSel:[]});
+    viewControls.focusNode(node.id,projectKey);
+  }
+  const {displayNodes,displayEdges}=useMemo(()=>projectCanvasScene({nodes,edges,comfyNodes:comfyNodesStore.nodes,comfyActions,comfySaving:comfyNodesStore.saving,active,activeKey,generationTasks:generationTasks.filter(task=>canvasArtworkDocument.scope.viewCurrent()&&(task.isVisible?.()??true)),taskPositions:generationPresentation.positions,
     textBusyIds:new Set(textNodes.filter(node=>textTasks.state(node.id).busy).map(node=>node.id)),pendNodes,textNodes,videoNodes:videoNodesStore.nodes,directorNodes:directorNodesStore.nodes,characterNodes:characterNodesStore.nodes,sceneNodes:sceneNodesStore.nodes,audioNodes:audioNodesStore.nodes,timelineNodes:timelineNodesStore.nodes,videoTasks:videoTaskStore.tasks,works,selectedId,selectedPendId,selectedTextId,multiSel,expandedTextIds,
     locale,lightCanvas,nodeSettings,nodeSettingsReady,readOnly,cutoutAvailable:!!cutoutCatalog&&!cutoutCatalogError&&cutoutCatalog.available!==false,
     operations:generationPresentation.operations,workflowManifests,actions:sceneActions}),
-    [textTasks.revision,nodes,edges,active,activeKey,generationTasks,generationPresentation.positions,generationPresentation.operations,pendNodes,textNodes,videoNodesStore.nodes,directorNodesStore.nodes,characterNodesStore.nodes,sceneNodesStore.nodes,audioNodesStore.nodes,timelineNodesStore.nodes,videoTaskStore.tasks,works,selectedId,selectedPendId,selectedTextId,multiSel,expandedTextIds,
+    [comfyNodesStore.nodes,comfyNodesStore.saving,comfyActions,textTasks.revision,nodes,edges,active,activeKey,generationTasks,generationPresentation.positions,generationPresentation.operations,pendNodes,textNodes,videoNodesStore.nodes,directorNodesStore.nodes,characterNodesStore.nodes,sceneNodesStore.nodes,audioNodesStore.nodes,timelineNodesStore.nodes,videoTaskStore.tasks,works,selectedId,selectedPendId,selectedTextId,multiSel,expandedTextIds,
       locale,lightCanvas,nodeSettings,nodeSettingsReady,readOnly,cutoutCatalog,cutoutCatalogError,workflowManifests,sceneActions,canvasArtworkDocument.scope]);
   const {rfNodes,setRfNodes,onNodesChange,rfEdges,setRfEdges,onEdgesChange,holdPositions}=useCanvasScene(displayNodes,displayEdges,canvasArtworkDocument.scope);
   useEffect(()=>{projectCanvasSelection();},[rfNodes,projectCanvasSelection]);
@@ -1240,6 +1272,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const name = nodeRenameValue.trim();
     setRenamingNodeId(null);
     if (!id || !user || readOnly || !name || isNodeLocked(id)) return;
+    const comfy=comfyNodesStore.getNode(id);if(comfy){if(comfy.title!==name)try{await canvasHistory.submit(canvasHistory.scope,()=>({kind:"comfy-patch",id,from:{title:comfy.title},to:{title:name}}));}catch(error){flashTip(error instanceof Error?error.message:t("canvas.genFail"));}return;}
     const character=characterNodesStore.getNode(id);if(character){if(character.title!==name)try{await patchCharacterNode(id,{title:name,character:{...character.character,name}});}catch(error){flashTip(error instanceof Error?error.message:t("canvas.genFail"));}return;}
     const audio=audioNodesStore.getNode(id);if(audio){if(audio.title!==name)try{await patchAudioNode(id,{title:name});}catch(error){flashTip(error instanceof Error?error.message:t("canvas.genFail"));}return;}
     const timeline=timelineNodesStore.getNode(id);if(timeline){if(timeline.title!==name)try{await patchTimelineNode(id,{title:name});}catch(error){flashTip(error instanceof Error?error.message:t("canvas.genFail"));}return;}
@@ -1507,9 +1540,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
   const workflowRunsRef=useRef<ReturnType<typeof createCanvasWorkflowRuns>|null>(null);
   if(!workflowRunsRef.current)workflowRunsRef.current=createCanvasWorkflowRuns();
-  async function runComfyWorkflow(source:Artwork,payload:ComfyRunPayload):Promise<ComfyRunResult>{
+  async function runComfyWorkflow(source:Artwork|null,payload:ComfyRunPayload):Promise<ComfyRunResult>{
     if(readOnly||!user)throw new Error("只读画布不能执行工作流");
-    return workflowRunsRef.current!.run(source,payload,{...canvasGenerationRunContext(),storage:resilientLocalStorage,submitted:()=>videoTaskStore.refresh()});
+    return workflowRunsRef.current!.run(source,payload,{...canvasGenerationRunContext(),storage:resilientLocalStorage,submitted:()=>videoTaskStore.refresh()},payload.workflowId.startsWith("canvas-comfy:")?comfyNodesStore.getNode(payload.workflowId.slice("canvas-comfy:".length)):undefined);
   }
 
   async function submitAnnotations(formData: FormData) {
@@ -1723,7 +1756,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       if(!await canvasNodeOperations.remove(ids)||!scope.viewCurrent())return;
       canvasSelection.patch({selectedId:null,selectedTextId:null,selectedPendId:null,multiSel:multiSel.filter(id=>!ids.includes(id))});
       const members=active?.members||[],texts=canvasTextDocument.getSnapshot().nodes;
-      if(activeKey&&!members.some(node=>!ids.includes(node.id))&&!texts.some(node=>node.projectKey===activeKey)&&!videoNodesStore.nodes.some(node=>node.projectKey===activeKey&&!ids.includes(node.id))&&!directorNodesStore.nodes.some(node=>node.projectKey===activeKey&&!ids.includes(node.id))&&!characterNodesStore.nodes.some(node=>node.projectKey===activeKey&&!ids.includes(node.id))&&!sceneNodesStore.nodes.some(node=>node.projectKey===activeKey&&!ids.includes(node.id))&&!audioNodesStore.nodes.some(node=>node.projectKey===activeKey&&!ids.includes(node.id))&&!timelineNodesStore.nodes.some(node=>node.projectKey===activeKey&&!ids.includes(node.id))){
+      if(activeKey&&!members.some(node=>!ids.includes(node.id))&&!texts.some(node=>node.projectKey===activeKey)&&!videoNodesStore.nodes.some(node=>node.projectKey===activeKey&&!ids.includes(node.id))&&!directorNodesStore.nodes.some(node=>node.projectKey===activeKey&&!ids.includes(node.id))&&!characterNodesStore.nodes.some(node=>node.projectKey===activeKey&&!ids.includes(node.id))&&!sceneNodesStore.nodes.some(node=>node.projectKey===activeKey&&!ids.includes(node.id))&&!audioNodesStore.nodes.some(node=>node.projectKey===activeKey&&!ids.includes(node.id))&&!timelineNodesStore.nodes.some(node=>node.projectKey===activeKey&&!ids.includes(node.id))&&!comfyNodesStore.nodes.some(node=>node.projectKey===activeKey&&!ids.includes(node.id))){
         projectNavigation.empty();
       }
     }catch(error){if(scope.viewCurrent())flashTip(canvasHistoryFailureMessage(error,t("canvas.genFail")));}
@@ -1819,7 +1852,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   async function deleteSelected() {
     if(selectedPendId){batchDelete([selectedPendId]);return;}
     if(selectedId?.startsWith("task-")){batchDelete([selectedId]);return;}
-    if(selectedId&&(videoNodesStore.getNode(selectedId)||directorNodesStore.getNode(selectedId)||characterNodesStore.getNode(selectedId)||sceneNodesStore.getNode(selectedId)||audioNodesStore.getNode(selectedId)||timelineNodesStore.getNode(selectedId))){batchDelete([selectedId]);return;}
+    if(selectedId&&(comfyNodesStore.getNode(selectedId)||videoNodesStore.getNode(selectedId)||directorNodesStore.getNode(selectedId)||characterNodesStore.getNode(selectedId)||sceneNodesStore.getNode(selectedId)||audioNodesStore.getNode(selectedId)||timelineNodesStore.getNode(selectedId))){batchDelete([selectedId]);return;}
     if (selected) await deleteTree(selected.id);
   }
 
@@ -2351,8 +2384,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     owner:user?.email,account:canvasAccountRef.current,workspace:canvasArtworkDocument.scope.workspace,current:canvasArtworkDocument.scope.documentCurrent,
     imageLabel:t("canvas.imageNode"),selectionLabel:L("画布节点","Canvas nodes"),
     state:()=>({ready,readOnly,browsing,loading,blocked:canvasShortcutLayerOpen,selected:selected||null,selectedId,selectedTextId,multiSel}),
-    contains:id=>!!videoNodesStore.getNode(id)||!!directorNodesStore.getNode(id)||!!characterNodesStore.getNode(id)||!!sceneNodesStore.getNode(id)||!!audioNodesStore.getNode(id)||!!timelineNodesStore.getNode(id)||textNodesRef.current.some(node=>node.id===id)||(works||[]).some(node=>node.id===id),
-    isVideo:id=>!!videoNodesStore.getNode(id)||!!directorNodesStore.getNode(id)||!!characterNodesStore.getNode(id)||!!sceneNodesStore.getNode(id)||!!audioNodesStore.getNode(id),hasCanvas:()=>!!canvasAreaRef.current,
+    contains:id=>!!comfyNodesStore.getNode(id)||!!videoNodesStore.getNode(id)||!!directorNodesStore.getNode(id)||!!characterNodesStore.getNode(id)||!!sceneNodesStore.getNode(id)||!!audioNodesStore.getNode(id)||!!timelineNodesStore.getNode(id)||textNodesRef.current.some(node=>node.id===id)||(works||[]).some(node=>node.id===id),
+    isVideo:id=>!!comfyNodesStore.getNode(id)||!!videoNodesStore.getNode(id)||!!directorNodesStore.getNode(id)||!!characterNodesStore.getNode(id)||!!sceneNodesStore.getNode(id)||!!audioNodesStore.getNode(id),hasCanvas:()=>!!canvasAreaRef.current,
     center:()=>{const box=canvasAreaRef.current?.getBoundingClientRect();return rfRef.current?.screenToFlowPosition({x:(box?.left??0)+(box?.width??0)/2,y:(box?.top??0)+(box?.height??0)/2},{snapToGrid:false})??{x:0,y:0};},
     workflow:(html,point)=>workflowPaste.paste(html,point),
     images:(files,point)=>{uploadCtxRef.current={parentId:activeRootId(),x:point.x-NODE_W/2,y:point.y-NODE_H/2};const data=new DataTransfer();for(const file of files)data.items.add(file);uploadRoot(data.files);},
@@ -2377,6 +2410,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       rememberGenerationDrag(id,point,finished);if(!finished)return;
     },
     commit:(moves,scope)=>canvasHistory.submit(scope,()=>{const action=compileCanvasMove(moves,id=>{
+      const comfy=comfyNodesStore.getNode(id);if(comfy)return {x:comfy.x,y:comfy.y};
       const audio=audioNodesStore.getNode(id);if(audio)return {x:audio.x,y:audio.y};
       const timeline=timelineNodesStore.getNode(id);if(timeline)return {x:timeline.x,y:timeline.y};
       const scene=sceneNodesStore.getNode(id);if(scene)return {x:scene.x,y:scene.y};
@@ -2516,7 +2550,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const collaborationNodeIds = new Set([
     ...(active?.members.map(node => node.id) || []),
     ...textNodes.filter(node => node.projectKey === active?.key).map(node => node.id),
-    ...[videoNodesStore, directorNodesStore, characterNodesStore, sceneNodesStore, audioNodesStore, timelineNodesStore].flatMap(store => store.nodes.filter(node => node.projectKey === active?.key).map(node => node.id)),
+    ...[videoNodesStore, directorNodesStore, characterNodesStore, sceneNodesStore, audioNodesStore, timelineNodesStore, comfyNodesStore].flatMap(store => store.nodes.filter(node => node.projectKey === active?.key).map(node => node.id)),
   ]);
   const collaborationSelected = [...new Set(multiSel.length ? multiSel : selectedBatchIds.length ? selectedBatchIds : [selectedId, selectedTextId, selectedPendId].filter((id): id is string => !!id))];
   const collaborationSelectionPending = collaborationSelected.some(id => !collaborationNodeIds.has(id));
@@ -2959,7 +2993,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                     open={addMenuOpen} onOpenChange={open => { setMoreToolsOpen(false); setAddMenuOpen(open); }}
                     triggerIcon={Plus} iconOnly triggerTestId="canvas-add-node-button" menuTestId="canvas-create-menu"
                     triggerClassName="flex h-7 w-7 flex-none items-center justify-center rounded-md bg-primary text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 sm:h-9 sm:w-9"
-                    items={canvasNodeMenuItems({ L, readOnly, videoDisabled: !canFeature("video") || videoNodeCreateDisabled, onCreate: kind => createCanvasNode(kind) })}
+                    items={canvasNodeMenuItems({ L, readOnly, onWorkflow:canFeature("comfyui")?()=>{setComfyRunId(null);setComfyOpen(true);}:undefined, videoDisabled: !canFeature("video") || videoNodeCreateDisabled, onCreate: kind => createCanvasNode(kind) })}
                   />
                   <button type="button" data-tool="text" aria-label={t("canvas.toolbar.addText")} title={t("canvas.toolbar.addText")}
                     onClick={() => { const c = centerScreen(); addTextNodeAtScreen(c.x, c.y); }}
@@ -3191,7 +3225,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           {/* 拉线新建与添加节点共用清单、权限和创建入口。 */}
           {spawnMenu && (
             <ContextMenuSurface x={spawnMenu.cx} y={spawnMenu.cy} light={lightCanvas} onClose={() => setSpawnMenu(null)}>
-              {canvasNodeMenuItems({ L, readOnly, videoDisabled: !canFeature("video") || videoNodeCreateDisabled, onCreate: kind => void spawnNode(kind) }).map(item => (
+              {canvasNodeMenuItems({ L, readOnly, onWorkflow:canFeature("comfyui")?()=>{setComfyRunId(null);setComfyOpen(true);}:undefined, videoDisabled: !canFeature("video") || videoNodeCreateDisabled, onCreate: kind => void spawnNode(kind) }).map(item => (
                 <Item key={item.id} action={item.id} label={item.label} icon={item.icon} disabled={item.disabled} onClick={item.onSelect} />
               ))}
             </ContextMenuSurface>
@@ -3478,7 +3512,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                         <ContextMenuSubmenu
                           label={t("canvas.addNode")}
                           disabled={readOnly}
-                          items={canvasNodeMenuItems({ L, readOnly, videoDisabled: !canFeature("video") || videoNodeCreateDisabled, onCreate: kind => createCanvasNode(kind, ctxMenu) })}
+                          items={canvasNodeMenuItems({ L, readOnly, onWorkflow:canFeature("comfyui")?()=>{setComfyRunId(null);setComfyOpen(true);}:undefined, videoDisabled: !canFeature("video") || videoNodeCreateDisabled, onCreate: kind => createCanvasNode(kind, ctxMenu) })}
                         />
                         <Item
                           label={t("canvas.uploadImage")}
@@ -3727,7 +3761,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   ] : []),
                   ...(selected&&!selected.videoUrl ? [{id:"replace",icon:ImagePlus,label:L("替换图片","Replace image"),disabled:localEditBusy||!nodeSettingsReady||isNodeLocked(selected.id),onSelect:()=>requestReplace(selected)}] : []),
                   { id: "workflow", icon: Workflow, label: t("canvas.toolbar.workflow"), hint: t("canvas.toolbar.workflowHint"),
-                    disabled: !selected || readOnly, onSelect: () => setComfyOpen(true) },
+                    disabled: readOnly, onSelect: () => {setComfyRunId(null);setComfyOpen(true);} },
                   { id: "video", icon: Video, label: videoNodeCreationReady?t("canvas.toolbar.video"):videoNodeCreateLabel, hint: t("canvas.toolbar.videoHint"),
                     disabled: readOnly||videoNodeCreateDisabled, onSelect: () => { void openVideoNodeFromSelection(); } },
                   ...(selected ? [
@@ -3894,11 +3928,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           {canFeature("comfyui") && (comfyOpen || comfyMounted) && <CanvasComfyDialog
             key={`${canvasAccountRef.current}:${currentWorkspace()}:${activeKey}:${canvasContextEpochRef.current}:${selected?.id||""}`}
             open={comfyOpen}
-            onClose={() => setComfyOpen(false)}
+            onClose={() => {setComfyOpen(false);setComfyRunId(null);}}
+            canvasWorkflow={comfyRunId?comfyNodesStore.getNode(comfyRunId):null}
+            onAdd={addComfyToCanvas}
             source={selected}
-            onRun={(payload) => {
-              if (!selected) return Promise.reject(new Error("请先选择一张图"));
-              return runComfyWorkflow(selected, payload);
+            inputArtworks={active?.members||[]}
+            onRun={(payload,artworkId) => {
+              return runComfyWorkflow(artworkId?(active?.members.find(art=>art.id===artworkId)||null):null, payload);
             }}
           />}
 
@@ -4221,7 +4257,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
       {videoMedia&&videoMedia.projectKey===activeKey&&<MediaActionsDialog key={`${user?.email}:${videoMedia.projectKey}:${videoMedia.id}`} initial={videoMedia.initial} sourceId={videoMedia.id} projectKey={videoMedia.projectKey} choices={videoInputChoices.filter(choice=>choice.available&&choice.kind!=="text").map(choice=>({id:choice.nodeId,title:choice.title,kind:choice.kind as MediaInputChoice["kind"],url:choice.value}))} light={lightCanvas} readOnly={readOnly||isNodeLocked(videoMedia.id)} jobs={mediaJobStore.jobs} historyError={mediaJobStore.error} canLoadMore={!!mediaJobStore.nextCursor} onLoadMore={mediaJobStore.loadMore} onQuote={mediaJobStore.estimate} onSubmit={mediaJobStore.submit} onCancel={mediaJobStore.cancel} onClose={()=>setVideoMedia(null)}/>}
       <CanvasNativeEditors sessions={nativeEditors.sessions} legacyDraftScope={JSON.stringify([user?.email,targetEmail,activeKey])}
-        nodes={{characterNodes:characterNodesStore.nodes,sceneNodes:sceneNodesStore.nodes,directorNodes:directorNodesStore.nodes,audioNodes:audioNodesStore.nodes,timelineNodes:timelineNodesStore.nodes}}
+        nodes={{characterNodes:characterNodesStore.nodes,sceneNodes:sceneNodesStore.nodes,directorNodes:directorNodesStore.nodes,audioNodes:audioNodesStore.nodes,timelineNodes:timelineNodesStore.nodes,comfyNodes:comfyNodesStore.nodes}}
         commands={{character:characterActions,scene:sceneNodeActions,director:directorActions,audio:audioActions,timeline:timelineActions}}
         inputs={baseVideoInputChoices} resolvedInputs={videoInputChoices} media={mediaJobStore} inspectTimeline={timelineNodesStore.inspect}
         english={locale==='en'} readOnly={readOnly} settingsReady={nodeSettingsReady} locked={isNodeLocked}/>

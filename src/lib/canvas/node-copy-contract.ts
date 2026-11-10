@@ -1,3 +1,4 @@
+import type {CanvasComfyNode} from "./comfy-node-schema";
 import type {CanvasNativeRecords} from "./native-node-records";
 import type {CanvasTimelineNode} from "./timeline-node-schema";
 import type {CanvasAudioNode} from "./audio-node-schema";
@@ -20,4 +21,4 @@ export const nodeCopyRequest=z.strictObject({
 }).refine(input=>!input.singleArtwork||input.ids.length===1,"单图复制需要一个来源")
   .refine(input=>!input.detached||input.ids.length===1,"独立复制仅支持单个图片节点");
 export type CanvasNodeCopyInput=z.infer<typeof nodeCopyRequest>;
-export type CanvasNodeCopyResult={nativeNodes?:CanvasNativeRecords;artworkIds:string[];textNodes:CanvasTextNode[];nodes:CanvasVideoNode[];directorNodes?:CanvasDirectorNode[];characterNodes?:CanvasCharacterNode[];sceneNodes?:CanvasSceneNode[];audioNodes?:CanvasAudioNode[];timelineNodes?:CanvasTimelineNode[];idMap:Record<string,string>;projectKey:string};
+export type CanvasNodeCopyResult={nativeNodes?:CanvasNativeRecords;artworkIds:string[];textNodes:CanvasTextNode[];nodes:CanvasVideoNode[];directorNodes?:CanvasDirectorNode[];characterNodes?:CanvasCharacterNode[];sceneNodes?:CanvasSceneNode[];audioNodes?:CanvasAudioNode[];timelineNodes?:CanvasTimelineNode[];comfyNodes?:CanvasComfyNode[];idMap:Record<string,string>;projectKey:string};

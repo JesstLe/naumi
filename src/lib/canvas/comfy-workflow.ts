@@ -6,7 +6,7 @@ import type {ComfyRunPayload,ComfyRunResult} from "../comfyui/run-contract";
 
 type Storage=Pick<globalThis.Storage,"getItem"|"setItem"|"removeItem">;
 type Services={
-  sourceId:string;payload:ComfyRunPayload;receiptKey:string;storage?:Pick<Storage,"getItem"|"setItem"|"removeItem">;
+  sourceId?:string;payload:ComfyRunPayload;receiptKey:string;storage?:Pick<Storage,"getItem"|"setItem"|"removeItem">;
   attach:(scope:CanvasImageTaskScope,images:CanvasResultImage[])=>Promise<unknown>;
   submitted:(taskId:string)=>Promise<unknown>;
   saving:()=>void;

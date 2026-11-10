@@ -21,7 +21,7 @@ export async function deleteCanvasNodesAtomically(
   characterIds:string[]=[],
   sceneIds:string[]=[],
   audioIds:string[]=[],
-  timelineIds:string[]=[]
+  timelineIds:string[]=[],comfyIds:string[]=[]
 ): Promise<{ artworks: number; textNodes: number;videoNodes:number;directorNodes?:number;characterNodes?:number;sceneNodes?:number;audioNodes?:number;timelineNodes?:number;artworkNodes?:CanvasArtworkReceipt[];artworkIds?:string[];nativeNodes?:CanvasNativeRecords }> {
   await ensureSchema();
   const email = emailRaw.toLowerCase();
@@ -33,12 +33,13 @@ export async function deleteCanvasNodesAtomically(
   const cleanTimelineIds=Array.from(new Set(timelineIds.filter(Boolean)));
   const cleanAudioIds=Array.from(new Set(audioIds.filter(Boolean)));
   const cleanSceneIds=Array.from(new Set(sceneIds.filter(Boolean)));
-  const nativeIds:CanvasNativeIds={videoIds:cleanVideoIds,directorIds:cleanDirectorIds,characterIds:cleanCharacterIds,sceneIds:cleanSceneIds,audioIds:cleanAudioIds,timelineIds:cleanTimelineIds};
+  const cleanComfyIds=Array.from(new Set(comfyIds.filter(Boolean)));
+  const nativeIds:CanvasNativeIds={comfyIds:cleanComfyIds,videoIds:cleanVideoIds,directorIds:cleanDirectorIds,characterIds:cleanCharacterIds,sceneIds:cleanSceneIds,audioIds:cleanAudioIds,timelineIds:cleanTimelineIds};
   await ensureNativeNodeSchemas(nativeIds);
   if([cleanArtworkIds,cleanTextIds,...Object.values(nativeIds)].some(ids=>ids.length>200))throw new Error("单次删除节点过多");
   if(expectedTexts&&(expectedTexts.length!==cleanTextIds.length||new Set(expectedTexts.map(n=>n.id)).size!==cleanTextIds.length||expectedTexts.some(n=>!cleanTextIds.includes(n.id))))throw new Error("文字删除基线无效");
   if(expectedArtworks&&(expectedArtworks.length!==cleanArtworkIds.length||new Set(expectedArtworks.map(n=>n.id)).size!==cleanArtworkIds.length||expectedArtworks.some(n=>!cleanArtworkIds.includes(n.id))))throw new Error("图片删除基线无效");
-  const fingerprint=createHash("sha256").update(JSON.stringify({delete:{artworkIds:[...cleanArtworkIds].sort(),textIds:[...cleanTextIds].sort(),videoIds:[...cleanVideoIds].sort(),...(cleanDirectorIds.length?{directorIds:[...cleanDirectorIds].sort()}:{}),...(cleanCharacterIds.length?{characterIds:[...cleanCharacterIds].sort()}:{}),...(cleanSceneIds.length?{sceneIds:[...cleanSceneIds].sort()}:{}),...(cleanAudioIds.length?{audioIds:[...cleanAudioIds].sort()}:{}),...(cleanTimelineIds.length?{timelineIds:[...cleanTimelineIds].sort()}:{}),...(expectedTexts?{expectedTexts}:{} ),...(expectedArtworks?{expectedArtworks}:{})}})).digest("hex");
+  const fingerprint=createHash("sha256").update(JSON.stringify({delete:{...(cleanComfyIds.length?{comfyIds:[...cleanComfyIds].sort()}:{}),artworkIds:[...cleanArtworkIds].sort(),textIds:[...cleanTextIds].sort(),videoIds:[...cleanVideoIds].sort(),...(cleanDirectorIds.length?{directorIds:[...cleanDirectorIds].sort()}:{}),...(cleanCharacterIds.length?{characterIds:[...cleanCharacterIds].sort()}:{}),...(cleanSceneIds.length?{sceneIds:[...cleanSceneIds].sort()}:{}),...(cleanAudioIds.length?{audioIds:[...cleanAudioIds].sort()}:{}),...(cleanTimelineIds.length?{timelineIds:[...cleanTimelineIds].sort()}:{}),...(expectedTexts?{expectedTexts}:{} ),...(expectedArtworks?{expectedArtworks}:{})}})).digest("hex");
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");

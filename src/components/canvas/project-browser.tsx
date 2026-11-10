@@ -1,5 +1,6 @@
 "use client";
 import {Image as ImageIcon,GalleryVerticalEnd,Rotate3d,Type,Plus,MoreHorizontal,Pencil,Trash2,type LucideIcon} from "lucide-react";
+import {ComfyProjectCover} from "./comfy/comfy-project-cover";
 import {ProjectBrowserSurface,ProjectCover} from "./project-browser-surface";
 import {cn,formatDate} from "@/lib/utils";
 import type {CanvasProject,CanvasWorkflowKey,canvasProjectMonths} from "@/lib/canvas/project-catalog";
@@ -152,7 +153,7 @@ export function CanvasProjectBrowser({visible=true,months,catalog,readOnly,t,onN
                                 title={p.name}
                                 className="relative aspect-[16/10] w-full overflow-hidden rounded-[12px] border border-[#d8dde4] bg-white transition-all group-hover:border-[#9da8b6] group-hover:shadow-[0_8px_24px_rgba(16,24,40,0.10)]"
                               >
-                                {p.cover ? (
+                                {p.comfyNodes?.length ? <ComfyProjectCover document={p.comfyNodes[0].workflow}/> : p.cover ? (
                                   /* eslint-disable-next-line @next/next/no-img-element */
                                   <ProjectCover source={p.cover} title={p.name} />
                                 ) : (

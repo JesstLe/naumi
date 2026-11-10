@@ -10,7 +10,7 @@ type Viewport=Point&{zoom:number};
 type Area=Point&{width:number;height:number};
 type PendingHistory=Extract<CanvasHistoryAction,{kind:'pending-add'}>;
 type TextHistory=Extract<CanvasHistoryAction,{kind:'text-add'}>;
-export type CanvasCreatableNodeKind='image'|'text'|CanvasNativeKind;
+export type CanvasCreatableNodeKind='image'|'text'|Exclude<CanvasNativeKind,'comfy'>;
 
 export type CanvasPendingCreationPorts={
  project:string|null;

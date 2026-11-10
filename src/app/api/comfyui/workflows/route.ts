@@ -1,21 +1,21 @@
 import { NextResponse } from "next/server";
 
-import {deleteComfyWorkflow, getActiveComfyEndpoint, listComfyWorkflows, saveComfyWorkflow} from "@/lib/comfyui/repository";
+import {deleteComfyWorkflow, getComfyWorkflow, listComfyWorkflows, saveComfyWorkflow} from "@/lib/comfyui/repository";
 import {dbEnabled} from "@/platform/db/pool";
 import { authenticatedEmail } from "@/lib/request-auth";
 import { checkRateLimit } from "@/lib/rate-limit-http";
 import { clientIp } from "@/lib/ip";
 import {
-  detectWorkflowFormat,
   extractWorkflowInputs,
-  missingNodes,
   type ApiWorkflow,
 } from "@/lib/comfyui/workflow";
-import { fetchObjectInfo } from "@/lib/comfyui/client";
+import {parseComfyDocument,projectComfyGraph} from "@/lib/comfyui/document";
+import {sameSiteBiMutation} from "@/lib/bi/access";
+import {readBounded} from "@/lib/supplier-cost/io";
 
 // ---------------------------------------------------------------------------
 // ComfyUI 工作流库:GET 列表 / POST 导入(解析+可选缺件预检) / DELETE。
-// 一期只收 API 格式;编辑器格式给出导出指引(转换需端点 object_info,二期)。
+// API/UI 文档均可保存；端点与节点能力检查只在运行阶段发生。
 // ---------------------------------------------------------------------------
 
 export const runtime = "nodejs";
@@ -29,6 +29,8 @@ async function actor(request: Request) {
 export async function GET(request: Request) {
   const email = await actor(request);
   if (!email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
+  const id=new URL(request.url).searchParams.get("id");
+  if(id){const workflow=await getComfyWorkflow(email,id);return workflow?NextResponse.json({workflow:{...workflow,document:parseComfyDocument(workflow.apiJson)}},{headers:{"cache-control":"private, no-store"}}):NextResponse.json({error:"工作流不存在"},{status:404});}
   const workflows = await listComfyWorkflows(email);
   return NextResponse.json({ workflows });
 }
@@ -36,12 +38,13 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const email = await actor(request);
   if (!email) return NextResponse.json({ error: "请先登录" }, { status: 401 });
+  if(!sameSiteBiMutation(request))return NextResponse.json({error:"不允许跨站修改"},{status:403});
   const rateLimitResult = await checkRateLimit(`comfyui-wf:${clientIp(request) || "0.0.0.0"}`, 30, 10 * 60 * 1000);
   if (rateLimitResult instanceof Response) return rateLimitResult;
   if (!rateLimitResult) {
     return NextResponse.json({ error: "操作过于频繁，请稍后再试" }, { status: 429 });
   }
-  const body = (await request.json().catch(() => null)) as
+  const body = (await readBounded(new Response(request.body),8*1024*1024).then(JSON.parse).catch(() => null)) as
     | { id?: string; name?: string; json?: string; note?: string }
     | null;
   if (!body || typeof body.json !== "string" || !body.json.trim()) {
@@ -54,51 +57,21 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ error: "JSON 解析失败，请检查内容" }, { status: 400 });
   }
-  const format = detectWorkflowFormat(parsed);
-  if (format === "ui") {
-    return NextResponse.json(
-      {
-        error:
-          "这是 ComfyUI 编辑器格式。请在 ComfyUI 里打开 设置→开发者模式 后，用「Save (API Format)」导出，再粘贴这里",
-      },
-      { status: 400 }
-    );
-  }
-  if (format !== "api") {
-    return NextResponse.json({ error: "不是有效的 ComfyUI 工作流 JSON" }, { status: 400 });
-  }
-  const api = parsed as ApiWorkflow;
-  const inputs = extractWorkflowInputs(api);
-  if (!inputs.texts.length && !inputs.images.length) {
-    return NextResponse.json(
-      { error: "工作流里没有找到可编辑输入(LoadImage/提示词)，请确认导出的 JSON 完整" },
-      { status: 400 }
-    );
-  }
-
-  // 有活动端点时做缺件预检(没有端点也能导入,运行前会再检)
-  let missing: string[] = [];
-  let nodeCount = 0;
-  try {
-    const endpoint = await getActiveComfyEndpoint(email);
-    if (endpoint) {
-      const available = await fetchObjectInfo(endpoint);
-      nodeCount = available.length;
-      missing = missingNodes(inputs.requiredNodes, available);
-    }
-  } catch {
-    /* 预检失败不阻塞导入 */
-  }
+  let document;try{document=parseComfyDocument(parsed);}catch(error){return NextResponse.json({error:error instanceof Error?error.message:"工作流格式无效"},{status:400});}
+  const api=document.raw,graph=projectComfyGraph(document);
+  const inputs=document.format==="api"?extractWorkflowInputs(api as ApiWorkflow):{images:[],texts:[],seeds:[],numerics:[],requiredNodes:[...new Set(graph.nodes.map(node=>node.classType))]};
+  const savedId=body.id||crypto.randomUUID();
 
   try {
-    await saveComfyWorkflow(email, {
-      id: body.id,
+    const saved=await saveComfyWorkflow(email, {
+      ...(body.id?{id:body.id}:{newId:savedId}),
       name: String(body.name || ""),
       apiJson: api,
       inputs,
       required: inputs.requiredNodes,
       note: String(body.note || ""),
     });
+
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "保存工作流失败" },
@@ -108,8 +81,7 @@ export async function POST(request: Request) {
   return NextResponse.json({
     ok: true,
     inputs,
-    missing,
-    nodeCount,
+    savedId,document,missing:[],nodeCount:graph.nodes.length,
   });
 }
 

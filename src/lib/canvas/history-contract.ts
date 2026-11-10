@@ -1,3 +1,4 @@
+import {comfyNodeWriteSchema} from "./comfy-node-schema";
 import {timelineNodeWriteSchema} from "./timeline-node-schema";
 import {audioNodeWriteSchema} from "./audio-node-schema";
 import {sceneNodeWriteSchema} from "./scene-node-schema";
@@ -26,12 +27,15 @@ export const characterHistoryFields=characterNodeWriteSchema.omit({id:true,proje
 export const directorHistoryFields=directorNodeWriteSchema.omit({id:true,projectKey:true,expectedRevision:true,operationId:true,deleted:true});
 export const audioHistoryFields=audioNodeWriteSchema.omit({id:true,projectKey:true,expectedRevision:true,operationId:true,deleted:true});
 export const timelineHistoryFields=timelineNodeWriteSchema.omit({id:true,projectKey:true,expectedRevision:true,operationId:true,deleted:true});
+export const comfyHistoryFields=comfyNodeWriteSchema.omit({id:true,projectKey:true,expectedRevision:true,operationId:true,deleted:true});
 export const historyRequest = z.object({
   operationId: z.string().uuid(),
   operations: z.array(z.discriminatedUnion("type", [
     z.object({ type: z.literal("visibility"), id, visible: z.boolean(),expectedArtwork:canvasArtworkFieldsSchema.partial().optional() }),
     z.object({ type: z.literal("text-restore"), node: textNode,expectMissing:z.boolean().optional() }),
     z.object({ type: z.literal("text-delete"), id,expected:textNode.optional() }),
+    z.object({type:z.literal("comfy-visibility"),id,visible:z.boolean()}),
+    z.object({type:z.literal("comfy-patch"),id,expectedRevision:z.number().int().nonnegative(),fields:comfyHistoryFields}),
     z.object({ type: z.literal("video-visibility"), id, visible:z.boolean() }),
     z.object({ type: z.literal("video-patch"), id, expectedRevision:z.number().int().nonnegative(), fields:videoHistoryFields }),
     z.object({type:z.literal("scene-visibility"),id,visible:z.boolean()}),
@@ -53,7 +57,7 @@ export const historyRequest = z.object({
     z.object({ type: z.literal("size"), id, x: coordinate, y: coordinate, width: z.number().min(80).max(4096), height: z.number().min(80).max(4096),expectedArtwork:canvasArtworkFieldsSchema.partial().optional() }),
     z.object({type:z.literal("art-dimensions"),id,width:z.number().min(80).max(4096),height:z.number().min(80).max(4096),expectedArtwork:canvasArtworkFieldsSchema.partial().optional()}),
     z.object({ type: z.literal("mark"), id, marked: z.boolean(),expectedArtwork:canvasArtworkFieldsSchema.partial().optional() }),
-    z.object({ type: z.literal("node-settings"), id, text: z.boolean(), video:z.boolean().optional(), director:z.boolean().optional(), character:z.boolean().optional(), scene:z.boolean().optional(), audio:z.boolean().optional(),timeline:z.boolean().optional(), settings: nodeSettingsSchema }),
+    z.object({ type: z.literal("node-settings"), id, text: z.boolean(), video:z.boolean().optional(), director:z.boolean().optional(), character:z.boolean().optional(), scene:z.boolean().optional(), audio:z.boolean().optional(),timeline:z.boolean().optional(),comfy:z.boolean().optional(), settings: nodeSettingsSchema }),
     z.object({type:z.literal("image-version"),id,versionId:id,expectedRevision:z.number().int().nonnegative(),expectedImage:z.string().min(1)}),
     z.object({ type: z.literal("workflow-asset"), id, assetOperationId: z.string().uuid(), filled: z.boolean() }),
   ])).min(1).max(400),

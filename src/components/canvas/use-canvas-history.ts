@@ -16,6 +16,7 @@ import { reduceHistoryArtworks, reduceHistorySettings, type CanvasHistoryAction 
 import type {CanvasLocalHistoryAction} from "@/lib/canvas/node-commands";
 
 type Input = {
+  comfy?:(id:string)=>import("@/lib/canvas/comfy-node-schema").CanvasComfyNode|undefined;
   native?:{accept:(receipt:import("@/lib/canvas/native-node-records").CanvasNativeRecords,current:()=>boolean)=>void};
   account: string; project: string | null; readOnly: boolean;
   validateOperations?:(operations:import("@/lib/canvas/history-contract").CanvasHistoryOperation[])=>void;
@@ -44,7 +45,7 @@ export function useCanvasHistory(input: Input) {
     readOnly: () => latest.current.readOnly,
     validateOperations:operations=>latest.current.validateOperations?.(operations),
     flush: () => latest.current.flush(), transaction: (scope,work) => latest.current.textDocument.transaction(scope,()=>latest.current.artworkDocument?latest.current.artworkDocument.transaction(scope,work):work()),
-    video: id => latest.current.video(id),director:id=>latest.current.director?.(id),character:id=>latest.current.character?.(id),scene:id=>latest.current.scene?.(id),artwork:id=>latest.current.artwork?.(id),audio:id=>latest.current.audio?.(id),timeline:id=>latest.current.timeline?.(id), refresh: () => latest.current.refresh(),
+    video: id => latest.current.video(id),director:id=>latest.current.director?.(id),character:id=>latest.current.character?.(id),scene:id=>latest.current.scene?.(id),artwork:id=>latest.current.artwork?.(id),audio:id=>latest.current.audio?.(id),timeline:id=>latest.current.timeline?.(id),comfy:id=>latest.current.comfy?.(id), refresh: () => latest.current.refresh(),
     warning: message => latest.current.warning(message),
     conflict:(scope,value)=>latest.current.textDocument.conflict?.(scope,value),
     artworkConflict:(scope,value,action,undo)=>latest.current.artworkDocument?.conflict(scope,value,action,undo),
