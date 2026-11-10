@@ -703,5 +703,13 @@
   .nv-fade-in, .nv-msg-in { animation: none; }
 }
 
-/* Canvas cards retain their own overflow rules. Restore native browser paint
-   rather than forcing the complete node/edge plane into scaled raster layers. */
+/* Cards already clip/scroll their own content. Bound paint invalidation to each
+   card without changing node layout, ports, text or interaction sampling. */
+.canvas-ui-light .canvas-ui-node-card,
+.canvas-ui-dark .canvas-ui-node-card { contain: paint; }
+
+/* Images and text must rasterize at the current viewport scale. Keeping their
+   entire plane promoted stretches an earlier low-zoom bitmap during zoom-in.
+   Card paint containment and the independent, z-order-guarded edge layer remain. */
+.canvas-render-layers .react-flow__nodes { will-change: auto; }
+.canvas-render-layers[data-canvas-layer-order="composite"]:not([data-canvas-edge-hover]) .react-flow__edges { will-change: transform; }
