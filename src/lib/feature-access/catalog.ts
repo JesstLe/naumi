@@ -37,7 +37,7 @@ export function requestRequirement(path: string, method = "GET"): AccessRequirem
   if(path.startsWith("/desktop/api/"))path=path.slice("/desktop".length);
   if (!path.startsWith("/api/")) { const id = pageFeature(path); return id ? { all: [id] } : undefined; }
   if (path.startsWith("/api/canvas/assistant")) return { all: ["canvas", "agent"] };
-  if(path==='/api/canvas/storyboards')return {all:['canvas','video']};
+  if(path==='/api/canvas/storyboards'||path.startsWith('/api/canvas/storyboards/'))return {all:['canvas','video']};
   if(path==='/api/canvas/video-workflows'&&method==='POST')return {all:['canvas','video']};
   if (/^\/api\/canvas\/video-nodes\/[^/]+\/(?:generate|batch)$/.test(path) && method === "POST") return { all: ["canvas", "video"] };
   if (/^\/api\/canvas\/(image-tasks|expand|annotate|text-edit)(\/|$)/.test(path)) return { all: ["canvas", "generate"] };
