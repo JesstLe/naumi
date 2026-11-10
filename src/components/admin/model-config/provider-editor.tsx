@@ -39,6 +39,7 @@ export function ProviderEditor({
   const video = ![
     "openai-images",
     "openai-chat",
+    "openai-audio",
     "new-api-flow",
     "apimart-images",
     "fal-images",

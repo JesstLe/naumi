@@ -6,11 +6,11 @@ import type { ConfigSnapshot } from "../billing/types";
 
 export type ModelExecutionScope = { parameterModelId?: string; channelGuard?:import("./channel-availability").ChannelGuard; frontendModel?: import("./frontend-selection").FrontendModelSelection; capacityReserved?:boolean; supplierRouting?:{policy:import("./channel-policy").ChannelPolicy;targets:import("./channel-scheduler").ChannelTarget[]}; imagePreset?: import("./image-preset").ImagePreset; audited?: boolean; costPhase?: string; costRuleId?: string; frozen: ExecutionModel; connection: ExecutionConnection; capabilities: UpstreamModel["capabilities"]; parameterMap: UpstreamModel["parameterMap"]; businessOption?: import("./business-schema").BusinessOption; procurement?: import("./business-schema").Procurement; routing?: { policy: import("./business-schema").BusinessRouting; matchedRuleId?: string; spentMicros: bigint; targets: Record<string, { connection: ExecutionConnection; capabilities: UpstreamModel["capabilities"]; parameterMap: UpstreamModel["parameterMap"]; procurement: import("./business-schema").Procurement }> } };
 const context = new AsyncLocalStorage<ModelExecutionScope | null>();
-export type ExecutionBundle = { modelVersion: number; billingVersion: number; primary?: "image" | "text" | "vision" | "video"; image?: ExecutionModel; text?: ExecutionModel; vision?: ExecutionModel; video?: ExecutionModel };
-export type ResolvedExecutionBundle = { frozen: ExecutionBundle; billing: ConfigSnapshot; models?:ModelSnapshot; image?: ModelExecutionScope; text?: ModelExecutionScope; vision?: ModelExecutionScope; video?: ModelExecutionScope };
+export type ExecutionBundle = { modelVersion: number; billingVersion: number; primary?: "image" | "text" | "vision" | "video" | "audio"; image?: ExecutionModel; text?: ExecutionModel; vision?: ExecutionModel; audio?: ExecutionModel; video?: ExecutionModel };
+export type ResolvedExecutionBundle = { frozen: ExecutionBundle; billing: ConfigSnapshot; models?:ModelSnapshot; image?: ModelExecutionScope; text?: ModelExecutionScope; vision?: ModelExecutionScope; audio?: ModelExecutionScope; video?: ModelExecutionScope };
 const bundles = new AsyncLocalStorage<ResolvedExecutionBundle | null>();
 const legacyBilling = new AsyncLocalStorage<ConfigSnapshot>();
-export function currentModelExecution(role?: "image" | "text" | "vision" | "video") {
+export function currentModelExecution(role?: "image" | "text" | "vision" | "video" | "audio") {
   const current = context.getStore();
   if (current === null) return null;
   const bundle = bundles.getStore();
@@ -18,7 +18,7 @@ export function currentModelExecution(role?: "image" | "text" | "vision" | "vide
   // primary text model can also consume images.
   if (role === "vision" && bundle?.vision) return bundle.vision;
   if (current && (!role || current.frozen.modality === role || role === "vision" && current.capabilities.vision)) return current;
-  return (role ? bundle?.[role] : bundle?.image || bundle?.text || bundle?.vision || bundle?.video) || null;
+  return (role ? bundle?.[role] : bundle?.image || bundle?.text || bundle?.vision || bundle?.video || bundle?.audio) || null;
 }
 export const currentExecutionBundle = () => bundles.getStore()?.frozen;
 /** The accepted in-memory snapshot is shared by preparation and pricing, never reread from current. */

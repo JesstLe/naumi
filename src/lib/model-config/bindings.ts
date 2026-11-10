@@ -10,6 +10,8 @@ export const MODEL_BINDINGS = {
   "vision.reference": { modality: "text", capability: "vision" },
   "vision.review": { modality: "text", capability: "vision" },
   "vision.ocr": { modality: "text", capability: "vision" },
+  "audio.speech": { modality: "audio", capability: "generate" },
+  "audio.transcribe": { modality: "audio", capability: "transcribe" },
   "video.generate": { modality: "video", capability: "generate" },
 } as const;
 export type ModelBinding = keyof typeof MODEL_BINDINGS;

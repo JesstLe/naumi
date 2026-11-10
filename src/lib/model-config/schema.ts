@@ -18,15 +18,16 @@ import {resolutionPolicySchema} from "./resolution-policy";
 import {qualityPolicySchema} from "./quality-policy";
 import {PARAMETER_CONTRACTS,conventionalContract} from "./parameter-contract";
 import {videoDefinitionSchema,videoWireProfileSchema,videoProfileProtocol} from "../video/capability-schema";
+import {audioDefinitionSchema} from "../audio/model-capabilities";
 import {videoWorkflowManifestSchema} from "../video/workflow-schema";
 
 const id = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/);
 const name = z.string().trim().min(1).max(100);
-const modality = z.enum(["image", "text", "video"]);
+const modality = z.enum(["image", "text", "video", "audio"]);
 const quality = z.enum(["low", "medium", "high", "xhigh", "max", "auto"]);
 const resolution = z.enum(["1K", "2K", "4K"]);
 const displayRatios = z.array(z.string().regex(/^[1-9]\d{0,2}:[1-9]\d{0,2}$/)).min(1).max(30).refine(v => new Set(v).size === v.length, "比例不能重复").optional();
-export const MODEL_PROTOCOLS = ["openai-images", "new-api-flow", "openai-chat", "apimart-images", "fal-images", "openai-videos", "ark", "kie", "apimart", "gemini", "minimax", "metaso", "tokendance", "tfrouter", "compshare", "comfyui", "autodl", "runninghub"] as const;
+export const MODEL_PROTOCOLS = ["openai-audio", "openai-images", "new-api-flow", "openai-chat", "apimart-images", "fal-images", "openai-videos", "ark", "kie", "apimart", "gemini", "minimax", "metaso", "tokendance", "tfrouter", "compshare", "comfyui", "autodl", "runninghub"] as const;
 const videoOptions = z.strictObject({
   imageAdapter: z.literal("reverse-hub").optional(),
   imageRatios: displayRatios,
@@ -40,7 +41,7 @@ const videoOptions = z.strictObject({
   appUrl:z.url().max(1000).refine(value=>{const url=new URL(value);return !url.username&&!url.password&&!url.search&&!url.hash;}).optional(),
 });
 const providerSchema = z.strictObject({ id, name, protocol: z.enum(MODEL_PROTOCOLS), baseUrl: z.string().max(1024), credentialRef: z.uuid().optional(), enabled: z.boolean(), timeoutMs: z.number().int().min(1000).max(900000), maxConcurrent: z.number().int().min(1).max(256), options: videoOptions.optional() });
-const capabilities = z.strictObject({ imagegen:imagegenCapabilitySetSchema.optional(), verified: z.boolean(), generate: z.boolean(), edit: z.boolean(), vision: z.boolean(), transparent: z.boolean(), preserveIdentity: z.boolean(), textAccuracy: z.boolean(), qualityRank: z.number().int().min(1).max(5), qualities: z.array(quality).max(6), nativeResolutions: z.array(resolution).max(3), maxReferenceImages: z.number().int().min(0).max(128), expectedLatencyMs: z.number().int().min(0).max(900000), video: videoDefinitionSchema.optional() });
+const capabilities = z.strictObject({ audio:audioDefinitionSchema.optional(), transcribe:z.boolean().optional(), imagegen:imagegenCapabilitySetSchema.optional(), verified: z.boolean(), generate: z.boolean(), edit: z.boolean(), vision: z.boolean(), transparent: z.boolean(), preserveIdentity: z.boolean(), textAccuracy: z.boolean(), qualityRank: z.number().int().min(1).max(5), qualities: z.array(quality).max(6), nativeResolutions: z.array(resolution).max(3), maxReferenceImages: z.number().int().min(0).max(128), expectedLatencyMs: z.number().int().min(0).max(900000), video: videoDefinitionSchema.optional() });
 const mappedValue = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/);
 const parameterMap = z.strictObject({ parameterContract:z.enum(PARAMETER_CONTRACTS).optional(), apimartImages:apimartImagesSchema.optional(), imagegen:imagegenWireMapSchema.optional(), resolutionPolicy:resolutionPolicySchema.optional(), qualityPolicy: qualityPolicySchema.optional(), quality: z.partialRecord(quality, mappedValue).optional(), resolution: z.partialRecord(resolution, mappedValue).optional(), version: mappedValue.optional(), videoProfile: videoWireProfileSchema.optional(), videoWorkflow:videoWorkflowManifestSchema.optional() });
 const upstream = z.strictObject({ id, providerId: id, model: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$/), label: name, modality, enabled: z.boolean(), capabilities, parameterMap, costRef: z.string().min(1).max(200).optional(), procurement: procurementSchema.optional() });
@@ -105,14 +106,22 @@ export function validateModelConfig(input: unknown, options: ValidationOptions =
   for (const p of config.providers) {
     validateModelEndpoint(p.baseUrl, options);
     if (p.enabled && !p.credentialRef) fail("启用的供应商缺少凭据", [`providers.${p.id}.credentialRef`]);
+    if (p.protocol === "openai-audio" && p.options && Object.keys(p.options).length) fail("音频协议不接受图片或视频适配参数");
     if (p.options?.imageAdapter && p.protocol !== "openai-images") fail("Reverse Hub 图片适配器需使用图片协议");
     if (p.options?.idempotencyStrategy === "body" && !p.options.idempotencyBodyField) fail("视频幂等参数缺少字段");
   }
   for (const m of config.upstreamModels) {
     const p = providers.get(m.providerId);
     if (!p) fail("上游供应商不存在", [`upstreamModels.${m.id}.providerId`]);
-    const expected = ["openai-images", "new-api-flow", "apimart-images", "fal-images"].includes(p.protocol) ? "image" : p.protocol === "openai-chat" ? "text" : "video";
+    const expected = ["openai-images", "new-api-flow", "apimart-images", "fal-images"].includes(p.protocol) ? "image" : p.protocol === "openai-chat" ? "text" : p.protocol === "openai-audio" ? "audio" : "video";
     if (m.modality !== expected) fail("供应商协议与模态不匹配");
+    if(m.modality!=="audio" && (m.capabilities.audio!==undefined || m.capabilities.transcribe!==undefined))fail("音频能力只适用于音频模型");
+    if(m.modality==="audio"){
+      const c=m.capabilities;
+      if(c.generate && !c.audio?.speech?.enabled || c.transcribe && !c.audio?.transcription?.enabled)fail("音频用途需要显式声明可执行能力");
+      if(m.enabled && (c.generate || c.transcribe) && !c.verified)fail("启用的音频用途需要先核验能力");
+      if(c.edit || c.vision || c.transparent || c.preserveIdentity || c.textAccuracy || c.maxReferenceImages || c.qualities.length || c.nativeResolutions.length || c.video || c.imagegen || Object.keys(m.parameterMap).length)fail("音频模型不能继承图片或视频能力与参数映射");
+    }
     const profile=m.parameterMap.videoProfile??p.options?.videoProfile;
     if(profile&&(m.modality!=="video"||videoProfileProtocol(profile)!==p.protocol))fail("视频wire profile与供应商协议不一致",[`upstreamModels.${m.id}.parameterMap.videoProfile`]);
     if(m.parameterMap.apimartImages && (p.protocol!=="apimart-images" || !m.parameterMap.qualityPolicy || !m.parameterMap.resolutionPolicy || config.defaultImagePreset?.enabled && config.defaultImagePreset.upstreamId===m.id))fail("异步图片契约需要APIMart图片协议及显式质量和尺寸策略，不能覆盖成本预设");
