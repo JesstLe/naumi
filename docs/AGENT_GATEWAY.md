@@ -1,5 +1,7 @@
 # 外部 Agent 网关（CLI / MCP / HTTP）
 
+面向 Agent 的完整创作产品目标、功能缺口与阶段验收见 [Agent 创作平台 PRD](prd/2026-11-10-agent-creation-platform.md) 和 [实施台账](prd/2026-11-10-agent-creation-platform-execution.md)。本文仍只描述已实现的网关契约；PRD中的目标接口不视为当前可调用能力。
+
 外部 agent（Claude Code、Codex、Cursor、自建脚本等）用**个人 API 令牌**调用 Naumi 的创作工具。它和站内 Agent 用的是同一套工具与规则，只是"出主意的模型"换成了外部 agent。
 
 ## 用户怎么接入
