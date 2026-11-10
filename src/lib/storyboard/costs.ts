@@ -5,7 +5,7 @@ import type {TaskCostEvidence} from "../billing/task-cost-evidence";
 
 export const storyboardCostRequestSchema=productionSelectionSchema.safeExtend({compareRevision:z.number().int().positive().optional()});
 export type CostAttribution="plan"|"shared-node"|"inherited"|"referenced-media";
-export type StoryboardCostItem={id:string;kind:"video"|"audio-processing"|"media";status:string;attribution:CostAttribution;nodeIds:string[];runIds:string[];timelineIds:string[];billing:TaskCostEvidence;externalCostUnknown:boolean;remake:boolean};
+export type StoryboardCostItem={id:string;kind:"video"|"audio-processing"|"media"|"review";status:string;attribution:CostAttribution;nodeIds:string[];runIds:string[];timelineIds:string[];billing:TaskCostEvidence;externalCostUnknown:boolean;remake:boolean};
 export type CostTotals={taskCount:number;chargedCredits:number;reservedCredits:number;refundedCredits:number;releasedCredits:number;pendingCount:number;unknownCount:number;externalUnknownCount:number;failedTaskCount:number};
 export const emptyCostTotals=():CostTotals=>({taskCount:0,chargedCredits:0,reservedCredits:0,refundedCredits:0,releasedCredits:0,pendingCount:0,unknownCount:0,externalUnknownCount:0,failedTaskCount:0});
 export function summarizeCosts(items:readonly StoryboardCostItem[]):CostTotals{

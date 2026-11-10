@@ -27,7 +27,7 @@ import {currentExecutionBundle} from "../model-config/context";
 export const AGENT_FEATURES: Record<string, {
     feature: FeatureId;
     label: string;
-}> = { ...CREATIVE_TOOL_FEATURES, generate_aplus: { feature: "image.aplus", label: "A+ 母图准备" }, generate_image: { feature: "image.generate", label: "AI 生图" }, retouch_product: { feature: "tool.retouch", label: "商品精修" }, recolor_product: { feature: "tool.recolor", label: "产品换色" }, replicate_hot: { feature: "tool.replicate", label: "爆款复刻" }, generate_suite: { feature: "image.suite", label: "商品套图" }, continue_aplus_generation: { feature: "image.aplus", label: "A+ 详情页" }, generate_packaging_3d: { feature: "tool.packaging3d", label: "包装 3D" }, generate_video: { feature: "video.generate", label: "视频生成" }, extend_video: { feature: "video.generate", label: "视频续写" }, edit_video: { feature: "video.generate", label: "视频编辑" },render_video_timeline:{feature:"video.process",label:"多轨导出"},process_video:{feature:"video.process",label:"视频媒体处理"},run_video_workflow:{feature:"video.generate",label:"视频制作链"},confirm_video_workflow_stage:{feature:"video.generate",label:"制作链阶段"} };
+}> = { ...CREATIVE_TOOL_FEATURES, generate_aplus: { feature: "image.aplus", label: "A+ 母图准备" }, generate_image: { feature: "image.generate", label: "AI 生图" }, retouch_product: { feature: "tool.retouch", label: "商品精修" }, recolor_product: { feature: "tool.recolor", label: "产品换色" }, replicate_hot: { feature: "tool.replicate", label: "爆款复刻" }, generate_suite: { feature: "image.suite", label: "商品套图" }, continue_aplus_generation: { feature: "image.aplus", label: "A+ 详情页" }, generate_packaging_3d: { feature: "tool.packaging3d", label: "包装 3D" }, generate_video: { feature: "video.generate", label: "视频生成" }, extend_video: { feature: "video.generate", label: "视频续写" }, edit_video: { feature: "video.generate", label: "视频编辑" },render_video_timeline:{feature:"video.process",label:"多轨导出"},prepare_video_review_frames:{feature:"video.process",label:"审片抽帧"},review_video_storyboard_take:{feature:"canvas.text-generate",label:"辅助审片"},process_video:{feature:"video.process",label:"视频媒体处理"},run_video_workflow:{feature:"video.generate",label:"视频制作链"},confirm_video_workflow_stage:{feature:"video.generate",label:"制作链阶段"} };
 export async function agentQuote(name: string, args: Record<string, any>, email: string, cred: {
     cookie: string;
     authorization: string;
@@ -62,6 +62,18 @@ export async function agentQuote(name: string, args: Record<string, any>, email:
       const intent=await findTimelineRenderIntent(email,String(args.operation_id));if(intent){if(intent.id!==node.id||intent.render?.baseRevision!==args.expected_revision)throw new Error("导出编号已用于其他工程");const job=(await listMediaJobs(email,{operationId:args.operation_id})).jobs[0];if(job)return {quote:{configVersion:0,requestedCredits:0,authorizedCredits:0},label:entry.label,threshold};}
       else if(node.revision!==args.expected_revision)throw new Error("多轨工程已更新，请读取最新版本");
       return {quote:await mediaBillingQuote(email,"ffmpeg"),label:entry.label,threshold};
+    }
+    if(name==="prepare_video_review_frames"){
+      const {reviewFramesSchema}=await import("../storyboard/assisted-review"),{requireReviewTarget}=await import("../storyboard/assisted-review-service");
+      const input=reviewFramesSchema.parse({projectKey:canvas?.video?.projectKey||args.project_key,planId:args.plan_id,revision:args.revision,nodeId:args.node_id,taskId:args.task_id,artworkId:args.artwork_id,operationId:args.operation_id,samples:args.samples});
+      const {material}=await requireReviewTarget(email,input);if(input.samples.some(time=>time>=material.durationSeconds!))throw new Error("抽帧超出实际原片时长");
+      return {quote:await mediaBillingQuote(email,"ffmpeg"),label:entry.label,threshold};
+    }
+    if(name==="review_video_storyboard_take"){
+      const {assistedReviewRequestSchema}=await import("../storyboard/assisted-review"),{reviewEvidence}=await import("../storyboard/assisted-review-service"),{withModelOperation}=await import("../model-config/requests");
+      const input=assistedReviewRequestSchema.parse({projectKey:canvas?.video?.projectKey||args.project_key,planId:args.plan_id,revision:args.revision,nodeId:args.node_id,taskId:args.task_id,artworkId:args.artwork_id,operationId:args.operation_id,samples:args.samples,frameJobId:args.frame_job_id});
+      await reviewEvidence(email,input);
+      return withModelOperation({path:"/api/canvas/storyboards/review",body:input,references:input.samples.length},async()=>({quote:await quoteForActor(email,{feature:"canvas.text-generate",quantity:1,quality:"medium",resolution:"1K"},undefined,snapshot),label:entry.label,threshold}));
     }
     if(name==="process_video")return {quote:await mediaBillingQuote(email,args.action),label:entry.label,threshold};
     if (name === "continue_aplus_generation") {
@@ -122,7 +134,7 @@ export async function agentBillingPrecheck(session: AgentBillingSession, name: s
     const costPlus=quoted.quote.tariff?.pricing.mode==="api-cost-plus"||quoted.authorizationRequired===true, cap=quoted.quote.authorizedCredits??quoted.quote.requestedCredits;
     const meta = { cost: name === "generate_aplus" ? 0 : quoted.quote.requestedCredits, label: quoted.label };
     // Prepare the server quote once for this tool call; pricing is not a second user-confirmation flow.
-    session.preparedBilling = { billingVersion: quoted.quote.configVersion, billingCredits: costPlus?cap:quoted.quote.requestedCredits, billingOperationId: fingerprint({ session: session.id, turn: session.turnId, call: callId }) };
+    session.preparedBilling = { billingVersion: quoted.quote.configVersion, billingCredits: costPlus?cap:quoted.quote.requestedCredits, billingOperationId: name==="review_video_storyboard_take"&&typeof args.operation_id==="string"?args.operation_id:fingerprint({ session: session.id, turn: session.turnId, call: callId }) };
     session.preparedBudgetCredits = name === "generate_aplus" ? 0 : session.preparedBilling.billingCredits;
     if(quoted.videoWorkflow)session.preparedVideoWorkflow=quoted.videoWorkflow;
     if(quoted.imagegenPlan){const request={...quoted.imagegenPlan.request,operationId:imagegenStepId(session.preparedBilling.billingOperationId,"agent")};session.preparedImagegen={...quoted.imagegenPlan,request,fingerprint:imagegenFingerprint(request)};}
