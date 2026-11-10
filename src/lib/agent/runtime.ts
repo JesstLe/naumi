@@ -1,6 +1,8 @@
+import {appendAgentEvent, normalizeAgentEvents, type AgentEvent} from "./event-buffer";
+import {managedAgentReference} from "./managed-reference";
 
 import { streamDiagnostic } from "./stream-recovery";
-import { resultMediaUrls, unsupportedMedia, unsupportedReview, evidenceOnlyReply, EXECUTION_EVIDENCE_PROMPT, type ToolReceipt } from "./execution-evidence";
+import { agentToolResultFailure, resultMediaUrls, unsupportedMedia, unsupportedReview, evidenceOnlyReply, EXECUTION_EVIDENCE_PROMPT, type ToolReceipt } from "./execution-evidence";
 import { agentRestrictionMessage } from "./public-status";
 import {createModelActivityTracker,type PublicModelPhase} from "./model-activity";
 import { publicToolDetails } from "./tool-presentation";
@@ -114,11 +116,7 @@ export type Session = {
   createdAt: number;
   lastUsedAt: number;
   /** 运行状态快照,给前端轮询/SSE 用 */
-  events: {
-    type: string;
-    at: number;
-    data: Record<string, unknown>;
-  }[];
+  events: AgentEvent[];
   running: boolean;
   canvasExecuting?: boolean;
   textOnlyContinuation?: boolean;
@@ -305,7 +303,7 @@ async function createRuntimeSession(
     onToolResult: options?.onToolResult,
     createdAt: Date.now(),
     lastUsedAt: Date.now(),
-    events: Array.isArray(persisted?.steps) ? persisted.steps.map((step: any) => ({type:String(step.type),at:typeof step.at === "number" && Number.isFinite(step.at) ? step.at : 0,data:Object.fromEntries(Object.entries(step).filter(([key])=>key!=="type" && key!=="at"))})) : [],
+    events: normalizeAgentEvents(Array.isArray(persisted?.steps) ? persisted.steps.map((step: any) => ({type:String(step.type),sequence:step.sequence,at:typeof step.at === "number" && Number.isFinite(step.at) ? step.at : 0,data:Object.fromEntries(Object.entries(step).filter(([key])=>!["type","at","sequence"].includes(key)))})) : []),
     running: false,
     repeatSignature: "",
     repeatCount: 0,
@@ -400,8 +398,7 @@ async function createRuntimeSession(
       });
     }
     const push = (type: string, data: Record<string, unknown>) => {
-      session.events.push({ type, at: Date.now(), data: session.harness.sanitize(data) });
-      if (session.events.length > 400) session.events.splice(0, 200);
+      appendSessionEvent(session, type, data);
     };
     if (event.type === "tool_execution_start") {
       const e = event as unknown as { toolCallId: string; toolName?: string; args?: unknown };
@@ -416,7 +413,7 @@ async function createRuntimeSession(
       // 轨迹对外只暴露公开摘要:details.publicSummary 优先(不含内部全文)
       const details = (e.result as { details?: { publicSummary?: string; verificationStatus?: string } } | undefined)
         ?.details;
-      const toolFailed = !!(e.isError || e.result?.isError || details?.verificationStatus === "unavailable");
+      const toolFailed = !!e.isError || !!agentToolResultFailure(e.result);
       const raw = e.result as {details?:Record<string,unknown>;content?:{type?:string;text?:string}[]} | undefined;
       const outputs = toolFailed ? [] : resultMediaUrls(e.result);
       outputs.forEach(url => session.knownMedia.add(url));
@@ -519,6 +516,9 @@ async function createRuntimeSession(
     session.releaseActivity = await startAgentActivity(email, sessionId, !!options);
     if (pendingGeneration !== promptGeneration) { await completeAgentReleaseActivity(session); throw new HarnessError("RUN_INACTIVE", 409); }
     try {
+      // Recheck CAS after acquiring global run ownership: a concurrent history
+      // deletion before admission must prevent model/tool submission.
+      await persistAgentSession(session);
       if (!session.turnId || session.turnId === lastPromptTurn) session.turnId = crypto.randomUUID();
       lastPromptTurn = session.turnId;
       session.harness.begin(input, originalAbort);
@@ -621,8 +621,7 @@ export function appendSessionEvent(
   type: string,
   data: Record<string, unknown>
 ) {
-  session.events.push({ type, at: Date.now(), data: session.harness.sanitize(data) });
-  if (session.events.length > 400) session.events.splice(0, 200);
+  appendAgentEvent(session, { type, at: Date.now(), data: session.harness.sanitize(data) });
 }
 
 export async function persistAgentSession(session: Session): Promise<void> {
@@ -641,7 +640,7 @@ export async function persistAgentSession(session: Session): Promise<void> {
   });
   const steps = session.events
     .filter((event) => ["harness","plan","tool_start","tool_end","attention","canvas_turn","image_skill","artifacts","video_nodes","text_nodes","agent_start","agent_end","canvas_terminal","assistant","canvas_reply","model_stream_end","error"].includes(event.type))
-    .map((event) => ({ ...event.data, type: event.type, at: event.at }));
+    .map((event) => ({ ...event.data, type: event.type, at: event.at, sequence: event.sequence }));
   try { session.persistedRevision = await saveAgentSession(
     session.email,
     session.id,
@@ -664,10 +663,15 @@ const VISION_MAX_BYTES = 8 * 1024 * 1024;
 const VISION_MAX_IMAGES = 6;
 const VISION_ALLOWED_HOST_RE =
   /(^|\.)(imgdd\.cc|youmind\.com|cms-assets\.youmind\.com)$/i;
+export class AgentVisionInputError extends Error {
+  constructor() { super("参考图片读取失败，请重新选择图片；本次未提交任务"); }
+}
 
 export async function resolveVisionImages(
   urls: string[],
-  cookie = ""
+  cookie = "",
+  actor?: string,
+  origins: string[] = []
 ): Promise<ImageContent[]> {
   const out: ImageContent[] = [];
   for (const raw of urls.slice(0, VISION_MAX_IMAGES)) {
@@ -676,7 +680,15 @@ export async function resolveVisionImages(
       const internal = new URL(
         process.env.INTERNAL_APP_ORIGIN || "http://127.0.0.1:3012/"
       );
-      const u = new URL(raw.trim());
+      if (actor) {
+        const managed = await managedAgentReference(raw.trim(), [internal.origin, ...origins], actor);
+        if (managed) {
+          if (managed.bytes.length > VISION_MAX_BYTES) throw new Error("参考图片超过视觉输入上限");
+          out.push({type:"image", data:managed.bytes.toString("base64"), mimeType:managed.contentType});
+          continue;
+        }
+      }
+      const u = new URL(raw.trim(), internal);
       if (u.protocol !== "http:" && u.protocol !== "https:") continue;
       const host = u.hostname;
       const sameOrigin = u.origin === internal.origin;
@@ -709,10 +721,12 @@ export async function resolveVisionImages(
       const buf = await readBoundedBytes(res, VISION_MAX_BYTES);
       if (!buf.length || buf.length > VISION_MAX_BYTES) continue;
       out.push({ type: "image", data: buf.toString("base64"), mimeType: mime });
-    } catch {
-      /* 单张失败跳过 */
+    } catch (error) {
+      if (actor) throw new AgentVisionInputError();
+      /* Canvas has already checked its owned references. */
     }
   }
+  if (actor && out.length !== Math.min(urls.length, VISION_MAX_IMAGES)) throw new AgentVisionInputError();
   return out;
 }
 

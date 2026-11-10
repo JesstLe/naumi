@@ -1,3 +1,4 @@
+import {agentHistoryRunning,assertLocalAgentIdle,agentHistoryResponse} from "@/lib/agent/session-lifecycle";
 import { forwardLegacyAgentSession } from "@/lib/agent/legacy-runtime";
 import { NextResponse } from "next/server";
 import { resolveUserEmail } from "@/lib/admin-auth";
@@ -27,7 +28,7 @@ async function authedEmail(request: Request): Promise<string | null> {
   return resolveUserEmail(request);
 }
 
-export async function GET(request: Request) {
+async function localGET(request: Request) {
   const legacy = await forwardLegacyAgentSession(request);
   if (legacy) return legacy;
   const email = await authedEmail(request);
@@ -41,7 +42,7 @@ export async function GET(request: Request) {
     await getSession(email,id)?.persistPending?.catch(()=>undefined);
     const s = await getAgentSession(email, id);
     if (!s) return NextResponse.json({ error: "会话不存在" }, { status: 404 });
-    return NextResponse.json({ session: new AgentHarness(email, id).sanitize(s) });
+    return NextResponse.json({ session: {...new AgentHarness(email, id).sanitize(s),running:await agentHistoryRunning(email,id)} });
   }
   const sessions = await listAgentSessions(email, 50, true);
   return NextResponse.json({
@@ -55,7 +56,7 @@ export async function GET(request: Request) {
   });
 }
 
-export async function POST(request: Request) {
+async function localPOST(request: Request) {
   const legacy = await forwardLegacyAgentSession(request);
   if (legacy) return legacy;
   const email = await authedEmail(request);
@@ -88,7 +89,7 @@ export async function POST(request: Request) {
   return NextResponse.json({ ok: true });
 }
 
-export async function PATCH(request: Request) {
+async function localPATCH(request: Request) {
   const legacy = await forwardLegacyAgentSession(request);
   if (legacy) return legacy;
   const email = await authedEmail(request);
@@ -112,7 +113,7 @@ export async function PATCH(request: Request) {
   if(id.startsWith("cv-"))return NextResponse.json({error:"请从画布管理此会话"},{status:400});
   if(getSession(email,id)?.running)return NextResponse.json({error:"请先停止任务"},{status:409});
   await getSession(email,id)?.persistPending?.catch(()=>undefined);
-  const renamed = await renameAgentSession(email, id, title);
+  const renamed = await renameAgentSession(email, id, title,()=>assertLocalAgentIdle(email,id));
   if (!renamed) {
     return NextResponse.json({ error: "会话不存在" }, { status: 404 });
   }
@@ -120,7 +121,7 @@ export async function PATCH(request: Request) {
   return NextResponse.json({ ok: true, title });
 }
 
-export async function DELETE(request: Request) {
+async function localDELETE(request: Request) {
   const legacy = await forwardLegacyAgentSession(request);
   if (legacy) return legacy;
   const email = await authedEmail(request);
@@ -141,7 +142,15 @@ export async function DELETE(request: Request) {
     );
   }
   await getSession(email, id)?.persistPending?.catch(()=>undefined);
-  await deleteAgentSession(email, id);
+  await deleteAgentSession(email, id,()=>assertLocalAgentIdle(email,id));
   removeRuntimeSession(email, id);
   return NextResponse.json({ ok: true });
 }
+
+export const GET=(request:Request)=>agentHistoryResponse(()=>localGET(request));
+
+export const POST=(request:Request)=>agentHistoryResponse(()=>localPOST(request));
+
+export const PATCH=(request:Request)=>agentHistoryResponse(()=>localPATCH(request));
+
+export const DELETE=(request:Request)=>agentHistoryResponse(()=>localDELETE(request));

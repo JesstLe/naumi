@@ -1,6 +1,21 @@
 import "server-only";
 import {getPool} from "@/platform/db/pool";
 import {ensureSchema} from "@/lib/persistence/schema";
+import {withTransaction} from "@/platform/db/transaction";
+import type {PoolClient} from "pg";
+import {releaseRuntimeEnabled} from "../release-runtime/identity";
+import {ensureReleaseSchema, assertIdleAgentSessionTx} from "../release-runtime/store";
+
+async function mutateHistory<T>(email:string,id:string,localIdle:()=>void,write:(tx:PoolClient)=>Promise<T>) {
+  await ensureSchema();
+  const global=releaseRuntimeEnabled();
+  if(global)await ensureReleaseSchema();
+  return withTransaction(getPool(),async tx=>{
+    if(global)await assertIdleAgentSessionTx(tx,email,id,id.startsWith("cv-")?"canvas":"workbench");
+    localIdle();
+    return write(tx);
+  });
+}
 
 // Session data and monotonic revision CAS share one owner; schema migration belongs to startup.
 export type AgentSessionRow = {
@@ -79,22 +94,23 @@ export async function listAgentSessions(
 export async function renameAgentSession(
   email: string,
   id: string,
-  title: string
+  title: string,
+  localIdle:()=>void=()=>{}
 ): Promise<boolean> {
-  await ensureSchema();
-  const result = await getPool().query(
+  return mutateHistory(email,id,localIdle,async tx=>{
+  const result = await tx.query(
     `UPDATE app_agent_sessions
         SET title = $3, updated_at = GREATEST(clock_timestamp(),updated_at + interval '1 microsecond')
       WHERE id = $1 AND email = $2`,
     [id, email.toLowerCase(), title.slice(0, 120)]
   );
   return (result.rowCount ?? 0) > 0;
+  });
 }
 
-export async function deleteAgentSession(email: string, id: string): Promise<void> {
-  await ensureSchema();
-  await getPool().query(
+export async function deleteAgentSession(email: string, id: string, localIdle:()=>void=()=>{}): Promise<void> {
+  await mutateHistory(email,id,localIdle,async tx=>{await tx.query(
     `DELETE FROM app_agent_sessions WHERE id = $1 AND email = $2`,
     [id, email.toLowerCase()]
-  );
+  );});
 }

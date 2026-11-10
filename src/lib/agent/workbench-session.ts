@@ -155,6 +155,12 @@ export function createWorkbenchSession() {
         if (!ownsObservation(owner)) return;
         if (typeof data?.running !== "boolean") throw new Error("Invalid recovery state");
         cursor = Number.isInteger(data.total) && data.total >= 0 ? data.total : cursor;
+        if (data.reset) {
+          const snapshot=await read(owner,`/api/agent/session?id=${encodeURIComponent(owner.id)}`,context);
+          if(!ownsObservation(owner))return;
+          if(!Array.isArray(snapshot.session?.messages))throw new Error("Invalid session history");
+          context.setMessages(previous=>ownsObservation(owner)?restoreMessages(snapshot.session.messages,snapshot.session.steps||[]):previous);
+        }
         const events = Array.isArray(data.events) ? data.events : [];
         const lastAssistant = [...events].reverse().find(event => event.type === "assistant");
         if (lastAssistant?.data?.text) {
@@ -260,7 +266,7 @@ export function createWorkbenchSession() {
     if (!previous) explicitStream?.controller.abort();
     context.setRunning(false);
     context.setBusy(false);
-    context.setMessages(messages => messages.map(message => message.pending ? { ...message, pending: false, ...(!previous ? { content: "(执行失败)" } : {}) } : message));
+    context.setMessages(messages => messages.map(message => message.pending ? { ...message, pending: false } : message));
     if (recovery) recovery.phase = response?.ok ? "settled" : "unavailable";
     context.setUnavailable(!response?.ok);
     if (!response?.ok) context.setError("停止任务失败，请重试");
@@ -295,9 +301,9 @@ export function createWorkbenchSession() {
     const urls = attachmentUrls ?? context.attachments;
     const parts = [content, ...urls.map((u) => `[商品图] ${u}`)];
     const userMsg: WorkbenchMessage = { role: "user", content: parts.join("\n") };
-    const history = context.messages
-      .filter((m) => !m.pending && m.content)
-      .map((m) => ({ role: m.role, content: m.content }));
+    // Existing conversations are authoritative on the server; never echo a
+    // potentially large model answer into the next bounded input request.
+    const history = runSessionId ? [] : context.messages.filter(m=>!m.pending&&m.content).slice(-12).map(({role,content})=>({role,content}));
     const runSteps: { tool: string; summary: string }[] = [];
     context.setMessages((prev) => [
       ...prev,
@@ -314,6 +320,7 @@ export function createWorkbenchSession() {
 
     const controller = new AbortController();
     let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+    let streamed = "", reply = "", receivedFinal = false, historyRequired = false;
     try {
       explicitStream = { scope, controller };
       const headers = await context.headers();
@@ -342,10 +349,9 @@ export function createWorkbenchSession() {
       reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buf = "";
-      let reply = "";
-      let streamed = "";
+
       for (;;) {
-        const { done, value } = await reader.read();
+        const { done, value } = await reader.read().catch(error=>{if(receivedFinal)return {done:true,value:undefined};throw error;});
         if (done) break;
         // Do not cancel this SSE from observer cleanup: cancellation has an
         // existing server meaning. Detached sends drain without changing UI or
@@ -425,7 +431,10 @@ export function createWorkbenchSession() {
               }
               return copy;
             });
+          } else if (type === "history_required") {
+            historyRequired = true;
           } else if (type === "final") {
+            receivedFinal = true;
             reply = (data.reply as string) || streamed;
           } else if (type === "error") {
             throw new Error((data.message as string) || "执行失败");
@@ -433,36 +442,28 @@ export function createWorkbenchSession() {
         }
       }
       if (!current()) return;
+      if (!receivedFinal) throw new Error("任务连接已中断，已输出内容保留，请从历史核对原任务；不要重复提交");
       context.setMessages((prev) => {
         if (!current()) return prev;
         const copy = [...prev];
         const last = copy[copy.length - 1];
         copy[copy.length - 1] = {
           role: "assistant",
-          content: reply || "(无回复)",
+          content: reply || streamed,
           steps: last?.steps ?? runSteps,
         };
         return copy;
       });
-      // 持久化
-      const saveHeaders = await context.headers();
-      if (!current()) return;
-      void context.request("/api/agent/session", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...saveHeaders,
-        },
-        body: JSON.stringify({
-          id: runSessionId,
-          title: content.slice(0, 40),
-          messages: [
-            ...history,
-            { role: "user", content: userMsg.content },
-            { role: "assistant", content: reply || "(无回复)" },
-          ],
-        }),
-      }).catch(() => {});
+      // The server persists before final. Client autosave must not re-upload
+      // long history or become another writer of a model-owned conversation.
+      if (historyRequired && runSessionId) {
+        const headers=await context.headers();if(!current())return;
+        const response=await context.request(`/api/agent/session?id=${encodeURIComponent(runSessionId)}`,{headers,cache:"no-store"});
+        if(!response.ok)throw new Error("回复已保留，历史轨迹同步失败，请从历史重新打开");
+        const data=await response.json();if(!current())return;
+        if(!Array.isArray(data.session?.messages))throw new Error("历史轨迹尚未同步");
+        context.setMessages(previous=>current()?restoreMessages(data.session.messages,data.session.steps||[]):previous);
+      }
     } catch (e) {
       if (!current()) return;
       if ((e as { name?: string })?.name !== "AbortError") {
@@ -471,7 +472,7 @@ export function createWorkbenchSession() {
       context.setMessages((prev) => {
         if (!current()) return prev;
         const copy = [...prev];
-        copy[copy.length - 1] = { role: "assistant", content: "(执行失败)" };
+        copy[copy.length - 1] = { ...copy[copy.length - 1], role: "assistant", pending:false, content: reply || streamed || "(回复未完成，请从历史核对结果)", steps:copy.at(-1)?.steps ?? runSteps };
         return copy;
       });
     } finally {

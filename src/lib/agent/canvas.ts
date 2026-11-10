@@ -1,3 +1,5 @@
+import {agentEventCursor, agentEventsSince} from "./event-buffer";
+import {agentTurnOutcome, recordAuthoritativeReply} from "./stream-recovery";
 import { routeAgentToOwner, observeReleaseRequest } from "@/lib/release-runtime/http";
 import { releaseRuntimeEnabled, releaseError, ReleaseRuntimeError } from "@/lib/release-runtime/identity";
 import { resolveImageSkill } from "@/lib/image-skills/server";
@@ -137,8 +139,13 @@ async function runCanvasAgentLocal(request: Request) {
   const messageIndex=session.agent.state.messages.filter(turn=> { if(turn.role!=="user"&&turn.role!=="assistant")return false; return typeof turn.content==="string" ? !!turn.content.trim() : turn.content.some(part=>part.type==="text"&&!!part.text.trim()); }).length;
   appendSessionEvent(session,"canvas_turn",{turnId:session.turnId,anchorId,contextIds:ids,projectKey,message,messageIndex,skill:imageSkill ? {id:imageSkill.id,revision:imageSkill.revision,name:imageSkill.name} : null});
   session.running = true; session.canvasExecuting = true;
-  await persistAgentSession(session);
-  const cursorStart = session.events.length;
+  try { await persistAgentSession(session); }
+  catch(error) {
+    session.running=false;session.canvasExecuting=false;session.onToolResult=undefined;
+    if((error as {code?:string}).code==="AGENT_SESSION_CONFLICT")return NextResponse.json({error:"会话已在其他连接更新，请重新打开；已有任务不会重新执行",code:"AGENT_SESSION_CONFLICT",sessionId},{status:409});
+    throw error;
+  }
+  const cursorStart = agentEventCursor(session);
   const encoder = new TextEncoder();
   let cancel = () => { session.agent.abort(); };
   const stream = new ReadableStream<Uint8Array>({
@@ -146,7 +153,10 @@ async function runCanvasAgentLocal(request: Request) {
       let cursor = cursorStart, output = "", closed = false, failed = false,lastSent=Date.now();
       const send = (type: string, data: unknown) => { if (!closed) { try { controller.enqueue(encoder.encode(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`));lastSent=Date.now(); } catch { cancel(); } } };
       const flush = () => {
-        for (; cursor < session.events.length; cursor++) { const event = session.events[cursor]; if (event.type === "error") failed = true; send(event.type, { ...event.data, at: event.at }); }
+        const page=agentEventsSince(session,cursor);
+        if(page.reset)send("history_required",{total:page.total});
+        for(const event of page.events){if(event.type==="error")failed=true;send(event.type,{...event.data,at:event.at});}
+        cursor=page.total;
         if(!closed&&Date.now()-lastSent>=5000)send("heartbeat",{});
       };
       const timer = setInterval(flush, 300);
@@ -180,23 +190,10 @@ async function runCanvasAgentLocal(request: Request) {
             }
             throw interruption;
           }
-          const attention = session.events.slice(cursorStart).findLast(event => event.type === "attention");
-          const pendingAttention = attention?.data.kind === "waiting" || attention?.data.kind === "restricted";
-          const modelReply = Array.isArray(last?.content) ? last.content.filter(part => part.type === "text").map(part => part.type === "text" ? part.text : "").join("").trim() : output.trim();
-          // A tool gate is authoritative even if the model already promised execution.
-          // Persist its actual reason so restoring history cannot resurrect that claim.
-          const attentionReply = pendingAttention ? String(attention?.data.message || (attention?.data.kind === "waiting" ? "请明确确认报价后继续。" : "当前操作受限，请调整任务后继续。")) : "";
-          const reply = attentionReply || modelReply;
-          if (!reply || failed) throw new Error("Agent 执行未完成，已产出的结果保留，请勿重复提交收费任务");
-          if (pendingAttention && reply !== modelReply) {
-            const corrected = session.agent.state.messages.map(turn => turn === last && turn.role === "assistant"
-              ? { ...turn, content: turn.content.filter(part => part.type !== "text") } : turn);
-            session.agent.state.messages = [...corrected, {
-              role: "assistant", api: session.agent.state.model?.api || "openai-completions", provider: "naumi-local", model: "naumi-local-reply",
-              content: [{ type: "text", text: reply }], stopReason: "stop", timestamp: Date.now(),
-              usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-            }];
-          }
+          const outcome=agentTurnOutcome(last,agentEventsSince(session,cursorStart).events,output);
+          const {attention,reply}=outcome,pendingAttention=outcome.authoritative;
+          if(failed)throw new Error("Agent 执行未完成，已产出的结果保留，请勿重复提交收费任务");
+          if(pendingAttention)recordAuthoritativeReply(session.agent,reply,last);
           const frames = [...(attention ? [{ type: "attention", data: attention.data }] : []), { type: "final", data: { reply, sessionId } }, ...(artifacts.length ? [{ type: "artifacts", data: { artifacts, anchorId } }] : [])];
           await completeSynchronousStream({ text: reply, model: modelId, agentFrames: frames });
           appendSessionEvent(session,"canvas_reply",{reply,authoritative:!!pendingAttention,turnId:session.turnId});

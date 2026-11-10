@@ -106,12 +106,23 @@ export async function sessionOwner(email: string, sessionId: string, kind: "work
   const { rows } = await releasePool().query<SessionOwner>("SELECT * FROM app_release_session_owners WHERE account_key=$1 AND session_id=$2 AND kind=$3", [accountKey(email), sessionId, kind]);
   return rows[0] || null;
 }
+async function lockAgentSession(db: PoolClient, email: string, sessionId: string, kind: "workbench" | "canvas") {
+  await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [`${accountKey(email)}:${kind}:${sessionId}`]);
+}
+/** History mutations use the very same lock as run admission, on their own
+ * transaction connection. Unknown ownership must never be treated as idle. */
+export async function assertIdleAgentSessionTx(db: PoolClient, email: string, sessionId: string, kind: "workbench" | "canvas") {
+  await lockAgentSession(db,email,sessionId,kind);
+  const owner=(await db.query<SessionOwner>("SELECT * FROM app_release_session_owners WHERE account_key=$1 AND session_id=$2 AND kind=$3 FOR UPDATE",[accountKey(email),sessionId,kind])).rows[0];
+  if(owner?.state==="unknown")throw new ReleaseRuntimeError("AGENT_OWNER_UNKNOWN",409);
+  if(owner?.state==="running")throw new ReleaseRuntimeError("AGENT_SESSION_BUSY",409);
+}
 export async function beginAgentActivity(email: string, sessionId: string, kind: "workbench" | "canvas", id = randomUUID()): Promise<string> {
   const identity = releaseIdentity(), runtimeId = releaseProcessRegistry().runtimeId, account = accountKey(email);
   await transaction(async (db) => {
     const boot = await register(db);
     if (boot.admission !== "open") throw new ReleaseRuntimeError("RELEASE_DRAINING", 503);
-    await db.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [`${account}:${kind}:${sessionId}`]);
+    await lockAgentSession(db,email,sessionId,kind);
     const owner = (await db.query<SessionOwner>("SELECT * FROM app_release_session_owners WHERE account_key=$1 AND session_id=$2 AND kind=$3 FOR UPDATE", [account, sessionId, kind])).rows[0];
     if (owner && owner.state !== "idle") throw new ReleaseRuntimeError(owner.state === "unknown" ? "AGENT_OWNER_UNKNOWN" : "AGENT_RUN_ALREADY_ACCEPTED", 409);
     await db.query(`INSERT INTO app_release_session_owners(account_key,session_id,kind,instance_id,boot_id,runtime_id,run_id,state) VALUES($1,$2,$3,$4,$5,$6,$7,'running') ON CONFLICT(account_key,session_id,kind) DO UPDATE SET instance_id=excluded.instance_id,boot_id=excluded.boot_id,runtime_id=excluded.runtime_id,run_id=excluded.run_id,state='running',updated_at=now()`, [account, sessionId, kind, identity.instanceId, identity.bootId, runtimeId, id]);

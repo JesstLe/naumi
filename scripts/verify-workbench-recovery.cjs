@@ -25,7 +25,7 @@ evidence.applicationOwners=['workbench-session.ts','workbench-contract.ts','work
 evidence.sourceSha256=require('node:crypto').createHash('sha256').update(fs.readFileSync(source)).digest('hex');
 let browser, browserServer, server, context, page, origin;
 let currentCase='';
-const explicitSendCases=new Set(['existing explicit SSE send and save retain exact identity and payload','old SSE completion cannot overwrite recovered account or save as new actor','deferred save authorization cannot use the newly selected account','StrictMode bootstrap prompt submits once without being lost']);
+const explicitSendCases=new Set(['server-owned SSE retains identity without client autosave','old SSE completion cannot overwrite recovered account or save as new actor','completed SSE has no second writer across an account change','StrictMode bootstrap prompt submits once without being lost']);
 let requests = [], plans = [], holds = new Map(), count = new Map();
 const delay = ms => new Promise(r => setTimeout(r, ms));
 const sessions = id => ({ session: { title: id, messages: [{ role: 'user', content: 'original prompt [商品图] /media/reference.png' }, { role: 'assistant', content: 'history-' + id }], steps: [{ tool: 'fixture-tool', summary: 'kept' }] } });
@@ -161,11 +161,11 @@ window.metrics=()=>({timers:timers.size,peakTimers,listeners:[...listeners.value
   await check('late list JSON cannot cross accounts; list request errors are contained',async()=>{await reset();await page.evaluate(()=>window.holdJson('/api/agent/session'));await call('refreshSessions');await until(()=>window.jsonWaiting);await page.evaluate(()=>window.account('b@example.test'));await page.evaluate(()=>window.releaseJson());await delay(50);assert.equal((await snapshot()).sessions.length,0);plan('list','',2,{invalid:true});await call('refreshSessions');await delay(100);const s=await snapshot();assert.ok(s.error);assert.equal(s.resources.errors.length,0)});
   await check('bounded remount churn leaves no timers or listeners',async()=>{await reset(true);for(let i=0;i<8;i++){await call('loadSession','A');await until(()=>window.w.state().running);await page.evaluate(()=>window.detach());await page.evaluate(()=>window.mount(true));}const before=requests.length;await delay(1350);const s=await snapshot();observe('churn',{cycles:8,requests:requests.length,...s.resources});assert.equal(requests.length,before);assert.equal(s.resources.timers,0);assert.equal(s.resources.listeners,0);assert.equal(s.resources.peakTimers,1);assert.equal(requests.length,16);assert.ok(s.resources.jsonBytes<8192)});
 
-  await check('StrictMode bootstrap prompt submits once without being lost',async()=>{await reset();await page.evaluate(()=>window.detach());plan('send','',1,{sse:'bootstrap'});await page.evaluate(()=>{window.history.replaceState(null,'','/?prompt=one-shot-original');window.mount(true)});await waitRequest('send','');await until(()=>window.w.state().sessionId==='LIVE');await release('bootstrap');await until(()=>!window.w.state().busy);assert.equal(requests.filter(r=>r.kind==='send').length,1);assert.equal(JSON.parse(requests.find(r=>r.kind==='send').input).message,'one-shot-original');assert.equal(requests.filter(r=>r.kind==='save').length,1)});
+  await check('StrictMode bootstrap prompt submits once without being lost',async()=>{await reset();await page.evaluate(()=>window.detach());plan('send','',1,{sse:'bootstrap'});await page.evaluate(()=>{window.history.replaceState(null,'','/?prompt=one-shot-original');window.mount(true)});await waitRequest('send','');await until(()=>window.w.state().sessionId==='LIVE');await release('bootstrap');await until(()=>!window.w.state().busy);assert.equal(requests.filter(r=>r.kind==='send').length,1);assert.equal(JSON.parse(requests.find(r=>r.kind==='send').input).message,'one-shot-original');assert.equal(requests.filter(r=>r.kind==='save').length,0)});
   // Deliberate mock SEND tests are separate from recovery's zero replay count.
-  await check('existing explicit SSE send and save retain exact identity and payload',async()=>{await reset();plan('send','',1,{sse:'send-end'});await call('send','exact prompt [商品图] /media/reference.png');await waitRequest('send','');await until(()=>window.w.state().sessionId==='LIVE');await release('send-end');await waitRequest('save','');await until(()=>!window.w.state().busy);assert.equal(requests.filter(r=>r.kind==='send').length,1);assert.equal(requests.filter(r=>r.kind==='save').length,1);assert.equal(JSON.parse(requests.find(r=>r.kind==='send').input).message,'exact prompt [商品图] /media/reference.png');assert.equal(JSON.parse(requests.find(r=>r.kind==='save').input).id,'LIVE');assert.equal(requests.find(r=>r.kind==='save').actor,'a@example.test');evidence.explicitMockSend=(evidence.explicitMockSend||0)+1});
+  await check('server-owned SSE retains identity without client autosave',async()=>{await reset();plan('send','',1,{sse:'send-end'});await call('send','exact prompt [商品图] /media/reference.png');await waitRequest('send','');await until(()=>window.w.state().sessionId==='LIVE');await release('send-end');await until(()=>!window.w.state().busy);assert.equal(requests.filter(r=>r.kind==='send').length,1);assert.equal(requests.filter(r=>r.kind==='save').length,0);assert.equal(JSON.parse(requests.find(r=>r.kind==='send').input).message,'exact prompt [商品图] /media/reference.png');assert.equal((await snapshot()).messages.at(-1).content,'original final');evidence.explicitMockSend=(evidence.explicitMockSend||0)+1});
   await check('old SSE completion cannot overwrite recovered account or save as new actor',async()=>{await reset();plan('send','',1,{sse:'late-send'});await call('send','explicit original');await waitRequest('send','');await until(()=>window.w.state().sessionId==='LIVE');await page.evaluate(()=>window.account('b@example.test'));plan('live','B',1,{data:{running:false,total:0,events:[]}});await call('loadSession','B');await until(()=>window.w.state().sessionId==='B'&&!window.w.state().sessionLoadingId);await release('late-send');await delay(100);const s=await snapshot();assert.equal(s.messages.at(-1).content,'history-B');assert.equal(requests.filter(r=>r.kind==='save').length,0);assert.equal(requests.filter(r=>r.kind==='send').length,1);assert.equal(requests.filter(r=>r.method==='DELETE').length,0);evidence.explicitMockSend=(evidence.explicitMockSend||0)+1});
-  await check('deferred save authorization cannot use the newly selected account',async()=>{await reset();plan('send','',1,{sse:'save-auth'});await call('send','original');await waitRequest('send','');await until(()=>window.w.state().sessionId==='LIVE');await page.evaluate(()=>window.holdAuth());await release('save-auth');await until(()=>window.w.state().messages.at(-1)?.content==='original final');await page.evaluate(()=>window.account('b@example.test'));await page.evaluate(()=>window.releaseAuth());await delay(100);assert.equal(requests.filter(r=>r.kind==='save').length,0);evidence.explicitMockSend=(evidence.explicitMockSend||0)+1});
+  await check('completed SSE has no second writer across an account change',async()=>{await reset();plan('send','',1,{sse:'save-auth'});await call('send','original');await until(()=>window.w.state().sessionId==='LIVE');await page.evaluate(()=>window.holdAuth());await release('save-auth');await until(()=>!window.w.state().busy);await page.evaluate(()=>window.account('b@example.test'));await page.evaluate(()=>window.releaseAuth());await delay(100);assert.equal(requests.filter(r=>r.kind==='save').length,0);evidence.explicitMockSend=(evidence.explicitMockSend||0)+1});
   async function closeDrawer() {
     const button=page.getByRole('button',{name:'关闭',exact:true});
     if(await button.count()) await button.click();
@@ -219,19 +219,19 @@ window.metrics=()=>({timers:timers.size,peakTimers,listeners:[...listeners.value
   });
   await parentCheck('parent cached account explicit accepted send survives readiness',async()=>{
     await reset(false,{ready:false});plan('send','',1,{sse:'cached'});await sendUi('cached explicit');await until(()=>window.w.state().sessionId==='LIVE');
-    await page.evaluate(()=>window.setAuthReady(true));await release('cached');await waitRequest('save','');await until(()=>!window.w.state().busy);
+    await page.evaluate(()=>window.setAuthReady(true));await release('cached');await until(()=>!window.w.state().busy);
     assert.equal((await snapshot()).messages.at(-1).content,'original final');assert.equal((await snapshot()).sessionId,'LIVE');assert.equal(requests.filter(r=>r.kind==='send').length,1);
   });
   await parentCheck('parent cached URL StrictMode send survives readiness once',async()=>{
     await reset();await page.evaluate(()=>window.detach());plan('send','',1,{sse:'url'});
     await page.evaluate(()=>{window.authReady=false;window.history.replaceState(null,'','/?prompt=cached-url');window.mount(true)});await until(()=>window.w.state().sessionId==='LIVE');
-    await page.evaluate(()=>window.setAuthReady(true));await release('url');await waitRequest('save','');await until(()=>!window.w.state().busy);
+    await page.evaluate(()=>window.setAuthReady(true));await release('url');await until(()=>!window.w.state().busy);
     assert.equal((await snapshot()).messages.at(-1).content,'original final');assert.equal(requests.filter(r=>r.kind==='send').length,1);assert.ok(!page.url().includes('prompt='));
   });
   await parentCheck('parent anonymous pending URL waits for identity hydration once',async()=>{
     await reset(true,{ready:false,actor:null,prompt:'anonymous-url'});await delay(40);
     assert.equal(requests.filter(r=>r.kind==='send').length,0);assert.ok(page.url().includes('prompt='));plan('send','',1,{sse:'hydrate'});
-    await page.evaluate(()=>{window.account('a@example.test');window.setAuthReady(true)});await waitRequest('send','');await release('hydrate');await waitRequest('save','');await until(()=>!window.w.state().busy);
+    await page.evaluate(()=>{window.account('a@example.test');window.setAuthReady(true)});await waitRequest('send','');await release('hydrate');await until(()=>!window.w.state().busy);
     assert.equal(requests.filter(r=>r.kind==='send').length,1);assert.equal(JSON.parse(requests.find(r=>r.kind==='send').input).message,'anonymous-url');
   });
   await parentCheck('parent anonymous not-ready explicit draft remains until manual send',async()=>{
@@ -247,27 +247,36 @@ window.metrics=()=>({timers:timers.size,peakTimers,listeners:[...listeners.value
   });
 
   const event=(type,data)=>'event: '+type+'\ndata: '+JSON.stringify(data)+'\n\n';
-  await parentCheck('send lifecycle preserves delta plan tools skill history images and original save',async()=>{
+  await parentCheck('send lifecycle preserves delta plan tools skill images and server-owned history',async()=>{
     await reset();plan('live','A',1,{data:{running:false,total:0,events:[]}});await call('loadSession','A');await until(()=>!window.w.state().sessionLoadingId);
     await page.evaluate(()=>window.w.setImageSkill({id:'fixture-skill',revision:7}));
     plan('send','',1,{sse:'matrix',before:[event('plan',{items:['定位','生成']}),event('delta',{text:'正文已流出'}),event('tool_start',{tool:'image'}),event('tool_end',{tool:'image',summary:'已交付'})]});
     await page.evaluate(()=>{void window.w.send('原提示',['/media/reference.png'])});await until(()=>window.w.state().messages.at(-1)?.steps?.length===2);
     const interim=(await snapshot()).messages.at(-1);assert.equal(interim.content,'正文已流出');assert.deepEqual(interim.steps,[{tool:'任务计划',summary:'定位 → 生成'},{tool:'image',summary:'已交付'}]);
-    await release('matrix');await waitRequest('save','');await until(()=>!window.w.state().busy);
-    const send=JSON.parse(requests.find(r=>r.kind==='send').input),save=JSON.parse(requests.find(r=>r.kind==='save').input);
-    assert.deepEqual(send,{message:'原提示\n[商品图] /media/reference.png',skill:{id:'fixture-skill',revision:7},sessionId:'A',history:sessions('A').session.messages.map(m=>({role:m.role,content:m.content})),images:['/media/reference.png']});
-    assert.equal(save.id,'LIVE');assert.equal(save.title,'原提示');assert.deepEqual(save.messages,[...send.history,{role:'user',content:send.message},{role:'assistant',content:'original final'}]);
-    assert.equal(requests.filter(r=>r.kind==='send').length,1);assert.equal(requests.filter(r=>r.kind==='save').length,1);assert.equal((await snapshot()).messages.at(-1).pending,undefined);
+    await release('matrix');await until(()=>!window.w.state().busy);
+    const send=JSON.parse(requests.find(r=>r.kind==='send').input);
+    assert.deepEqual(send,{message:'原提示\n[商品图] /media/reference.png',skill:{id:'fixture-skill',revision:7},sessionId:'A',history:[],images:['/media/reference.png']});
+    assert.equal(requests.filter(r=>r.kind==='save').length,0);
+    assert.equal(requests.filter(r=>r.kind==='send').length,1);assert.equal(requests.filter(r=>r.kind==='save').length,0);assert.equal((await snapshot()).messages.at(-1).pending,undefined);
   });
   await parentCheck('send lifecycle fragmented UTF8 events preserve final text',async()=>{
     await reset();const frames=[event('delta',{text:'中文🙂'}),event('delta',{text:'后续'}),event('final',{reply:'最终中文🙂'})];const bytes=Buffer.from(frames.join(''));const cut=bytes.indexOf(Buffer.from('中'))+1;
-    plan('send','',1,{sse:'fragments',after:frames,fragments:[cut,1,2,7]});await call('send','分片');await until(()=>window.w.state().sessionId==='LIVE');await release('fragments');await waitRequest('save','');await until(()=>!window.w.state().busy);
-    assert.equal((await snapshot()).messages.at(-1).content,'最终中文🙂');assert.equal(JSON.parse(requests.find(r=>r.kind==='save').input).messages.at(-1).content,'最终中文🙂');assert.deepEqual((await snapshot()).resources.errors,[]);
+    plan('send','',1,{sse:'fragments',after:frames,fragments:[cut,1,2,7]});await call('send','分片');await until(()=>window.w.state().sessionId==='LIVE');await release('fragments');await until(()=>!window.w.state().busy);
+    assert.equal((await snapshot()).messages.at(-1).content,'最终中文🙂');assert.equal(requests.filter(r=>r.kind==='save').length,0);assert.deepEqual((await snapshot()).resources.errors,[]);
+  });
+  for(const [name,after]of [['error',[event('error',{message:'fixture interrupted'})]],['EOF',[]]])await parentCheck('partial text and trace retained on '+name,async()=>{
+    await reset();plan('send','',1,{sse:'partial',before:[event('tool_end',{tool:'image',summary:'saved'}),event('delta',{text:'已输出的正文'})],after});
+    await call('send','保留正文');await until(()=>window.w.state().messages.at(-1)?.content==='已输出的正文');await release('partial');await until(()=>!window.w.state().busy);
+    const state=await snapshot();assert.equal(state.messages.at(-1).content,'已输出的正文');assert.equal(state.messages.at(-1).steps[0].summary,'saved');assert.ok(state.error);assert.equal(requests.filter(r=>r.kind==='save').length,0);assert.equal(requests.filter(r=>r.kind==='send').length,1);
+  });
+  await parentCheck('long durable history is not echoed on follow-up',async()=>{
+    await reset();plan('history','A',1,{data:{session:{title:'long',messages:Array.from({length:101},(_,i)=>({role:i%2?'assistant':'user',content:i%2?'文'.repeat(5000):'prompt'})),steps:[]}}});plan('live','A',1,{data:{running:false,total:0,events:[]}});
+    await call('loadSession','A');await until(()=>!window.w.state().sessionLoadingId);plan('send','',1,{sse:'long'});await call('send','follow-up');await waitRequest('send','');const body=JSON.parse(requests.find(r=>r.kind==='send').input);assert.deepEqual(body.history,[]);assert.equal(body.message,'follow-up');await release('long');await until(()=>!window.w.state().busy);
   });
   for(const [name,action,expected]of [['HTTP',{status:503},'fixture-503'],['malformed SSE',{sse:'malformed',after:['event: delta\ndata: {invalid}\n\n']},null]]){
     await parentCheck('send lifecycle '+name+' fails once without save or replay',async()=>{
       await reset();plan('send','',1,action);await call('send','单次失败');await waitRequest('send','');if(action.sse)await release(action.sse);await until(()=>!window.w.state().busy);
-      const s=await snapshot();assert.ok(s.error);if(expected)assert.equal(s.error,expected);assert.equal(s.running,false);assert.equal(s.messages.at(-1).content,'(执行失败)');assert.equal(requests.filter(r=>r.kind==='send').length,1);assert.equal(requests.filter(r=>r.kind==='save').length,0);assert.equal(requests.filter(r=>r.method==='DELETE').length,0);assert.deepEqual(s.resources.errors,[]);
+      const s=await snapshot();assert.ok(s.error);if(expected)assert.equal(s.error,expected);assert.equal(s.running,false);assert.equal(s.messages.at(-1).content,'(回复未完成，请从历史核对结果)');assert.equal(requests.filter(r=>r.kind==='send').length,1);assert.equal(requests.filter(r=>r.kind==='save').length,0);assert.equal(requests.filter(r=>r.method==='DELETE').length,0);assert.deepEqual(s.resources.errors,[]);
     });
   }
   await parentCheck('send lifecycle explicit stop uses original DELETE and no save',async()=>{
@@ -276,7 +285,7 @@ window.metrics=()=>({timers:timers.size,peakTimers,listeners:[...listeners.value
   });
   await parentCheck('send lifecycle interjection retains original session and account',async()=>{
     await reset();plan('send','',1,{sse:'interject'});await call('send','原请求');await until(()=>window.w.state().sessionId==='LIVE');await page.evaluate(()=>window.w.setInterject('加一条'));await call('sendInterject');await waitRequest('interject','');await until(()=>window.w.state().interject==='');
-    const row=requests.find(r=>r.kind==='interject');assert.equal(row.actor,'a@example.test');assert.deepEqual(JSON.parse(row.input),{sessionId:'LIVE',message:'加一条'});assert.equal(requests.filter(r=>r.kind==='send').length,1);await release('interject');await waitRequest('save','');await until(()=>!window.w.state().busy);
+    const row=requests.find(r=>r.kind==='interject');assert.equal(row.actor,'a@example.test');assert.deepEqual(JSON.parse(row.input),{sessionId:'LIVE',message:'加一条'});assert.equal(requests.filter(r=>r.kind==='send').length,1);await release('interject');await until(()=>!window.w.state().busy);
   });
   await parentCheck('send lifecycle account detach drains original transport without cancelling',async()=>{
     await reset();plan('send','',1,{sse:'detached',after:[event('tool_end',{tool:'late',summary:'late-result'}),event('final',{reply:'old-result'})]});await call('send','原账号');await until(()=>window.w.state().sessionId==='LIVE');await page.evaluate(()=>window.account('b@example.test'));await delay(50);
