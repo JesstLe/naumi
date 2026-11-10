@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createServer} from 'node:net';
-import {spawn} from 'node:child_process';
+import {spawn,execFileSync} from 'node:child_process';
 import {randomBytes,scryptSync} from 'node:crypto';
 import {Pool} from 'pg';
 import {chromium} from '@playwright/test';
@@ -13,7 +13,21 @@ assert.equal(process.env.NAUMI_VERIFY_ISOLATED_DB,'1');assert.equal(url.hostname
 const out=path.resolve('output/admin-query/runtime');await fs.mkdir(out,{recursive:true});
 const reservation=createServer();await new Promise(resolve=>reservation.listen(0,'127.0.0.1',resolve));const port=reservation.address().port;await new Promise(resolve=>reservation.close(resolve));
 const origin=`http://127.0.0.1:${port}`,secret='admin-query-runtime-fixture-only-012345678901234567890123456789';
-const server=spawn(process.execPath,['node_modules/next/dist/bin/next','start','-H','127.0.0.1','-p',String(port)],{windowsHide:true,env:{...process.env,NODE_OPTIONS:'',SETTINGS_SECRET:secret,VIDEO_WORKER_SECRET:randomBytes(32).toString('hex'),NAUMI_APPLICATION_TASK_EXECUTION:'worker',NAUMI_MULTI_USER:'1',NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','pipe','pipe']});
+// The metadata console requires an initialized managed registry. Seed it using
+// its real repository and established inert fixture model, without discovery.
+execFileSync(process.execPath,['node_modules/tsx/dist/cli.mjs','-e',`(async()=>{
+ const {getPool}=require('./src/platform/db/pool');const {ensureSchema}=require('./src/lib/persistence/schema');
+ const {createModelRepository}=require('./src/lib/model-config/repository');const {fixtureModelConfig}=require('./scripts/model-config-unit-fixture');const pool=getPool();
+ try{
+  await ensureSchema();await require('./src/lib/model-config/storage-schema').ensureModelSchema(pool);
+  const credentials=require('./src/lib/model-config/credentials').createCredentialStore(pool);
+  const credential=await credentials.importPlain({providerId:'p1',plain:'runtime-fixture-not-a-real-provider-key',actor:'fixture'});
+  const config=fixtureModelConfig('https://fixture.invalid/v1',credential.id);
+  require('./src/lib/model-config/schema').validateModelConfig(config);
+  await createModelRepository({pool,initialize:async()=>config}).current();
+ }finally{await pool.end();}
+})().catch(error=>{console.error(error);process.exitCode=1;});`],{windowsHide:true,env:{...process.env,NODE_OPTIONS:'--conditions=react-server',SETTINGS_SECRET:secret},stdio:'pipe',encoding:'utf8'});
+const server=spawn(process.execPath,['node_modules/next/dist/bin/next','start','-H','127.0.0.1','-p',String(port)],{windowsHide:true,env:{...process.env,NODE_OPTIONS:'',SETTINGS_SECRET:secret,VIDEO_WORKER_SECRET:randomBytes(32).toString('hex'),NAUMI_ROUTER_MANAGEMENT_URL:origin+'/fixture-router',NAUMI_ROUTER_MANAGEMENT_TOKEN:randomBytes(32).toString('hex'),MODEL_CONFIG_ENVELOPE_SECRET:randomBytes(32).toString('hex'),MODEL_CONFIG_TRUSTED_ORIGINS:origin,NAUMI_APPLICATION_TASK_EXECUTION:'worker',NAUMI_MULTI_USER:'1',NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','pipe','pipe']});
 let logs='';server.stdout.on('data',data=>logs+=data);server.stderr.on('data',data=>logs+=data);
 const pool=new Pool({connectionString:process.env.DATABASE_URL});let browser,page;const errors=[],requests=[],checks=[];
 try{
@@ -71,7 +85,10 @@ try{
  await detailsPage.getByRole('button',{name:'查看',exact:true}).first().click();await detailsPage.getByText('无法读取对话内容',{exact:true}).waitFor();
  await detailsPage.unroute('**/api/admin/bi/conversation?**');await detailsPage.getByRole('button',{name:'重试',exact:true}).click();await detailsPage.getByText('Actual conversation retry evidence',{exact:true}).waitFor();
  await detailsPage.screenshot({path:path.join(out,'conversation-retry.png'),fullPage:true});checks.push('Conversation 503 retry recovers actual authorized database messages');
- await detailsPage.goto(origin+'/admin/model-management/library');await detailsPage.getByText('Fixture metadata audit',{exact:true}).waitFor();
+ await detailsPage.goto(origin+'/admin/model-management/library');
+ const libraryCheck=await context.request.get(origin+'/api/admin/model-management/library?view=summary');
+ assert.equal(libraryCheck.status(),200,JSON.stringify(await libraryCheck.json()));
+ await detailsPage.getByText('Fixture metadata audit',{exact:true}).waitFor();
  await detailsPage.route('**/api/admin/model-management/library?**',route=>route.fulfill({status:403,contentType:'text/html',body:'<h1>Denied</h1>'}));
  await detailsPage.getByRole('button',{name:'刷新元数据库'}).click();await detailsPage.getByRole('alert').filter({hasText:'读取失败'}).waitFor();assert.equal(await detailsPage.getByText('Fixture metadata audit',{exact:true}).count(),0);assert.equal(await detailsPage.getByRole('button',{name:'导出当前页'}).isDisabled(),true);
  await detailsPage.screenshot({path:path.join(out,'library-denied.png'),fullPage:true});await detailsPage.unroute('**/api/admin/model-management/library?**');await detailsPage.getByRole('button',{name:'刷新元数据库'}).click();await detailsPage.getByText('Fixture metadata audit',{exact:true}).waitFor();
@@ -89,5 +106,5 @@ try{
  await context.request.delete(origin+'/api/admin/login');await page.getByRole('button',{name:'刷新',exact:true}).click();await page.getByRole('alert').filter({hasText:'读取用量失败'}).waitFor();
  assert.equal(await page.locator('tbody tr').count(),0);checks.push('Expired admin session clears retained same-page results');
  assert.deepEqual(errors,[]);await fs.writeFile(path.join(out,'RESULT.json'),JSON.stringify({checks,errors,requests,realNext:true,realPostgres:true,productionWrites:0,supplierCalls:0},null,2));console.log('ADMIN_QUERY_RUNTIME=PASS '+JSON.stringify(checks));
-}catch(error){if(page){await page.screenshot({path:path.join(out,'failure.png'),fullPage:true});await fs.writeFile(path.join(out,'failure.json'),JSON.stringify({errors,requests,url:page.url(),text:await page.locator('body').innerText()},null,2));}throw error;}
+}catch(error){if(page){await page.screenshot({path:path.join(out,'failure.png'),fullPage:true});const surfaces=[];for(const context of browser.contexts())for(const open of context.pages())surfaces.push({url:open.url(),text:await open.locator('body').innerText()});await fs.writeFile(path.join(out,'failure.json'),JSON.stringify({errors,requests,surfaces},null,2));}throw error;}
 finally{await browser?.close();server.kill();await new Promise(resolve=>{if(server.exitCode!==null)resolve();else server.once('exit',resolve)});await pool.end();await fs.writeFile(path.join(out,'server.log'),logs);}
