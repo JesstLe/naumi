@@ -1,0 +1,43 @@
+import assert from "node:assert/strict";
+import {randomUUID} from "node:crypto";
+import {validateCinematicMappings,cinematicShotPrompt} from "../src/lib/storyboard/script-mapping";
+import {newStoryboardDocument,reviewStoryboardTake,storyboardWriteSchema,storyboardDocumentSignature,restructureStoryboardShots} from "../src/lib/storyboard/plan";
+import {prepareScriptShotAssets,type ScriptShot} from "../src/lib/agent/video-script-storyboard";
+import {assertInternalAgentPath} from "../src/lib/agent/harness-network";
+import type {CanvasVideoNode} from "../src/lib/canvas/video-node-schema";
+
+async function main(){
+  let checks=0;const pass=()=>checks++;
+  const text="女孩说：等我。列车离开。",range={start:0,end:text.length};
+  const mapping={ranges:[range],dialogue:[{start:4,end:7,speaker:"女孩"}]},reaction={ranges:[range],dialogue:[]},addition={ranges:[],dialogue:[],supplement:"站台空镜"};
+  assert.equal(validateCinematicMappings(text,[{mapping},{mapping:reaction},{mapping:addition}]).length,3);pass();
+  assert.throws(()=>validateCinematicMappings(text,[{mapping},{mapping}]),/同一句对白/);pass();
+  assert.throws(()=>validateCinematicMappings(text,[{mapping:{ranges:[{start:1,end:text.length}],dialogue:[]}}]),/覆盖/);pass();
+  assert.throws(()=>validateCinematicMappings(text,[{mapping:{ranges:[],dialogue:[]}}]),/创作补充/);pass();
+  assert.throws(()=>validateCinematicMappings("😀",[{mapping:{ranges:[{start:0,end:1},{start:1,end:2}],dialogue:[]}}]),/截断/);pass();
+  const reordered=[{mapping:{ranges:[{start:7,end:text.length}],dialogue:[]}},{mapping:{ranges:[{start:0,end:7}],dialogue:[]}}];assert.equal(validateCinematicMappings(text,reordered).length,2);pass();
+  assert.match(cinematicShotPrompt("反应",text,reaction),/本镜无新增对白/);pass();
+  assert.match(cinematicShotPrompt("说话",text,mapping),/女孩：等我。/);pass();
+  const saves:Record<string,any>[]=[],deps={projectKey:"tree:fixture",read:async()=>({node:{status:"completed",content:text}}),save:async(body:any)=>{saves.push(body);return {node:{id:`text-${saves.length}`,content:body.content||text.slice(body.start,body.end),x:0,width:400}};},operationId:()=>randomUUID()};
+  const shots:ScriptShot[]=[{id:"a",prompt:"说话",durationSeconds:4,mapping},{id:"b",prompt:"反应",durationSeconds:4,mapping:reaction},{id:"c",prompt:"空镜",durationSeconds:4,mapping:addition}];
+  await prepareScriptShotAssets({node_id:"original",mapping:"cinematic"},shots,[],deps);assert.equal(saves.length,3);assert.ok(saves.every(body=>body.referenceNodeId==="original"&&body.expectedSourceSha256));assert.equal(shots[2].source?.mapping.supplement,"站台空镜");pass();
+  await assert.rejects(()=>prepareScriptShotAssets({node_id:"original"},[{id:"a",prompt:"a",durationSeconds:4,originalText:"女孩"},{id:"b",prompt:"b",durationSeconds:4,originalText:"列车"}],[],deps),/连续/);assert.equal(saves.length,3);pass();
+  await assert.rejects(()=>prepareScriptShotAssets(undefined,shots,[],deps),/正式剧本/);pass();
+  const nodes=[{id:"a",x:100,y:0,createdAt:"2026-01-01",deletedAt:null},{id:"b",x:-100,y:0,createdAt:"2026-01-02",deletedAt:null}] as CanvasVideoNode[];
+  const doc=newStoryboardDocument(nodes,[]);assert.deepEqual(doc.shots.map(shot=>shot.nodeId),["a","b"]);pass();
+  assert.equal(storyboardDocumentSignature(doc),storyboardDocumentSignature(storyboardWriteSchema.parse({id:randomUUID(),operationId:randomUUID(),projectKey:"tree:fixture",expectedRevision:0,document:doc}).document));pass();
+  const linked={...doc,shots:doc.shots.map((shot,index)=>({...shot,source:{nodeId:"original",sha256:"a".repeat(64),mapping:index?reaction:mapping}}))};
+  const merged=restructureStoryboardShots(linked,["a","b"],["merged"]);assert.equal(merged.shots.length,1);assert.equal(merged.shots[0].source?.mapping.dialogue.length,1);assert.equal(merged.shots[0].source?.mapping.ranges.length,1);assert.equal(merged.shots[0].adoptedArtworkId,null);pass();
+  const split=restructureStoryboardShots(merged,["merged"],["left","right"]);assert.equal(split.shots[1].source?.mapping.dialogue.length,0);assert.notEqual(split.shots[0].number,split.shots[1].number);assert.equal(merged.shots.length,1);pass();
+  assert.deepEqual(newStoryboardDocument(nodes,["b","a"]).shots.map(shot=>shot.nodeId),["b","a"]);pass();
+  const old={artworkId:"old",taskId:"task-old",status:"approved" as const,note:""},fresh={artworkId:"new",taskId:"task-new",status:"pending" as const,note:""};
+  let shot=reviewStoryboardTake(doc.shots[0],old,true);shot=reviewStoryboardTake(shot,fresh);assert.equal(shot.adoptedArtworkId,"old");pass();
+  shot=reviewStoryboardTake(shot,{...old,status:"changes",note:"延长停顿"});assert.equal(shot.adoptedArtworkId,"old");pass();
+  shot=reviewStoryboardTake(shot,{...fresh,status:"approved"},true);assert.equal(shot.adoptedArtworkId,"new");pass();
+  shot=reviewStoryboardTake(shot,{...old,note:"旧版备注"});assert.equal(shot.adoptedArtworkId,"new");pass();
+  const write={id:randomUUID(),operationId:randomUUID(),expectedRevision:0,projectKey:"tree:fixture",document:{...doc,shots:[shot,doc.shots[1]]}};assert.equal(storyboardWriteSchema.parse(write).document.shots[0].adoptedArtworkId,"new");pass();
+  assert.throws(()=>storyboardWriteSchema.parse({...write,document:{...doc,shots:[shot,shot]}}));pass();
+  for(const method of ["GET","POST"])assert.doesNotThrow(()=>assertInternalAgentPath("/api/canvas/storyboards",method));assert.throws(()=>assertInternalAgentPath("/api/admin/storyboards","POST"));pass();
+  console.log(`STORYBOARD_DIRECTOR=PASS CHECKS=${checks} ORIGINAL_COVERAGE=PASS DIALOGUE_SINGLE_OWNER=PASS ADOPTED_TAKE_STABLE=PASS SUPPLIER_CALLS=0`);
+}
+main().catch(error=>{console.error(error);process.exitCode=1;});

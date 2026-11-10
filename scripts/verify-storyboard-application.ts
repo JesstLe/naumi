@@ -31,9 +31,13 @@ async function main(){
  }catch{res.writeHead(500);res.end()}});
  try{
   console.log("STORYBOARD_APP_STAGE=isolated_database");
+  let databaseUrl=process.env.STORYBOARD_NATIVE_FIXTURE_URL||"";
+  if(databaseUrl){const supplied=new URL(databaseUrl);assert.equal(process.env.NAUMI_VERIFY_ISOLATED_DB,"1");assert.equal(supplied.hostname,"127.0.0.1");assert.equal(supplied.pathname,"/naumi_video_fixture_storyboard_director");}
+  else {
   container=docker(["run","--detach","--rm","--name",name,"--label",`naumi.task=${owner}`,"--memory","768m","--cpus","2","--tmpfs","/var/lib/postgresql/data","--publish","127.0.0.1::5432","--env-file",envFile,"postgres:16-alpine"]);
   let ready=false;for(let i=0;i<60;i++){if(spawnSync("docker",["exec",container,"pg_isready","-U","postgres","-d",database],{windowsHide:true,stdio:"ignore"}).status===0){ready=true;break}await new Promise(r=>setTimeout(r,200))}assert.ok(ready);
-  const port=Number(docker(["port",container,"5432/tcp"]).split(":").at(-1)),databaseUrl=`postgresql://postgres:${password}@127.0.0.1:${port}/${database}`;
+  const port=Number(docker(["port",container,"5432/tcp"]).split(":").at(-1));databaseUrl=`postgresql://postgres:${password}@127.0.0.1:${port}/${database}`;
+  }
   pool=new Pool({connectionString:databaseUrl,max:2});await pool.query("CREATE TABLE public.naumi_video_fixture_guard(owner text NOT NULL)");await pool.query("INSERT INTO public.naumi_video_fixture_guard VALUES($1)",["canvas-video-fusion-20261013"]);
   await new Promise<void>(r=>router.listen(0,"127.0.0.1",r));listening=true;
   Object.assign(process.env,{NAUMI_VERIFY_ISOLATED_DB:"1",VIDEO_FIXTURE_DATABASE_URL:databaseUrl,VIDEO_FIXTURE_ROUTER_MANAGEMENT_URL:`http://127.0.0.1:${(router.address() as {port:number}).port}`,VIDEO_FIXTURE_ROUTER_TOKEN:randomBytes(32).toString("hex"),VIDEO_FIXTURE_ROUTER_ENVELOPE_SECRET:randomBytes(32).toString("hex")});
@@ -49,7 +53,14 @@ async function main(){
   const config=reconcileVideoSettings({modelId:"video-a",providerId:"managed-video",mode:"text",prompt:"Storyboard fixture",durationSeconds:4,resolution:"720p",aspectRatio:"16:9"},resolveVideoCapability({manual:spec.definition})).config;
   const parts=["第一镜：红色方块缓慢转动。\n","第二镜：蓝色方块进入画面。\n","第三镜：两个方块停止。\n"],creditBefore=await h.creditState("a"),source=await invoke("plan_video_script",{title:"分镜端到端原稿",content:parts.join("")});
   const callId=randomUUID(),storyArgs={mode:"independent",script_source:{node_id:source.node.id},config,shots:parts.map((part,index)=>({id:`shot-${index}`,title:`镜头${index+1}`,prompt:`Shot ${index+1}: original test cubes.`,originalText:part,durationSeconds:4}))};
-  const story=await invoke("plan_video_storyboard",storyArgs,callId);assert.equal(story.nodes.length,3);assert.deepEqual((await invoke("plan_video_storyboard",storyArgs,callId)).nodeIds,story.nodeIds);
+  const story=await invoke("plan_video_storyboard",storyArgs,callId);assert.equal(story.nodes.length,3);const persisted=await h.request<any>("a","GET",`/api/canvas/storyboards?projectKey=${encodeURIComponent(project)}`);assert.equal(persisted.status,200);assert.equal(persisted.body.plans[0].id,story.planId);assert.deepEqual((await invoke("plan_video_storyboard",storyArgs,callId)).nodeIds,story.nodeIds);
+  const fullRange={start:0,end:parts.join("").length};
+  const cinematic=await invoke("plan_video_storyboard",{mode:"independent",script_source:{node_id:source.node.id,mapping:"cinematic"},config,shots:[
+    {id:"speaking",prompt:"发声镜头",durationSeconds:4,mapping:{ranges:[fullRange],dialogue:[{start:0,end:3,speaker:"旁白"}]}},
+    {id:"reaction",prompt:"反应镜头，无新增对白",durationSeconds:4,mapping:{ranges:[fullRange],dialogue:[]}},
+    {id:"insert",prompt:"站台空镜",durationSeconds:4,mapping:{ranges:[],dialogue:[],supplement:"无对白空镜"}}
+  ]});
+  const cinematicPlan=(await h.request<any>("a","GET",`/api/canvas/storyboards?projectKey=${encodeURIComponent(project)}`)).body.plans.find((plan:any)=>plan.id===cinematic.planId);assert.equal(cinematicPlan.document.shots.length,3);assert.equal(cinematicPlan.document.shots[0].source.mapping.dialogue.length,1);assert.equal(cinematicPlan.document.shots[1].source.mapping.dialogue.length,0);pass("cinematic_mapping_real_agent_api_original_overlap_dialogue_once");
   assert.deepEqual(await h.creditState("a"),creditBefore);assert.equal(h.supplierCalls().filter(call=>call.phase==="create").length,0);
   for(let i=0;i<3;i++){assert.ok(story.nodes[i].config.prompt.includes(parts[i]));assert.ok(story.nodes[i].inputs.some((input:any)=>input.kind==="text"&&input.value===parts[i]));}
   pass("agent_saves_full_original_three_editable_shots_no_supplier_or_charge");
@@ -69,6 +80,11 @@ async function main(){
   pass("three_shots_auto_assembly_restart_replay_hash_audio_billing",{runId:first.id,jobId:complete.assembly.jobId,videoIds});
   const current=await nodes(),edited=await invoke("set_video_prompt",{node_id:current[1].id,expected_revision:current[1].revision,prompt:current[1].config.prompt+"\n仅修改第二镜的运镜。"});assert.ok(edited.node.revision>current[1].revision);
   const partial=await intent([0,2]);await submit(partial);const partialRun=await wait(partial.id);assert.equal(h.supplierCalls().filter(call=>call.phase==="create").length,4);assert.equal(partialRun.nodes.filter((n:any)=>n.taskId).length,1);await validateOutput(partialRun,"partial-assembly");pass("local_edit_generates_one_shot_reuses_other_two",{runId:partial.id});
+  const savedPlan=(await h.request<any>("a","GET",`/api/canvas/storyboards?projectKey=${encodeURIComponent(project)}`)).body.plans.find((plan:any)=>plan.id===story.planId);
+  const adoptedIds:string[]=[];
+  for(const shot of savedPlan.document.shots){const stage=complete.nodes.find((n:any)=>n.id===shot.nodeId),task=(await h.request<any>("a","GET",`/api/video/tasks/${stage.taskId}`)).body.task;const art=task.resultAssets.find((asset:any)=>asset.kind==="video").artworkId;adoptedIds.push(art);shot.adoptedArtworkId=art;shot.takes=[{artworkId:art,taskId:task.id,status:"approved",note:"original take"}];}
+  const adoption=await h.request<any>("a","POST","/api/canvas/storyboards",{id:savedPlan.id,projectKey:project,expectedRevision:savedPlan.revision,operationId:randomUUID(),document:savedPlan.document});assert.equal(adoption.status,200,JSON.stringify(adoption.body));
+  const adoptedIntent={...await intent(true),storyboard:{id:savedPlan.id,revision:adoption.body.plan.revision}};await submit(adoptedIntent);const adoptedRun=await wait(adoptedIntent.id);assert.deepEqual(adoptedRun.plan.nodes.map((n:any)=>n.existingArtworkId),adoptedIds);assert.equal(h.supplierCalls().filter(call=>call.phase==="create").length,4);await validateOutput(adoptedRun,"adopted-assembly");pass("persistent_plan_adopted_old_take_survives_new_result_zero_generation");
   const reorder=await intent(true,[...story.nodeIds].reverse());await submit(reorder);const reordered=await wait(reorder.id);assert.equal(h.supplierCalls().filter(call=>call.phase==="create").length,4);assert.equal(reordered.nodes.filter((n:any)=>n.taskId).length,0);assert.deepEqual(reordered.plan.assembly.nodeIds,[...story.nodeIds].reverse());await validateOutput(reordered,"reordered-assembly");pass("all_reused_reorder_only_assembles_zero_video_calls");
   const invalid={...await intent(true),assembly:{nodeIds:[story.nodeIds[0],story.nodeIds[0]]}},invalidBefore=await h.dbCount("app_video_media_jobs");assert.equal((await h.request<any>("a","POST","/api/canvas/video-workflows",invalid)).status,422);assert.equal(await h.dbCount("app_video_media_jobs"),invalidBefore);pass("invalid_order_rejected_without_media_purchase");
   const failedIntent=await intent(true);await submit(failedIntent);const queued=await read(failedIntent.id);assert.equal(queued.assembly.status,"queued");await h.failOwnedQueuedAssembly(queued.assembly.jobId);const failed=await wait(failedIntent.id,"failed");assert.equal(failed.assembly.error,"媒体处理失败，请检查输入与处理参数");assert.equal(h.supplierCalls().filter(call=>call.phase==="create").length,4);const failedBilling=await h.mediaBillingEvidence("a",failed.assembly.jobId);assert.equal(Number(failedBilling.operation.charged_credits),0);assert.equal(failedBilling.ledger.length,0);

@@ -190,31 +190,37 @@ export function ModelHealthPanel() {
     if (!dirtyRef.current) setForm({ enabled: next.policy.enabled, staleHours: String(next.policy.staleHours), dailyMaxCalls: String(next.policy.dailyMaxCalls) });
   }, []);
 
+  const readAbort = useRef<AbortController | null>(null);
   const load = useCallback(async (mode: "initial" | "refresh" | "silent") => {
+    if (mode === "silent" && readAbort.current) return;
+    readAbort.current?.abort();
+    const abort = new AbortController(); readAbort.current = abort;
     if (mode === "initial") setLoading(true);
     if (mode === "refresh") setRefreshing(true);
     try {
-      const response = await fetch("/api/admin/model-health", { cache: "no-store" });
+      const response = await fetch("/api/admin/model-health", { cache: "no-store", signal: abort.signal });
+      if (abort.signal.aborted) return;
       if (response.status === 401 || response.status === 404) {
         // 本接口仅管理员可达：biAuthorize 对未登录一律返回 404「页面不存在」。
         setAuthStale(true);
         throw new Error("登录状态已失效，请重新登录");
       }
       const data = await response.json().catch(() => null) as (HealthOverview & { error?: string }) | null;
+      if (abort.signal.aborted) return;
       if (response.status === 403) throw new Error("没有权限查看模型健康巡检");
       if (!response.ok || !data) throw new Error(data?.error || "加载失败，请稍后重试");
       applyOverview(data);
       setAuthStale(false);
       setLoadError("");
     } catch (error) {
-      if (mode !== "silent") setLoadError(error instanceof Error ? error.message : "加载失败，请稍后重试");
+      if (!abort.signal.aborted && mode !== "silent") setLoadError(error instanceof Error ? error.message : "加载失败，请稍后重试");
     } finally {
-      if (mode === "initial") setLoading(false);
-      if (mode === "refresh") setRefreshing(false);
+      if (!abort.signal.aborted) { setLoading(false); setRefreshing(false); }
+      if (readAbort.current === abort) readAbort.current = null;
     }
   }, [applyOverview]);
 
-  useEffect(() => { void load("initial"); }, [load]);
+  useEffect(() => { void load("initial"); return () => readAbort.current?.abort(); }, [load]);
 
   const hasChecking = overview?.providers.some(provider => provider.models.some(model => model.state === "checking")) ?? false;
   useEffect(() => {

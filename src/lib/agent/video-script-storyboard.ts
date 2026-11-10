@@ -1,9 +1,10 @@
 import {createHash} from "node:crypto";
 import {videoNodeConfigSchema} from "../canvas/video-node-schema";
 import type {OrderedInput} from "../video/references";
+import {validateCinematicMappings,cinematicShotPrompt,type CinematicMapping,type StoryboardSource} from "../storyboard/script-mapping";
 
-export type ScriptShot={id:string;prompt:string;durationSeconds:number;originalText?:string;scriptStart?:number;scriptEnd?:number;scriptInput?:OrderedInput;textNodeId?:string;scriptX?:number;config?:any;inputs?:OrderedInput[];title?:string;dependsOn?:string[]};
-type Source={node_id:string;start?:number;end?:number};
+export type ScriptShot={id:string;prompt:string;durationSeconds:number;originalText?:string;scriptStart?:number;scriptEnd?:number;scriptInput?:OrderedInput;textNodeId?:string;scriptX?:number;config?:any;inputs?:OrderedInput[];title?:string;dependsOn?:string[];mapping?:CinematicMapping;source?:StoryboardSource;scene?:string;purpose?:string};
+type Source={node_id:string;start?:number;end?:number;mapping?:"cinematic"};
 type Dependencies={projectKey:string;promptAssets?:boolean;mainPrompt?:string;read:(path:string)=>Promise<any>;save:(body:unknown)=>Promise<any>;operationId:(kind:string)=>string};
 const hash=(text:string)=>createHash("sha256").update(text).digest("hex");
 const splitsCharacter=(text:string,i:number)=>i>0&&i<text.length&&/[\uD800-\uDBFF]/.test(text[i-1])&&/[\uDC00-\uDFFF]/.test(text[i]);
@@ -13,12 +14,28 @@ export function storyboardMainPrompt(shots:readonly {prompt:string;durationSecon
 
 /** Verify complete contiguous original coverage before creating any fragment asset. */
 export async function prepareScriptShotAssets(source:Source|undefined,shots:ScriptShot[],shared:OrderedInput[],deps:Dependencies){
-  if(!source){if(shots.some(s=>s.originalText!==undefined||s.scriptStart!==undefined||s.scriptEnd!==undefined))throw new Error("原文片段需要指定正式剧本来源");return [];}
+  if(!source){if(shots.some(s=>s.originalText!==undefined||s.scriptStart!==undefined||s.scriptEnd!==undefined||s.mapping!==undefined))throw new Error("原文片段需要指定正式剧本来源");return [];}
   const original=(await deps.read(`/api/video/texts?id=${encodeURIComponent(source.node_id)}&projectKey=${encodeURIComponent(deps.projectKey)}`)).node;
   if(!original||original.status!=="completed")throw new Error("剧本来源尚未完成");
   if(shared.some(input=>input.kind==="text"&&input.nodeId.replace(/^text:/,"")===source.node_id))throw new Error("各片段只引用自身原文，不能把整份剧本作为共享输入");
   const text=String(original.content),start=source.start??0,end=source.end??text.length;
   if(!Number.isInteger(start)||!Number.isInteger(end)||start<0||start>=end||end>text.length)throw new Error("原稿制作范围无效");
+  if(source.mapping==="cinematic"){
+    if(shots.some(shot=>shot.originalText!==undefined||shot.scriptStart!==undefined||shot.scriptEnd!==undefined))throw new Error("影视映射使用ranges，不能混入旧连续切片字段");
+    const mappings=validateCinematicMappings(text,shots,start,end),sha256=hash(text);
+    const prompts=shots.map((shot,index)=>cinematicShotPrompt(shot.prompt,text,mappings[index]));
+    for(const prompt of prompts)videoNodeConfigSchema.parse({prompt});
+    if(deps.promptAssets)videoNodeConfigSchema.parse({prompt:deps.mainPrompt?.trim()?deps.mainPrompt:storyboardMainPrompt(shots.map((shot,index)=>({...shot,prompt:prompts[index]})))});
+    const authors:OrderedInput[]=[];
+    for(const [index,shot] of shots.entries()){
+      const saved=await deps.save({operationId:deps.operationId(`video-script-cinematic:${shot.id}`),projectKey:deps.projectKey,title:shot.title||`镜头正文 ${index+1}`,content:prompts[index],referenceNodeId:source.node_id,expectedSourceSha256:sha256});
+      const input:OrderedInput={id:`script-${shot.id}`,nodeId:saved.node.id,kind:"text",role:"author",value:saved.node.content};
+      shot.prompt=prompts[index];shot.textNodeId=saved.node.id;shot.scriptInput=input;shot.scriptX=saved.node.x+saved.node.width+96;
+      shot.source={nodeId:source.node_id,sha256,mapping:mappings[index]};authors.push(input);
+    }
+    return authors;
+  }
+  if(shots.some(shot=>shot.mapping))throw new Error("影视映射需显式选择cinematic来源模式");
   let next=start;
   const prepared=shots.map((shot,index)=>{
     if(shot.originalText!==undefined){

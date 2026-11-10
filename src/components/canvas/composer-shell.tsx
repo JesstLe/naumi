@@ -32,6 +32,20 @@ export const CanvasComposerShell = forwardRef<HTMLDivElement, Props>(function Ca
   const expanded = controlledExpanded ?? localExpanded;
   const shell = useRef<HTMLDivElement | null>(null);
   const previousScroll = useRef<{ top:number; left:number } | null>(null);
+  useLayoutEffect(()=>{
+    const panel=shell.current,body=panel?.querySelector<HTMLElement>('[data-composer-body]');
+    if(!panel||!body)return;
+    // If chrome leaves less than a useful input area (small slot or keyboard),
+    // scroll the whole panel. Otherwise only its body scrolls. Never both.
+    const measure=()=>{
+      const chrome=panel.scrollHeight-body.offsetHeight;
+      panel.dataset.composerScroll=panel.clientHeight-chrome<112?"shell":"body";
+    };
+    measure();const observer=new ResizeObserver(measure);
+    observer.observe(panel);observer.observe(body);
+    for(const child of Array.from(panel.children))observer.observe(child);
+    return()=>observer.disconnect();
+  },[]);
   function toggleExpand(){
     const body=shell.current?.querySelector<HTMLElement>('[data-composer-body]');
     if(body)previousScroll.current={top:body.scrollTop,left:body.scrollLeft};

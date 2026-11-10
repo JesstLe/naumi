@@ -48,7 +48,7 @@ async function main() {
     canvasX: id === rootId ? 120 : 560, canvasY: 110, width: 350, height: 220, createdAt: now, updatedAt: now, ...extra });
   let texts = [nodeRecord(rootId, ''), nodeRecord(otherId, '另一份已保存正文', { prompt: '另一份写作要求' })];
   let settings = {}, textMode = 'fail', delayTextSave = false, releaseTextSave, failTextSave = false;
-  const generated = '清晨的白鹭停在石桥边，柔和日光照亮水面。';
+  let generated = '清晨的白鹭停在石桥边，柔和日光照亮水面。';
   const imageModel = { id: 'fixture-image', label: '图片模型', modality: 'image', supportsEdit: true, qualities: ['medium'],
     qualitySupported: true, nativeResolutions: ['1K'], generationParameters: { ratios: ['auto', '1:1', '3:4', '16:9'], resolutions: ['1K'] } };
   const textModel = { id: 'fixture-text', label: '文字模型', modality: 'text', supportsVision: true };
@@ -113,6 +113,7 @@ async function main() {
     if (p === '/api/account') return json(route, { persisted: true, user, artworks: [] });
     if (p === '/api/feature-access') return json(route, { email: account, policy: { mode: 'default', allowed: [], version: 1 } });
     if (p === '/api/projects') return json(route, { names: { [project]: '文字工作区' } });
+    if (p === '/api/canvas/workflow-import' && req.method() === 'GET') return json(route, { manifests: [] });
     if (p === '/api/canvas/text-nodes') {
       if (req.method() === 'POST') {
         textWrites.push(structuredClone(payload));
@@ -171,6 +172,13 @@ async function main() {
 
   try {
     await load(rootId);
+    if(args.includes('--layout-only')){
+      await require('./verification/canvas-text-layout-browser.cjs')({page,rootId,node,dock,body,cardBody,tab,instruction,load,saved,check,screenshot,
+        generated:value=>{generated=value;textMode='success';}});
+      assert.deepEqual(errors,[]);assert.deepEqual(external,[]);assertNoImagePurchase();
+      fs.writeFileSync(path.join(out,'LAYOUT.json'),JSON.stringify({...snapshot(),result:'PASS'},null,2));
+      console.log(`CANVAS_TEXT_LAYOUT=PASS CHECKS=${checks.length} FULL_REACT=YES REAL_SUPPLIER_CALLS=0`);return;
+    }
     if (baseline) {
       assert.equal(await node(rootId).locator('textarea').count(), 0, 'Old empty text card must reproduce its non-editable state');
       assert.equal(await dock().getByRole('tab', { name: '正文', exact: true }).count(), 0);
