@@ -1,7 +1,8 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
 import {AdminQueryInput} from '@/components/admin/query-input';
-import {usePathname,useRouter,useSearchParams} from 'next/navigation';
+import {useSearchParams} from 'next/navigation';
+import {replaceAdminQuery} from '@/components/admin/query-navigation';
 import {ArrowLeft,ChevronRight,ImageIcon,RefreshCw,X} from 'lucide-react';
 import {authHeader} from '@/lib/supabase';
 import {useAuth} from '@/lib/auth-context';
@@ -17,18 +18,22 @@ function eventSummary(event:{type:string;summary:string}){
 export function CreationStatus({status}:{status:string}){return <span className={`${styles.badge} ${styles[status]||''}`}>{labels[status]||'未记录'}</span>;}
 export function CreationBrowser(props:{tenantId?:string;enterprise?:boolean;historySource?:'legacy'|''}){const {user}=useAuth();return <ScopedCreationBrowser key={`${user?.email||'console'}:${props.tenantId||'*'}:${props.enterprise?'enterprise':'platform'}`} {...props}/>;}
 function ScopedCreationBrowser({tenantId,enterprise=false,historySource}:{tenantId?:string;enterprise?:boolean;historySource?:'legacy'|''}){
- const query=useSearchParams(),router=useRouter(),path=usePathname();const selected=query.get('creationId')||'';
+ const query=useSearchParams();const selected=query.get('creationId')||'';
  const legacy=(historySource??query.get('source'))==='legacy',platformHistory=!enterprise&&!tenantId;
  const [page,setPage]=useState<CreationPage|null>(null),[detail,setDetail]=useState<CreationDetail|null>(null),[error,setError]=useState(''),[detailError,setDetailError]=useState(''),[retry,setRetry]=useState(0),[loading,setLoading]=useState(true);
  const api=enterprise?'/api/enterprise/creations':'/api/admin/creations';
- useEffect(()=>{const refresh=()=>setRetry(v=>v+1);const clear=()=>{setPage(null);setDetail(null);setError('请重新登录');setDetailError('');};window.addEventListener('focus',refresh);window.addEventListener('naumi:cache-session-ended',clear);return()=>{window.removeEventListener('focus',refresh);window.removeEventListener('naumi:cache-session-ended',clear);};},[]);
+ const sessionEnded=useRef(false),listRead=useRef<AbortController|null>(null),detailRead=useRef<AbortController|null>(null);
+ useEffect(()=>{const refresh=()=>{if(!sessionEnded.current)setRetry(v=>v+1);};const clear=()=>{
+  sessionEnded.current=true;listRead.current?.abort();detailRead.current?.abort();
+  setPage(null);setDetail(null);setLoading(false);setError('请重新登录');setDetailError('请重新登录');
+ };window.addEventListener('focus',refresh);window.addEventListener('naumi:cache-session-ended',clear);return()=>{window.removeEventListener('focus',refresh);window.removeEventListener('naumi:cache-session-ended',clear);};},[]);
  const evidencePages=new URLSearchParams();for(const key of ['assetPage','eventPage','childPage'])if(query.get(key))evidencePages.set(key,query.get(key)!);if(tenantId)evidencePages.set('tenantId',tenantId);const evidenceKey=evidencePages.toString();
- const update=(values:Record<string,string>)=>{const p=new URLSearchParams(query.toString());if(Object.keys(values).some(k=>['q','from','to','period','user','status','source','page'].includes(k))){for(const key of ['creationId','assetPage','eventPage','childPage'])p.delete(key);}for(const[k,v]of Object.entries(values))v?p.set(k,v):p.delete(k);router.replace(`${path}?${p}`,{scroll:false});};
+ const update=(values:Record<string,string>)=>replaceAdminQuery(values,Object.keys(values).some(k=>['q','from','to','period','user','status','source','page'].includes(k))?['creationId','assetPage','eventPage','childPage']:[]);
  const filters=new URLSearchParams();for(const key of ['q','from','to','period','user','status','source','page'])if(query.get(key))filters.set(key,query.get(key)!);if(tenantId)filters.set('tenantId',tenantId);if(historySource!==undefined){historySource?filters.set('source',historySource):filters.delete('source');if(!historySource)filters.delete('period');}const filterKey=filters.toString();
- useEffect(()=>{const abort=new AbortController();setPage(null);setError('');setLoading(true);
+ useEffect(()=>{if(sessionEnded.current)return;const abort=new AbortController();listRead.current=abort;setPage(null);setError('');setLoading(true);
   void authHeader().then(headers=>fetch(`${api}?${filterKey}`,{headers,cache:'no-store',signal:abort.signal})).then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d.error||'记录读取失败');if(!abort.signal.aborted)setPage(d);}).catch(e=>{if(!abort.signal.aborted)setError(e.message);}).finally(()=>{if(!abort.signal.aborted)setLoading(false);});return()=>abort.abort();
  },[api,filterKey,retry]);
- useEffect(()=>{setDetail(null);setDetailError('');if(!selected)return;const abort=new AbortController();
+ useEffect(()=>{if(sessionEnded.current)return;setDetail(null);setDetailError('');if(!selected)return;const abort=new AbortController();detailRead.current=abort;
   void authHeader().then(headers=>fetch(`${api}/${encodeURIComponent(selected)}?${evidenceKey}`,{headers,cache:'no-store',signal:abort.signal})).then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d.error||'详情读取失败');if(!abort.signal.aborted)setDetail(d);}).catch(e=>{if(!abort.signal.aborted)setDetailError(e.message);});return()=>abort.abort();
  },[api,selected,evidenceKey,retry]);
  const artworkParams=new URLSearchParams({section:'artworks'});for(const key of ['q','from','to'])if(query.get(key))artworkParams.set(key,query.get(key)!);if(query.get('user'))artworkParams.set('email',query.get('user')!);
