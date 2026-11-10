@@ -8,7 +8,7 @@ function Picture({ src, label, detail, onOpen }: { src: string; label: string; d
   const image = failed ? <span className={styles.unavailable}>图片暂不可读</span> :
     // Native image deliberately bypasses shared persistent image cache for private BI media.
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={src} alt={label} loading="lazy" onError={() => setFailed(true)} />;
+    <img src={src} alt={label} loading="lazy" decoding="async" onError={() => setFailed(true)} />;
   return <figure className={styles.figure}>
     {detail ? <a className={styles.image} href={`${src}&full=1`} target="_blank" rel="noreferrer">{image}</a> :
       <button type="button" className={styles.image} onClick={onOpen} aria-label={`查看${label}`}>{image}</button>}

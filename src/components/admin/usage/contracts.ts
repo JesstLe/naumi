@@ -32,6 +32,7 @@ export type UsersData = {
   bannedIps: BannedIp[];
 };
 export type UsageData = {
+  pagination?: {page:number;size:number;total:number};
   rangeDays: number;
   totals: { credits: number; operations: number; activeUsers: number };
   users: {

@@ -428,6 +428,9 @@ export function BiDashboard({ initialSection = "overview", embedded = false }: {
     row: BiRow;
   } | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+  // URL synchronization creates new filter objects; only a changed query should
+  // start a read. Navigation previously sent the same expensive request twice.
+  const requestQuery = new URLSearchParams({ ...filter, section, page: String(page), size: "30" }).toString();
   const navigatedSection = useRef(initialSection);
   useEffect(() => {
     navigatedSection.current = initialSection;
@@ -444,13 +447,7 @@ export function BiDashboard({ initialSection = "overview", embedded = false }: {
     setBusy(true);
     setError("");
     setData(null);
-    const params = new URLSearchParams({
-      ...filter,
-      section,
-      page: String(page),
-      size: "30",
-    });
-    void fetch(`/api/admin/bi?${params}`, {
+    void fetch(`/api/admin/bi?${requestQuery}`, {
       cache: "no-store",
       signal: controller.signal,
     })
@@ -467,7 +464,7 @@ export function BiDashboard({ initialSection = "overview", embedded = false }: {
         if (!controller.signal.aborted) setBusy(false);
       });
     return () => controller.abort();
-  }, [filter, section, page, reload]);
+  }, [requestQuery, reload]);
   useEffect(() => {
     if (!selected) return;
     const previous = document.activeElement as HTMLElement | null;
