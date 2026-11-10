@@ -313,7 +313,7 @@ const MCP_HELPERS = [
   { name: "naumi_download_media", description: "把 Naumi 结果媒体地址下载到本机文件或目录。", inputSchema: { type: "object", properties: { url: { type: "string" }, out: { type: "string", description: "保存路径或目录（绝对路径）" } }, required: ["url", "out"], additionalProperties: false }, annotations: { readOnlyHint: false, openWorldHint: false } },
   { name: "naumi_call_status", description: "按 operationId 查询 Naumi 任务状态与结果。结果未知时先查询，不要重复提交收费任务。", inputSchema: { type: "object", properties: { operationId: { type: "string" } }, required: ["operationId"], additionalProperties: false }, annotations: { readOnlyHint: true, openWorldHint: false } },
 ];
-const MCP_INSTRUCTIONS = "Naumi 电商图片创作工具。图片参数只接受 Naumi 地址：本机图片先用 naumi_upload_image 上传。收费工具按系统报价扣积分，在令牌每日预算内自动确认，超出会被拒绝。结果未知时用 naumi_call_status 查询，不要重复提交。";
+const MCP_INSTRUCTIONS = "Naumi 图片与视频创作工具。先查具体工具schema，复杂方案、镜头数组与工程按原JSON传递。正式分镜先列举/读取明确plan_id和revision；新候选不自动采用，用户授权代选后才保存采用及理由。run_video_workflow传明确storyboard身份/修订；inspect_video_storyboard检查报价和粗剪身份，apply_video_storyboard_roughcut只更新指定目标及镜头，保留人工剪辑和声音。图片参数只接受Naumi地址，本机图片先上传。收费工具按系统报价扣积分，令牌每日预算内自动确认，超出会被拒绝。网络未知先用naumi_call_status查外层operationId；业务写操作同时保留原operation_id及原完整参数，不换编号重做。";
 
 function callText(call) {
   const lines = [`operationId: ${call.operationId}`, `状态: ${call.state}`, `积分报价: ${call.credits ?? 0}`];
