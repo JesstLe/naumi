@@ -6,10 +6,12 @@ import {nextShotNumber,restructureStoryboardShots,type StoryboardDocument,type S
 import type {StoryboardSelection} from "@/lib/video/storyboard-client";
 import type {VideoPrivateFetch} from "./use-video-nodes";
 import {useStoryboardPlan} from "./use-storyboard-plan";
+import {StoryboardProductionPanel} from "./storyboard-production-panel";
+import type {VideoInputChoice} from "@/lib/video/client-settings";
 import {StoryboardRestructure} from "./storyboard-restructure";
 import {StoryboardTakes} from "./storyboard-takes";
 
-export function StoryboardPlanEditor({scope,projectKey,nodes,initialNodeIds,request,english=false,blocked,onEditNode,onSubmit,onNodesCreated}:{scope:string;projectKey:string;nodes:CanvasVideoNode[];initialNodeIds:string[];request:VideoPrivateFetch;english?:boolean;blocked:boolean;onEditNode:(id:string)=>void;onNodesCreated:(nodes:CanvasVideoNode[])=>void;onSubmit:(selection:StoryboardSelection[],assemble:boolean,plan:{id:string;revision:number})=>Promise<unknown>}){
+export function StoryboardPlanEditor({scope,projectKey,nodes,initialNodeIds,request,english=false,blocked,onEditNode,onSubmit,onNodesCreated,choices,onOpenTimeline}:{scope:string;projectKey:string;nodes:CanvasVideoNode[];initialNodeIds:string[];request:VideoPrivateFetch;english?:boolean;blocked:boolean;onEditNode:(id:string)=>void;choices?:VideoInputChoice[];onOpenTimeline?:(id:string)=>Promise<void>|void;onNodesCreated:(nodes:CanvasVideoNode[])=>void;onSubmit:(selection:StoryboardSelection[],assemble:boolean,plan:{id:string;revision:number})=>Promise<unknown>}){
   const L=(zh:string,en:string)=>english?en:zh;
   const [createdNodes,setCreatedNodes]=useState<CanvasVideoNode[]>([]),[restructure,setRestructure]=useState<{nodes:CanvasVideoNode[];document:StoryboardDocument}|null>(null);
   const available=[...nodes,...createdNodes.filter(node=>!nodes.some(item=>item.id===node.id))];
@@ -50,6 +52,7 @@ export function StoryboardPlanEditor({scope,projectKey,nodes,initialNodeIds,requ
       {open===shot.nodeId&&<StoryboardTakes shot={shot} projectKey={projectKey} request={request} disabled={locked} onChange={patch} english={english}/>}
     </li>;})}</ol>
     <div className="flex gap-2"><select className={`${css} min-w-0 flex-1`} aria-label={L("添加已有镜头","Add existing shot")} value={adding} disabled={locked} onChange={event=>setAdding(event.target.value)}><option value="">{L("选择镜头","Choose shot")}</option>{available.filter(node=>!doc.shots.some(shot=>shot.nodeId===node.id)).map(node=><option key={node.id} value={node.id}>{node.title}</option>)}</select><button type="button" className={css} disabled={locked||!adding} onClick={()=>{update({...doc,shots:[...doc.shots,{nodeId:adding,number:nextShotNumber(doc.shots),scene:"",purpose:"",takes:[],adoptedArtworkId:null}]});setAdding("");}}><Plus size={13}/>{L("加入方案","Add shot")}</button></div>
+    <StoryboardProductionPanel scope={scope} projectKey={projectKey} document={doc} revision={store.draft!.revision} dirty={store.dirty} selection={selected.map(shot=>({id:shot.nodeId,reuseCompleted:mode(shot)==="reuse"}))} choices={choices} request={request} disabled={locked} onSave={store.save} onChange={update} onOpenTimeline={onOpenTimeline}/>
     <div className="flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-3"><button type="button" className={css} disabled={locked||!hasGeneration||selected.some(shot=>!available.some(node=>node.id===shot.nodeId))} onClick={()=>void submit(false)}>{L("生成所选镜头","Generate selected shots")}</button><button type="button" className={`${css} !bg-slate-900 !text-white`} disabled={locked||!canAssemble} onClick={()=>void submit(true)}>{L("合成采用版本","Assemble adopted takes")}</button></div>
     </>}
   </section>;

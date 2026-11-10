@@ -3,6 +3,7 @@ import type {CanvasVideoNode} from "../canvas/video-node-schema";
 import {videoNodeIdSchema} from "../canvas/video-node-schema";
 import {videoProjectKeySchema} from "../canvas/project-key";
 import {storyboardSourceSchema} from "./script-mapping";
+import {continuitySchema,shotCutSchema,storyboardAudioSchema} from "./continuity";
 
 export const storyboardTakeSchema=z.strictObject({
   artworkId:videoNodeIdSchema,taskId:videoNodeIdSchema,
@@ -13,6 +14,7 @@ export const storyboardShotSchema=z.strictObject({
   scene:z.string().max(200).default(""),purpose:z.string().max(2000).default(""),
   source:storyboardSourceSchema.optional(),
   additionalSources:z.array(storyboardSourceSchema).max(100).optional(),
+  continuity:continuitySchema.optional(),cut:shotCutSchema.optional(),
   takes:z.array(storyboardTakeSchema).max(200).default([]),
   adoptedArtworkId:videoNodeIdSchema.nullable().default(null),
 }).superRefine((shot,ctx)=>{
@@ -22,6 +24,7 @@ export const storyboardShotSchema=z.strictObject({
 export const storyboardDocumentSchema=z.strictObject({
   title:z.string().trim().min(1).max(200),shots:z.array(storyboardShotSchema).max(100),
   assemble:z.boolean().default(true),
+  audio:z.array(storyboardAudioSchema).max(100).optional(),
 }).superRefine((plan,ctx)=>{
   if(new Set(plan.shots.map(shot=>shot.nodeId)).size!==plan.shots.length)ctx.addIssue({code:"custom",message:"方案镜头不能重复"});
   if(new Set(plan.shots.map(shot=>shot.number)).size!==plan.shots.length)ctx.addIssue({code:"custom",message:"镜号不能重复"});
