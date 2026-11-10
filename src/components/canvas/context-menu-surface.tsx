@@ -120,8 +120,9 @@ export function ContextMenuSurface({ x, y, light, onClose, children }: {
     if (!panel.current) return;
     restore.current = document.activeElement as HTMLElement | null;
     const fit = () => {
-      const rect = panel.current!.getBoundingClientRect();
-      setPoint({ left: Math.max(8, Math.min(x, window.innerWidth - rect.width - 8)), top: Math.max(8, Math.min(y, window.innerHeight - rect.height - 8)) });
+      // menu-pop scales the panel during entry; fit its final layout size.
+      const { offsetWidth: width, offsetHeight: height } = panel.current!;
+      setPoint({ left: Math.max(8, Math.min(x, window.innerWidth - width - 8)), top: Math.max(8, Math.min(y, window.innerHeight - height - 8)) });
     };
     fit();
     panel.current.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus({ preventScroll: true });
