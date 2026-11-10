@@ -16,14 +16,20 @@ export function StoryboardTakes({shot,projectKey,request,disabled,onChange,engli
   const query=async(next?:Cursor,signal?:AbortSignal)=>{
     const params=new URLSearchParams({projectKey,nodeId:shot.nodeId,limit:"30"});if(next)params.set("cursor",JSON.stringify(next));
     setLoading(true);try{const response=await requestRef.current(`/api/video/tasks?${params}`,{cache:"no-store",signal,headers:{"x-naumi-workspace":workspace,"x-naumi-project-context":projectKey}}),body=await response.json();if(!response.ok)throw new Error(body.error||"候选读取失败");if(signal?.aborted||life.current!==identity)return;
-      setTasks(old=>next?[...new Map([...old,...body.tasks].map(task=>[task.id,task])).values()]:body.tasks);setCursor(body.nextCursor||null);setError("");
+      const loaded:PublicVideoTaskView[]=[...body.tasks];
+      // The new node has no fake lastTaskId. Fetch only exact takes retained by the saved fork, not future source-node tasks.
+      const missing=next?[]:[...new Set(shot.takes.map(take=>take.taskId))].filter(id=>!loaded.some(task=>task.id===id));
+      for(let index=0;index<missing.length;index+=4)await Promise.all(missing.slice(index,index+4).map(async id=>{const r=await requestRef.current(`/api/video/tasks/${encodeURIComponent(id)}`,{cache:"no-store",signal,headers:{"x-naumi-workspace":workspace,"x-naumi-project-context":projectKey}});if(r.ok){const value=await r.json();if(value.task?.projectKey===projectKey)loaded.push(value.task);}}));
+      if(signal?.aborted||life.current!==identity)return;
+      setTasks(old=>next?[...new Map([...old,...loaded].map(task=>[task.id,task])).values()]:loaded);setCursor(body.nextCursor||null);setError("");
     }catch(cause){if(!signal?.aborted&&life.current===identity)setError(cause instanceof Error?cause.message:"候选读取失败");}finally{if(!signal?.aborted&&life.current===identity)setLoading(false);}
   };
   const queryRef=useRef(query);queryRef.current=query;
   useEffect(()=>{const controller=new AbortController();life.current=identity;setTasks([]);setLeft("");setRight("");setSnapshots({});void queryRef.current(undefined,controller.signal);return()=>{controller.abort();life.current="";};},[identity,reload]);
   const candidates:Candidate[]=tasks.filter(task=>task.status==="completed").flatMap(task=>{
-    const outputs=task.resultAssets.filter(asset=>asset.kind==="video"||asset.mimeType?.startsWith("video/"));
-    return outputs.length?outputs.map(asset=>({id:asset.artworkId,task,url:asset.url})):task.artworkId&&task.videoUrl?[{id:task.artworkId,task,url:task.videoUrl}]:[];
+    const inherited=task.sourceId!==shot.nodeId,allowed=(id:string)=>!inherited||shot.takes.some(take=>take.taskId===task.id&&take.artworkId===id);
+    const outputs=task.resultAssets.filter(asset=>(asset.kind==="video"||asset.mimeType?.startsWith("video/"))&&allowed(asset.artworkId));
+    return outputs.length?outputs.map(asset=>({id:asset.artworkId,task,url:asset.url})):task.artworkId&&task.videoUrl&&allowed(task.artworkId)?[{id:task.artworkId,task,url:task.videoUrl}]:[];
   });
   const selected=candidates.find(value=>value.id===left)||candidates.find(value=>value.id===shot.adoptedArtworkId)||candidates[0],comparison=candidates.find(value=>value.id===right);
   const taskIds=[selected?.task.id,comparison?.task.id].filter(Boolean).join("|");

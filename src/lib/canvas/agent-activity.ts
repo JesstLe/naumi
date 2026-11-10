@@ -9,6 +9,7 @@ const actions: Record<string, [string, string]> = {
   generate_packaging_3d: ["生成包装图", "Generating packaging"], list_comfy_workflows: ["读取工作流", "Loading workflows"],
   run_comfy_workflow: ["执行工作流", "Running workflow"], list_video_models: ["读取视频模型", "Loading video models"],
   plan_video_shot: ["策划视频镜头", "Planning video shot"], plan_video_storyboard: ["策划分镜", "Planning storyboard"],
+  fork_video_storyboard:["建立独立版本","Creating independent version"],
   list_video_storyboards:["读取分镜方案","Loading storyboards"],get_video_storyboard:["读取指定方案","Loading storyboard"],save_video_storyboard:["保存方案与审片","Saving storyboard review"],get_video_storyboard_operation:["查询方案原操作","Checking storyboard receipt"],inspect_video_storyboard:["检查制作与粗剪","Inspecting production"],apply_video_storyboard_roughcut:["保存方案粗剪","Saving storyboard roughcut"],
   plan_video_script: ["保存剧本", "Saving script"],
   list_video_text_nodes:["读取剧本来源","Loading script sources"],get_video_text:["读取完整片段文字","Loading complete scene text"],

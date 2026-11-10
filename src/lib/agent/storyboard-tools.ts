@@ -5,6 +5,7 @@ import type {AgentTool} from "@earendil-works/pi-agent-core";
 import {storyboardDocumentSchema,storyboardWriteSchema} from "../storyboard/plan";
 import {productionSelectionSchema,roughcutRequestSchema} from "../storyboard/production-schema";
 import {videoProjectKeySchema} from "../canvas/project-key";
+import {storyboardForkSchema} from "../storyboard/fork";
 import type {CanvasAgentContext} from "./canvas-context";
 
 type Deps={canvas?:CanvasAgentContext;internal:(path:string,signal?:AbortSignal,init?:RequestInit)=>Promise<any>};
@@ -13,7 +14,10 @@ const id=Type.String({minLength:1,maxLength:160}),revision=Type.Integer({minimum
 const context={project_key:Type.Optional(Type.String({minLength:1,maxLength:166}))};
 const selection={...context,plan_id:uuid,revision};
 const document=Type.Unsafe(z.toJSONSchema(storyboardDocumentSchema,{unrepresentable:"any"}));
-const result=(publicSummary:string,value:Record<string,unknown>)=>({content:[{type:"text" as const,text:JSON.stringify(value)}],details:{...value,publicSummary}});
+const result=(publicSummary:string,value:Record<string,unknown>)=>{
+  const publicNode=(node:any)=>{if(!node.config?.workflowManifest?.template)return node;const {template:_template,...manifest}=node.config.workflowManifest;return {...node,config:{...node.config,workflowManifest:manifest},workflowTemplateStored:true};};
+  const view={...value,...(Array.isArray(value.nodes)?{nodes:value.nodes.map(publicNode)}:{})};return {content:[{type:"text" as const,text:JSON.stringify(view)}],details:{...view,publicSummary}};
+};
 
 /** Thin adapters: the same HTTP routes own scope, CAS, take provenance and receipts as the webpage. */
 export function createStoryboardTools(d:Deps):AgentTool[]{
@@ -25,6 +29,10 @@ export function createStoryboardTools(d:Deps):AgentTool[]{
   }
   async function plans(key:string,signal?:AbortSignal){return await d.internal(`/api/canvas/storyboards?projectKey=${encodeURIComponent(key)}`,signal);}
   return [
+    tool("fork_video_storyboard","建立独立创意版本","从明确plan_id/revision及全部节点revision建立独立版本，复制节点参数并重写内部依赖，保留原稿、设定快照、意见和采用。旧作品通过服务端冻结来源复用，历史任务不改归属；不生成、不收费、不更新原粗剪。operation_id稳定；未知/401后原完整请求重试，不重新读新revision组成另一请求。",{...selection,operation_id:uuid,title:Type.String({minLength:1,maxLength:200}),nodes:Type.Array(Type.Object({id,revision:Type.Integer({minimum:0})}),{minItems:1,maxItems:100})},async(_call,args,signal)=>{
+      const a=args as any,body=storyboardForkSchema.parse({projectKey:project(a.project_key),planId:a.plan_id,revision:a.revision,operationId:a.operation_id,title:a.title,nodes:a.nodes});
+      const value=await post("/api/canvas/storyboards/fork",body,signal);return result("独立创意版本已建立，尚未生成",{...value,planId:value.plan.id,planRevision:value.plan.revision,nodeIds:value.nodes.map((node:any)=>node.id),projectKey:body.projectKey,operationId:body.operationId});
+    }),
     tool("list_video_storyboards","读取分镜方案","列出指定项目的正式持久方案及其revision、采用清单和审片意见。同节点可属于多个方案；后续必须使用明确plan_id，不根据标题或最新结果猜测。",context,async(_call,args,signal)=>result("分镜方案已读取",await plans(project((args as any).project_key),signal))),
     tool("get_video_storyboard","读取指定方案","读取明确plan_id的正式方案。修改前保留完整document和revision；takes是候选及意见，adoptedArtworkId才是明确采用版本。",{...context,plan_id:uuid},async(_call,args,signal)=>{
       const a=args as any,key=project(a.project_key),plan=(await plans(key,signal)).plans.find((plan:any)=>plan.id===a.plan_id&&plan.projectKey===key);

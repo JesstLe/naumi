@@ -113,7 +113,7 @@ async function runCanvasAgentLocal(request: Request) {
       const nodes=ids.length?(await getPool().query("SELECT id,project_key AS \"projectKey\" FROM app_canvas_text_nodes WHERE email=$1 AND id=ANY($2::text[]) AND project_key=$3",[email,ids,projectKey])).rows:[];
       if(nodes.length){appendSessionEvent(liveSession,"text_nodes",{nodes,turnId:liveSession.turnId});await persistAgentSession(liveSession);}
     }
-    if(["create_video_node","plan_video_shot","plan_video_storyboard"].includes(tool)&&liveSession){
+    if(["create_video_node","plan_video_shot","plan_video_storyboard","fork_video_storyboard"].includes(tool)&&liveSession){
       const nodeIds=Array.from(new Set([details.nodeId,record(details.node).id,...(Array.isArray(details.nodeIds)?details.nodeIds:[])].filter((id):id is string=>typeof id==="string")));
       const owned=[];for(const id of nodeIds){const node=await getVideoNode(email,id);if(node&&(!video?.projectKey||node.projectKey===video.projectKey))owned.push({id:node.id,projectKey:node.projectKey});}
       if(owned.length){appendSessionEvent(liveSession,"video_nodes",{nodes:owned,turnId:liveSession.turnId});await persistAgentSession(liveSession);}return;

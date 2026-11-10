@@ -15,7 +15,7 @@ import {publicVideoTaskSnapshot} from "../video/task-snapshot";
 import {ModelConfigError} from "../model-config/types";
 import {canonicalConfig} from "../model-config/snapshot-value";
 import {storyboardWriteSchema,type StoryboardTake} from "./plan";
-import {ensureStoryboardSchema,readStoryboardPlan,readStoryboardPlans,readStoryboardOperation,saveStoryboardTx} from "./repository";
+import {ensureStoryboardSchema,readStoryboardPlan,readStoryboardPlans,readStoryboardOperation,saveStoryboardTx,inheritedStoryboardTakeOrigin} from "./repository";
 
 export async function listStoryboardPlans(actor:string,projectKey:string){
   await authorizeCanvasProject(actor,projectKey);await assertCreationProjectInput(actor,projectKey,undefined,true);
@@ -27,13 +27,15 @@ export async function getStoryboardOperation(actor:string,projectKey:string,oper
   if(!plan||plan.projectKey!==projectKey)throw new ModelConfigError("STORYBOARD_OPERATION_UNAVAILABLE","此项目中没有该操作回执",404);
   return plan;
 }
-/** A take is a completed video from this exact node/project, never an arbitrary owned asset. */
+/** A take belongs to this node, or an exact immutable inherited-take receipt; never an arbitrary owned asset. */
 export async function assertStoryboardTake(actor:string,projectKey:string,nodeId:string,take:Pick<StoryboardTake,"taskId"|"artworkId">,tx?:Pick<PoolClient,"query">){
   const task=await getVideoTask(actor,take.taskId,tx),snapshot=task&&publicVideoTaskSnapshot(task);
+  const origin=snapshot?.nodeId===nodeId?nodeId:await inheritedStoryboardTakeOrigin(actor,projectKey,nodeId,take,tx);
   const outputs=task?.parameters.resultAssets as Array<{artworkId:string;kind?:string;mimeType?:string}>|undefined;
-  if(!task||task.status!=="completed"||snapshot?.nodeId!==nodeId||snapshot.projectKey!==projectKey||
+  if(!task||task.status!=="completed"||!origin||snapshot?.nodeId!==origin||snapshot.projectKey!==projectKey||
     !(outputs?.some(asset=>asset.artworkId===take.artworkId&&(asset.kind==="video"||asset.mimeType?.startsWith("video/")))||task.artworkId===take.artworkId&&!!task.videoUrl))
     throw new ModelConfigError("STORYBOARD_TAKE_UNAVAILABLE","候选结果不属于此镜头，或尚未完成",422);
+  return origin;
 }
 export async function saveStoryboardPlan(actorRaw:string,raw:unknown){
   const actor=actorRaw.toLowerCase(),input=storyboardWriteSchema.parse(raw);
