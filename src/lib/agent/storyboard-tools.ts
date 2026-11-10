@@ -5,6 +5,7 @@ import type {AgentTool} from "@earendil-works/pi-agent-core";
 import {storyboardDocumentSchema,storyboardWriteSchema} from "../storyboard/plan";
 import {productionSelectionSchema,roughcutRequestSchema} from "../storyboard/production-schema";
 import {videoProjectKeySchema} from "../canvas/project-key";
+import {storyboardDialogueRequestSchema} from "../storyboard/dialogue";
 import {storyboardForkSchema} from "../storyboard/fork";
 import type {CanvasAgentContext} from "./canvas-context";
 
@@ -29,6 +30,9 @@ export function createStoryboardTools(d:Deps):AgentTool[]{
   }
   async function plans(key:string,signal?:AbortSignal){return await d.internal(`/api/canvas/storyboards?projectKey=${encodeURIComponent(key)}`,signal);}
   return [
+    tool("apply_video_storyboard_dialogue","将原稿对白读入粗剪","从明确方案revision向已关联timeline_id/timeline_revision追加逐句原文、说话人和字幕草稿；同句只保存一次，保留已有音轨、字幕手工修改与时间。初始时间是草稿需听录音校对，不冒称自动转写/对齐。通过get/save_video_timeline编辑，render_video_timeline导出。不生成、不收费；operation_id稳定，未知后原完整参数恢复。",{...selection,operation_id:uuid,timeline_id:Type.String({minLength:1,maxLength:80}),timeline_revision:revision},async(_call,args,signal)=>{
+      const a=args as any,body=storyboardDialogueRequestSchema.parse({projectKey:project(a.project_key),planId:a.plan_id,revision:a.revision,operationId:a.operation_id,timelineId:a.timeline_id,timelineRevision:a.timeline_revision});return result("原稿对白已读入粗剪，时间待校对",await post("/api/canvas/storyboards/dialogue",body,signal));
+    }),
     tool("fork_video_storyboard","建立独立创意版本","从明确plan_id/revision及全部节点revision建立独立版本，复制节点参数并重写内部依赖，保留原稿、设定快照、意见和采用。旧作品通过服务端冻结来源复用，历史任务不改归属；不生成、不收费、不更新原粗剪。operation_id稳定；未知/401后原完整请求重试，不重新读新revision组成另一请求。",{...selection,operation_id:uuid,title:Type.String({minLength:1,maxLength:200}),nodes:Type.Array(Type.Object({id,revision:Type.Integer({minimum:0})}),{minItems:1,maxItems:100})},async(_call,args,signal)=>{
       const a=args as any,body=storyboardForkSchema.parse({projectKey:project(a.project_key),planId:a.plan_id,revision:a.revision,operationId:a.operation_id,title:a.title,nodes:a.nodes});
       const value=await post("/api/canvas/storyboards/fork",body,signal);return result("独立创意版本已建立，尚未生成",{...value,planId:value.plan.id,planRevision:value.plan.revision,nodeIds:value.nodes.map((node:any)=>node.id),projectKey:body.projectKey,operationId:body.operationId});

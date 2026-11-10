@@ -81,3 +81,9 @@ Naumi 提供电商图片和视频创作工具。你通过 `node naumi.mjs`（或
 - `naumi_call_status`：查询任务状态。
 
 规则同上。
+
+## 声音、对白与字幕
+
+用 `apply_video_storyboard_dialogue` 把明确方案原文追加到关联粗剪，不覆盖已有字幕/声音；初始时间是草稿，必须听录音校对。`get_video_timeline` 读取正式工程；`save_video_timeline` 保存完整timeline及revision，保留其他片段、混音和dialogue字段。每句保存一次，source.text保留原文、text保存当前朗读台词、subtitleText独立编辑、audioClipId指向实际音轨片段；audioText与text不符时声音待重录或核对。原声、录音与音色样本不是同一种资产，不虚构生成能力。
+
+用 `render_video_timeline` 固定operation_id和expected_revision，沿原媒体job输出MP4/SRT，burnIn控制烧录。未知受理以原请求恢复；`get_video_media_task`读取实际结果，`adopt_video_timeline`明确采用，过期结果保持冻结工程身份。不要用裸FFmpeg代替可恢复多轨工程。当前独立配音/转写通道未配置时，仍可使用已导入真实录音。

@@ -1,5 +1,6 @@
 "use client";
-import {useCallback,useEffect,useRef,useState} from "react";
+import {useCallback,useEffect,useRef,useState,useMemo} from "react";
+import {subtitlePlacements} from "@/lib/timeline/dialogue";
 import {sampleTimeline,type TimelinePlan} from "@/lib/timeline/project";
 import type {TimelineMaterial} from "@/lib/canvas/timeline-node-schema";
 
@@ -7,6 +8,7 @@ type ClipMedia={visual?:HTMLImageElement|HTMLVideoElement;audio?:HTMLAudioElemen
 export function useTimelinePreview(plan:TimelinePlan|null,materials:readonly TimelineMaterial[]){
   const canvas=useRef<HTMLCanvasElement>(null),time=useRef(0),playing=useRef(false),clock=useRef({at:0,time:0}),context=useRef<AudioContext|null>(null),media=useRef(new Map<string,ClipMedia>());
   const [position,setPosition]=useState(0),[running,setRunning]=useState(false),[error,setError]=useState(""),[ready,setReady]=useState(false);
+  const placements=useMemo(()=>plan?subtitlePlacements(plan.project):new Map() as ReturnType<typeof subtitlePlacements>,[plan]),placementsRef=useRef(placements);placementsRef.current=placements;
   const planRef=useRef(plan);planRef.current=plan;
   const urls=useRef(new Map(materials.map(source=>[source.artworkId,source.url])));urls.current=new Map(materials.map(source=>[source.artworkId,source.url]));
   const identity=JSON.stringify(plan?.clips.map(clip=>[clip.id,clip.source.kind,clip.artworkId,urls.current.get(clip.artworkId),clip.source.hasAudio])||[]);
@@ -59,6 +61,12 @@ export function useTimelinePreview(plan:TimelinePlan|null,materials:readonly Tim
           layerContext.fillStyle=plan.project.background;layerContext.fillRect(0,0,layer.width,layer.height);layerContext.drawImage(image,(surface.width-w)/2,(surface.height-h)/2,w,h);
           ctx.globalAlpha=visual.opacity;ctx.drawImage(layer,0,0);
         }
+        ctx.globalAlpha=1;
+        const dialogue=plan.project.dialogue;
+        const subtitles=dialogue?.lines.filter(line=>line.subtitleEnabled&&line.subtitleText.trim()&&time.current>=line.position&&time.current<line.position+line.duration)||[];
+        for(const line of subtitles){if(!dialogue)continue;const layout=placementsRef.current.get(line.id)!;ctx.font=`${layout.fontSize}px "Noto Sans CJK SC", "Microsoft YaHei", sans-serif`;ctx.textAlign="center";ctx.textBaseline="top";
+          layout.lines.forEach((text,index)=>{const y=layout.y+index*layout.lineHeight;if(dialogue.style.background){const width=Math.min(surface.width-2*layout.marginX,ctx.measureText(text).width+layout.fontSize*.5);ctx.fillStyle="rgba(0,0,0,.65)";ctx.fillRect(layout.x-width/2,y,width,layout.lineHeight);}ctx.strokeStyle="rgba(0,0,0,.7)";ctx.lineWidth=2;ctx.strokeText(text,layout.x,y,surface.width-2*layout.marginX);ctx.fillStyle=dialogue.style.color;ctx.fillText(text,layout.x,y,surface.width-2*layout.marginX);});}
+        surface.dataset.subtitleCount=String(subtitles.length);
         ctx.globalAlpha=1;surface.dataset.audioCount=String(at.audio.length);surface.dataset.videoCount=String(at.video.length);surface.dataset.time=String(time.current);surface.dataset.playing=String(playing.current);
         surface.dataset.audioGains=JSON.stringify([...resources].filter(([,value])=>value.gain).map(([id,value])=>[id,value.gain!.gain.value]));surface.dataset.audioPlaying=String([...resources.values()].filter(value=>value.audio&&!value.audio.paused).length);
         surface.dataset.videoSeeking=String(at.video.filter(clip=>(resources.get(clip.id)?.visual as HTMLVideoElement)?.seeking).length);

@@ -35,6 +35,12 @@ export function replaceVirtual(value,inputs,outputs,auxiliary=[]){
   return value.replace(/\bassets:([a-z0-9]{1,8})\b/g,(_match,extension)=>{
     if(!inputs.length||inputs.some((file,index)=>path.basename(file)!==`input-${index}.${extension}`))throw new Error('IMAGE_SEQUENCE_INPUTS_MUST_MATCH');
     return path.join(path.dirname(inputs[0]),`input-%d.${extension}`).replaceAll('\\','/');
+  }).replace(/\b(ass|subtitles)=filename='aux:(\d+)'/g,(_match,filter,index)=>{
+    const item=auxiliary[Number(index)];if(!item)throw new Error('UNKNOWN_VIRTUAL_MEDIA_PATH');
+    // FFmpeg filter filenames have an extra escaping layer, unlike CLI -i paths.
+    // Keep the virtual-file admission contract and support Windows drive colons.
+    const escaped=item.replaceAll('\\','/').replaceAll(':','\\:').replaceAll("'","'\\''");
+    return `${filter}=filename='${escaped}'`;
   }).replace(/\b(asset|output|aux):(\d+)/g,(_match,type,index)=>{
     const item=(type==='asset'?inputs:type==='output'?outputs:auxiliary)[Number(index)];
     if(!item)throw new Error('UNKNOWN_VIRTUAL_MEDIA_PATH');return item.replaceAll('\\','/');

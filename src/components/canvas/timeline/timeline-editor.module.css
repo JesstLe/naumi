@@ -6,7 +6,7 @@
 
 .clipBody{position:absolute;inset:0;padding:7px 8px;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:transparent;border:0;color:inherit;font:inherit;cursor:grab;touch-action:none}.trimHandle{position:absolute;top:0;bottom:0;width:6px;border:0;background:#7181bd2b;padding:0;cursor:ew-resize;touch-action:none;z-index:1}.trimStart{left:0;border-radius:5px 0 0 5px}.trimEnd{right:0;border-radius:0 5px 5px 0}.trimHandle:hover,.trimHandle:focus-visible{background:#7181bd88;outline:1px solid #7181bd}.trimHandle:disabled{cursor:default;opacity:.3}
 
-.workspace{display:flex;flex:1;flex-direction:column;min-height:0;overflow:hidden}
+.workspace{display:flex;flex:1;flex-direction:column;min-height:0;overflow:auto;overscroll-behavior:contain}
 .header,.footer,.toolbar,.error{flex-shrink:0}
 /* Small windows/onscreen keyboards must not clip the tracks and footer behind
    fixed preview minima. Keep header/actions visible; scroll only the workspace. */

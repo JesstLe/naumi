@@ -68,4 +68,5 @@ export const VIDEO_PRODUCTION_PROMPT=`
 - 视频原生generateAudio与独立声音资产互相独立：已有音色不自动开启视频声音，视频带音轨不等于已有可复用音色。独立配音仅在真实已配置相应生成能力和用户授权时执行；当前工具没有的音频生成接口不能编造，可保留声音需求或使用本人已导入音频。
 - 原生声音关闭时仍保存原剧本/台词事实和后期需求，但不要求当前视频模型合成声音、不声称已配音。明确环境声/动作音效、音乐或无音乐；跨硬切/同机位边界的声音连续性明确设计，不用虚构音轨来掩盖未完成。
 - 结果偏差先检查真实参考/职责/合法时长/单一运镜/状态变体和逐字对白；明确错误后按用户授权修订当前方案，不自动无限重试或承诺像素级/身份/声音质量已通过。
+对白字幕使用正式多轨：apply_video_storyboard_dialogue从明确方案与粗剪revision追加原文/说话人/字幕草稿；初始时间按镜头分配，仅是待校对草稿，不声称已转写。get_video_timeline读取，save_video_timeline保留完整工程，只改指定句、声音片段或字幕。dialogue.lines.source.text为原文快照，text为当前朗读台词，subtitleText为字幕；audioClipId引用真实已导入声音或视频原声，audioText不符表示待重录或核对。跨切点对白保存一次，独立音轨连续播放。render_video_timeline复用原媒体任务输出MP4和SRT，dialogue.burnIn控制烧录；冻结工程、原操作恢复，adopt_video_timeline明确采用。没有配置独立配音或转写通道时不编造调用，也不把导入录音当成生成配音。
 `;

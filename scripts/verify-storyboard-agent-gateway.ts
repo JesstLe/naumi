@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {randomUUID} from "node:crypto";
+import {randomUUID,createHash} from "node:crypto";
 import {spawn} from "node:child_process";
 import {createServer} from "node:http";
 import path from "node:path";
@@ -29,7 +29,7 @@ export async function verifyStoryboardAgentGateway(input:{actor:string;project:s
   const before=await state(),original=await read(planId),planKey=randomUUID();
   const schema=await cli(["tools","save_video_storyboard"]);assert.equal(schema.code,0);assert.equal(schema.json.parameters.properties.document.type,"object");assert.equal(schema.json.write,true);pass("cli_discovers_nested_formal_storyboard_schema");
   const listed=ok(await call("list_video_storyboards",{project_key:project}));assert.ok(listed.plans.some((p:any)=>p.id===planId));
-  const doc=structuredClone(original.document),oldTake=doc.shots[0].takes[0];doc.title="CLI/MCP方案B";doc.shots[0].adoptedArtworkId=oldTake.artworkId;
+  const doc=structuredClone(original.document),oldTake=doc.shots[0].takes[0];doc.title="CLI/MCP方案B";const utterance="我已到达。",script=await api("POST","/api/video/texts",{operationId:randomUUID(),projectKey:project,title:"跨入口对白",content:utterance});doc.shots[0].source={nodeId:script.node.id,sha256:createHash("sha256").update(utterance).digest("hex"),mapping:{ranges:[{start:0,end:utterance.length}],dialogue:[{start:0,end:utterance.length,speaker:"旁白"}]}};doc.shots[0].adoptedArtworkId=oldTake.artworkId;
   const saved=ok(await call("save_video_storyboard",{project_key:project,plan_id:planKey,expected_revision:0,operation_id:randomUUID(),document:doc}));let plan=saved.plan;assert.deepEqual((await read(planKey)).document,doc);pass("cli_creates_real_persistent_plan_webpage_reads_same_document");
   mcp=new Client({name:"storyboard-handoff",version:"1"});await mcp.connect(new StdioClientTransport({command:process.execPath,args:[cliPath,"mcp"],env:env() as Record<string,string>,stderr:"pipe"}));
   const discovered=await mcp.listTools(),inspectTool=discovered.tools.find(t=>t.name==="inspect_video_storyboard")!;assert.equal((inspectTool.inputSchema as any).properties.nodes.type,"array");assert.equal((inspectTool.inputSchema as any).properties.nodes.items.type,"object");
@@ -63,6 +63,14 @@ export async function verifyStoryboardAgentGateway(input:{actor:string;project:s
   await api("DELETE",`/api/account/agent-tokens?id=${readonly.token.id}`);const revoked=await cli(["call","get_video_storyboard","--args",JSON.stringify({project_key:project,plan_id:planKey})],readonly.secret);assert.equal(revoked.code,3);pass("revoked_cli_token_cannot_read_persistent_plan");
   const forkNodes=await Promise.all(nodes.map((id:string)=>api("GET",`/api/canvas/video-nodes/${id}`))),independent=await mcall("fork_video_storyboard",{project_key:project,plan_id:planKey,revision:plan.revision,operation_id:randomUUID(),title:"MCP独立创意方向",nodes:forkNodes.map((v:any)=>({id:v.node.id,revision:v.node.revision}))});
   const forkRead=ok(await call("get_video_storyboard",{project_key:project,plan_id:independent.planId}));assert.equal(forkRead.plan.lineage.sourcePlanId,planKey);assert.ok(forkRead.plan.document.shots.every((s:any)=>!nodes.includes(s.nodeId)));assert.deepEqual(await state(),after);pass("actual_mcp_forks_independent_version_cli_reads_lineage_zero_generation");
+  const imported=await mcall("apply_video_storyboard_dialogue",{project_key:project,plan_id:planKey,revision:plan.revision,operation_id:randomUUID(),timeline_id:updated.node.id,timeline_revision:updated.node.revision});
+  let timeline=ok(await call("get_video_timeline",{project_key:project,timeline_id:updated.node.id})).node;assert.equal(timeline.timeline.dialogue.lines.length,1);assert.equal(timeline.timeline.dialogue.lines[0].timing,"draft");pass("actual_mcp_imports_formal_dialogue_cli_reads_original_snapshot_and_timing_draft");
+  const sentence=timeline.timeline.dialogue.lines[0];sentence.subtitleText="已到车站 / Arrived";sentence.position=1;sentence.duration=2;sentence.timing="confirmed";
+  timeline=(await mcall("save_video_timeline",{project_key:project,timeline_id:timeline.id,expected_revision:timeline.revision,operation_id:randomUUID(),timeline:timeline.timeline})).node;
+  const mediaArgs={project_key:project,timeline_id:timeline.id,expected_revision:timeline.revision,operation_id:randomUUID()},deniedMedia=await call("render_video_timeline",mediaArgs,randomUUID(),budget.secret);assert.equal(deniedMedia.code,4);pass("actual_cli_timeline_render_zero_budget_denied_before_media_job");
+  const rendered=ok(await call("render_video_timeline",mediaArgs));assert.ok(rendered.job.id);let media:any;const mediaDeadline=Date.now()+150000;while(Date.now()<mediaDeadline){await fetch(origin+"/api/video/worker/tick",{method:"POST",headers:{"x-video-worker-secret":process.env.VIDEO_WORKER_SECRET!}});media=await mcall("get_video_media_task",{job_id:rendered.job.id});const job=media.job||media;if(job.status==="completed"){media=job;break;}assert.ok(!["failed","cancelled"].includes(job.status),JSON.stringify(job));await new Promise(resolve=>setTimeout(resolve,250));}
+  assert.equal(media.status,"completed");assert.ok(media.outputs.some((output:any)=>output.name==="timeline.srt"));assert.equal((await state()).video,after.video);assert.equal((await state()).media,after.media+1);assert.equal((await state()).ledger.length,after.ledger.length+1);
+  const latestTimeline=ok(await call("get_video_timeline",{project_key:project,timeline_id:timeline.id})).node;const adoptedTimeline=await mcall("adopt_video_timeline",{project_key:project,timeline_id:timeline.id,expected_revision:latestTimeline.revision,operation_id:randomUUID(),job_id:media.id});assert.equal(adoptedTimeline.node.adopted.jobId,media.id);assert.deepEqual(adoptedTimeline.node.timeline,timeline.timeline);pass("actual_cli_renders_mcp_reads_mp4_srt_and_adopts_same_formal_timeline_one_media_charge");
   return {checks,realCli:true,realMcp:true,realApp:true,realPostgres:true,newVideoTasks:1,newLedgerCharges:1};
  }finally{
   await mcp?.close().catch(()=>{});if(proxy)await new Promise<void>(resolve=>proxy!.close(()=>resolve()));
