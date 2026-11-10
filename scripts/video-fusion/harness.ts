@@ -152,6 +152,11 @@ export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot
       legacySchema,schemaColumns,legacyRowsBeforeDdl,legacySentinelState,
       fixtureDatabaseName:new URL(databaseUrl).pathname.slice(1),
       fixtureSchema:schemaName,
+      async withOwnedStructureLinkFault<T>(id:string,action:()=>Promise<T>){
+        if(!/^[A-Za-z0-9._:-]{1,80}$/.test(id)||!(await sql.query("SELECT 1 FROM app_storyboard_roughcuts WHERE email=$1 AND timeline_id=$2",[seed.accounts.a,id])).rowCount)throw new Error("Owned fixture roughcut required");
+        await sql.query(`CREATE FUNCTION fixture_structure_link_fault() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'owned structure link fault'; END $$;CREATE TRIGGER fixture_structure_link_fault BEFORE UPDATE ON app_storyboard_roughcuts FOR EACH ROW WHEN (NEW.timeline_id='${id}') EXECUTE FUNCTION fixture_structure_link_fault();`);
+        try{return await action();}finally{await sql.query("DROP TRIGGER fixture_structure_link_fault ON app_storyboard_roughcuts;DROP FUNCTION fixture_structure_link_fault()");}
+      },
       async verifyStoryboardCosts(projectKey:string,planId:string){return JSON.parse(await privateChild(["--conditions=react-server","--import","tsx","scripts/verify-storyboard-costs-runtime.ts"],{...env,VIDEO_FIXTURE_ACTION_ACTOR:seed.accounts.a,VIDEO_FIXTURE_ACTION_OTHER:seed.accounts.b,VIDEO_FIXTURE_ACTION_PROJECT:projectKey,VIDEO_FIXTURE_ACTION_PLAN:planId})) as {checks:string[]};},
       async verifyStoryboardAgent(projectKey:string,planId:string){return JSON.parse(await privateChild(["--conditions=react-server","--import","tsx","scripts/verify-storyboard-agent-runtime.ts"],{...env,VIDEO_FIXTURE_ACTION_ACTOR:seed.accounts.a,VIDEO_FIXTURE_ACTION_OTHER:seed.accounts.b,VIDEO_FIXTURE_ACTION_PROJECT:projectKey,VIDEO_FIXTURE_ACTION_PLAN:planId})) as {checks:string[]};},
       async shortLivedFixtureObjectUrl(key:string){

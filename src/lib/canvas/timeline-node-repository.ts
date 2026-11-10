@@ -13,8 +13,8 @@ export function mapTimelineNode(row:Record<string,any>):CanvasTimelineNode{
   return {id:String(row.id),projectKey:String(row.project_key),revision:Number(row.revision),title:String(row.title),x:Number(row.x),y:Number(row.y),width:Number(row.width),height:Number(row.height),
     timeline:row.timeline,adopted:row.adopted||null,render:row.render||null,deletedAt:row.deleted_at?new Date(row.deleted_at).toISOString():null,createdAt:new Date(row.created_at).toISOString(),updatedAt:new Date(row.updated_at).toISOString()};
 }
-export async function getTimelineNode(actor:string,id:string,includeDeleted=false){
-  await ensureTimelineNodeSchema();const row=(await getPool().query("SELECT * FROM app_canvas_timeline_nodes WHERE email=$1 AND id=$2 AND ($3 OR deleted_at IS NULL)",[actor.toLowerCase(),id,includeDeleted])).rows[0];return row?mapTimelineNode(row):null;
+export async function getTimelineNode(actor:string,id:string,includeDeleted=false,tx?:Pick<PoolClient,"query">){
+  if(!tx)await ensureTimelineNodeSchema();const row=(await (tx??getPool()).query("SELECT * FROM app_canvas_timeline_nodes WHERE email=$1 AND id=$2 AND ($3 OR deleted_at IS NULL)",[actor.toLowerCase(),id,includeDeleted])).rows[0];return row?mapTimelineNode(row):null;
 }
 export async function listTimelineNodes(actor:string,includeDeleted=false){
   await ensureTimelineNodeSchema();return (await getPool().query("SELECT * FROM app_canvas_timeline_nodes WHERE email=$1 AND ($2 OR deleted_at IS NULL) ORDER BY created_at,id",[actor.toLowerCase(),includeDeleted])).rows.map(mapTimelineNode);

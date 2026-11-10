@@ -7,6 +7,7 @@ import {productionSelectionSchema,roughcutRequestSchema} from "../storyboard/pro
 import {videoProjectKeySchema} from "../canvas/project-key";
 import {storyboardDialogueRequestSchema} from "../storyboard/dialogue";
 import {storyboardCostRequestSchema} from "../storyboard/costs";
+import {structurePreviewSchema,structureApplySchema,structureRestoreSchema} from "../storyboard/structure";
 import {storyboardForkSchema} from "../storyboard/fork";
 import type {CanvasAgentContext} from "./canvas-context";
 
@@ -30,7 +31,12 @@ export function createStoryboardTools(d:Deps):AgentTool[]{
     catch(error){throw Object.assign(new Error(`${error instanceof Error?error.message:"操作尚未核实"}；保留原请求${body.operationId?`及 operation_id=${body.operationId}`:""}，查询回执或以完全相同参数重试，不另建操作`),{status:(error as {status?:number}).status});}
   }
   async function plans(key:string,signal?:AbortSignal){return await d.internal(`/api/canvas/storyboards?projectKey=${encodeURIComponent(key)}`,signal);}
+  const structureFields={...selection,timeline_id:Type.String({minLength:1,maxLength:80}),timeline_revision:revision,position_policy:Type.Union([Type.Literal("preserve"),Type.Literal("ripple")]),change_ids:Type.Array(Type.String({minLength:1,maxLength:180}),{maxItems:1000}),follow_clip_ids:Type.Array(id,{maxItems:1000}),follow_dialogue_ids:Type.Array(id,{maxItems:1000})};
+  const structureBody=(a:any)=>({projectKey:project(a.project_key),planId:a.plan_id,revision:a.revision,timelineId:a.timeline_id,timelineRevision:a.timeline_revision,positionPolicy:a.position_policy,changeIds:a.change_ids,followClipIds:a.follow_clip_ids,followDialogueIds:a.follow_dialogue_ids});
   return [
+    tool("inspect_video_storyboard_structure","预览粗剪结构差异","只读指定方案revision及关联timeline_revision的插镜/删镜/调序差异。首次change_ids与follow数组为空。position_policy=preserve保留绝对位置；ripple仅计算位置建议，未明确选中change或follow的声音/人工片段不移动。按返回差异id选择，再预览取得previewDigest；冲突整次不写，不自动换片、生成或导出。",structureFields,async(_call,args,signal)=>result("粗剪结构预览已读取，尚未应用",await post("/api/canvas/storyboards/structure-inspect",structurePreviewSchema.parse(structureBody(args)),signal))),
+    tool("apply_video_storyboard_structure","应用所选粗剪结构","使用刚预览的相同完整选择、position_policy和preview_digest应用。只改明确插入/移除/移动，保留未选择声音、裁剪、音量和旧导出；方案、工程、素材或摘要变化时整次拒绝。operation_id稳定，未知/401后原完整参数恢复，不重读新revision拼另一请求。返回operationId用于restore。",{...structureFields,operation_id:uuid,preview_digest:Type.String({pattern:"^[a-f0-9]{64}$"})},async(_call,args,signal)=>{const a=args as any;return result("所选粗剪结构已保存，未导出",await post("/api/canvas/storyboards/structure",structureApplySchema.parse({...structureBody(a),operationId:a.operation_id,previewDigest:a.preview_digest}),signal));}),
+    tool("restore_video_storyboard_structure","恢复同步前工程","以确切source_operation_id恢复该次结构同步前的工程及方案关联。timeline_revision为当前明确版本；同步后有人工修改时保留当前工程并拒绝，不回滚媒体或账务。保留稳定operation_id及原完整请求，未知后原样恢复。",{...context,plan_id:uuid,timeline_id:Type.String({minLength:1,maxLength:80}),timeline_revision:revision,source_operation_id:uuid,operation_id:uuid},async(_call,args,signal)=>{const a=args as any;return result("同步前工程已恢复，历史导出保持",await post("/api/canvas/storyboards/structure-restore",structureRestoreSchema.parse({projectKey:project(a.project_key),planId:a.plan_id,timelineId:a.timeline_id,timelineRevision:a.timeline_revision,sourceOperationId:a.source_operation_id,operationId:a.operation_id}),signal));}),
     tool("inspect_video_storyboard_costs","读取方案费用与返工影响","只读指定plan_id/revision的跨阶段真实积分账务、预扣、退款、结算中及未知费用；nodes明确本轮生成/复用，compare_revision可对比明确旧版本。方案精确归属、共享节点历史与继承复用分开；BYOC外部费用保持未知。报价不锁价、不提交任务、不改采用版、不增加预算；影响按实际输入依赖而非镜序传播。",{...selection,nodes:Type.Array(Type.Object({id,reuseCompleted:Type.Boolean()}),{minItems:1,maxItems:100}),compare_revision:Type.Optional(revision)},async(_call,args,signal)=>{
       const a=args as any,body=storyboardCostRequestSchema.parse({projectKey:project(a.project_key),planId:a.plan_id,revision:a.revision,nodes:a.nodes,...(a.compare_revision?{compareRevision:a.compare_revision}:{})});return result("方案费用与返工影响已读取，未提交任务",await post("/api/canvas/storyboards/costs",body,signal));
     }),
