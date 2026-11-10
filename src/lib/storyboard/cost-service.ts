@@ -1,4 +1,6 @@
 import "server-only";
+import {readAudioReviewSources} from "./audio-review-repository";
+import {requireSettledAudioReview} from "./audio-review-service";
 import {readAudioCostSources} from "../audio/operation-repository";
 import {createHash} from "node:crypto";
 import {requireStoryboardPlan} from "./service";
@@ -47,6 +49,11 @@ export async function inspectStoryboardCosts(actorRaw:string,raw:unknown):Promis
    inspections.set(`tool-${ref.operationId}`,{attribution:samePlan?"plan":"inherited",nodeIds:[shot.nodeId],frameOperationId:frame.operationId});
    if(samePlan)operations.set(frame.operationId,{runIds:[],timelineIds:[]});
  }
+ for(const request of await readAudioReviewSources(actor,plan.projectKey,plan.id)){
+  if(request.stage==="extract")operations.set(request.operationId,{runIds:[],timelineIds:[]});
+  else{const audio=await readMediaJobEvidence(actor,request.jobId,false);inspections.set(`tool-${request.operationId}`,{attribution:"plan",nodeIds:[request.source.nodeId],frameOperationId:audio.operationId});operations.set(audio.operationId,{runIds:[],timelineIds:[]});}
+ }
+ for(const shot of plan.document.shots)for(const take of shot.takes)for(const ref of take.audioReviews||[]){const report=await requireSettledAudioReview(actor,ref.source,ref.operationId),audio=await readMediaJobEvidence(actor,report.audioJobId);const same=report.source.planId===plan.id;inspections.set(`tool-${ref.operationId}`,{attribution:same?"plan":"inherited",nodeIds:[shot.nodeId],frameOperationId:audio.operationId});if(same)operations.set(audio.operationId,{runIds:[],timelineIds:[]});}
  const media=await readMediaCostHistory(actor,plan.projectKey,[...new Set([...operations.keys(),...[...inspections.values()].map(value=>value.frameOperationId)])],referencedArtworkIds);
  const audioSources=await readAudioCostSources(actor,plan.projectKey,timelineIds);
  const bills=await readTaskCostEvidence(actor,[...history.tasks.map(task=>({id:task.id,ledgerId:`led-video-${task.id}`})),...media.map(job=>({id:job.id,ledgerId:`led-media-${job.id}`})),...[...inspections.keys()].map(id=>({id,ledgerId:`led-${id}`})),...audioSources.map(({id})=>({id,ledgerId:`led-${id}`}))]);
@@ -57,7 +64,7 @@ export async function inspectStoryboardCosts(actorRaw:string,raw:unknown):Promis
   return {id:task.id,kind:"video",status:task.status,attribution:task.runId&&runIds.has(task.runId)?"plan":inherited.has(task.id)?"inherited":"shared-node",nodeIds:inherited.get(task.id)||(task.nodeId?[task.nodeId]:[]),runIds:task.runId?[task.runId]:[],timelineIds:[],billing,externalCostUnknown:task.byoc,remake:task.retry||!!exact.find(run=>run.id===task.runId&&run.reviewPlanId)};
  });
  for(const job of media){const origin=operations.get(job.operationId);items.push({id:job.id,kind:job.audio?"audio-processing":"media",status:job.status,attribution:origin?"plan":"referenced-media",nodeIds:[],runIds:origin?.runIds||[],timelineIds:origin?.timelineIds||[],billing:byId.get(job.id)!,externalCostUnknown:false,remake:false});}
- for(const [id,inspection]of inspections){const billing=byId.get(id)!;items.push({id,kind:"review",status:billing.state==="settled"?"completed":billing.state==="released"?"failed":"needs_attention",attribution:inspection.attribution,nodeIds:inspection.nodeIds,runIds:[],timelineIds:[],billing,externalCostUnknown:false,remake:false});}
+ for(const [id,inspection]of inspections){const billing=byId.get(id)!;items.push({id,kind:"review",status:billing.outcome==="failed"||billing.state==="released"?"failed":billing.state==="settled"?"completed":"needs_attention",attribution:inspection.attribution,nodeIds:inspection.nodeIds,runIds:[],timelineIds:[],billing,externalCostUnknown:false,remake:false});}
  for(const source of audioSources){const billing=byId.get(source.id)!;items.push({id:source.id,kind:source.kind==="speech"?"speech-generation":"transcription",status:billing.outcome==="failed"||billing.state==="released"?"failed":billing.state==="settled"&&billing.outcome==="succeeded"?"completed":"needs_attention",attribution:"plan",nodeIds:[],runIds:[],timelineIds:[source.timelineId],billing,externalCostUnknown:false,remake:false});}
  const actual=items.filter(item=>item.attribution==="plan"),unacceptedOperations=exact.flatMap(run=>run.nodes.filter(node=>!node.taskId&&!node.reused).map(node=>({id:`${run.id}:${node.id}`,status:node.status,quotedCredits:node.quotedCredits,upperBound:node.upperBound})));
  for(const id of operations.keys())if(!media.some(job=>job.operationId===id))unacceptedOperations.push({id,status:"not-accepted",quotedCredits:null,upperBound:false});

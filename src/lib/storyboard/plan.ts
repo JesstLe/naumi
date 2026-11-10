@@ -12,7 +12,8 @@ export const storyboardTakeSchema=z.strictObject({
   status:z.enum(["pending","changes","approved"]),note:z.string().max(4000),
   annotations:z.array(reviewAnnotationSchema).max(100).optional(),
   assistedReviews:z.array(assistedReviewRefSchema).max(20).optional(),
-}).superRefine((take,ctx)=>{if(new Set(take.annotations?.map(value=>value.id)).size!==(take.annotations?.length||0))ctx.addIssue({code:"custom",message:"批注编号不能重复"});if(new Set(take.assistedReviews?.map(value=>value.operationId)).size!==(take.assistedReviews?.length||0))ctx.addIssue({code:"custom",message:"辅助检查回执不能重复"});});
+  audioReviews:z.array(assistedReviewRefSchema).max(20).optional(),
+}).superRefine((take,ctx)=>{if(new Set(take.audioReviews?.map(v=>v.operationId)).size!==(take.audioReviews?.length||0))ctx.addIssue({code:"custom",message:"语音检查回执不能重复"});if(new Set(take.annotations?.map(value=>value.id)).size!==(take.annotations?.length||0))ctx.addIssue({code:"custom",message:"批注编号不能重复"});if(new Set(take.assistedReviews?.map(value=>value.operationId)).size!==(take.assistedReviews?.length||0))ctx.addIssue({code:"custom",message:"辅助检查回执不能重复"});});
 export const storyboardShotSchema=z.strictObject({
   nodeId:videoNodeIdSchema,number:z.string().trim().min(1).max(40),
   scene:z.string().max(200).default(""),purpose:z.string().max(2000).default(""),
