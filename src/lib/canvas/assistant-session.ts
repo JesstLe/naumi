@@ -93,9 +93,10 @@ export function createCanvasAssistant(){
       const references=prepared?[]:refs(context),anchorId=references[0]?.id||"",referencesKey=JSON.stringify(references.map(art=>art.id));
       const reuse=!continueText&&attempt?.input===inputText&&attempt.anchorId===anchorId&&attempt.referencesKey===referencesKey&&attempt.preparedTextNodeId===prepared?.textNodeId;
       const history=reuse?attempt!.history:[...state.turns,{id:`as-u-${Date.now()}`,role:"user" as const,content:inputText}];
-      const saved=reuse?attempt!:{input:inputText,anchorId,referencesKey,history,preparedTextNodeId:prepared?.textNodeId,submission:createRetainedBillingSubmission(),body:JSON.stringify({mode:"agent",continueText,continueFromTurnId:continuation,skill:!prepared&&state.skill?{id:state.skill.id,revision:state.skill.revision}:null,sessionId,turnId:browserRandomUUID(),anchorId,videoNodeId:prepared?undefined:context.videoNodeId,textNodeId:prepared?.textNodeId??context.textNodeId,projectKey:bound.project||"workspace",contextIds:references.map(art=>art.id),messages:continueText?[]:history.slice(-12).map(({role,content})=>({role,content:content.slice(0,4000)})),imageModelId:context.imageModelId,ratio:context.ratio,resolution:context.resolution,quality:context.quality})};
+      const saved=reuse?attempt!:{input:inputText,anchorId,referencesKey,history,preparedTextNodeId:prepared?.textNodeId,submission:createRetainedBillingSubmission(),body:JSON.stringify({mode:"agent",continueText,continueFromTurnId:continuation,skill:!prepared&&state.skill?{id:state.skill.id,revision:state.skill.revision}:null,sessionId,turnId:browserRandomUUID(),anchorId,videoNodeId:prepared?undefined:context.videoNodeId,textNodeId:prepared?.textNodeId??context.textNodeId,projectKey:bound.project||"workspace",contextIds:references.map(art=>art.id),messages:continueText?[]:[{role:"user",content:inputText}],imageModelId:context.imageModelId,ratio:context.ratio,resolution:context.resolution,quality:context.quality})};
       attempt=saved;const requestEpoch=++epoch,acceptedSession=sessionId,active=new AbortController();controller=active;liveSessionId=acceptedSession;
       const current=()=>visible()&&requestEpoch===epoch&&acceptedSession===sessionId&&!active.signal.aborted;
+      let historyRequired=false;
       let serverSession=acceptedSession,receivedText="",recoveryTurn:string|null=null,orbFailureCode:string|undefined,videoProject:{key:string;nodeId:string}|undefined;const artifactIds=new Set<string>(),plannedNodeIds=new Set<string>();
       set({error:null,busy:true,responding:false,activity:{phase:"connecting"},steps:[],outcome:"running",continueTurn:null,...(!prepared?{input:""}:{}),turns:[...history,{id:`as-a-${Date.now()}`,role:"assistant",content:""}]});context.cue({type:"submit"});
       try{
@@ -109,6 +110,7 @@ export function createCanvasAssistant(){
           if(["delta","assistant","tool_start","tool_end","attention","artifacts","final"].includes(type))set({turns:updateAssistantTimeline(state.turns,{...data,type},context.english)});
           if(type==="open"){serverSession=String(data.sessionId||acceptedSession);liveSessionId=serverSession;}
           if(type==="done"&&data.ok===true)completed=true;
+          if(type==="history_required")historyRequired=true;
           if(type==="attention"){set({steps:reduceAgentProgress(state.steps,{...data,type},context.english)});if(data.kind==="waiting"||data.kind==="restricted")context.cue({type:"attention",kind:data.kind});else if(data.kind==="resolved")context.cue({type:"attention-resolved",tool:String(data.tool||"")});}
           if(type==="delta"){if(Date.now()-lastOrbDelta>650){lastOrbDelta=Date.now();context.cue({type:"delta"});}text+=String(data.text||"");receivedText=text;set({responding:true});setLast({content:text});}
           else if(type==="error"){if(data.canContinue===true&&typeof data.continueFromTurnId==="string")recoveryTurn=data.continueFromTurnId;if(typeof data.code==="string")orbFailureCode=data.code;streamError=String(data.error||data.message||"画布助手暂时不可用");}
@@ -119,6 +121,7 @@ export function createCanvasAssistant(){
           else if(type==="final"){text=String(data.reply||text);setLast({content:text});}
         }
         if(!current())return;if(streamError)throw Error(streamError);if(!completed)throw Error("任务连接已中断，请从历史核对执行结果，避免重复生图");if(!text.trim())throw Error("助手没有返回内容，请重试");setLast({content:text.trim()});if(attempt===saved)attempt=undefined;set({outcome:"done"});context.cue({type:"done"});
+        if(historyRequired){await restore(serverSession,context);return;}
         if(prepared&&bound.project&&plannedNodeIds.size)await context.storyboard?.({projectKey:bound.project,nodeIds:[...plannedNodeIds]},current);
         if(videoProject&&current())await context.revealVideo(videoProject,current);
       }catch(error){if(!visible()||requestEpoch!==epoch||acceptedSession!==sessionId)return;

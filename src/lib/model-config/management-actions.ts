@@ -1,3 +1,4 @@
+import {editManagedModelIdentity} from "./management-identity";
 import "server-only";
 import { applyImageMappingEditor } from "./image-mapping-editor";
 import { applyResolutionParameters } from "./resolution-policy";
@@ -41,7 +42,7 @@ export async function applyManagementConfigAction({ admin, snapshot, body, fetch
         } else if(body.action === "image-mapping") {
           const row=rows(snapshot).find(r=>r.id===body.rowId);if(!row||row.modality!=="image"||row.preset||!row.resolutionConfig?.routes.every(r=>r.editable)||!row.qualityConfig?.routes.every(r=>r.editable))throw new ModelConfigError("IMAGE_MAPPING_INVALID","此模型参数由协议预设管理",422);
           config=applyImageMappingEditor(config,row.publicIds,[...new Set(row.routes.map(r=>r.upstreamId))],body.mapping);
-        } else if (body.action === "switch" || body.action === "rename" || body.action === "scope" || body.action === "parameters" || body.action === "resolutions" || body.action === "channels" || body.action === "imagegen-parameters" || body.action === "video-parameters") {
+        } else if (body.action === "identity" || body.action === "switch" || body.action === "rename" || body.action === "scope" || body.action === "parameters" || body.action === "resolutions" || body.action === "channels" || body.action === "imagegen-parameters" || body.action === "video-parameters") {
           const row = rows(snapshot).find(r => r.id === body.rowId);
           if (!row) throw new ModelConfigError("MODEL_UNAVAILABLE", "前端当前没有展示该模型，请刷新", 409);
           if(body.action==="channels"&&body.policy&&row.modality==="text"&&body.policy.channels.some(c=>c.enabled&&!row.candidateIds.includes(c.upstreamId)))throw new ModelConfigError("MODEL_INCOMPATIBLE","文字通道必须满足当前全部用途的文字及图片理解能力",400);
@@ -62,7 +63,7 @@ export async function applyManagementConfigAction({ admin, snapshot, body, fetch
             if(body.routes===null)body.routes=[...new Set(row.routes.map(r=>r.upstreamId))].map(upstreamId=>{const d=defaults.get(upstreamId);return {upstreamId,capabilities:d?.capabilities||{},wireMap:d?.wireMap||{},metadataRef:d?.metadataRef||null};});
             for(const r of body.routes??[]){const d=defaults.get(r.upstreamId);if(r.metadataRef&&(!d||d.metadataRef.id!==r.metadataRef.id||d.metadataRef.revision!==r.metadataRef.revision))throw new ModelConfigError("METADATA_CHANGED","图像能力资料已更新，请重新打开设置核对",409);}
           }
-          config = body.action === "video-parameters" ? applyVideoParameters(config,row,body.routes) : body.action === "imagegen-parameters" ? applyImagegenModelParameters(config,[...new Set(row.routes.map(r=>r.upstreamId))],body.routes) : body.action === "channels" ? applyChannelPolicy(config,row,body.policy) : body.action === "resolutions" ? applyDisplayResolutions(config,row,body.resolutions) : body.action === "parameters" ? applyModelQualityParameters(config,row,body.parameters) : body.action === "scope" ? applyModelToolScope(config,row,body.features,body.canvas) : body.action === "rename" ? renameManagedModel(config, row, body.label) : switchManagedModel(config, row, body.upstreamId);
+          config = body.action === "identity" ? editManagedModelIdentity(config,row,body.publicId,body.label) : body.action === "video-parameters" ? applyVideoParameters(config,row,body.routes) : body.action === "imagegen-parameters" ? applyImagegenModelParameters(config,[...new Set(row.routes.map(r=>r.upstreamId))],body.routes) : body.action === "channels" ? applyChannelPolicy(config,row,body.policy) : body.action === "resolutions" ? applyDisplayResolutions(config,row,body.resolutions) : body.action === "parameters" ? applyModelQualityParameters(config,row,body.parameters) : body.action === "scope" ? applyModelToolScope(config,row,body.features,body.canvas) : body.action === "rename" ? renameManagedModel(config, row, body.label) : switchManagedModel(config, row, body.upstreamId);
           if(body.action==="resolutions" && body.parameters!==undefined)config=applyResolutionParameters(config,row,body.resolutions||["1K","2K","4K"],body.parameters);
         } else if (body.action === "connect") {
           const endpoint = validateModelEndpoint(body.protocol === "apimart-images" ? body.baseUrl.replace(/\/v1\/?$/, "") : body.baseUrl, { trustedOrigins: admin.trustedOrigins });

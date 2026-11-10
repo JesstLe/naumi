@@ -44,7 +44,15 @@ export function ScopeDialog({row,locked,error,onClose,onSave}:{row:ManagedModelR
     </div><footer className={styles.dialogFooter}><button className={styles.secondary} disabled={locked} onClick={onClose}>取消</button><button className={styles.primary} disabled={locked || !changed} onClick={()=>onSave(selected,effectiveCanvas)}>保存范围并生效</button></footer></Dialog>;
 }
 
-export function RenameDialog({ row, locked, onClose, onSave }: { row: ManagedModelRow; locked: boolean; onClose: () => void; onSave: (label: string) => void }) {
-  const [label, setLabel] = useState(row.label);
-  return <Dialog title="修改前端显示名称" onClose={onClose} locked={locked}><form onSubmit={e => { e.preventDefault(); if (label.trim()) onSave(label.trim()); }}><div className={styles.dialogBody}><p className={styles.ruleNote}>此名称将用于前端模型选项。实际调用模型、模型 ID、价格和用途保持原配置。{row.publicIds.length > 1 && "该模型家族的所有比例分支会统一使用新名称。"}</p><label className={styles.field}>显示名称<input aria-label="显示名称" autoFocus required maxLength={100} value={label} onChange={e => setLabel(e.target.value)} disabled={locked} /><small>{label.length} / 100</small></label><p className={styles.ruleNote}>影响：{row.features.map(f => f.label).join("、")}</p></div><footer className={styles.dialogFooter}><button type="button" className={styles.secondary} disabled={locked} onClick={onClose}>取消</button><button type="submit" className={styles.primary} disabled={locked || !label.trim() || label.trim() === row.label}>保存并生效</button></footer></form></Dialog>;
+export function RenameDialog({ row, locked, error, onClose, onSave }: { row: ManagedModelRow; locked: boolean; error: string; onClose: () => void; onSave: (publicId: string, label: string) => void }) {
+  const [label, setLabel] = useState(row.label), [publicId, setPublicId] = useState(row.id);
+  const validId = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/.test(publicId.trim());
+  const changed = publicId.trim() !== row.id || label.trim() !== row.label;
+  return <Dialog title="名称与公开 ID" onClose={onClose} locked={locked}><form onSubmit={e => { e.preventDefault(); if (!locked && changed && validId && label.trim()) onSave(publicId.trim(),label.trim()); }}><div className={styles.dialogBody}>
+    {error && <p role="alert" className={styles.error}>{error}</p>}
+    <label className={styles.field}>显示名称<input aria-label="显示名称" autoFocus required maxLength={100} value={label} onChange={e => setLabel(e.target.value)} disabled={locked}/></label>
+    <label className={styles.field}>公开 ID<input aria-label="公开 ID" required maxLength={100} value={publicId} onChange={e => setPublicId(e.target.value)} disabled={locked} spellCheck={false}/><small>前端提交使用；字母、数字及 . _ : -</small></label>
+    <button type="button" className={styles.secondary} disabled={locked || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/.test(label.trim())} onClick={()=>setPublicId(label.trim())}>使用显示名称作为 ID</button>
+    <p className={styles.ruleNote}>旧 ID 自动兼容已保存的选择。实际调用型号在供应通道中设置，售价保持原配置。{row.publicIds.length > 1 && "家族比例分支一起更新。"}</p>
+    </div><footer className={styles.dialogFooter}><button type="button" className={styles.secondary} disabled={locked} onClick={onClose}>取消</button><button type="submit" className={styles.primary} disabled={locked || !validId || !label.trim() || !changed}>保存并生效</button></footer></form></Dialog>;
 }

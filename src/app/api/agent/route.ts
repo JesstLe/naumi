@@ -1,3 +1,7 @@
+import {agentEventCursor, agentEventsSince} from "@/lib/agent/event-buffer";
+import {agentTurnOutcome, recordAuthoritativeReply} from "@/lib/agent/stream-recovery";
+import {getAgentSession} from "@/lib/agent/session-repository";
+import {agentHistoryRunning} from "@/lib/agent/session-lifecycle";
 import { observeReleaseRequest, routeAgentToOwner } from "@/lib/release-runtime/http";
 import { releaseRuntimeEnabled, releaseError } from "@/lib/release-runtime/identity";
 import { forwardLegacyAgentSession } from "@/lib/agent/legacy-runtime";
@@ -11,6 +15,7 @@ import { dbEnabled } from "@/platform/db/pool";
 import {checkRateLimit} from "@/lib/rate-limit-http";
 import { getOpenAISettings } from "@/lib/settings";
 import {
+  AgentVisionInputError,
   appendSessionEvent,
   agentVisionEnabled,
   getOrCreateSession,
@@ -51,7 +56,7 @@ async function localPUT(request: Request) {
   const legacy = await forwardLegacyAgentSession(request);
   if (legacy) return legacy;
   try { return await withBiRequest(request, () => handlePut(request)); }
-  catch (error) { if (error instanceof HarnessError) return harnessErrorResponse(error); throw error; }
+  catch (error) { if (error instanceof AgentVisionInputError) return NextResponse.json({error:error.message},{status:422}); if (error instanceof HarnessError) return harnessErrorResponse(error); throw error; }
 }
 async function handlePut(request: Request) {
   const email = await authedEmail(request);
@@ -96,7 +101,7 @@ async function handlePut(request: Request) {
     agentVisionEnabled(modelId) && imageUrls.length
       ? await resolveVisionImages(
           imageUrls,
-          request.headers.get("cookie") ?? ""
+          request.headers.get("cookie") ?? "", email, [new URL(request.url).origin]
         )
       : [];
   const history = Array.isArray(body?.history)
@@ -127,7 +132,7 @@ async function handlePut(request: Request) {
   }
   session.turnId=randomUUID();
   if (imageSkill) appendSessionEvent(session, "image_skill", { id:imageSkill.id, revision:imageSkill.revision, name:imageSkill.name, turnId:session.turnId });
-  const eventCursor = session.events.length;
+  const eventCursor = agentEventCursor(session);
   if (session.agent.state.messages.length === 0) {
     session.title = message.slice(0, 120) || session.title;
   }
@@ -199,63 +204,47 @@ async function handlePut(request: Request) {
       // 注册流式回调:assistant 文本增量绕过 events 轮询,直写 SSE(毫秒级到达)
       session.onDelta = onDelta;
 
-      // One pump owns event delivery and completion. Neither idle check emits
-      // a heartbeat; do not count 700ms polling ticks as wire events.
+      let lastSent = Date.now();
       const flush = () => {
         if (closed) return;
-        for (; cursor < session.events.length; cursor++) {
-          const e = session.events[cursor];
-          send(e.type, e.data);
-        }
-        if (!session.running && cursor >= session.events.length) {
-          const lastAssistant = [...session.agent.state.messages]
-            .reverse()
-            .find((m) => m.role === "assistant");
-          const reply = Array.isArray(lastAssistant?.content)
-            ? (lastAssistant!.content as { type?: string; text?: string }[])
-                .map((c) => (c.type === "text" ? c.text ?? "" : ""))
-                .join("")
-                .trim()
-            : "";
-          const failed = lastAssistant && "stopReason" in lastAssistant && ["error", "aborted"].includes(String(lastAssistant.stopReason));
-          if (failed || !reply && !session.events.slice(eventCursor).some(event => event.type === "attention")) {
-            const failure = classifyAgentFailure(new Error(failed && lastAssistant.stopReason === "aborted" ? "任务已停止" : "模型服务未完成本轮请求"));
-            if (!session.events.slice(eventCursor).some(event => event.type === "error")) appendSessionEvent(session, "error", failure);
-            send("error", failure);
-          } else send("final", {
-            sessionId,
-            reply,
-            turns: session.agent.state.messages.length,
-          });
-          void persistAgentSession(session).catch(()=>undefined);
-          close();
-        }
+        const page = agentEventsSince(session, cursor);
+        if (page.reset) send("history_required", {total:page.total});
+        for (const event of page.events) send(event.type, event.data);
+        cursor = page.total;
+        if (page.events.length) lastSent = Date.now();
+        if (Date.now() - lastSent >= 15000) { send("heartbeat", {}); lastSent = Date.now(); }
       };
       pump = setInterval(flush, 700);
 
       timeout = setTimeout(() => session.agent.abort(), 780_000);
       void (async () => {
-        primeAgentSystemPrompt(session, message);
-        await session.agent.prompt(message, visionImages.length ? visionImages : undefined);
-      })()
-        .catch((e) => {
-          // 发图被拒:证伪该模型的视觉能力并提示重发(不做同会话自动重试,避免状态污染)
-          if (visionImages.length && markVisionUnsupported(modelId, e)) {
-            send("error", {
-              message:
-                "当前模型不接受图片输入,已自动关闭视觉并降级为纯文本。请把这条消息再发一次即可。",
-            });
-            return;
-          }
-          const failure=classifyAgentFailure(e);appendSessionEvent(session,"error",failure);
-          send("error", failure);
-        })
-        .finally(() => {
+        let failure: unknown;
+        try {
+          primeAgentSystemPrompt(session, message);
+          await session.agent.prompt(message, visionImages.length ? visionImages : undefined);
+        } catch (error) {
+          failure = error;
+          if (visionImages.length && markVisionUnsupported(modelId, error)) failure = new Error("当前模型不接受图片输入，请选择支持图片的模型后继续");
+        } finally {
           clearTimeout(timeout);
           session.running = false;
-          void persistAgentSession(session).catch(()=>undefined);
-          flush();
-        });
+          if (closed) { await persistAgentSession(session).catch(()=>undefined); return; }
+          try {
+            if (failure) throw failure;
+            const last = session.agent.state.messages.findLast(m => m.role === "assistant");
+            const outcome = agentTurnOutcome(last, agentEventsSince(session,eventCursor).events);
+            if (outcome.authoritative) recordAuthoritativeReply(session.agent,outcome.reply,last);
+            await persistAgentSession(session);
+            flush();
+            send("final", {sessionId,reply:outcome.reply,authoritative:outcome.authoritative,turns:session.agent.state.messages.length});
+          } catch (error) {
+            const detail = classifyAgentFailure(error);
+            appendSessionEvent(session,"error",detail);
+            await persistAgentSession(session).catch(()=>undefined);
+            flush();
+          } finally { close(); }
+        }
+      })();
     },
     cancel() {
       cancelStream();
@@ -341,13 +330,17 @@ async function localGET(request: Request) {
   const since = Number(url.searchParams.get("since") || "0");
   const session = getSession(email, sessionId);
   if (!session) {
-    return NextResponse.json({ error: "会话不存在或已过期" }, { status: 404 });
+    const saved=await getAgentSession(email,sessionId);
+    if(!saved)return NextResponse.json({ error: "会话不存在或已过期" }, { status: 404 });
+    if(await agentHistoryRunning(email,sessionId))return NextResponse.json({error:"原会话仍在执行，请稍后重新连接"},{status:503});
+    // The history route owns the full transcript. A reset tells old and new
+    // observers to read it instead of guessing from a missing in-memory run.
+    return NextResponse.json({events:[],running:false,total:0,reset:true});
   }
   refreshSessionCredentials(session, request);
   return NextResponse.json({
-    events: session.harness.sanitize(session.events.slice(Number.isInteger(since) && since >= 0 ? since : 0)),
+    ...session.harness.sanitize(agentEventsSince(session, Number.isSafeInteger(since) && since >= 0 ? since : 0)),
     running: session.running,
-    total: session.events.length,
   });
 }
 
@@ -356,7 +349,7 @@ async function localPOST(request: Request) {
   const legacy = await forwardLegacyAgentSession(request);
   if (legacy) return legacy;
   try { return await withBiRequest(request, () => handlePost(request)); }
-  catch (error) { if (error instanceof HarnessError) return harnessErrorResponse(error); throw error; }
+  catch (error) { if (error instanceof AgentVisionInputError) return NextResponse.json({error:error.message},{status:422}); if (error instanceof HarnessError) return harnessErrorResponse(error); throw error; }
 }
 async function handlePost(request: Request) {
   const email = await authedEmail(request);
@@ -393,7 +386,7 @@ async function handlePost(request: Request) {
     agentVisionEnabled(postModelId) && imageUrls.length
       ? await resolveVisionImages(
           imageUrls,
-          request.headers.get("cookie") ?? ""
+          request.headers.get("cookie") ?? "", email, [new URL(request.url).origin]
         )
       : [];
   const history = Array.isArray(body?.history)
@@ -447,19 +440,15 @@ async function handlePost(request: Request) {
   const lastAssistant = [...session.agent.state.messages]
     .reverse()
     .find((m) => m.role === "assistant");
-  if (lastAssistant && "stopReason" in lastAssistant && ["error", "aborted"].includes(String(lastAssistant.stopReason))) {
-    const failure = classifyAgentFailure(new Error(lastAssistant.stopReason === "aborted" ? "任务已停止" : "模型服务未完成本轮请求"));
-    appendSessionEvent(session, "error", failure); await persistAgentSession(session);
-    return NextResponse.json({error: failure.message, code: failure.code, sessionId: tempId}, {status: 502});
+  let reply: string;
+  try {
+    const outcome=agentTurnOutcome(lastAssistant,session.events);
+    reply=outcome.reply;
+    if(outcome.authoritative){recordAuthoritativeReply(session.agent,reply,lastAssistant);await persistAgentSession(session);}
+  } catch(error) {
+    const failure=classifyAgentFailure(error);appendSessionEvent(session,"error",failure);await persistAgentSession(session);
+    return NextResponse.json({error:failure.message,code:failure.code,sessionId:tempId},{status:502});
   }
-  const modelReply = Array.isArray(lastAssistant?.content)
-    ? (lastAssistant!.content as { type?: string; text?: string }[])
-        .map((c) => (c.type === "text" ? c.text ?? "" : ""))
-        .join("")
-        .trim()
-    : "";
-  const attention=session.events.findLast(event=>event.type==="attention");
-  const reply=modelReply || (attention?.data.kind==="waiting"||attention?.data.kind==="restricted" ? String(attention.data.message||"请确认报价后继续") : "");
   return NextResponse.json({
     sessionId:tempId,
     reply,

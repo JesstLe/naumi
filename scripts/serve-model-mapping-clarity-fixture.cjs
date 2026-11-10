@@ -26,7 +26,7 @@ const port=Number(process.env.FIXTURE_PORT||14688),source=process.argv[2];
         if(op.expectedVersion!==state.version)return json({error:'fixture version mismatch'},409);
         const row=state.rows.find(r=>r.id===op.rowId);
         if(op.action==='channels'){row.supplierRouting=op.policy; if(op.policy)row.routes=row.routes.map(r=>({...r,enabled:!!op.policy.channels.find(c=>c.upstreamId===r.upstreamId)?.enabled}));}
-        else if(op.action==='rename')row.label=op.label;
+        else if(op.action==='rename'||op.action==='identity'){row.label=op.label;if(op.publicId){row.id=op.publicId;row.publicIds=[op.publicId];}}
         else if(op.action==='scope')row.features=row.scopeOptions.filter(f=>op.features.includes(f.id)).map(({id,label})=>({id,label}));
         else if(op.action==='order')state.rows=op.rowIds.map(id=>state.rows.find(r=>r.id===id));
         state.version++;return json({publication:{phase:'applied'}});

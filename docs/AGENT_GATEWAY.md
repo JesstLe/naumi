@@ -1,6 +1,6 @@
 # 外部 Agent 网关（CLI / MCP / HTTP）
 
-当前已知实现缺陷见 [2026-11-10 Agent 全链路审计](changes/2026-11-10-agent-chain-audit.md) A08–A15：只读上传权限、未知结果分类/恢复编号、媒体回执、A+预算、质检状态及幂等摘要仍待修。下文为接口及设计契约，不能把这些缺陷涉及的不变量视为全部已验收。
+[2026-11-10 Agent 全链路审计](changes/2026-11-10-agent-chain-audit.md) A08–A15 已完成源码修复和本机隔离验收，见 [修复记录](changes/2026-11-10-agent-chain-fixes.md)：只读上传、未知结果恢复、产物回执、A+预算、质检状态及幂等摘要均有回归。真实 PG、实际 CLI/MCP 断连恢复已验证；未发布服务器，不能推算生产供应商或容量验收。
 
 面向 Agent 的完整创作产品目标、功能缺口与阶段验收见 [Agent 创作平台 PRD](prd/2026-11-10-agent-creation-platform.md) 和 [实施台账](prd/2026-11-10-agent-creation-platform-execution.md)。本文仍只描述已实现的网关契约；PRD中的目标接口不视为当前可调用能力。
 

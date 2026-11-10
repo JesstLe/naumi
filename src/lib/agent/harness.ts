@@ -4,6 +4,7 @@ import { Check } from "typebox/value";
 import type { TSchema } from "typebox";
 import { sanitizeAgentMarkdownImages } from "./markdown-images";
 import { publicOutputBoundary } from "./public-output";
+import {AgentToolHttpError} from "./tool-errors";
 
 /** Authority is server-owned. Model/user/Skill/tool text never supplies these fields. */
 export const HARNESS_LIMITS = Object.freeze({
@@ -48,7 +49,7 @@ export async function readHarnessBody(request: Request): Promise<Record<string, 
   let body: unknown;
   try { body = JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch { throw new HarnessError("INPUT_INVALID"); }
   if (!record(body)) throw new HarnessError("INPUT_INVALID");
-  boundedJson(body, HARNESS_LIMITS.requestBytes, "INPUT_INVALID");
+  boundedJson(body, HARNESS_LIMITS.requestBytes, "INPUT_INVALID", 1000);
   for (const key of ["message", "sessionId", "anchorId", "projectKey", "turnId", "imageModelId", "id", "title", "action", "mode", "ratio", "resolution", "quality", "videoNodeId", "textNodeId"]) if (body[key] !== undefined && typeof body[key] !== "string") throw new HarnessError("INPUT_INVALID");
   if (typeof body.message === "string" && body.message.length > HARNESS_LIMITS.messageChars) throw new HarnessError("INPUT_INVALID");
   if (body.continueText !== undefined && typeof body.continueText !== "boolean") throw new HarnessError("INPUT_INVALID");
@@ -57,7 +58,9 @@ export async function readHarnessBody(request: Request): Promise<Record<string, 
   return body;
 }
 export function validateHarnessHistory(value: unknown): asserts value is {role: "user" | "assistant"; content: string}[] {
-  if (!Array.isArray(value) || value.length > 100 || !value.every(x => record(x) && ["user", "assistant"].includes(String(x.role)) && typeof x.content === "string" && x.content.length <= HARNESS_LIMITS.messageChars)) throw new HarnessError("INPUT_INVALID");
+  // Legacy clients may echo model output. New sends use server-owned history;
+  // the request byte limit still bounds imports and old-client fallbacks.
+  if (!Array.isArray(value) || value.length > 1000 || !value.every(x => record(x) && ["user", "assistant"].includes(String(x.role)) && typeof x.content === "string" && x.content.length <= (x.role === "assistant" ? HARNESS_LIMITS.outputChars : HARNESS_LIMITS.messageChars))) throw new HarnessError("INPUT_INVALID");
 }
 export function assertHarnessSessionId(value: string, entry: "workbench" | "canvas") {
   if (!/^[\w-]{1,64}$/.test(value) || (entry === "workbench" && value.startsWith("cv-")) || (entry === "canvas" && !value.startsWith("cv-"))) throw new HarnessError("INPUT_INVALID");
@@ -166,7 +169,13 @@ export class AgentHarness {
       const result = await Promise.race([fn(owned), aborted]);
       this.live(); boundedJson(result, HARNESS_LIMITS.resultBytes, "OUTPUT_BLOCKED");
       this.log("TOOL_COMPLETED", name); return result;
-    } catch (error) { this.log(error instanceof HarnessError ? error.code : "TOOL_FAILED", name); throw error instanceof HarnessError ? error : new Error(this.publicText(error instanceof Error ? error.message : "工具执行失败", false)); }
+    } catch (error) {
+      this.log(error instanceof HarnessError ? error.code : "TOOL_FAILED", name);
+      if(error instanceof HarnessError)throw error;
+      const message=this.publicText(error instanceof Error?error.message:"工具执行失败",false);
+      if(error instanceof AgentToolHttpError)throw new AgentToolHttpError(message,error.status,error.code,error.submitted);
+      throw new Error(message);
+    }
     finally { clearTimeout(timer); owned.removeEventListener("abort", onAbort); }
   }
   publicText(text: string, protectInstructions = true) {

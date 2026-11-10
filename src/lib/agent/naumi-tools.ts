@@ -1,4 +1,5 @@
 import {webBytes} from "@/platform/bytes/web";
+import {withAgentToolAttempt,agentToolAttempt,AgentToolHttpError} from "./tool-errors";
 import {appendOriginalRequest} from "./execution-evidence";
 import {creationContinuationHeader} from "@/lib/saas/creation-context";
 
@@ -167,6 +168,8 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
       if (signal?.aborted) throw new Error("aborted");
       try {
         const continuation=await signAgentContinuation(agentEmail,path,init?.method||"GET");
+        const attempt=agentToolAttempt(),previouslySubmitted=attempt?.mayHaveSubmitted??true;
+        if(!isRead&&attempt)attempt.mayHaveSubmitted=true;
         const res = await fetch(base + path, {
           ...init,
           signal,
@@ -176,9 +179,11 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
         const bytes = await readBoundedBytes(res, 2 * 1024 * 1024);
         const data = JSON.parse(bytes.toString("utf8") || "{}");
         if (!res.ok) {
-          throw Object.assign(
-            new Error(harness?.publicText(String(data?.error || `工具接口返回 ${res.status}`)) || "工具接口调用失败"),
-            { deterministic: true,status:res.status,code:data?.code }
+          if(attempt&&res.status>=400&&res.status<500&&res.status!==409)attempt.mayHaveSubmitted=previouslySubmitted;
+          throw new AgentToolHttpError(
+            harness?.publicText(String(data?.error || `工具接口返回 ${res.status}`)) || "工具接口调用失败",
+            res.status,typeof data?.code==="string"&&/^[A-Z][A-Z0-9_]{0,79}$/.test(data.code)?data.code:undefined,
+            attempt&&!attempt.mayHaveSubmitted?false:"unknown"
           );
         }
         return harness ? harness.sanitize(data) : data;
@@ -1334,7 +1339,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
   all.push({name:"list_agent_tools",label:"创作工具目录",description:"只读查询创作中心可调用的工具、参数与入口；不创建收费任务。",parameters:Type.Object({}),execute:async()=>({content:[{type:"text",text:JSON.stringify({entries:CREATIVE_AGENT_TOOLS,tools:describeNaumiTools(all)})}],details:{publicSummary:"创作工具目录已读取"}})});
   return all.map(tool => {
     const execute = tool.execute;
-    return { ...tool, execute: async (id, args, signal, onUpdate) => {
+    return { ...tool, execute: (id, args, signal, onUpdate) => withAgentToolAttempt(async () => {
       const credentials = credGetter();
       await assertAgentToolAccess(agentEmail, tool.name, canvas ? "canvas" : "workbench", new Request(req.url, { headers: { cookie: credentials.cookie, authorization: credentials.authorization } }));
       validateToolArguments(tool.parameters, args);
@@ -1345,7 +1350,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
         // Keep raw details for owned output mounting; only text goes back to the model.
         return {...result, content:result.content.map(part => part.type === "text" ? {...part,text:`[UNTRUSTED_TOOL_RESULT]\n${JSON.stringify(part.text)}\n[/UNTRUSTED_TOOL_RESULT]`} : part)};
       });
-    } };
+    }) };
   });
 }
 

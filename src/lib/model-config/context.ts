@@ -4,7 +4,7 @@ import type { ExecutionModel, ExecutionConnection } from "./execution";
 import type { UpstreamModel, ModelSnapshot } from "./types";
 import type { ConfigSnapshot } from "../billing/types";
 
-export type ModelExecutionScope = { channelGuard?:import("./channel-availability").ChannelGuard; frontendModel?: import("./frontend-selection").FrontendModelSelection; capacityReserved?:boolean; supplierRouting?:{policy:import("./channel-policy").ChannelPolicy;targets:import("./channel-scheduler").ChannelTarget[]}; imagePreset?: import("./image-preset").ImagePreset; audited?: boolean; costPhase?: string; costRuleId?: string; frozen: ExecutionModel; connection: ExecutionConnection; capabilities: UpstreamModel["capabilities"]; parameterMap: UpstreamModel["parameterMap"]; businessOption?: import("./business-schema").BusinessOption; procurement?: import("./business-schema").Procurement; routing?: { policy: import("./business-schema").BusinessRouting; matchedRuleId?: string; spentMicros: bigint; targets: Record<string, { connection: ExecutionConnection; capabilities: UpstreamModel["capabilities"]; parameterMap: UpstreamModel["parameterMap"]; procurement: import("./business-schema").Procurement }> } };
+export type ModelExecutionScope = { parameterModelId?: string; channelGuard?:import("./channel-availability").ChannelGuard; frontendModel?: import("./frontend-selection").FrontendModelSelection; capacityReserved?:boolean; supplierRouting?:{policy:import("./channel-policy").ChannelPolicy;targets:import("./channel-scheduler").ChannelTarget[]}; imagePreset?: import("./image-preset").ImagePreset; audited?: boolean; costPhase?: string; costRuleId?: string; frozen: ExecutionModel; connection: ExecutionConnection; capabilities: UpstreamModel["capabilities"]; parameterMap: UpstreamModel["parameterMap"]; businessOption?: import("./business-schema").BusinessOption; procurement?: import("./business-schema").Procurement; routing?: { policy: import("./business-schema").BusinessRouting; matchedRuleId?: string; spentMicros: bigint; targets: Record<string, { connection: ExecutionConnection; capabilities: UpstreamModel["capabilities"]; parameterMap: UpstreamModel["parameterMap"]; procurement: import("./business-schema").Procurement }> } };
 const context = new AsyncLocalStorage<ModelExecutionScope | null>();
 export type ExecutionBundle = { modelVersion: number; billingVersion: number; primary?: "image" | "text" | "vision" | "video"; image?: ExecutionModel; text?: ExecutionModel; vision?: ExecutionModel; video?: ExecutionModel };
 export type ResolvedExecutionBundle = { frozen: ExecutionBundle; billing: ConfigSnapshot; models?:ModelSnapshot; image?: ModelExecutionScope; text?: ModelExecutionScope; vision?: ModelExecutionScope; video?: ModelExecutionScope };
@@ -29,3 +29,9 @@ export function runModelExecution<T>(scope: ModelExecutionScope, run: () => Prom
 export function runExecutionBundle<T>(bundle: ResolvedExecutionBundle, run: () => Promise<T>) { return bundles.run(bundle, () => run()); }
 export function runLegacyModelExecution<T>(run: () => Promise<T>) { return bundles.run(null, () => context.run(null, run)); }
 export function runFrozenLegacyBilling<T>(billing:ConfigSnapshot,run:()=>Promise<T>){return legacyBilling.run(billing,()=>runLegacyModelExecution(run));}
+
+/** Supplier families historically size using their public identity. Renaming
+ * preserves that contract; direct calls continue to size using the wire model. */
+export function imageExecutionSizingModel(scope: ModelExecutionScope | null | undefined) {
+  return scope?.connection.protocol === "supplier-channels" ? scope.parameterModelId || scope.connection.wireModel : scope?.connection.wireModel;
+}
