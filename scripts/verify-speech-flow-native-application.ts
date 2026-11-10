@@ -41,7 +41,7 @@ async function main(){
   await h.setAudioPrice('audio.speech',3);await h.setAudioPrice('audio.transcribe',2);await h.setMediaPrice(3);
   const id='speech-native-'+randomUUID(),projectKey=`tree:${id}`,timeline=newTimelineProject();timeline.width=640;timeline.height=360;
   timeline.tracks[0].clips=[{id:'picture-a',artworkId:h.refs.video.id,position:0,inPoint:0,duration:2,gain:1,fadeIn:0,fadeOut:0,audioEnabled:false,transitionIn:0},{id:'picture-b',artworkId:h.refs.video.id,position:2,inPoint:2,duration:2,gain:1,fadeIn:0,fadeOut:0,audioEnabled:false,transitionIn:0}];
-  timeline.dialogue={...newTimelineDialogue(),lines:[{id:'line-a',speaker:'女孩',text:'爸爸，我到了',subtitleText:'爸爸，我到了。',position:1,duration:2,subtitleEnabled:true,timing:'draft'},{id:'line-b',speaker:'Father',text:'I am here.',subtitleText:'I am here.',position:3,duration:1,subtitleEnabled:true,timing:'draft'}]};
+  timeline.dialogue={...newTimelineDialogue(),burnIn:false,lines:[{id:'line-a',speaker:'女孩',text:'爸爸，我到了',subtitleText:'爸爸，我到了。',position:1,duration:2,subtitleEnabled:true,timing:'draft'},{id:'line-b',speaker:'Father',text:'I am here.',subtitleText:'I am here.',position:3,duration:1,subtitleEnabled:true,timing:'draft'}]};
   const made=await h.request<any>('a','POST','/api/canvas/timeline-nodes',{id,projectKey,expectedRevision:0,operationId:randomUUID(),title:'雨夜车站 · 声音原生验收',timeline});assert.equal(made.status,201,JSON.stringify(made));
   const getCut=async()=>(await h.request<any>('a','GET',`/api/canvas/timeline-nodes/${id}`)).body.node;
   const calls=()=>h.supplierCalls().filter(c=>String(c.phase).startsWith('audio-')).length;
