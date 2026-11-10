@@ -1,5 +1,6 @@
 import {verifyStoryboardProductionApplication} from "./verify-storyboard-production-application";
 import {verifyStoryboardIndependentApplication} from "./verify-storyboard-independent-application";
+import {verifyStoryboardReviewApplication} from "./verify-storyboard-review-application";
 import assert from "node:assert/strict";
 import {randomBytes,randomUUID,createHash} from "node:crypto";
 import {spawnSync} from "node:child_process";
@@ -97,6 +98,7 @@ async function main(){
   await verifyStoryboardProductionApplication(h,project,story.planId,pass);
   for(const check of (await h.verifyStoryboardAgent(project,story.planId)).checks)pass("agent_"+check);
   await verifyStoryboardIndependentApplication(h,project,story.planId,pass);
+  await verifyStoryboardReviewApplication(h,project,story.planId,pass);
   await writeFile(path.join(out,"RESULT.json"),JSON.stringify({checks,realApp:true,realPostgres:true,actualAgentTools:true,actualMediaWorker:true,realBilling:true,simulatedSupplierCreates:h.supplierCalls().filter(call=>call.phase==="create").length,realSupplierCalls:0,creativeModelNotTested:true,root:process.cwd()},null,2));
   console.log(`STORYBOARD_APPLICATION=PASS CHECKS=${checks.length} REAL_APP_DB_WORKER_STORAGE_BILLING=PASS PLANNING=FREE REUSE=PASS REPLAY=PASS FAILED_ASSEMBLY_RETRY=MEDIA_ONLY CANCEL=PASS NATIVE_SHOTS=PASS REAL_SUPPLIER_CALLS=0`);
  }finally{if(fixture)await fixture.stop();if(listening)await new Promise<void>(r=>router.close(()=>r()));if(pool)await pool.end();if(container){assert.equal(docker(["inspect","--format",'{{index .Config.Labels "naumi.task"}}',container]),owner);docker(["rm","--force",container])}await unlink(envFile);console.log("STORYBOARD_APP_CLEANUP=OWN_FIXTURE_REMOVED");}

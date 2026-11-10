@@ -1,4 +1,5 @@
 import {z} from "zod";
+import {reviewOriginSchema} from "../storyboard/review";
 import {videoReferenceSchema,orderedInputSchema} from "./references";
 import {VIDEO_MODES} from "./capability-schema";
 import {videoInputSchema} from "./contract";
@@ -20,6 +21,7 @@ export const workflowVideoRequestSchema=videoInputSchema.omit({durationSeconds:t
   billingConfirmation:z.strictObject({version:z.number().int().positive().optional(),credits:z.number().int().nonnegative().optional()}).optional()});
 export const videoWorkflowPlanSchema=z.strictObject({id:z.uuid(),projectKey:z.string().regex(/^(?:tree|batch):[A-Za-z0-9._:-]{1,160}$/),
   assembly:z.strictObject({nodeIds:z.array(id).min(2).max(100)}).optional(),
+  reviewOrigin:reviewOriginSchema.optional(),
   variables:z.record(id,z.union([z.string().max(16384),z.number().finite(),z.boolean()])).optional(),
   nodes:z.array(z.strictObject({id,existingArtworkId:id.optional(),canvasNodeId:id.optional(),canvasNodeRevision:z.number().int().nonnegative().optional(),canvasContentDigest:z.string().regex(/^[a-f0-9]{64}$/).optional(),canvasLastTaskId:id.nullable().optional(),request:workflowVideoRequestSchema,dependsOn:z.array(id).max(100),
     mediaBindings:z.array(z.strictObject({fromNodeId:id,inputId:id.optional(),outputIndex:z.number().int().min(0).max(127).optional(),kind:z.enum(["image","video","audio"]),

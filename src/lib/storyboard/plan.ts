@@ -4,11 +4,13 @@ import {videoNodeIdSchema} from "../canvas/video-node-schema";
 import {videoProjectKeySchema} from "../canvas/project-key";
 import {storyboardSourceSchema} from "./script-mapping";
 import {continuitySchema,shotCutSchema,storyboardAudioSchema} from "./continuity";
+import {reviewAnnotationSchema} from "./review";
 
 export const storyboardTakeSchema=z.strictObject({
   artworkId:videoNodeIdSchema,taskId:videoNodeIdSchema,
   status:z.enum(["pending","changes","approved"]),note:z.string().max(4000),
-});
+  annotations:z.array(reviewAnnotationSchema).max(100).optional(),
+}).superRefine((take,ctx)=>{if(new Set(take.annotations?.map(value=>value.id)).size!==(take.annotations?.length||0))ctx.addIssue({code:"custom",message:"批注编号不能重复"});});
 export const storyboardShotSchema=z.strictObject({
   nodeId:videoNodeIdSchema,number:z.string().trim().min(1).max(40),
   scene:z.string().max(200).default(""),purpose:z.string().max(2000).default(""),
@@ -52,7 +54,8 @@ export function newStoryboardDocument(nodes:readonly CanvasVideoNode[],ids:reado
 export function nextShotNumber(shots:readonly StoryboardShot[]){let number=1;const used=new Set(shots.map(shot=>shot.number));while(used.has(String(number).padStart(2,"0")))number++;return String(number).padStart(2,"0");}
 export function reviewStoryboardTake(shot:StoryboardShot,take:StoryboardTake,adopt=false):StoryboardShot{
   const adoptedArtworkId=adopt?take.artworkId:shot.adoptedArtworkId;
-  return {...shot,adoptedArtworkId,takes:[...shot.takes.filter(item=>item.artworkId!==take.artworkId),take]};
+  const old=shot.takes.find(item=>item.artworkId===take.artworkId&&item.taskId===take.taskId);
+  return {...shot,adoptedArtworkId,takes:[...shot.takes.filter(item=>item.artworkId!==take.artworkId),{...old,...take}]};
 }
 
 export function restructureStoryboardShots(document:StoryboardDocument,replacedIds:readonly string[],createdIds:readonly string[]):StoryboardDocument{

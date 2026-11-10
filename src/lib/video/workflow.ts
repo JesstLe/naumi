@@ -70,7 +70,7 @@ export async function authorizeWorkflowInputs(actor:string,plan:VideoWorkflowPla
   }
 }
 export async function scheduleVideoWorkflow(actor:string,raw:unknown,canvasIntent?:unknown,preparedFrozen?:Record<string,FrozenWorkflowStage>,signal?:AbortSignal,frozenAssemblyQuote?:import("../billing/types").BillingQuote):Promise<{runId:string;taskIds:string[]}>{
-  actor=actor.toLowerCase();const plan=validateVideoWorkflow(raw);await ensureWorkflowSchema();const inputDigest=createHash("sha256").update(canonicalConfig(plan)).digest("hex"),known=(await getPool().query("SELECT email,input_digest,creation_scope FROM app_video_workflow_runs WHERE id=$1",[plan.id])).rows[0];
+  actor=actor.toLowerCase();const plan=validateVideoWorkflow(raw);if(plan.reviewOrigin&&!canvasIntent)throw new ModelConfigError("STORYBOARD_REVIEW_CONTEXT_REQUIRED","审片返工须从正式方案提交",422);await ensureWorkflowSchema();const inputDigest=createHash("sha256").update(canonicalConfig(plan)).digest("hex"),known=(await getPool().query("SELECT email,input_digest,creation_scope FROM app_video_workflow_runs WHERE id=$1",[plan.id])).rows[0];
   if(known?.input_digest){assertWorkflowCreationScope(known.creation_scope,actor);if(known.email!==actor||known.input_digest!==inputDigest)throw new ModelConfigError("WORKFLOW_OPERATION_CONFLICT","工作流编号已用于另一请求",409);const resumed=await resumeVideoWorkflow(plan.id,actor);return {runId:plan.id,taskIds:resumed.nodes.map(node=>node.taskId).filter((id):id is string=>!!id)};}
   if(known&&known.email!==actor)throw new ModelConfigError("WORKFLOW_OPERATION_CONFLICT","工作流编号已用于另一请求",409);
   await authorizeProject(actor,plan.projectKey);await bindWorkflowCreationProject(actor,plan.projectKey);await validateWorkflowCreationInputs(actor,plan);await authorizeWorkflowInputs(actor,plan);const frozen=known?null:preparedFrozen||await freezeVideoWorkflow(actor,plan),frozenEnc=frozen?encryptAtRest(JSON.stringify(frozen)):null,publicFrozen=frozen?Object.fromEntries(Object.entries(frozen).map(([id,stage])=>[id,stage.quote])):{};
@@ -216,8 +216,8 @@ export async function confirmVideoWorkflowNode(actor:string,runId:string,nodeId:
   }catch(error){await client.query("ROLLBACK");throw error;}finally{client.release();}
   return resumeVideoWorkflow(runId,actor);
 }
-export async function listVideoWorkflows(actor:string,projectKey?:string){
-  await ensureWorkflowSchema();const rows=(await getPool().query("SELECT id FROM app_video_workflow_runs WHERE email=$1 AND ($2::text IS NULL OR project_key=$2) ORDER BY created_at DESC LIMIT 50",[actor,projectKey||null])).rows;
+export async function listVideoWorkflows(actor:string,projectKey?:string,review?:{planId:string;nodeId:string}){
+  await ensureWorkflowSchema();const rows=(await getPool().query("SELECT id FROM app_video_workflow_runs WHERE email=$1 AND ($2::text IS NULL OR project_key=$2) AND ($3::text IS NULL OR (plan->'reviewOrigin'->>'planId'=$3 AND plan->'reviewOrigin'->>'nodeId'=$4)) ORDER BY created_at DESC LIMIT 50",[actor,projectKey||null,review?.planId||null,review?.nodeId||null])).rows;
   const result=[];for(const row of rows)result.push(await getVideoWorkflow(actor,row.id));return result;
 }
 export async function cancelVideoWorkflow(actor:string,runId:string){

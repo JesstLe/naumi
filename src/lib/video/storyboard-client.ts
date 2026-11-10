@@ -1,10 +1,11 @@
+import type {StoryboardContext,ReviewOrigin} from "../storyboard/review";
 import type {CanvasVideoNode} from "../canvas/video-node-schema";
 
 export type StoryboardSelection={id:string;reuseCompleted:boolean};
-export type StoryboardIntent={id:string;projectKey:string;storyboard?:{id:string;revision:number};nodes:Array<{id:string;revision:number;reuseCompleted?:boolean}>;assembly?:{nodeIds:string[]}};
+export type StoryboardIntent={id:string;projectKey:string;storyboard?:StoryboardContext;nodes:Array<{id:string;revision:number;reuseCompleted?:boolean}>;assembly?:{nodeIds:string[]}};
 export type StoryboardRun={runId:string;projectKey:string;progress:number;cancellationRequestedAt?:string|null;
   nodes:Array<{id:string;status:string;taskId?:string|null;error?:string|null;quote?:{version?:number;credits?:number;authorizedCredits?:number;authorization?:unknown}|null}>;
-  plan:{nodes:Array<{id:string;canvasNodeId?:string;request:{prompt?:string;durationSeconds?:number}}>};
+  plan:{reviewOrigin?:ReviewOrigin;nodes:Array<{id:string;canvasNodeId?:string;request:{prompt?:string;durationSeconds?:number}}>};
   assembly?:{status:string;attempt:number;jobId?:string|null;error?:string|null;outputs?:Array<{artworkId?:string;url:string;mimeType?:string;name?:string}>}|null};
 
 /** This text delegates creative splitting to the existing Agent. The source is

@@ -43,7 +43,7 @@ export function useStoryboardPlan({scope,projectKey,nodes,initialNodeIds,request
       const response=await ports.current.request("/api/canvas/storyboards",{method:"POST",headers:{"content-type":"application/json","x-naumi-workspace":workspace,"x-naumi-project-context":projectKey},body:JSON.stringify(write)}),body=await response.json();
       if(!response.ok){
         // Only these explicit validation/CAS rejections are known not to have committed.
-        if([401,403,409,422].includes(response.status)){const rejected={...current.current!,pending:undefined};cache(rejected);current.current=rejected;if(alive.current)setDraft(rejected);}
+        if([409,422].includes(response.status)){const rejected={...current.current!,pending:undefined};cache(rejected);current.current=rejected;if(alive.current)setDraft(rejected);}
         throw new Error(body.error||"方案保存结果尚未核实");
       }
       const plan=body.plan as StoryboardPlan;

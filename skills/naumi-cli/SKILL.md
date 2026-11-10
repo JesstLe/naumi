@@ -60,6 +60,8 @@ Naumi 提供电商图片和视频创作工具。你通过 `node naumi.mjs`（或
 5. 外层 CLI `--operation-id` 对应网关回执；工具参数内的 `operation_id` 对应领域写操作，两者都保留。断网先 `status <外层编号>`，必要时以原业务编号及完全相同参数恢复；方案保存可用 `get_video_storyboard_operation` 查询原业务回执。401不丢弃原意图。
 6. 需要独立尝试创意方向时调用 `fork_video_storyboard`，传源 `plan_id`、`revision`、全部节点当前 `revision`、新标题和固定 `operation_id`。它创建新节点、重写内部依赖并保留分叉点已有采用，不提交生成；历史任务仍属于原节点。共享方案副本仍共享节点，不能冒充独立版本。分叉未知时原完整参数重试，不读取新版本后换参数复用旧编号。
 
+7. 时间码批注保存在明确take的 `annotations:[{id,start,end?,issue,note}]`，时间单位为实际视频秒；不修改其他take。先保存方案，再使用 `run_video_workflow` 的 `storyboard.review:{nodeId,taskId,artworkId,annotationIds,instructions}` 引用已保存批注，`nodes`仅含该镜且不复用，不带assembly。此操作生成整镜新候选而非承诺像素级区间编辑；原采用版保持。通过返回run的 `plan.reviewOrigin` 和 `nodes[].taskId` 追溯真实返工候选。未知结果沿原operation恢复，不自动循环重做。
+
 可复用指令：
 
 ```text
