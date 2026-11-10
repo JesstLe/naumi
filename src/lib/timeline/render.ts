@@ -1,5 +1,6 @@
 import {mediaJobRequestSchema,type MediaJobRequest} from "../video/media-job-schema";
 import {planTimeline,type TimelineProject,type TimelineSource} from "./project";
+import {dialogueSrt,dialogueAss} from "./dialogue";
 
 const number=(value:number)=>String(Number(value.toFixed(9)));
 
@@ -28,10 +29,16 @@ export function timelineMediaRequest(project:TimelineProject,sources:readonly Ti
       chain.push(`adelay=delays=${Math.round(clip.position*48000)}S:all=1[a${index}]`);filters.push(chain.join(","));audio.push(`a${index}`);
     }
   }
+  const srt=dialogueSrt(plan.project.dialogue),auxiliaryFiles:MediaJobRequest["auxiliaryFiles"]=[],auxiliaryOutputs:MediaJobRequest["auxiliaryOutputs"]=[];
+  if(srt){
+    // Subtitle bytes are data, not filter syntax or a virtual path template.
+    auxiliaryFiles.push({name:"timeline.srt",encoding:"base64",content:Buffer.from(srt,"utf8").toString("base64")});auxiliaryOutputs.push({index:0,name:"timeline.srt"});
+    if(plan.project.dialogue?.burnIn){auxiliaryFiles.push({name:"timeline.ass",encoding:"base64",content:Buffer.from(dialogueAss(plan.project),"utf8").toString("base64")});filters.push(`[${video}]ass=filename='aux:1'[subtitled]`);video="subtitled";}
+  }
   filters.push(`[${video}]format=yuv420p[vout]`,`anullsrc=r=48000:cl=stereo,atrim=duration=${duration}[silence]`);
   filters.push(`[silence]${audio.map(label=>`[${label}]`).join("")}amix=inputs=${audio.length+1}:duration=first:normalize=0:dropout_transition=0,atrim=duration=${duration},asetpts=PTS-STARTPTS[aout]`);
   args.push("-filter_complex",filters.join(";"),"-map","[vout]","-map","[aout]","-t",duration,"-r",String(fps),"-c:v","libx264","-preset","veryfast","-pix_fmt","yuv420p","-c:a","aac","-ar","48000","-movflags","+faststart","output:0");
   const request:MediaJobRequest=mediaJobRequestSchema.parse({operationId,action:"ffmpeg",inputs:plan.sources.map(source=>source.artworkId),outputs:["timeline.mp4"],args,
-    source:"canvas",projectKey});
+    auxiliaryFiles,auxiliaryOutputs,source:"canvas",projectKey});
   return {plan,request};
 }

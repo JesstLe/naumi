@@ -9,7 +9,7 @@ import {timelineNodeIdSchema} from "@/lib/canvas/timeline-node-schema";
 import {timelineFailure} from "../../response";
 
 export const runtime = "nodejs", dynamic = "force-dynamic", maxDuration = 120;
-const requestSchema = z.strictObject({operationId: z.uuid(), expectedRevision: z.number().int().positive()});
+const requestSchema = z.strictObject({operationId: z.uuid(), expectedRevision: z.number().int().positive(),billingConfirmation:z.strictObject({version:z.number().int().positive(),credits:z.number().int().nonnegative()}).optional()});
 export async function POST(request: Request, context: {params: Promise<{id: string}>}) {
   return withCreationReceiptRoute(request, async (authenticatedActor) => {
     const actor = await authenticatedEmail(request, authenticatedActor);

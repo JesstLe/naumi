@@ -1,4 +1,5 @@
 import {z} from "zod";
+import {timelineDialogueSchema,validateTimelineDialogue} from "./dialogue";
 
 const identity=z.string().min(1).max(160);
 const seconds=z.number().finite().nonnegative();
@@ -15,6 +16,7 @@ export const timelineProjectSchema=z.strictObject({
   height:z.number().int().positive().max(8192).refine(v=>v%2===0,"画面高度须为偶数"),
   fps:z.union([z.literal(24),z.literal(25),z.literal(30),z.literal(60)]),
   background:z.string().regex(/^#[0-9a-fA-F]{6}$/),masterGain:gain,
+  dialogue:timelineDialogueSchema.optional(),
   tracks:z.array(z.strictObject({id:identity,name:z.string().trim().min(1).max(100),kind:z.enum(["video","audio"]),muted:z.boolean(),gain,clips:z.array(timelineClipSchema)})),
 }).superRefine((project,ctx)=>{
   const tracks=new Set<string>(),clips=new Set<string>();
@@ -76,6 +78,7 @@ export function planTimeline(raw:TimelineProject,sources:readonly TimelineSource
     }
   }
   if(!Number.isFinite(duration)||duration<=0)throw new Error("请先添加时间线片段");
+  validateTimelineDialogue(project,duration,sources);
   return {project,duration,sources:used,clips};
 }
 

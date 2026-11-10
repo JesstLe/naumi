@@ -17,6 +17,7 @@ const actions: Record<string, [string, string]> = {
   create_video_node:["创建视频节点","Creating video node"],get_video_config:["读取视频设置","Loading video settings"],list_video_nodes:["读取视频节点","Loading video nodes"],
   set_video_config:["保存视频设置","Saving video settings"],set_video_prompt:["保存视频描述","Saving video prompt"],set_video_references:["保存视频引用","Saving video references"],
   list_video_assets:["读取媒体素材","Loading media assets"],list_video_workflows:["读取自备视频工作流","Loading video workflows"],cancel_video_task:["请求停止视频","Requesting video cancellation"],
+  get_video_timeline:["读取多轨工程","Reading timeline"],save_video_timeline:["保存声音字幕","Saving dialogue and subtitles"],render_video_timeline:["导出声音字幕","Rendering timeline"],adopt_video_timeline:["采用成片","Adopting timeline result"],apply_video_storyboard_dialogue:["读取原稿对白","Reading script dialogue"],
   process_video:["处理视频媒体","Processing video media"],get_video_media_task:["查询媒体进度","Checking media progress"],cancel_video_media_task:["停止媒体处理","Cancelling media processing"],
   get_video_task: ["查询视频进度", "Checking video task"], generate_video: ["生成视频", "Generating video"],
   extend_video: ["续写视频", "Extending video"], edit_video: ["编辑视频", "Editing video"],

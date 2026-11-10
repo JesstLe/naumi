@@ -7,7 +7,7 @@ import type {StoryboardSelection} from "@/lib/video/storyboard-client";
 import type {ProductionInspection,RoughcutLink} from "@/lib/storyboard/production";
 import type {VideoPrivateFetch} from "./use-video-nodes";
 
-type RoughcutRequest={projectKey:string;planId:string;revision:number;operationId:string;mode:"create"|"update";nodeIds:string[];timelineId?:string;timelineRevision?:number};
+type RoughcutRequest={projectKey:string;planId:string;revision:number;operationId:string;kind?:"dialogue";mode:"create"|"update";nodeIds:string[];timelineId?:string;timelineRevision?:number};
 export function useStoryboardProduction({scope,projectKey,request,onOpenTimeline}:{scope:string;projectKey:string;request:VideoPrivateFetch;onOpenTimeline?:(id:string)=>Promise<void>|void}){
   const workspace=currentWorkspace(),key=`naumi:storyboard-production:v1:${JSON.stringify([scope,workspace,projectKey])}`;
   const [inspection,setInspection]=useState<{planId:string;revision:number;selection:string;data:ProductionInspection}|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(""),[pending,setPending]=useState<RoughcutRequest|null>(()=>{try{const value=JSON.parse(localStorage.getItem(key)||"null");return value?.projectKey===projectKey&&typeof value.operationId==="string"?value:null;}catch{return null;}});
@@ -20,7 +20,7 @@ export function useStoryboardProduction({scope,projectKey,request,onOpenTimeline
     if(alive.current)setInspection({planId:plan.id,revision:plan.revision,selection:JSON.stringify(selection),data});
   });
   const complete=async(body:RoughcutRequest)=>{
-    try{const data=await post("/api/canvas/storyboards/roughcut",body);localStorage.removeItem(key);if(alive.current){setPending(null);await ports.current.onOpenTimeline?.(data.node.id);}}
+    try{const data=await post(body.kind==="dialogue"?"/api/canvas/storyboards/dialogue":"/api/canvas/storyboards/roughcut",body.kind==="dialogue"?{projectKey:body.projectKey,planId:body.planId,revision:body.revision,operationId:body.operationId,timelineId:body.timelineId,timelineRevision:body.timelineRevision}:body);localStorage.removeItem(key);if(alive.current){setPending(null);await ports.current.onOpenTimeline?.(data.node.id);}}
     catch(cause){if([400,409,422].includes((cause as {status?:number}).status||0)){localStorage.removeItem(key);if(alive.current)setPending(null);}throw cause;}
   };
   const roughcut=(plan:StoryboardPlan,nodeIds:string[],target?:RoughcutLink)=>run(async()=>{
@@ -28,6 +28,11 @@ export function useStoryboardProduction({scope,projectKey,request,onOpenTimeline
     const body:RoughcutRequest={projectKey,planId:plan.id,revision:plan.revision,operationId:browserRandomUUID(),mode:target?"update":"create",nodeIds,...(target?{timelineId:target.timelineId,timelineRevision:target.revision}:{})};
     localStorage.setItem(key,JSON.stringify(body));setPending(body);await complete(body);
   });
+  const dialogue=(plan:StoryboardPlan,target:RoughcutLink)=>run(async()=>{
+    if(pending)throw new Error("请先核对原粗剪操作");
+    const body:RoughcutRequest={projectKey,planId:plan.id,revision:plan.revision,operationId:browserRandomUUID(),kind:"dialogue",mode:"update",nodeIds:[],timelineId:target.timelineId,timelineRevision:target.revision};
+    localStorage.setItem(key,JSON.stringify(body));setPending(body);await complete(body);
+  });
   const recover=()=>run(async()=>{if(pending)await complete(pending);});
-  return {inspection,busy,error,pending,inspect,roughcut,recover};
+  return {inspection,busy,error,pending,inspect,roughcut,dialogue,recover};
 }

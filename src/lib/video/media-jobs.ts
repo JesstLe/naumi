@@ -79,7 +79,11 @@ export async function readMediaJobEvidence(actorRaw:string,id:string,completed=t
   const actor=actorRaw.toLowerCase(),row=tx?(await tx.query("SELECT * FROM app_video_media_jobs WHERE email=$1 AND id=$2 FOR SHARE",[actor,id])).rows[0] as JobRow|undefined:await getRow(actor,id);
   if(!row)throw new ModelConfigError("MEDIA_JOB_UNAVAILABLE","媒体任务不存在或无权访问",404);
   if(completed&&row.status!=="completed")throw new ModelConfigError("MEDIA_JOB_PENDING","媒体任务尚未完成",409);
-  return {operationId:row.operation_id,status:row.status,request:row.request,inputs:row.inputs,outputs:row.outputs};
+  // Auxiliary bytes are encrypted separately at admission; internal recipe evidence
+  // must reconstruct them or subtitle renders could never match their frozen intent.
+  const auxiliaryFiles=row.auxiliary_files_enc?JSON.parse(decryptAtRest(row.auxiliary_files_enc)||"null"):row.request.auxiliaryFiles;
+  const request=mediaJobRequestSchema.parse({...row.request,auxiliaryFiles});
+  return {operationId:row.operation_id,status:row.status,request,inputs:row.inputs,outputs:row.outputs};
 }
 function presetOutputs(request:MediaJobRequest):string[]{
   if(["ffmpeg","ffprobe"].includes(request.action))return request.outputs;

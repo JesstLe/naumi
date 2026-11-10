@@ -1,4 +1,5 @@
 import "server-only";
+import {createTimelineTools} from "./timeline-tools";
 import {createStoryboardTools} from "./storyboard-tools";
 import {agentVideoWorkflowIntent} from "./video-workflow-intent";
 import {createHash} from "node:crypto";
@@ -117,5 +118,5 @@ export function createCanvasVideoTools(d:Deps):AgentTool[]{
     tool("get_video_media_task","查询媒体处理","查询真实媒体job进度、全部产物与终态，不猜测百分比。",{job_id:id},async(_call,args,signal)=>result("媒体任务已读取",await d.internal(`/api/video/media-jobs/${encodeURIComponent((args as any).job_id)}`,signal))),
     tool("cancel_video_media_task","停止媒体处理","请求停止真实媒体Worker任务，保留原始输入媒体。",{job_id:id},async(_call,args,signal)=>{const job=(await d.internal(`/api/video/media-jobs/${encodeURIComponent((args as any).job_id)}`,signal)).job;if(project&&job.projectKey!==project)throw new Error("媒体任务不属于当前项目");return result("媒体停止已请求",await d.internal(`/api/video/media-jobs/${encodeURIComponent(job.id)}`,signal,{method:"DELETE"}));}),
   ];
-  return [...tools,...createStoryboardTools(d)];
+  return [...tools,...createStoryboardTools(d),...createTimelineTools(d)];
 }

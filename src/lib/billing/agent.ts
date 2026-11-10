@@ -27,7 +27,7 @@ import {currentExecutionBundle} from "../model-config/context";
 export const AGENT_FEATURES: Record<string, {
     feature: FeatureId;
     label: string;
-}> = { ...CREATIVE_TOOL_FEATURES, generate_aplus: { feature: "image.aplus", label: "A+ 母图准备" }, generate_image: { feature: "image.generate", label: "AI 生图" }, retouch_product: { feature: "tool.retouch", label: "商品精修" }, recolor_product: { feature: "tool.recolor", label: "产品换色" }, replicate_hot: { feature: "tool.replicate", label: "爆款复刻" }, generate_suite: { feature: "image.suite", label: "商品套图" }, continue_aplus_generation: { feature: "image.aplus", label: "A+ 详情页" }, generate_packaging_3d: { feature: "tool.packaging3d", label: "包装 3D" }, generate_video: { feature: "video.generate", label: "视频生成" }, extend_video: { feature: "video.generate", label: "视频续写" }, edit_video: { feature: "video.generate", label: "视频编辑" },process_video:{feature:"video.process",label:"视频媒体处理"},run_video_workflow:{feature:"video.generate",label:"视频制作链"},confirm_video_workflow_stage:{feature:"video.generate",label:"制作链阶段"} };
+}> = { ...CREATIVE_TOOL_FEATURES, generate_aplus: { feature: "image.aplus", label: "A+ 母图准备" }, generate_image: { feature: "image.generate", label: "AI 生图" }, retouch_product: { feature: "tool.retouch", label: "商品精修" }, recolor_product: { feature: "tool.recolor", label: "产品换色" }, replicate_hot: { feature: "tool.replicate", label: "爆款复刻" }, generate_suite: { feature: "image.suite", label: "商品套图" }, continue_aplus_generation: { feature: "image.aplus", label: "A+ 详情页" }, generate_packaging_3d: { feature: "tool.packaging3d", label: "包装 3D" }, generate_video: { feature: "video.generate", label: "视频生成" }, extend_video: { feature: "video.generate", label: "视频续写" }, edit_video: { feature: "video.generate", label: "视频编辑" },render_video_timeline:{feature:"video.process",label:"多轨导出"},process_video:{feature:"video.process",label:"视频媒体处理"},run_video_workflow:{feature:"video.generate",label:"视频制作链"},confirm_video_workflow_stage:{feature:"video.generate",label:"制作链阶段"} };
 export async function agentQuote(name: string, args: Record<string, any>, email: string, cred: {
     cookie: string;
     authorization: string;
@@ -56,6 +56,13 @@ export async function agentQuote(name: string, args: Record<string, any>, email:
       return {quote:{configVersion:quotes[0].version,requestedCredits:credits,authorizedCredits,modelVersion:quotes.find(q=>q.modelVersion)?.modelVersion},label:entry.label,threshold:credits>0||authorizedCredits>0?0:Number.MAX_SAFE_INTEGER,videoWorkflow:prepared,authorizationRequired:quotes.some(q=>q.authorization===true)};
     }
     if(name==="confirm_video_workflow_stage"){const run=await getVideoWorkflow(email,args.run_id);if(canvas?.video?.projectKey&&run.projectKey!==canvas.video.projectKey)throw new Error("制作链不属于当前项目");const stage=run.nodes.find(node=>node.id===args.stage_id);if(stage?.status!=="needs_confirmation"||!stage.quote)throw new Error("此阶段无需确认或缺少冻结报价");const q=stage.quote;return {quote:{configVersion:q.version,requestedCredits:q.credits,authorizedCredits:q.authorizedCredits,modelVersion:q.modelVersion},label:entry.label,threshold:q.authorizedCredits>0?0:Number.MAX_SAFE_INTEGER,authorizationRequired:q.authorization===true};}
+    if(name==="render_video_timeline"){
+      const {getTimelineNode}=await import("../canvas/timeline-node-service"),{findTimelineRenderIntent}=await import("../canvas/timeline-node-repository"),{listMediaJobs}=await import("../video/media-jobs");
+      const node=await getTimelineNode(email,String(args.timeline_id));if(!node||canvas?.video?.projectKey&&node.projectKey!==canvas.video.projectKey||args.project_key&&node.projectKey!==args.project_key)throw new Error("多轨工程不属于此项目");
+      const intent=await findTimelineRenderIntent(email,String(args.operation_id));if(intent){if(intent.id!==node.id||intent.render?.baseRevision!==args.expected_revision)throw new Error("导出编号已用于其他工程");const job=(await listMediaJobs(email,{operationId:args.operation_id})).jobs[0];if(job)return {quote:{configVersion:0,requestedCredits:0,authorizedCredits:0},label:entry.label,threshold};}
+      else if(node.revision!==args.expected_revision)throw new Error("多轨工程已更新，请读取最新版本");
+      return {quote:await mediaBillingQuote(email,"ffmpeg"),label:entry.label,threshold};
+    }
     if(name==="process_video")return {quote:await mediaBillingQuote(email,args.action),label:entry.label,threshold};
     if (name === "continue_aplus_generation") {
         const job = await getImageJob(String(args.job_id || ""), "aplus");
