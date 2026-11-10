@@ -167,6 +167,7 @@ import {useImageReferenceDraft} from './use-image-reference-draft';
 import { resolveCanvasImageReferences, changeImageReferenceRole, imageReferenceManifest, inheritableImagePrompt, type CanvasImageReference, type ImageReferenceCandidate } from '@/lib/canvas/image-references';
 import { referenceManifestError } from '@/lib/imagegen/reference-labels';
 import { imageDraftScope } from '@/lib/canvas/image-node-drafts';
+import { CanvasRenderLayerGuard } from './canvas-render-layer-guard';
 import { CanvasGroupLayer } from "./group-layer";
 import { CanvasEdgeHoverHint, type CanvasEdgeHoverHandle } from './canvas-edge-hover-hint';
 import { canvasZoomState } from '@/lib/canvas/viewport-state';
@@ -2724,8 +2725,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               colorMode="dark"
               style={{ background: "transparent" }}
               className={cn(
-                // Promote two render surfaces, not hundreds of individual cards.
+                // Promote only the guarded edge surface; image/text nodes rasterize natively.
                 // Selected/linking edges retain React Flow's original z-index plane.
+                !selectedEdge && !linking && "canvas-render-layers",
                 boxSelectMode && "canvas-box-select",
                 canvasTool === "move" && "canvas-select-tool",
                 canvasTool === "hand" && "canvas-hand-tool",
@@ -2832,6 +2834,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               onlyRenderVisibleElements={shouldVirtualizeCanvas(rfNodes.length, rfEdges.length)}
             >
               <CanvasPerformanceProbe />
+              <CanvasRenderLayerGuard />
               <CanvasGroupLayer key={`groups:${canvasArtworkDocument.scope.key}:${currentWorkspaceRevision()}`} nodes={rfNodes}
                 disabled={canvasTool === "hand" || historySaving || !nodeSettingsReady} readOnly={readOnly} snap={snapGrid} english={locale === "en"}
                 onSelect={applyArtworkSelection}
