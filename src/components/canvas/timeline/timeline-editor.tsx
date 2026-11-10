@@ -30,7 +30,11 @@ export function TimelineEditor({node,choices,jobs,draftScope,english,readOnly,on
   useEffect(()=>{let live=true;setLoading(true);void callbacks.current.onInspect(JSON.parse(idsKey)).then(values=>{if(live){setMaterials(old=>[...new Map([...old,...values].map(value=>[value.artworkId,value])).values()]);setError("");}}).catch(cause=>{if(live)setError(cause instanceof Error?cause.message:"素材读取失败");}).finally(()=>{if(live)setLoading(false);});return ()=>{live=false;};},[idsKey]);
   useEffect(()=>{let live=true;if(!readOnly)void callbacks.current.onQuote().then(value=>{if(live)setQuote(value.credits);}).catch(()=>{});return ()=>{live=false;};},[readOnly,cacheKey]);
   useEffect(()=>{alive.current=true;return ()=>{alive.current=false;};},[]);
-  useEffect(()=>{if(node.revision>revision.current&&JSON.stringify(current.current)===saved.current){revision.current=node.revision;saved.current=JSON.stringify(node.timeline);current.current=structuredClone(node.timeline);setDraft(current.current);}},[node]);
+  // A completed audio adoption reaches the Canvas store before its editor
+  // callback. Keep the pre-adoption draft until that callback records undo;
+  // accepting the store echo here would put the new value into both snapshots.
+  // Recheck after busy clears so unrelated remote updates are not lost.
+  useEffect(()=>{if(!busy&&node.revision>revision.current&&JSON.stringify(current.current)===saved.current){revision.current=node.revision;saved.current=JSON.stringify(node.timeline);current.current=structuredClone(node.timeline);setDraft(current.current);}},[node,busy]);
   useEffect(()=>{if(!readOnly)try{if(JSON.stringify(draft)!==saved.current)sessionStorage.setItem(cacheKey,JSON.stringify({project:draft,revision:revision.current}));else sessionStorage.removeItem(cacheKey);}catch{}},[draft,cacheKey,readOnly,node.revision]);
   const commit=useCallback((project:TimelineProject)=>{if(JSON.stringify(project)===JSON.stringify(current.current))return;undo.current=[...undo.current.slice(-49),structuredClone(current.current)];redo.current=[];current.current=project;setDraft(project);setError("");},[]);
   const planned=useMemo(()=>{if(!draft.tracks.some(track=>track.clips.length))return {plan:null,error:""};try{return {plan:planTimeline(draft,materials.map(({artworkId,kind,durationSeconds,hasAudio})=>({artworkId,kind,durationSeconds,hasAudio}))),error:""};}catch(cause){return {plan:null,error:cause instanceof Error?cause.message:"工程设定无效"};}},[draft,materials]);
