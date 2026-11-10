@@ -52,9 +52,7 @@ export function flowNodeSize(node: Node | undefined) {
   const data = node.data as { width?: number; height?: number; nodeKind?: string } | undefined;
   const width = data?.width && data.width > 0 ? data.width : node.measured?.width || NODE_W;
   if (data?.nodeKind === "text") {
-    const height = data.height && data.height > 0
-      ? data.height
-      : node.measured?.height || TEXT_NODE_DEFAULT_H;
+    const height = node.measured?.height || data.height || TEXT_NODE_DEFAULT_H;
     return { width, height };
   }
   const imageHeight = data?.height && data.height > 0 ? data.height : Math.max(110, (node.measured?.height || NODE_H) - NODE_LABEL_H);

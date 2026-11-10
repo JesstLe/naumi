@@ -19,6 +19,7 @@ import type {CanvasTextTaskState} from "@/lib/canvas/text-task";
 import type {DockPlacement} from "@/lib/canvas/dock-placement";
 import type {CanvasSize,SafeArea} from "@/lib/canvas/dock-layout";
 import {CanvasComposerShell,CanvasComposerFooter} from "./composer-shell";
+import {useGrowingTextarea} from "./use-growing-textarea";
 import {StoryboardPlanButton} from "./video/storyboard-panel";
 
 type ComposerReference=Pick<Artwork,"id"|"image"|"title">;
@@ -44,54 +45,15 @@ export function CanvasTextComposer({node:selectedText,members,light:lightCanvas,
   const bodyEdit=useRef<{initial:string;draft:string;change:typeof content.onChange;commit:typeof content.onCommit}|null>(null);
   const value=mode==="content"?canvasTextContent(selectedText):textPrompt;
   const setValue=(next:string)=>{if(mode==="content"){const session=bodyEdit.current;if(session){session.draft=next;session.change(next);}else content.onChange(next);}else setTextPrompt(next);};
-  const [textComposerManuallySized,setTextComposerManuallySized]=useState(false);
   const textComposerBodyRef=useRef<HTMLDivElement>(null),textPromptRef=useRef<HTMLTextAreaElement>(null);
   useEffect(()=>{if(focusRevision){setMode("write");requestAnimationFrame(()=>textPromptRef.current?.focus());}},[focusRevision]);
   const [textReferenceMenuOpen,setTextReferenceMenuOpen]=useState(false);
   const [mentionState,setMentionState]=useState<{query:string;start:number}|null>(null);
   useLayoutEffect(()=>{onMenuOpenChange(textReferenceMenuOpen||!!mentionState);return()=>onMenuOpenChange(false);},[textReferenceMenuOpen,mentionState,onMenuOpenChange]);
+  useGrowingTextarea(textPromptRef,value,`${selectedText.id}:${mode}:${textComposerExpanded}`);
   useEffect(() => {
-    const textarea = textPromptRef.current;
-    if (!textarea) return;
-    if (textComposerExpanded) {
-      textarea.style.height = "100%";
-      textarea.style.overflowY = "auto";
-      return;
-    }
-    if (textComposerManuallySized) return;
-    // 收起态至少展示约 5 行；短文本不再塌成两行，长文本自适应到 240px 后滚动。
-    const minHeight = 112;
-    const maxHeight = 240;
-    textarea.style.height = "0px";
-    textarea.style.height = `${Math.min(maxHeight, Math.max(minHeight, textarea.scrollHeight))}px`;
-    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
-  }, [textPrompt,selectedText.content,mode,textComposerExpanded,textComposerManuallySized,selectedText.id]);
-  useEffect(() => {
-    setTextComposerManuallySized(false);
     if (textComposerDockRef.current) textComposerDockRef.current.style.height = "";
   }, [selectedText.id,textComposerDockRef]);
-  useEffect(() => {
-    const dock = textComposerDockRef.current;
-    const body = textComposerBodyRef.current;
-    const textarea = textPromptRef.current;
-    if (!dock || !body || !textarea) return;
-    const syncHeight = () => {
-      const manuallySized = !textComposerExpanded && Boolean(dock.style.height);
-      if (manuallySized !== textComposerManuallySized) {
-        setTextComposerManuallySized(manuallySized);
-      }
-      if (textComposerExpanded || manuallySized) {
-        // 即使用户拖动 Dock 或浏览器恢复了原生 resize 高度，也不允许输入区退回两行。
-        textarea.style.height = `${Math.max(112, body.clientHeight)}px`;
-        textarea.style.overflowY = "auto";
-      }
-    };
-    syncHeight();
-    const observer = new ResizeObserver(syncHeight);
-    observer.observe(dock);
-    observer.observe(body);
-    return () => observer.disconnect();
-  }, [selectedText.id,mode,textComposerExpanded,textComposerManuallySized,textComposerDockRef]);
   useEffect(()=>{if(task.state.phase==="succeeded")setMode("content");},[task.state.phase]);
   const selectedTextRefs = useMemo(
     () =>
@@ -123,7 +85,7 @@ export function CanvasTextComposer({node:selectedText,members,light:lightCanvas,
                     }
               }
               className={textComposerExpanded ? "resize-none" : "resize-y"}
-             kind="text" heading={selectedText.title || L("文字", "Text")} onDismiss={onDismiss} expanded={textComposerExpanded} onToggleExpand={() => { if (textComposerDockRef.current) textComposerDockRef.current.style.height = ""; setTextComposerManuallySized(false); setTextComposerExpanded(value => !value); }} expandLabel={L("展开文字编辑窗口", "Expand text editor")} collapseLabel={L("收起文字编辑窗口", "Collapse text editor")} closeLabel={L("关闭创作栏", "Close composer")}>
+             kind="text" heading={selectedText.title || L("文字", "Text")} onDismiss={onDismiss} expanded={textComposerExpanded} onToggleExpand={() => { if (textComposerDockRef.current) textComposerDockRef.current.style.height = ""; setTextComposerExpanded(value => !value); }} expandLabel={L("展开文字编辑窗口", "Expand text editor")} collapseLabel={L("收起文字编辑窗口", "Collapse text editor")} closeLabel={L("关闭创作栏", "Close composer")}>
               <div role="tablist" aria-label={L("文字编辑方式","Text editing mode")} className="flex gap-1 px-3.5 pt-2">
                 {(["content","write"] as const).map(item=><button key={item} type="button" role="tab" aria-selected={mode===item} onClick={()=>{setMode(item);setMentionState(null);}} className={cn("rounded-lg px-3 py-1.5 text-xs font-semibold",mode===item?"bg-[#edf2ff] text-[#315fc8]":"canvas-ui-action")}>{item==="content"?L("正文","Content"):L("AI 写作","AI writing")}</button>)}
               </div>
@@ -179,10 +141,8 @@ export function CanvasTextComposer({node:selectedText,members,light:lightCanvas,
                     }
                   }}
                   className={cn(
-                    "h-full min-h-[112px] min-w-[160px] flex-1 resize-none border-0 bg-transparent px-0 py-0.5 text-sm leading-relaxed shadow-none focus-visible:border-0 focus-visible:bg-transparent focus-visible:ring-0",
-                    textComposerExpanded || textComposerManuallySized
-                      ? "h-full max-h-none overflow-y-auto"
-                      : "max-h-[240px] overflow-y-hidden",
+                    "min-h-[112px] min-w-0 flex-1 resize-none border-0 bg-transparent px-0 py-0.5 text-sm leading-relaxed shadow-none focus-visible:border-0 focus-visible:bg-transparent focus-visible:ring-0",
+                    "max-h-none overflow-hidden",
                     lightCanvas
                       ? "text-[#303641] placeholder:text-[#929aa6]"
                       : "text-[#e7e9ee] placeholder:text-[#818895]"

@@ -360,7 +360,9 @@ export function projectCanvasScene(input:CanvasSceneInput):{displayNodes:Node[];
           width: displayWidth,
           height: displayHeight,
         } satisfies CanvasTextNodeData,
-        style: { width: displayWidth, height: displayHeight },
+        // Stored size reserves the initial/manual frame. Actual text layout may
+        // grow beyond it, including while streaming and in read-only views.
+        style: { width: displayWidth, height: "auto", minHeight: displayHeight },
       } as Node);
       for (const sourceId of Array.from(new Set([...(textNode.sourceIds ?? []), ...(textNode.productIds ?? [])]))) {
         if (!memberIds.has(sourceId) && !projectTextIds.has(sourceId)) continue;
