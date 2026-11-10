@@ -183,37 +183,47 @@ export function ModelHealthPanel() {
   const [probing, setProbing] = useState(false);
   const [probeNote, setProbeNote] = useState("");
   const [probeFailed, setProbeFailed] = useState(false);
+  const readAbort = useRef<AbortController | null>(null), writes = useRef(0), latestRevision = useRef<number | null>(null);
 
   const applyOverview = useCallback((next: HealthOverview) => {
+    if (typeof next.revision === "number") {
+      if (latestRevision.current !== null && next.revision < latestRevision.current) return;
+      latestRevision.current = next.revision;
+    }
     setOverview(next);
     if(!dirtyRef.current)revisionRef.current = typeof next.revision === "number" ? next.revision : null;
     if (!dirtyRef.current) setForm({ enabled: next.policy.enabled, staleHours: String(next.policy.staleHours), dailyMaxCalls: String(next.policy.dailyMaxCalls) });
   }, []);
 
-  const readAbort = useRef<AbortController | null>(null);
+  function beginWrite() {
+    writes.current++;readAbort.current?.abort();readAbort.current=null;
+    setLoading(false);setRefreshing(false);
+    return () => { writes.current--; };
+  }
   const load = useCallback(async (mode: "initial" | "refresh" | "silent") => {
+    if (writes.current) return;
     if (mode === "silent" && readAbort.current) return;
     readAbort.current?.abort();
     const abort = new AbortController(); readAbort.current = abort;
+    let accessDenied=false;
     if (mode === "initial") setLoading(true);
     if (mode === "refresh") setRefreshing(true);
     try {
       const response = await fetch("/api/admin/model-health", { cache: "no-store", signal: abort.signal });
       if (abort.signal.aborted) return;
-      if (response.status === 401 || response.status === 404) {
+      if ([401,403,404].includes(response.status)) {
         // 本接口仅管理员可达：biAuthorize 对未登录一律返回 404「页面不存在」。
-        setAuthStale(true);
-        throw new Error("登录状态已失效，请重新登录");
+        accessDenied=true;setAuthStale(true);setOverview(null);
+        throw new Error(response.status===403?"没有权限查看模型健康巡检":"登录状态已失效，请重新登录");
       }
       const data = await response.json().catch(() => null) as (HealthOverview & { error?: string }) | null;
       if (abort.signal.aborted) return;
-      if (response.status === 403) throw new Error("没有权限查看模型健康巡检");
       if (!response.ok || !data) throw new Error(data?.error || "加载失败，请稍后重试");
       applyOverview(data);
       setAuthStale(false);
       setLoadError("");
     } catch (error) {
-      if (!abort.signal.aborted && mode !== "silent") setLoadError(error instanceof Error ? error.message : "加载失败，请稍后重试");
+      if (!abort.signal.aborted && (mode !== "silent" || accessDenied)) setLoadError(error instanceof Error ? error.message : "加载失败，请稍后重试");
     } finally {
       if (!abort.signal.aborted) { setLoading(false); setRefreshing(false); }
       if (readAbort.current === abort) readAbort.current = null;
@@ -224,10 +234,15 @@ export function ModelHealthPanel() {
 
   const hasChecking = overview?.providers.some(provider => provider.models.some(model => model.state === "checking")) ?? false;
   useEffect(() => {
-    if (!hasChecking) return;
-    const timer = setTimeout(() => void load("silent"), 5000);
-    return () => clearTimeout(timer);
-  }, [hasChecking, overview, load]);
+    if (!hasChecking || authStale) return;
+    let active=true,timer:ReturnType<typeof setTimeout>;
+    const poll=async()=>{
+      try { if(!document.hidden)await load("silent"); }
+      finally { if(active)timer=setTimeout(()=>void poll(),5000); }
+    };
+    timer=setTimeout(()=>void poll(),5000);
+    return()=>{active=false;clearTimeout(timer);};
+  }, [hasChecking, authStale, load]);
 
   function editForm(patch: Partial<PolicyForm>) {
     setForm(current => ({ ...current, ...patch }));
@@ -249,6 +264,7 @@ export function ModelHealthPanel() {
     setSaveError("");
     setSaveConflict(false);
     setSaved(false);
+    const finishWrite=beginWrite();
     try {
       const response = await fetch("/api/admin/model-health", {
         method: "POST",
@@ -273,6 +289,7 @@ export function ModelHealthPanel() {
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : "保存未确认，请重试");
     } finally {
+      finishWrite();
       setSaving(false);
     }
   }
@@ -290,6 +307,7 @@ export function ModelHealthPanel() {
     setProbing(true);
     setProbeFailed(false);
     setProbeNote("");
+    const finishWrite=beginWrite();
     try {
       const response = await fetch("/api/admin/model-health", {
         method: "POST",
@@ -309,15 +327,18 @@ export function ModelHealthPanel() {
       setProbeFailed(true);
       setProbeNote(error instanceof Error ? error.message : "触发未确认，请重试");
     } finally {
+      finishWrite();
       setProbing(false);
     }
   }
   async function reconcile(model:ModelView){
     if(!model.lastObservedAt||!window.confirm("请先在供应商侧确认原任务已结束且不再运行。此操作只解除后续巡检暂停，不重发原任务；至少等待当前巡检间隔后才能再次检查。确认已完成核查？"))return;
+    const finishWrite=beginWrite();
     try{
       const response=await fetch("/api/admin/model-health",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"reconcile",key:model.key,observedAt:model.lastObservedAt,confirmed:true})});
       const data=await response.json();if(!response.ok)throw Error(data.error||"状态未确认，请刷新后核查");applyOverview(data);
     }catch(error){setLoadError(error instanceof Error?error.message:"状态未确认，请刷新后核查");}
+    finally{finishWrite();}
   }
 
   const providerCounts = useMemo(() => {
