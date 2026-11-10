@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 async function main() {
  const media=await import('../src/lib/canvas/media-loading');
- assert.equal(typeof media.canvasMediaVariant,'function','legacy canvas media policy API');
- assert.equal(media.canvasMediaVariant(120,2),'original');
- assert.equal(media.canvasMediaVariant(420,2),'original');
+ assert.equal(typeof media.canvasMediaVariant,'function','zoom-aware media sizing');
+ assert.equal(media.canvasMediaVariant(120,2),'thumbnail');
+ assert.equal(media.canvasMediaVariant(420,2),'preview');
  assert.equal(media.canvasMediaVariant(1800,1),'original');
  const queue=new media.MediaLoadQueue(2),started:number[]=[];
  const done:Array<()=>void>=[];
@@ -18,6 +18,6 @@ async function main() {
  controllers[4].abort();controllers[0].abort();await Promise.resolve();assert.equal(startedSlots,3);assert.equal(slots.active,2);
  active[1]();await Promise.resolve();assert.equal(startedSlots,4);active[2]();active[3]();assert.equal(slots.active,0);assert.deepEqual(await Promise.all(tasks),[true,true,true,true,false]);
  const cancelled=new AbortController();cancelled.abort();await assert.rejects(media.acquireMediaSlot(slots,cancelled.signal),/Aborted/);assert.equal(slots.active,0);
- console.log('PASS canvas original source at every zoom/DPR, bounded concurrency, queued and running cancellation; cache bytes slot after metadata');
+ console.log('PASS canvas thumbnail/preview/original selection, bounded concurrency, queued and running cancellation; cache bytes slot after metadata');
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});
