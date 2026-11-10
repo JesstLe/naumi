@@ -47,17 +47,17 @@ try{
  filtersPage.on('request',request=>{const url=new URL(request.url());if(['/admin/tenants','/admin/creations'].includes(url.pathname)&&url.searchParams.has('_rsc'))rsc.push(url.pathname)});
  await filtersPage.goto(origin+'/admin/tenants?keep=1#section');await filtersPage.getByLabel('搜索企业名称或负责人').waitFor();rsc.length=0;
  const tenantSearch=filtersPage.waitForResponse(response=>response.url().includes('/api/admin/tenants?')&&new URL(response.url()).searchParams.get('q')==='north');
- await filtersPage.getByLabel('搜索企业名称或负责人').fill('north');await tenantSearch;
+ await filtersPage.getByLabel('搜索企业名称或负责人').fill('north');assert.ok((await tenantSearch).ok());
  const tenantStatus=filtersPage.waitForResponse(response=>response.url().includes('/api/admin/tenants?')&&new URL(response.url()).searchParams.get('status')==='active');
- await filtersPage.getByLabel('租户状态').selectOption('active');await tenantStatus;
+ await filtersPage.getByLabel('租户状态').selectOption('active');assert.ok((await tenantStatus).ok());
  let filtered=new URL(filtersPage.url());assert.equal(filtered.searchParams.get('q'),'north');assert.equal(filtered.searchParams.get('status'),'active');assert.equal(filtered.hash,'#section');assert.equal(rsc.length,0);
  await filtersPage.reload();assert.equal(await filtersPage.getByLabel('搜索企业名称或负责人').inputValue(),'north');checks.push('Actual Next History: tenant filters compose, survive reload, zero filter RSC navigations');
  await filtersPage.goto(origin+'/admin/creations?creationId=missing&assetPage=2&keep=1#section');await filtersPage.getByLabel('搜索创作记录').waitFor();rsc.length=0;
  const creationSearch=filtersPage.waitForResponse(response=>response.url().includes('/api/admin/creations?')&&new URL(response.url()).searchParams.get('q')==='scene');
- await filtersPage.getByLabel('搜索创作记录').fill('scene');await creationSearch;
+ await filtersPage.getByLabel('搜索创作记录').fill('scene');assert.ok((await creationSearch).ok());
  await filtersPage.locator('summary').filter({hasText:'筛选'}).click();
  const memberSearch=filtersPage.waitForResponse(response=>response.url().includes('/api/admin/creations?')&&new URL(response.url()).searchParams.get('user')==='fixture-01@example.test');
- await filtersPage.getByLabel('成员账号').fill('fixture-01@example.test');await memberSearch;
+ await filtersPage.getByLabel('成员账号').fill('fixture-01@example.test');assert.ok((await memberSearch).ok());
  filtered=new URL(filtersPage.url());assert.equal(filtered.searchParams.get('q'),'scene');assert.equal(filtered.searchParams.get('user'),'fixture-01@example.test');assert.equal(filtered.searchParams.get('keep'),'1');assert.equal(filtered.hash,'#section');assert.equal(filtered.searchParams.has('creationId'),false);assert.equal(filtered.searchParams.has('assetPage'),false);assert.equal(rsc.length,0);
  await filtersPage.screenshot({path:path.join(out,'creation-filters.png'),fullPage:true});await filtersPage.close();checks.push('Actual Next History: creation/member filters compose and clear prior detail without RSC');
  // Deliberately fail a different page; its label must not borrow page 2 rows.
