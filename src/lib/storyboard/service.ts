@@ -64,7 +64,11 @@ export async function saveStoryboardPlan(actorRaw:string,raw:unknown){
         }
         await validateContinuityBindings(actor,input.projectKey,shot,previous?.document.shots.find(old=>old.nodeId===shot.nodeId),tx,trustedBindings);
         for(const take of shot.takes){
-          await assertStoryboardTake(actor,input.projectKey,shot.nodeId,take,tx);
+          const origin=await assertStoryboardTake(actor,input.projectKey,shot.nodeId,take,tx);
+          for(const ref of take.assistedReviews||[]){
+            if(ref.source.projectKey!==input.projectKey||ref.source.taskId!==take.taskId||ref.source.artworkId!==take.artworkId||await assertStoryboardTake(actor,input.projectKey,ref.source.nodeId,take,tx)!==origin)throw new ModelConfigError("STORYBOARD_REVIEW_EVIDENCE_INVALID","辅助检查不属于此候选",422);
+            const {getAssistedReview}=await import("./assisted-review-service");await getAssistedReview(actor,ref.source,ref.operationId);
+          }
           if(take.annotations?.length){
             const [material]=await requireTimelineMaterials(actor,[take.artworkId],tx);
             try{assertReviewBounds(take.annotations,material.durationSeconds);}catch(error){throw new ModelConfigError("STORYBOARD_REVIEW_RANGE_INVALID",(error as Error).message,422);}

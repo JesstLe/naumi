@@ -11,6 +11,7 @@ export const FEATURE_BINDINGS: Partial<Record<FeatureId, ModelBinding>> = {
   "canvas.text-generate": "text.generate", "canvas.assistant": "text.generate", "canvas.ocr": "vision.ocr",
   ...Object.fromEntries(["tool.garment", "tool.avatar", "tool.dewrinkle", "tool.dewatermark", "tool.style", "tool.tryon", "tool.retouch", "tool.recolor", "tool.replicate", "tool.inpaint", "tool.extract", "tool.garment3d", "tool.packaging3d", "canvas.image", "canvas.expand", "canvas.text-edit", "canvas.annotate"].map(id => [id, "image.edit"])),
   "video.generate": "video.generate",
+  "audio.speech": "audio.speech", "audio.transcribe": "audio.transcribe",
 };
 
 export function modelAllowedForFeature(model: PublicModel, feature?: string) {

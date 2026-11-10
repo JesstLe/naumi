@@ -5,12 +5,14 @@ import {videoProjectKeySchema} from "../canvas/project-key";
 import {storyboardSourceSchema} from "./script-mapping";
 import {continuitySchema,shotCutSchema,storyboardAudioSchema} from "./continuity";
 import {reviewAnnotationSchema} from "./review";
+import {assistedReviewRefSchema} from "./assisted-review";
 
 export const storyboardTakeSchema=z.strictObject({
   artworkId:videoNodeIdSchema,taskId:videoNodeIdSchema,
   status:z.enum(["pending","changes","approved"]),note:z.string().max(4000),
   annotations:z.array(reviewAnnotationSchema).max(100).optional(),
-}).superRefine((take,ctx)=>{if(new Set(take.annotations?.map(value=>value.id)).size!==(take.annotations?.length||0))ctx.addIssue({code:"custom",message:"批注编号不能重复"});});
+  assistedReviews:z.array(assistedReviewRefSchema).max(20).optional(),
+}).superRefine((take,ctx)=>{if(new Set(take.annotations?.map(value=>value.id)).size!==(take.annotations?.length||0))ctx.addIssue({code:"custom",message:"批注编号不能重复"});if(new Set(take.assistedReviews?.map(value=>value.operationId)).size!==(take.assistedReviews?.length||0))ctx.addIssue({code:"custom",message:"辅助检查回执不能重复"});});
 export const storyboardShotSchema=z.strictObject({
   nodeId:videoNodeIdSchema,number:z.string().trim().min(1).max(40),
   scene:z.string().max(200).default(""),purpose:z.string().max(2000).default(""),

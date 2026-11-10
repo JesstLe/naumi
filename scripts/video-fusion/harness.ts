@@ -25,7 +25,7 @@ function privateChild(args:string[],env:NodeJS.ProcessEnv):Promise<string>{retur
 });}
 
 /** Uses real Naumi HTTP and Worker processes; only upstream services are simulated. */
-export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot?:string;startWorker?:boolean;routerUrl?:string;routerBinary?:string;videoProfile?:VideoWireProfile;videoWireModel?:string;legacyGemini?:boolean;videoDefinition?:VideoModelDefinition;extraVideoModels?:Array<{id:string;definition:VideoModelDefinition}>;fullWorkflow?:boolean;uiModels?:boolean;referenceModels?:boolean;validateWire?:(call:unknown)=>void|Promise<void>;validatePoll?:(call:unknown)=>void|Promise<void>;agentReply?:(request:any)=>any|Promise<any>}={}) {
+export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot?:string;startWorker?:boolean;routerUrl?:string;routerBinary?:string;videoProfile?:VideoWireProfile;videoWireModel?:string;legacyGemini?:boolean;videoDefinition?:VideoModelDefinition;extraVideoModels?:Array<{id:string;definition:VideoModelDefinition}>;fullWorkflow?:boolean;uiModels?:boolean;referenceModels?:boolean;agentVision?:boolean;validateWire?:(call:unknown)=>void|Promise<void>;validatePoll?:(call:unknown)=>void|Promise<void>;agentReply?:(request:any)=>any|Promise<any>}={}) {
   if(options.legacyGemini&&options.videoProfile!=="gemini")throw new Error("Native legacy fixture is limited to Gemini");
   if(options.fullWorkflow&&!['autodl','runninghub'].includes(options.videoProfile||''))throw new Error("Full workflow fixture requires AutoDL or RunningHub");
   let databaseUrl=options.databaseUrl||process.env.VIDEO_FIXTURE_DATABASE_URL||process.env.DATABASE_URL||"";
@@ -62,7 +62,7 @@ export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot
   const mediaPort=await freePort(),mediaSecret=randomUUID()+randomUUID(),mediaOrigin=`http://127.0.0.1:${mediaPort}`;
   const env:NodeJS.ProcessEnv={...cleanEnv(),NODE_ENV:"development",NEXT_TELEMETRY_DISABLED:"1",DATABASE_URL:databaseUrl,NAUMI_VERIFY_ISOLATED_DB:"1",
     NAUMI_MULTI_USER:"1",NAUMI_EDITION:"pro",PRO_LICENSE_KEY:"LOCAL-OFFLINE",SETTINGS_SECRET:randomUUID()+randomUUID(),
-    VIDEO_FIXTURE_PARENT_PIPE:"1",VIDEO_FIXTURE_ASSETS_ROOT:assetsRoot,VIDEO_FIXTURE_AGENT:options.agentReply?"1":"0",VIDEO_FIXTURE_UI_MODELS:options.uiModels?"1":"0",VIDEO_FIXTURE_REFERENCE_MODELS:options.referenceModels?"1":"0",MEDIA_DIR:path.join(output,"media"),STORAGE_DRIVER:"s3",MEDIA_PRIVATE:"1",
+    VIDEO_FIXTURE_PARENT_PIPE:"1",VIDEO_FIXTURE_ASSETS_ROOT:assetsRoot,VIDEO_FIXTURE_AGENT_VISION:options.agentVision?"1":"0",VIDEO_FIXTURE_AGENT:options.agentReply?"1":"0",VIDEO_FIXTURE_UI_MODELS:options.uiModels?"1":"0",VIDEO_FIXTURE_REFERENCE_MODELS:options.referenceModels?"1":"0",MEDIA_DIR:path.join(output,"media"),STORAGE_DRIVER:"s3",MEDIA_PRIVATE:"1",
     S3_ENDPOINT:supplier.origin+"/objects",S3_REGION:"us-east-1",S3_BUCKET:bucket,S3_FORCE_PATH_STYLE:"1",S3_ACCESS_KEY_ID:accessKeyId,S3_SECRET_ACCESS_KEY:secretAccessKey,
     NAUMI_VIDEO_WORKER:"0",VIDEO_WORKER_SECRET:workerSecret,NAUMI_APP_ORIGIN:baseUrl,INTERNAL_APP_ORIGIN:baseUrl,VIDEO_WORKER_INTERVAL_MS:"5000",
     MEDIA_WORKER_ORIGIN:mediaOrigin,MEDIA_WORKER_SECRET:mediaSecret,MEDIA_JOB_DIR:path.join(output,"media-jobs"),
@@ -248,6 +248,7 @@ export async function createVideoFixture(options:{databaseUrl?:string;assetsRoot
         return Number((await sql.query(`SELECT count(*) AS n FROM ${table} WHERE ${clauses.join(" AND ")}`,values)).rows[0].n);
       },
       async balance(account:Account){return Number((await sql.query("SELECT credits_total AS n FROM app_users WHERE email=$1",[seed.accounts[account]])).rows[0].n);},
+      async setTextPrice(credits:number){if(!Number.isSafeInteger(credits)||credits<0||credits>100)throw new Error("Invalid fixture price");return JSON.parse(await privateChild(["--conditions=react-server","--import","tsx","scripts/video-fusion/fixture-actions.ts","--set-text-price"],{...env,VIDEO_FIXTURE_ACTION_CREDITS:String(credits)})) as {version:number;credits:number};},
       async setMediaPrice(credits:number){if(!Number.isSafeInteger(credits)||credits<0||credits>100)throw new Error("Invalid fixture price");return JSON.parse(await privateChild(["--conditions=react-server","--import","tsx","scripts/video-fusion/fixture-actions.ts","--set-media-price"],{...env,VIDEO_FIXTURE_ACTION_CREDITS:String(credits)})) as {version:number;credits:number};},
       async ownedArtworkVisible(account:Account,id:string){const row=(await sql.query("SELECT deleted_at FROM app_artworks WHERE email=$1 AND id=$2",[seed.accounts[account],id])).rows[0];if(!row)throw new Error("Owned fixture artwork required");return !row.deleted_at;},
       async withForeignMediaScope(account:Account,id:string,action:()=>Promise<void>){

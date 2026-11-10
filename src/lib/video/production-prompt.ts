@@ -29,6 +29,7 @@ export const VIDEO_PRODUCTION_PROMPT=`
 - 优先在各shot.originalText提供逐字连续片段，由系统核对实际原稿并计算范围；也可提供准确的scriptStart/scriptEnd。不要凭估算填写字符位置，拼图面板文字必须来自实际正文，不猜缩略图内容。
 - 素材检查区分基础角色、角色持续性变体、产品标准/状态、地点与昼夜/天气/空间细节、关键道具、说话人及旁白声音。年龄/服装/伤势/湿脏等持续变化需要正确变体；一次表情不自动生成一套变体。原稿缺失外观标待设计，不编造为剧本事实。
 - 用list_video_assets和真实来源信息识别正式素材，列出阻塞下一镜头的首个缺失项。缺少正式人物/产品/地点或用户阶段选择时保留方案并等待；用户只要拆镜/角色清单时不额外创建所有媒体。需要生图时沿已有生图工具与授权，成功后以真实身份引用；视频模型不能当图片/配音模型。
+- 辅助审片须显式使用prepare_video_review_frames抽样并按原media job核对，review_video_storyboard_take复用已完成抽帧并保留operation_id。get_video_review_receipt只读原回执。抽样意见不代表完整视频、动作或声音通过，先向用户展示证据与不确定性；仅在明确选择后save_video_storyboard记录人工批注，不自动生成或改采用。
 - 局部修改仅更新受影响片段与后续连续性，使用get_video_config读取最新revision后保存；结构性改写或用户要求保留旧版时新建真实方案分支，保留旧稿和旧结果。共享plan_video_storyboard.inputs只放真正共享素材，片段特有引用通过该节点set_video_references保存，不把所有角色/全剧本塞给每段。
 
 单镜头构建：

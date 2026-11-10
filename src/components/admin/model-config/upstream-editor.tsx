@@ -1,6 +1,7 @@
 "use client";
 import type { ModelProvider, UpstreamModel } from "@/lib/model-config/types";
 import { Choice, NumberField, Panel, TextField, Toggle, Chips } from "./fields";
+import {AudioCapabilityEditor} from "./audio-capability-editor";
 import {VideoCapabilityEditor} from "./video-capability-editor";
 const qualities = ["low", "medium", "high", "xhigh", "max", "auto"];
 const resolutions = ["1K", "2K", "4K"];
@@ -59,9 +60,10 @@ export function UpstreamEditor({
             { value: "image", label: "图片" },
             { value: "text", label: "文字 / 视觉" },
             { value: "video", label: "视频" },
+            { value: "audio", label: "声音" },
           ]}
           onChange={(modality) =>
-            edit({ modality: modality as UpstreamModel["modality"] })
+            edit({ modality: modality as UpstreamModel["modality"], ...(modality === "audio" ? {parameterMap:{},costRef:undefined,procurement:undefined,capabilities:{...c,verified:false,imagegen:undefined,generate:false,edit:false,vision:false,transparent:false,preserveIdentity:false,textAccuracy:false,qualities:[],nativeResolutions:[],maxReferenceImages:0,video:undefined,transcribe:false}} : m.modality === "audio" ? {capabilities:{...c,audio:undefined,transcribe:undefined}} : {}) })
           }
         />
         <Choice
@@ -89,6 +91,7 @@ export function UpstreamEditor({
           onChange={(verified) => capability({ verified })}
         />
       </div>
+      {m.modality!=="audio"&&<>
       <div className="flex flex-wrap gap-4">
         {(
           [
@@ -197,6 +200,8 @@ export function UpstreamEditor({
           />
         </div>
       </details>
+      </>}
+      {m.modality==="audio"&&<AudioCapabilityEditor value={c.audio} generate={c.generate} transcribe={c.transcribe===true} onChange={(audio,generate,transcribe)=>capability({audio,generate,transcribe})}/>}
       {m.modality==="video"&&<VideoCapabilityEditor value={m.capabilities.video} profile={m.parameterMap.videoProfile} onChange={(video,videoProfile)=>edit({capabilities:{...c,video,...(typeof video?.limits?.images==="number"?{maxReferenceImages:video.limits.images}:{})},parameterMap:{...m.parameterMap,videoProfile}})}/>}
       {m.modality==="image"&&<p className="text-xs text-c-text3">
         质量档位与原生尺寸需要真实核验。OpenAI 图片协议的原生 2K / 4K
