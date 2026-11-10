@@ -7,6 +7,7 @@ import {agentBillingPrecheck,type AgentBillingSession} from "../src/lib/billing/
 import {getPool,closeDatabasePools} from "../src/platform/db/pool";
 import {assertInternalAgentPath} from "../src/lib/agent/harness-network";
 import {validateToolArguments} from "../src/lib/agent/harness";
+import {verifyStoryboardAgentGateway} from "./verify-storyboard-agent-gateway";
 
 async function main(){
  assert.equal(process.env.NAUMI_VERIFY_ISOLATED_DB,"1");const url=new URL(process.env.DATABASE_URL!);assert.equal(url.hostname,"127.0.0.1");assert.match(url.pathname,/^\/naumi_video_fixture_/);assert.match(url.searchParams.get("options")||"",/video_run_[a-f0-9]+/);
@@ -58,7 +59,8 @@ async function main(){
   plan=(await invoke("save_video_storyboard",{...write,expected_revision:plan.revision,operation_id:randomUUID(),document:reviewed})).plan;
   const changed=await invoke("apply_video_storyboard_roughcut",{...update,operation_id:randomUUID(),revision:plan.revision});const expected=structuredClone(cut.node.timeline);expected.tracks[0].clips[2].artworkId=take.artworkId;assert.deepEqual(changed.node.timeline,expected);assert.deepEqual(changed.changes.map((c:any)=>c.nodeId),[nodeIds[2]]);assert.deepEqual(await state(),after);assert.deepEqual(await get(planId),original);pass("explicitly_adopt_new_third_take_update_exact_cut_preserve_other_shots_and_audio");
   assert.equal((await getPool().query("SELECT count(*)::int AS n FROM app_ledger WHERE email=$1 AND id=$2",[actor,`led-video-${taskId}`])).rows[0].n,1);pass("one_new_generation_one_ledger_charge");
-  console.log(JSON.stringify({checks,realApp:true,realPostgres:true,actualBillingPrecheck:true,actualToolExecution:true,generatedTasks:1,mediaJobs:0}));
+  for(const check of (await verifyStoryboardAgentGateway({actor,project,planId,origin,cookie})).checks)pass("gateway_"+check);
+  console.log(JSON.stringify({checks,realApp:true,realPostgres:true,actualBillingPrecheck:true,actualToolExecution:true,generatedTasks:2,mediaJobs:0}));
  }finally{await closeDatabasePools();}
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});
