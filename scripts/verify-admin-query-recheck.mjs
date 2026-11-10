@@ -110,6 +110,15 @@ try{
  await hours.fill('8');await page.getByRole('button',{name:'保存设置',exact:true}).click();await waitCount('/api/admin/model-health',4);
  check('Next save retains server-confirmed revision',await page.evaluate(()=>fixture.calls.filter(c=>c.url==='/api/admin/model-health').at(-1).body.revision),2);
  await resolve('/api/admin/model-health',3,{...health,revision:3,policy:{...health.policy,staleHours:8}});await page.waitForTimeout(80);
+ // A genuinely newer server revision must not silently rebase an edited draft.
+ await hours.fill('9');const conflictRead=await count('/api/admin/model-health');await waitCount('/api/admin/model-health',conflictRead+1);
+ await resolve('/api/admin/model-health',conflictRead,{...health,revision:4,policy:{...health.policy,staleHours:10}});await page.waitForTimeout(70);
+ check('New server policy preserves unsaved draft',await hours.inputValue(),'9');
+ await page.getByRole('button',{name:'保存设置',exact:true}).click();await waitCount('/api/admin/model-health',conflictRead+2);
+ check('Dirty draft preserves optimistic conflict revision',await page.evaluate(()=>fixture.calls.filter(c=>c.url==='/api/admin/model-health').at(-1).body.revision),3);
+ await resolve('/api/admin/model-health',conflictRead+1,{error:'fixture conflict'},409);await page.getByRole('button',{name:'拉取最新配置'}).click();await waitCount('/api/admin/model-health',conflictRead+3);
+ await resolve('/api/admin/model-health',conflictRead+2,{...health,revision:4,policy:{...health.policy,staleHours:10}});await page.waitForTimeout(70);
+ check('Explicit conflict reload adopts newest settings',await hours.inputValue(),'10');
  const healthBefore=await count('/api/admin/model-health');await waitCount('/api/admin/model-health',healthBefore+1);await resolve('/api/admin/model-health',healthBefore,{error:'temporary failure'},503);
  await page.waitForTimeout(5300);check('Transient health poll failure keeps polling',await count('/api/admin/model-health')>healthBefore+1,true);
  if(await count('/api/admin/model-health')>healthBefore+1){
