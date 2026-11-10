@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "fixtureOnly": true,
+  "source": "Imported original Windows offline recordings from VV-06 local acceptance; not product TTS",
+  "files": [
+    {
+      "index": 0,
+      "file": "recording-0.wav",
+      "sha256": "db5807cd8e2eec35fff5a9e23ba0050def6420d2b917b807e05226db0206e6a2",
+      "bytes": 112568,
+      "voice": "Microsoft Huihui Desktop",
+      "text": "爸爸，我到了。"
+    },
+    {
+      "index": 1,
+      "file": "recording-1.wav",
+      "sha256": "7af74de29178f35ecdf2b4e9aa9599b8bca7bc740b9e395c8ba2c9ae7b7d3043",
+      "bytes": 71678,
+      "voice": "Microsoft Zira Desktop",
+      "text": "I am here."
+    }
+  ]
+}

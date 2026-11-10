@@ -1,0 +1,235 @@
+{
+  "source": "LIVE103_CATALOG.json",
+  "modelVersion": 117,
+  "models": [
+    {
+      "modelId": "grok-imagine-video",
+      "modes": [
+        "text",
+        "single_image"
+      ],
+      "audio": "disabled",
+      "nativeMultiShot": false,
+      "state": "unverified",
+      "evidence": "103 directory read HTTP200 only; no real specimen in this run"
+    },
+    {
+      "modelId": "video-apib-seedance-1-0-pro-fast",
+      "modes": [
+        "text"
+      ],
+      "audio": null,
+      "nativeMultiShot": false,
+      "state": "unverified",
+      "evidence": "103 directory read HTTP200 only; no real specimen in this run"
+    },
+    {
+      "modelId": "video-apib-seedance-1-0-pro-quality",
+      "modes": [
+        "text"
+      ],
+      "audio": null,
+      "nativeMultiShot": false,
+      "state": "unverified",
+      "evidence": "103 directory read HTTP200 only; no real specimen in this run"
+    },
+    {
+      "modelId": "video-apib-seedance-1-5-pro",
+      "modes": [
+        "text"
+      ],
+      "audio": "disabled",
+      "nativeMultiShot": false,
+      "state": "unverified",
+      "evidence": "103 directory read HTTP200 only; no real specimen in this run"
+    },
+    {
+      "modelId": "video-apib-seedance-2-0",
+      "modes": [
+        "text"
+      ],
+      "audio": null,
+      "nativeMultiShot": false,
+      "state": "unverified",
+      "evidence": "103 directory read HTTP200 only; no real specimen in this run"
+    },
+    {
+      "modelId": "video-apib-seedance-2-0-fast",
+      "modes": [
+        "text"
+      ],
+      "audio": null,
+      "nativeMultiShot": false,
+      "state": "unverified",
+      "evidence": "103 directory read HTTP200 only; no real specimen in this run"
+    },
+    {
+      "modelId": "video-apib-seedance-2-0-mini",
+      "modes": [
+        "text"
+      ],
+      "audio": null,
+      "nativeMultiShot": false,
+      "state": "unverified",
+      "evidence": "103 directory read HTTP200 only; no real specimen in this run"
+    },
+    {
+      "modelId": "video-apib-seedance-2-5",
+      "modes": [
+        "text",
+        "single_image",
+        "first_optional",
+        "last_optional",
+        "lip_sync",
+        "motion_control",
+        "extend",
+        "video_edit",
+        "reference"
+      ],
+      "audio": "optional",
+      "nativeMultiShot": false,
+      "state": "unverified",
+      "evidence": "103 directory read HTTP200 only; no real specimen in this run"
+    },
+    {
+      "modelId": "video-apib-kling-3-0-turbo",
+      "modes": [
+        "text"
+      ],
+      "audio": null,
+      "nativeMultiShot": false,
+      "state": "unverified",
+      "evidence": "103 directory read HTTP200 only; no real specimen in this run"
+    },
+    {
+      "modelId": "video-apib-kling-v2-6",
+      "modes": [
+        "text"
+      ],
+      "audio": "disabled",
+      "nativeMultiShot": false,
+      "state": "unverified",
+      "evidence": "103 directory read HTTP200 only; no real specimen in this run"
+    },
+    {
+      "modelId": "video-apib-kling-v3",
+      "modes": [
+        "text"
+      ],
+      "audio": "disabled",
+      "nativeMultiShot": false,
+      "state": "unverified",
+      "evidence": "103 directory read HTTP200 only; no real specimen in this run"
+    },
+    {
+      "modelId": "video-apib-kling-v3-omni",
+      "modes": [
+        "text"
+      ],
+      "audio": "disabled",
+      "nativeMultiShot": false,
+      "state": "unverified",
+      "evidence": "103 directory read HTTP200 only; no real specimen in this run"
+    },
+    {
+      "modelId": "video-apib-kling-v4",
+      "modes": [
+        "text"
+      ],
+      "audio": null,
+      "nativeMultiShot": false,
+      "state": "unverified",
+      "evidence": "103 directory read HTTP200 only; no real specimen in this run"
+    },
+    {
+      "modelId": "video-apib-kling-video-o1",
+      "modes": [
+        "text"
+      ],
+      "audio": null,
+      "nativeMultiShot": false,
+      "state": "unverified",
+      "evidence": "103 directory read HTTP200 only; no real specimen in this run"
+    },
+    {
+      "modelId": "video-apib-wan2-5-preview",
+      "modes": [
+        "text"
+      ],
+      "audio": "required",
+      "nativeMultiShot": false,
+      "state": "unverified",
+      "evidence": "103 directory read HTTP200 only; no real specimen in this run"
+    },
+    {
+      "modelId": "video-apib-wan2-6",
+      "modes": [
+        "text"
+      ],
+      "audio": null,
+      "nativeMultiShot": false,
+      "state": "unverified",
+      "evidence": "103 directory read HTTP200 only; no real specimen in this run"
+    },
+    {
+      "modelId": "video-apib-wan2-6-i2v-flash",
+      "modes": [
+        "single_image"
+      ],
+      "audio": "disabled",
+      "nativeMultiShot": false,
+      "state": "unverified",
+      "evidence": "103 directory read HTTP200 only; no real specimen in this run"
+    },
+    {
+      "modelId": "video-apib-wan2-7-r2v",
+      "modes": [
+        "reference"
+      ],
+      "audio": null,
+      "nativeMultiShot": false,
+      "state": "unverified",
+      "evidence": "103 directory read HTTP200 only; no real specimen in this run"
+    },
+    {
+      "modelId": "video-apib-wan3-0-video",
+      "modes": [
+        "text"
+      ],
+      "audio": null,
+      "nativeMultiShot": false,
+      "state": "unverified",
+      "evidence": "103 directory read HTTP200 only; no real specimen in this run"
+    },
+    {
+      "modelId": "video-apib-wan3-0-video-prime",
+      "modes": [
+        "text"
+      ],
+      "audio": null,
+      "nativeMultiShot": false,
+      "state": "unverified",
+      "evidence": "103 directory read HTTP200 only; no real specimen in this run"
+    },
+    {
+      "modelId": "video-apib-minimax-h3",
+      "modes": [
+        "text"
+      ],
+      "audio": null,
+      "nativeMultiShot": false,
+      "state": "unverified",
+      "evidence": "103 directory read HTTP200 only; no real specimen in this run"
+    },
+    {
+      "modelId": "video-apib-minimax-h3-max",
+      "modes": [
+        "text"
+      ],
+      "audio": null,
+      "nativeMultiShot": false,
+      "state": "unverified",
+      "evidence": "103 directory read HTTP200 only; no real specimen in this run"
+    }
+  ]
+}

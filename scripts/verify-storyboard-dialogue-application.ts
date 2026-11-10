@@ -21,8 +21,17 @@ export async function verifyStoryboardDialogueApplication(h:Awaited<ReturnType<t
  const voiceSources:import("../src/lib/canvas/timeline-node-schema").TimelineMaterial[]=[];
  for(const [index,voiceName,utterance]of [[0,"Microsoft Huihui Desktop","爸爸，我到了。"],[1,"Microsoft Zira Desktop","I am here."]] as const){
   const recording=path.join(out,`recording-${index}.wav`),padded=path.join(out,`recording-${index}-padded.wav`),script=path.join(out,`recording-${index}.ps1`);
+  if(process.platform==='win32'){
   await writeFile(script,`\ufeffAdd-Type -AssemblyName System.Speech\n$s=New-Object System.Speech.Synthesis.SpeechSynthesizer\n$s.SelectVoice('${voiceName}')\n$s.Rate=-1\n$s.SetOutputToWaveFile('${recording.replaceAll("'","''")}')\n$s.Speak('${utterance}')\n$s.Dispose()\n`,"utf8");
   const spoken=spawnSync("powershell",["-NoProfile","-ExecutionPolicy","Bypass","-File",script],{encoding:"utf8",windowsHide:true});assert.equal(spoken.status,0,spoken.stderr);
+  }else{
+   // Imported recorded speech is test input, not a product TTS implementation.
+   const fixtureRoot=path.resolve('scripts/video-trials/fixtures'),manifest=JSON.parse(await readFile(path.join(fixtureRoot,'recordings.json'),'utf8'));
+   assert.equal(manifest.version,1);assert.equal(manifest.fixtureOnly,true);
+   const source=manifest.files.find((item:any)=>item.index===index);assert.equal(source?.file,`recording-${index}.wav`);assert.equal(source.voice,voiceName);assert.equal(source.text,utterance);
+   const bytes=await readFile(path.join(fixtureRoot,source.file));assert.equal(bytes.length,source.bytes);assert.equal(createHash('sha256').update(bytes).digest('hex'),source.sha256);
+   assert.equal(bytes.subarray(0,4).toString(),'RIFF');assert.equal(bytes.subarray(8,12).toString(),'WAVE');await writeFile(recording,bytes);
+  }
   const paddedResult=spawnSync("ffmpeg",["-nostdin","-y","-v","error","-i",recording,"-af","apad","-t","4","-c:a","pcm_s16le",padded],{encoding:"utf8",windowsHide:true});assert.equal(paddedResult.status,0,paddedResult.stderr);
   const form=new FormData();form.set("operationId",randomUUID());form.set("file",new File([await readFile(padded)],`recording-${index}.wav`,{type:"audio/wav"}));
   const uploadResponse=await fetch(h.baseUrl+"/api/video/references",{method:"POST",headers:{cookie:h.cookies.a,origin:h.baseUrl},body:form}),uploaded=await uploadResponse.json();assert.equal(uploadResponse.status,200,JSON.stringify(uploaded));

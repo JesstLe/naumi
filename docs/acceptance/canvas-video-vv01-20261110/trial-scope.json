@@ -1,0 +1,157 @@
+{
+  "version": 1,
+  "id": "canvas-video-vv01-20261110",
+  "baseline": "2458a4d5644ce7d669c8ba7c520e90a6e05648b5",
+  "target": "103.30.76.93",
+  "source": {
+    "file": "original-script.txt",
+    "sha256": "5e1dc355a62c8ffb87e210644452619955590b5951e5fc416bfa8bdbf55c214f",
+    "range": {
+      "start": 0,
+      "end": 90
+    }
+  },
+  "budget": {
+    "unit": "Naumi credits",
+    "totalCeiling": 120,
+    "maxVideoTasks": 5,
+    "maxMediaJobs": 2,
+    "perVideoCeiling": 20,
+    "perMediaCeiling": 10,
+    "autoTopUp": false,
+    "automaticRetries": 0,
+    "unknownAcceptance": "reconcile-original-only",
+    "procurementCurrencyCost": "unknown-not-converted-from-credit-price"
+  },
+  "execution": {
+    "requiredEntry": "formal-storyboard-workflow-and-owned-media",
+    "projectTitle": "VV-01 雨夜车站真实试片",
+    "modelVersion": 117,
+    "billingVersion": 8,
+    "modelId": "video-apib-seedance-2-5",
+    "providerId": "managed-video",
+    "durationSeconds": 4,
+    "resolution": "480p",
+    "aspectRatio": "16:9",
+    "requiresFreshQuote": true,
+    "publishedDefinitionOnly": true
+  },
+  "shots": [
+    {
+      "id": "01",
+      "purpose": "建立人物、服装、左手手机与车站空间",
+      "mapping": {
+        "ranges": [
+          {
+            "start": 0,
+            "end": 90
+          }
+        ],
+        "dialogue": []
+      },
+      "prompt": "中景，固定机位。雨夜的空车站，成年女孩穿深蓝色雨衣，左手握黑色手机，站在冷白顶灯下，先看手机，再抬头看向画面左边。远处列车完全静止，湿地面倒映灯光。保持自然表演，单一连续镜头，无字幕，无旁白。",
+      "mode": "text",
+      "generateAudio": false
+    },
+    {
+      "id": "02",
+      "purpose": "同一原文的手机细节镜头，复用人物参考",
+      "mapping": {
+        "ranges": [
+          {
+            "start": 7,
+            "end": 49
+          }
+        ],
+        "dialogue": []
+      },
+      "prompt": "近景，缓慢推近女孩左手握着的黑色手机，深蓝雨衣袖口在画面中，雨夜车站冷白灯光。与人物参考保持同一雨衣、同一左手和同一手机；单一连续镜头，无字幕，不说话。",
+      "mode": "reference",
+      "referenceFrom": "01:first-frame",
+      "generateAudio": false,
+      "selectionReason": "使用已声明的普通图片参考。公开single_image会转换为first_frame，但当前显式supportsFirstFrame=false，该路径单列配置矛盾，不覆写管理员false。"
+    },
+    {
+      "id": "03",
+      "purpose": "对白只由本镜承担，检查原声与身份连续性",
+      "mapping": {
+        "ranges": [
+          {
+            "start": 31,
+            "end": 69
+          }
+        ],
+        "dialogue": [
+          {
+            "start": 56,
+            "end": 63,
+            "speaker": "女孩"
+          }
+        ]
+      },
+      "prompt": "中近景，固定机位，参考中的同一成年女孩穿深蓝雨衣，左手持黑色手机。她抬头望向画面左边，用普通话轻声准确说一次：“爸爸，我到了。”说完停顿，其他人不说话。只有这句对白和轻微雨声，不添加字幕、配乐或旁白，保持一个镜头。",
+      "mode": "reference",
+      "referenceFrom": "01:first-frame",
+      "generateAudio": true
+    }
+  ],
+  "additionalTrials": [
+    {
+      "id": "04",
+      "kind": "remake",
+      "sourceShot": "02",
+      "change": "只把推镜改为固定机位，保留原手机细节镜头为采用版；新结果仅为候选，不自动替换。"
+    },
+    {
+      "id": "05",
+      "kind": "continuity",
+      "sourceShot": "01",
+      "mode": "reference",
+      "referenceFrom": "01:video",
+      "change": "同一女孩继续向左走一步，服装、左手手机和站台灯光保持；不切镜头、不换人。"
+    }
+  ],
+  "nativeMultiShot": {
+    "state": "not-applicable",
+    "reason": "当前22个已配置公开视频模型的冻结目录均为supportsMultiShot=false；不按名称启用或传递原生分镜。"
+  },
+  "adoption": {
+    "initial": "manual-exact-take",
+    "remake": "old-adopted-take-remains",
+    "assembly": "explicit-current-adopted-list",
+    "unknown": "not-free-not-refunded"
+  },
+  "qualityRubric": [
+    "identity",
+    "action",
+    "dialogue",
+    "camera",
+    "visual",
+    "audio"
+  ],
+  "results": {
+    "realPaidCalls": 0,
+    "state": "preflight-blocked-no-credit-and-candidate-not-deployed",
+    "quality": "unverified"
+  },
+  "excludedPaths": [
+    {
+      "modelId": "video-apib-seedance-2-5",
+      "mode": "single_image",
+      "status": "configuration-conflict",
+      "code": "FRAME_UNSUPPORTED",
+      "reason": "single_image转换首帧角色后遇到显式supportsFirstFrame=false；原配置保持，等待管理员核对。"
+    }
+  ],
+  "clientOperationIds": {
+    "plan": "74cbc145-1500-5c3f-8cdd-a38ef710b4b4",
+    "script": "6beeb0a0-4308-5069-b94e-038be7c4996b",
+    "shot-01": "cf5170e5-064b-5e27-829c-59ed40f47a6c",
+    "shot-02": "c7d0d3f3-8845-5e39-b8df-b26ef19966f0",
+    "shot-03": "7c65133a-9d48-5281-951c-e65fb411de21",
+    "remake-02": "a10c7fb7-41d3-5975-87ea-501c36043c84",
+    "continuity-01": "f8efc2b4-9074-56ad-a78b-fa05c7fee0a9",
+    "frame": "c161c088-7ad8-5351-8eeb-39ac87cc8d7b",
+    "concat": "e30fd6ec-c43c-5305-904e-cd58bec8da33"
+  }
+}
