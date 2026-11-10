@@ -1,4 +1,5 @@
 import "server-only";
+import type {PoolClient} from "pg";
 import {validateCanvasTextLinksTx} from "./text-node-links";
 import {mergeCanvasTextWrite,CanvasTextWriteConflict} from "./text-write";
 import {getPool} from "@/platform/db/pool";
@@ -65,6 +66,13 @@ export async function listCanvasTextNodes(
     [emailRaw.toLowerCase()]
   );
   return rows.map((row) => mapCanvasTextNode(row));
+}
+
+/** Exact source lookup for application services; ownership remains in this repository. */
+export async function getCanvasTextNode(emailRaw:string,id:string,projectKey:string,tx?:Pick<PoolClient,"query">):Promise<CanvasTextNodeRecord|null>{
+  await ensureSchema();
+  const row=(await (tx||getPool()).query("SELECT * FROM app_canvas_text_nodes WHERE email=$1 AND id=$2 AND project_key=$3",[emailRaw.toLowerCase(),id,projectKey])).rows[0];
+  return row?mapCanvasTextNode(row):null;
 }
 
 export async function upsertCanvasTextNode(

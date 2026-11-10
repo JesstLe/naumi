@@ -1,4 +1,5 @@
 import "server-only";
+import type {PoolClient} from "pg";
 import {getPool} from "@/platform/db/pool";
 import {ensureSchema} from "@/lib/persistence/schema";
 import {mapVideoTask,type VideoTaskRow,type VideoResultRow} from "./task-types";
@@ -78,10 +79,11 @@ export async function createVideoTask(input: {
 
 export async function getVideoTask(
   email: string,
-  id: string
+  id: string,
+  tx?:Pick<PoolClient,"query">
 ): Promise<VideoTaskRow | null> {
   await ensureSchema();
-  const { rows } = await getPool().query(
+  const { rows } = await (tx||getPool()).query(
     `SELECT id, upstream_id, model, prompt, status, progress, cost, artwork_id, video_url, error,
             provider_id, source, source_id, parameters, video_references, capability_snapshot,
             next_poll_at, poll_attempts, seconds, created_at, updated_at, completed_at,
