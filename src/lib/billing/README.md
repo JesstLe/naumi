@@ -26,3 +26,7 @@
 金额单位：商品售价为人民币分；积分为非负整数；估计成本及汇率为百万分之一单位的十进制整数字符串；比例为基点。不要用浮点数换算成本。成本加成是选定成本项的单位售价，功能的 image/item/task 单位决定数量乘法。
 
 执行 `npm run verify:billing-all` 前设置隔离的本地 PostgreSQL URL 和 `NAUMI_VERIFY_ISOLATED_DB=1`。运行真实浏览器验收用 `npm run verify:billing-ui`，先启动同一 fixture 配置的本地应用；所有供应商验收请求必须保持本地 mock。
+
+## 只读任务费用证据
+
+`task-cost-evidence.ts`是跨阶段方案报告的公开积分投影，读取当前实际预扣、已结算净扣、确切退款与释放；不公开tariff或供应采购信息，不触发结算或回填。缺证据为未知，退款与释放不重复累计。对应实现和验证见`docs/changes/2026-11-10-storyboard-costs.md`。

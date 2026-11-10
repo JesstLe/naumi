@@ -45,3 +45,18 @@ export async function saveTimelineNodeTx(tx:PoolClient,actor:string,input:Timeli
       JSON.stringify(input.timeline??old?.timeline??newTimelineProject()),JSON.stringify(input.adopted===undefined?old?.adopted??null:input.adopted),JSON.stringify(render===undefined?old?.render??null:render),input.deleted===undefined?!!old?.deleted_at:input.deleted])).rows[0];
   const result=mapTimelineNode(row);await tx.query("INSERT INTO app_canvas_timeline_operations(email,operation_id,input_digest,result) VALUES($1,$2,$3,$4::jsonb)",[actor,input.operationId,digest(identity),JSON.stringify(result)]);return result;
 }
+
+/** All accepted export intents, including superseded/deleted timeline revisions. */
+export async function readTimelineCostReceipts(actor:string,projectKey:string,ids:readonly string[]){
+ await ensureTimelineNodeSchema();if(!ids.length)return [];
+ return (await getPool().query(`SELECT operation_id,result->>'id' AS timeline_id FROM app_canvas_timeline_operations
+  WHERE email=$1 AND result->>'projectKey'=$2 AND result->>'id'=ANY($3::text[])
+  AND result->'render'->>'operationId'=operation_id::text ORDER BY operation_id`,[actor.toLowerCase(),projectKey,ids])).rows.map(row=>({operationId:String(row.operation_id),timelineId:String(row.timeline_id)}));
+}
+
+/** Media references across all saved linked cuts, not just the latest render. */
+export async function readTimelineCostReferences(actor:string,projectKey:string,ids:readonly string[]){
+ await ensureTimelineNodeSchema();if(!ids.length)return [];
+ const rows=(await getPool().query("SELECT result->'timeline' AS timeline FROM app_canvas_timeline_operations WHERE email=$1 AND result->>'projectKey'=$2 AND result->>'id'=ANY($3::text[])",[actor.toLowerCase(),projectKey,ids])).rows;
+ return [...new Set(rows.flatMap(row=>(row.timeline?.tracks||[]).flatMap((track:{clips:Array<{artworkId:string}>})=>track.clips.map(clip=>clip.artworkId))))] as string[];
+}

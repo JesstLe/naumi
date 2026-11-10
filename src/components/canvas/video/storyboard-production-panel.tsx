@@ -5,11 +5,12 @@ import type {VideoInputChoice} from "@/lib/video/client-settings";
 import type {StoryboardSelection} from "@/lib/video/storyboard-client";
 import type {VideoPrivateFetch} from "./use-video-nodes";
 import {useStoryboardProduction} from "./use-storyboard-production";
+import {StoryboardCosts} from "./storyboard-costs";
 import {StoryboardPreview} from "./storyboard-preview";
 import {StoryboardContinuity} from "./storyboard-continuity";
 import {browserRandomUUID} from "@/lib/browser-crypto";
 
-export function StoryboardProductionPanel({scope,projectKey,document,revision,dirty,selection,choices=[],request,disabled,onSave,onChange,onOpenTimeline}:{scope:string;projectKey:string;document:StoryboardDocument;revision:number;dirty:boolean;selection:StoryboardSelection[];choices?:VideoInputChoice[];request:VideoPrivateFetch;disabled:boolean;onSave:()=>Promise<StoryboardPlan>;onChange:(document:StoryboardDocument)=>void;onOpenTimeline?:(id:string)=>Promise<void>|void}){
+export function StoryboardProductionPanel({scope,projectKey,planId,document,revision,dirty,selection,choices=[],request,disabled,onSave,onChange,onOpenTimeline}:{scope:string;projectKey:string;planId?:string;document:StoryboardDocument;revision:number;dirty:boolean;selection:StoryboardSelection[];choices?:VideoInputChoice[];request:VideoPrivateFetch;disabled:boolean;onSave:()=>Promise<StoryboardPlan>;onChange:(document:StoryboardDocument)=>void;onOpenTimeline?:(id:string)=>Promise<void>|void}){
   const production=useStoryboardProduction({scope,projectKey,request,onOpenTimeline}),[opened,setOpened]=useState(false),[saving,setSaving]=useState(false),[error,setError]=useState(""),[audioId,setAudioId]=useState(""),[audioDuration,setAudioDuration]=useState(5),[audioPosition,setAudioPosition]=useState(0),[target,setTarget]=useState("");
   const locked=disabled||saving||production.busy||!!production.pending,data=production.inspection?.data,stale=dirty||production.inspection?.revision!==revision||production.inspection?.selection!==JSON.stringify(selection);
   const css="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs disabled:opacity-40";
@@ -18,6 +19,7 @@ export function StoryboardProductionPanel({scope,projectKey,document,revision,di
   const adopted=selection.length>0&&selection.every(item=>document.shots.find(shot=>shot.nodeId===item.id)?.adoptedArtworkId);
   return <section aria-label="制作准备" className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
     <div className="flex flex-wrap items-center gap-2"><button type="button" className={css} disabled={locked||!selection.length} onClick={inspect}>{data?"刷新制作检查":"连续性、预演与预算"}</button>{opened&&<button type="button" className={css} onClick={()=>setOpened(false)}>收起</button>}</div>
+    <StoryboardCosts scope={scope} projectKey={projectKey} planId={planId} revision={revision} dirty={dirty} selection={selection} disabled={locked} onSave={onSave} request={request}/>
     {(error||production.error)&&<p role="alert" className="text-xs text-red-600">{error||production.error}</p>}
     {production.pending&&<button type="button" className={css} disabled={production.busy} onClick={()=>void production.recover()}>核对原粗剪操作</button>}
     {opened&&data&&<>

@@ -6,6 +6,7 @@ import {storyboardDocumentSchema,storyboardWriteSchema} from "../storyboard/plan
 import {productionSelectionSchema,roughcutRequestSchema} from "../storyboard/production-schema";
 import {videoProjectKeySchema} from "../canvas/project-key";
 import {storyboardDialogueRequestSchema} from "../storyboard/dialogue";
+import {storyboardCostRequestSchema} from "../storyboard/costs";
 import {storyboardForkSchema} from "../storyboard/fork";
 import type {CanvasAgentContext} from "./canvas-context";
 
@@ -30,6 +31,9 @@ export function createStoryboardTools(d:Deps):AgentTool[]{
   }
   async function plans(key:string,signal?:AbortSignal){return await d.internal(`/api/canvas/storyboards?projectKey=${encodeURIComponent(key)}`,signal);}
   return [
+    tool("inspect_video_storyboard_costs","读取方案费用与返工影响","只读指定plan_id/revision的跨阶段真实积分账务、预扣、退款、结算中及未知费用；nodes明确本轮生成/复用，compare_revision可对比明确旧版本。方案精确归属、共享节点历史与继承复用分开；BYOC外部费用保持未知。报价不锁价、不提交任务、不改采用版、不增加预算；影响按实际输入依赖而非镜序传播。",{...selection,nodes:Type.Array(Type.Object({id,reuseCompleted:Type.Boolean()}),{minItems:1,maxItems:100}),compare_revision:Type.Optional(revision)},async(_call,args,signal)=>{
+      const a=args as any,body=storyboardCostRequestSchema.parse({projectKey:project(a.project_key),planId:a.plan_id,revision:a.revision,nodes:a.nodes,...(a.compare_revision?{compareRevision:a.compare_revision}:{})});return result("方案费用与返工影响已读取，未提交任务",await post("/api/canvas/storyboards/costs",body,signal));
+    }),
     tool("apply_video_storyboard_dialogue","将原稿对白读入粗剪","从明确方案revision向已关联timeline_id/timeline_revision追加逐句原文、说话人和字幕草稿；同句只保存一次，保留已有音轨、字幕手工修改与时间。初始时间是草稿需听录音校对，不冒称自动转写/对齐。通过get/save_video_timeline编辑，render_video_timeline导出。不生成、不收费；operation_id稳定，未知后原完整参数恢复。",{...selection,operation_id:uuid,timeline_id:Type.String({minLength:1,maxLength:80}),timeline_revision:revision},async(_call,args,signal)=>{
       const a=args as any,body=storyboardDialogueRequestSchema.parse({projectKey:project(a.project_key),planId:a.plan_id,revision:a.revision,operationId:a.operation_id,timelineId:a.timeline_id,timelineRevision:a.timeline_revision});return result("原稿对白已读入粗剪，时间待校对",await post("/api/canvas/storyboards/dialogue",body,signal));
     }),

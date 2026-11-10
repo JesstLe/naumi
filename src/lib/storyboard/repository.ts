@@ -51,3 +51,9 @@ export async function saveStoryboardTx(tx:PoolClient,actor:string,input:Storyboa
 export async function inheritedStoryboardTakeOrigin(actor:string,projectKey:string,nodeId:string,take:{taskId:string;artworkId:string},tx?:Pick<PoolClient,"query">){
   await ensureStoryboardSchema();return (await (tx??getPool()).query("SELECT origin_node_id FROM app_storyboard_take_origins WHERE email=$1 AND project_key=$2 AND node_id=$3 AND task_id=$4 AND artwork_id=$5",[actor,projectKey,nodeId,take.taskId,take.artworkId])).rows[0]?.origin_node_id as string|undefined;
 }
+
+/** Exact saved revision, never the latest document relabelled as historical. */
+export async function readStoryboardRevision(actor:string,id:string,revision:number){
+ await ensureStoryboardSchema();const current=await readStoryboardPlan(actor,id);if(current?.revision===revision)return current;
+ return (await getPool().query("SELECT result FROM app_storyboard_operations WHERE email=$1 AND result->>'id'=$2 AND result->>'revision'=$3 LIMIT 1",[actor,id,String(revision)])).rows[0]?.result as StoryboardPlan|undefined;
+}
