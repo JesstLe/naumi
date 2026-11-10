@@ -29,7 +29,7 @@ async function main() {
     const reconcile=page.waitForResponse(r=>r.url().endsWith("/api/admin/model-management")&&r.request().method()==="POST");await page.getByRole("button",{name:"核对并继续",exact:true}).click();assert.equal((await reconcile).status(),200);
     await expect(page.getByRole("button",{name:"核对并继续",exact:true})).toHaveCount(0);assert.equal(await page.evaluate(()=>sessionStorage.getItem("naumi:admin:mvp:pending")),null);assert.equal((await(await admin.request.get(origin+"/api/admin/model-management")).json()).version,recoveredVersion);
     const originalCatalog = await (await admin.request.get(`${origin}/api/models?feature=image.generate`)).json();
-    await expandManagedModelConfig(page.locator("article").first());await page.getByRole("button", { name: "修改显示名称", exact: true }).first().click();
+    await expandManagedModelConfig(page.locator("article").first());await page.getByRole("button", { name: "名称与公开 ID", exact: true }).first().click();
     await page.getByLabel("显示名称", { exact: true }).fill("产品摄影模型");
     await page.screenshot({ path: "output/model-management-fixture/rename-dialog.png", fullPage: true });
     await page.getByRole("button", { name: "保存并生效", exact: true }).click();
@@ -72,8 +72,8 @@ async function main() {
     await expect(page.getByTestId("managed-model-smart-text")).toBeVisible();
     const textCard = page.getByTestId("managed-model-smart-text");
     await expect(textCard.getByRole("heading", { name: "创作助手", exact: true })).toBeVisible();
-    await expandManagedModelConfig(textCard);await textCard.getByRole("button", { name: "修改显示名称", exact: true }).click();
-    const textRename = page.getByRole("dialog", { name: "修改前端显示名称", exact: true });
+    await expandManagedModelConfig(textCard);await textCard.getByRole("button", { name: "名称与公开 ID", exact: true }).click();
+    const textRename = page.getByRole("dialog", { name: "名称与公开 ID", exact: true });
     await expect(textRename.getByLabel("显示名称", { exact: true })).toHaveValue("创作助手");
     await textRename.getByLabel("显示名称", { exact: true }).fill("GPT-6Astra");
     await textRename.getByRole("button", { name: "保存并生效", exact: true }).click();
@@ -84,7 +84,7 @@ async function main() {
     await page.reload();
     await page.getByRole("button", { name: "文字", exact: true }).click();
     await expect(textCard.getByRole("heading", { name: "GPT-6Astra", exact: true })).toBeVisible();
-    await expandManagedModelConfig(textCard);await textCard.getByRole("button", { name: "修改显示名称", exact: true }).click();
+    await expandManagedModelConfig(textCard);await textCard.getByRole("button", { name: "名称与公开 ID", exact: true }).click();
     await expect(textRename.getByLabel("显示名称", { exact: true })).toHaveValue("GPT-6Astra");
     await textRename.getByRole("button", { name: "取消", exact: true }).click();
 

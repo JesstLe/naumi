@@ -1,3 +1,4 @@
+import {currentModelExecution as identityExecutionScope} from "@/lib/model-config/context";
 import "server-only";
 import { exactImageRequestSize, imageRatioMismatch } from "@/lib/imagegen/request-size";
 import { sourceImageDimensions } from "@/lib/imagegen/output-shape";
@@ -540,7 +541,7 @@ async function runAplusGeneration(jobId: string) {
       buf: buf!,
       type: "image/png",
     }));
-    const size = sizeFor(job.format, job.model, !!job.frameVersion, job.frameVersion === 2);
+    const size = sizeFor(job.format, identityExecutionScope("image")?.frozen.publicModelId===job.model ? identityExecutionScope("image")?.parameterModelId || job.model : job.model, !!job.frameVersion, job.frameVersion === 2);
     const specs = job.shots.length ? job.shots : await planShots(
       client,
       cleanImages[0],

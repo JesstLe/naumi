@@ -1,3 +1,4 @@
+import {parameterModelIdentity} from "./public-identity";
 import type { ModelConfig, ModelFacts, ModelSnapshot, UpstreamModel } from "./types";
 import type { ConfigSnapshot } from "../billing/types";
 import type { ValidationOptions } from "./schema";
@@ -70,7 +71,7 @@ export function resolveImageResolution(config: ModelConfig, modelId: string | un
       const u=config.upstreamModels.find(u=>u.id===id), provider=config.providers.find(p=>p.id===u?.providerId);
       if (!u?.enabled || !provider?.enabled || !preset && !(upstreamResolutionTiers(u,ratio).includes(tier)
         || tier === requested && upstreamAcceptsResolution(u,tier,ratio))) return false;
-      if (ratio && imageRequestAdmission(ratio,model.id,!!model.supplierRouting,u,provider.options?.imageAdapter).length) return false;
+      if (ratio && imageRequestAdmission(ratio,parameterModelIdentity(config,model.id),!!model.supplierRouting,u,provider.options?.imageAdapter).length) return false;
       if (stage && context) {
         const alternative=structuredClone(context.snapshot);
         const selected=alternative.config.publicModels.find(m=>m.id===model.id)!;

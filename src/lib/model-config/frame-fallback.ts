@@ -1,3 +1,4 @@
+import {parameterModelIdentity} from "./public-identity";
 import type {ModelConfig,ModelFacts} from './types';
 import {publicUpstreamIds} from './channel-policy';
 import {selectedBusinessOption} from './business';
@@ -32,7 +33,7 @@ export function resolveImageFrame(config:ModelConfig,modelId:string,target:strin
    const u=sources.find(u=>u.id===c.upstreamId);if(!u)return false;
    const p=config.providers.find(p=>p.id===u.providerId)!;
    if(ratio==='auto'&&!u.parameterMap.apimartImages?.automaticRatio?.enabled)return false;
-   return !imageRequestAdmission(ratio,modelId,!!model.supplierRouting,u,p.options?.imageAdapter).length;
+   return !imageRequestAdmission(ratio,parameterModelIdentity(config,modelId),!!model.supplierRouting,u,p.options?.imageAdapter).length;
   });
  };
  if(accepts(target))return unchanged;

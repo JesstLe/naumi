@@ -30,6 +30,7 @@ export async function ensureModelSchema(pool: Pool): Promise<void> {
       CREATE TABLE IF NOT EXISTS app_model_public_models(draft_id uuid NOT NULL REFERENCES app_model_drafts(id) ON DELETE CASCADE,id text NOT NULL,position int NOT NULL,label text NOT NULL,modality text NOT NULL,enabled boolean NOT NULL,visible boolean NOT NULL,upstream_target text,pool_target text,CHECK((upstream_target IS NULL)<>(pool_target IS NULL)),PRIMARY KEY(draft_id,id),FOREIGN KEY(draft_id,upstream_target) REFERENCES app_model_upstreams(draft_id,id),FOREIGN KEY(draft_id,pool_target) REFERENCES app_model_pools(draft_id,id));
       ALTER TABLE app_model_upstreams ADD COLUMN IF NOT EXISTS procurement jsonb;
       CREATE TABLE IF NOT EXISTS app_model_business(draft_id uuid PRIMARY KEY REFERENCES app_model_drafts(id) ON DELETE CASCADE,config jsonb NOT NULL);
+      ALTER TABLE app_model_public_models ADD COLUMN IF NOT EXISTS previous_ids jsonb;
       ALTER TABLE app_model_public_models ADD COLUMN IF NOT EXISTS tool_scope jsonb;
       ALTER TABLE app_model_public_models ADD COLUMN IF NOT EXISTS display_resolutions jsonb;
       ALTER TABLE app_model_public_models ADD COLUMN IF NOT EXISTS supplier_routing jsonb;

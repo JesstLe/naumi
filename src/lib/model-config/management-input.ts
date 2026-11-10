@@ -26,6 +26,7 @@ export const managementInput = z.discriminatedUnion("action", [
   z.strictObject({ action: z.literal("discover"), providerId: identifier, force: z.boolean().optional() }),
   z.strictObject({ action: z.literal("credential"), providerId: identifier, ciphertext: z.string().min(1).max(32768).optional(), keyPlain: z.string().min(1).max(16384).optional() }),
   z.strictObject({ action: z.literal("switch"), ...common, rowId: identifier, upstreamId: identifier }),
+  z.strictObject({ action: z.literal("identity"), ...common, rowId: identifier, publicId: identifier, label: z.string().trim().min(1).max(100).regex(/^[^\u0000-\u001f\u007f]+$/) }),
   z.strictObject({ action: z.literal("rename"), ...common, rowId: identifier, label: z.string().trim().min(1).max(100).regex(/^[^\u0000-\u001f\u007f]+$/) }),
   z.strictObject({action:z.literal("scope-compat"),...common}),
   z.strictObject({action:z.literal("order"),...common,rowIds:z.array(identifier).min(1).max(500)}),
