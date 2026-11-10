@@ -38,7 +38,7 @@ export function createStoryboardTools(d:Deps):AgentTool[]{
       const a=args as any,key=project(a.project_key),plan=(await plans(key,signal)).plans.find((plan:any)=>plan.id===a.plan_id&&plan.projectKey===key);
       if(!plan)throw new Error("此项目中没有指定分镜方案");return result("指定方案已读取",{plan});
     }),
-    tool("save_video_storyboard","保存方案与审片","保存完整document，包括镜序、连续性、takes审片意见和adoptedArtworkId。保留未修改字段；expected_revision为上次读取版本，新方案为0。新增候选不改变采用版；只有用户已授权选片时才明确修改adoptedArtworkId并在take.note记录理由。不生成视频，不更新粗剪。operation_id稳定，重试原完整请求；冲突先读取，不覆盖。",{...context,plan_id:uuid,expected_revision:Type.Integer({minimum:0}),operation_id:uuid,document},async(_call,args,signal)=>{
+    tool("save_video_storyboard","保存方案与审片","保存完整document，包括镜序、连续性、takes审片意见、annotations时间码批注和adoptedArtworkId。保留未修改字段；expected_revision为上次读取版本，新方案为0。新增候选不改变采用版；只有用户已授权选片时才明确修改adoptedArtworkId并在take.note记录理由。annotations绑定其父take的确切taskId/artworkId；start/end以实际原片秒数标记时间点或区间，issue和note记录问题。返工通过run_video_workflow.storyboard.review显式引用，不重挂旧意见。不生成视频，不更新粗剪。operation_id稳定，重试原完整请求；冲突先读取，不覆盖。",{...context,plan_id:uuid,expected_revision:Type.Integer({minimum:0}),operation_id:uuid,document},async(_call,args,signal)=>{
       const a=args as any,body=storyboardWriteSchema.parse({id:a.plan_id,projectKey:project(a.project_key),expectedRevision:a.expected_revision,operationId:a.operation_id,document:a.document});
       return result("方案与审片已保存，尚未生成",{...await post("/api/canvas/storyboards",body,signal),operationId:body.operationId});
     }),

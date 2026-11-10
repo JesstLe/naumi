@@ -28,7 +28,7 @@ export type PublicVideoTaskView = Pick<
   | "cancellationSentAt"
   | "supplierCancellationSupported"
   | "errorCode"
->&{updatedAt?:string;retryOf?:string|null;projectKey?:string|null;resultAssets:import("./result-assets").SavedVideoResultAsset[];resultMetadataWarnings:Array<{artworkId:string;code:string;expected:unknown;actual:unknown}>};
+>&{nodeId?:string|null;updatedAt?:string;retryOf?:string|null;projectKey?:string|null;resultAssets:import("./result-assets").SavedVideoResultAsset[];resultMetadataWarnings:Array<{artworkId:string;code:string;expected:unknown;actual:unknown}>};
 
 export function publicVideoTaskView(task: VideoTaskRow): PublicVideoTaskView {
   const managed = (task.parameters.modelExecutions as ExecutionBundle | undefined)?.video;
@@ -49,6 +49,7 @@ export function publicVideoTaskView(task: VideoTaskRow): PublicVideoTaskView {
     nextPollAt: task.nextPollAt,
     createdAt: task.createdAt,
     updatedAt:task.updatedAt,
+    nodeId:typeof task.parameters.nodeId==="string"?task.parameters.nodeId:null,
     projectKey:typeof task.parameters.projectKey==="string"?task.parameters.projectKey:null,
     retryOf:typeof task.parameters.retryOf==="string"?task.parameters.retryOf:null,
     completedAt: task.completedAt,

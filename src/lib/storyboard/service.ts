@@ -15,6 +15,8 @@ import {publicVideoTaskSnapshot} from "../video/task-snapshot";
 import {ModelConfigError} from "../model-config/types";
 import {canonicalConfig} from "../model-config/snapshot-value";
 import {storyboardWriteSchema,type StoryboardTake} from "./plan";
+import {assertReviewBounds} from "./review";
+import {requireTimelineMaterials} from "../canvas/timeline-materials";
 import {ensureStoryboardSchema,readStoryboardPlan,readStoryboardPlans,readStoryboardOperation,saveStoryboardTx,inheritedStoryboardTakeOrigin} from "./repository";
 
 export async function listStoryboardPlans(actor:string,projectKey:string){
@@ -61,7 +63,13 @@ export async function saveStoryboardPlan(actorRaw:string,raw:unknown){
           for(const range of [...source.mapping.ranges,...source.mapping.dialogue])if(range.end>text.length||[range.start,range.end].some(i=>i>0&&i<text.length&&/[\uD800-\uDBFF]/.test(text[i-1])&&/[\uDC00-\uDFFF]/.test(text[i])))throw new ModelConfigError("STORYBOARD_SOURCE_INVALID","原文关联超出范围或截断字符",422);
         }
         await validateContinuityBindings(actor,input.projectKey,shot,previous?.document.shots.find(old=>old.nodeId===shot.nodeId),tx,trustedBindings);
-        for(const take of shot.takes)await assertStoryboardTake(actor,input.projectKey,shot.nodeId,take,tx);
+        for(const take of shot.takes){
+          await assertStoryboardTake(actor,input.projectKey,shot.nodeId,take,tx);
+          if(take.annotations?.length){
+            const [material]=await requireTimelineMaterials(actor,[take.artworkId],tx);
+            try{assertReviewBounds(take.annotations,material.durationSeconds);}catch(error){throw new ModelConfigError("STORYBOARD_REVIEW_RANGE_INVALID",(error as Error).message,422);}
+          }
+        }
       }
       if(input.document.audio?.length)await assertCreationInputsTx(tx,actor,input.document.audio.map(audio=>audio.artworkId));
     });

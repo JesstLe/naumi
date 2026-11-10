@@ -25,6 +25,7 @@ async function main(){
    let result=receipts.get(body.operationId);if(!result){const source=plans.find(p=>p.id===body.planId);assert.equal(source.revision,body.revision);const idMap=Object.fromEntries(body.nodes.map(n=>[n.id,`fork-${body.operationId}-${n.id}`]));const nodes=body.nodes.map(n=>({...originals.find(o=>o.id===n.id)||originals[0],id:idMap[n.id],revision:1,lastTaskId:null,lastResultId:null}));const plan={id:body.operationId,projectKey:project,revision:1,document:{...structuredClone(source.document),title:body.title,shots:source.document.shots.map(s=>({...structuredClone(s),nodeId:idMap[s.nodeId]}))},lineage:{sourcePlanId:source.id,sourceRevision:source.revision,operationId:body.operationId}};result={plan,nodes,idMap};plans=[plan,...plans];receipts.set(body.operationId,result);}
    if(fail==='disconnect'){fail='';return route.abort('connectionreset');}return json(result);
   }
+  if(u.pathname==='/api/video/workflows')return json({runs:[]});
   if(u.pathname==='/api/video/tasks')return json({tasks:[],nextCursor:null});
   if(u.pathname.startsWith('/api/video/tasks/')){const id=u.pathname.split('/').pop(),node=id.replace('task-','');return json({task:{id,projectKey:project,sourceId:node,status:'completed',createdAt:'2026-11-10',model:'fixture',seconds:'4',resultAssets:[{artworkId:'art-'+node,kind:'video',url:'/media/take.mp4'},{artworkId:'extra-not-inherited',kind:'video',url:'/media/take.mp4'}]},snapshot:{originalPrompt:'原版 '+node,inputs:[],config:{prompt:'原版 '+node}}});}
   throw Error('Unexpected '+u.pathname);
