@@ -6,7 +6,7 @@
 
 这次是审计，**没有修改产品实现，没有修复或发布上述问题**。结论来自当前源码、实际模块/函数的受控复现和既有回归；没有访问生产数据库、真实用户会话或供应商。不能据此断言所有线上问题已穷尽，也不能用本地用例替代真实 PostgreSQL、多实例和供应商验收。
 
-合并前刷新到 `6d475a6ce906d2f794c8f0b7711eb99ee4e7db44`：新增内容为管理员查询和画布文字布局，未改变本报告问题所在的 Agent 链路文件。最终审计来源 SHA 与源码哈希另见证据 JSON；主线整合不代表业务发布。
+中途刷新到 `6d475a6ce906d2f794c8f0b7711eb99ee4e7db44`，随后主线又推进到 `71ff0d1d3e8c20010584dfa6e0d961f8a93827fa`，新增分镜影视映射和正式方案持久化。已补查其 Agent 工具/网络白名单/脚本映射增量及 storyboard Route、service、repository，并整合为 `b6fc2cc39ee74163f746cc0fda0c94868084b382`；16 项复现仍成立。新分镜方案持久化属于已实现能力，不计为缺失。最终审计来源 SHA 与源码哈希另见证据 JSON；主线整合不代表业务发布。
 
 ## 链路与职责
 
@@ -161,6 +161,7 @@ node --conditions react-server scripts/audit-agent-chain-20261110.cjs
 | verify-agent-activity.ts | 通过 | 活动/终态标签规则 |
 | verify-agent-original-request.cjs | 12 checks 通过 | 4 个实际 multipart 解析函数 |
 | verify-workbench-recovery.cjs | 47/47 通过 | 实际 WorkbenchClient + React 19 + Chromium + loopback HTTP；认证/后端为 fixture |
+| verify-storyboard-director.ts | 23 checks 通过 | 主线新增分镜的原稿覆盖、对白归属和候选采用规则；非真实 DB/供应商 |
 | verify-agent-chat-attachments.cjs | **未通过：测试基础设施失效** | transpile 单文件后用 new Function 执行，新增 input-references import 需要 require；在产品断言前报 require is not defined |
 | verify-capacity-agent-streams.cjs | **未通过：测试基础设施失效** | stub:@/platform/db/pool 缺 getPool 导出，新增 rate-limit 依赖使 bundle 失败；未进入路由用例 |
 
