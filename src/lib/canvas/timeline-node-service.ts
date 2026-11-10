@@ -1,4 +1,5 @@
 import "server-only";
+import type {PoolClient} from "pg";
 import {getPool} from "@/platform/db/pool";
 import {TeamError} from "../teams/errors";
 import {ModelConfigError} from "../model-config/types";
@@ -11,9 +12,9 @@ import {ensureTimelineNodeSchema,findTimelineOperation,findTimelineRenderIntent,
 import {validateTimelineProject,validateTimelineAdoption,assertTimelineJobRecipe} from "./timeline-project-validation";
 import {requireTimelineMaterials} from "./timeline-materials";
 import {validateDialogueSources} from "./timeline-dialogue-sources";
-export async function getTimelineNode(actor:string,id:string){
-  const node=await getRawTimelineNode(actor,id);if(!node)return null;
-  try{await assertCreationProjectInput(actor,node.projectKey,undefined,true);}catch(error){if(error instanceof TeamError&&error.status===403)return null;throw error;}return node;
+export async function getTimelineNode(actor:string,id:string,tx?:PoolClient){
+  const node=await getRawTimelineNode(actor,id,false,tx);if(!node)return null;
+  try{await assertCreationProjectInput(actor,node.projectKey,tx,true);}catch(error){if(error instanceof TeamError&&error.status===403)return null;throw error;}return node;
 }
 export async function listTimelineNodes(actor:string,includeDeleted=false){
   return filterCreationProjects(actor,await listRawTimelineNodes(actor,includeDeleted));
@@ -58,4 +59,16 @@ export async function adoptTimelineResult(actorRaw:string,input:{id:string;expec
   const actor=actorRaw.toLowerCase(),job=await readMediaJobEvidence(actor,input.jobId),intent=await findTimelineRenderIntent(actor,job.operationId);if(!intent?.render||intent.id!==input.id)throw new ModelConfigError("TIMELINE_RESULT_CONFLICT","结果不属于此多轨工程",409);
   assertTimelineJobRecipe(intent.render,job);const output=job.outputs.find(output=>!output.fragment&&output.mimeType.startsWith("video/"));if(!output)throw new ModelConfigError("TIMELINE_RESULT_UNAVAILABLE","导出没有可采用的视频结果",409);
   return saveTimelineNode(actor,{id:input.id,expectedRevision:input.expectedRevision,operationId:input.operationId,adopted:{artworkId:output.artworkId,jobId:input.jobId,project:structuredClone(intent.render.project)}});
+}
+
+/** Existing-project edit participant. The caller holds the business transaction;
+ * this owner still validates scope, media, original text, receipt identity and CAS. */
+export async function saveTimelineEditTx(tx:PoolClient,actorRaw:string,raw:unknown){
+ const actor=actorRaw.toLowerCase(),input=timelineNodeWriteSchema.parse(raw);
+ if(!input.timeline||!input.projectKey||input.deleted!==undefined||input.adopted!==undefined)throw new ModelConfigError("TIMELINE_EDIT_INVALID","结构同步只保存已有工程",422);
+ await tx.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`video-node-graph:${actor}`]);
+ const old=await getRawTimelineNode(actor,input.id,false,tx);if(!old||old.projectKey!==input.projectKey)throw new ModelConfigError("TIMELINE_NODE_UNAVAILABLE","多轨节点不存在或无权访问",404);
+ await bindActualCreationProject(actor,input.projectKey,{tx});await assertCreationProjectInput(actor,input.projectKey,tx);
+ await validateTimelineProject(actor,input.timeline,tx);await validateDialogueSources(actor,input.projectKey,input.timeline,old.timeline,tx);
+ return saveTimelineNodeTx(tx,actor,input,input.projectKey);
 }
