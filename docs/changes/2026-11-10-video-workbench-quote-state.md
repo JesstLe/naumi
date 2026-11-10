@@ -27,7 +27,7 @@ VideoStudioSession → useBillingEstimate → BillingProvider → /api/billing/q
 
 原文件哈希及四件套保存于`E:/Workspace/naumi-task-evidence/video-quote-state-20261110/`：MODIFIED_FILE.zip、DIFF_FILE.patch、VERIFICATION.txt、可执行ROLLBACK.sh。独立完整副本回退恢复原文件字节／新增文件原缺失状态，同一保留回归脚本再次检出原0积分表现；修改交付副本保持。精确命令、输入、字面结果与退出码见VERIFICATION.txt。
 
-本模块拟普通合main；提交／主线与103实际部署分开。当前线上仍沿唯一r3回执3a043c6b／1794310315，本修复未部署，不创建后继候选、不持103锁，47未连接。
+本模块已普通合main；提交／主线与103实际部署分开。当前线上仍沿唯一r3回执3a043c6b／1794310315，本修复未部署，不创建后继候选、不持103锁，47未连接。
 
 ## 未完成项与下一步
 
@@ -40,3 +40,11 @@ VV-01原视频账户0余额且无普通密码、正常后台凭据请求超时�
 工作台缺报价显示“—”只证明展示修复，不证明免费或实际可执行；提交沿正式quote和原操作。
 保留120积分／5视频／2媒体上限，UNKNOWN不重提，按实际模型产物和原账务关闭质量格。
 ```
+
+
+## 固定Linux当前主线完整验收（2026-11-11，沿用本轮ID）
+
+- main固定9a517cc15ae56f82889de0bcd64e0c00a39e3f07，BUILD_VERSION1794326403，完整生产镜像sha256:a274d150f6370117bd702b25685bd0cbda3474afccac0442e4190dea69120639构建exit0。SDK sha256:56fc6f1a16f28600f843dfaad2a22a239fccc0ae1f59925eb1cf6d79d22d150f对照App server／BUILD_ID／Worker manifest真实入口字节全部一致，未用旧镜像覆盖本次修复。
+- 同一固定App的完整Canvas创作13＋原片语音12＋视觉6共31项通过：原稿／实际站内Agent、保存断网与重开、制作App重启恢复、三镜生成／旧采用／单镜返工、粗剪／对白／烧录导出下载、正常密码登录、真实200丢响应、私有证据SHA／ACL、ASR结算故障恢复、UNKNOWN不重发、显式人工批注与采用保持。pageerrors0，真实供应商调用0。脚本上游仍是fixture，不代替商业质量验收。
+- 精确命令（cwd本任务main整合工作树）：`python scripts/verify-native-application.py run --sdk-manifest output/video-quote-sdk/SDK_RESULT.json --case storyboard-assisted-review --out output/video-quote-assisted-native`，exit0；SDK／PG自有容器已移除，临时PG数据丢弃，外部网络0／端口0，原源码指纹保持。完整原始记录与媒体归档在任务证据APPLICATION目录。
+- 本阶段Git已合main的代码、当前固定Linux生产构建和103在线r3是三个层级。本次没有上传镜像／持远端锁／创建候选／切流。下一步仍需单独的后续模块103整体发布验收及正常账户资金条件，不重放r3；VV-01质量、VV-02线上完整验收、真实声音／审片质量均保持未关闭，47未连接。
