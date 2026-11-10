@@ -1,5 +1,5 @@
 import {browserRandomUUID} from "../browser-crypto";
-import {newAudioProject} from "../audio/project";
+import {newAudioProject,withAudioSource} from "../audio/project";
 import type {Artwork} from "../mock-data";
 import type {VideoInputChoice} from "../video/input-choice";
 import type {PublicMediaJob} from "../video/media-job-schema";
@@ -45,9 +45,9 @@ export function createCanvasAudioActions(){
       return patch(id,{expectedRevision:node.revision,audio:{...node.audio,adopted:{artworkId:output.artworkId,sourceArtworkId:render.sourceArtworkId,edit:render.edit,jobId:job.id},render:null}},true);
     };
     return {patch,adopt,
-      async create(at:{x:number;y:number}){
+      async create(at:{x:number;y:number},source?:{artworkId:string;title:string}){
         assert();if(creating.has(scope.key))return;creating.add(scope.key);
-        try{const id=`audio-${browserRandomUUID()}`,location=ports.location(at,id),node=await ports.store.save(id,{...location,title:label("音频","Audio"),audio:newAudioProject()});
+        try{const id=`audio-${browserRandomUUID()}`,location=ports.location(at,id),node=await ports.store.save(id,{...location,title:source?.title||label("音频","Audio"),audio:source?withAudioSource(source.artworkId):newAudioProject()});
           if(scope.documentCurrent())ports.history({kind:"audio-add",records:[node]});if(scope.viewCurrent())ports.created(node);return node;
         }finally{creating.delete(scope.key);}
       },

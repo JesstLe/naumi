@@ -9,6 +9,7 @@ import {ACCESS_FEATURES} from '@/lib/feature-access/catalog';
 import type {EnterpriseRole} from '@/lib/enterprise/contracts';
 import {AdminCenterShell} from '@/components/admin/center-shell';
 import {AdminQueryInput} from '@/components/admin/query-input';
+import {replaceAdminQuery} from '@/components/admin/query-navigation';
 import {CreationBrowser} from './creation-browser';
 import {TrendChart} from './trend-chart';
 import styles from './saas.module.css';
@@ -20,8 +21,8 @@ const num=(v:number|null|undefined)=>v===null||v===undefined?'未记录':v.toLoc
 const date=(v:string|null)=>v?new Date(v).toLocaleDateString('zh-CN'):'永久';
 const tenantStatus:Record<string,string>={active:'正常',suspended:'已暂停',expired:'已到期'};
 export function PlatformConsole({view='overview',tenantId,embedded=false}:{embedded?:boolean;view?:'overview'|'tenants'|'tenant'|'creations';tenantId?:string}){
- const q=useSearchParams(),router=useRouter(),path=usePathname();const [data,setData]=useState<Overview|TenantList|null>(null),[error,setError]=useState(''),[loading,setLoading]=useState(true),[retry,setRetry]=useState(0),[editing,setEditing]=useState<Tenant|null|false>(false);
- const update=(values:Record<string,string>)=>{const p=new URLSearchParams(q.toString());for(const[k,v]of Object.entries(values))v?p.set(k,v):p.delete(k);router.replace(`${path}?${p}`,{scroll:false});};
+ const q=useSearchParams();const [data,setData]=useState<Overview|TenantList|null>(null),[error,setError]=useState(''),[loading,setLoading]=useState(true),[retry,setRetry]=useState(0),[editing,setEditing]=useState<Tenant|null|false>(false);
+ const update=replaceAdminQuery;
  const filters=new URLSearchParams();for(const key of ['q','status','from','to','page','sort'])if(q.get(key))filters.set(key,q.get(key)!);const filterKey=filters.toString();
  useEffect(()=>{if(view==='tenant'||view==='creations')return;const abort=new AbortController();setLoading(true);setError('');setData(null);void api(`${view==='overview'?'/api/admin/saas-overview':'/api/admin/tenants'}?${filterKey}`,{signal:abort.signal}).then(d=>{if(!abort.signal.aborted)setData(d);}).catch(e=>{if(!abort.signal.aborted)setError(e.message);}).finally(()=>{if(!abort.signal.aborted)setLoading(false);});return()=>abort.abort();},[view,filterKey,retry]);
  const overview=view==='overview'?data as Overview|null:null;const tenants=overview?.tenants||data as TenantList|null;

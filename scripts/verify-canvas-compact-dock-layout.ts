@@ -182,3 +182,16 @@ for(const natural of [175,226,340])for(const previous of [1,175,226,360,420,738]
  assert.deepEqual(canvasDockLayout({...fixed,dockMetrics:{...fixed.dockMetrics,dockHeight:previous}}),canvasDockLayout(fixed));checks++;
 }
 console.log(`COMPACT_IMAGE_DOCK_LAYOUT=PASS CHECKS=${checks} WIDTH_MAX=620 NORMAL_MAX_HEIGHT=360 EXPANDED_HEIGHT=420 EXPANDED_MAX_HEIGHT=480 TITLE_TOOLBAR_COLLISIONS=0 RESIZE_STABLE=PASS LEGACY=UNCHANGED`);
+
+// Keyboard-height windows may cover image pixels/title, but must use the space
+// left by the toolbar rather than degenerate to a header-only 34px sliver.
+for(const height of [300,340,360])for(const expanded of [false,true]){
+ const input=sample({canvasSize:{width:1000,height},nodeScreen:{left:450,cx:500,top:110,bottom:168},mediaComposerExpanded:expanded,
+  dockMetrics:{dockHeight:220,dockNaturalHeight:278,toolbarHeight:50,toolbarWidth:714,dockMinimumHeight:224}});
+ const {dock,toolbar,safe}=rectangles(input),available=height-safe.top-safe.bottom-toolbar.height-12;
+ assert(dock.height>=Math.min(80,available));assert(!intersects(dock,toolbar));
+ assert(dock.top>=safe.top&&dock.top+dock.height<=height-safe.bottom);
+ const output=canvasDockLayout(input);
+ assert.deepEqual(canvasDockLayout({...input,dockMetrics:{...input.dockMetrics,dockHeight:34}}),output);
+}
+console.log('COMPACT_SHORT_VIEWPORT=PASS CASES=6 TOOLBAR_CLEAR=1 HEIGHT_STABLE=1');
