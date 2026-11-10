@@ -7,7 +7,7 @@ import {readBounded} from "@/lib/supplier-cost/io";
 import {ModelConfigError} from "@/lib/model-config/types";
 import {TeamError} from "@/lib/teams/errors";
 import {videoProjectKeySchema} from "@/lib/canvas/project-key";
-import {listStoryboardPlans,saveStoryboardPlan} from "@/lib/storyboard/service";
+import {listStoryboardPlans,saveStoryboardPlan,getStoryboardOperation} from "@/lib/storyboard/service";
 export const runtime="nodejs",dynamic="force-dynamic";
 function failure(error:unknown){
   if(error instanceof ModelConfigError||error instanceof TeamError)return NextResponse.json({error:error.message,code:"code" in error?error.code:undefined},{status:error.status});
@@ -16,7 +16,7 @@ function failure(error:unknown){
 }
 export function GET(request:Request){return withCreationReceiptRoute(request,async()=>{
   const actor=await authenticatedEmail(request);if(!actor)return NextResponse.json({error:"请先登录"},{status:401});
-  try{const project=videoProjectKeySchema.parse(new URL(request.url).searchParams.get("projectKey"));return NextResponse.json({plans:await listStoryboardPlans(actor,project)},{headers:{"cache-control":"private, no-store"}});}catch(error){return failure(error);}
+  try{const params=new URL(request.url).searchParams,project=videoProjectKeySchema.parse(params.get("projectKey")),operationId=params.get("operationId");return NextResponse.json(operationId!==null?{plan:await getStoryboardOperation(actor,project,z.uuid().parse(operationId)),operationId}:{plans:await listStoryboardPlans(actor,project)},{headers:{"cache-control":"private, no-store"}});}catch(error){return failure(error);}
 });}
 export function POST(request:Request){return withCreationRoute(request,async()=>{
   const actor=await authenticatedEmail(request);if(!actor)return NextResponse.json({error:"请先登录"},{status:401});

@@ -29,10 +29,14 @@ async function main() {
     // Initialize workbench schema using an expected, non-billable validation error.
     await call({ action: "single/start", body: { prompt: "" } });
     const before = await counters();
+    const tinyImage="data:image/png;base64,"+(await sharp({create:{width:8,height:8,channels:3,background:"#aabbcc"}}).png().toBuffer()).toString("base64");
+    const tooManyReferences=body();Object.assign(tooManyReferences.body,{images:Array(5).fill(tinyImage)});
     for (const [name, input, raw, status, code] of [
       ["invalid JSON", "{", true, 400, "INVALID_REQUEST"],
       ["exact unsupported ratio", body("381:31"), false, 400, "IMAGE_SIZE_UNSUPPORTED"],
-      ["no eligible channel", body("1:1", "low"), false, 409, "IMAGEGEN_NO_CHANNEL"],
+      // Unsupported quality now intentionally selects the published default;
+      // exceed the fixture channel's real four-image capability instead.
+      ["no eligible channel", tooManyReferences, false, 409, "IMAGEGEN_NO_CHANNEL"],
     ] as const) {
       const response = await call(input, "quote", raw), data = await response.json();
       assert.equal(response.status, baseline ? 500 : status, name);

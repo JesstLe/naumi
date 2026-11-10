@@ -23,6 +23,7 @@ export async function ensureStoryboardSchema(){
 function map(row:Record<string,any>):StoryboardPlan{return {id:String(row.id),projectKey:String(row.project_key),revision:Number(row.revision),document:row.document,createdAt:new Date(row.created_at).toISOString(),updatedAt:new Date(row.updated_at).toISOString()};}
 export async function readStoryboardPlans(actor:string,projectKey:string){await ensureStoryboardSchema();return (await getPool().query("SELECT * FROM app_storyboard_plans WHERE email=$1 AND project_key=$2 ORDER BY updated_at DESC,id",[actor,projectKey])).rows.map(map);}
 export async function readStoryboardPlan(actor:string,id:string){await ensureStoryboardSchema();const row=(await getPool().query("SELECT * FROM app_storyboard_plans WHERE email=$1 AND id=$2",[actor,id])).rows[0];return row?map(row):null;}
+export async function readStoryboardOperation(actor:string,operationId:string){await ensureStoryboardSchema();return (await getPool().query("SELECT result FROM app_storyboard_operations WHERE email=$1 AND operation_id=$2",[actor,operationId])).rows[0]?.result as StoryboardPlan|undefined;}
 export async function saveStoryboardTx(tx:PoolClient,actor:string,input:StoryboardWrite,validate:()=>Promise<void>){
   // Same lock order as node changes; the operation receipt and plan CAS commit together.
   await tx.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",[`video-node-graph:${actor}`]);
