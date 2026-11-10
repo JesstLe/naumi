@@ -177,11 +177,11 @@ export function createModelExecutor(deps: Dependencies) {
       const resolved: ResolvedExecutionBundle = { frozen, billing,...(models?{models}:{} ) };
       if(models&&models.version!==frozen.modelVersion)throw new ModelConfigError("EXECUTION_MISMATCH","准备模型快照版本不一致",503);
       if (billing.version !== frozen.billingVersion) throw new ModelConfigError("EXECUTION_MISMATCH", "任务计费快照版本不一致", 503);
-      for (const role of ["image", "text", "vision", "video"] as const) if (frozen[role]) {
+      for (const role of ["image", "text", "vision", "video", "audio"] as const) if (frozen[role]) {
         if (frozen[role]!.modelVersion !== frozen.modelVersion || frozen[role]!.billingVersion !== frozen.billingVersion) throw new ModelConfigError("EXECUTION_MISMATCH", "任务模型与计费组合不一致", 503);
         resolved[role] = await describe(frozen[role]!);
       }
-      const primary = resolved[frozen.primary || "image"] || resolved.text || resolved.vision || resolved.video;
+      const primary = resolved[frozen.primary || "image"] || resolved.text || resolved.vision || resolved.video || resolved.audio;
       return runExecutionBundle(resolved, () => primary ? runModelExecution(primary, action) : action());
     },
   };

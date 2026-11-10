@@ -12,6 +12,7 @@ import { qualityConfiguration, qualityPolicySchema } from "./quality-policy";
 
 export const MODEL_MANAGEMENT_PROTOCOLS = ["openai-images", "new-api-flow", "apimart-images", "openai-chat", "openai-videos", "ark", "kie", "apimart", "gemini", "minimax", "metaso", "tokendance", "tfrouter", "compshare", "comfyui", "autodl", "runninghub"] as const;
 export const featureNames: Record<string, string> = {
+  "audio.speech": "生成配音", "audio.transcribe": "音频转写",
   "image.generate": "自由生图", "image.suite": "组图", "image.aplus": "A+ 页面",
   "canvas.image": "画布生图", "canvas.expand": "画布扩图", "canvas.text-edit": "画布改字", "canvas.annotate": "画布标注",
   "canvas.text-generate": "画布文字", "canvas.assistant": "画布助手", "canvas.ocr": "画布 OCR",

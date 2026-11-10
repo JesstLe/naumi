@@ -15,7 +15,7 @@ import {
 } from "./fields";
 const qualities = ["low", "medium", "high", "xhigh", "max", "auto"],
   sizes = ["1K", "2K", "4K"];
-const modalityLabels = { image: "图片", text: "文字 / 视觉", video: "视频" };
+const modalityLabels = { image: "图片", text: "文字 / 视觉", video: "视频", audio: "声音" };
 type Rule = ModelPool["rules"][number];
 function RuleEditor({
   rule: r,

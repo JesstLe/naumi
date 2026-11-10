@@ -3,6 +3,8 @@ import type { FeatureTariff } from "./types";
 // Only newly introduced optional features receive defaults when reading an old
 // immutable version. Missing original tariffs still fail validation.
 export const CANVAS_FREE_DEFAULTS = {
+    "audio.speech": "生成配音",
+    "audio.transcribe": "音频转写",
     "canvas.text-generate": "画布文字生成与提示词",
     "canvas.assistant": "画布助手对话",
     "canvas.ocr": "画布文字识别（OCR）",

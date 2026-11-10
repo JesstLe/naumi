@@ -1,6 +1,6 @@
 import type { z } from "zod";
 import type { modelConfigSchema } from "./schema";
-export type Modality = "image" | "text" | "video";
+export type Modality = "image" | "text" | "video" | "audio";
 export type ModelConfig = z.infer<typeof modelConfigSchema>;
 export type ModelProvider = ModelConfig["providers"][number];
 export type UpstreamModel = ModelConfig["upstreamModels"][number];

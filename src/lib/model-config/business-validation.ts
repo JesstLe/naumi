@@ -45,7 +45,7 @@ export function validateBusinessConfig(config: ModelConfig) {
       if (p?.mode === "usage" && (MODEL_BINDINGS[binding!].modality !== "text" || o.unit !== "task")) fail("首版实际用量结算仅开放有 usage 回执的文字任务", field);
       const policy = o.routing;
       if (policy?.enabled) {
-        if (model!.target.type !== "upstream" || MODEL_BINDINGS[binding!].modality === "video") fail("阶段路由需要直连图片/文字模型；视频及外部混合池保持原执行协议", field);
+        if (model!.target.type !== "upstream" || !["image", "text"].includes(MODEL_BINDINGS[binding!].modality)) fail("阶段路由需要直连图片/文字模型；视频、音频及外部混合池保持原执行协议", field);
         const targets = [policy.defaultUpstreamId, ...policy.rules.map(r => r.targetUpstreamId)];
         if (new Set(policy.rules.map(r => r.id)).size !== policy.rules.length) fail("路由规则编号重复", field);
         if (new Set(policy.rules.map(r => `${r.stage}:${r.priority}`)).size !== policy.rules.length) fail("同阶段规则优先级重复", field);
