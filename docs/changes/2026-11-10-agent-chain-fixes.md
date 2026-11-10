@@ -15,7 +15,7 @@
 | 审计项 | 修复 |
 | --- | --- |
 | A01 | 新客户端已有会话只发送本轮输入，历史由服务器恢复；兼容旧客户端长 assistant 消息和超过 100 条历史，保留请求总字节及新用户输入上限。 |
-| A02 | 单调 sequence 持久化并恢复；裁剪/失效游标返回 reset/history_required，客户端回读持久历史。 |
+| A02 | 单调 sequence 持久化并恢复；裁剪/失效游标返回 reset/history_required，客户端回读持久历史，旧缓冲不能覆盖快照，后续回复不能替换用户原文。 |
 | A03 | 画布初始持久化失败清理 running/canvasExecuting/回调，CAS 冲突返回 409，未调用模型。 |
 | A04 | error、EOF、停止保留已输出正文和步骤；无 final 的 EOF 明确失败，取消客户端重复自动保存。 |
 | A05–A06 | 两入口共用终态判断；length 不再假报成功，受限/待确认事实覆盖模型成功承诺；工作台持久化成功后才发 final。 |
@@ -49,7 +49,7 @@
 | `node scripts/verify-agent-chain-fixes.cjs` | A01–A16 全部通过；当前函数/模块回归，I/O 端口受控；含先受理后 404 与并发错误状态隔离。 |
 | `node --import tsx --conditions react-server scripts/verify-agent-chain-history-pg.ts` | 18 项，真实 PG advisory lock 等待、全局 busy/unknown、跨实例历史、删除后 CAS 阻止模型调用。 |
 | `node --import tsx --conditions react-server scripts/verify-agent-chain-gateway-pg.ts` | 18 项，实际 Routes、令牌、上传/归属媒体字节、幂等、并发预算、实际 CLI/MCP 子进程断连及 status 恢复；内部工具端点为 fixture。 |
-| `node scripts/verify-workbench-recovery.cjs` | React 19 + Chromium 50 项；长会话及 error/EOF 保留正文/步骤，22 次 fixture PUT，0 次客户端保存 POST。 |
+| `node scripts/verify-workbench-recovery.cjs` | React 19 + Chromium 51 项；长会话、裁剪恢复及 error/EOF 保留正文/步骤，22 次 fixture PUT，0 次客户端保存 POST。 |
 | `node scripts/verify-capacity-agent-streams.cjs` | 全部通过，含本机 HTTP 断连、观察者/超时/清理及 12009 个 Markdown 差分样本。 |
 | `node scripts/verify-canvas-assistant-session.cjs` | 15 场景、55 检查通过。 |
 | `node scripts/verify-agent-chat-attachments.cjs` | 31 检查通过；更新旧脚本模块路径与 bundler，未改变产品归属校验。 |
@@ -58,3 +58,9 @@
 | `node node_modules/typescript/bin/tsc --noEmit --pretty false` | 通过。 |
 
 未完成项与下一步：本轮 16 项无剩余代码待修；真实供应商、生产双槽、生产容量及新增平台功能不在本轮验收范围。上线须按固定版本蓝绿流程执行，不把上述本机证据写成线上完成。主线整合与最终验证结果在下文记录。
+
+## 主线整合与最终检查
+
+功能提交 `82c2928ca3280723f4f907d74a6452d0a0292c09`；已将 `origin/main` 的 `b678fa7042f4f528608ad96a62f476f398ef8a9d` 普通合入，整合提交 `8029b67c806a2e2e7cd165175f0397c5fdd3b809`，无冲突，保留画布 dock/后台查询改动。本次完成 2 个业务模块，整合主线后计数归零；文档不计功能或发布次数。
+
+整合后 A01–A16、画布会话 55 检查、附件 31 检查、工作台浏览器 51 项、Harness 104 项、真实 PG Agent 计费（冻结报价、稳定 operation、40 次新调用、余额拒绝、0 供应商请求）、完整 tsc 和改动源文件 ESLint 均通过。无新增生产验收结论。

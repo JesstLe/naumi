@@ -163,11 +163,13 @@ export function createWorkbenchSession() {
         }
         const events = Array.isArray(data.events) ? data.events : [];
         const lastAssistant = [...events].reverse().find(event => event.type === "assistant");
-        if (lastAssistant?.data?.text) {
+        if (!data.reset && lastAssistant?.data?.text) {
           context.setMessages(previous => {
             if (!ownsObservation(owner)) return previous;
             const copy = [...previous];
-            copy[copy.length - 1] = { role: "assistant", content: String(lastAssistant.data.text) };
+            const last=copy.at(-1);
+            if(last?.role==="assistant")copy[copy.length - 1] = {...last,content:String(lastAssistant.data.text)};
+            else copy.push({role:"assistant",content:String(lastAssistant.data.text)});
             return copy;
           });
         }
