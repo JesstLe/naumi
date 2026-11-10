@@ -1,5 +1,28 @@
 [
   {
+    "version": "1794327098",
+    "title": {
+      "zh": "视频审片与声音编辑更新",
+      "en": "Video review and audio editing"
+    },
+    "improvements": [
+      {
+        "zh": "新增画面与原片声音辅助检查入口，检查结果供人工复核。",
+        "en": "Added visual and source-audio review tools with findings for manual review."
+      },
+      {
+        "zh": "支持配音、转写和逐句声音采用，保留原稿与已有剪辑。",
+        "en": "Create narration, transcribe audio and adopt individual lines while preserving the script and existing edits."
+      }
+    ],
+    "fixes": [
+      {
+        "zh": "完善检查中断后的恢复，修复生成按钮加载时的状态显示。",
+        "en": "Improved interrupted-review recovery and corrected the generation button while loading."
+      }
+    ]
+  },
+  {
     "version": "1794310315",
     "title": {
       "zh": "分镜创作与成片交付更新",
