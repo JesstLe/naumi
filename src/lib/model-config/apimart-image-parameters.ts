@@ -20,7 +20,7 @@ export function apimartImageParameters(scope: ModelExecutionScope, requested: { 
   // exact-size contract as native 16-grid pixels; apib returns exactly those
   // dimensions (probed 2026-10-27), so the ratio itself never reaches the wire.
   const named = policy.ratios.includes(requested.ratio);
-  const exactPixels = named ? undefined : exactRatioPixels(requested.ratio, scope.frozen.publicModelId);
+  const exactPixels = named ? undefined : exactRatioPixels(requested.ratio, scope.parameterModelId || scope.frozen.publicModelId);
   if ((!named && !exactPixels) || !conventionalContract(map) && (!scope.capabilities.qualities.includes(requested.quality as never) ||
       !scope.capabilities.nativeResolutions.includes(requested.resolution as never)))
     throw new ModelConfigError("MODEL_INCOMPATIBLE", "异步图片通道未开放此质量、尺寸或比例", 422);

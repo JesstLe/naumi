@@ -1,3 +1,4 @@
+import {canonicalPublicModelId,parameterModelIdentity} from "./public-identity";
 import {canonicalConfig} from './snapshot-value';
 import {compileImageParameterPlan,imagePlanSelection,type ImageParameterPlans} from './image-parameter-plan';
 import {resolveImageResolution, resolutionFacts, upstreamAcceptsResolution} from "./resolution-fallback";
@@ -36,7 +37,7 @@ export function createModelExecutor(deps: Dependencies) {
       if(!frozen.imageParameterPlans||!Object.keys(frozen.imageParameterPlans).length)throw new ModelConfigError('EXECUTION_MISMATCH','冻结参数计划缺失',503);
       for(const [id,plan]of Object.entries(frozen.imageParameterPlans)){
         const u=snapshot.config.upstreamModels.find(u=>u.id===id),p=snapshot.config.providers.find(p=>p.id===u?.providerId);
-        if(!u||!p||plan.upstreamId!==id||plan.modelVersion!==frozen.modelVersion||canonicalConfig(plan)!==canonicalConfig(compileImageParameterPlan(u,plan.requested,{publicModelId:frozen.publicModelId,protocol:p.protocol,modelVersion:frozen.modelVersion,adapter:p.options?.imageAdapter})))throw new ModelConfigError('EXECUTION_MISMATCH','冻结参数映射与原配置不符',503);
+        if(!u||!p||plan.upstreamId!==id||plan.modelVersion!==frozen.modelVersion||canonicalConfig(plan)!==canonicalConfig(compileImageParameterPlan(u,plan.requested,{publicModelId:parameterModelIdentity(snapshot.config,frozen.publicModelId),protocol:p.protocol,modelVersion:frozen.modelVersion,adapter:p.options?.imageAdapter})))throw new ModelConfigError('EXECUTION_MISMATCH','冻结参数映射与原配置不符',503);
       }
     }
     const frontendModel = frontendModelSelection(snapshot, frozen.modality, frozen.publicModelId);
@@ -77,7 +78,7 @@ export function createModelExecutor(deps: Dependencies) {
       // that the generic simulator cannot reconstruct. Never widen it on resume.
       // The absent field preserves the interpretation of historical paid tasks.
       if(frozen.imageUpstreamIds)for(const id of eligible)if(!frozen.imageUpstreamIds.includes(id))eligible.delete(id);
-      const targets=await Promise.all(publicModel.supplierRouting.channels.filter(c=>c.enabled&&eligible.has(c.upstreamId)).map(async c=>{const u=snapshot.config.upstreamModels.find(u=>u.id===c.upstreamId)!;return {...c,scope:{frozen,frontendModel,channelGuard:{upstreamId:u.id},connection:await connectionFor(u.id),capabilities:u.capabilities,parameterMap:u.parameterMap,procurement:u.procurement,businessOption,audited:true}};}));
+      const targets=await Promise.all(publicModel.supplierRouting.channels.filter(c=>c.enabled&&eligible.has(c.upstreamId)).map(async c=>{const u=snapshot.config.upstreamModels.find(u=>u.id===c.upstreamId)!;return {...c,scope:{parameterModelId:parameterModelIdentity(snapshot.config,frozen.publicModelId),frozen,frontendModel,channelGuard:{upstreamId:u.id},connection:await connectionFor(u.id),capabilities:u.capabilities,parameterMap:u.parameterMap,procurement:u.procurement,businessOption,audited:true}};}));
       if(!targets.length)throw new ModelConfigError("MODEL_INCOMPATIBLE","没有符合本次参数的供应通道",400);
       // Resolve only eligible targets. A disabled/incompatible first entry must
       // not require its credentials or dictate the healthy targets' transport.
@@ -92,6 +93,7 @@ export function createModelExecutor(deps: Dependencies) {
       })));
       scope.routing = { policy: plan.policy, matchedRuleId: plan.matchedRuleId, targets, spentMicros: BigInt(0) };
     }
+    scope.parameterModelId=parameterModelIdentity(snapshot.config,frozen.publicModelId);
     return scope;
   };
   return {
@@ -102,6 +104,7 @@ export function createModelExecutor(deps: Dependencies) {
       const purpose = MODEL_BINDINGS[input.binding as ModelBinding];
       if (!purpose) throw new ModelConfigError("INVALID_REQUEST", "未知模型用途");
       const config = validateModelConfig(input.snapshot.config, deps);
+      input = {...input,requestedModelId:canonicalPublicModelId(config.publicModels,input.requestedModelId)};
       const preset = selectedImagePreset(config,input.feature,input.requestedModelId,input.binding);
       let requestedParameters = input.requestedParameters || (preset && input.facts ? {quality:input.facts.quality,resolution:input.facts.resolution,ratio:input.facts.ratio||"1:1"} : undefined);
       if (preset && input.facts && !prepared) {
@@ -163,7 +166,7 @@ export function createModelExecutor(deps: Dependencies) {
       if(planVersion&&input.facts&&!imageParameterPlans){
         const ids=imageUpstreamIds|| (model.supplierRouting?simulateModel(input.snapshot,input.billing,model.id,input.facts,deps).eligible.map(c=>c.upstreamId):plan?plan.targets:[upstream!.id]);
         imageParameterPlans=Object.fromEntries(ids.map(id=>{const u=config.upstreamModels.find(u=>u.id===id)!,p=config.providers.find(p=>p.id===u.providerId)!;
-          return [id,compileImageParameterPlan(u,imagePlanSelection(input.facts!),{publicModelId:model.id,protocol:p.protocol,modelVersion:input.snapshot.version,adapter:p.options?.imageAdapter})];}));
+          return [id,compileImageParameterPlan(u,imagePlanSelection(input.facts!),{publicModelId:parameterModelIdentity(config,model.id),protocol:p.protocol,modelVersion:input.snapshot.version,adapter:p.options?.imageAdapter})];}));
       }
       return { ...(planVersion?{imageParameterPlanVersion:planVersion,imageParameterPlans}:{}), ...(imageUpstreamIds ? {imageUpstreamIds:[...imageUpstreamIds]} : {}), ...(video ? {video} : {}), ...(requestedParameters ? {requestedParameters} : {}), ...(input.feature ? { feature: input.feature } : {}), modelVersion: input.snapshot.version, billingVersion: input.billing.version, modelDigest: input.snapshot.digest, publicModelId: model.id, binding: input.binding, modality: model.modality, target: structuredClone(target), ...(provider?.credentialRef ? { credentialRef: provider.credentialRef } : {}), ...(projection ? { routerDigest: projection.digest } : {}), ...(input.facts ? { facts: structuredClone(input.facts) } : {}) };
     },

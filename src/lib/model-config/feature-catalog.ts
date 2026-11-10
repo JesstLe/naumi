@@ -1,8 +1,9 @@
+import {canonicalPublicModelId} from "./public-identity";
 import type {FeatureId} from '../billing/rules/registry';
 import {compactImageModelOptions,imageModelDisplayId} from '../image-model-routing';
 import {adminConfiguredFeature} from './selection-policy';
 
-export type FeatureCatalog={managed:boolean;supported?:boolean;available?:boolean;feature:FeatureId;version?:number;defaultModelId?:string;models:{id:string;label:string;creditHint?:string;modality:string;supportsEdit:boolean;qualities?:string[];qualityLabels?:Record<string,string>;nativeResolutions?:string[];generationParameters?:{ratios?:string[];resolutions?:string[];combinations?:string[]}}[]};
+export type FeatureCatalog={managed:boolean;supported?:boolean;available?:boolean;feature:FeatureId;version?:number;defaultModelId?:string;models:{id:string;previousIds?:string[];label:string;creditHint?:string;modality:string;supportsEdit:boolean;qualities?:string[];qualityLabels?:Record<string,string>;nativeResolutions?:string[];generationParameters?:{ratios?:string[];resolutions?:string[];combinations?:string[]}}[]};
 export type FeatureCatalogScope={actor:string;session:number;workspace:string;revision:number};
 export type FeatureCatalogSnapshot={catalog:FeatureCatalog|null;selected:string;error:string|null};
 export const EMPTY_FEATURE_CATALOG:FeatureCatalogSnapshot={catalog:null,selected:'',error:null};
@@ -37,7 +38,7 @@ export function createFeatureCatalog(ports:Ports){
   if(!current()||adminConfiguredFeature(feature))return undefined;
   const state=snapshots.get(feature);if(!state?.catalog)return undefined;
   const kind=canvasKind(feature),group=kind?canvasSelections.get(kind):undefined;
-  return state.catalog.models.find(model=>group&&imageModelDisplayId(model.id)===imageModelDisplayId(group))?.id||state.selected||state.catalog.defaultModelId;
+  return state.catalog.models.find(model=>group&&imageModelDisplayId(model.id)===imageModelDisplayId(canonicalPublicModelId(state.catalog!.models,group)))?.id||state.selected||state.catalog.defaultModelId;
  }
  function accept(feature:FeatureId,input:FeatureCatalog,captured:FeatureCatalogScope){
   assertCurrent(captured);const previous=snapshots.get(feature);let catalog=input;
@@ -51,7 +52,7 @@ export function createFeatureCatalog(ports:Ports){
    const kind=canvasKind(feature),savedGroup=kind?ports.preference(captured,`naumi:model:canvas:${kind}`):undefined;
    if(kind&&savedGroup)canvasSelections.set(kind,savedGroup);
    const saved=(kind?canvasSelections.get(kind):undefined)||previous?.selected||ports.preference(captured,`naumi:model:${feature}`);
-   selected=catalog.models.find(model=>imageModelDisplayId(model.id)===imageModelDisplayId(saved||''))?.id||catalog.models.find(model=>model.id===catalog.defaultModelId)?.id||catalog.models[0]?.id||'';
+   selected=catalog.models.find(model=>imageModelDisplayId(model.id)===imageModelDisplayId(canonicalPublicModelId(catalog.models,saved||'')))?.id||catalog.models.find(model=>model.id===catalog.defaultModelId)?.id||catalog.models[0]?.id||'';
   }
   snapshots.set(feature,{catalog,selected,error:null});if(catalog.managed)ports.version(catalog.version);emit(feature);
   if(previous?.catalog?.version&&previous.catalog.version!==catalog.version)ports.selectionChanged();

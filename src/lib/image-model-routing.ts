@@ -1,5 +1,7 @@
+import {canonicalPublicModelId} from "./model-config/public-identity";
 export type ImageModelRoutingOption = {
   id: string;
+  previousIds?: string[];
   provider?: string;
   label?: string;
   supportsEdit?: boolean;
@@ -39,6 +41,7 @@ export function routeImageModel(
   ratio: string,
   available: ImageModelRoutingOption[] | string[]
 ) {
+  model = canonicalPublicModelId(available.map(item => typeof item === "string" ? {id:item} : item), model);
   const prefix = flowModelPrefix(model);
   const variant = flowVariantForRatio(ratio);
   if (!prefix || !variant) return model;
@@ -74,6 +77,7 @@ export function compactImageModelOptions<T extends ImageModelRoutingOption>(
     const label = item.label?.trim();
     const managed = item.provider === "managed" || item.modality === "image";
     const custom = managed && label && label !== item.id && family.every(option => option.label?.trim() === label);
-    return [{ ...item, label: custom ? label : displayId }];
+    const previousIds = family.flatMap(member => member.previousIds || []);
+    return [{ ...item, ...(previousIds.length ? {previousIds} : {}), label: custom ? label : displayId }];
   });
 }
