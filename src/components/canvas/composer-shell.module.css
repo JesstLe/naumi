@@ -21,7 +21,9 @@
 .headerActions button { display: flex; width: 28px; height: 28px; align-items: center; justify-content: center; border: 0; border-radius: 7px; color: var(--canvas-ui-muted); background: transparent; cursor: pointer; }
 .headerActions button:hover { color: var(--canvas-ui-text); background: var(--canvas-ui-soft-hover); }
 .shell button:focus-visible, .shell select:focus-visible, .shell textarea:focus-visible, .shell [contenteditable="true"]:focus-visible { outline: 2px solid var(--canvas-ui-accent); outline-offset: 2px; }
-.shell [data-composer-body] { min-height: 0; flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; padding: 4px 16px 12px; }
+.shell [data-composer-body] { min-height: 0; flex: 1 1 auto; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: 4px 16px 12px; }
+.shell[data-composer-kind="text"] [data-composer-body] { align-items: flex-start; }
+.shell[data-composer-kind="text"] [role="tablist"] { flex-shrink: 0; }
 .shell [data-composer-body] textarea { width: 100%; min-height: 112px; color: var(--canvas-ui-text); font-size: 14px; line-height: 1.65; }
 .shell [data-composer-body] textarea::placeholder { color: var(--canvas-ui-muted); }
 .shell[data-composer-expanded="true"] [data-composer-body] textarea { min-height: 220px; }
@@ -49,7 +51,7 @@
  * their existing layout. The body remains the only vertical scroll surface. */
 .shell[data-composer-kind="image"][data-composer-density="compact"] .header { min-height: 32px; padding: 1px 10px 1px 12px; }
 .shell[data-composer-kind="image"][data-composer-density="compact"] [data-composer-body] { padding: 2px 12px 8px; }
-.shell[data-composer-kind="image"][data-composer-density="compact"] [data-composer-body] [role="textbox"][contenteditable] { min-height: 56px; }
+.shell[data-composer-kind="image"][data-composer-density="compact"] [data-composer-body] [role="textbox"][contenteditable] { min-height: 112px; }
 .shell[data-composer-kind="image"][data-composer-density="compact"][data-composer-expanded="true"] [data-composer-body] [role="textbox"][contenteditable] { min-height: 160px; }
 .shell[data-composer-kind="image"][data-composer-density="compact"] .footer { min-height: 62px; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; }
 .shell[data-composer-kind="image"][data-composer-density="compact"] .controls { flex: 1 1 300px; }
@@ -86,9 +88,8 @@
   .shell[data-composer-kind="image"][data-composer-density="compact"] .controls { flex-basis: 100%; }
   .shell[data-composer-kind="image"][data-composer-density="compact"] .actions { flex: 1 1 100%; }
 }
-@media (max-height: 600px) {
-  /* A short/keyboard-sized viewport cannot show every control at once.
-     Scroll the actual composer instead of clipping its submit row. */
-  .shell { overflow-y: auto; overscroll-behavior: contain; }
-  .shell [data-composer-body] { min-height: 64px; flex-shrink: 0; }
-}
+/* Slot height matters as well as viewport height. This also covers a dock
+ * squeezed beside a large node on an otherwise tall desktop. */
+.shell[data-composer-scroll="shell"] { overflow-y: auto; overscroll-behavior: contain; }
+.shell[data-composer-scroll="shell"] [data-composer-body] { min-height: 112px; flex: 0 0 auto; overflow: visible; }
+.shell[data-composer-scroll="shell"] [data-testid="video-compact-composer"] { flex-shrink: 0; overflow: visible; }

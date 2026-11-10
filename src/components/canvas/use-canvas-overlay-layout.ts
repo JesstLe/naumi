@@ -53,7 +53,7 @@ export function useCanvasOverlayLayout(input:Input){
     // makes a collapse converge to the same slot for identical content.
     const bodyStyle=body?getComputedStyle(body):null;
     const naturalBody=body?Array.from(body.children).reduce((height,child)=>{const style=getComputedStyle(child);return height+(child as HTMLElement).offsetHeight+(parseFloat(style.marginTop)||0)+(parseFloat(style.marginBottom)||0);},(parseFloat(bodyStyle!.paddingTop)||0)+(parseFloat(bodyStyle!.paddingBottom)||0)):0;
-    const next={dockHeight:dock.offsetHeight,toolbarHeight:toolbar.offsetHeight,toolbarWidth:toolbar.offsetWidth,dockMinimumHeight:(header?.offsetHeight||38)+(footer?.offsetHeight||90)+50,
+    const next={dockHeight:dock.offsetHeight,toolbarHeight:toolbar.offsetHeight,toolbarWidth:toolbar.offsetWidth,dockMinimumHeight:(header?.offsetHeight||38)+(footer?.offsetHeight||90)+128,
       dockNaturalHeight:input.compactImage?Math.ceil((header?.offsetHeight||0)+(footer?.offsetHeight||0)+naturalBody+2):0};
     return previous.dockHeight===next.dockHeight&&previous.toolbarHeight===next.toolbarHeight&&previous.toolbarWidth===next.toolbarWidth&&previous.dockMinimumHeight===next.dockMinimumHeight&&previous.dockNaturalHeight===next.dockNaturalHeight?previous:next;});
   };

@@ -25,7 +25,9 @@ export async function GET(request: Request) {
   if (!["result", "input"].includes(slot) || !/^(0|[1-9]\d?)$/.test(indexText))
     return biJson({ error: "图片参数无效" }, 400);
   const result = await getPool().query(
-    `SELECT a.email,a.image_url,a.creation_provenance,a.source_url,j.kind AS job_kind,c.kind AS canvas_task_kind,
+    slot === "result"
+      ? "SELECT email,image_url FROM app_artworks WHERE id=$1"
+      : `SELECT a.email,a.image_url,a.creation_provenance,a.source_url,j.kind AS job_kind,c.kind AS canvas_task_kind,
       ${ARTWORK_INPUT_COLUMNS} FROM app_artworks a ${ARTWORK_INPUT_JOINS} WHERE a.id=$1`,
     [id],
   );

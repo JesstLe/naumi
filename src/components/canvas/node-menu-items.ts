@@ -1,9 +1,10 @@
 import { Clapperboard, FileText, Film, Image, Mountain, Music2, UserRound, Video } from "lucide-react";
 import type { CanvasActionMenuItem } from "./canvas-action-menu";
+import type { CanvasCreatableNodeKind } from "@/lib/canvas/node-creation";
 
-export type CreatableCanvasNode = "text" | "image" | "video" | "director" | "character" | "scene" | "audio" | "timeline";
+export type CreatableCanvasNode = CanvasCreatableNodeKind;
 
-/** One ordered list for the toolbar and the blank-canvas context submenu. */
+/** One ordered list for toolbar, blank-canvas and reference creation. */
 export function canvasNodeMenuItems({ L, readOnly, videoDisabled, onCreate }: {
   L: (zh: string, en: string) => string;
   readOnly: boolean;

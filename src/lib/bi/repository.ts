@@ -32,24 +32,49 @@ export async function logBiAccess(
 // Filter each source directly: assembling all historical email rows first is both
 // unnecessary and expensive. Correlated metadata lookups preserve orphan accounts.
 const scopeSql = () => `WITH query_window AS (SELECT $1::timestamptz AS starts, $2::timestamptz AS ends,
-  $3::text AS email,$4::text AS keyword,$5::text AS account_type)`;
+  $3::text AS email,$4::text AS keyword,$5::text AS account_type),
+  enterprise_directory AS MATERIALIZED (
+    SELECT email,string_agg(DISTINCT company,'、' ORDER BY company) AS company FROM (
+      SELECT t.owner_email AS email,t.name AS company FROM app_account_teams t JOIN app_enterprise_settings s ON s.team_id=t.id
+      UNION ALL SELECT m.email,t.name FROM app_enterprise_members m JOIN app_account_teams t ON t.id=m.enterprise_id
+        JOIN app_enterprise_settings s ON s.team_id=t.id
+    ) memberships GROUP BY email
+  ), account_directory AS MATERIALIZED (
+    SELECT i.email,COALESCE(u.name,'') AS name,COALESCE(e.company,p.company,'') AS company,
+      CASE WHEN e.company IS NOT NULL THEN 'enterprise' ELSE COALESCE(p.account_type,'unknown') END AS account_type
+    FROM (SELECT email FROM app_users UNION SELECT email FROM app_bi_account_profiles UNION SELECT email FROM enterprise_directory) i
+    LEFT JOIN app_users u ON u.email=i.email LEFT JOIN app_bi_account_profiles p ON p.email=i.email
+    LEFT JOIN enterprise_directory e ON e.email=i.email
+  ), matching_accounts AS MATERIALIZED (
+    SELECT email FROM account_directory WHERE ($4::text='' OR position(lower($4) in lower(email||' '||name||' '||company))>0)
+      AND ($5::text='' OR account_type=$5)
+  )`;
 const scope = scopeSql();
 // Current membership enriches the account directory only; it does not rewrite
 // the enterprise attribution of any historical task or monetary event.
-const enterpriseNames=(email:string)=>`(SELECT string_agg(DISTINCT directory_team.name,'、' ORDER BY directory_team.name)
-  FROM app_account_teams directory_team JOIN app_enterprise_settings directory_settings ON directory_settings.team_id=directory_team.id
-  WHERE directory_team.owner_email=${email} OR EXISTS(SELECT 1 FROM app_enterprise_members directory_member WHERE directory_member.enterprise_id=directory_team.id AND directory_member.email=${email}))`;
-const effectiveAccountType=(email:string)=>`CASE WHEN ${enterpriseNames(email)} IS NOT NULL THEN 'enterprise' ELSE COALESCE((SELECT filter_profile.account_type FROM app_bi_account_profiles filter_profile WHERE filter_profile.email=${email}),'unknown') END`;
+// Directory predicates become hashed membership checks instead of per-event
+// user/profile/team queries. Historical emails absent from the directory still
+// participate with their original empty name/company and unknown account type.
 const accountFilter = (email: string, authorizedEmployees = false, scopeBind = 8) => `
   (${email} IS NOT NULL AND ($3::text='' OR ${email}=$3)
-  AND ($4::text='' OR position(lower($4) in lower(${email}||' '||COALESCE((SELECT filter_user.name FROM app_users filter_user WHERE filter_user.email=${email}),'')||' '||COALESCE(${enterpriseNames(email)},(SELECT filter_profile.company FROM app_bi_account_profiles filter_profile WHERE filter_profile.email=${email}),'')))>0)
-  AND ($5::text='' OR ${effectiveAccountType(email)}=$5)
+  AND (($4::text='' AND $5::text='') OR ${email} IN (SELECT email FROM matching_accounts)
+    OR (${email} NOT IN (SELECT email FROM account_directory) AND $5::text IN ('','unknown')
+      AND ($4::text='' OR position(lower($4) in lower(${email}||'  '))>0)))
   ${authorizedEmployees ? `AND ${email}=ANY($${scopeBind}::text[])` : ''})`;
 const inRange = (alias: string) =>
   `${alias}.created_at >= $1::timestamptz AND ${alias}.created_at < $2::timestamptz`;
 const values = (q: BiQuery) => [q.start, q.end, q.email, q.q, q.accountType];
 const imageOperationStatus = "COALESCE(j.snapshot#>>'{result,status}',j.snapshot->>'status','unknown')";
-const normalizedOperationStatus = (value:string) => `CASE WHEN ${value} IN ('done','completed','success') THEN 'succeeded' WHEN ${value} IN ('error','rejected') THEN 'failed' WHEN ${value} IN ('pending','reviewing') THEN 'queued' WHEN ${value} IN ('processing','generating') THEN 'running' WHEN ${value} IN ('queued','running','succeeded','partial','failed','cancel_requested','cancelled','needs_review') THEN ${value} ELSE 'needs_review' END`;
+// Compare indexed raw state to a constant alias set; wrapping the column in a
+// CASE forced a detoast/normalization of every historical image snapshot.
+const creationStatusFilter = (value:string) => `(${value}=ANY(CASE $6::text
+  WHEN 'creation:succeeded' THEN ARRAY['done','completed','success','succeeded']
+  WHEN 'creation:failed' THEN ARRAY['error','rejected','failed']
+  WHEN 'creation:queued' THEN ARRAY['pending','reviewing','queued']
+  WHEN 'creation:running' THEN ARRAY['processing','generating','running']
+  WHEN 'creation:partial' THEN ARRAY['partial'] WHEN 'creation:cancel_requested' THEN ARRAY['cancel_requested']
+  WHEN 'creation:cancelled' THEN ARRAY['cancelled'] ELSE ARRAY[]::text[] END)
+  OR ($6='creation:needs_review' AND COALESCE(${value} NOT IN ('done','completed','success','error','rejected','pending','reviewing','processing','generating','queued','running','succeeded','partial','failed','cancel_requested','cancelled'),true)))`;
 // Only page keys enter this projection. In particular, UNION ALL + an outer
 // LIMIT can otherwise evaluate JSON and correlated billing for every candidate.
 const operationPageSource = `SELECT 'app_image_jobs'::text AS source_table,EXISTS(SELECT 1 FROM app_ledger WHERE email=j.email AND id='led-image-'||j.id AND kind='consume') AS has_ledger_charge,j.id,j.email,j.kind,j.created_at,j.updated_at,
@@ -78,7 +103,7 @@ const operationPageSource = `SELECT 'app_image_jobs'::text AS source_table,EXIST
  * status filter still reads snapshot before paging; it needs an indexed state
  * projection to avoid that work, not an early LIMIT that drops matching rows. */
 function operationKeys(authorizedEmployees = false) {
-  const status = (value: string, review: string) => `($6::text='' OR ${value}=$6 OR ($6 LIKE 'creation:%' AND ${normalizedOperationStatus(value)}=substring($6 from 10)) OR ($6='review' AND (${review})))`;
+  const status = (value: string, review: string) => `($6::text='' OR ${value}=$6 OR ${creationStatusFilter(value)} OR ($6='review' AND (${review})))`;
   return `SELECT 'app_image_jobs'::text AS source_table,j.id,j.email,j.created_at
     FROM app_image_jobs j WHERE ${accountFilter("j.email", authorizedEmployees, 9)} AND (${inRange("j")} OR $7::text<>'') AND ($7='' OR j.id=$7) AND ($8::text='' OR $8='app_image_jobs')
       AND ${status(imageOperationStatus, "j.snapshot->>'status'='needs_attention' OR j.snapshot->>'stage' IN ('checking','reviewing') OR j.snapshot->>'error' LIKE '%核查%'")}
@@ -218,7 +243,7 @@ export async function queryBi(q: BiQuery, access?: { client: PoolClient; allowed
       COALESCE(a.artworks,0)::int AS artworks,COALESCE(o.received,0)::float8 AS received_cents,
       COALESCE(o.purchased_credits,0)::float8 AS purchased_credits
       FROM app_users u JOIN selected k ON k.email=u.email LEFT JOIN app_bi_account_profiles p ON p.email=u.email
-      LEFT JOIN LATERAL (SELECT ${enterpriseNames('u.email')} AS company) membership ON true
+      LEFT JOIN enterprise_directory membership ON membership.email=u.email
       LEFT JOIN LATERAL (SELECT sum(remaining) AS principal,sum(remaining) FILTER(WHERE expires_at<now()+interval '30 days') AS expiring FROM app_credit_batches WHERE email=u.email AND expires_at>now() AND remaining>0) b ON true
       LEFT JOIN user_usage l ON l.email=u.email
       LEFT JOIN LATERAL (SELECT count(*) AS artworks FROM app_artworks a WHERE a.email=u.email AND a.deleted_at IS NULL AND ${inRange("a")}) a ON true
@@ -330,8 +355,9 @@ async function overview(q: BiQuery, pool: PoolClient): Promise<BiOverview> {
   const params = values(q);
   const results = [
     await pool.query(
-      `${scope} SELECT count(*)::int AS accounts,count(*) FILTER(WHERE ${effectiveAccountType("u.email")}='enterprise')::int AS enterprises,
-      COALESCE(sum(u.credits_used),0)::float8 AS reserved FROM app_users u LEFT JOIN app_bi_account_profiles p ON p.email=u.email WHERE ${accountFilter("u.email")}`,
+      `${scope} SELECT count(*)::int AS accounts,count(*) FILTER(WHERE membership.company IS NOT NULL OR p.account_type='enterprise')::int AS enterprises,
+      COALESCE(sum(u.credits_used),0)::float8 AS reserved FROM app_users u LEFT JOIN app_bi_account_profiles p ON p.email=u.email
+      LEFT JOIN enterprise_directory membership ON membership.email=u.email WHERE ${accountFilter("u.email")}`,
       params,
     ),
     await pool.query(

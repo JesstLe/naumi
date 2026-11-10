@@ -18,7 +18,7 @@ export type AdminUserRow = {
   note: string; // 管理员备注（仅后台可见）
 };
 
-export async function listAllUsers(): Promise<AdminUserRow[]> {
+export async function listAllUsers(emails?: readonly string[]): Promise<AdminUserRow[]> {
   await ensureSchema();
   const { rows } = await getPool().query(
     `SELECT u.email, u.name, u.plan, u.role,
@@ -27,10 +27,12 @@ export async function listAllUsers(): Promise<AdminUserRow[]> {
             COALESCE(l.consumed7d,0) AS consumed7d
        FROM app_users u
        LEFT JOIN (SELECT email,count(*) AS artworks,count(*) FILTER(WHERE created_at>now()-interval '7 days') AS artworks7d
-         FROM app_artworks GROUP BY email) a ON a.email=u.email
+         FROM app_artworks WHERE ($1::text[] IS NULL OR email=ANY($1)) GROUP BY email) a ON a.email=u.email
        LEFT JOIN (SELECT email,-sum(delta) AS consumed7d FROM app_ledger
-         WHERE kind='consume' AND delta<0 AND reason<>'管理员调整积分' AND created_at>now()-interval '7 days' GROUP BY email) l ON l.email=u.email
-      ORDER BY artworks7d DESC, u.joined_at ASC`
+         WHERE ($1::text[] IS NULL OR email=ANY($1)) AND kind='consume' AND delta<0 AND reason<>'管理员调整积分' AND created_at>now()-interval '7 days' GROUP BY email) l ON l.email=u.email
+      WHERE ($1::text[] IS NULL OR u.email=ANY($1))
+      ORDER BY artworks7d DESC, u.joined_at ASC`,
+    [emails ?? null]
   );
   return rows.map((r) => ({
     email: r.email,
@@ -82,6 +84,7 @@ export type AdminUsageUserRow = {
 };
 
 export type AdminUsageSummary = {
+  pagination?: { page: number; size: number; total: number };
   rangeDays: number;
   totals: { credits: number; operations: number; activeUsers: number };
   users: AdminUsageUserRow[];
@@ -89,7 +92,7 @@ export type AdminUsageSummary = {
 };
 
 /** Admin usage overview backed by settled credit ledger entries. */
-export async function adminUsageSummary(daysRaw = 30): Promise<AdminUsageSummary> {
+export async function adminUsageSummary(daysRaw = 30, pagination?: {page: number; size: number}): Promise<AdminUsageSummary> {
   await ensureSchema();
   const rangeDays = Math.min(365, Math.max(1, Math.trunc(Number(daysRaw) || 30)));
   const pool = getPool();
@@ -98,16 +101,20 @@ export async function adminUsageSummary(daysRaw = 30): Promise<AdminUsageSummary
     AND l.created_at >= now() - ($1::text || ' days')::interval`;
   const [users, daily] = await Promise.all([
     pool.query(
-      `SELECT u.email, u.name, u.role,
+      `WITH usage_users AS MATERIALIZED (SELECT u.email, u.name, u.role,u.joined_at,
               COALESCE(SUM(-l.delta), 0)::int AS credits,
               COUNT(l.id)::int AS operations,
               MAX(l.created_at) AS last_used_at,
               (u.credits_total - u.credits_used)::int AS balance
          FROM app_users u
          LEFT JOIN app_ledger l ON l.email = u.email AND ${usageWhere}
-        GROUP BY u.email, u.name, u.role, u.credits_total, u.credits_used
-        ORDER BY credits DESC, last_used_at DESC NULLS LAST, u.joined_at ASC`,
-      [rangeDays]
+        GROUP BY u.email, u.name, u.role, u.credits_total, u.credits_used)
+        SELECT count(*)::int AS total,COALESCE(sum(credits),0)::float8 AS credits,
+          COALESCE(sum(operations),0)::float8 AS operations,count(*) FILTER(WHERE operations>0)::int AS active_users,
+          COALESCE((SELECT jsonb_agg(p ORDER BY credits DESC,last_used_at DESC NULLS LAST,joined_at,email)
+            FROM (SELECT * FROM usage_users ORDER BY credits DESC,last_used_at DESC NULLS LAST,joined_at,email LIMIT $2 OFFSET $3) p),'[]'::jsonb) AS users
+        FROM usage_users`,
+      [rangeDays, pagination?.size ?? null, pagination ? (pagination.page - 1) * pagination.size : 0]
     ),
     pool.query(
       `SELECT to_char(l.created_at::date, 'YYYY-MM-DD') AS date,
@@ -120,7 +127,8 @@ export async function adminUsageSummary(daysRaw = 30): Promise<AdminUsageSummary
       [rangeDays]
     ),
   ]);
-  const mappedUsers = users.rows.map((r) => ({
+  const aggregate = users.rows[0];
+  const mappedUsers = (aggregate.users as Record<string, any>[]).map((r) => ({
     email: r.email,
     name: r.name,
     role: r.role,
@@ -137,12 +145,13 @@ export async function adminUsageSummary(daysRaw = 30): Promise<AdminUsageSummary
   return {
     rangeDays,
     totals: {
-      credits: mappedUsers.reduce((sum, row) => sum + row.credits, 0),
-      operations: mappedUsers.reduce((sum, row) => sum + row.operations, 0),
-      activeUsers: mappedUsers.filter((row) => row.operations > 0).length,
+      credits: aggregate.credits,
+      operations: aggregate.operations,
+      activeUsers: aggregate.active_users,
     },
     users: mappedUsers,
     daily: mappedDaily,
+    ...(pagination ? { pagination: { ...pagination, total: aggregate.total } } : {}),
   };
 }
 

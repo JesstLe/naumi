@@ -22,11 +22,27 @@ export function FleetManager() {
   const [registration,setRegistration]=useState<{id:string;token:string}|null>(null),[search,setSearch]=useState(''),[email,setEmail]=useState(''),[delta,setDelta]=useState(''),[reason,setReason]=useState('');
   const [policy,setPolicy]=useState<AccessPolicy|null>(null),[policyEmail,setPolicyEmail]=useState(''),[pending,setPending]=useState<{operation:unknown;instanceId:string;id:string}|null>(null);
   const lock=useRef(false),mounted=useRef(true),registrationId=useRef<string|null>(null);
-  async function refresh(signal?:AbortSignal) {
-    const response=await fetch('/api/admin/fleet',{cache:'no-store',signal}),data=await response.json();
-    if(!response.ok)throw new Error(data.error||'读取失败');if(mounted.current)setSnapshot(data);
+  const readAbort=useRef<AbortController|null>(null);
+  async function refresh() {
+    readAbort.current?.abort();const abort=new AbortController();readAbort.current=abort;
+    try {
+      const response=await fetch('/api/admin/fleet',{cache:'no-store',signal:abort.signal}),data=await response.json();
+      if(abort.signal.aborted)return;
+      if(!response.ok)throw new Error(data.error||'读取失败');if(mounted.current)setSnapshot(data);
+    } catch(error) {if(!abort.signal.aborted)throw error;}
+    finally {if(readAbort.current===abort)readAbort.current=null;}
   }
-  useEffect(()=>{mounted.current=true;try{const saved=sessionStorage.getItem(pendingKey);if(saved){const attempt=JSON.parse(saved);if(typeof attempt.id==='string'&&typeof attempt.instanceId==='string'&&attempt.operation){setPending(attempt);setSelected(attempt.instanceId);}}}catch{/* Storage unavailable: in-page retry identity remains intact. */}const abort=new AbortController();void refresh(abort.signal).catch(e=>{if(!abort.signal.aborted)setError(e.message);});const timer=setInterval(()=>{void refresh(abort.signal).catch(()=>{});},10000);return()=>{mounted.current=false;abort.abort();clearInterval(timer);};},[]);
+  useEffect(()=>{
+    mounted.current=true;
+    try{const saved=sessionStorage.getItem(pendingKey);if(saved){const attempt=JSON.parse(saved);if(typeof attempt.id==='string'&&typeof attempt.instanceId==='string'&&attempt.operation){setPending(attempt);setSelected(attempt.instanceId);}}}catch{/* Storage unavailable: in-page retry identity remains intact. */}
+    let active=true,timer:ReturnType<typeof setTimeout>;
+    const poll=async()=>{
+      try {if(!document.hidden&&!readAbort.current)await refresh();}catch(error){if(active)setError(error instanceof Error?error.message:'读取失败');}
+      if(active)timer=setTimeout(()=>void poll(),10000);
+    };
+    void poll();
+    return()=>{active=false;mounted.current=false;readAbort.current?.abort();clearTimeout(timer);};
+  },[]);
   async function send(body:unknown) {
     if(lock.current)return;lock.current=true;setBusy(true);setError('');
     try {const response=await fetch('/api/admin/fleet',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});const data=await response.json();if(!response.ok)throw new Error(data.error||'提交失败');await refresh();return data;}

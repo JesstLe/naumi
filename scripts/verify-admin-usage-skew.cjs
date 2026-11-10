@@ -51,8 +51,8 @@ function load(relative) {
   }).outputText;
   const req = name => {
     if (name === 'server-only') return {};
-    if (name === '@/lib/db') return { getPool() { throw new Error('Unexpected nested database checkout'); } };
-    if (name === './repository') return { ensureBiSchema() { throw new Error('Unexpected production schema initialization'); } };
+    if (name === '@/lib/db' || name === '@/platform/db/pool') return { getPool() { throw new Error('Unexpected nested database checkout'); } };
+    if (name === './repository' || name === './schema') return { ensureBiSchema() { throw new Error('Unexpected production schema initialization'); } };
     if (name === './usage-contracts') return load('src/lib/bi/usage-contracts.ts');
     throw new Error(`Unexpected application import ${name}`);
   };
