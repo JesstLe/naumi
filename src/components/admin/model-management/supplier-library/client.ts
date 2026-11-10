@@ -6,9 +6,9 @@ export function filterParams(filter:Filter){
   return new URLSearchParams(Object.entries(filter).map(([key,value])=>[key,String(value)]));
 }
 
-export async function libraryRequest<T>(params?:URLSearchParams,body?:unknown,fallback="读取失败"):Promise<T>{
+export async function libraryRequest<T>(params?:URLSearchParams,body?:unknown,fallback="读取失败",signal?:AbortSignal):Promise<T>{
   const response=await fetch(endpoint+(params?"?"+params:""),{
-    method:body?"POST":"GET",cache:"no-store",
+    method:body?"POST":"GET",cache:"no-store",signal,
     headers:{...await authHeader(),...(body?{"content-type":"application/json"}:{})},
     ...(body?{body:JSON.stringify(body)}:{}),
   });

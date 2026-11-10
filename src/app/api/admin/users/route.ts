@@ -43,6 +43,13 @@ async function guard(req: Request): Promise<NextResponse | null> {
 export async function GET(req: Request) {
   const blocked = await guard(req);
   if (blocked) return blocked;
+  const params = new URL(req.url).searchParams;
+  if (params.get("view") === "members") {
+    const emails = [...new Set(params.getAll("member").map(value => value.trim().toLowerCase()))];
+    if (emails.length > 100 || emails.some(email => !email || email.length > 320))
+      return NextResponse.json({ error: "用户筛选参数无效" }, { status: 400 });
+    return NextResponse.json({ users: await listAllUsers(emails) });
+  }
   // ?email= -> per-member detail (artworks + credit ledger)
   const email = new URL(req.url).searchParams.get("email");
   if (email) {

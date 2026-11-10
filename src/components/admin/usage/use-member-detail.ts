@@ -3,7 +3,7 @@ import {useCallback,useEffect,useMemo,useRef,useState} from "react";
 import type {AdminUser,MemberArtwork,MemberDetail,UserActionPayload,UsersData} from "./contracts";
 /** A selected member and its pending read live together. Closing/switching the
  * drawer invalidates that read; a late response cannot reopen or replace it. */
-export function useMemberDetail(token:string|null,usersData:UsersData|null,setUsersData:(data:UsersData)=>void){
+export function useMemberDetail(token:string|null,usersData:Pick<UsersData,"users">|null,setUsersData:(data:Pick<UsersData,"users">)=>void){
  const [detail,setDetail]=useState<MemberDetail|null>(null),[detailRow,setDetailRow]=useState<AdminUser|null>(null),[detailLoading,setDetailLoading]=useState(false),[noteDraft,setNoteDraft]=useState(""),[lightbox,setLightbox]=useState<{src:string;alt:string}|null>(null),[busy,setBusy]=useState(false),[msg,setMsg]=useState<{ok:boolean;text:string}|null>(null);
  const generation=useRef(0),pending=useRef<AbortController|null>(null),owner=useRef(token),mounted=useRef(true),actorEpoch=useRef(0);owner.current=token;
  const closeDetail=useCallback(()=>{generation.current++;pending.current?.abort();setDetail(null);setDetailRow(null);setDetailLoading(false);setLightbox(null);},[]);

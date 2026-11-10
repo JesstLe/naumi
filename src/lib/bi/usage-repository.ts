@@ -44,8 +44,9 @@ export async function readUserUsage(tx: ReadClient, query: UsageQuery, scope?: U
   }
   const tenancy = links.length ? `SELECT DISTINCT ON(email) email,tenant_id,company FROM (${links.join(" UNION ALL ")}) x ORDER BY email,priority,tenant_id` : "SELECT NULL::text email,NULL::uuid tenant_id,''::text company WHERE false";
   const filter = (email: string) => `(${email} IS NOT NULL AND ($3::text='' OR ${email}=$3)
-    AND ($4::text='' OR position(lower($4) in lower(${email}||' '||COALESCE((SELECT filter_user.name FROM app_users filter_user WHERE filter_user.email=${email}),'')||' '||COALESCE((SELECT filter_team.company FROM tenancy filter_team WHERE filter_team.email=${email}),'')))>0)
-    AND ($5::uuid IS NULL OR EXISTS(SELECT 1 FROM tenancy filter_team WHERE filter_team.email=${email} AND filter_team.tenant_id=$5))
+    AND (($4::text='' AND $5::uuid IS NULL) OR ${email} IN (SELECT email FROM matching_accounts)
+      OR ($5::uuid IS NULL AND ${email} NOT IN (SELECT email FROM account_directory)
+        AND position(lower($4) in lower(${email}||'  '))>0))
     AND ($6::text[] IS NULL OR ${email}=ANY($6)))`;
   // Enterprise reads use the authorized historical account cohort. Membership is
   // not retroactively assigned as a frozen tenant to old tasks.
@@ -128,7 +129,15 @@ export async function readUserUsage(tx: ReadClient, query: UsageQuery, scope?: U
   const emptyFact = selectFact("NULL::text", "now()", "none", {}, "false", "WHERE false");
   const sums = (alias: string) => numericKeys.map(k => `COALESCE(sum(${alias}."${k}"),0) AS "${k}"`).join(",");
   const sortColumns = { consumed: "consumed", delivered: "delivered", tasks: "tasks", activeDays: "activeDays", modelCalls: "modelCalls" } as const;
-  const result = await tx.query(`WITH tenancy AS MATERIALIZED (${tenancy}),${sourceCtes.length ? sourceCtes.join(",") + "," : ""}facts AS MATERIALIZED (${facts.join(" UNION ALL ") || emptyFact}),
+  const result = await tx.query(`WITH tenancy AS MATERIALIZED (${tenancy}),
+    account_directory AS MATERIALIZED (
+      SELECT i.email,COALESCE(u.name,'') name,COALESCE(t.company,'') company,t.tenant_id
+      FROM (SELECT email FROM app_users UNION SELECT email FROM tenancy) i
+      LEFT JOIN app_users u ON u.email=i.email LEFT JOIN tenancy t ON t.email=i.email
+    ), matching_accounts AS MATERIALIZED (
+      SELECT email FROM account_directory WHERE ($4::text='' OR position(lower($4) in lower(email||' '||name||' '||company))>0)
+        AND ($5::uuid IS NULL OR tenant_id=$5)
+    ),${sourceCtes.length ? sourceCtes.join(",") + "," : ""}facts AS MATERIALIZED (${facts.join(" UNION ALL ") || emptyFact}),
     user_totals AS (SELECT email,${sums("f")},count(DISTINCT day) FILTER(WHERE activity) AS "activeDays",max(occurred_at) FILTER(WHERE activity) AS "lastActivityAt" FROM facts f GROUP BY email),
     identities AS (SELECT u.email FROM app_users u WHERE ${filter("u.email")} UNION SELECT email FROM user_totals),
     people AS (SELECT i.email,COALESCE(u.name,'') name,COALESCE(t.company,'') company,t.tenant_id AS "tenantId",COALESCE(u.role,'unknown') role,

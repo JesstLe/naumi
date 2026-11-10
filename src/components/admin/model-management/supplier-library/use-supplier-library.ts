@@ -12,32 +12,38 @@ export function useSupplierLibrary(){
   const [busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState("");
   const [edit,setEdit]=useState<SupplierModelRecord|null>(null),[opening,setOpening]=useState<string|null>(null),[exporting,setExporting]=useState(false);
   const scope=useRef({active:true,generation:0,read:0,detail:0}),filterRef=useRef(filter),syncing=useRef(false),exportGuard=useRef(false);
+  const readAbort=useRef<AbortController|null>(null),detailAbort=useRef<AbortController|null>(null);
+  const queryKey=filterParams(filter).toString();
   filterRef.current=filter;
   const load=useCallback(async()=>{
+    readAbort.current?.abort();const abort=new AbortController();readAbort.current=abort;
     const owner=scope.current,generation=owner.generation,read=++owner.read;
-    const current=()=>owner.active && owner.generation===generation && owner.read===read;
+    const current=()=>!abort.signal.aborted && owner.active && owner.generation===generation && owner.read===read;
     setLoading(true);
     try{
       const params=filterParams(filterRef.current);params.set("view","summary");
-      const data=await libraryRequest<Listing>(params);
+      const data=await libraryRequest<Listing>(params,undefined,"读取失败",abort.signal);
       if(current()){setListing(data);setError("");}
     }catch(error){if(current())setError(error instanceof Error?error.message:"读取失败");}
     finally{if(current())setLoading(false);}
   },[]);
   useEffect(()=>{
     const owner=scope.current;owner.active=true;owner.generation++;
-    return()=>{owner.active=false;owner.generation++;owner.read++;owner.detail++;};
+    return()=>{owner.active=false;owner.generation++;owner.read++;owner.detail++;readAbort.current?.abort();detailAbort.current?.abort();};
   },[]);
   useEffect(()=>{
-    scope.current.detail++;setOpening(null);void load();
-  },[filter,load]);
-  const closeModel=()=>{scope.current.detail++;setOpening(null);setEdit(null);};
+    scope.current.detail++;detailAbort.current?.abort();setOpening(null);
+    void load();
+    return()=>{readAbort.current?.abort();};
+  },[queryKey,load]);
+  const closeModel=()=>{scope.current.detail++;detailAbort.current?.abort();setOpening(null);setEdit(null);};
   const openModel=async(id:string)=>{
+    detailAbort.current?.abort();const abort=new AbortController();detailAbort.current=abort;
     const owner=scope.current,generation=owner.generation,detail=++owner.detail;
-    const current=()=>owner.active && owner.generation===generation && owner.detail===detail;
+    const current=()=>!abort.signal.aborted && owner.active && owner.generation===generation && owner.detail===detail;
     setOpening(id);setError("");
     try{
-      const data=await libraryRequest<{model:SupplierModelRecord}>(new URLSearchParams({id}));
+      const data=await libraryRequest<{model:SupplierModelRecord}>(new URLSearchParams({id}),undefined,"读取失败",abort.signal);
       if(current())setEdit(data.model);
     }catch(error){if(current())setError(error instanceof Error?error.message:"读取失败");}
     finally{if(current())setOpening(null);}
