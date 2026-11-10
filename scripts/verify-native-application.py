@@ -11,7 +11,7 @@ root=Path.cwd().resolve()
 parser=argparse.ArgumentParser()
 sub=parser.add_subparsers(dest='action',required=True)
 prepare=sub.add_parser('prepare');prepare.add_argument('--image-manifest',required=True);prepare.add_argument('--out',required=True)
-execute=sub.add_parser('run');execute.add_argument('--sdk-manifest',required=True);execute.add_argument('--case',choices=['audio','timeline','timeline-api','timeline-matrix','scene','character','director'],required=True);execute.add_argument('--out',required=True)
+execute=sub.add_parser('run');execute.add_argument('--sdk-manifest',required=True);execute.add_argument('--case',choices=['audio','timeline','timeline-api','timeline-matrix','scene','character','director','storyboard'],required=True);execute.add_argument('--out',required=True)
 args=parser.parse_args();out=Path(args.out).resolve()
 assert root/'output' in out.parents,'OUTPUT_MUST_BE_UNDER_WORKSPACE_OUTPUT'
 out.mkdir(parents=True,exist_ok=True);assert not any(out.iterdir()),'OUTPUT_MUST_BE_NEW_OR_EMPTY'
@@ -65,13 +65,20 @@ else:
  assert sdk['status']=='PASS' and sdk['source']['commit']==before['commit'] and sdk['source']['digest']==before['digest'] and not before['dirty'],'EXACT_NATIVE_SDK_SOURCE_REQUIRED'
  assert image(sdk['sdkImageId'])['Id']==sdk['sdkImageId'] and image(sdk['sdkImageId'])['Config']['Labels']['io.naumi.source.digest']==before['digest']
  token='native-fixed-'+uuid.uuid4().hex[:12];names={key:token+'-'+key for key in ['sdk','pg']};owned=[];ids={};code=1
- database='naumi_video_fixture_fixed_'+uuid.uuid4().hex;password=uuid.uuid4().hex+uuid.uuid4().hex
+ database='naumi_video_fixture_storyboard_director' if args.case=='storyboard' else 'naumi_video_fixture_fixed_'+uuid.uuid4().hex;password=uuid.uuid4().hex+uuid.uuid4().hex
  def start(role,cmd):
   cid=run(cmd,'START_'+role.upper()).stdout.strip();owned.append(role);ids[role]=cid
   data=inspect(cid);assert data['Id']==cid and data['Config']['Labels']['naumi.task']==token
   return cid
  try:
-  start('sdk',['docker','run','-d','--init','--name',names['sdk'],'--label','naumi.task='+token,'--network','none','--read-only','--memory','3g','--cpus','2','--shm-size','256m','--tmpfs','/tmp:rw,size=512m,mode=1777','--tmpfs','/fixed-app/.next/cache:rw,size=128m,mode=777',*mount(out,'/fixture/output'),sdk['sdkImageId']])
+  test_mounts=[];test_adapter=None
+  if args.case=='storyboard':
+   controller=Path(__file__).resolve().parent
+   adapter=controller/'verify-storyboard-dialogue-application.ts';recordings=controller/'video-trials/fixtures'
+   test_adapter=dict(path=str(adapter),sha256=digest(adapter),fixtures={p.name:digest(p) for p in sorted(recordings.iterdir()) if p.is_file()},reason='Portable imported speech fixtures; fixed App unchanged and original business assertions retained')
+   test_mounts=mount(adapter,'/fixture/scripts/verify-storyboard-dialogue-application.ts')+mount(recordings,'/fixture/scripts/video-trials/fixtures')
+   test_mounts=[part+',readonly' if part.startswith('type=bind,') else part for part in test_mounts]
+  start('sdk',['docker','run','-d','--init','--name',names['sdk'],'--label','naumi.task='+token,'--network','none','--read-only','--memory','3g','--cpus','2','--shm-size','256m','--tmpfs',('/tmp:rw,size=1536m,mode=1777' if args.case=='storyboard' else '/tmp:rw,size=512m,mode=1777'),'--tmpfs','/fixed-app/.next/cache:rw,size=128m,mode=777',*mount(out,'/fixture/output'),*test_mounts,sdk['sdkImageId']])
   start('pg',['docker','run','-d','--name',names['pg'],'--label','naumi.task='+token,'--network','container:'+ids['sdk'],'--memory','768m','--cpus','2','--tmpfs','/var/lib/postgresql/data:rw,size=1g','-e','POSTGRES_USER=fixture','-e','POSTGRES_PASSWORD='+password,'-e','POSTGRES_DB='+database,'postgres:16-alpine','-c','listen_addresses=127.0.0.1'])
   deadline=time.monotonic()+60
   while run(['docker','exec',ids['pg'],'pg_isready','-h','127.0.0.1','-U','fixture','-d',database],required=False).returncode:
@@ -81,19 +88,30 @@ else:
   assert all(x['Destination'] not in ['/var/run/docker.sock','/run/docker.sock']for x in data['Mounts'])
   url='postgresql://fixture:'+password+'@127.0.0.1:5432/'+database
   env={'NATIVE_FIXTURE_DATABASE_URL':url,'NAUMI_VERIFY_ISOLATED_DB':'1','VIDEO_FIXTURE_BUILT_APP_ROOT':'/fixed-app','VIDEO_FIXTURE_BUILT_SOURCE_COMMIT':before['commit'],'VIDEO_FIXTURE_BUILT_VERSION':str(sdk['applicationVersion']),'NODE_OPTIONS':'','NODE_ENV':'development','LIBGL_ALWAYS_SOFTWARE':'1'}
+  # The original storyboard suite accepts one guarded disposable database name.
+  # It remains inside this runner's private namespace, with no published port.
+  if args.case=='storyboard':env.update(STORYBOARD_NATIVE_FIXTURE_URL=url,VIDEO_FIXTURE_OUTPUT_ROOT='/tmp/storyboard-fixed-fixture')
   command=['docker','exec']
   for k,v in env.items():command+=['-e',k+'='+v]
   entry='timeline'if args.case.startswith('timeline')else args.case
-  command+=[ids['sdk'],'node','--conditions=react-server','--import','tsx','scripts/verify-'+entry+'-native-application.ts','/fixture/output/case']
+  script='scripts/verify-storyboard-application.ts' if args.case=='storyboard' else 'scripts/verify-'+entry+'-native-application.ts'
+  command+=[ids['sdk'],'node','--conditions=react-server','--import','tsx',script,'/fixture/output/case']
   if args.case=='timeline':command+=['--ui-only']
   if args.case=='timeline-matrix':command+=['--matrix-only']
   if args.case=='audio':command+=['--with-matrix']
-  write('INPUT.json',dict(source=before['commit'],sourceDigest=before['digest'],applicationImage=sdk['applicationImageId'],sdkImage=sdk['sdkImageId'],case=args.case,parentOwnsPG=True,sdkNetwork='none',pgNamespace=ids['sdk'],publishedPorts=0,dockerSocketMounted=False,ownedIds=ids))
+  write('INPUT.json',dict(source=before['commit'],sourceDigest=before['digest'],applicationImage=sdk['applicationImageId'],sdkImage=sdk['sdkImageId'],case=args.case,testAdapter=test_adapter,parentOwnsPG=True,sdkNetwork='none',pgNamespace=ids['sdk'],publishedPorts=0,dockerSocketMounted=False,ownedIds=ids))
   child=run(command,'NATIVE_CASE',required=False);code=child.returncode;print(child.stdout+child.stderr,flush=True)
   assert code==0,'ORIGINAL_NATIVE_CASE_FAILED'
-  cleanup=json.loads((out/'case/CLEANUP.json').read_text('utf-8'));assert cleanup['status']=='PASS'
+  if args.case=='storyboard':
+   result=json.loads((out/'case/RESULT.json').read_text('utf-8'))
+   assert result['realApp'] and result['realPostgres'] and result['actualMediaWorker'] and result['realBilling'] and result['realSupplierCalls']==0
+   assert 'STORYBOARD_APP_CLEANUP=OWN_FIXTURE_REMOVED' in child.stdout,'STORYBOARD_CHILD_CLEANUP_MISSING'
+  else:
+   cleanup=json.loads((out/'case/CLEANUP.json').read_text('utf-8'));assert cleanup['status']=='PASS'
+  if test_adapter:
+   assert digest(adapter)==test_adapter['sha256'] and {p.name:digest(p) for p in sorted(recordings.iterdir()) if p.is_file()}==test_adapter['fixtures'],'TEST_ADAPTER_CHANGED'
   source_unchanged(before)
-  write('RESULT.json',dict(status='PASS',case=args.case,source=before['commit'],sourceDigest=before['digest'],applicationImage=sdk['applicationImageId'],sdkImage=sdk['sdkImageId'],originalAssertions=True,actualFullApplication=True,realPG=True,parentDatabaseRetainedUntilCaseExit=True,paidProviderCalls=0,externalNetwork=False))
+  write('RESULT.json',dict(status='PASS',case=args.case,source=before['commit'],sourceDigest=before['digest'],applicationImage=sdk['applicationImageId'],sdkImage=sdk['sdkImageId'],testAdapter=test_adapter,originalAssertions=True,actualFullApplication=True,realPG=True,parentDatabaseRetainedUntilCaseExit=True,paidProviderCalls=0,externalNetwork=False))
   print('NATIVE_FIXED_APPLICATION=PASS CASE='+args.case+' SOURCE='+before['commit']+' ORIGINAL_ASSERTIONS=1 FULL_APP=1 REAL_PG=1 EXTERNAL_NETWORK=0')
  except Exception as error:
   write('FAILURE.json',dict(status='FAIL',case=args.case,error=str(error)));raise
