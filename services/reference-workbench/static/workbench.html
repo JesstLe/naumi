@@ -307,6 +307,11 @@ function setPromptOverride(refPath,text){delete promptOverrides[refPath]; prompt
 function mergePromptOverrides(list){return list.map(item=>promptOverrides[item.ref_path]!==undefined ? {...item,prompt:promptOverrides[item.ref_path]} : item);}
 function rememberPrompt(el){const card=el.closest(".card"); if(card)setPromptOverride(card.dataset.ref,el.value);}
 function currentRoot(){return String(document.getElementById("workbench_root")?.value||"");}
+let workbenchOperation=null,workbenchViewRevision=0;
+function workbenchView(){return {root:currentRoot(),revision:workbenchViewRevision,operationId:workbenchOperation?.root===currentRoot()?workbenchOperation.id:""};}
+function workbenchViewIsCurrent(view){return currentRoot()===view.root&&workbenchViewRevision===view.revision&&(view.operationId===undefined||view.operationId===(workbenchOperation?.root===view.root?workbenchOperation.id:""));}
+function resetWorkbenchView(){workbenchViewRevision++;workbenchOperation=null;}
+function beginWorkbenchOperation(kind){resetWorkbenchView();workbenchOperation={root:currentRoot(),id:"",kind};return workbenchView();}
 function values(){
   const d={};
   for(const id of fields){const el=document.getElementById(id); if(el)d[id]=el.value;}
@@ -327,8 +332,9 @@ function readLocalWorkbenchSettings(){
 }
 function writeLocalWorkbenchSettings(){WorkbenchEnvironment.storage().setItem(settingsStoreKey,JSON.stringify(values()));}
 function workbenchRequestConfig(){return values();}
-function workbenchItemsUrl(){
-  const params=new URLSearchParams({root:currentRoot(),...workbenchRequestConfig()});
+function workbenchItemsUrl(operationId="",root=currentRoot(),config=workbenchRequestConfig()){
+  const params=new URLSearchParams({root,...config});
+  if(operationId)params.set("operation_id",operationId);
   return WorkbenchEnvironment.api("workbench/items?")+params.toString();
 }
 function fill(d){for(const id of fields){const el=document.getElementById(id); if(el&&d[id]!==undefined&&d[id]!==null) el.value=String(d[id]);}}
@@ -412,7 +418,7 @@ async function uploadLocalFolder(files){
     alert("上传失败："+e.message);
   }
 }
-async function saveAndLoad(){WorkbenchEnvironment.storage().setItem(rootStoreKey,currentRoot()); await saveSettings(); await loadRefs(true);}
+async function saveAndLoad(){resetWorkbenchView();WorkbenchEnvironment.storage().setItem(rootStoreKey,currentRoot()); await saveSettings(); await loadRefs(true);}
 function readProjects(){try{projects=JSON.parse(WorkbenchEnvironment.storage().getItem(projectStoreKey)||"[]"); if(!Array.isArray(projects))projects=[]; projects=projects.filter(p=>p&&typeof p==="object"&&typeof p.root==="string");}catch(e){projects=[];} renderProjects();}
 function writeProjects(){WorkbenchEnvironment.storage().setItem(projectStoreKey,JSON.stringify(projects)); renderProjects();}
 function projectName(path){return String(path||"").split(/[\\/]/).filter(Boolean).pop()||"未命名项目";}
@@ -436,6 +442,7 @@ function sendToBackground(){
 }
 async function restoreProject(index){
   const project=projects[index]; if(!project)return;
+  resetWorkbenchView();
   const config={...(project.config||{}),workbench_root:(project.config&&project.config.workbench_root)||project.root};
   config.card_height=config.card_height||card_height.value||WorkbenchEnvironment.storage().getItem(cardHeightStoreKey)||640;
   fill(config);
@@ -452,18 +459,22 @@ function renderProjects(){
   projectList.innerHTML=projects.map((p,i)=>`<div class="projectItem"><strong>${esc(p.name)}</strong><div class="path">${esc(p.root)}</div><div class="meta">${esc(p.state||"后台等待")} / ${esc(p.savedAt||"")}</div><div class="buttons"><button onclick="restoreProject(${i})">恢复</button><button class="ghost" onclick="removeProject(${i})">移除</button></div></div>`).join("");
 }
 async function loadRefs(resetSelection=true){
+  const view=workbenchView(),root=view.root;
   try{
-    const root=currentRoot();
     if(!root.trim()){items=[]; render(); status.textContent="请先选择本机产品文件夹。"; return;}
-    const data=await(await fetch(workbenchItemsUrl())).json();
+    const data=await fetchJsonChecked(workbenchItemsUrl(view.operationId,root));
+    if(!workbenchViewIsCurrent(view))return;
     let cachedRows=data.items||[];
-    try{cachedRows=await WorkbenchHistory.remember(root,cachedRows);}catch(e){status.textContent="本机历史缓存失败："+e.message;}
+    try{cachedRows=await WorkbenchHistory.remember(root,cachedRows);}catch(e){if(workbenchViewIsCurrent(view))status.textContent="本机历史缓存失败："+e.message;}
+    if(!workbenchViewIsCurrent(view))return;
     items=mergePromptOverrides(cachedRows);
     if(resetSelection) selectedRefs=null;
     render();
-    await refreshStatus();
+    await refreshStatus(view);
   }catch(e){
-    try{const local=await WorkbenchHistory.restore(currentRoot());if(local){items=mergePromptOverrides(local);render();status.textContent="已从本机读取历史版本；生成和同步仍需连接服务器。";return;}}catch(_){}
+    if(!workbenchViewIsCurrent(view))return;
+    try{const local=await WorkbenchHistory.restore(root);if(!workbenchViewIsCurrent(view))return;if(local){items=mergePromptOverrides(local);render();status.textContent="已从本机读取历史版本；生成和同步仍需连接服务器。";return;}}catch(_){}
+    if(!workbenchViewIsCurrent(view))return;
     status.textContent="加载失败："+e;
   }
 }
@@ -512,8 +523,9 @@ function cardActionsHtml(it,i){
   const options=(it.versions||[]).map(x=>`<option value="${esc(x.path)}" ${v&&v.path===x.path?"selected":""}>${esc(x.label)}</option>`).join("");
   return `<select onchange="setVersion(${i},this.value)">${options}</select><button class="ghost small" onclick="openCompare(${i})">对比</button><button class="ghost small" onclick="saveCurrentTemplate(${i})">保存模板</button>`;
 }
-function cardMetaHtml(it){return `${esc(it.product)} / ${esc(it.task_label)} / ${esc(it.size)} <span class="badge ${esc(it.status)}">${statusText[it.status]||it.status}</span>${it.local_cached?' <span class="badge">本机已缓存</span>':''}`;}
-function errorHtml(it){return it.error?`<div class="errorBox">${esc(it.error)}</div>`:"";}
+function cardMetaHtml(it){return `${esc(it.product)} / ${esc(it.task_label)} / ${esc(it.size)} <span class="badge ${esc(it.status)}">${statusText[it.status]||it.status}</span>${it.frame_choice?` <span class="badge">${esc(it.frame_choice.target)} → ${esc(it.frame_choice.effective)}</span>`:""}${it.local_cached?' <span class="badge">本机已缓存</span>':''}`;}
+function errorHtml(it){const infer=it.infer||{},inferenceError=["failed","maybe_submitted"].includes(infer.status)?infer.error:"",message=inferenceError||it.error;
+ return message?`<div class="errorBox">${esc(message)}${inferenceError&&infer.traceId?`<br>错误编号：${esc(infer.traceId)}`:""}</div>`:"";}
 function cleanPrompt(value){const text=String(value??""); return text==="undefined" ? document.getElementById("prompt").value : text;}
 function render(){
   renderProduct();
@@ -564,8 +576,8 @@ function patchCards(nextItems){
     }
     const body=card.querySelector(".body");
     const existingError=card.querySelector(".errorBox");
-    if(it.error){
-      if(existingError)existingError.textContent=it.error;
+    if(it.error||(["failed","maybe_submitted"].includes(it.infer?.status)&&it.infer?.error)){
+      if(existingError)existingError.outerHTML=errorHtml(it);
       else if(body)body.insertAdjacentHTML("beforeend",errorHtml(it));
     }else if(existingError){
       existingError.remove();
@@ -655,74 +667,78 @@ function syncDefaultPromptToCards(){
 async function inferSelectedPrompts(){
   const selected=selectedPayload();
   if(!selected.length){alert("请先选择要推理提示词的参考图");return;}
+  if(workbenchSubmitting)return;
+  workbenchSubmitting=true;
+  const task={...beginWorkbenchOperation("infer"),selected,config:workbenchRequestConfig(),requestId:crypto.randomUUID()};
+  try{
   await saveSettings();
-  const taskRoot=currentRoot();
+  if(!workbenchViewIsCurrent(task))return;
   for(const selectedItem of selected){
     const item=items.find(it=>it.ref_path===selectedItem.ref_path);
     if(item){item.status="inferring";item.error="";}
   }
   render();
   status.textContent="正在推理 "+selected.length+" 张图的提示词...";
-  runInferTask({root:taskRoot,selected});
+  await runInferTask(task);
+  }catch(error){if(workbenchViewIsCurrent(task))status.textContent="提示词推理准备失败，请检查当前项目后再操作";
+  }finally{workbenchSubmitting=false;}
 }
 async function runInferTask(task){
-  let r;
   try{
-    r=await fetch(WorkbenchEnvironment.api("workbench/infer-prompts"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({items:task.selected,workbench_root:task.root,config:workbenchRequestConfig()})});
-  }catch(e){return;}
+  const r=await fetch(WorkbenchEnvironment.api("workbench/infer-prompts"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({items:task.selected,workbench_root:task.root,config:task.config,request_id:task.requestId})});
   if(!r.ok){
     const failure=await r.clone().json().catch(()=>({}));
     const text=await window.NaumiWorkbenchError(r,"提示词推理启动失败");
+    if(!workbenchViewIsCurrent(task))return;
     status.textContent=text;
-    for(const selected of task.selected){const item=items.find(it=>it.ref_path===selected.ref_path);if((failure.stage==="quote"||failure.accepted===false)&&item?.status==="inferring")item.status="idle";}render();
+    const definite=failure.stage==="quote"||failure.accepted===false;
+    for(const selected of task.selected){const item=items.find(it=>it.ref_path===selected.ref_path);if(item){item.status=definite?"idle":"maybe_submitted";item.infer={status:definite?"failed":"maybe_submitted",error:text,traceId:failure.traceId||""};}}render();
     alert(text);
     return;
   }
-  alert("已提交 "+task.selected.length+" 条提示词推理任务");
-  pollInferResults(task);
+  const receipt=await r.json();
+  if(!workbenchViewIsCurrent(task))return;
+  task.operationId=receipt.id;
+  workbenchOperation={root:task.root,id:receipt.id,kind:"infer"};
+  status.textContent="已受理 "+(receipt.accepted??task.selected.length)+" 条提示词推理任务";
+  await pollInferResults(task);
+  }catch(error){
+    if(!workbenchViewIsCurrent(task))return;
+    status.textContent="提示词推理提交结果待核查，请查询原任务，勿重复提交";
+    for(const selected of task.selected){const item=items.find(it=>it.ref_path===selected.ref_path);if(item){item.status="maybe_submitted";item.infer={status:"maybe_submitted",error:status.textContent};}}render();
+  }
 }
 async function pollInferResults(task){
-  if(currentRoot()!==task.root){
-    status.textContent="提示词推理已在后台进行，切换回来即可看到结果。";
-    return;
-  }
-  let list=[];
-  try{
-    const data=await(await fetch(workbenchItemsUrl())).json();
-    list=data.items||[];
-  }catch(e){}
+  // A new batch or a project switch owns its own view. Old accepted work keeps
+  // running in the backend; stale polls neither overwrite prompts nor resubmit.
+  if(!workbenchViewIsCurrent(task))return;
+  let list;
+  try{const data=await fetchJsonChecked(workbenchItemsUrl(task.operationId||"",task.root,task.config));list=data.items||[];}
+  catch(error){if(workbenchViewIsCurrent(task))status.textContent=error.message||"提示词结果读取失败，请查询原任务";return;}
+  if(!workbenchViewIsCurrent(task))return;
   const byRef=new Map(list.map(x=>[x.ref_path,x]));
-  let pending=0;
+  const applied=task.appliedRefs||(task.appliedRefs=new Set()),freshPrompts=new Set();
+  let pending=0,done=0,failed=0,unknown=0;
   for(const selectedItem of task.selected){
-    const it=byRef.get(selectedItem.ref_path);
-    if(!it)continue;
+    const it=byRef.get(selectedItem.ref_path);if(!it){unknown++;continue;}
     const infer=it.infer||{};
-    if(infer.status==="failed"||infer.status==="maybe_submitted"){status.textContent=infer.error||"推理失败";alert(status.textContent);return;}
+    if(task.operationId&&infer.operation_id&&infer.operation_id!==task.operationId){unknown++;continue;}
+    if(infer.status==="failed"){failed++;continue;}
+    if(infer.status==="maybe_submitted"){unknown++;continue;}
     if(infer.status==="inferring"){pending++;continue;}
-    if(infer.status==="done"&&infer.prompt){
-      setPromptOverride(selectedItem.ref_path,infer.prompt);
-    }
+    if(infer.status==="done"&&infer.prompt){done++;if(!applied.has(selectedItem.ref_path)){setPromptOverride(selectedItem.ref_path,infer.prompt);applied.add(selectedItem.ref_path);freshPrompts.add(selectedItem.ref_path);}}
+    else unknown++;
   }
   const nextItems=mergePromptOverrides(list);
-  if(canPatchCards(nextItems)){items=nextItems; patchCards(nextItems);}
-  else{items=nextItems; render();}
+  if(canPatchCards(nextItems)){items=nextItems;patchCards(nextItems);}else{items=nextItems;render();}
   for(const selectedItem of task.selected){
-    const it=byRef.get(selectedItem.ref_path);
-    if(!it)continue;
-    const infer=it.infer||{};
-    if(infer.status==="done"&&infer.prompt){
-      const card=document.querySelector(`.card[data-ref="${CSS.escape(selectedItem.ref_path)}"]`);
-      const ta=card&&card.querySelector(".prompt");
-      if(ta)ta.value=infer.prompt;
+    const infer=byRef.get(selectedItem.ref_path)?.infer||{};
+    if(freshPrompts.has(selectedItem.ref_path)&&infer.status==="done"&&infer.prompt){
+      const card=document.querySelector(`.card[data-ref="${CSS.escape(selectedItem.ref_path)}"]`),ta=card&&card.querySelector(".prompt");if(ta)ta.value=infer.prompt;
     }
   }
-  if(pending>0){
-    status.textContent="正在推理 "+pending+" 条提示词...";
-    setTimeout(()=>pollInferResults(task),800);
-  }else{
-    status.textContent="提示词推理完成";
-    alert("所有提示词推理完成");
-  }
+  status.textContent=`提示词推理：成功 ${done}，失败 ${failed}，进行中 ${pending}，待核查 ${unknown}`;
+  if(pending>0)setTimeout(()=>pollInferResults(task),800);
 }
 async function startSelected(){
   const selected=selectedPayload();
@@ -738,17 +754,18 @@ let workbenchSubmitting=false;
 async function submitWorkbenchJobs(selected){
   if(workbenchSubmitting)return;
   workbenchSubmitting=true;
-  const requestId=crypto.randomUUID();
+  const view=beginWorkbenchOperation("generate"),config=workbenchRequestConfig(),requestId=crypto.randomUUID();
   try{
   await saveSettings();
-
-  const r=await fetch(WorkbenchEnvironment.api("workbench/start"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({items:selected,workbench_root:currentRoot(),config:workbenchRequestConfig(),request_id:requestId})});
-  if(!r.ok){const message=await window.NaumiWorkbenchError(r,"报价或提交暂时失败，请查询任务状态");status.textContent=message;alert(message);return;}
-  const receipt=await r.json();
+  if(!workbenchViewIsCurrent(view))return;
+  const r=await fetch(WorkbenchEnvironment.api("workbench/start"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({items:selected,workbench_root:view.root,config,request_id:requestId})});
+  if(!r.ok){const message=await window.NaumiWorkbenchError(r,"报价或提交暂时失败，请查询任务状态");if(!workbenchViewIsCurrent(view))return;status.textContent=message;alert(message);return;}
+  const receipt=await r.json();if(!workbenchViewIsCurrent(view))return;
+  workbenchOperation={root:view.root,id:receipt.id,kind:"generate"};
   const project=currentProjectSnapshot("运行中");if(project)upsertProject(project);
   alert("已受理 "+(receipt.accepted??selected.length)+" 项任务，可在当前项目查看进度");
   await refreshLoop();
-  }catch(error){status.textContent="操作未完成，请查询任务状态后再操作";alert(status.textContent);
+  }catch(error){if(workbenchViewIsCurrent({...view,operationId:undefined})){status.textContent="操作未完成，请查询任务状态后再操作";alert(status.textContent);}
   }finally{workbenchSubmitting=false;}
 }
 async function fetchJsonChecked(url){
@@ -758,19 +775,26 @@ async function fetchJsonChecked(url){
   }
   return response.json();
 }
-async function refreshStatus(){
-  const s=await fetchJsonChecked(WorkbenchEnvironment.api("status")); const p=s.progress||{};
+async function refreshStatus(view=workbenchView()){
+  const params=new URLSearchParams({root:view.root});
+  if(view.operationId)params.set("operation_id",view.operationId);
+  const s=await fetchJsonChecked(WorkbenchEnvironment.api("status?")+params.toString());
+  if(!workbenchViewIsCurrent(view))return false;
+  const p=s.progress||{};
   const q=s.queue||{};
-  status.textContent=`状态：${p.current||"等待"}\n当前产品：${p.product||"-"}\n参考图：${p.ref||"-"}\n尺寸：${p.size||"-"}\n完成：${p.done||0}  异常：${p.failed||0}  跳过：${p.skipped||0}\n队列：运行中 ${q.running||0}/${q.global_limit||"-"}，等待 ${q.waiting||0}，单用户上限 ${q.user_limit||"-"}\n最近错误：${p.last_error||"-"}`;
+  status.textContent=`状态：${p.current||"等待"}\n当前产品：${p.product||"-"}\n参考图：${p.ref||"-"}\n尺寸：${p.size||"-"}\n完成：${p.done||0}  失败：${p.failed||0}  待核查：${p.unknown||0}\n队列：运行中 ${q.running||0}/${q.global_limit||"-"}，等待 ${q.waiting||0}，单用户上限 ${q.user_limit||"-"}\n最近错误：${p.last_error||"-"}`;
   return Boolean(s.running);
 }
 let workbenchRefreshPromise=null;
 async function refreshLoopOnce(){
   if(workbenchRefreshPromise)return workbenchRefreshPromise;
+  const view=workbenchView();
   workbenchRefreshPromise=(async()=>{
-    const data=await fetchJsonChecked(workbenchItemsUrl());
+    const data=await fetchJsonChecked(workbenchItemsUrl(view.operationId,view.root));
+    if(!workbenchViewIsCurrent(view))return false;
     let cachedRows=data.items||items;
-    try{cachedRows=await WorkbenchHistory.remember(currentRoot(),cachedRows);}catch(e){status.textContent="本机历史缓存失败："+e.message;}
+    try{cachedRows=await WorkbenchHistory.remember(view.root,cachedRows);}catch(e){if(workbenchViewIsCurrent(view))status.textContent="本机历史缓存失败："+e.message;}
+    if(!workbenchViewIsCurrent(view))return false;
     const nextItems=mergePromptOverrides(cachedRows);
     if(canPatchCards(nextItems)){
       items=nextItems;
@@ -779,7 +803,7 @@ async function refreshLoopOnce(){
       items=nextItems;
       render();
     }
-    return refreshStatus();
+    return refreshStatus(view);
   })();
   try{return await workbenchRefreshPromise;}
   finally{workbenchRefreshPromise=null;}
@@ -971,6 +995,7 @@ window.addEventListener("mouseup",()=>{if(drag){drag=null; marquee.style.display
   setInterval(()=>{refreshLoop().catch(()=>{});},2500);
 })();
 workbench_root.addEventListener("change",()=>saveAndLoad());
+workbench_root.addEventListener("input",resetWorkbenchView);
 workbench_root.addEventListener("paste",()=>setTimeout(scheduleRootLoad,0));
 mode.addEventListener("change",()=>saveAndLoad());
 document.getElementById("prompt").addEventListener("input",()=>{syncDefaultPromptToCards();scheduleSaveSettings();});
