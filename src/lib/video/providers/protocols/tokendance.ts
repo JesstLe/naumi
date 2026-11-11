@@ -3,7 +3,6 @@ import type {VideoWireContext,VideoWireRequest,VideoWireCodec} from "../wire-con
 import {buildArkCreate} from "./ark";
 import {buildMiniMaxCreate} from "./minimax";
 import type {VideoWireProfile} from "../../capability-schema";
-// IC 68b37db handler/tokendance.go + web/src/services/api/protocols/tokendance.ts (AGPL-3.0).
 const routes={
   "tokendance-seedance":{prefix:"seedance:generations",create:"/ark/v3/generations/tasks",poll:"/ark/v3/generations/tasks/"},
   "tokendance-kling-text":{prefix:"kling:text2video",create:"/kling/v1/text2video",poll:"/kling/v1/text2video/"},

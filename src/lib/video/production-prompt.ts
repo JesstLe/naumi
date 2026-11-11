@@ -1,6 +1,4 @@
-/** Source behavior audit: infinite-canvas 68b37db, canvas/agent/skills/{script,
- * video-single-shot,video-multi-shot,video-extension,video-editing,audio}.ts.
- * Adapted to Naumi's public capabilities, ordered inputs and durable node/run APIs;
+/** Adapted to Naumi's public capabilities, ordered inputs and durable node/run APIs;
  * upstream tool names and absent audio-generation APIs are deliberately not promised.
  * Executable instructions contain no user assets, workflow templates or credentials. */
 export const VIDEO_PRODUCTION_PROMPT=`
