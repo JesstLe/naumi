@@ -55,3 +55,4 @@
 - 证据根：`E:/Workspace/naumi-task-evidence/video-duration-logo-20261111`；四制品 `MODIFIED_FILE.zip`、`DIFF_FILE.patch`、`VERIFICATION.txt`、可执行 `ROLLBACK.sh` 已重开核验。
 - 真实发布及复核：`release103/r2/final-receipts/`、`FINAL_METADATA_RECONCILIATION.json`、`BROWSER_RESULT-cross-switch.json`、`BROWSER_COMPLETION_RESULT.json`、`QA_CLEANUP.json`。
 - 本版仅完成共享视频时长滑条与首页模型族 Logo。先前诊断中的图片比例完整性、缺时长时清晰度展示、跨标签页目录刷新仍列为独立待办，不计入本轮完成。
+- 本地收尾：任务代码和交付记录已合入并推送 main。移除本任务 worktree / 依赖 junction 的命令被工具拦截，未改用其他删除方式；因此干净的本任务分支、worktree 和依赖链接继续保留。共享 checkout 与其他任务内容保持。
