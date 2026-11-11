@@ -1,8 +1,8 @@
 "use client";
 
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
 import { CreationActivity } from "./creation-activity";
-import { useEffect,useRef,useState } from "react";
+import { createContext,useContext,useEffect,useRef,useState,type ComponentPropsWithoutRef } from "react";
 import { Download, Ellipsis, Expand, Loader2, Palette, PanelsTopLeft, RotateCcw, ScanEye, Scissors, Shirt, SquarePen, Sun, Blend, X } from "lucide-react";
 import { useWorkspaceRouter } from "@/lib/desktop/navigation";
 import { agentMediaUrl } from "@/lib/agent/media-policy";
@@ -28,6 +28,9 @@ export function messagePrompt(content:string) {return content.split("\n").filter
 function ResultImage({url,alt,prompt,port,onPreview}:{url:string;alt:string;prompt:string;port:CreationWorkbenchPort;onPreview:(url:string)=>void}) {
   const router=useWorkspaceRouter(), {canPage}=useFeatureAccess();
   const [error,setError]=useState(""),[pending,setPending]=useState(false),[more,setMore]=useState(false);
+  const [imageState,setImageState]=useState<"loading"|"ready"|"error">("loading"),[retry,setRetry]=useState(0);
+  const dimensions=useRef<{width:number;height:number}|undefined>(undefined);
+  function retryImage(){setImageState("loading");setRetry(n=>n+1);}
   async function openTool(route:string) {
     setPending(true);setError("");
     try {
@@ -40,7 +43,12 @@ function ResultImage({url,alt,prompt,port,onPreview}:{url:string;alt:string;prom
   }
   return <div className={styles.resultBlock}>
     <div className={styles.resultImage}>
-      <button type="button" className={styles.imageOpen} aria-label="放大查看图片" onClick={()=>onPreview(url)}><CachedImage src={url} alt={alt||"生成图片"}/></button>
+      <button type="button" className={styles.imageOpen} data-image-state={imageState} aria-busy={imageState==="loading"} aria-label={imageState==="error"?"重新加载图片":"放大查看图片"}
+        style={imageState!=="ready"?{aspectRatio:dimensions.current?`${dimensions.current.width}/${dimensions.current.height}`:"1"}:undefined}
+        onClick={()=>imageState==="error"?retryImage():onPreview(url)}>
+        <CachedImage key={url+":"+retry} src={url} alt={alt||"生成图片"} onLoad={event=>{const img=event.currentTarget;dimensions.current={width:img.naturalWidth,height:img.naturalHeight};setImageState("ready");}} onError={()=>setImageState("error")}/>
+        {imageState!=="ready"&&<span className={styles.imagePlaceholder} role={imageState==="error"?"alert":"status"}>{imageState==="error"?<><RotateCcw size={18}/><span>图片加载失败 · 重试</span></>:<Loader2 size={20} className="animate-spin"/>}</span>}
+      </button>
       <div className={styles.imageTop}>
         <button type="button" aria-label="下载图片" title="下载图片" onClick={()=>void downloadImage(url).catch(()=>setError("下载失败，请重试"))}><Download/></button>
         <button type="button" aria-label="更多图片操作" aria-expanded={more} onClick={()=>setMore(!more)}><Ellipsis/></button>
@@ -52,6 +60,23 @@ function ResultImage({url,alt,prompt,port,onPreview}:{url:string;alt:string;prom
     {error&&<p className={styles.error} role="alert">{error}</p>}
   </div>;
 }
+
+type ResultContextValue={prompt:string;port:CreationWorkbenchPort;onPreview:(url:string)=>void};
+const ResultContext=createContext<ResultContextValue|null>(null);
+function MarkdownResultImage({src,alt}:ComponentPropsWithoutRef<"img">){
+  const context=useContext(ResultContext),url=typeof src==="string"?src:"";
+  if(!context||!agentMediaUrl(url))return null;
+  return /\.(mp4|webm|mov|m4v)(\?|$)/i.test(url)
+    ? <video controls playsInline preload="metadata" src={url} className={styles.resultVideo}/>
+    : <ResultImage key={url} url={url} alt={alt||""} {...context}/>;
+}
+// Renderer identities must stay stable across settings changes, streaming,
+// scroll state and fresh port objects. Context updates callbacks without
+// unmounting an authorized decoded CachedImage or resetting its menu.
+const MESSAGE_COMPONENTS:Components={
+  p:({children})=><div className={styles.responseParagraph}>{children}</div>,
+  img:MarkdownResultImage,
+};
 
 export function CreationMessage({message,previous,port,onPreview}:{message:WorkbenchMessage;previous?:WorkbenchMessage;port:CreationWorkbenchPort;onPreview:(url:string)=>void}) {
   if(message.role==="user") {
@@ -65,10 +90,7 @@ export function CreationMessage({message,previous,port,onPreview}:{message:Workb
   const images=message.content.split("\n").flatMap(line=>{const m=line.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);return m&&agentMediaUrl(m[2])&&!/\.(mp4|webm|mov|m4v)(\?|$)/i.test(m[2])?[m[2]]:[];});
   return <div className={styles.assistantMessage}>
     {(message.pending||!!message.steps?.length)&&<CreationActivity steps={message.steps||[]} pending={message.pending}/>}
-    <div className={styles.responseMarkdown}><ReactMarkdown components={{
-      p:({children})=><div className={styles.responseParagraph}>{children}</div>,
-      img:({src,alt})=>{const url=typeof src==="string"?src:"";if(!agentMediaUrl(url))return null;return /\.(mp4|webm|mov|m4v)(\?|$)/i.test(url)?<video controls playsInline preload="metadata" src={url} className={styles.resultVideo}/>:<ResultImage url={url} alt={alt||""} prompt={prompt} port={port} onPreview={onPreview}/>;},
-    }}>{message.content.replace(/^视频链接\s*[:：]\s*(\S+)$/gm,"![视频]($1)")}</ReactMarkdown></div>
+    <div className={styles.responseMarkdown}><ResultContext.Provider value={{prompt,port,onPreview}}><ReactMarkdown components={MESSAGE_COMPONENTS}>{message.content.replace(/^视频链接\s*[:：]\s*(\S+)$/gm,"![视频]($1)")}</ReactMarkdown></ResultContext.Provider></div>
     {message.pending&&message.steps?.flatMap(step=>step.outputs||[]).filter((url,index,urls)=>urls.indexOf(url)===index&&!images.includes(url)).map(url=>/\.(mp4|webm|mov|m4v)(\?|$)/i.test(url)?<video key={url} controls playsInline src={url} className={styles.resultVideo}/>:<ResultImage key={url} url={url} alt="生成图片" prompt={prompt} port={port} onPreview={onPreview}/>)}
     {!message.pending&&prompt&&<div className={styles.resultActions}>
       <button type="button" disabled={port.busy||port.unavailable} onClick={()=>port.stage(prompt,images.length?[images[0]]:messageReferences(source))}><SquarePen/>重新编辑</button>

@@ -1,5 +1,6 @@
 import "server-only";
 import { isManagedImageUrl } from "@/lib/object-storage/runtime";
+import { repairedTemplateCover } from "./cover-repairs";
 
 export function normalizeHttpUrl(raw: string): string | null {
   try {
@@ -38,5 +39,7 @@ export function remoteTemplateImageSource(image: string): string | null {
 export function templateImageDeliveryUrl(id: string, image: string): string {
   const source = remoteTemplateImageSource(image);
   if (!source) return image;
+  const repaired = repairedTemplateCover(id, source);
+  if (repaired) return repaired;
   return `/api/tpl-image?id=${encodeURIComponent(id)}&u=${encodeURIComponent(source)}`;
 }

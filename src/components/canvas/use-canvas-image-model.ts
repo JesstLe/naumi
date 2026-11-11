@@ -2,7 +2,7 @@
 import {useCallback,useEffect,useMemo,useRef,useState,type SetStateAction} from 'react';
 import {useImageQuality} from '@/lib/image-quality-context';
 import {useFeatureModels,useFeatureCatalogScope,currentFeatureCatalogScope} from '@/lib/model-config/feature-client';
-import {canvasModelParameters} from '@/lib/canvas/generation-parameters';
+import {imageModelParameterOptions} from '@/lib/imagegen/parameter-options';
 import {canvasImageCatalogMode,canvasImageModelSelection,canvasImageRatio,canvasImageResolution,type CanvasImageModels} from '@/lib/canvas/image-model-selection';
 
 type DraftPort={draftKey:string|null;ratio:string;setRatio:(value:SetStateAction<string>)=>void};
@@ -31,7 +31,7 @@ export function useCanvasImageModel(draft:DraftPort){
    const next=canvasImageModelSelection({catalog,selected,config:modelConfig,previous:previous.model,saved});return next?{...next,scope}:previous;
   });
  },[catalog,selected,modelConfig,scope]);
- const parameters=useMemo(()=>canvasModelParameters(selection.models.find(model=>model.id===selection.model)?.generationParameters),[selection.models,selection.model]);
+ const parameters=useMemo(()=>imageModelParameterOptions(selection.models.find(model=>model.id===selection.model)),[selection.models,selection.model]);
  const {draftKey,ratio}=draft;
  useEffect(()=>{
   const current=latestDraft.current;if(current.draftKey!==draftKey)return;

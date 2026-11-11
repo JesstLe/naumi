@@ -33,7 +33,7 @@ export function VideoDurationControl({ capability, mode, value, onChange, onSmar
       <div className={styles.selection}>
         {onSmart ? <button type="button" aria-pressed={value === undefined} onClick={onSmart}>{translate("智能")}</button>
           : automatic && <button type="button" aria-pressed={value === -1} onClick={() => onChange(-1)}>{translate("自动")}</button>}
-        <output aria-label={translate("视频时长")} aria-invalid={invalid || undefined}>{text}</output>
+        {!(onSmart ? value === undefined : automatic && value === -1) && <output aria-label={translate("视频时长")} aria-invalid={invalid || undefined}>{text}</output>}
       </div>
     </div>
     {seconds.length > 1 ? <>

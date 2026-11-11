@@ -1,5 +1,28 @@
 [
   {
+    "version": "1794396691",
+    "title": {
+      "zh": "创作设置与图片显示优化",
+      "en": "Creation settings and image display improvements"
+    },
+    "improvements": [
+      {
+        "zh": "首页与画布的创作参数保持一致，视频时长、清晰度与比例联动更准确。",
+        "en": "Creation parameters are consistent across the home page and canvas, with more accurate video duration, resolution and aspect-ratio choices."
+      }
+    ],
+    "fixes": [
+      {
+        "zh": "修复部分图片比例选项缺失，以及视频时长状态重复显示的问题。",
+        "en": "Fixed missing image aspect ratios and duplicate video duration labels."
+      },
+      {
+        "zh": "提升对话结果图片和模板封面的加载稳定性，恢复部分失效封面。",
+        "en": "Improved loading stability for conversation images and template covers, and restored some unavailable covers."
+      }
+    ]
+  },
+  {
     "version": "1794367067",
     "title": {
       "zh": "每轮创作与执行过程更新",

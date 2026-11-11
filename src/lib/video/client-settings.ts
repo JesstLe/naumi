@@ -8,8 +8,8 @@ import {compileVideoPrompt} from "./prompt";
 import {videoByocOverridesSchema} from "./byoc-settings";
 import {videoWorkflowManifestSchema} from "./workflow-schema";
 import {compileVideoCamera} from "./camera";
-import {videoParameterScope,videoDurations} from "./parameter-options";
-export {videoDurations} from "./parameter-options";
+import {videoDurations,videoResolutions,videoAspectRatios} from "./parameter-options";
+export {videoDurations,videoResolutions,videoAspectRatios} from "./parameter-options";
 import {previewCanvasInputs} from "../canvas/input-preview";
 
 export type VideoNodeConfig=CanvasVideoNode["config"];
@@ -34,8 +34,6 @@ export function selectedVideoCatalogModel(models:VideoCatalogModel[],config:Vide
   return managed.length===1?managed[0]:undefined;
 }
 export function catalogCapability(model?:VideoCatalogModel):ResolvedVideoCapability{return model?.definition||{sources:{}};}
-export function videoResolutions(cap:ResolvedVideoCapability,duration?:number,mode?:VideoMode){return Array.from(new Set((videoParameterScope(cap,mode).durationResolutionMap||[]).filter(map=>duration!==undefined&&map.durations.includes(duration)).flatMap(map=>map.resolutions)));}
-export function videoAspectRatios(cap:ResolvedVideoCapability,mode?:VideoMode,resolution?:string){return videoParameterScope(cap,mode,resolution).aspectRatios||[];}
 /** Defaults apply only to an explicit new node; an existing selection is never replaced. */
 export function videoNodeCreationDefaults(catalog:{models:readonly VideoCatalogModel[];loading:boolean;error:string}){
   if(catalog.loading||catalog.error)return undefined;
@@ -64,7 +62,12 @@ export function reconcileVideoSettings(config:VideoNodeConfig,cap:ResolvedVideoC
   if(next.mode&&!modes.includes(next.mode)||!next.mode){const value=modes[0];if(next.mode!==value)changes.push("生成模式");next.mode=value;}
   const durations=videoDurations(cap,next.mode);
   if(next.durationSeconds===undefined||!durations.includes(next.durationSeconds)){
-    const value=cap.defaultDurationSeconds!=null&&durations.includes(cap.defaultDurationSeconds)?cap.defaultDurationSeconds:durations[0];
+    // A user can choose a resolution before a duration on a partial draft.
+    // Honour that explicit choice when selecting a legal duration, rather than
+    // immediately resetting the just-clicked resolution to an unrelated default.
+    const compatible=next.resolution?durations.filter(duration=>videoResolutions(cap,duration,next.mode).includes(next.resolution!)):durations;
+    const choices=compatible.length?compatible:durations;
+    const value=cap.defaultDurationSeconds!=null&&choices.includes(cap.defaultDurationSeconds)?cap.defaultDurationSeconds:choices[0];
     if(next.durationSeconds!==value)changes.push("时长");next.durationSeconds=value;
   }
   const resolutions=videoResolutions(cap,next.durationSeconds,next.mode);
