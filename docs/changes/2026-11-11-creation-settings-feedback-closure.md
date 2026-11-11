@@ -86,3 +86,6 @@ P01 → P02 → P03 → P04 → P05/P06 核验与确认缺陷修复 → R01/R02/
 - 初次Agent规则调用未正确传递 react-server condition，按正确 tsx 参数重跑22项通过；初次Next冷路由25秒内未就绪，预热/api/config后原测试通过。保留失败与重试日志，不改业务门禁迁就测试。
 - 本机空间触发构建前盘点，仅清理前序本任务已结束、未共享的精确Docker构建缓存ID s69vdwo3m6hw6bxhusi6n38mb，Docker回执1.723GB；未删除镜像、volume、业务数据或其他工作树。
 - 构建前最新main仍为c22c7536；103只读实际为SEO候选5a3d5ea4/1794392055、生命周期COMPLETE revision687。发布前还须持锁重新核对，不据此宣称本轮上线。
+
+## 固定构建网络修正
+- 两次Linux构建遇到Debian单个依赖下载502（先libpixman，后libavc1394），应用Next/Worker编译已通过；第二次在已确认同类错误后停止。Dockerfile仅为apt获取增加Acquire::Retries=3，不跳过包、不改依赖清单或验证门禁，保持固定源码重新构建。原失败日志均保留。

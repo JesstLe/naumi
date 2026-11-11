@@ -51,7 +51,7 @@ RUN if [ "$NEXT_PUBLIC_CANVAS_PERF_PROBE" = "1" ]; then npm run build -- --profi
 
 # ── isolated media runtime (no compiler in the release image) ────────────────
 FROM ${NODE_BASE_IMAGE} AS media-runtime
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg gcc libc6-dev fonts-dejavu-core fonts-noto-cjk && rm -rf /var/lib/apt/lists/*
+RUN apt-get -o Acquire::Retries=3 update && apt-get -o Acquire::Retries=3 install -y --no-install-recommends ffmpeg gcc libc6-dev fonts-dejavu-core fonts-noto-cjk && rm -rf /var/lib/apt/lists/*
 COPY services/media-worker/sandbox.c /tmp/media-sandbox.c
 COPY services/media-worker/prepare-runtime.sh /tmp/prepare-media-runtime.sh
 RUN cc -O2 -Wall -Wextra -Werror /tmp/media-sandbox.c -o /usr/local/bin/naumi-media-sandbox && sh /tmp/prepare-media-runtime.sh
