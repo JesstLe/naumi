@@ -2,10 +2,10 @@ import {readCanvasGenerationReceipt} from "./generation-receipt";
 import type {CanvasImageAttachment} from "./image-versions";
 import type {CanvasHistoryAction} from "./history-model";
 import type {Artwork} from "../mock-data";
-import {ImagegenHttpError,ImagegenPreparationCancelled} from "../imagegen/http";
+import {ImagegenPreparationCancelled} from "../imagegen/http";
 import {completeCanvasImagegen} from "../imagegen/client-recovery";
 import {imageOutputWarningText} from "../imagegen/output-advisory";
-import {classifyGenerationFailure,type GenerationFailure} from "./generation-failure";
+import {canvasGenerationHttpError,classifyGenerationFailure,type GenerationFailure} from "./generation-failure";
 import type {GenerationStage} from "./generation-feedback";
 import type {CanvasPoint} from "./stable-placement";
 import {canvasImageTaskHeaders,type CanvasImageTaskScope} from "./image-task-scope";
@@ -27,7 +27,7 @@ type Services={
   errorText:string;saveErrorText:string;resultGap:number;
 };
 async function readBody(response:Response):Promise<Record<string,any>>{
-  const text=await response.text();try{return text?JSON.parse(text):{};}catch{throw new Error("服务响应异常，请稍后检查原任务");}
+  const text=await response.text();try{const body=text?JSON.parse(text):{};if(!body||typeof body!=="object"||Array.isArray(body))throw Error();return body;}catch{throw new Error("服务响应异常，请稍后检查原任务");}
 }
 
 /** Application controller for both existing-image and blank/text-image nodes.
@@ -65,7 +65,7 @@ export function createCanvasImageTask(input:Services){
       if(!jobId){
         input.stage("preparing");form??=await input.prepare();guard();attempted=true;
         const response=await input.submit(form,scope.isCurrent),body=await readBody(response);guard();
-        if(!response.ok)throw new ImagegenHttpError(body.error||input.errorText,response.status,body.accepted===false||[400,401,403,409,413,422,429].includes(response.status)?false:undefined);
+        if(!response.ok)throw canvasGenerationHttpError(response.status,body,input.errorText);
         if(typeof body.jobId!=="string"||!body.jobId)throw new Error(input.errorText);jobId=body.jobId;
       }
       // A durable job receipt releases only its submitting composer. Polling,

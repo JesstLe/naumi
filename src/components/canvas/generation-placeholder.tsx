@@ -48,7 +48,7 @@ export function GenerationPlaceholder({ stage = "generating", startedAt, count =
     <p className={styles.failureMessage}>{generationFailureMessage(failure)}</p>
     {onRetry && <button type="button" disabled={checking} className={`nodrag nopan ${styles.checkButton}`}
       onClick={event=>{event.stopPropagation();if(retrying.current)return;retrying.current=true;setChecking(true);void Promise.resolve().then(onRetry).catch(()=>{}).finally(()=>{retrying.current=false;setChecking(false);});}}>
-      {checking?(english?'Retrying…':'正在重试…'):(english?'Retry':'重试')}
+      {checking?(english?'Checking…':'正在读取…'):failure.kind==='sync'?(english?'Sync result':'同步结果'):failure.kind==='uncertain'?(english?'Check original task':'查询原任务'):(english?'Retry':'重试')}
     </button>}
   </div>;
   return <div data-testid="generation-placeholder" data-stage={stage} aria-busy="true"
