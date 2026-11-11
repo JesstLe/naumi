@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import {useEffect,useState} from "react";
-import {Loader2,Plus,RefreshCw,Search} from "lucide-react";
+import {Activity,Boxes,CircleDollarSign,History,Loader2,Plus,RefreshCw,Search,Unplug} from "lucide-react";
 import type {Operation} from "./contracts";
 import {ModelMappingCard,ModelMappingHeader} from "./model-mapping-card";
 import {useModelManagement} from "./use-model-management";
@@ -30,9 +30,10 @@ export function ModelManagement({initialView="models",initialModel=null}:{initia
   }
   const rows=state?.rows.filter(row=>(filter==="all"||row.modality===filter)&&`${row.label} ${row.alias} ${row.routes.map(route=>`${route.model} ${route.provider}`).join(" ")} ${row.features.map(feature=>feature.label).join(" ")}`.toLowerCase().includes(search.toLowerCase()))||[];
   const selected=state?.rows.find(row=>row.id===selectedId);
+  const viewIcons={models:Boxes,suppliers:Unplug,pricing:CircleDollarSign,runtime:Activity};
   return <main className={styles.workspace}>
-    <header className={styles.header}><h1>模型与供应商</h1><div className={styles.headerActions}><Link className={styles.button} href="/admin/bi/models?tab=history">变更记录</Link><button className={styles.primary} disabled={locked||!state?.managed} onClick={()=>open({kind:"create"})}><Plus size={16}/>新增前端模型</button></div></header>
-    <div className={styles.tabs}><nav role="tablist" aria-label="模型与供应商工作区">{WORKSPACE_VIEWS.map(view=><button type="button" id={`workspace-${view.id}-tab`} key={view.id} role="tab" aria-selected={tab===view.id} aria-controls={`workspace-${view.id}-panel`} onClick={()=>navigate(view.id)}>{view.label}</button>)}</nav><div className={styles.versions}>{state&&<><span>模型 v{state.version}</span><span>计费 v{state.billingVersion??"未记录"}</span></>}<button aria-label="刷新生效配置" disabled={loading||locked} onClick={()=>{setError("");void load(true);}}><RefreshCw size={14}/></button></div></div>
+    <header className={styles.header}><h1>模型与供应商</h1><div className={styles.headerActions}><Link className={styles.button} href="/admin/bi/models?tab=history"><History size={15}/>变更记录</Link><button className={styles.primary} disabled={locked||!state?.managed} onClick={()=>open({kind:"create"})}><Plus size={16}/>新增前端模型</button></div></header>
+    <div className={styles.tabs}><nav role="tablist" aria-label="模型与供应商工作区">{WORKSPACE_VIEWS.map(view=>{const Icon=viewIcons[view.id],count=view.id==="models"?state?.rows.length:view.id==="suppliers"?state?.providers.length:undefined;return <button type="button" id={`workspace-${view.id}-tab`} key={view.id} role="tab" aria-selected={tab===view.id} aria-controls={`workspace-${view.id}-panel`} onClick={()=>navigate(view.id)}><Icon size={16} aria-hidden="true"/>{view.label}{count!==undefined&&<span className={styles.tabCount} aria-hidden="true">{count}</span>}</button>;})}</nav><div className={styles.versions}>{state&&<><span>模型 v{state.version}</span><span>计费 v{state.billingVersion??"未记录"}</span></>}<button aria-label="刷新生效配置" disabled={loading||locked} onClick={()=>{setError("");void load(true);}}><RefreshCw size={14}/></button></div></div>
     {error&&<div className={`${styles.alert} ${styles.error}`} role="alert">{error}</div>}{notice&&<div className={styles.alert} role="status">{notice}</div>}
     {pending&&<div className={styles.alert}><span>有一项发布结果待核对，原操作编号已保留。</span> <button className={styles.button} disabled={busy} onClick={()=>void run(pending)}>{busy&&<Loader2 size={14}/>}核对并继续</button></div>}
     {state&&!state.managed&&<div className={styles.alert}>统一配置尚未启用，用户仍使用兼容配置。<Link className={styles.link} href="/admin/bi/models">前往高级配置</Link></div>}
@@ -40,7 +41,7 @@ export function ModelManagement({initialView="models",initialModel=null}:{initia
       {tab==="models"&&(selected?<ModelDetail key={selected.id} row={selected} state={state} actions={modelActions(selected,state.managed,locked,open)} locked={locked} onBack={()=>navigate("models")} onOpen={open}/>:<>
         {selectedId&&<div className={styles.alert}>该模型已隐藏、停用或不在当前目录中。<Link className={styles.link} href="/admin/bi/models?tab=publicModels">查看完整配置</Link></div>}
         <div className={styles.toolbar}><div className={styles.filters} aria-label="模型类型">{[["all","全部"],["image","图片"],["text","文字"],["video","视频"],["audio","声音"]].map(([id,label])=><button key={id} aria-pressed={filter===id} onClick={()=>setFilter(id)}>{label}</button>)}</div><div className={styles.actions}><button className={styles.link} disabled={locked||!state.managed} onClick={()=>open({kind:"order"})}>调整排序</button>{state.managed&&state.rows.some(row=>row.modality==="video")&&<button className={styles.link} disabled={locked} onClick={()=>open({kind:"video-upgrade"})}>更新视频能力</button>}<label className={styles.search}><Search size={15}/><input aria-label="搜索模型" placeholder="搜索名称、模型 ID 或功能" value={search} onChange={event=>setSearch(event.target.value)}/></label></div></div>
-        <ModelMappingHeader/>{rows.map(r=><ModelMappingCard key={r.id} row={r} actions={modelActions(r,state.managed,locked,open)} scopeDisabled={locked||!state.managed} onScope={()=>open({kind:"scope",row:r})} onManage={()=>navigate("models",r.id)} onPrice={()=>open({kind:"price",row:r})}/>)}
+        <div className={styles.modelTable}><ModelMappingHeader workspace/>{rows.map(r=><ModelMappingCard key={r.id} row={r} actions={modelActions(r,state.managed,locked,open)} scopeDisabled={locked||!state.managed} onScope={()=>open({kind:"scope",row:r})} onManage={()=>navigate("models",r.id)} onPrice={()=>open({kind:"price",row:r})}/>)}</div>
         {!rows.length&&<div className={styles.empty}>没有匹配的模型。</div>}
         {!!state.onboarding?.incomplete.length&&<details className={styles.advanced}><summary>待配置 / 隐藏模型 · {state.onboarding.incomplete.length}</summary>{state.onboarding.incomplete.map(model=><p key={model.id}>{model.label} · {model.reason}</p>)}<Link className={styles.link} href="/admin/bi/models?tab=publicModels">配置与启用 →</Link></details>}
         <footer className={styles.footer}><span>显示 {rows.length} / {state.rows.length} 个模型</span><Link className={styles.link} href="/admin/bi/models">高级配置 →</Link></footer>
