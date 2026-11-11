@@ -2,7 +2,7 @@ import type { ModelManagementState } from "./management";
 import type { CatalogEntry } from "./catalog-store";
 
 /** Browser application contracts; no React, storage or transport implementation. */
-export type ManagementState = ModelManagementState & { catalogs: CatalogEntry[] };
+export type ManagementState = ModelManagementState & { catalogs: CatalogEntry[];onboarding?:import('./onboarding-contract').OnboardingView;onboardingDraft?:import('./onboarding-contract').OnboardingDraft|null };
 export type ManagementOperation = Record<string, unknown> & { action: string; id: string; expectedVersion: number };
 export type ManagementRequest = { current(): boolean; signal?: AbortSignal };
 export type ManagementPublication = { publication: { phase: string } };

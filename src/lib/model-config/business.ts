@@ -16,6 +16,7 @@ export function selectedBusinessOption(config: ModelConfig, feature?: string, se
   if (!f) return undefined;
   if (!f.enabled) throw new ModelConfigError("FEATURE_DISABLED", "该功能已停用", 409);
   const option = f.options.find(o => o.modelId === (selected || featureDefaultModel(config,feature,binding)) && o.enabled);
+  if (!option && f.inheritExisting && !f.options.some(o=>o.modelId===(selected||featureDefaultModel(config,feature,binding)))) return undefined;
   if (!option) throw new ModelConfigError("MODEL_INCOMPATIBLE", "该模型未在当前功能的已生效列表中", 400);
   return option;
 }
