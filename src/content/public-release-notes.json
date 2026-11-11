@@ -1,5 +1,23 @@
 [
   {
+    "version": "1794367067",
+    "title": {
+      "zh": "每轮创作与执行过程更新",
+      "en": "Per-turn creation and execution updates"
+    },
+    "improvements": [
+      {
+        "zh": "创作设置按每轮独立保存，历史轮次可沿用原设置再次生成。",
+        "en": "Creation settings are saved per turn, and previous turns can be regenerated with their original settings."
+      },
+      {
+        "zh": "工具执行过程合并展示，生成结果交由你确认。",
+        "en": "Tool activity is grouped into a clear progress view, with generated results left for you to review."
+      }
+    ],
+    "fixes": []
+  },
+  {
     "version": "1794327098",
     "title": {
       "zh": "视频审片与声音编辑更新",
