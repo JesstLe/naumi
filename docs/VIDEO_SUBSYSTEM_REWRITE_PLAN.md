@@ -30,7 +30,7 @@
 
 ### 1.1 总目标
 
-将 `E:\Workspace\infinite-canvas-main` 的生视频能力按能力域完整吸收进 Naumi，形成与现有图片、画布、Agent、账户、积分和媒体存储统一的原生子功能。
+将外部参考实现的生视频能力按能力域完整吸收进 Naumi，形成与现有图片、画布、Agent、账户、积分和媒体存储统一的原生子功能。
 
 “完整吸收”指最终覆盖参考项目的视频模型接入、能力声明、异步任务、独立工作台、画布编排、历史恢复和 Agent 策划能力；不复制其 Go 后端、Ant Design 页面、Zustand 数据层或浏览器直存 API Key 的实现。
 
@@ -94,7 +94,7 @@
 
 ## 3. 改造前差距与吸收结果
 
-| 能力域 | Naumi 改造前 | infinite-canvas-main | 原差距级别 | 已完成吸收方式 |
+| 能力域 | Naumi 改造前 | 参考基线 | 原差距级别 | 已完成吸收方式 |
 | --- | --- | --- | --- | --- |
 | 供应商协议 | 1 个 OpenAI 兼容适配 | OpenAI、Ark/Seedance、API Mart、Kie/Kling、MiniMax、Gemini/Veo、GLM、AutoDL、RunningHub、ComfyUI | 高 | 建立服务端适配器注册表，不复制前端直连逻辑 |
 | 模型能力声明 | 固定时长/尺寸 | 按模型声明帧、参考媒体、音频、水印、清晰度、时长等 | 高 | 建立 `VideoModelCapability`，前后端共用 |

@@ -8,7 +8,7 @@
 
 ## 上游真实流程
 
-固定来源 `HBAI-Ltd/Toonflow-app@ae9e5f1ac4f37713b902fed7fa5ca87819b324ae`：
+外部参考实现固定版本：
 
 - `packages/skills/v118workflow/references/baseAssets.md`：先识别唯一地点，描述空间、光照、固定陈设与色调；同一地点的日夜变化先登记变化需求，不重建另一个基础地点；跨集复用。
 - `references/knowledge/assetDesign.md`：场景布局与地标连续，光源具有实际来源；变化只影响指定时段/天气，不偷偷改空间骨架。通常为单幅主视图，只有对应设计分支才使用同中心点的四方向资料，四格资料也不是360全景。

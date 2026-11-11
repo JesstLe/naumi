@@ -6,7 +6,7 @@
 
 ## 原生媒体
 
-固定Toonflow ae9e5f的packages/tools/ffmpeg/src/index.ts和packages/ffmpeg/src/browserTypes.ts提供原生FFprobe、链式配置/原始参数、多输入多输出、screenshots/concat、文件序列、分片及能力查询。Naumi对应为process_video的原生args、outputs、auxiliaryFiles与独立持久媒体Worker；工作区路径换为本账号已授权asset/output/aux虚拟路径，产物命名与相对目录保持。
+外部参考的媒体工具层固定版本提供原生FFprobe、链式配置/原始参数、多输入多输出、screenshots/concat、文件序列、分片及能力查询。Naumi对应为process_video的原生args、outputs、auxiliaryFiles与独立持久媒体Worker；工作区路径换为本账号已授权asset/output/aux虚拟路径，产物命名与相对目录保持。
 
 `verify-video-fusion-native-media.ts`实际App/PG/媒体Worker查询-encoders/-decoders/-formats/-filters，保存真实返回；四帧frame-%02d.png逐份SHA/独立FFprobe160×90、tile拼图320×180、视频/音频双输入及MP4/PNG双输出正确。账号隔离、危险URL/宿主路径/report拒绝、原SHA/免费余额及重启重放保持；视频供应商创建0。6954 exit0，native-media-da433d9b-f762-4d74-83e5-cf8946b00c07。
 

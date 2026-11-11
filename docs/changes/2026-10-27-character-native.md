@@ -8,14 +8,14 @@
 
 ## 上游实际流程与取舍
 
-读取 `HBAI-Ltd/Toonflow-app@ae9e5f1ac4f37713b902fed7fa5ca87819b324ae`：
+读取外部参考实现固定版本：
 
 - `packages/skills/v118workflow/references/baseAssets.md`：先建立唯一基础身份，多个称呼不按字符串盲目合并；已有角色先识别复用，未知外观不自动猜成事实。
 - `references/knowledge/assetDesign.md`：基础身份与外观变体分开；变体保留父身份，明确保持项及变化项，使用真实参考图；镜头引用已选版本，不能覆写主记录后假设旧镜头仍有效。
 - `references/deriveAssets.md`：在基础资产上登记变化并保留来源，不复制独立角色体系。
 - `apps/web/src/pages/workspace/panels/canvas/components/assetLibrary.vue`：真实媒体可预览、选择后复用；上游文件目录/资产JSON不是Naumi数据模型。
 
-固定来源原文件和SHA256保存在本轮证据目录 `upstream/source-manifest.json`。GitHub树API首次因公开限流返回403，保留错误；改用常规Git协议读取同一公开固定提交，不改动已有上游checkout。`infinite-canvas-main`是无Git元数据的解压目录，未将它冒充固定版本证据。
+固定来源原文件和SHA256保存在本轮证据目录。读取过程曾遇公开API限流（保留错误记录），改用常规Git协议读取同一公开固定提交，不改动已有参考检出。无Git元数据的解压目录未冒充固定版本证据。
 
 Naumi复用已有正式图片、画布项目、视频有序引用/元素能力、任务快照和计费。首版角色仅包含名称、识别设定和有稳定身份的外观方案（名称、描述、参考图片）；不新增独立后台、模型调用或存储服务。
 

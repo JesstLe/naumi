@@ -12,9 +12,9 @@
 
 ## 固定上游与流程取舍
 
-- 固定 `HBAI-Ltd/Toonflow-app@ae9e5f1ac4f37713b902fed7fa5ca87819b324ae`，实际读取audioProcessing、audioClipEditor、FFmpeg browser/types/catalog和execute/cancel；7份文件字节与SHA见 `source-manifest.json`。尝试的videoNode/src/index.ts在该树不存在，保留missing记录。
+- 外部参考实现固定版本，实际读取audioProcessing、audioClipEditor、FFmpeg browser/types/catalog和execute/cancel；7份文件字节与SHA见本轮证据清单。尝试的videoNode/src/index.ts在该树不存在，保留missing记录。
 - 上游先ffprobe确认真实时长/音轨，再按片段atrim/asetpts/concat，生成新文件、复核输出，取消用AbortSignal终止command；不覆盖原素材。
-- 该固定树没有独立多轨节点；全文amix/acrossfade/xfade未找到完整多轨编辑器。固定 `tigerowo/infinite-canvas@68b37db04b9083c3ff0af67ffe362f85d04d1f9f` 的Timeline命中为版本说明，不是剪辑实现。
+- 该参考树没有独立多轨节点；全文amix/acrossfade/xfade未找到完整多轨编辑器。另一参考实现的Timeline命中为版本说明，不是剪辑实现。
 - 因而学习“核真实素材→范围处理→新产物→复核→取消”的成熟流程，按Naumi原生节点/连线/@/项目和媒体任务实现多轨；不声称移植了上游不存在的成品，不嵌入整页或另造账号、存储、任务队列。
 
 ## 模块职责、公共接口与归属

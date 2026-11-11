@@ -16,7 +16,7 @@ reference能力路径用于三种叙事意图，未伪造反向延展API。最�
 
 ## 制作规则核对与剩余工作
 
-已对照固定IC68b37db的video-multi-shot、video-extension规则及Naumi production-prompt：整拼图不裁切/不当首帧、逐格顺序/时长、正式身份和声音职责、默认硬切、明确同机位、前传导向来源开场、成功前序与持久依赖一致。script-assets及video-script-storyboard在创建正式片段前验证逐字连续覆盖和来源修订；实际测试补齐四格原生请求与新前序连续链。原script/multishot/SSE/freeze证据保留各自范围，不把脚本供应商解释为真实模型策略质量。
+已对照外部参考的多镜头/续写规则及Naumi production-prompt：整拼图不裁切/不当首帧、逐格顺序/时长、正式身份和声音职责、默认硬切、明确同机位、前传导向来源开场、成功前序与持久依赖一致。script-assets及video-script-storyboard在创建正式片段前验证逐字连续覆盖和来源修订；实际测试补齐四格原生请求与新前序连续链。原script/multishot/SSE/freeze证据保留各自范围，不把脚本供应商解释为真实模型策略质量。
 
 上游实操、整分支复核、固定Linux候选/兼容回滚和103发布仍待完成。本批没有SSH连接、部署锁、上线或维护计数增加。
 

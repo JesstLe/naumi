@@ -26,7 +26,7 @@ node scripts/verify-video-fusion-application-summary.mjs --runs=application-prot
 
 完整34项矩阵仍逐项审核中，协议应用汇总新增到evidenceRegistry；正式视频API消费0，真实生成效果未测。完整上游对照、整分支复核、固定Linux候选/兼容回滚和103发布仍待完成。本模块无服务器连接、部署锁、上线或维护计数增加。
 
-本轮按已批准设计保留V01—V24、P01—P08、S01/S02共34项，新增scripts/video-fusion/coverage.json。每项列实现、实际已有证据、证据类型和剩余条件；已有阶段PASS保留，但完整条件未审完时均为evidence-review-pending，不用一个窄用例或JSON布尔值替代整项结论。脚本verify-video-fusion-e2e.mjs的--inventory仅核对34项、批准设计、路径和证据注册；默认命令只有所有条件逐项完成且带具体断言才通过。--delivery-audit另检查交付门槛。当前不是最终验收通过。
+本轮按已批准设计保留V01—V24、P01—P08、S01/S02共34项，新增逐项审核清单（已随来源标注清理移除）。每项列实现、实际已有证据、证据类型和剩余条件；已有阶段PASS保留，但完整条件未审完时均为evidence-review-pending，不用一个窄用例或JSON布尔值替代整项结论。融合e2e核对脚本（已随来源标注清理移除）的--inventory仅核对34项、批准设计、路径和证据注册；默认命令只有所有条件逐项完成且带具体断言才通过。--delivery-audit另检查交付门槛。当前不是最终验收通过。
 
 发现具体缺口：原ic-protocols/new-protocols覆盖24+27个协议HTTP组合，部分App真实链只覆盖Ark/KIE/工作流/结果等子集，不能据此宣称P01—P08全应用完成。新增application-protocol-cases.json固定51组合/41原生profile，应用脚本经实际App/PG/Router/Worker执行公开模型选定、授权引用、原生请求、持久task及冻结、完整产物探测/哈希、两账号私有媒体、重复提交/结算和App重启。
 

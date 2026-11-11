@@ -1,6 +1,6 @@
 # 画布视频制作规则融合
 
-来源固定 infinite-canvas `68b37db04b9083c3ff0af67ffe362f85d04d1f9f`，读取 `web/src/app/(user)/canvas/agent/skills/` 的 script、video-single-shot、video-multi-shot、video-extension、video-editing、audio。本文记录规则实现，不能作为真实模型质量或完整34项验收证据。
+规则基线：外部参考实现的画布 Agent 技能（script、video-single-shot、video-multi-shot、video-extension、video-editing、audio）。本文记录规则实现，不能作为真实模型质量或完整34项验收证据。
 
 此前 `src/lib/video/production-prompt.ts` 只有通用约束。本批按实际Naumi工具、统一cap、有序引用、可编辑节点和持久制作链重写细分规则，继续从 `AGENT_SYSTEM_PROMPT` 接入正常Pi调用，没有添加前端宣传文字或默认收费动作。
 

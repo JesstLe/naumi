@@ -2,7 +2,7 @@
 
 ## 实现与来源
 
-基于主线2d3e2ee继续本目标，未修改共享checkout。对照固定IC 68b37db的handler/kie_video.go第716—744行及真实原前端→原Go direct-request→隔离供应商调用，发现Naumi把reference分支的静音限制错误应用到了transformation。
+基于主线2d3e2ee继续本目标，未修改共享checkout。对照外部参考实现的 KIE 直连处理逻辑及真实原前端→原Go direct-request→隔离供应商调用，发现Naumi把reference分支的静音限制错误应用到了transformation。
 
 - Omni duration采用原协议的number；其他KIE分支保持各自类型。
 - 带图片的视频编辑保留显式音频与请求比例、时长；纯视频编辑采用auto并省略duration，仍保留显式音频。
@@ -13,7 +13,7 @@
 
 独立原项目后端仅监听127.0.0.1:15372，原SQLite与原创素材；六段调用实际执行原create/poll函数和原Go转换器，外部供应商完全替换为严格隔离传输，无网络兜底。结果：
 
-`E:/workspace/naumi/output/canvas-video-fusion-20261013/reference/ic-68b37db-20261014/native-video-826a9496-904f-44f9-ba18-cdb01a690ebe/result.json`
+`本轮证据目录 native-video-826a9496-904f-44f9-ba18-cdb01a690ebe/result.json`
 
 开场、四格拼图12秒、硬切、同机位、前传、编辑全部完成。检查完整多行对白、4×3秒原文、拼图全图非首帧、元素身份、直接前序完成后引用；实际输出字节SHA与ffprobe对应12秒静音/4秒带音频素材。编辑audio=true、16:9、number 4与实际带音频结果一致。
 
@@ -27,7 +27,7 @@ TypeScript全量检查通过。四种Omni profile共六个应用用例在真实A
 
 独立CLI只读完整源码包补审51228 exit0，结论No actionable findings in this correction scope；输出omni-parity-review-20261017.txt。这是本修正范围审阅，不能替代新整合主线的全分支审阅，wholeBranchReview已重新设pending。原6689审阅证据仍保留为其范围历史。
 
-原生复现脚本已保存scripts/video-fusion/verify-reference-native.mts；VIDEO_REFERENCE_ROOT指向隔离原项目与原创素材目录，沿用原web tsconfig通过tsx加载。上游真实浏览器局限及公开演示站版本/验证码限制保留在comparison.json，没有以本API补证伪称浏览器全流程成功。
+原生复现脚本当时保存在视频融合工具目录（已随来源标注清理移除）；其根目录指向隔离原项目与原创素材目录，沿用原 tsconfig 通过 tsx 加载。上游真实浏览器局限及公开演示站版本/验证码限制保留在对比记录中，没有以本API补证伪称浏览器全流程成功。
 
 首次恢复自有PostgreSQL时遗漏启动端口参数，启动到回环5432；识别后等待自身崩溃恢复完成，正常关闭自有cluster并以原53292重新启动。没有连接/修改其他数据库或服务器。后续启动明确传-h 127.0.0.1 -p 53292。
 

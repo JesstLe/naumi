@@ -8,7 +8,7 @@
 
 ## 固定上游与原生设计
 
-固定tigerowo/infinite-canvas@68b37db04b9083c3ff0af67ffe362f85d04d1f9f，10份原文件/字节哈希位于证据目录source-manifest.json及upstream/。
+外部参考实现固定版本，10份原文件/字节哈希位于本轮证据目录。
 
 - canvas-client-page.tsx:3358起体现空音频复用节点、有内容时新增结果、来源连线、任务先建档及旧回执不覆盖新任务。
 - audio skill区分独立音色样本、最终朗读和视频模型原生声音；正文与演绎说明分开，未完成结果不直接用于下游。
