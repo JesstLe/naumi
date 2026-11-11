@@ -58,15 +58,15 @@ export async function executeCutout(input:CutoutInput,context:{actor:()=>Promise
     let out: Buffer;
     try {
       const cfg = await getCutoutSettings();
-      // 抠图统一走发丝级(Replicate);失败退 OpenAI(gpt-image-1 透明底)。
-      // 自托管 rembg 免费抠图已下线(2026-06-21 用户停用),不再回退自托管。
+      // Published image execution owns managed cutout. Legacy standalone
+      // segmentation is used only when no managed image scope was resolved.
       const fallback = async (): Promise<Buffer> => {
         const { apiKey } = await getOpenAISettings();
-        if (!apiKey) throw new Error("抠图后端不可用");
+        if (!apiKey&&!currentModelExecution("image")) throw new Error("抠图图片模型尚未配置");
         return await cutoutOpenAI(
           input.bytes,
           input.type,
-          apiKey,
+          apiKey||"managed",
           cfg.openaiModel
         );
       };

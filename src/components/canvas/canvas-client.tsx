@@ -194,6 +194,7 @@ import type {TextImageMode} from "@/lib/canvas/text-image-inputs";
 import type {CanvasTextImageContext} from "@/lib/canvas/text-image-runs";
 import {useCanvasTextImages} from "./use-canvas-text-images";
 import {useCanvasLocalImageEdits} from "./use-canvas-local-image-edits";
+import {canvasImageToolState} from "@/lib/canvas/image-tool-state";
 import {useCanvasStitch} from "./use-canvas-stitch";
 import type {CanvasLocalImageEditPorts} from "@/lib/canvas/local-image-edits";
 import { CanvasAssistantPanel } from "./canvas-assistant-panel";
@@ -1131,6 +1132,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         task.operationKey === `retry:${selectedId}`)
     ) || (!!selectedId && pendNodes.some(node => node.generating && !node.generationFailure && node.parentId === selectedId));
   const selectedImageAttempts=projectCanvasImageAttempts([...generationTasks].filter(task=>task.isVisible?.()??true),selectedId||"");
+  function imageToolState(source:Artwork|null|undefined){return canvasImageToolState({source,readOnly,ready:nodeSettingsReady,locked:!!source&&isNodeLocked(source.id),
+    cutoutReady:!!cutoutCatalog&&!cutoutCatalogError&&cutoutCatalog.available!==false&&cutoutCatalog.supported!==false,cutoutError:cutoutCatalogError});}
+  const selectedImageTools=imageToolState(selected);
   const selectedImageSubmitting=!!selectedId&&(imageSubmissionRef.current.has(canvasImageSubmissionKey(canvasAccountRef.current,currentWorkspace(),activeProjectRef.current?.key||null,selectedId))||generationTasks.some(task=>task.sourceId===selectedId&&!task.failure&&task.stage==="preparing"));
   const selectedPendingSubmitting=!!selectedPendId&&imageSubmissionRef.current.has(canvasImageSubmissionKey(canvasAccountRef.current,currentWorkspace(),activeProjectRef.current?.key||null,selectedPendId));
   const selectedGenerationFailure = selectedImageAttempts.current?.failure||generationTasks.find(task => !task.replaceNode&&task.failure && task.sourceId === selectedId && (task.isVisible?.() ?? true))?.failure
@@ -1370,7 +1374,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     };
   }
   async function runGen(source:Artwork,prompt:string,opts?:CanvasImageGenerationOptions):Promise<GeneratedResult[]> {
-    if(readOnly||!user||isNodeLocked(source.id))return [];
+    if(!user||!imageToolState(source).canMutate)return [];
     const presentation=generationPresentation;
     const visibleAttempt=()=>!opts?.replaceNode||projectCanvasImageAttempts([...presentation.getSnapshot().tasks],source.id).current?.operationKey===(opts.operationKey??`node:${source.id}`);
     return runCanvasDerivedImage({source,prompt,options:opts,model:genModel,quality:genQuality,models:imageModels,
@@ -1433,10 +1437,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       merge:(ids,isCurrent)=>mergeWorks(ids,isCurrent),history:pushAddUndoMany,refresh:()=>setCanvasImageTaskRefreshKey(value=>value+1),credits:refreshCredits,notice:message=>{if(scope.viewCurrent())flashTip(message);}};
   }
   async function openImageTextEditor(artwork:Artwork){
-    if(readOnly||!user)return;assistantSession.detach();setPropertiesOpen(false);suspendAssistant();
+    if(!user||!imageToolState(artwork).canMutate)return;assistantSession.detach();setPropertiesOpen(false);suspendAssistant();
     await imageTextEditor.open(artwork,canvasImageTextContext());
   }
-  function applyOcrSegment(segment:OcrSegment){if(readOnly||!user)return Promise.resolve();return imageTextEditor.apply(segment,canvasImageTextContext());}
+  function applyOcrSegment(segment:OcrSegment){const source=active?.members.find(artwork=>artwork.id===ocrArtworkId);if(!user||!imageToolState(source).canMutate)return Promise.resolve();return imageTextEditor.apply(segment,canvasImageTextContext());}
 
   /** React supplies geometry and existing document/transport adapters only. */
   function canvasGenerationRunContext():CanvasGenerationRunContext {
@@ -1453,7 +1457,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     };
   }
   async function landEditResult(source:Artwork,request:CanvasEditRequest,label:string):Promise<boolean> {
-    if(readOnly||!user)return false;
+    if(!user||!imageToolState(source).canMutate)return false;
     return runCanvasEdit({source,request,label},canvasGenerationRunContext());
   }
 
@@ -3620,7 +3624,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             >
               {selected && <>
               <button type="button" data-action="rename" aria-label={t("canvas.editName")} title={t("canvas.toolbar.renameHint")}
-                disabled={!selected || !nodeSettingsReady || isNodeLocked(selected.id)} onClick={() => { if (selected) { setNodeRenameValue(selected.title); setRenamingNodeId(selected.id); } }}
+                disabled={!selectedImageTools.canMutate} onClick={() => { if (selected) { setNodeRenameValue(selected.title); setRenamingNodeId(selected.id); } }}
                 className="canvas-ui-action flex h-[34px] items-center justify-center gap-1 rounded-[9px] px-2 text-[12px] font-semibold transition-colors disabled:opacity-40">
                 <Pencil className="h-4 w-4 shrink-0" aria-hidden="true" />
               </button>
@@ -3632,8 +3636,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               {/* 抠图:发丝级,扣 1 积分/张(已去掉免费极速档) */}
               <FeatureVisible feature="cutout"><button
                 type="button"
-                disabled={selectedGenerating || !selected}
-                title={!selected ? t("canvas.toolNeedImage") : t("canvas.toolbar.cutoutHint")}
+                disabled={selectedGenerating || !selectedImageTools.canCutout}
+                title={selectedImageTools.cutoutReason || t("canvas.toolbar.cutoutHint")}
                 onClick={() => onCutout("fine")}
                 className="canvas-ui-action flex items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 py-2 text-[13px] font-semibold transition-colors disabled:opacity-40"
               >
@@ -3642,10 +3646,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               </button></FeatureVisible>
               {/* 高清:下拉选分辨率(深色弹出,向下) */}
               <FeatureVisible feature="generate"><CanvasSelect
-                hint={t("canvas.toolbar.hdHint")}
+                hint={selectedImageTools.reason || (generationParameters.resolutions.length ? t("canvas.toolbar.hdHint") : "当前模型没有可用分辨率")}
                 dir="down"
                 light={lightCanvas}
-                disabled={selectedGenerating || !selected}
+                disabled={selectedGenerating || !selectedImageTools.canMutate || !generationParameters.resolutions.length}
                 value=""
                 options={generationParameters.resolutions.map((resolution) => ({
                   value: resolution,
@@ -3667,10 +3671,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               /></FeatureVisible>
               {/* 改比例(ChatGPT 式重生成):选目标比例,按原图重画再裁切,无需提示词 */}
               <FeatureVisible feature="generate"><CanvasSelect
-                hint={t("canvas.toolbar.ratioHint")}
+                hint={selectedImageTools.reason || t("canvas.toolbar.ratioHint")}
                 dir="down"
                 light={lightCanvas}
-                disabled={selectedGenerating || !selected}
+                disabled={selectedGenerating || !selectedImageTools.canMutate}
                 value=""
                 options={[
                   { value: "1:1", label: t("canvas.ratioSquare") },
@@ -3700,8 +3704,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   type="button"
                   ref={expandButtonRef}
                   aria-expanded={expandOpen}
-                  title={t("canvas.toolbar.expandHint")}
-                  disabled={!selected || selectedGenerating || readOnly}
+                  title={selectedImageTools.reason || t("canvas.toolbar.expandHint")}
+                  disabled={!selectedImageTools.canMutate || selectedGenerating}
                   onClick={() => {
                     setExpandOpen((open) => !open);
                     setExpandRatio(null);
@@ -3765,7 +3769,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                       <ImageQualityControl compact feature="canvas.expand" resolution={selected?.resolution || "1K"} />
                       <button
                         type="button"
-                        disabled={!expandRatio || selectedGenerating}
+                        disabled={!expandRatio || selectedGenerating || !selectedImageTools.canMutate}
                         onClick={() => expandRatio && void onExpand(expandRatio)}
                         className="mt-3 w-full rounded-[10px] bg-teal-500 px-3 py-2 text-[12px] font-semibold text-white transition-colors hover:bg-teal-600 disabled:cursor-not-allowed disabled:opacity-40"
                       >
@@ -3784,11 +3788,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 items={[
                   ...QUICK_ACTIONS.filter(a => canFeature("generate") && ["bg", "angle", "caption", "relight"].includes(a.key)).map(a => ({
                     id: a.key, icon: a.icon, label: t(`canvas.qa.${a.key}`), hint: t(`canvas.toolbar.${a.key}Hint`),
-                    disabled: selectedGenerating || !selected, onSelect: () => onQuickAction(a.key),
+                    disabled: selectedGenerating || !selectedImageTools.canMutate, onSelect: () => onQuickAction(a.key),
                   })),
                   ...(canFeature("generate") ? [
-                    { id:"edit-text",icon:Type,label:t("canvas.toolbar.editText"),hint:t("canvas.toolbar.editTextHint"),disabled:!selected||selectedGenerating||readOnly,onSelect:()=>{if(selected)void openImageTextEditor(selected);} },
-                    { id:"annotate",icon:PenLine,label:t("canvas.toolbar.annotate"),hint:t("canvas.toolbar.annotateHint"),disabled:!selected||selectedGenerating||readOnly,onSelect:()=>{if(selected)setAnnotateArtwork(selected);} },
+                    { id:"edit-text",icon:Type,label:t("canvas.toolbar.editText"),hint:selectedImageTools.reason||t("canvas.toolbar.editTextHint"),disabled:!selectedImageTools.canMutate||selectedGenerating,onSelect:()=>{if(selected)void openImageTextEditor(selected);} },
+                    { id:"annotate",icon:PenLine,label:t("canvas.toolbar.annotate"),hint:selectedImageTools.reason||t("canvas.toolbar.annotateHint"),disabled:!selectedImageTools.canMutate||selectedGenerating,onSelect:()=>{if(selected)setAnnotateArtwork(selected);} },
                   ] : []),
                   ...(selected&&!selected.videoUrl ? [{id:"replace",icon:ImagePlus,label:L("替换图片","Replace image"),disabled:localEditBusy||!nodeSettingsReady||isNodeLocked(selected.id),onSelect:()=>requestReplace(selected)}] : []),
                   { id: "workflow", icon: Workflow, label: t("canvas.toolbar.workflow"), hint: t("canvas.toolbar.workflowHint"),
@@ -3819,7 +3823,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 type="button"
                 title={t("canvas.toolbar.downloadImage")}
                 aria-label={t("canvas.toolbar.downloadImage")}
-                disabled={!selected}
+                disabled={!selectedImageTools.canView}
                 onClick={() =>
                   selected && void downloads.image(selected.image)
                 }
@@ -3831,7 +3835,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 type="button"
                 title={t("canvas.viewLarge")}
                 aria-label={t("canvas.viewLarge")}
-                disabled={!selected}
+                disabled={!selectedImageTools.canView}
                 onClick={() =>
                   selected &&
                   setLightbox({ src: selected.image, alt: selected.title })
