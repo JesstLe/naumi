@@ -1,6 +1,6 @@
 import {createdResult,field,polled,rejectAdvanced,selectWireOptions,unsupportedWire,wireReferences} from "../wire-helpers";
 import type {VideoWireContext,VideoWireRequest,VideoWireCodec} from "../wire-contracts";
-// Wire adaptation: IC 68b37db handler/apimart_video.go (AGPL-3.0). Reject overlimits instead of upstream source truncation.
+// Reject overlimit requests instead of silently truncating them.
 export function buildAPIMartCreate(context:VideoWireContext):VideoWireRequest{
   const input=context.request,refs=wireReferences(context),profile=context.profile;
   const extra=selectWireOptions(context,{seed:"seed",mode:"mode",characterOrientation:"character_orientation",character_orientation:"character_orientation",keepOriginalSound:"keep_original_sound",smartShots:"multi_shot",cfgScale:"cfg_scale"});

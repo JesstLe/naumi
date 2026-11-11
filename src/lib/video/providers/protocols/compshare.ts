@@ -2,7 +2,6 @@ import {createdResult,field,imageWireValue,mediaUrl,polled,rejectAdvanced,select
 import type {VideoWireContext,VideoWireRequest,VideoWireCodec} from "../wire-contracts";
 import {buildMiniMaxCreate,decodeMiniMaxPoll} from "./minimax";
 import {TransientPollError} from "../../types";
-// Toonflow-app ae9e5f1 packages/providers/src/media/compshare.ts. Copyright (c) 2026 HBAI-Ltd, MIT.
 export const COMPSHARE_PROFILES=["compshare-h3","compshare-hailuo","compshare-vidu","compshare-vidu-extend","compshare-vidu-lip-sync","compshare-wan","compshare-seedance"] as const;
 export function buildCompshareCreate(context:VideoWireContext):VideoWireRequest{
   rejectAdvanced(context);const input=context.request,profile=context.profile,refs=wireReferences(context);

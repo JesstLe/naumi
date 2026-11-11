@@ -1,7 +1,7 @@
 import {createdResult,field,imageWireValue,polled,rejectAdvanced,selectWireOptions,unsupportedWire,wireReferences} from "../wire-helpers";
 import type {VideoWireContext,VideoWireRequest,VideoWireCodec} from "../wire-contracts";
 import {mediaExtension} from "../../media-formats";
-// IC 68b37db web/src/services/api/video.ts: distinct Grok2API, CogVideoX3 and Agnes wire forms.
+// Distinct Grok2API, CogVideoX3 and Agnes wire forms.
 function dimensions(context:VideoWireContext){
   const input=context.request;if(input.width&&input.height)return `${input.width}x${input.height}`;
   const vertical=input.aspectRatio==="9:16",square=input.aspectRatio==="1:1",resolution=(input.resolution||"").toLowerCase();

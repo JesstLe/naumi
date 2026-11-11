@@ -1,4 +1,3 @@
-/** Adapted from tigerowo/infinite-canvas, commit 68b37db; AGPL-3.0. See docs/licenses/infinite-canvas/NOTICE.md. */
 /**
  * Professional cinematography prompt library for the Camera Control panel.
  *

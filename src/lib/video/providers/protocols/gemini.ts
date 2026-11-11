@@ -1,7 +1,6 @@
 import {TransientPollError} from "../../types";
 import {createdResult,field,mediaUrl,object,polled,rejectAdvanced,selectWireOptions,unsupportedWire} from "../wire-helpers";
 import type {VideoWireContext,VideoWireRequest,VideoWireCodec} from "../wire-contracts";
-// Behavior adapted from infinite-canvas 68b37db web/src/services/api/video.ts and lib/gemini.ts (AGPL-3.0).
 export const GEMINI_WIRE_OPTIONS={seed:"seed",personGeneration:"personGeneration",numberOfVideos:"numberOfVideos",sampleCount:"sampleCount",enhancePrompt:"enhancePrompt"} as const;
 export function buildGeminiCreate(context:VideoWireContext):VideoWireRequest{
   rejectAdvanced(context);const input=context.request,refs=input.references;

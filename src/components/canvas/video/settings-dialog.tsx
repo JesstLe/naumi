@@ -11,7 +11,6 @@ import type { OrderedInput } from "@/lib/video/references";
 import { catalogCapability, selectedVideoCatalogModel, resolveVideoTextInputs, validateVideoSettings, type VideoCatalogModel, type VideoNodeConfig, type VideoInputChoice } from "@/lib/video/client-settings";
 import { useBillingEstimate, type PublicQuote } from "@/lib/billing/client";
 import { VideoSettingsFields } from "./settings-fields";
-import { VideoSourceAttribution } from "./source-attribution";
 import { VideoField, videoFieldClass, videoButtonClass, assertVideoFieldsValid } from "./form-controls";
 import { isTopVideoDialog } from "./dialog-stack";
 import {type PublicVideoTaskView} from "@/lib/video/queries";
@@ -172,7 +171,7 @@ export function VideoSettingsDialog({ node, models, choices, light, email, readO
         <VideoSettingsFields config={config} inputs={resolvedInputs} models={models} choices={choices} nodeId={node.id} email={email} readOnly={readOnly} busy={busy} onConfig={setConfig} onInputs={setInputs} onImport={onImport} onImportBusyChange={setImporting} onLoadMoreAssets={onLoadMoreAssets} canLoadMoreAssets={canLoadMoreAssets}/>
 
       </fieldset></div>
-      <footer className="shrink-0 space-y-2 border-t border-current/10 px-4 py-3">{(error || invalid || !config.comfyWorkflowId && estimate.error) && <p role={error ? "alert" : "status"} className={`text-xs ${error ? "text-red-500" : "text-amber-500"}`}>{V(error || invalid || estimate.error||"")}</p>}<div className="flex flex-wrap items-center justify-between gap-3"><VideoSourceAttribution /><div className="flex gap-2"><button type="button" className={videoButtonClass} disabled={readOnly || busy || importing} onClick={() => void submit(false)}>{busy ? V("保存中…") : V("保存设置")}</button><button type="button" className="rounded-lg bg-teal-500 px-4 py-2 text-xs font-semibold text-white hover:bg-teal-600 disabled:opacity-40" disabled={readOnly || busy || importing || active || catalogLoading || !!invalid || !config.comfyWorkflowId && !estimate.quote} onClick={() => void submit(true)}>{V("\u751F\u6210\u89C6\u9891 \u00B7 ")}{readOnly ? V("只读") : config.comfyWorkflowId ? V("0 积分") : estimate.quote ? V(`${estimate.quote.mode === "api-cost-plus" ? "上限 " : ""}${totalCost} 积分`) : V("报价中…")}</button></div></div></footer>
+      <footer className="shrink-0 space-y-2 border-t border-current/10 px-4 py-3">{(error || invalid || !config.comfyWorkflowId && estimate.error) && <p role={error ? "alert" : "status"} className={`text-xs ${error ? "text-red-500" : "text-amber-500"}`}>{V(error || invalid || estimate.error||"")}</p>}<div className="flex justify-end gap-2"><button type="button" className={videoButtonClass} disabled={readOnly || busy || importing} onClick={() => void submit(false)}>{busy ? V("保存中…") : V("保存设置")}</button><button type="button" className="rounded-lg bg-teal-500 px-4 py-2 text-xs font-semibold text-white hover:bg-teal-600 disabled:opacity-40" disabled={readOnly || busy || importing || active || catalogLoading || !!invalid || !config.comfyWorkflowId && !estimate.quote} onClick={() => void submit(true)}>{V("\u751F\u6210\u89C6\u9891 \u00B7 ")}{readOnly ? V("只读") : config.comfyWorkflowId ? V("0 积分") : estimate.quote ? V(`${estimate.quote.mode === "api-cost-plus" ? "上限 " : ""}${totalCost} 积分`) : V("报价中…")}</button></div></footer>
     </div>
   </div>, document.body);
 }

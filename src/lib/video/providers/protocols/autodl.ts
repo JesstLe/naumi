@@ -2,7 +2,7 @@ import {createdResult,field,mediaUrl,polled,rejectAdvanced,string,unsupportedWir
 import type {VideoWireContext,VideoWireRequest,VideoWireCodec} from "../wire-contracts";
 import {compileWorkflowInputs} from "./workflow-inputs";
 import {TransientPollError} from "../../types";
-// IC 68b37db service/autodl.go: manifest stores the inspected InputRules mapping without later silent clamping.
+// Manifest stores the inspected InputRules mapping without later silent clamping.
 export function buildAutoDLCreate(context:VideoWireContext):VideoWireRequest{
   rejectAdvanced(context);const {manifest,body}=compileWorkflowInputs(context),id=manifest.workflowId||context.provider.workflowId||context.request.modelId;
   if(!id)unsupportedWire(context,"缺少AutoDL工作流ID");
