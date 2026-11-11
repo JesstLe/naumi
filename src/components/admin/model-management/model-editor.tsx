@@ -36,7 +36,7 @@ export function ModelEditor({editor,state,locked,busy,error,refreshing,onRefresh
     case "video":return <VideoParametersDialog row={editor.row} locked={locked} error={error} onClose={close} onSave={routes=>void onPublish(operation("video-parameters",{rowId:editor.row.id,routes}))}/>;
     case "order":return <OrderDialog rows={state.rows} locked={locked} error={error} onClose={close} onSave={rowIds=>void onPublish(operation("order",{rowIds}))}/>;
     case "scope":return <ScopeDialog row={editor.row} locked={locked} error={error} onClose={close} onSave={(features,canvas)=>void onPublish(operation("scope",{rowId:editor.row.id,features,...(canvas!==undefined?{canvas}:{})}))}/>;
-    case "price":return <PriceDialog row={editor.row} locked={locked} error={error} onClose={close} onSave={(features,pricing)=>void onPublish(operation("pricing",{rowId:editor.row.id,features,pricing}))}/>;
+    case "price":return <PriceDialog row={state.rows.find(row=>row.id===editor.row.id)||editor.row} initialFeature={editor.feature} locked={locked} error={error} onClose={close} onSave={(features,pricing)=>void onPublish(operation("pricing",{rowId:editor.row.id,features,pricing}))}/>;
     case "connect":return <ConnectDialog locked={locked} onClose={close} onSave={(fields,id)=>onPublish({...operation("connect",fields),id})}/>;
     case "register":return <RegisterDialog model={editor.model} protocol={state.providers.find(provider=>provider.id===editor.providerId)!.protocol} locked={locked} onClose={()=>onChange(registeredEditor(editor,state))} onSave={fields=>void onPublish(operation("register",{providerId:editor.providerId,model:editor.model,...fields}))}/>;
   }

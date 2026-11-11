@@ -12,8 +12,8 @@ const priceQualities=["low","medium","high","xhigh","max","auto"],priceResolutio
 
 const priceQualityNames:Record<string,string>={low:"低",medium:"标准",high:"高",xhigh:"超高",max:"最高",auto:"自动"};
 
-export function PriceDialog({row,locked,error,onClose,onSave}:{row:ManagedModelRow;locked:boolean;error:string;onClose:()=>void;onSave:(features:string[],pricing:ManagedModelCreditPricing|null)=>void}){
-  const views=row.pricing || [],first=views[0];
+export function PriceDialog({row,initialFeature,locked,error,onClose,onSave}:{row:ManagedModelRow;initialFeature?:string;locked:boolean;error:string;onClose:()=>void;onSave:(features:string[],pricing:ManagedModelCreditPricing|null)=>void}){
+  const views=row.pricing || [],first=views.find(view=>view.feature===initialFeature)||views[0];
   const [selected,setSelected]=useState<string[]>(first?[first.feature]:[]),[active,setActive]=useState(first?.feature || ""),[mode,setMode]=useState(row.modality==="image"?"matrix":"fixed");
   const [amount,setAmount]=useState(first?.credits ?? NaN),[bulk,setBulk]=useState(first?.credits ?? NaN);
   type Draft={cells:import("@/lib/model-config/management").ManagedModelCreditGrid;prices:Record<string,Record<string,number|null>>};

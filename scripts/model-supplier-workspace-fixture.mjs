@@ -1,0 +1,56 @@
+/** Actual React owners + loopback HTTP. Authentication, persistence, Router and supplier endpoints are fixtures. */
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import {createServer} from 'node:http';
+import {createRequire} from 'node:module';
+import {build} from 'esbuild';
+import {spawnSync} from 'node:child_process';
+import {createHash} from 'node:crypto';
+const require=createRequire(import.meta.url);
+export async function startWorkspaceFixture({root,out,port=0}){
+ root=path.resolve(root);out=path.resolve(out);await fs.mkdir(out,{recursive:true});
+ const {createState}=require(path.join(root,'scripts/model-mapping-clarity-fixture.cjs'));
+ const makeState=()=>{const s=createState();s.catalogs.forEach(c=>{c.stale=false;c.models=[{id:'directory-image',label:'Directory image'}];});s.rows[0].pricing.push({feature:'canvas.image',label:'画布生图',unit:'image',credits:9,estimated:false,source:{kind:'model-rule',label:'本页积分设置'}});s.rows[0].parameterSources=s.rows[0].routes.map(r=>({id:r.upstreamId,model:r.model,provider:r.provider,protocol:'openai-images',nativeResolutions:['1K','2K'],parameterMap:{qualityPolicy:{mode:'passthrough',choices:[{id:'medium',label:'标准'}]}}}));s.rows[3].videoConfig.routes=[{upstreamId:'video-native',model:'native-video-model',provider:'视频来源',editable:true,configured:true,definition:{modes:['text'],durationResolutionMap:[{durations:[5],resolutions:['720p']}],aspectRatios:['16:9']},profile:'openai-videos',sources:{modes:'admin',durationResolutionMap:'vendor',aspectRatios:'vendor'}}];s.rows.push({...s.rows[2],id:'audio',label:'语音生成',modality:'audio',publicIds:['audio-public'],features:[{id:'audio.speech',label:'生成配音'}],pricing:[{feature:'audio.speech',label:'生成配音',unit:'task',credits:2,estimated:false}]});s.channelHealth={};s.providerCapacity={primary:{inFlight:0,maxConcurrent:2}};return s;};
+ let state=makeState();const receipts=new Map(),requests=[],failures=[],flags={gridDelay:0,gridError:false,gridVersion:false,unknown:false,held:false};
+ const entry=`import React,{useState}from'react';import{createRoot}from'react-dom/client';import{AdminCenterShell}from'./src/components/admin/center-shell';import{ModelManagement}from'./src/components/admin/model-management/model-management';import{BusinessEditor}from'./src/components/admin/model-config/business-editor';import{fixtureModelConfig}from'./scripts/model-config-unit-fixture';import{fixtureConfig}from'./scripts/billing-unit-fixture';
+ const config=fixtureModelConfig('https://fixture.invalid/v1','00000000-0000-4000-8000-000000000001');const pricing=window.fixtureMode==='fixed'?{mode:'fixed',credits:3}:window.fixtureMode==='inherit'?undefined:window.fixtureMode==='api-cost-plus'?{mode:'api-cost-plus',estimateCnyMicros:'100000',factorBps:15000,authorizationCnyMicros:'1000000',creditsPerCnyMicros:'10000000',rounding:'ceil'}:{mode:'matrix',prices:Object.fromEntries(['low','medium','high','xhigh','max','auto'].map(q=>[q,Object.fromEntries(['1K','2K','4K','5K'].map(r=>[r,r==='4K'?null:q==='low'?0:7]))]))};config.business={'image.generate':{enabled:true,defaultModelId:'image-a',options:[{modelId:'image-a',enabled:true,sort:0,unit:'image',...(pricing?{pricing}:{}),parameters:{qualities:['medium']}}]}};
+ function Business(){const[c,set]=useState(config);window.fixtureConfig=c;window.fixtureInitial=JSON.stringify(config);window.fixtureEdits=window.fixtureEdits||0;return <BusinessEditor config={c} billing={{version:8,config:fixtureConfig()}} onChange={n=>{window.fixtureEdits++;set(n)}} onPreview={async()=>({fixture:true})}/>}
+ function App(){return location.pathname==='/business-editor'?<Business/>:<AdminCenterShell active='model-management' moduleNavigation={false}><ModelManagement/></AdminCenterShell>};createRoot(document.getElementById('root')).render(<App/>);`;
+ const plugin={name:'only-framework-auth-and-version-boundaries',setup(b){b.onResolve({filter:/^(next\/link|next\/navigation|@\/lib\/supabase|@\/components\/site-version)$/},a=>({path:a.path,namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},a=>({loader:'tsx',resolveDir:root,contents:a.path==='next/link'?`import React from'react';export default({href,children,prefetch,...props})=><a href={href} {...props}>{children}</a>`:a.path==='next/navigation'?`import{useSyncExternalStore}from'react';const sub=fn=>{window.addEventListener('popstate',fn);return()=>window.removeEventListener('popstate',fn)};export function usePathname(){return location.pathname};export function useSearchParams(){const search=useSyncExternalStore(sub,()=>location.search);return new URLSearchParams(search)};export const useRouter=()=>({replace:url=>location.assign(url),push:url=>location.assign(url)});`:a.path==='@/components/site-version'?`import React from'react';export const SiteVersion=()=> <span>本地验收 · 隔离数据</span>`:`export async function authHeader(){return {'x-fixture-admin':'local-only'}};`}));}};
+ const result=await build({stdin:{contents:entry,loader:'tsx',resolveDir:root},bundle:true,write:true,outfile:path.join(out,'app.js'),platform:'browser',format:'iife',jsx:'automatic',metafile:true,tsconfig:path.join(root,'tsconfig.json'),define:{'process.env.NODE_ENV':'"production"','process.env':'{}'},plugins:[plugin]});
+ const sources={};for(const file of Object.keys(result.metafile.inputs)){if(file.startsWith('fixture:')||file==='<stdin>')continue;const absolute=path.resolve(root,file);if(!absolute.startsWith(root+path.sep))continue;try{sources[path.relative(root,absolute).replaceAll('\\','/')]=createHash('sha256').update(await fs.readFile(absolute)).digest('hex');}catch{}}
+ await fs.writeFile(path.join(out,'SOURCE_INPUTS.json'),JSON.stringify({fixtureBoundaries:['auth','next navigation/link','site version','HTTP responses'],sources},null,2));
+ const cssInput=path.join(out,'tailwind-input.css');await fs.writeFile(cssInput,'@tailwind base;@tailwind components;@tailwind utilities;');
+ const tailwind=spawnSync(process.execPath,[path.join(root,'node_modules/tailwindcss/lib/cli.js'),'-c',path.join(root,'tailwind.config.ts'),'-i',cssInput,'-o',path.join(out,'tailwind.css'),'--minify'],{cwd:root,encoding:'utf8'});if(tailwind.status!==0)throw Error(tailwind.stderr);
+ const send=(res,status,data)=>{res.writeHead(status,{'content-type':'application/json','cache-control':'no-store'});res.end(JSON.stringify(data));};
+ const grid=(row,feature)=>['low','medium','high','xhigh','max','auto'].flatMap(quality=>['1K','2K','4K','5K'].map(resolution=>({quality,resolution,effectiveQuality:quality,available:quality==='medium'&&['1K','2K'].includes(resolution),credits:feature==='canvas.image'?9:quality==='low'?0:6,estimated:false,source:'model-rule'})));
+ const server=createServer(async(req,res)=>{try{
+  const url=new URL(req.url,'http://fixture');requests.push({method:req.method,url:req.url});
+  if(url.pathname==='/__fixture/status'){send(res,200,{requests,failures,flags,state});return;}
+  if(url.pathname==='/__fixture/control'){let raw='';for await(const c of req)raw+=c;const input=JSON.parse(raw||'{}');if(input.reset){state=makeState();receipts.clear();for(const k of Object.keys(flags))flags[k]=typeof flags[k]==='number'?0:false;}Object.assign(flags,input.flags||{});send(res,200,{ok:true});return;}
+  if(url.pathname==='/api/admin/fleet/status'){send(res,200,{enabled:false});return;}
+  if(url.pathname==='/api/admin/model-management'){
+   if(req.method==='GET'){
+    if(url.searchParams.has('rowId')){if(flags.gridDelay)await new Promise(r=>setTimeout(r,flags.gridDelay));if(flags.gridError){send(res,503,{error:'价格查询暂不可用'});return;}send(res,200,{version:state.version+(flags.gridVersion?1:0),billingVersion:state.billingVersion,grid:grid(url.searchParams.get('rowId'),url.searchParams.get('feature'))});return;}
+    send(res,200,state);return;
+   }
+   let raw='';for await(const c of req)raw+=c;const op=JSON.parse(raw);requests[requests.length-1].body=op;
+   if(op.action==='discover'){send(res,200,state.catalogs.find(c=>c.providerId===op.providerId));return;}
+   if(op.action==='pricing'){
+    if(!receipts.has(op.id)){const row=state.rows.find(r=>r.id===op.rowId);for(const p of row.pricing||[])if(op.features.includes(p.feature)){p.credits=op.pricing?.mode==='fixed'?op.pricing.credits:op.pricing?.prices?.medium?.['1K']??6;p.source={kind:'model-rule',label:'本页积分设置'};}state.billingVersion++;receipts.set(op.id,{phase:'applied',id:op.id});}
+    if(flags.unknown){send(res,202,{publication:{id:op.id,phase:'unknown'}});return;}
+    send(res,200,{publication:receipts.get(op.id)});return;
+   }
+   send(res,422,{error:'验收fixture未配置此写操作',operationNotStaged:true});return;
+  }
+  if(url.pathname.startsWith('/api/')){failures.push(req.url);send(res,404,{error:'Unexpected fixture API'});return;}
+  if(url.pathname==='/app.js'||url.pathname==='/app.css'||url.pathname==='/tailwind.css'){res.setHeader('content-type',url.pathname.endsWith('js')?'text/javascript':'text/css');res.end(await fs.readFile(path.join(out,url.pathname.slice(1))));return;}
+  if(url.pathname==='/brand/naumi/symbol-black.svg'){res.setHeader('content-type','image/svg+xml');res.end(await fs.readFile(path.join(root,'public',url.pathname)));return;}
+  if(!['/','/admin/model-management','/business-editor'].includes(url.pathname)){res.writeHead(404,{'content-type':'text/html;charset=utf-8'});res.end('<!doctype html><meta charset="utf-8"><title>本地验收范围</title><main style="font:16px system-ui;max-width:640px;margin:80px auto;padding:24px"><h1>原有后台子页面</h1><p>此入口在正式应用中保留。本地隔离验收服务只承载四区工作台和功能价格编辑器，不模拟其他后台页面的业务数据。</p><a href="/admin/model-management">返回本地工作区</a></main>');return;}
+  res.setHeader('content-type','text/html;charset=utf-8');res.end(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>Naumi 模型与供应商 · 本地验收</title><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/tailwind.css"><link rel="stylesheet" href="/app.css"><style>:root{--background:0 0% 100%;--foreground:222 25% 18%;--card:0 0% 100%;--border:220 15% 89%;--input:220 15% 87%;--primary:250 65% 58%;--c-card:#fff;--c-border:#e5e8ef;--c-text:#202737;--c-text2:#526075;--c-text3:#768195}body{margin:0;font-family:system-ui,'Microsoft YaHei',sans-serif;background:#fff;color:#202737}button,input,select{font:inherit}pre{white-space:pre-wrap}#root{min-height:100vh}</style></head><body><div id="root"></div><script>window.fixtureMode=${JSON.stringify(url.searchParams.get('mode'))};</script><script src="/app.js"></script></body></html>`);
+ }catch(error){failures.push(String(error));if(!res.headersSent)send(res,500,{error:'fixture failed'});else res.end();}});
+ await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(port,'127.0.0.1',resolve);});
+ const origin=`http://127.0.0.1:${server.address().port}`;
+ return {origin,server,requests,failures,sources,close:async()=>{server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}};
+}
+if(process.argv.includes('--serve')){const arg=(key,fallback)=>{const i=process.argv.indexOf(key);return i<0?fallback:process.argv[i+1];};const f=await startWorkspaceFixture({root:arg('--source-root',process.cwd()),out:arg('--out','output/model-supplier-workspace/local'),port:Number(arg('--port','58711'))});console.log('LOCAL_WORKSPACE_READY='+f.origin+'/admin/model-management');}

@@ -19,7 +19,9 @@ for (const feature of input.features) {
 assert.deepEqual(result.config.bindings, config.bindings, "unselected purposes must not change");
 assert.equal(result.config.publicModels.find(m => m.id === input.modelId)?.target.id, "u1");
 const availability = batchFeatureAvailability(config, "u1");
-for (const feature of ["canvas.text-generate", "video.generate", "tool.cutout", "tool.upscale"]) assert.equal(availability.find(a => a.feature === feature)?.compatible, false);
+for (const feature of ["canvas.text-generate", "video.generate", "tool.cutout"]) assert.equal(availability.find(a => a.feature === feature)?.compatible, false);
+assert.equal(availability.find(a=>a.feature==="tool.upscale")?.compatible,true,"upscale uses the current image.edit contract");
+assert.equal(availability.find(a=>a.feature==="tool.printfile")?.compatible,true,"printfile uses the current image.edit contract");
 assert.throws(() => planModelBatch(config, { ...input, features: ["image.generate", "tool.cutout"] }), /不兼容/);
 assert.equal(JSON.stringify(config), original, "invalid batch must be atomic");
 assert.throws(() => planModelBatch(config, { ...input, label: " " }));

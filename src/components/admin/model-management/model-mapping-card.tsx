@@ -14,7 +14,7 @@ export type MappingAction = {
   onClick: () => void;
 };
 
-const types: Record<string, string> = { image: "图片", text: "文字", video: "视频" };
+const types: Record<string, string> = { image: "图片", text: "文字", video: "视频", audio: "声音" };
 
 export function ModelMappingHeader() {
   return <div className={styles.tableHead} aria-hidden="true">
@@ -22,11 +22,13 @@ export function ModelMappingHeader() {
   </div>;
 }
 
-export function ModelMappingCard({ row, actions, scopeDisabled, onScope }: {
+export function ModelMappingCard({ row, actions, scopeDisabled, onScope, onManage, onPrice }: {
   row: ManagedModelRow;
   actions: MappingAction[];
   scopeDisabled: boolean;
   onScope: () => void;
+  onManage?: () => void;
+  onPrice?: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const panelId = useId();
@@ -49,7 +51,7 @@ export function ModelMappingCard({ row, actions, scopeDisabled, onScope }: {
     })}
   </ul>;
 
-  return <article className={styles.card} data-testid={`managed-model-${row.id}`} data-expanded={expanded}>
+  return <article className={styles.card} data-testid={`managed-model-${row.id}`} data-expanded={expanded} data-workspace={!!onManage}>
     <div className={styles.summary}>
       <div className={styles.identity}>
         <span className={styles.modality}>{types[row.modality]}</span>
@@ -65,16 +67,15 @@ export function ModelMappingCard({ row, actions, scopeDisabled, onScope }: {
       </div>
       <div className={styles.scope}>
         <span className={styles.mobileLabel}>应用范围</span>
-        <button type="button" disabled={scopeDisabled} onClick={onScope} aria-label={`编辑 ${row.label} 的应用范围`}>{row.features.length} 个工具 <ChevronRight size={13} /></button>
+        <button type="button" disabled={scopeDisabled} onClick={onScope} className={styles.scopeButton} aria-label={`编辑 ${row.label} 的应用范围`}>{row.features.length} 个工具 <ChevronRight size={13} /></button>
         <small title={row.features.map(feature => feature.label).join("、")}>{row.features.length ? row.features.slice(0, 2).map(feature => feature.label).join("、") + (row.features.length > 2 ? "等" : "") : "未应用到工具"}</small>
       </div>
       <div className={styles.price}>
         <span className={styles.mobileLabel}>积分售价</span>
-        <span>{priceKnown ? <><b>{price.credits}</b> 积分/{priceUnit}</> : "按工具配置"}</span>
-        {priceKnown && <small>{price.estimated ? "预估" : "标准 1K"} · {price.label}{price.source ? ` · ${price.source.label}` : ""}</small>}
+        {onPrice ? <button type="button" className={styles.priceLink} disabled={scopeDisabled || !row.features.length} onClick={onPrice}>查看价目</button> : <><span>{priceKnown ? <><b>{price.credits}</b> 积分/{priceUnit}</> : "按工具配置"}</span>{priceKnown && <small>{price.estimated ? "预估" : "标准 1K"} · {price.label}{price.source ? ` · ${price.source.label}` : ""}</small>}</>}
       </div>
-      <button type="button" className={styles.configure} aria-expanded={expanded} aria-controls={panelId} onClick={() => setExpanded(value => !value)}>
-        {expanded ? <ChevronDown size={15} /> : <Settings2 size={15} />}{expanded ? "收起" : "配置"}
+      <button type="button" className={styles.configure} aria-expanded={onManage ? undefined : expanded} aria-controls={onManage ? undefined : panelId} onClick={onManage || (() => setExpanded(value => !value))}>
+        {onManage ? <ChevronRight size={15}/> : expanded ? <ChevronDown size={15} /> : <Settings2 size={15} />}{onManage ? "管理" : expanded ? "收起" : "配置"}
       </button>
     </div>
     {expanded && <div id={panelId} className={styles.panel}>

@@ -35,6 +35,7 @@ export type ManagedModelRow = {
 
   imagegenConfig?: {routes:import("./imagegen-policy").ImagegenRoutePolicy[]};
   scopeOptions: {id:string;label:string;selected:boolean;available:boolean;adminDefault:boolean;reason?:string}[];
+  defaultFeatures?: {id:string;label:string}[];
   pricing?: {feature:string;label:string;unit:string;credits:number|null;estimated:boolean;override?:import("./credit-overrides").ManagedModelCreditPricing;source?:import("./management-pricing").CreditSource}[];
 };
 export type ManagedModelCandidate = { id: string; model: string; label: string; providerId: string; provider: string; modality: string; verified: boolean; channelCompatible?: boolean };
@@ -96,6 +97,7 @@ export function managedModelRows(snapshot: ModelSnapshot, catalogs: { feature: s
       try { assertManagedTarget(config, row, c.id); return true; } catch { return false; }
     }).map(c => c.id);
     row.scopeOptions = managedModelScopeOptions(row,eligibleCatalogs);
+    row.defaultFeatures = Object.entries(FEATURE_BINDINGS).filter(([feature,binding])=>row.publicIds.includes(featureDefaultModel(config,feature,binding)||"")).map(([id])=>({id,label:featureNames[id]||id}));
     row.canvasUnified = row.publicIds.every(id=>config.publicModels.find(m=>m.id===id)?.toolScope?.systems?.includes("canvas"));
     if (row.modality === "image") {const ids=[...new Set(row.routes.map(r=>r.upstreamId))];row.parameterSources=ids.map(id=>{const u=config.upstreamModels.find(u=>u.id===id)!,p=config.providers.find(p=>p.id===u.providerId)!;return {id:u.id,model:u.model,protocol:p.protocol,provider:p.name,enabled:u.enabled&&p.enabled,nativeResolutions:u.capabilities.nativeResolutions,parameterMap:structuredClone(u.parameterMap)};});row.qualityConfig=qualityConfiguration(config,ids);row.resolutionConfig=resolutionConfiguration(config,ids);}
   }

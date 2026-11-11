@@ -6,7 +6,7 @@ type SwitchEditor = {kind:"switch"; row:ManagedModelRow; initialProvider:string}
 type ChannelsEditor = {kind:"channels"; row:ManagedModelRow; draft:ChannelPolicy|null};
 type ReturnEditor = SwitchEditor | ChannelsEditor;
 export type EditorState = ReturnEditor
-  | {kind:"rename"|"mapping"|"advanced"|"resolution"|"parameters"|"video"|"scope"|"price"; row:ManagedModelRow}
+  | {kind:"rename"|"mapping"|"advanced"|"resolution"|"parameters"|"video"|"scope"|"price"; row:ManagedModelRow;feature?:string}
   | {kind:"order"|"connect"|"video-upgrade"}
   | {kind:'create';initialSource?:{providerId:string;model:string}}
   | {kind:"register";providerId:string;model:string;returnTo?:ReturnEditor};

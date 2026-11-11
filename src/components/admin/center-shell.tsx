@@ -10,9 +10,9 @@ import {AdminPageSearch} from './page-search';
 import styles from './center-shell.module.css';
 import theme from './theme.module.css';
 /** Presentation only. Each page and API retains its existing administrator checks. */
-type ShellProps={active:AdminSection;children:React.ReactNode;onBiNavigate?:(section:BiSection)=>void;light?:boolean;deploymentsOnly?:boolean;embedded?:boolean};
+type ShellProps={active:AdminSection;children:React.ReactNode;onBiNavigate?:(section:BiSection)=>void;light?:boolean;deploymentsOnly?:boolean;embedded?:boolean;moduleNavigation?:boolean};
 export function AdminCenterShell({embedded=false,...props}:ShellProps){return embedded?<>{props.children}</>:<AdminShell {...props}/>;}
-function AdminShell({active,children,deploymentsOnly=false}:ShellProps){
+function AdminShell({active,children,deploymentsOnly=false,moduleNavigation=true}:ShellProps){
  const [fleetEnabled,setFleetEnabled]=useState(active==='deployments'),[logoutError,setLogoutError]=useState('');
  const mobile=useRef<HTMLDialogElement>(null),menu=useRef<HTMLButtonElement>(null);
  const pathname=usePathname()||'',search=useSearchParams(),category=adminCategory(active);
@@ -25,7 +25,7 @@ function AdminShell({active,children,deploymentsOnly=false}:ShellProps){
  const navigation=(isMobile=false)=><><div className={styles.brandRow}><Link className={styles.brand} href={home} prefetch={false} onClick={()=>mobile.current?.close()}><img src="/brand/naumi/symbol-black.svg" width={30} height={30} alt=""/><span>Naumi</span></Link>{isMobile&&<button aria-label="收起管理导航" className={styles.iconButton} onClick={()=>mobile.current?.close()}><X size={20}/></button>}</div>
  <nav className={styles.navigation} aria-label="管理中心导航">{links.map(({id,label,icon:Icon,href})=><Link key={id} href={href} prefetch={false} aria-current={category===id?'page':undefined} className={category===id?styles.active:undefined} onClick={event=>{if(event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;mobile.current?.close();}}><Icon size={18}/><span>{label}</span></Link>)}</nav>
  <div className={styles.sidebarFooter}><Link href="/" prefetch={false}><ArrowLeft size={16}/>返回工作台</Link>{!deploymentsOnly&&<button type="button" onClick={()=>void logout()}><LogOut size={16}/>退出管理中心</button>}{logoutError&&<p role="alert">{logoutError}</p>}</div></>;
- const tabs=!deploymentsOnly&&!pathname.startsWith('/admin/tenants/')?adminModuleLinks[category]:undefined;
+ const tabs=moduleNavigation&&!deploymentsOnly&&!pathname.startsWith('/admin/tenants/')?adminModuleLinks[category]:undefined;
  return <div className={`${theme.theme} ${styles.shell}`} data-admin-ui="integrated"><aside className={styles.sidebar}>{navigation()}</aside>
  <dialog ref={mobile} id="admin-mobile-navigation" className={styles.mobileNavigation} aria-label="管理中心导航" onClick={e=>{if(e.target===e.currentTarget)mobile.current?.close();}} onClose={()=>menu.current?.focus()}>{navigation(true)}</dialog>
  <div className={styles.content}><header className={styles.topbar}><div className={styles.heading}><button ref={menu} type="button" className={styles.menuButton} aria-label="展开管理导航" aria-haspopup="dialog" aria-controls="admin-mobile-navigation" onClick={()=>mobile.current?.showModal()}><Menu size={21}/></button><span>{adminEntries.find(entry=>entry.id===category)?.label||'后台管理'}</span></div><div className={styles.topbarActions}><AdminPageSearch deploymentsOnly={deploymentsOnly} fleetEnabled={fleetEnabled}/><SiteVersion embedded/></div></header>
