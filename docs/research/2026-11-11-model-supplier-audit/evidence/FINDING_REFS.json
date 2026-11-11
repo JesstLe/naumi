@@ -1,0 +1,53 @@
+{
+  "F01": [
+    "src/components/admin/model-config/business-editor.tsx",
+    "src/lib/model-config/onboarding.ts",
+    "src/lib/model-config/batch.ts"
+  ],
+  "F02": [
+    "src/components/admin/model-management/model-mapping-card.tsx",
+    "src/lib/model-config/management-pricing.ts",
+    "src/components/admin/billing/business-prices.tsx"
+  ],
+  "F03": [
+    "src/components/admin/navigation.ts",
+    "src/lib/model-config/provider-balance.ts",
+    "src/lib/supplier-models/repository.ts",
+    "src/lib/supplier-cost/repository.ts"
+  ],
+  "F04": [
+    "src/lib/model-health/targets.ts",
+    "src/lib/model-health/executor.ts",
+    "scripts/model-health-worker.mjs"
+  ],
+  "F05": [
+    "src/lib/bi/repository.ts",
+    "src/lib/bi/model-chain.ts",
+    "src/lib/bi/model-calls.ts",
+    "src/lib/model-config/provider-activity.ts"
+  ],
+  "F06": [
+    "scripts/verify-model-batch.ts",
+    "src/lib/model-config/feature-model-policy.ts",
+    "src/lib/model-config/batch.ts"
+  ],
+  "F07": [
+    "src/components/admin/model-management/model-mapping-card.tsx",
+    "src/components/admin/model-management/model-management.tsx"
+  ],
+  "F08": [
+    "src/components/admin/center-shell.tsx",
+    "src/components/admin/model-management/model-management.tsx",
+    "src/components/admin/model-config/manager.tsx"
+  ],
+  "F09": [
+    "src/lib/billing/types.ts",
+    "src/components/admin/model-config/business-editor.tsx",
+    "src/components/admin/model-config/image-preset-editor.tsx"
+  ],
+  "F10": [
+    "src/lib/billing/README.md",
+    "src/lib/model-config/management-input.ts",
+    "src/lib/model-config/business-billing.ts"
+  ]
+}

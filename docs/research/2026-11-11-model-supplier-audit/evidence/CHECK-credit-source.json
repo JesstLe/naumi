@@ -1,0 +1,8 @@
+{
+  "name": "credit-source",
+  "command": "node node_modules/tsx/dist/cli.mjs --conditions react-server scripts/verify-model-credit-source.ts",
+  "input": "repository 052665c8; local synthetic fixtures only",
+  "exit": 0,
+  "stdout": "MODEL_CREDIT_SOURCE=PASS CHECKS=6 PRECEDENCE_TESTED=MODEL_RULE>TARIFF_RULE>TARIFF QUOTE_PATH=REAL SUPPLIER_CALLS=0\n",
+  "stderr": ""
+}

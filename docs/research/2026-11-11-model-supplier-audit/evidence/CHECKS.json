@@ -1,0 +1,34 @@
+[
+  {
+    "name": "credit-source",
+    "command": "node node_modules/tsx/dist/cli.mjs --conditions react-server scripts/verify-model-credit-source.ts",
+    "input": "repository 052665c8; local synthetic fixtures only",
+    "exit": 0,
+    "stdout": "MODEL_CREDIT_SOURCE=PASS CHECKS=6 PRECEDENCE_TESTED=MODEL_RULE>TARIFF_RULE>TARIFF QUOTE_PATH=REAL SUPPLIER_CALLS=0\n",
+    "stderr": ""
+  },
+  {
+    "name": "parameter-contract",
+    "command": "node node_modules/tsx/dist/cli.mjs --conditions react-server scripts/verify-image-parameter-contract.ts",
+    "input": "repository 052665c8; local synthetic fixtures only",
+    "exit": 0,
+    "stdout": "IMAGE_PARAMETER_CONTRACT=PASS CHECKS=35 QUALITY_EMPTY=TIER RESOLUTION_EMPTY=PROTOCOL METADATA=NON_BLOCKING STRUCTURAL=KEPT STRICT_DEFAULT=UNCHANGED PUBLISH_RULES=ENFORCED SUPPLIER_CALLS=0\n",
+    "stderr": ""
+  },
+  {
+    "name": "model-batch",
+    "command": "node node_modules/tsx/dist/cli.mjs --conditions react-server scripts/verify-model-batch.ts",
+    "input": "repository 052665c8; local synthetic fixtures only",
+    "exit": 1,
+    "stdout": "",
+    "stderr": "node:internal/modules/run_main:107\r\n    triggerUncaughtException(\r\n    ^\r\n\r\nAssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\r\n\r\ntrue !== false\r\n\r\n    at assert (E:\\Workspace\\naumi-model-supplier-audit-20261111\\scripts\\verify-model-batch.ts:22:105)\r\n    at Object.<anonymous> (E:\\Workspace\\naumi-model-supplier-audit-20261111\\scripts\\verify-model-batch.ts:54:207)\r\n    at Module._compile (node:internal/modules/cjs/loader:1872:14)\r\n    at Object.transformer (E:\\Workspace\\naumi-yueyao-deps-20261106\\node_modules\\tsx\\dist\\register-B1c7OH6V.cjs:22:2188)\r\n    at Module.load (node:internal/modules/cjs/loader:1594:32)\r\n    at Module._load (node:internal/modules/cjs/loader:1396:12)\r\n    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)\r\n    at loadCJSModuleWithModuleLoad (node:internal/modules/esm/translators:372:15)\r\n    at ModuleWrap.<anonymous> (node:internal/modules/esm/translators:244:9)\r\n    at ModuleJob.run (node:internal/modules/esm/module_job:439:25) {\r\n  generatedMessage: true,\r\n  code: 'ERR_ASSERTION',\r\n  actual: true,\r\n  expected: false,\r\n  operator: 'strictEqual',\r\n  diff: 'simple'\r\n}\r\n\r\nNode.js v24.19.0\r\n"
+  },
+  {
+    "name": "ui-structure",
+    "command": "node scripts/verify-model-management-refactor.mjs --static --source-root E:\\Workspace\\naumi-model-supplier-audit-20261111 --out E:/Workspace/naumi/output/model-supplier-audit-20261111/ui-static",
+    "input": "repository 052665c8; local synthetic fixtures only",
+    "exit": 0,
+    "stdout": "MODEL_MANAGEMENT_REFACTOR=PASS MODE=STATIC CHECKS=15 TARGET_COMPILE=ACTUAL EDITOR_TRANSITIONS=ACTUAL BROWSER=NOT_RUN API=NOT_RUN PG=NOT_RUN SUPPLIER=0\nMODEL_MANAGEMENT_REFACTOR_CLEANUP=PASS OWN_BROWSER_CLOSED=1 OWN_LOOPBACK_CLOSED=1\n",
+    "stderr": ""
+  }
+]

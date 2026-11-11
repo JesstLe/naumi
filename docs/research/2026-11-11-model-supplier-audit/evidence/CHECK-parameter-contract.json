@@ -1,0 +1,8 @@
+{
+  "name": "parameter-contract",
+  "command": "node node_modules/tsx/dist/cli.mjs --conditions react-server scripts/verify-image-parameter-contract.ts",
+  "input": "repository 052665c8; local synthetic fixtures only",
+  "exit": 0,
+  "stdout": "IMAGE_PARAMETER_CONTRACT=PASS CHECKS=35 QUALITY_EMPTY=TIER RESOLUTION_EMPTY=PROTOCOL METADATA=NON_BLOCKING STRUCTURAL=KEPT STRICT_DEFAULT=UNCHANGED PUBLISH_RULES=ENFORCED SUPPLIER_CALLS=0\n",
+  "stderr": ""
+}

@@ -1,0 +1,8 @@
+{
+  "name": "ui-structure",
+  "command": "node scripts/verify-model-management-refactor.mjs --static --source-root E:\\Workspace\\naumi-model-supplier-audit-20261111 --out E:/Workspace/naumi/output/model-supplier-audit-20261111/ui-static",
+  "input": "repository 052665c8; local synthetic fixtures only",
+  "exit": 0,
+  "stdout": "MODEL_MANAGEMENT_REFACTOR=PASS MODE=STATIC CHECKS=15 TARGET_COMPILE=ACTUAL EDITOR_TRANSITIONS=ACTUAL BROWSER=NOT_RUN API=NOT_RUN PG=NOT_RUN SUPPLIER=0\nMODEL_MANAGEMENT_REFACTOR_CLEANUP=PASS OWN_BROWSER_CLOSED=1 OWN_LOOPBACK_CLOSED=1\n",
+  "stderr": ""
+}

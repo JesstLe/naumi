@@ -1,0 +1,7 @@
+{
+  "command": "node node_modules/tsx/dist/cli.mjs --conditions react-server -e \"import {fixtureModelConfig} from './scripts/model-config-unit-fixture'; import {batchFeatureAvailability} from './src/lib/model-config/batch'; console.log(JSON.stringify(batchFeatureAvailability(fixtureModelConfig('https://fixture.invalid/v1','00000000-0000-4000-8000-000000000001'),'u1').filter(a=>['canvas.text-generate','video.generate','tool.cutout','tool.upscale'].includes(a.feature))));\"",
+  "input": "same local model batch unit fixture as failed legacy test",
+  "exit": 0,
+  "stdout": "[{\"feature\":\"tool.cutout\",\"compatible\":false,\"reason\":\"模型能力不兼容\"},{\"feature\":\"tool.upscale\",\"compatible\":true,\"reason\":\"\"},{\"feature\":\"canvas.text-generate\",\"compatible\":false,\"reason\":\"模型能力不兼容\"},{\"feature\":\"video.generate\",\"compatible\":false,\"reason\":\"模型能力不兼容\"}]\n",
+  "stderr": ""
+}
