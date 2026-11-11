@@ -1,0 +1,4 @@
+Public creation examples
+Images: copyright 2025 Jamez Bondos; CC BY 4.0. Original prompt authors and source links: ATTRIBUTION.json and each case detail.
+Videos: Genmo, Mochi 1 official assets/grid.mp4; Apache 2.0. Six tiles were cropped and re-encoded; posters extracted at 1s.
+Naumi adapted the prompts and titles. These examples are not represented as Naumi-generated outputs. Image and video transformations are recorded in ATTRIBUTION.json.

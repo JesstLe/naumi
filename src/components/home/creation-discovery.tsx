@@ -4,7 +4,7 @@ import Link from "next/link";
 import { ArrowUpRight, ChevronRight } from "lucide-react";
 import { useFeatureAccess } from "@/lib/feature-access/client";
 import { toolBySlug } from "@/lib/tool-meta";
-import { TemplatesClient } from "@/components/templates/templates-client";
+import { TemplateLibrary } from "@/components/templates/template-library";
 import { CachedImage } from "@/components/cached-image";
 import styles from "./creation-workbench.module.css";
 
@@ -30,6 +30,6 @@ export function CreationDiscovery(){
       </div>
       <button type="button" className={styles.featureNext} aria-label="更多创作工具" onClick={()=>{const el=rail.current;if(el)el.scrollTo({left:el.scrollLeft>=el.scrollWidth-el.clientWidth-5?0:el.scrollLeft+340,behavior:"smooth"});}}><ChevronRight/></button>
     </section>
-    {canPage("/templates")&&<section className={styles.discovery} id="templates" aria-label="模板灵感"><TemplatesClient variant="creation" gridClass="columns-2 lg:columns-4"/></section>}
+    {canPage("/templates")&&<section className={styles.discovery} id="templates" aria-label="模板灵感"><TemplateLibrary home/></section>}
   </>;
 }

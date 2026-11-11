@@ -1,0 +1,530 @@
+[
+  {
+    "id": "gold-pendant",
+    "kind": "image",
+    "title": "金饰微距",
+    "category": "商品摄影",
+    "tags": [
+      "珠宝",
+      "材质",
+      "微距"
+    ],
+    "poster": "/creation-cases/gold-pendant.webp",
+    "width": 1024,
+    "height": 1024,
+    "prompt": "一枚金色圆形吊坠，中央是简洁的微笑浮雕，金链自然垂落。吊坠放在手指上，采用珠宝广告的近距离构图，突出金属的细腻拉丝、边缘高光与自然肤色。暖米色背景、柔和侧光、浅景深，清晰展现工艺，不添加品牌或文字。",
+    "steps": [
+      "替换提示词中的产品或主题。",
+      "按需要上传自己的参考图，再选择画幅。",
+      "确认模型和参数后生成。"
+    ],
+    "source": {
+      "title": "Awesome GPT-4o Images",
+      "author": "@jamez-bondos",
+      "promptAuthor": "@azed_ai",
+      "url": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/72",
+      "license": "CC BY 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/"
+    },
+    "adaptation": "公开原图已压缩为 WebP；提示词由 Naumi 根据公开案例改写，并非原图复现记录。"
+  },
+  {
+    "id": "citrus-still-life",
+    "kind": "video",
+    "title": "柠檬静物短片",
+    "category": "商品摄影",
+    "tags": [
+      "水果",
+      "食品",
+      "固定镜头"
+    ],
+    "poster": "/creation-cases/citrus-still-life.webp",
+    "width": 848,
+    "height": 480,
+    "video": "/creation-cases/citrus-still-life.mp4",
+    "duration": 5.433333,
+    "prompt": "暖橙色背景前，一碗新鲜柠檬与绿叶摆在桌面，一只手缓慢拿起碗中最上方的一颗柠檬，其他柠檬保持稳定。镜头固定，光线柔和，果皮纹理和自然投影清晰，动作连续流畅，适合食品广告短片。",
+    "steps": [
+      "修改主体、动作或镜头描述。",
+      "在视频工作台选择已配置的模型和支持的时长。",
+      "确认参数后生成；案例不会自动提交。"
+    ],
+    "source": {
+      "title": "Mochi 1 · 官方演示",
+      "author": "Genmo",
+      "url": "https://github.com/genmoai/mochi/blob/15c9bad662df1fa3e7b53136423695b286484c08/assets/grid.mp4",
+      "license": "Apache 2.0",
+      "licenseUrl": "https://github.com/genmoai/mochi/blob/15c9bad662df1fa3e7b53136423695b286484c08/LICENSE"
+    },
+    "adaptation": "从 Mochi 官方九宫格演示裁出单个镜头，转为无音轨 MP4；提示词由 Naumi 按画面改写，未公开原始提示词。"
+  },
+  {
+    "id": "city-poster",
+    "kind": "image",
+    "title": "城市旅行海报",
+    "category": "海报设计",
+    "tags": [
+      "旅行",
+      "平面",
+      "复古"
+    ],
+    "poster": "/creation-cases/city-poster.webp",
+    "width": 933,
+    "height": 1400,
+    "prompt": "为伦敦设计一张复古旅行海报，将大本钟、伦敦眼、泰晤士河和城市建筑组合成层次清晰的矢量插画。使用湖蓝、芥末黄、橙红和奶油白配色，带少量纸张颗粒。上方排版 LONDON，下方小字 UNITED KINGDOM，画面饱满但文字留白充足。",
+    "steps": [
+      "替换提示词中的产品或主题。",
+      "按需要上传自己的参考图，再选择画幅。",
+      "确认模型和参数后生成。"
+    ],
+    "source": {
+      "title": "Awesome GPT-4o Images",
+      "author": "@jamez-bondos",
+      "promptAuthor": "@michaelrabone",
+      "url": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/59",
+      "license": "CC BY 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/"
+    },
+    "adaptation": "公开原图已压缩为 WebP；提示词由 Naumi 根据公开案例改写，并非原图复现记录。"
+  },
+  {
+    "id": "oat-packaging",
+    "kind": "image",
+    "title": "麦片包装提案",
+    "category": "包装文创",
+    "tags": [
+      "食品",
+      "包装",
+      "3D"
+    ],
+    "poster": "/creation-cases/oat-packaging.webp",
+    "width": 1024,
+    "height": 1024,
+    "prompt": "设计一款原创健康麦片包装：奶油白纸盒上展示蓝色头巾的可爱 3D 少女形象、燕麦碗、草莓和绿叶。包装主标题 HEALTHY OATMEAL MIX。盒子直立于温暖的极简厨房台面，采用柔和窗光、细腻纸张质感和商业产品摄影构图。",
+    "steps": [
+      "替换提示词中的产品或主题。",
+      "按需要上传自己的参考图，再选择画幅。",
+      "确认模型和参数后生成。"
+    ],
+    "source": {
+      "title": "Awesome GPT-4o Images",
+      "author": "@jamez-bondos",
+      "promptAuthor": "@ZHO_ZHO_ZHO",
+      "url": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/26",
+      "license": "CC BY 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/"
+    },
+    "adaptation": "公开原图已压缩为 WebP；提示词由 Naumi 根据公开案例改写，并非原图复现记录。"
+  },
+  {
+    "id": "candle-light",
+    "kind": "video",
+    "title": "烛光氛围短片",
+    "category": "商品摄影",
+    "tags": [
+      "香氛",
+      "静物",
+      "微距"
+    ],
+    "poster": "/creation-cases/candle-light.webp",
+    "width": 848,
+    "height": 480,
+    "video": "/creation-cases/candle-light.mp4",
+    "duration": 5.433333,
+    "prompt": "一支黄色蜡烛在暗色室内燃烧，烛火轻轻摇曳，细烟缓慢向上飘散，蜡油沿边缘微微融化。近距离固定镜头，浅景深，背景是温暖的散景光点，保持真实的火焰变化和安静的氛围。",
+    "steps": [
+      "修改主体、动作或镜头描述。",
+      "在视频工作台选择已配置的模型和支持的时长。",
+      "确认参数后生成；案例不会自动提交。"
+    ],
+    "source": {
+      "title": "Mochi 1 · 官方演示",
+      "author": "Genmo",
+      "url": "https://github.com/genmoai/mochi/blob/15c9bad662df1fa3e7b53136423695b286484c08/assets/grid.mp4",
+      "license": "Apache 2.0",
+      "licenseUrl": "https://github.com/genmoai/mochi/blob/15c9bad662df1fa3e7b53136423695b286484c08/LICENSE"
+    },
+    "adaptation": "从 Mochi 官方九宫格演示裁出单个镜头，转为无音轨 MP4；提示词由 Naumi 按画面改写，未公开原始提示词。"
+  },
+  {
+    "id": "ocean-popsicle",
+    "kind": "image",
+    "title": "把海洋装进冰棒",
+    "category": "商品摄影",
+    "tags": [
+      "食品",
+      "创意",
+      "夏日"
+    ],
+    "poster": "/creation-cases/ocean-popsicle.webp",
+    "width": 933,
+    "height": 1400,
+    "prompt": "一只手拿着透明蓝色冰棒，冰棒内部是迷你的水下世界：小潜水员、鱼群与上升气泡，顶部有轻盈浪花，表面出现细小水滴和少量融化的边缘。木质冰棒棍清晰可见，背景是虚化的城市街道，采用夏日自然光和高端产品摄影的浅景深。",
+    "steps": [
+      "替换提示词中的产品或主题。",
+      "按需要上传自己的参考图，再选择画幅。",
+      "确认模型和参数后生成。"
+    ],
+    "source": {
+      "title": "Awesome GPT-4o Images",
+      "author": "@jamez-bondos",
+      "promptAuthor": "@madpencil_",
+      "url": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/65",
+      "license": "CC BY 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/"
+    },
+    "adaptation": "公开原图已压缩为 WebP；提示词由 Naumi 根据公开案例改写，并非原图复现记录。"
+  },
+  {
+    "id": "mushroom-planter",
+    "kind": "image",
+    "title": "蘑菇花盆",
+    "category": "包装文创",
+    "tags": [
+      "家居",
+      "植物",
+      "陶瓷"
+    ],
+    "poster": "/creation-cases/mushroom-planter.webp",
+    "width": 1024,
+    "height": 1024,
+    "prompt": "拍摄一个原创蘑菇造型陶瓷花盆：奶油色底座带简洁的笑脸，红色蘑菇帽点缀白色圆点，顶部种满自然生长的多肉植物。置于米色桌面，光线从左侧窗户照入，陶瓷釉面与植物纹理真实，构图干净，不出现品牌和文字。",
+    "steps": [
+      "替换提示词中的产品或主题。",
+      "按需要上传自己的参考图，再选择画幅。",
+      "确认模型和参数后生成。"
+    ],
+    "source": {
+      "title": "Awesome GPT-4o Images",
+      "author": "@jamez-bondos",
+      "promptAuthor": "@azed_ai",
+      "url": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/55",
+      "license": "CC BY 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/"
+    },
+    "adaptation": "公开原图已压缩为 WebP；提示词由 Naumi 根据公开案例改写，并非原图复现记录。"
+  },
+  {
+    "id": "lantern-fashion",
+    "kind": "video",
+    "title": "灯笼下的服饰镜头",
+    "category": "人物服饰",
+    "tags": [
+      "服装",
+      "人像",
+      "跟拍"
+    ],
+    "poster": "/creation-cases/lantern-fashion.webp",
+    "width": 848,
+    "height": 480,
+    "video": "/creation-cases/lantern-fashion.mp4",
+    "duration": 5.433333,
+    "prompt": "穿红色旗袍的女性沿挂满红灯笼的小巷缓慢向前行走，镜头平稳后退并始终保持中景。灯笼的暖光勾勒面部与服装轮廓，衣料随步伐自然摆动，人物外观保持连贯，画面呈现节日时尚短片质感。",
+    "steps": [
+      "修改主体、动作或镜头描述。",
+      "在视频工作台选择已配置的模型和支持的时长。",
+      "确认参数后生成；案例不会自动提交。"
+    ],
+    "source": {
+      "title": "Mochi 1 · 官方演示",
+      "author": "Genmo",
+      "url": "https://github.com/genmoai/mochi/blob/15c9bad662df1fa3e7b53136423695b286484c08/assets/grid.mp4",
+      "license": "Apache 2.0",
+      "licenseUrl": "https://github.com/genmoai/mochi/blob/15c9bad662df1fa3e7b53136423695b286484c08/LICENSE"
+    },
+    "adaptation": "从 Mochi 官方九宫格演示裁出单个镜头，转为无音轨 MP4；提示词由 Naumi 按画面改写，未公开原始提示词。"
+  },
+  {
+    "id": "keycap-world",
+    "kind": "image",
+    "title": "键帽里的工作室",
+    "category": "空间场景",
+    "tags": [
+      "微缩",
+      "数码",
+      "3D"
+    ],
+    "poster": "/creation-cases/keycap-world.webp",
+    "width": 1024,
+    "height": 1024,
+    "prompt": "将机械键盘上的 ESC 键帽设计为半透明微缩工作室。键帽内部有一位穿连帽衫的人坐在电脑前，暖色台灯照亮桌面、显示器和小陶瓷杯，底部点缀苔藓与石块。外部键盘为深灰哑光质地，采用等距近景、浅景深与冷暖对比，保持键帽的真实尺度。",
+    "steps": [
+      "替换提示词中的产品或主题。",
+      "按需要上传自己的参考图，再选择画幅。",
+      "确认模型和参数后生成。"
+    ],
+    "source": {
+      "title": "Awesome GPT-4o Images",
+      "author": "@jamez-bondos",
+      "promptAuthor": "@egeberkina",
+      "url": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/47",
+      "license": "CC BY 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/"
+    },
+    "adaptation": "公开原图已压缩为 WebP；提示词由 Naumi 根据公开案例改写，并非原图复现记录。"
+  },
+  {
+    "id": "panda-rest",
+    "kind": "image",
+    "title": "熊猫桌面腕托",
+    "category": "商品摄影",
+    "tags": [
+      "数码",
+      "家居",
+      "产品设计"
+    ],
+    "poster": "/creation-cases/panda-rest.webp",
+    "width": 1024,
+    "height": 1024,
+    "prompt": "一款原创熊猫造型桌面腕托，身体圆润趴卧，奶白色硅胶表面与黑色耳朵、眼圈、爪子形成柔和对比，脸部带亲切微笑。置于干净的浅灰桌面，以产品棚拍表现软硅胶触感、圆润曲线和轻柔接触阴影，不添加文字。",
+    "steps": [
+      "替换提示词中的产品或主题。",
+      "按需要上传自己的参考图，再选择画幅。",
+      "确认模型和参数后生成。"
+    ],
+    "source": {
+      "title": "Awesome GPT-4o Images",
+      "author": "@jamez-bondos",
+      "promptAuthor": "@ZHO_ZHO_ZHO",
+      "url": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/84",
+      "license": "CC BY 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/"
+    },
+    "adaptation": "公开原图已压缩为 WebP；提示词由 Naumi 根据公开案例改写，并非原图复现记录。"
+  },
+  {
+    "id": "sunset-cycling",
+    "kind": "video",
+    "title": "日落公路骑行",
+    "category": "运动旅行",
+    "tags": [
+      "骑行",
+      "运动",
+      "侧向跟拍"
+    ],
+    "poster": "/creation-cases/sunset-cycling.webp",
+    "width": 848,
+    "height": 480,
+    "video": "/creation-cases/sunset-cycling.mp4",
+    "duration": 5.433333,
+    "prompt": "日落时分，一位戴头盔的骑行者沿山间公路前进，镜头从侧前方平稳跟拍。车轮持续转动，头发和衣摆随风轻动，低角度阳光穿过车架形成长影，远处山脉缓慢移动，画面充满自然的运动感。",
+    "steps": [
+      "修改主体、动作或镜头描述。",
+      "在视频工作台选择已配置的模型和支持的时长。",
+      "确认参数后生成；案例不会自动提交。"
+    ],
+    "source": {
+      "title": "Mochi 1 · 官方演示",
+      "author": "Genmo",
+      "url": "https://github.com/genmoai/mochi/blob/15c9bad662df1fa3e7b53136423695b286484c08/assets/grid.mp4",
+      "license": "Apache 2.0",
+      "licenseUrl": "https://github.com/genmoai/mochi/blob/15c9bad662df1fa3e7b53136423695b286484c08/LICENSE"
+    },
+    "adaptation": "从 Mochi 官方九宫格演示裁出单个镜头，转为无音轨 MP4；提示词由 Naumi 按画面改写，未公开原始提示词。"
+  },
+  {
+    "id": "city-weather",
+    "kind": "image",
+    "title": "城市天气卡片",
+    "category": "海报设计",
+    "tags": [
+      "城市",
+      "信息设计",
+      "等距"
+    ],
+    "poster": "/creation-cases/city-weather.webp",
+    "width": 603,
+    "height": 905,
+    "prompt": "设计一张西安冬季天气卡片。画面中央为覆盖薄雪的微缩城市，包含古城墙、大雁塔与中式屋顶，使用精细等距 3D 模型与暖灰米色背景。顶部依次排版“西安”、雪花图标、“大雪”和“-15～-10°C”，文字少而清晰，建筑边缘和积雪质感精致。",
+    "steps": [
+      "替换提示词中的产品或主题。",
+      "按需要上传自己的参考图，再选择画幅。",
+      "确认模型和参数后生成。"
+    ],
+    "source": {
+      "title": "Awesome GPT-4o Images",
+      "author": "@jamez-bondos",
+      "promptAuthor": "@dotey",
+      "url": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/82",
+      "license": "CC BY 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/"
+    },
+    "adaptation": "公开原图已压缩为 WebP；提示词由 Naumi 根据公开案例改写，并非原图复现记录。"
+  },
+  {
+    "id": "knitted-doll",
+    "kind": "image",
+    "title": "针织玩偶特写",
+    "category": "包装文创",
+    "tags": [
+      "手作",
+      "针织",
+      "玩偶"
+    ],
+    "poster": "/creation-cases/knitted-doll.webp",
+    "width": 933,
+    "height": 1400,
+    "prompt": "手心托着一个原创针织少女玩偶，佩戴蓝色头巾和小珍珠耳饰，穿棕黄色针织衣裙。用近距离摄影突出毛线纤维、编织针脚和柔软的触感，保持人物五官简洁可爱。背景是虚化的暖色室内窗光，构图温馨、自然。",
+    "steps": [
+      "替换提示词中的产品或主题。",
+      "按需要上传自己的参考图，再选择画幅。",
+      "确认模型和参数后生成。"
+    ],
+    "source": {
+      "title": "Awesome GPT-4o Images",
+      "author": "@jamez-bondos",
+      "promptAuthor": "@ZHO_ZHO_ZHO",
+      "url": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/97",
+      "license": "CC BY 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/"
+    },
+    "adaptation": "公开原图已压缩为 WebP；提示词由 Naumi 根据公开案例改写，并非原图复现记录。"
+  },
+  {
+    "id": "harvest-aerial",
+    "kind": "video",
+    "title": "金色麦田航拍",
+    "category": "空间场景",
+    "tags": [
+      "农业",
+      "航拍",
+      "俯拍"
+    ],
+    "poster": "/creation-cases/harvest-aerial.webp",
+    "width": 848,
+    "height": 480,
+    "video": "/creation-cases/harvest-aerial.mp4",
+    "duration": 5.433333,
+    "prompt": "金色麦田中，一台绿色联合收割机沿笔直路线缓慢前进，机身后方留下一条整齐的收割轨迹，并扬起少量细尘。镜头保持俯视并缓慢跟随，展示大片麦田的纹理与几何秩序，日光自然，运动稳定。",
+    "steps": [
+      "修改主体、动作或镜头描述。",
+      "在视频工作台选择已配置的模型和支持的时长。",
+      "确认参数后生成；案例不会自动提交。"
+    ],
+    "source": {
+      "title": "Mochi 1 · 官方演示",
+      "author": "Genmo",
+      "url": "https://github.com/genmoai/mochi/blob/15c9bad662df1fa3e7b53136423695b286484c08/assets/grid.mp4",
+      "license": "Apache 2.0",
+      "licenseUrl": "https://github.com/genmoai/mochi/blob/15c9bad662df1fa3e7b53136423695b286484c08/LICENSE"
+    },
+    "adaptation": "从 Mochi 官方九宫格演示裁出单个镜头，转为无音轨 MP4；提示词由 Naumi 按画面改写，未公开原始提示词。"
+  },
+  {
+    "id": "boxed-landscape",
+    "kind": "image",
+    "title": "盒中的微缩世界",
+    "category": "空间场景",
+    "tags": [
+      "旅行",
+      "微缩",
+      "立体模型"
+    ],
+    "poster": "/creation-cases/boxed-landscape.webp",
+    "width": 1024,
+    "height": 1024,
+    "prompt": "打开一个米色纸板盒，盒内呈现古埃及的微缩景观：金字塔、尼罗河、棕榈树、神庙与微小人物。盒盖内侧用彩色立体字写 ANCIENT EGYPT，两只手轻扶盒盖。采用略俯视角度、暖色电影光与哑光模型质感，表现完整的空间层次。",
+    "steps": [
+      "替换提示词中的产品或主题。",
+      "按需要上传自己的参考图，再选择画幅。",
+      "确认模型和参数后生成。"
+    ],
+    "source": {
+      "title": "Awesome GPT-4o Images",
+      "author": "@jamez-bondos",
+      "promptAuthor": "@TheRelianceAI",
+      "url": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/19",
+      "license": "CC BY 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/"
+    },
+    "adaptation": "公开原图已压缩为 WebP；提示词由 Naumi 根据公开案例改写，并非原图复现记录。"
+  },
+  {
+    "id": "silk-sculpture",
+    "kind": "image",
+    "title": "丝绸流动雕塑",
+    "category": "商品摄影",
+    "tags": [
+      "材质",
+      "丝绸",
+      "极简"
+    ],
+    "poster": "/creation-cases/silk-sculpture.webp",
+    "width": 1024,
+    "height": 1024,
+    "prompt": "以象牙白丝绸构成一朵悬浮的抽象花形雕塑，布料向中心自然汇聚，边缘柔软舒展，保留丝绸特有的流动高光与细腻折痕。背景采用暖灰色无缝摄影棚，主体居中，柔和侧光和轻微阴影表现高级质感，不添加文字。",
+    "steps": [
+      "替换提示词中的产品或主题。",
+      "按需要上传自己的参考图，再选择画幅。",
+      "确认模型和参数后生成。"
+    ],
+    "source": {
+      "title": "Awesome GPT-4o Images",
+      "author": "@jamez-bondos",
+      "promptAuthor": "@ZHO_ZHO_ZHO",
+      "url": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/66",
+      "license": "CC BY 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/"
+    },
+    "adaptation": "公开原图已压缩为 WebP；提示词由 Naumi 根据公开案例改写，并非原图复现记录。"
+  },
+  {
+    "id": "morning-run",
+    "kind": "video",
+    "title": "晨光跑步跟拍",
+    "category": "运动旅行",
+    "tags": [
+      "跑步",
+      "运动",
+      "跟拍"
+    ],
+    "poster": "/creation-cases/morning-run.webp",
+    "width": 848,
+    "height": 480,
+    "video": "/creation-cases/morning-run.mp4",
+    "duration": 5.433333,
+    "prompt": "清晨，一位穿灰色运动服的跑者迎着镜头慢跑，镜头平稳向后移动。低角度阳光从远处高架桥后照来，形成温暖轮廓光和轻微镜头光晕。保持人物步态自然，手臂随步伐有节奏摆动，周围环境缓慢后移，呈现运动短片的真实质感。",
+    "steps": [
+      "修改主体、动作或镜头描述。",
+      "在视频工作台选择已配置的模型和支持的时长。",
+      "确认参数后生成；案例不会自动提交。"
+    ],
+    "source": {
+      "title": "Mochi 1 · 官方演示",
+      "author": "Genmo",
+      "url": "https://github.com/genmoai/mochi/blob/15c9bad662df1fa3e7b53136423695b286484c08/assets/grid.mp4",
+      "license": "Apache 2.0",
+      "licenseUrl": "https://github.com/genmoai/mochi/blob/15c9bad662df1fa3e7b53136423695b286484c08/LICENSE"
+    },
+    "adaptation": "从 Mochi 官方九宫格演示裁出单个镜头，转为无音轨 MP4；提示词由 Naumi 按画面改写，未公开原始提示词。"
+  },
+  {
+    "id": "paper-story",
+    "kind": "image",
+    "title": "立体纸雕绘本",
+    "category": "包装文创",
+    "tags": [
+      "纸艺",
+      "插画",
+      "故事"
+    ],
+    "poster": "/creation-cases/paper-story.webp",
+    "width": 1100,
+    "height": 733,
+    "prompt": "一本打开的立体纸雕绘本，纸页中展开中国神话风格的少年与青色巨龙。使用一层层剪纸构成云朵、海浪、夕阳和人物，朱红、青绿、金色相互呼应，纸张厚度和切口清晰可见。绘本放在木质桌面上，暖色光线突出丰富层次。",
+    "steps": [
+      "替换提示词中的产品或主题。",
+      "按需要上传自己的参考图，再选择画幅。",
+      "确认模型和参数后生成。"
+    ],
+    "source": {
+      "title": "Awesome GPT-4o Images",
+      "author": "@jamez-bondos",
+      "promptAuthor": "@dotey",
+      "url": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/32",
+      "license": "CC BY 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/"
+    },
+    "adaptation": "公开原图已压缩为 WebP；提示词由 Naumi 根据公开案例改写，并非原图复现记录。"
+  }
+]

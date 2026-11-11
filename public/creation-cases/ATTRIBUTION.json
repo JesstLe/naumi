@@ -1,0 +1,684 @@
+{
+  "retrievedAt": "2026-11-11",
+  "description": "Public source examples, not Naumi generated outputs. Image licenses are checked per-case; video clips are derived from the repository-bundled Mochi demonstration, not model weights.",
+  "items": [
+    {
+      "id": "gold-pendant",
+      "originalUrl": "https://raw.githubusercontent.com/jamez-bondos/awesome-gpt4o-images/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/72/gold_pendant_necklace.png",
+      "originalSha256": "a60233f16d207812f4489c6454feef57537bc60d1f1137efe3bd77d93bb881b0",
+      "files": {
+        "creation-cases\\gold-pendant.webp": "04a0e6d94b981ac3b5ce9c2f20d6f4d2def07025c298b93508def9c81f1443a5"
+      },
+      "attribution": {
+        "title": "金色吊坠项链",
+        "title_en": "Gold Pendant Necklace",
+        "prompt_author": "@azed_ai",
+        "prompt_author_link": "https://x.com/azed_ai",
+        "image_author": "@jamez-bondos",
+        "image_author_link": "https://github.com/jamez-bondos",
+        "source_links": [
+          {
+            "url": "https://x.com/azed_ai/status/1915770501705925106"
+          }
+        ],
+        "license": "CC-BY-4.0",
+        "creation_tool": "Sora",
+        "date": "2025-05-24",
+        "notes": "Prompt quoted verbatim; image fully regenerated via Sora."
+      },
+      "caseMetadata": {
+        "title": "金色吊坠项链",
+        "title_en": "Gold Pendant Necklace",
+        "author": "@azed_ai",
+        "author_link": "https://x.com/azed_ai",
+        "source_links": [
+          {
+            "url": "https://x.com/azed_ai/status/1915770501705925106"
+          }
+        ],
+        "image": "gold_pendant_necklace.png",
+        "alt_text": "金色吊坠项链",
+        "alt_text_en": "Gold Pendant Necklace",
+        "prompt": "一张照片级写实的特写图像，展示一条由女性手握持的金质吊坠项链。吊坠上刻有 [图像 / 表情符号] 的浮雕图案，悬挂在一条抛光金链上。背景为柔和虚化的中性米色调，采用自然光照，肤色真实，风格为产品摄影，画面比例为 16:9。\n",
+        "prompt_en": "A photorealistic close-up of a gold pendant necklace held by female hand. The pendant features a bas-relief engraving of [image /emoji]. The pendant hangs from a polished gold chain. The background is softly blurred with neutral beige tones, and natural lighting, realistic skin tones, Product photography, 16:9 aspect ratio.\n",
+        "prompt_note": "可替换提示词中的 `[image /emoji]` 为具体图像描述或 Emoji。\n",
+        "prompt_note_en": "Replace `[image /emoji]` in the prompt with a specific image description or an emoji.\n",
+        "reference_note": "（可选）可上传图片作为浮雕图案。\n",
+        "reference_note_en": "(Optional) An image can be uploaded to be used as the bas-relief pattern.\n",
+        "submitter": "",
+        "submitter_link": ""
+      },
+      "transform": "Pillow RGB, thumbnail max 1100x1400, WebP quality=86 method=6",
+      "sourceRevision": "3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596"
+    },
+    {
+      "id": "city-poster",
+      "originalUrl": "https://raw.githubusercontent.com/jamez-bondos/awesome-gpt4o-images/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/59/example_vector_poster_london.png",
+      "originalSha256": "d665397cf70d52585505c9f7772e297fcbb6e40a6bbf9120346bcddd36a8049f",
+      "files": {
+        "creation-cases\\city-poster.webp": "12ea3a21ac6249dffadd4309a2f406d5347dc07eb8126692b04b4632d495927c"
+      },
+      "attribution": {
+        "title": "彩色矢量艺术海报",
+        "title_en": "Colorful Vector Art Poster",
+        "prompt_author": "@michaelrabone",
+        "prompt_author_link": "https://x.com/michaelrabone",
+        "image_author": "@jamez-bondos",
+        "image_author_link": "https://github.com/jamez-bondos",
+        "source_links": [
+          {
+            "url": "https://x.com/michaelrabone/status/1913865394139316291"
+          }
+        ],
+        "license": "CC-BY-4.0",
+        "creation_tool": "Sora",
+        "date": "2025-05-24",
+        "notes": "Prompt quoted verbatim; image fully regenerated via Sora."
+      },
+      "caseMetadata": {
+        "title": "彩色矢量艺术海报",
+        "title_en": "Colorful Vector Art Poster",
+        "author": "@michaelrabone",
+        "author_link": "https://x.com/michaelrabone",
+        "source_links": [
+          {
+            "url": "https://x.com/michaelrabone/status/1913865394139316291"
+          }
+        ],
+        "image": "example_vector_poster_london.png",
+        "alt_text": "彩色矢量艺术海报",
+        "alt_text_en": "Colorful Vector Art Poster",
+        "prompt": "地点是\"英国伦敦\"，生成一张夏季的彩色矢量艺术海报，顶部有大的\"LONDON\"标题，下方有较小的\"UNITED KINGDOM\"标题\n",
+        "prompt_en": "Barcelona Spain colourful summer vector art poster with big \"BARCELONA\" title at the top and smaller \"SPAIN\" title under\n",
+        "prompt_note": "可替换提示词中的城市和国家名称（例如将\"英国伦敦\"替换为\"中国北京\"以生成示例图，大小标题也跟着更换）。此风格提示词也可用于食物、电影、音乐等主题。\n",
+        "prompt_note_en": "Replace the city and country names in the prompt (e.g., replace \"Barcelona Spain\" and the titles with \"London United Kingdom\" to generate the example image). This style prompt also works for food, movies, music, etc.\n",
+        "reference_note": "",
+        "reference_note_en": "",
+        "submitter": "",
+        "submitter_link": ""
+      },
+      "transform": "Pillow RGB, thumbnail max 1100x1400, WebP quality=86 method=6",
+      "sourceRevision": "3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596"
+    },
+    {
+      "id": "oat-packaging",
+      "originalUrl": "https://raw.githubusercontent.com/jamez-bondos/awesome-gpt4o-images/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/26/example_master_oats_ad.png",
+      "originalSha256": "23a87bd531e2056482eb65b1d348d0694346864f5f4d72ebc4d04a37da874dcc",
+      "files": {
+        "creation-cases\\oat-packaging.webp": "caaf6f48433720dee08b43d9ac69aab191ed25af9b2336b3773456f0f1081118"
+      },
+      "attribution": {
+        "title": "名画人物麦片广告",
+        "title_en": "Famous Painting Character Cereal Ad",
+        "prompt_author": "@ZHO_ZHO_ZHO",
+        "prompt_author_link": "https://x.com/ZHO_ZHO_ZHO",
+        "image_author": "@jamez-bondos",
+        "image_author_link": "https://github.com/jamez-bondos",
+        "source_links": [
+          {
+            "url": "https://x.com/ZHO_ZHO_ZHO/status/1909542765857587310"
+          }
+        ],
+        "license": "CC-BY-4.0",
+        "creation_tool": "Sora",
+        "date": "2025-05-24",
+        "notes": "Prompt quoted verbatim; image fully regenerated via Sora."
+      },
+      "caseMetadata": {
+        "title": "名画人物麦片广告",
+        "title_en": "Famous Painting Character Cereal Ad",
+        "author": "@ZHO_ZHO_ZHO",
+        "author_link": "https://x.com/ZHO_ZHO_ZHO",
+        "source_links": [
+          {
+            "url": "https://x.com/ZHO_ZHO_ZHO/status/1909542765857587310"
+          }
+        ],
+        "image": "example_master_oats_ad.png",
+        "alt_text": "名画人物麦片广告",
+        "alt_text_en": "Famous Painting Character Cereal Ad",
+        "prompt": "《大师麦片》：根据我上传的照片的人物特征判断，为他生成一个符合他特质的燕麦片搭配（比如蔬菜、水果、酸奶、粗粮等等）和包装设计，然后生成他作为麦片包装盒封面人物 加 相应麦片搭配的广告封面，人物要保持特征、可爱Q版3d、c4d渲染风格，麦片所放置的地方的风格也要符合设定，比如放在厨房、超市 极简主义的设计台上等等，先做好设定，再生成图像。\n",
+        "prompt_en": "“Master Oats”: Based on the visual features of the person in the uploaded photo, generate a custom oatmeal mix that reflects their personality traits — for example, using vegetables, fruits, yogurt, whole grains, etc.\n\nDesign a unique cereal box and package aesthetic that aligns with this tailored mix.\n\nThen, create an advertising cover featuring the person as the mascot on the cereal box. The character should retain their recognizable features but be transformed into a cute chibi-style 3D figure with a C4D-quality rendering.\n\nThe oatmeal and packaging should be presented in a setting that matches the mood — such as a minimalist kitchen, a sleek supermarket display, or a clean design counter.\n\nThe process includes:\n– Character analysis and oat mix pairing\n– Cereal box concept and design\n– Display environment selection\n– Final image with mascot figure, packaging, and styled scene composition\n\nAll visuals should be balanced, modern, and appealing, reflecting a premium and fun oat brand identity.\n",
+        "prompt_note": "",
+        "prompt_note_en": "",
+        "reference_note": "[《戴珍珠耳环的少女》图片](https://commons.wikimedia.org/w/index.php?curid=55017931)。\n",
+        "reference_note_en": "[Image of 'Girl with a Pearl Earring'](https://commons.wikimedia.org/w/index.php?curid=55017931).\n",
+        "submitter": "",
+        "submitter_link": ""
+      },
+      "transform": "Pillow RGB, thumbnail max 1100x1400, WebP quality=86 method=6",
+      "sourceRevision": "3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596"
+    },
+    {
+      "id": "ocean-popsicle",
+      "originalUrl": "https://raw.githubusercontent.com/jamez-bondos/awesome-gpt4o-images/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/65/surreal-underwater-scene-popsicle.png",
+      "originalSha256": "dd62cb8d8b1f5c17c68476a8488443c57d33ab597c12b5951371c5860538b075",
+      "files": {
+        "creation-cases\\ocean-popsicle.webp": "b0138f831a2ff042cee39074d70f3dc354dc4f981e552c0553353a9f9565698e"
+      },
+      "attribution": {
+        "title": "奇幻水下场景冰棒",
+        "title_en": "Surreal Underwater Scene Popsicle",
+        "prompt_author": "@madpencil_",
+        "prompt_author_link": "https://x.com/madpencil_",
+        "image_author": "@jamez-bondos",
+        "image_author_link": "https://github.com/jamez-bondos",
+        "source_links": [
+          {
+            "url": "https://x.com/madpencil_/status/1915099250079469907"
+          }
+        ],
+        "license": "CC-BY-4.0",
+        "creation_tool": "Sora",
+        "date": "2025-05-25",
+        "notes": "Prompt quoted verbatim; image fully regenerated via Sora."
+      },
+      "caseMetadata": {
+        "title": "奇幻水下场景冰棒",
+        "title_en": "Surreal Underwater Scene Popsicle",
+        "author": "@madpencil_",
+        "author_link": "https://x.com/madpencil_",
+        "source_links": [
+          {
+            "url": "https://x.com/madpencil_/status/1920037538372128998"
+          }
+        ],
+        "image": "surreal-underwater-scene-popsicle.png",
+        "alt_text": "奇幻水下场景冰棒",
+        "alt_text_en": "Surreal Underwater Scene Popsicle",
+        "prompt": "倾斜的第一人称视角拍摄，一只手握着一支超现实的冰棒。冰棒有着透明的蓝色外壳，里面展现了一个水下场景：一个小潜水员、几条小鱼和漂浮的气泡，还有翻滚的海浪，一根绿色的冰棒棍贯穿中心。冰棒略微融化，底部是一根木棍，手正握着这根木棍。背景是柔焦的纽约街景，采用高端产品摄影风格。\n",
+        "prompt_en": "Tilt POV shot of a hand holding a surreal popsicle with a transparent blue exterior, revealing an underwater scene inside: a tiny scuba diver with tiny fish floating with bubbles, ocean waves crashing, and a green popsicle stick running through the center. The popsicle is melting slightly, with a wooden stick at the bottom, hand is holding it by the wooden stick, soft focus new york street background, premium product photography\n",
+        "prompt_note": "",
+        "prompt_note_en": "",
+        "reference_note": "",
+        "reference_note_en": "",
+        "submitter": "",
+        "submitter_link": ""
+      },
+      "transform": "Pillow RGB, thumbnail max 1100x1400, WebP quality=86 method=6",
+      "sourceRevision": "3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596"
+    },
+    {
+      "id": "mushroom-planter",
+      "originalUrl": "https://raw.githubusercontent.com/jamez-bondos/awesome-gpt4o-images/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/55/cute_plant_planter.png",
+      "originalSha256": "195b158940d125daa178f9c1860f5f9f8a6f803b40e00fa2fa117ff108861283",
+      "files": {
+        "creation-cases\\mushroom-planter.webp": "924783f8970e6ba4398d74c7e9694690b1c8b61c6955e25b6684c024880e8590"
+      },
+      "attribution": {
+        "title": "创意绿植花盆",
+        "title_en": "Cute Plant Planter",
+        "prompt_author": "@azed_ai",
+        "prompt_author_link": "https://x.com/azed_ai",
+        "image_author": "@jamez-bondos",
+        "image_author_link": "https://github.com/jamez-bondos",
+        "source_links": [
+          {
+            "url": "https://x.com/azed_ai/status/1923739813414568075"
+          }
+        ],
+        "license": "CC-BY-4.0",
+        "creation_tool": "Sora",
+        "date": "2025-05-25",
+        "notes": "Prompt quoted verbatim; image fully regenerated via Sora."
+      },
+      "caseMetadata": {
+        "title": "创意绿植花盆",
+        "title_en": "Cute Plant Planter",
+        "author": "@azed_ai",
+        "author_link": "https://x.com/azed_ai",
+        "source_links": [
+          {
+            "url": "https://x.com/azed_ai/status/1923739813414568075"
+          }
+        ],
+        "image": "cute_plant_planter.png",
+        "alt_text": "创意绿植花盆",
+        "alt_text_en": "Cute Plant Planter",
+        "prompt": "一张高质量的照片，展示一个可爱的陶瓷[物体/动物]形状的花盆，表面光滑，里面装满了各种生机勃勃的多肉植物和绿色植物，包括尖刺的十二卷、莲座状的石莲花和精致的白色小花。花盆带有一个友好的面孔，放置在柔和的中性背景上，采用漫射自然光照明，展示了细腻的纹理和色彩对比，构图简洁、极具简约风格。\n",
+        "prompt_en": "A high-quality photo of a cute ceramic [object/animal]-shaped planter with a glossy finish, filled with a variety of vibrant succulents and greenery including a spiky Haworthia, a rosette-shaped Echeveria, and delicate white flowers. The planter has a friendly face and sits on a soft, neutral background with diffused natural lighting, showcasing fine textures and color contrast in a clean, minimalistic composition\n",
+        "prompt_note": "可替换提示词中的 [物体/动物] 为具体的物体、动物名称或表情符号。\n",
+        "prompt_note_en": "Replace [object/animal] in the prompt with a specific object, animal name, or emoji.\n",
+        "reference_note": "",
+        "reference_note_en": "",
+        "submitter": "",
+        "submitter_link": ""
+      },
+      "transform": "Pillow RGB, thumbnail max 1100x1400, WebP quality=86 method=6",
+      "sourceRevision": "3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596"
+    },
+    {
+      "id": "keycap-world",
+      "originalUrl": "https://raw.githubusercontent.com/jamez-bondos/awesome-gpt4o-images/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/47/example_esc_keycap_diorama.png",
+      "originalSha256": "68006154c6749db762eaef17fcac0e7a7ad321b5703b9a08243102dd006d46ee",
+      "files": {
+        "creation-cases\\keycap-world.webp": "b0fc57505a4b0a32ca7863d10f5f239d067e7eba12261b3061e7c39bc5f5508f"
+      },
+      "attribution": {
+        "title": "键盘ESC 键帽微型立体模型",
+        "title_en": "ESC Keycap Miniature Diorama",
+        "prompt_author": "@egeberkina",
+        "prompt_author_link": "https://x.com/egeberkina",
+        "image_author": "@jamez-bondos",
+        "image_author_link": "https://github.com/jamez-bondos",
+        "source_links": [
+          {
+            "url": "https://x.com/egeberkina/status/1911368319212408926"
+          }
+        ],
+        "license": "CC-BY-4.0",
+        "creation_tool": "Sora",
+        "date": "2025-05-24",
+        "notes": "Prompt quoted verbatim; image fully regenerated via Sora."
+      },
+      "caseMetadata": {
+        "title": "键盘ESC 键帽微型立体模型",
+        "title_en": "ESC Keycap Miniature Diorama",
+        "author": "@egeberkina",
+        "author_link": "https://x.com/egeberkina",
+        "source_links": [
+          {
+            "url": "https://x.com/egeberkina/status/1911368319212408926"
+          }
+        ],
+        "image": "example_esc_keycap_diorama.png",
+        "alt_text": "键盘 ESC 键帽内的微型电脑工作室立体模型",
+        "alt_text_en": "Miniature computer setup diorama inside an ESC keycap",
+        "prompt": "一个超写实的等距视角 3D 渲染图，展示了一个微型电脑工作空间，置于一个半透明的机械键盘键帽内，键帽特别放置在一块真实哑光表面的机械键盘的 ESC 键上。\n键帽内部，一个穿着舒适、有纹理连帽衫的小人坐在现代人体工学椅上，正专注地面对一块发光的超写实电脑屏幕工作。整个空间布满了逼真的微型科技配件：真实材质的台灯、带有反射效果的显示器、微小的扬声器格栅、缠绕的电缆以及陶瓷杯子。\n场景底部由土壤、岩石和苔藓构成，拥有照片级的材质质感和自然瑕疵。键帽内的光照模拟清晨自然阳光，投下柔和阴影与温暖光调；而键帽外部则受周围键盘环境的冷色调反射影响。\n“ESC”字样以微弱的磨砂玻璃效果蚀刻在半透明键帽顶部——根据视角不同，仅隐约可见。\n周围的按键如 F1、Q、Shift 和 CTRL 均清晰可见，拥有真实材质纹理与光照。整体画面仿佛由高端手机相机拍摄，具备浅景深、完美白平衡与电影感细节。\n",
+        "prompt_en": "A hyper-realistic isometric 3D render of a miniature computer setup inside a translucent mechanical keyboard keycap, specifically placed on the ESC key of a real matte-finished mechanical keyboard. Inside the keycap, a tiny figure sits in a modern ergonomic chair, wearing a cozy textured hoodie, working at a glowing ultra-realistic computer screen. The environment is packed with lifelike miniature tech accessories: real-material desk lamps, monitors with reflections, tiny speaker grills, tangled cables, and ceramic mugs. The base of the scene is made of soil, rocks, and moss, with photorealistic textures and imperfections. The lighting inside the cap mimics natural morning sun, casting soft shadows and warm tones, while the outside has cold ambient reflections from the surrounding keyboard. The word “ESC” is subtly etched onto the top of the translucent keycap with a faint frosted glass effect — just barely visible depending on the angle. The surrounding keyboard keys like F1, Q, Shift, and CTRL are crisp, textured, and photorealistically lit. Shot as if taken with a high-end mobile phone camera, with shallow depth of field, perfect white balance, and cinematic detail.\n",
+        "prompt_note": "中文版本提示词由英文版本翻译而来，原提示词请查看英文版本\n",
+        "prompt_note_en": "",
+        "reference_note": "",
+        "reference_note_en": "",
+        "submitter": "",
+        "submitter_link": ""
+      },
+      "transform": "Pillow RGB, thumbnail max 1100x1400, WebP quality=86 method=6",
+      "sourceRevision": "3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596"
+    },
+    {
+      "id": "panda-rest",
+      "originalUrl": "https://raw.githubusercontent.com/jamez-bondos/awesome-gpt4o-images/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/84/case.png",
+      "originalSha256": "769fb6c1b83b053b87fef131265ff7d0c4927d4c506a5ed9546df28a29445b32",
+      "files": {
+        "creation-cases\\panda-rest.webp": "97cc93bc73ef983aaf252d7b0d215ed003762b7053411f11b75857145ec3d95c"
+      },
+      "attribution": {
+        "title": "动物硅胶腕托",
+        "title_en": "Animal Silicone Wrist Rest",
+        "prompt_author": "@ZHO_ZHO_ZHO",
+        "prompt_author_link": "https://x.com/ZHO_ZHO_ZHO",
+        "image_author": "@jamez-bondos",
+        "image_author_link": "https://github.com/jamez-bondos",
+        "source_links": [
+          {
+            "url": "https://x.com/ZHO_ZHO_ZHO/status/1918525296577327574"
+          }
+        ],
+        "license": "CC-BY-4.0",
+        "creation_tool": "Sora",
+        "date": "2025-05-24",
+        "notes": "Prompt quoted verbatim; image fully regenerated via Sora."
+      },
+      "caseMetadata": {
+        "title": "动物硅胶腕托",
+        "title_en": "Animal Silicone Wrist Rest",
+        "author": "@ZHO_ZHO_ZHO",
+        "author_link": "https://x.com/ZHO_ZHO_ZHO",
+        "source_links": [
+          {
+            "url": "https://x.com/ZHO_ZHO_ZHO/status/1918525296577327574"
+          }
+        ],
+        "image": "case.png",
+        "alt_text": "动物硅胶腕托",
+        "alt_text_en": "Animal Silicone Wrist Rest",
+        "prompt": "创建图片 一个可爱Q版的硅胶护腕托，外形基于【🐼】表情，采用柔软的食品级硅胶材质，表面为亲肤哑光质感，内部填充慢回弹棉，拟人化卡通风格，表情生动，双手张开趴在桌面上，呈现出拥抱手腕的姿势，整体造型圆润软萌，颜色为【🐼】配色，风格治愈可爱，适合办公使用，背景为白色纯色，柔和布光，产品摄影风格，前视角或45度俯视，高清细节，突出硅胶质感与舒适功能\n",
+        "prompt_en": "Create an image of a cute chibi-style silicone wrist rest based on the {🐼} emoji. The wrist rest is made of soft, food-grade silicone with a skin-friendly matte surface. The interior is filled with slow-rebound foam. Designed in a personified cartoon style, the expression is lively, with both arms stretched out as if hugging the user’s wrist while lying on a desk. The overall shape is round, soft, and adorable, featuring the classic {🐼} color scheme. The design is comforting and cute, suitable for office use. The background is a solid white color with soft lighting. Rendered in a product photography style, the angle is either front-facing or at a 45-degree top-down view, showcasing high-definition details and emphasizing the silicone texture and comfort functionality.\n",
+        "prompt_note": "可替换提示词中的【🐼】为其他动物 Emoji。\n",
+        "prompt_note_en": "Replace the {🐼} emoji in the prompt with other animal emojis.\n",
+        "reference_note": "",
+        "reference_note_en": "",
+        "submitter": "",
+        "submitter_link": ""
+      },
+      "transform": "Pillow RGB, thumbnail max 1100x1400, WebP quality=86 method=6",
+      "sourceRevision": "3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596"
+    },
+    {
+      "id": "city-weather",
+      "originalUrl": "https://raw.githubusercontent.com/jamez-bondos/awesome-gpt4o-images/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/82/example.png",
+      "originalSha256": "004a081e7d2302a6c05da0ecb63cf352cad5125a6a11d783b1de25de04daeab3",
+      "files": {
+        "creation-cases\\city-weather.webp": "66ac0f5997b44186a2c9ad83a5426ec957e4df8c776b0ef9d8930be224db3844"
+      },
+      "attribution": {
+        "title": "特色城市天气预报",
+        "title_en": "Signature City Weather Forecast",
+        "prompt_author": "@dotey",
+        "prompt_author_link": "https://x.com/dotey",
+        "image_author": "@jamez-bondos",
+        "image_author_link": "https://github.com/jamez-bondos",
+        "source_links": [
+          {
+            "url": "https://x.com/dotey/status/1917988595228438771"
+          }
+        ],
+        "license": "CC-BY-4.0",
+        "creation_tool": "Sora",
+        "date": "2025-05-24",
+        "notes": "Prompt quoted verbatim; image fully regenerated via Sora."
+      },
+      "caseMetadata": {
+        "title": "特色城市天气预报",
+        "title_en": "Signature City Weather Forecast",
+        "author": "@dotey",
+        "author_link": "https://x.com/dotey",
+        "source_links": [
+          {
+            "url": "https://x.com/dotey/status/1917988595228438771"
+          }
+        ],
+        "image": "example.png",
+        "alt_text": "特色城市天气预报",
+        "alt_text_en": "Signature City Weather Forecast",
+        "prompt": "以清晰的45°俯视角度，展示一个等距微缩模型场景，内容为[上海东方明珠塔、外滩]等城市特色建筑，天气效果巧妙融入场景中，柔和的多云天气与城市轻柔互动。使用基于物理的真实渲染（PBR）和逼真的光照效果，纯色背景，清晰简洁。画面采用居中构图，凸显出三维模型精准而细腻的美感。在图片上方展示“[上海 多云 20°C]”，并附有多云天气图标。\n",
+        "prompt_en": "Show a clear 45-degree bird’s-eye view of an isometric miniature city scene featuring Shanghai’s iconic buildings, such as the Oriental Pearl Tower and the Bund. The weather effect—cloudy—blends softly into the city, interacting gently with the architecture. Use physically based rendering (PBR) and realistic lighting. Solid color background, crisp and clean. Centered composition to highlight the precision and detail of the 3D model. Display “Shanghai Cloudy 20°C” and a cloudy weather icon at the top of the image.\n",
+        "prompt_note": "城市、天气、温度和建筑名称可根据需求替换 [] 中的内容。图片由 Sora 生成。",
+        "prompt_note_en": "The city, weather, temperature, and building names can be replaced with the content in []. Generated with sora.",
+        "reference_note": "",
+        "reference_note_en": "",
+        "submitter": "luoshui-coder",
+        "submitter_link": "https://github.com/luoshui-coder"
+      },
+      "transform": "Pillow RGB, thumbnail max 1100x1400, WebP quality=86 method=6",
+      "sourceRevision": "3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596"
+    },
+    {
+      "id": "knitted-doll",
+      "originalUrl": "https://raw.githubusercontent.com/jamez-bondos/awesome-gpt4o-images/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/97/cute_cozy_knitted_doll.png",
+      "originalSha256": "0286e8064d0b54ae3b966ba4a9910fde0cfacac1f9edad52a3f7f1cc7db3bfbf",
+      "files": {
+        "creation-cases\\knitted-doll.webp": "1576eb2334d251ba908e3bed190c9dddb3795d627a801d28758488e206625f34"
+      },
+      "attribution": {
+        "title": "可爱温馨针织玩偶",
+        "title_en": "Cute and Cozy Knitted Doll",
+        "prompt_author": "@ZHO_ZHO_ZHO",
+        "prompt_author_link": "https://x.com/ZHO_ZHO_ZHO",
+        "image_author": "@jamez-bondos",
+        "image_author_link": "https://github.com/jamez-bondos",
+        "source_links": [
+          {
+            "url": "https://x.com/ZHO_ZHO_ZHO/status/1921148024861938077"
+          }
+        ],
+        "license": "CC-BY-4.0",
+        "creation_tool": "Sora",
+        "date": "2025-05-24",
+        "notes": "Prompt quoted verbatim; image fully regenerated via Sora."
+      },
+      "caseMetadata": {
+        "title": "可爱温馨针织玩偶",
+        "title_en": "Cute and Cozy Knitted Doll",
+        "author": "@ZHO_ZHO_ZHO",
+        "author_link": "https://x.com/ZHO_ZHO_ZHO",
+        "source_links": [
+          {
+            "url": "https://x.com/ZHO_ZHO_ZHO/status/1921148024861938077"
+          }
+        ],
+        "image": "cute_cozy_knitted_doll.png",
+        "alt_text": "可爱温馨针织玩偶",
+        "alt_text_en": "Cute and Cozy Knitted Doll",
+        "prompt": "一张特写、构图专业的照片，展示一个手工钩织的毛线玩偶被双手轻柔地托着。玩偶造型圆润，【上传图片】人物得可爱Q版形象，色彩对比鲜明，细节丰富。持玩偶的双手自然、温柔，手指姿态清晰可见，皮肤质感与光影过渡自然，展现出温暖且真实的触感。背景轻微虚化，表现为室内环境，有温暖的木质桌面和从窗户洒入的自然光，营造出舒适、亲密的氛围。整体画面传达出精湛的工艺感与被珍视的温馨情绪。\n",
+        "prompt_en": "A close-up, professionally composed photograph showcasing a hand-crocheted yarn doll gently cradled by two hands. The doll has a rounded shape, featuring the cute chibi image of the [upload image] character, with vivid contrasting colors and rich details. The hands holding the doll are natural and gentle, with clearly visible finger postures, and natural skin texture and light/shadow transitions, conveying a warm and realistic touch. The background is slightly blurred, depicting an indoor environment with a warm wooden tabletop and natural light streaming in from a window, creating a comfortable and intimate atmosphere. The overall image conveys a sense of exquisite craftsmanship and cherished warmth.\n",
+        "prompt_note": "",
+        "prompt_note_en": "",
+        "reference_note": "上传一张照片作为参考，生成其可爱Q版针织玩偶形象。\n",
+        "reference_note_en": "Upload a photo as a reference to generate its cute chibi knitted doll image.\n",
+        "submitter": "",
+        "submitter_link": ""
+      },
+      "transform": "Pillow RGB, thumbnail max 1100x1400, WebP quality=86 method=6",
+      "sourceRevision": "3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596"
+    },
+    {
+      "id": "boxed-landscape",
+      "originalUrl": "https://raw.githubusercontent.com/jamez-bondos/awesome-gpt4o-images/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/19/country_diorama_in_toy_box.png",
+      "originalSha256": "28c1aa0754abd807a2fa38ba4d785286f8691971be8d0aa8e637ac1feb27f3c9",
+      "files": {
+        "creation-cases\\boxed-landscape.webp": "a0b248f050015d38235da61c09ef8544d7fe016aa1604d1390b891e9dc6e4987"
+      },
+      "attribution": {
+        "title": "玩具盒中的国家立体模型",
+        "title_en": "Country Diorama in a Toy Box",
+        "prompt_author": "@TheRelianceAI",
+        "prompt_author_link": "https://x.com/TheRelianceAI",
+        "image_author": "@jamez-bondos",
+        "image_author_link": "https://github.com/jamez-bondos",
+        "source_links": [
+          {
+            "url": "https://x.com/TheRelianceAI/status/1925223613055017251"
+          }
+        ],
+        "license": "CC-BY-4.0",
+        "creation_tool": "Sora",
+        "date": "2025-05-25",
+        "notes": "Prompt quoted verbatim; image fully regenerated via Sora."
+      },
+      "caseMetadata": {
+        "title": "玩具盒中的国家立体模型",
+        "title_en": "Country Diorama in a Toy Box",
+        "author": "@TheRelianceAI",
+        "author_link": "https://x.com/TheRelianceAI",
+        "source_links": [
+          {
+            "url": "https://x.com/TheRelianceAI/status/1925223613055017251"
+          }
+        ],
+        "image": "country_diorama_in_toy_box.png",
+        "alt_text": "玩具盒中的[国家名称]立体模型",
+        "alt_text_en": "Country Diorama in a Toy Box",
+        "prompt": "一张超写实的俯拍摄影作品，展示了一个米色纸板盒内的3D打印立体模型，盒盖由两只人手撑开。盒子内部展现了[国家名称]的微缩景观，包含标志性地标、地形、建筑、河流、植被以及大量微小精细的人物模型。该立体模型充满了鲜活且符合地理特征的元素，全部采用触感舒适、玩具般的风格，使用哑光3D打印纹理制作，并带有可见的打印层纹。在顶部，盒盖内侧用大号、色彩鲜艳的凸起塑料字母显示“[国家名称]”字样——每个字母颜色各异，均为亮色。光线温暖且具有电影感，突出了纹理和阴影，营造出一种真实感和魅力，仿佛观看者正在打开一个神奇的国家微缩版本。\n",
+        "prompt_en": "An ultra-realistic top-down photograph of a 3D-printed diorama inside a beige cardboard box, with the lid being held open by two human hands. The interior of the box reveals a miniature landscape of [COUNTRY NAME], featuring iconic landmarks, terrain, buildings, rivers, vegetation, and crowds of tiny, detailed human figures. The diorama is filled with vibrant, geographically appropriate elements, all crafted in a tactile, toy-like style using matte 3D-printed textures with visible layer lines. At the top, the inside of the box lid displays the phrase “[COUNTRY NAME]” in large, colorful, raised plastic letters—each letter in a different bright color. The lighting is warm and cinematic, highlighting the textures and shadows to evoke a sense of realism and charm, as if the viewer is opening a magical miniature version of the nation\n",
+        "prompt_note": "请将提示词中的 `[国家名称]` 替换为具体的国家名称。\n",
+        "prompt_note_en": "Please replace `[COUNTRY NAME]` in the prompt with a specific country name.\n",
+        "reference_note": "",
+        "reference_note_en": "",
+        "submitter": "",
+        "submitter_link": ""
+      },
+      "transform": "Pillow RGB, thumbnail max 1100x1400, WebP quality=86 method=6",
+      "sourceRevision": "3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596"
+    },
+    {
+      "id": "silk-sculpture",
+      "originalUrl": "https://raw.githubusercontent.com/jamez-bondos/awesome-gpt4o-images/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/66/example_silk_creation_universe.png",
+      "originalSha256": "7eb62c578306b8a3b791d09ad2d9f9508fe3307f47930535f8f0242b2b19a247",
+      "files": {
+        "creation-cases\\silk-sculpture.webp": "592aed879a90679725e0e113e6aa3459ad3bed76036bb7f861c97801b7dad6aa"
+      },
+      "attribution": {
+        "title": "创意丝绸宇宙",
+        "title_en": "Creative Silk Universe",
+        "prompt_author": "@ZHO_ZHO_ZHO",
+        "prompt_author_link": "https://x.com/ZHO_ZHO_ZHO",
+        "image_author": "@jamez-bondos",
+        "image_author_link": "https://github.com/jamez-bondos",
+        "source_links": [
+          {
+            "url": "https://x.com/ZHO_ZHO_ZHO/status/1914864217867608175"
+          }
+        ],
+        "license": "CC-BY-4.0",
+        "creation_tool": "Sora",
+        "date": "2025-05-24",
+        "notes": "Prompt quoted verbatim; image fully regenerated via Sora."
+      },
+      "caseMetadata": {
+        "title": "创意丝绸宇宙",
+        "title_en": "Creative Silk Universe",
+        "author": "@ZHO_ZHO_ZHO",
+        "author_link": "https://x.com/ZHO_ZHO_ZHO",
+        "source_links": [
+          {
+            "url": "https://x.com/ZHO_ZHO_ZHO/status/1914864217867608175"
+          }
+        ],
+        "image": "example_silk_creation_universe.png",
+        "alt_text": "创意丝绸宇宙",
+        "alt_text_en": "Silk Universe-Creative Universe",
+        "prompt": "将 {❄️} 变成一个柔软的 3D 丝绸质感物体。整个物体表面包裹着顺滑流动的丝绸面料，带有超现实的褶皱细节、柔和的高光与阴影。该物体轻轻漂浮在干净的浅灰色背景中央，营造出轻盈优雅的氛围。整体风格超现实、触感十足且现代，传递出舒适与精致趣味的感觉。工作室灯光，高分辨率渲染。\n",
+        "prompt_en": "Transform the {❄️} into a soft 3D object with a silk texture. The entire surface of the object is wrapped in smooth and flowing silk fabric, featuring surreal wrinkle details, soft highlights, and shadows. The object gently floats in the center of a clean light gray background, creating a light and elegant atmosphere. The overall style is surreal, tactile, and modern, conveying a sense of comfort and refined playfulness. Studio lighting, high-resolution rendering.\n",
+        "prompt_note": "可替换提示词中的 {❄️} 替换为你的目标值。\n",
+        "prompt_note_en": "You can replace the {❄️} in the prompt words with your target value\n",
+        "reference_note": "",
+        "reference_note_en": "",
+        "submitter": "wowmarcomei",
+        "submitter_link": "https://github.com/wowmarcomei"
+      },
+      "transform": "Pillow RGB, thumbnail max 1100x1400, WebP quality=86 method=6",
+      "sourceRevision": "3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596"
+    },
+    {
+      "id": "paper-story",
+      "originalUrl": "https://raw.githubusercontent.com/jamez-bondos/awesome-gpt4o-images/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/32/3d_papercraft_popup_book.png",
+      "originalSha256": "fdf38f5291762ac8a42b7f8d3f22946eb610de25ad853251109212301d39d833",
+      "files": {
+        "creation-cases\\paper-story.webp": "5ae0cfc564623f04fb0181ab4da451622e66cf5ce4a15c9ea129ebf2f79efff7"
+      },
+      "attribution": {
+        "title": "折叠式纸雕立体绘本",
+        "title_en": "3D Papercraft Pop-up Book",
+        "prompt_author": "@dotey",
+        "prompt_author_link": "https://x.com/dotey",
+        "image_author": "@jamez-bondos",
+        "image_author_link": "https://github.com/jamez-bondos",
+        "source_links": [
+          {
+            "url": "https://x.com/dotey/status/1923264349050675329"
+          }
+        ],
+        "license": "CC-BY-4.0",
+        "creation_tool": "Sora",
+        "date": "2025-05-25",
+        "notes": "Prompt quoted verbatim; image fully regenerated via Sora."
+      },
+      "caseMetadata": {
+        "title": "折叠式纸雕立体绘本",
+        "title_en": "3D Papercraft Pop-up Book",
+        "author": "@dotey",
+        "author_link": "https://x.com/dotey",
+        "source_links": [
+          {
+            "url": "https://x.com/dotey/status/1923264349050675329"
+          }
+        ],
+        "image": "3d_papercraft_popup_book.png",
+        "alt_text": "折叠式纸雕立体绘本",
+        "alt_text_en": "3D Papercraft Pop-up Book",
+        "prompt": "多层折叠式纸雕立体绘本，放在一张书桌上，背景纯净突出主题，绘本呈现出立体翻页书般的风格，比例为3:2横版。翻开的书页呈现【魔童版哪吒大战敖丙】的场景，所有元素皆可精细折叠组合，呈现出逼真细腻的纸张折叠质感；构图统一采用正面视角，整体视觉风格梦幻唯美，色彩缤纷绚丽，充满奇幻而生动的故事氛围。\n",
+        "prompt_en": "Multi-layered foldable paper sculpture pop-up book, placed on a desk, with a clean background highlighting the main subject. The book presents a 3D flip-book style, with a 2:3 vertical aspect ratio. The open pages display the scene of [Nezha Demon Child version battling Ao Bing]. All elements are finely foldable and assembled, showcasing a realistic and delicate texture of folded paper. The composition uniformly adopts a frontal perspective, with an overall dreamy and beautiful visual style, vibrant and gorgeous colors, full of a fantastical and lively story atmosphere.\n",
+        "prompt_note": "请酌情修改中括号【】内的场景描述，也可以增加更多细节。\n",
+        "prompt_note_en": "Please modify the scene description within the square brackets 【】 as appropriate, and you can also add more details.\n",
+        "reference_note": "",
+        "reference_note_en": "",
+        "submitter": "",
+        "submitter_link": ""
+      },
+      "transform": "Pillow RGB, thumbnail max 1100x1400, WebP quality=86 method=6",
+      "sourceRevision": "3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596"
+    },
+    {
+      "id": "citrus-still-life",
+      "originalUrl": "https://raw.githubusercontent.com/genmoai/mochi/15c9bad662df1fa3e7b53136423695b286484c08/assets/grid.mp4",
+      "originalSha256": "e10304cf30b68f92b82438a33d4dd1dade8169e142fee538ceebb9d91565604d",
+      "files": {
+        "creation-cases\\citrus-still-life.mp4": "40a9e836b21197616cec82f4261b0d81314f57ca706275b3f03973f255801a9d",
+        "creation-cases\\citrus-still-life.webp": "18f2c23bcc72b9703c912c982bccf985bdbb73d7ef643c3d5d08ce6f3fb95a4f"
+      },
+      "transform": "ffmpeg -vf crop=848:480:0:960 -an -c:v libx264 -preset medium -crf 22 -pix_fmt yuv420p -movflags +faststart; poster at 1s",
+      "sourceRevision": "15c9bad662df1fa3e7b53136423695b286484c08",
+      "attribution": {
+        "author": "Genmo",
+        "license": "Apache-2.0"
+      }
+    },
+    {
+      "id": "candle-light",
+      "originalUrl": "https://raw.githubusercontent.com/genmoai/mochi/15c9bad662df1fa3e7b53136423695b286484c08/assets/grid.mp4",
+      "originalSha256": "e10304cf30b68f92b82438a33d4dd1dade8169e142fee538ceebb9d91565604d",
+      "files": {
+        "creation-cases\\candle-light.mp4": "a988e420355e8fa0420bd7cd78110c26060ee02152a55a0ce0b1ec77bdfbb5ee",
+        "creation-cases\\candle-light.webp": "13f2fa04a1df15e9b4bc59ef44ed373c387865845dacd4d8b284a4a29de74559"
+      },
+      "transform": "ffmpeg -vf crop=848:480:1696:0 -an -c:v libx264 -preset medium -crf 22 -pix_fmt yuv420p -movflags +faststart; poster at 1s",
+      "sourceRevision": "15c9bad662df1fa3e7b53136423695b286484c08",
+      "attribution": {
+        "author": "Genmo",
+        "license": "Apache-2.0"
+      }
+    },
+    {
+      "id": "lantern-fashion",
+      "originalUrl": "https://raw.githubusercontent.com/genmoai/mochi/15c9bad662df1fa3e7b53136423695b286484c08/assets/grid.mp4",
+      "originalSha256": "e10304cf30b68f92b82438a33d4dd1dade8169e142fee538ceebb9d91565604d",
+      "files": {
+        "creation-cases\\lantern-fashion.mp4": "5065c6f8a0fa1e974a9995de3474782da77b14b095ab27a20edded7083f349e7",
+        "creation-cases\\lantern-fashion.webp": "abac614994425aa9aa708a55d72bd7e1559dba1e6fb03fd72e223e7b7cb2927c"
+      },
+      "transform": "ffmpeg -vf crop=848:480:848:480 -an -c:v libx264 -preset medium -crf 22 -pix_fmt yuv420p -movflags +faststart; poster at 1s",
+      "sourceRevision": "15c9bad662df1fa3e7b53136423695b286484c08",
+      "attribution": {
+        "author": "Genmo",
+        "license": "Apache-2.0"
+      }
+    },
+    {
+      "id": "sunset-cycling",
+      "originalUrl": "https://raw.githubusercontent.com/genmoai/mochi/15c9bad662df1fa3e7b53136423695b286484c08/assets/grid.mp4",
+      "originalSha256": "e10304cf30b68f92b82438a33d4dd1dade8169e142fee538ceebb9d91565604d",
+      "files": {
+        "creation-cases\\sunset-cycling.mp4": "1e3b76a291a6e5e6ef2143b9f68e0e1db24a34910bd3632ba740b1922f81d91a",
+        "creation-cases\\sunset-cycling.webp": "d4c8d4257e4050327da68cdf517215d25151d5776927b31dea556f4666e6f90e"
+      },
+      "transform": "ffmpeg -vf crop=848:480:0:480 -an -c:v libx264 -preset medium -crf 22 -pix_fmt yuv420p -movflags +faststart; poster at 1s",
+      "sourceRevision": "15c9bad662df1fa3e7b53136423695b286484c08",
+      "attribution": {
+        "author": "Genmo",
+        "license": "Apache-2.0"
+      }
+    },
+    {
+      "id": "harvest-aerial",
+      "originalUrl": "https://raw.githubusercontent.com/genmoai/mochi/15c9bad662df1fa3e7b53136423695b286484c08/assets/grid.mp4",
+      "originalSha256": "e10304cf30b68f92b82438a33d4dd1dade8169e142fee538ceebb9d91565604d",
+      "files": {
+        "creation-cases\\harvest-aerial.mp4": "a4a8304a1db81abcc6a1c0bcca16bf7701f06896ba7f83e26ce7614aee447602",
+        "creation-cases\\harvest-aerial.webp": "883fbfe23c78979feba1bf713617a5404421a56df49b77bf91a071d9b5b40f69"
+      },
+      "transform": "ffmpeg -vf crop=848:480:848:960 -an -c:v libx264 -preset medium -crf 22 -pix_fmt yuv420p -movflags +faststart; poster at 1s",
+      "sourceRevision": "15c9bad662df1fa3e7b53136423695b286484c08",
+      "attribution": {
+        "author": "Genmo",
+        "license": "Apache-2.0"
+      }
+    },
+    {
+      "id": "morning-run",
+      "originalUrl": "https://raw.githubusercontent.com/genmoai/mochi/15c9bad662df1fa3e7b53136423695b286484c08/assets/grid.mp4",
+      "originalSha256": "e10304cf30b68f92b82438a33d4dd1dade8169e142fee538ceebb9d91565604d",
+      "files": {
+        "creation-cases\\morning-run.mp4": "8e48ef49cd12fc8a82a26e892bc68d75eb781f541e4f077db8d472b182a8e40a",
+        "creation-cases\\morning-run.webp": "2603aec829b2ba256600f72b19ef09d5a34000a5dba64fb39d9115cd940e2d7c"
+      },
+      "transform": "ffmpeg -vf crop=848:480:1696:960 -an -c:v libx264 -preset medium -crf 22 -pix_fmt yuv420p -movflags +faststart; poster at 1s",
+      "sourceRevision": "15c9bad662df1fa3e7b53136423695b286484c08",
+      "attribution": {
+        "author": "Genmo",
+        "license": "Apache-2.0"
+      }
+    }
+  ]
+}

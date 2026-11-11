@@ -10,6 +10,7 @@ import {useBilling,useBillingEstimate} from "@/lib/billing/client";
 import {MODEL_CATALOG_REFRESH} from "@/lib/model-config/public-client";
 import {catalogCapability,reconcileVideoSettings,validateVideoSettings,type VideoCatalogModel,type VideoNodeConfig,type VideoInputChoice} from "@/lib/video/client-settings";
 import {videoHistoryDraft} from "@/lib/video/client-history";
+import {findCreationCase} from "@/lib/creation-cases/catalog";
 import type {OrderedInput} from "@/lib/video/references";
 import {VideoSettingsFields} from "../canvas/video/settings-fields";
 import {VideoHistoryPicker} from "../canvas/video/history-picker";
@@ -23,18 +24,19 @@ import {useMediaJobs} from "../canvas/video/use-media-jobs";
 import type {VideoPrivateFetch} from "../canvas/video/use-video-nodes";
 import {videoButtonClass,videoFieldClass,assertVideoFieldsValid} from "../canvas/video/form-controls";
 
-export function VideoStudioClient(){
+export function VideoStudioClient({initialCaseId}:{initialCaseId?:string}={}){
   const {user,ready}=useAuth(),{openAuth}=useAuthModal(),identity=useRef({email:user?.email,revision:0});
   if(identity.current.email!==user?.email)identity.current={email:user?.email,revision:identity.current.revision+1};
   const revision=identity.current.revision;
   const request=useCallback<VideoPrivateFetch>(async(input,init={})=>{const headers=new Headers(await authHeader());new Headers(init.headers).forEach((value,key)=>headers.set(key,value));if(identity.current.revision!==revision)throw new Error("账号已切换");return fetch(input,{...init,headers});},[revision]);
   if(!ready)return <div className="flex min-h-80 items-center justify-center"><Loader2 className="animate-spin"/></div>;
   if(!user)return <div className="flex min-h-80 items-center justify-center"><button type="button" className={videoButtonClass} onClick={()=>openAuth("sign-in")}>登录</button></div>;
-  return <VideoStudioSession key={`${user.email}:${revision}`} email={user.email} request={request}/>;
+  return <VideoStudioSession key={`${user.email}:${revision}`} email={user.email} request={request} initialPrompt={findCreationCase(initialCaseId,"video")?.prompt||""}/>;
 }
 const status={queued:"排队中",processing:"生成中",needs_attention:"待核查",completed:"已完成",failed:"失败",cancelled:"已停止"};
-function VideoStudioSession({email,request}:{email:string;request:VideoPrivateFetch}){
-  const [models,setModels]=useState<VideoCatalogModel[]>([]),[config,setConfig]=useState<VideoNodeConfig>({prompt:""}),[inputs,setInputs]=useState<OrderedInput[]>([]),[extraChoices,setExtraChoices]=useState<VideoInputChoice[]>([]),[catalogError,setCatalogError]=useState(""),[activeId,setActiveId]=useState(""),[detail,setDetail]=useState<VideoTaskDetail|null>(null),[outputId,setOutputId]=useState(""),[historyOpen,setHistoryOpen]=useState(false),[busy,setBusy]=useState(false),[importing,setImporting]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState(""),[count,setCount]=useState(1),[projects,setProjects]=useState<{key:string;name:string}[]>([]),[media,setMedia]=useState<{id:string;initial:VideoPlayerAction;projectKey?:string}|null>(null);
+function VideoStudioSession({email,request,initialPrompt}:{email:string;request:VideoPrivateFetch;initialPrompt:string}){
+  const caseSeed=useRef(initialPrompt);
+  const [models,setModels]=useState<VideoCatalogModel[]>([]),[config,setConfig]=useState<VideoNodeConfig>({prompt:initialPrompt}),[inputs,setInputs]=useState<OrderedInput[]>([]),[extraChoices,setExtraChoices]=useState<VideoInputChoice[]>([]),[catalogError,setCatalogError]=useState(""),[activeId,setActiveId]=useState(""),[detail,setDetail]=useState<VideoTaskDetail|null>(null),[outputId,setOutputId]=useState(""),[historyOpen,setHistoryOpen]=useState(false),[busy,setBusy]=useState(false),[importing,setImporting]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState(""),[count,setCount]=useState(1),[projects,setProjects]=useState<{key:string;name:string}[]>([]),[media,setMedia]=useState<{id:string;initial:VideoPlayerAction;projectKey?:string}|null>(null);
   const formRoot=useRef<HTMLElement>(null),configured=useRef(false),catalogAttempt=useRef(0),billing=useBilling(),estimate=useBillingEstimate({feature:"video.generate",quantity:1,modelId:config.modelId,providerId:config.providerId,resolution:config.resolution});
   const assets=useVideoAssets({email,request}),history=useVideoHistory({email,request,onCompleted:async()=>{await assets.refresh();}}),generation=useVideoGeneration({email,request});
   const jobs=useMediaJobs({email,source:"workbench",readOnly:false,request,onCompleted:async()=>{await assets.refresh();}});
@@ -53,6 +55,7 @@ function VideoStudioSession({email,request}:{email:string;request:VideoPrivateFe
   async function submit(){if(busy||importing)return;setBusy(true);setError("");setNotice("");try{assertVideoFieldsValid(formRoot.current);if(invalid)throw new Error(invalid);if(!config.comfyWorkflowId&&!estimate.quote)throw new Error(estimate.error||"请等待报价");const result=await generation.submit(config,inputs,count,config.comfyWorkflowId?null:estimate.quote);setActiveId(result[0].taskId);setNotice(`已创建 ${result.length} 个任务 · ${result.reduce((total,item)=>total+item.cost,0)} 积分`);await history.refresh();}catch(cause){if(cause instanceof VideoGenerationPriceChanged)await billing.refresh();setError(cause instanceof Error?cause.message:"视频创建失败");await history.refresh().catch(()=>{});}finally{setBusy(false);}}
   function process(id:string,initial:VideoPlayerAction,projectKey?:string|null){setMedia({id,initial,projectKey:(projectKey!==undefined?projectKey:task?.projectKey)||undefined});}
   return <main ref={formRoot} className="mx-auto min-h-screen w-full max-w-[1600px] space-y-4 p-3 text-slate-800 dark:text-slate-100 md:p-6" data-testid="video-workbench">
+    {initialPrompt&&caseSeed.current!==initialPrompt&&<button type="button" className={videoButtonClass} disabled={busy||importing} onClick={()=>{caseSeed.current=initialPrompt;setConfig(current=>({...current,prompt:initialPrompt}));}}>替换为新案例提示词</button>}
     <header className="flex flex-wrap items-center gap-3"><h1 className="mr-auto text-lg font-semibold">视频工作台</h1><Link href="/canvas" className={videoButtonClass}>画布</Link><button type="button" className={videoButtonClass} disabled={busy||importing} onClick={()=>setHistoryOpen(true)}><History size={14} className="mr-1 inline"/>完整历史</button></header>
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,1fr)_240px]">
       <section className="min-w-0 space-y-4 rounded-2xl border border-current/10 p-4"><VideoSettingsFields config={config} inputs={inputs} models={models} choices={choices} busy={busy} onConfig={setConfig} onInputs={setInputs} onImport={files=>assets.upload(files)} onImportBusyChange={setImporting} onLoadMoreAssets={assets.loadMore} canLoadMoreAssets={!!assets.nextCursor}/>
