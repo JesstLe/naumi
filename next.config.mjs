@@ -1,6 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Preserve Next 15's HTML-limited bots, adding AI retrieval clients that may
+  // only read <head>. Ordinary browsers retain streamed metadata and UI.
+  htmlLimitedBots: /[\w-]+-Google|Google-[\w-]+|Chrome-Lighthouse|Slurp|DuckDuckBot|baiduspider|yandex|sogou|bitlybot|tumblr|vkShare|quora link preview|redditbot|ia_archiver|Bingbot|BingPreview|applebot|facebookexternalhit|facebookcatalog|Twitterbot|LinkedInBot|Slackbot|Discordbot|WhatsApp|SkypeUriPreview|Yeti|googleweblight|OAI-SearchBot|ChatGPT-User|Claude-SearchBot|Claude-User|PerplexityBot|Perplexity-User/i,
   // batchshot 工作台整夹上传超过 Next 默认 10MB 请求体上限(中间件截断报 UPLOAD_ERR_INI_SIZE)，
   // 提到 310mb 与 nginx client_max_body_size 对齐。
   experimental: {

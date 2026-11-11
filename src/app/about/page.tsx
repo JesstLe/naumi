@@ -1,3 +1,4 @@
+import { publicMetadata } from "@/lib/seo/server";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,7 +15,7 @@ import { BRAND } from "@/lib/brand";
 import { getSitePage } from "@/lib/settings";
 import { CustomPage } from "@/components/custom-page";
 
-export const metadata = { title: `关于 ${BRAND} — ${BRAND}` };
+export async function generateMetadata() { return publicMetadata("/about", `关于 ${BRAND} — ${BRAND}`); }
 
 type Item = { icon?: LucideIcon; title: string; desc: string };
 

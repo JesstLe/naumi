@@ -1,3 +1,4 @@
+import { publicMetadata } from "@/lib/seo/server";
 import { ShieldCheck } from "lucide-react";
 import { getServerLocale } from "@/lib/i18n/server-locale";
 import { BRAND, BRAND_EMAIL } from "@/lib/brand";
@@ -8,7 +9,7 @@ import { publicCommerceEnabled } from "@/lib/commerce";
 // 政策当前版本日期(中英文共用)。
 const LAST_UPDATED = "2026-10-10";
 
-export const metadata = { title: `隐私政策 — ${BRAND}` };
+export async function generateMetadata() { return publicMetadata("/privacy", `隐私政策 — ${BRAND}`); }
 
 export default async function PrivacyPage() {
   const locale = await getServerLocale();

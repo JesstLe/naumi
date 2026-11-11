@@ -14,7 +14,7 @@ export function SiteFooter() {
   const { canPage } = useFeatureAccess();
   const { locale } = useI18n();
   const { name: brandName } = useBrand();
-  const { pricingVisible } = usePaymentConfig();
+  const { pricingVisible, publicDiscovery } = usePaymentConfig();
   const L = (z: string, e: string) => (locale === "en" ? e : z);
 
   // 三栏(产品 / 资源 / 关于)—— 链接全部指向真实存在的路由,不造死链。
@@ -36,6 +36,7 @@ export function SiteFooter() {
     {
       title: L("资源", "Resources"),
       links: [
+        ...(publicDiscovery ? [{ href: "/guides", label: L("使用指南", "Guides") }] : []),
         { href: "/tools", label: L("创作工具", "Tools") },
         { href: "/dashboard", label: L("工作台", "Workspace") },
         { href: "/works", label: L("作品库", "Works") },
