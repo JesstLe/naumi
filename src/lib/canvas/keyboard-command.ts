@@ -10,7 +10,7 @@ export type CanvasKeyboardInput=CanvasKeyboardState&{
 };
 export type CanvasKeyboardAction=
   |{kind:"tool";tool:CanvasPrimaryTool}|{kind:"add-text"}|{kind:"copy"}|{kind:"paste-media"}
-  |{kind:"undo"}|{kind:"redo"}|{kind:"zoom-in"}|{kind:"zoom-out"}|{kind:"fit"}
+  |{kind:"save"}|{kind:"undo"}|{kind:"redo"}|{kind:"zoom-in"}|{kind:"zoom-out"}|{kind:"fit"}
   |{kind:"cut-edge"}|{kind:"remove";ids:string[]}|{kind:"remove-text";id:string}|{kind:"clear"};
 export type CanvasKeyboardDecision={prevent:boolean;action?:CanvasKeyboardAction};
 
@@ -18,6 +18,10 @@ export type CanvasKeyboardDecision={prevent:boolean;action?:CanvasKeyboardAction
  * browser globals, React state or asynchronous work belong to this decision. */
 export function canvasKeyboardCommand(input:CanvasKeyboardInput):CanvasKeyboardDecision{
   const s=input,key=s.key.toLowerCase();
+  // Saving is meaningful while typing too. Other shortcuts still belong to the
+  // focused editor; dialogs/IME and retired/read-only views never submit writes.
+  if(s.mod&&key==="s"&&!s.alt&&!s.browsing&&!s.defaultPrevented&&!s.composing&&!s.blocked)
+    return {prevent:true,...(!s.readOnly&&!s.busy&&!s.repeat?{action:{kind:"save" as const}}:{})};
   if(s.defaultPrevented||s.composing||s.blocked||s.tag==="INPUT"||s.tag==="TEXTAREA"||s.tag==="SELECT"||s.editable)
     return {prevent:!s.browsing&&key==="backspace"&&!s.composing&&s.tag!=="SELECT"&&!s.editable};
   if(s.busy&&((s.mod&&(key==="z"||key==="y"))||key==="delete"||key==="backspace"))return {prevent:true};

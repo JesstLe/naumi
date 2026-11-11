@@ -40,8 +40,8 @@ function setup(built,storageMap=new Map()){
  vm.createContext(c);vm.runInContext(built,c);Object.assign(c,loadedModule.exports);if(!baseline){const p=c.createCanvasPendingPresentation().bind('fixture'),g=c.createCanvasGenerationPresentation().bind('fixture');c.pendingPresentation={...p,atScope:()=>p};c.generationPresentation={...g,atScope:()=>g};c.projectCatalog={remove(){}};}vm.runInContext(compile(fn.privateFetchRaw),c);
  // The text-only fixture supplies all real native document ports; no native
  // records are seeded. The adapter is the same one used by Canvas.
- for(const kind of ['director','character','scene','audio','timeline'])c[kind+'NodesStore']={allNodes:[],accept(){},flush:async()=>{},getNode:()=>undefined,refresh:async()=>{}};
- if(c.canvasNativeDocuments)c.nativeDocuments=c.canvasNativeDocuments(Object.fromEntries(['video','director','character','scene','audio','timeline'].map(kind=>[kind+'Nodes',c[kind+'NodesStore']])));
+ for(const kind of ['director','character','scene','audio','timeline','comfy'])c[kind+'NodesStore']={allNodes:[],accept(){},flush:async()=>{},getNode:()=>undefined,refresh:async()=>{}};
+ if(c.canvasNativeDocuments)c.nativeDocuments=c.canvasNativeDocuments(Object.fromEntries(['video','director','character','scene','audio','timeline','comfy'].map(kind=>[kind+'Nodes',c[kind+'NodesStore']])));
 
  const owner=baseline?null:c.createCanvasTextDocument({storage:()=>storage,notice:(_s,m)=>state.notices.push(m)}),context=baseline?null:c.createCanvasDocumentContext();
  c.nodePreferences={apply:(update,persisted)=>{const next=update(c.nodeSettingsRef.current);c.nodeSettingsRef.current=next;c.setNodeSettings(next);}};

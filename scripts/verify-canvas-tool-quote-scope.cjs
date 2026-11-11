@@ -60,7 +60,7 @@ async function main(){
   const headers=new Headers(init?.headers);headers.set('x-fixture-owner',actor);const request=new Request('http://fixture'+url,{...init,headers});
   calls.push({url,hasAuthorization:headers.has('authorization'),headers:Object.fromEntries([...headers].filter(([name])=>name!=='authorization')),body:typeof init?.body==='string'?JSON.parse(init.body):'<multipart>'});
   if(url==='/api/billing/quote'){await quoteRequestHook?.();const response=await quoteRoute.POST(request);await quoteHook?.();return response;}
-  try{return await creation.withCreationRequest(request,actor,async()=>{const q=await quotes.imageBillingQuoteForRequest(request);assert.ok(q);paidEntries++;return Response.json({ok:true,scope:creation.currentCreationContext(),feature:q.facts.feature,quoteId:headers.get('x-naumi-image-quote')})})}catch(error){return Response.json({error:error.message,code:error.code},{status:error.status||500})}
+  try{return await creation.withCreationRequest(request,actor,async()=>{const q=await quotes.imageBillingQuoteForRequest(request);assert.ok(q);paidEntries++;return Response.json({ok:true,url:"/media/fixture-scope.png",jobId:"job-fixture-scope",scope:creation.currentCreationContext(),feature:q.facts.feature,quoteId:headers.get('x-naumi-image-quote')})})}catch(error){return Response.json({error:error.message,code:error.code},{status:error.status||500})}
  };
  vm.runInNewContext(bundle.outputFiles[0].text,clientContext);const client=clientContext.module.exports;
  function Capture(){api=client.useBilling();return null;}

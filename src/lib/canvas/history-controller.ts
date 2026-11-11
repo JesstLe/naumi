@@ -150,5 +150,6 @@ export function createCanvasHistoryController(services: Services) {
     });
     undo=prune(undo);redo=prune(redo);services.changed();
   };
-  return {consumePending,discard,list,push,apply,submit,transaction,acknowledge,step,busy,setBusy};
+  return {consumePending,discard,list,push,apply,submit,transaction,acknowledge,step,busy,setBusy,
+    retry:(scope:CanvasHistoryScope)=>serialize(scope,async()=>{scope.assertView();await resume(scope);})};
 }

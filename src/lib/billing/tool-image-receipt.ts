@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 const operations: Record<string, string> = {
   "tool.dewatermark": "dewatermark", "tool.avatar": "avatar",
   "tool.extract": "extract", "tool.style": "style", "tool.upscale": "upscale",
-  "tool.recolor": "recolor", "tool.replicate": "replicate",
+  "tool.recolor": "recolor", "tool.replicate": "replicate", "tool.printfile":"printfile",
 };
 const marker = "tool-image-artwork-v1";
 type Identity = { id: string; email: string; feature: string };

@@ -1,10 +1,9 @@
-import { supplierCostFetch } from "@/lib/supplier-cost/collect";
 import { currentModelExecution } from "@/lib/model-config/context";
 import { modelAwareOpenAI } from "@/lib/model-config/clients";
+import {chatAnswerText} from "@/lib/model-config/chat-completion-response";
 import {observeOpenAI} from "@/lib/bi/model-calls";
 import {withBiRequest} from "@/lib/bi/request";
 import { NextResponse } from "next/server";
-import OpenAI from "openai";
 import { requestedTextModel } from "@/lib/text-models";
 import sharp from "sharp";
 
@@ -14,56 +13,16 @@ import {listArtworksByIds} from "@/lib/artworks/repository";
 import { readCanvasImage } from "@/lib/canvas-image-input";
 import { getOpenAISettings } from "@/lib/settings";
 import { getOpenAIBaseUrl } from "@/lib/openai-base";
-import { toVisionDataUrl } from "@/lib/vision-image";
 import { clientIp } from "@/lib/ip";
 import { checkRateLimit } from "@/lib/rate-limit-http";
 import { safeError } from "@/lib/api-error";
-import { collectPaddleRows, normalizeOcrSegments, scaleOcrSegments } from "@/lib/canvas-ocr";
+import { normalizeOcrSegments, scaleOcrSegments } from "@/lib/canvas-ocr";
 import {withBillingRequest} from "@/lib/billing/synchronous";
 import {configuredToolCost, markBillingUpstream} from "@/lib/billing/synchronous-operation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
-
-async function paddleOcr(buffer: Buffer, mimeType: string) {
-  const endpoint = (process.env.PADDLE_OCR_BASE_URL || "").trim();
-  if (!endpoint) return null;
-  const timeoutMs = Math.max(5_000, Math.min(120_000, Number(process.env.PADDLE_OCR_TIMEOUT_MS) || 35_000));
-  const maxAttempts = Math.max(1, Math.min(4, Number(process.env.PADDLE_OCR_MAX_ATTEMPTS) || 2));
-  let lastError: unknown;
-  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    try {
-      const form = new FormData();
-      form.append("file", new File([new Uint8Array(buffer)], "canvas-image.png", { type: mimeType }));
-      markBillingUpstream("started");
-      const response = await supplierCostFetch(fetch,{providerId:"paddle-ocr",protocol:"paddle-ocr",apiKey:process.env.PADDLE_OCR_API_KEY,baseUrl:endpoint,wireModel:"paddle-ocr",phase:"ocr"})(endpoint, {
-        method: "POST",
-        headers: process.env.PADDLE_OCR_API_KEY
-          ? { Authorization: `Bearer ${process.env.PADDLE_OCR_API_KEY}` }
-          : undefined,
-        body: form,
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-      const raw = await response.text();
-      if (!response.ok) {
-        const retryable = response.status === 408 || response.status === 429 || response.status >= 500;
-        const error = new Error(`PaddleOCR 返回 ${response.status}：${raw.slice(0, 240)}`);
-        if (!retryable) throw error;
-        lastError = error;
-      } else {
-        let parsed: unknown;
-        try { parsed = JSON.parse(raw); } catch { throw new Error("PaddleOCR 返回了无效 JSON"); }
-        return { rows: collectPaddleRows(parsed), attempts: attempt };
-      }
-    } catch (error) {
-      lastError = error;
-      if (error instanceof Error && /返回 4\d\d/.test(error.message) && !/返回 (408|429)/.test(error.message)) throw error;
-    }
-    if (attempt < maxAttempts) await new Promise((resolve) => setTimeout(resolve, 350 * attempt));
-  }
-  throw lastError instanceof Error ? lastError : new Error("PaddleOCR 请求失败");
-}
 
 async function visionOcr(buffer: Buffer, width: number, height: number, model: string) {
   const prepared = await sharp(buffer)
@@ -92,7 +51,7 @@ async function visionOcr(buffer: Buffer, width: number, height: number, model: s
     | { type: "image_url"; image_url: { url: string; detail: "high" } }
   > = [
     { type: "text", text: `所见图片尺寸 ${scanWidth}×${scanHeight} 像素。扫描整张图片，一次性提取全部文字和像素坐标框。` },
-    { type: "image_url", image_url: { url: await toVisionDataUrl(prepared.data, "image/jpeg"), detail: "high" } },
+    { type: "image_url", image_url: { url: `data:image/jpeg;base64,${prepared.data.toString("base64")}`, detail: "high" } },
   ];
   const response = await client.chat.completions.create({
     model,
@@ -110,7 +69,7 @@ async function visionOcr(buffer: Buffer, width: number, height: number, model: s
       },
     ],
   });
-  const content = response.choices[0]?.message?.content || "";
+  const content = chatAnswerText(response.choices[0]?.message?.content);
   const json = content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
   const start = json.indexOf("{");
   const end = json.lastIndexOf("}");
@@ -149,53 +108,24 @@ async function handleObservedPost(request: Request) {
     if (!width || !height) throw new Error("无法读取图片尺寸");
 
     await configuredToolCost();
-    let engine = "paddleocr";
-    let raw: unknown;
-    let scanSize: { width: number; height: number } | null = null;
-    let paddleAttempts = 0;
-    let fallbackReason = "";
-    try {
-      const managed = !!currentModelExecution("vision")?.businessOption;
-      const paddle = managed ? null : await paddleOcr(image.buffer, image.mimeType);
-      if (!paddle) throw new Error("PaddleOCR 未配置");
-      raw = paddle.rows;
-      paddleAttempts = paddle.attempts;
-      if (!paddle.rows.length) throw new Error("PaddleOCR 返回空结果");
-    } catch (error) {
-      if (!currentModelExecution("vision")?.businessOption && process.env.PADDLE_OCR_REQUIRED === "true") throw error;
-      engine = "vision-fallback";
-      fallbackReason = safeError(error, "PaddleOCR 暂不可用").slice(0, 160);
-      console.warn(`[canvas-ocr] paddle fallback artwork=${artworkId} reason=${fallbackReason}`);
-      const vision = await visionOcr(
-        image.buffer,
-        width,
-        height,
-        requestedTextModel(
-          request,
-          process.env.PADDLE_OCR_FALLBACK_MODEL || process.env.OPENAI_TEXT_MODEL || process.env.AGENT_MODEL || "gpt-5.6-luna"
-        )
-      );
-      raw = vision.raw;
-      scanSize = { width: vision.scanWidth, height: vision.scanHeight };
-    }
-    const minConfidence = Math.max(0, Math.min(1, Number(process.env.PADDLE_OCR_MIN_CONFIDENCE) || 0.12));
-    let segments = normalizeOcrSegments(raw, scanSize?.width ?? width, scanSize?.height ?? height, {
-      minConfidence: engine === "paddleocr" ? minConfidence : 0,
-      maxSegments: 500,
-    });
-    if (scanSize) {
-      segments = scaleOcrSegments(segments, scanSize, { width, height });
-    }
+    // Canvas OCR uses the configured vision model directly. Legacy Paddle
+    // environment flags no longer select or require another OCR service.
+    const engine = "vision";
+    const vision = await visionOcr(image.buffer,width,height,requestedTextModel(request,
+      process.env.OPENAI_TEXT_MODEL || process.env.AGENT_MODEL || "gpt-5.6-luna"));
+    const scanSize = {width:vision.scanWidth,height:vision.scanHeight};
+    const segments = scaleOcrSegments(normalizeOcrSegments(vision.raw,scanSize.width,scanSize.height,
+      {minConfidence:0,maxSegments:500}),scanSize,{width,height});
     if (!segments.length) throw new Error("未识别到可编辑文字，请换一张更清晰的图片重试");
     const elapsedMs = Date.now() - startedAt;
-    console.info(`[canvas-ocr] artwork=${artworkId} engine=${engine} segments=${segments.length} attempts=${paddleAttempts} elapsed=${elapsedMs}ms`);
+    console.info(`[canvas-ocr] artwork=${artworkId} engine=${engine} segments=${segments.length} attempts=1 elapsed=${elapsedMs}ms`);
     markBillingUpstream("succeeded");
     return NextResponse.json({
       ok: true,
       engine,
       image: { width, height },
       segments: segments.map((segment, index) => ({ id: `ocr-${index + 1}`, ...segment })),
-      diagnostics: { elapsedMs, paddleAttempts, fallback: engine !== "paddleocr", fallbackReason },
+      diagnostics: { elapsedMs, paddleAttempts:0, fallback:false, fallbackReason:"" },
     });
   } catch (error) {
     return NextResponse.json(

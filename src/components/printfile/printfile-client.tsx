@@ -3,6 +3,7 @@ import { readBrowserImage } from "@/lib/browser-image-cache";
 import { CachedImage } from "@/components/cached-image";
 import {useObjectUrlCleanup} from "@/components/tools/use-object-url-cleanup";
 import {toolImageError} from "@/lib/tool-ui";
+import {FeatureImageResolution} from '@/components/tools/feature-image-resolution';
 import {useFeatureBilling} from "@/lib/billing/preview";
 
 import { cdnUrl } from "@/lib/cdn";
@@ -62,7 +63,8 @@ type Item = {
 };
 
 export function PrintfileClient() {
-  const billing=useFeatureBilling("tool.printfile",{});
+  const [resolution,setResolution]=useState("1K");
+  const billing=useFeatureBilling("tool.printfile",{resolution});
   const { user, remaining, consumeCredits, applyServerUser } = useAuth();
   const { openAuth } = useAuthModal();
   const { locale } = useI18n();
@@ -199,6 +201,7 @@ export function PrintfileClient() {
     try {
       const fd = new FormData();
       fd.append("image", it.file);
+      fd.append("resolution",resolution);
       fd.append("dpi", String(dpi));
       fd.append("wMm", String(wMm));
       fd.append("hMm", String(hMm));
@@ -293,6 +296,7 @@ export function PrintfileClient() {
       tint={TINT}
       accent={ACCENT}
       category="printfile"
+      resolution={resolution}
       cost={cost}
       actionLabel={
         pendingCount > 0 && billing.cost === 0
@@ -475,13 +479,7 @@ export function PrintfileClient() {
             </b>
           </p>
 
-          {/* 提示 */}
-          <p className="text-[11px] leading-relaxed text-c-text3">
-            {L(
-              "提示:本工具做精确尺寸+DPI 排版重采样,不增加画面细节。原图偏小想更清晰,先用「AI 变清晰」放大再来生成。",
-              "Note: this resizes to exact print size + DPI; it doesn't add detail. For small sources, run AI Upscale first."
-            )}
-          </p>
+          <FeatureImageResolution feature="tool.printfile" value={resolution} onChange={setResolution} disabled={processing}/>
         </>
       }
     >
