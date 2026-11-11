@@ -2,9 +2,8 @@
 import { useEffect,useRef,useState } from "react";
 import { ArrowUp,ChevronDown,Eraser,Images,Loader2,Plus,SlidersHorizontal,Square,Waves,X } from "lucide-react";
 import { TextModelSelect } from "@/components/ui/text-model-select";
-import { ImageQualitySelect } from "@/components/ui/image-quality-select";
+import { CreationSettingsPanel } from "./creation-settings-panel";
 import { SkillBook } from "@/components/image-skills/skill-book";
-import { useImageQuality } from "@/lib/image-quality-context";
 import { useAuth } from "@/lib/auth-context";
 import { useAuthModal } from "@/lib/auth-modal-context";
 import { useFeatureAccess } from "@/lib/feature-access/client";
@@ -16,7 +15,6 @@ import styles from "./creation-workbench.module.css";
 
 export function CreationComposer({port}:{port:CreationWorkbenchPort}){
   const {user}=useAuth(),{openAuth}=useAuthModal(),{can}=useFeatureAccess(),router=useWorkspaceRouter();
-  const quality=useImageQuality("image.generate");
   const [settings,setSettings]=useState(false),[works,setWorks]=useState(false),[mode,setMode]=useState(false),[steer,setSteer]=useState("");
   const root=useRef<HTMLDivElement>(null),files=useRef<HTMLInputElement>(null),text=useRef<HTMLTextAreaElement>(null);
   useEffect(()=>{const close=(event:MouseEvent)=>{if(!root.current?.contains(event.target as Node)){setSettings(false);setMode(false);}};document.addEventListener("mousedown",close);return()=>document.removeEventListener("mousedown",close);},[]);
@@ -40,10 +38,10 @@ export function CreationComposer({port}:{port:CreationWorkbenchPort}){
           <SkillBook compact selected={port.skill} onSelect={port.setSkill} accountKey={user?.email||""} busy={disabled} sessionId={port.sessionId} hasConversation={port.messages.some(m=>m.role==="assistant"&&!m.pending&&!!m.content)} onUse={prompt=>{if(!port.text.trim())port.setText(prompt);text.current?.focus();}}/>
           {can("works")&&<button type="button" aria-label="从作品选图" disabled={disabled} onClick={()=>{if(!user)openAuth("sign-in");else setWorks(true);}}><Images/></button>}
         </div>
-        <div className={styles.toolbarRight}><TextModelSelect compact direction="up"/><button type="button" aria-label="清空输入" disabled={disabled} onClick={()=>port.stage("",[])}><Eraser/></button><button type="button" className={styles.send} aria-label="发送" disabled={disabled||!port.text.trim()||!can("agent")} onClick={port.send}>{port.busy||port.uploading?<Loader2 className="animate-spin"/>:<ArrowUp/>}</button></div>
+        <div className={styles.toolbarRight}><span aria-label="对话 Agent 模型"><TextModelSelect compact direction="up"/></span><button type="button" aria-label="清空输入" disabled={disabled} onClick={()=>port.stage("",[])}><Eraser/></button><button type="button" className={styles.send} aria-label="发送" disabled={disabled||!port.text.trim()||!can("agent")} onClick={port.send}>{port.busy||port.uploading?<Loader2 className="animate-spin"/>:<ArrowUp/>}</button></div>
       </div>
       <input ref={files} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={e=>{const selected=Array.from(e.target.files||[]);e.target.value="";port.addFiles(selected);}}/>
-      {settings&&<div className={styles.settings}><span>图像质量</span><ImageQualitySelect compact label="图像质量" value={quality.quality} disabled={disabled} options={quality.allowedQualities.map(id=>({value:id,label:quality.qualityLabels[id]||({low:"基础",medium:"标准",high:"高质量",xhigh:"超高质量",max:"最高质量",auto:"自动"} as Record<string,string>)[id]||id}))} onChange={quality.setQuality}/></div>}
+      {settings&&<CreationSettingsPanel value={port.creationSettings} onChange={port.setCreationSettings} onClose={()=>setSettings(false)}/>}
     </div>
     {works&&<div className={styles.modalShade} onClick={()=>setWorks(false)}><section className={styles.worksDialog} role="dialog" aria-modal="true" aria-label="从作品选图" onClick={e=>e.stopPropagation()}><header><h2>从作品选图</h2><button type="button" autoFocus aria-label="关闭作品选择" onClick={()=>setWorks(false)}><X/></button></header><div className={styles.workGrid}>{port.recent?.map(work=><button type="button" key={work.id} aria-label={work.title||"选择作品"} onClick={()=>{port.addReference(work.image);setWorks(false);}}><CachedImage src={work.image} alt={work.title||"作品"}/></button>)}</div>{port.recent?.length===0&&<p className={styles.empty}>还没有可用作品</p>}{port.recent===null&&<p role="status">正在读取作品</p>}</section></div>}
   </div>;

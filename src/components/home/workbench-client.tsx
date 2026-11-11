@@ -33,6 +33,8 @@ import { Media } from "@/components/media";
 import { SkillBook } from "@/components/image-skills/skill-book";
 import type { ImageSkill } from "@/lib/image-skills/catalog";
 import { TextModelSelect } from "@/components/ui/text-model-select";
+import { useTextModel } from "@/lib/text-model-context";
+import { chosenFeatureModel } from "@/lib/model-config/feature-client";
 import {
   WorkbenchSessions,
   type SessionSummary,
@@ -45,6 +47,7 @@ import { authHeader } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { useClipboardImagePaste } from "@/lib/clipboard-images";
 import { TemplatesClient } from "@/components/templates/templates-client";
+import type {CreationSettings} from "@/lib/agent/creation-settings";
 import { CreationWorkbench } from "./creation-workbench";
 import type { CreationWorkbenchPort } from "./creation-contract";
 import { currentWorkspace,WORKSPACE_SELECTION } from "@/lib/saas/workspace-client";
@@ -288,17 +291,19 @@ export function WorkbenchClient({appearance="legacy"}:{appearance?:"legacy"|"cre
   const composerTextRef = useRef<HTMLTextAreaElement>(null);
 
   // ── 对话状态 ──
+  const conversationModel=useTextModel();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
+  const [creationSettings,setCreationSettings]=useState<CreationSettings>({});
   const [homeReferences,setHomeReferences]=useState<string[]>([]);
-  const drafts=useRef(new Map<string,{text:string;refs:string[];skill:ImageSkill|null}>());
-  const activeDraft=useRef({text:input,refs:[] as string[],skill:null as ImageSkill|null});
+  const drafts=useRef(new Map<string,{text:string;refs:string[];skill:ImageSkill|null;creationSettings:CreationSettings}>());
+  const activeDraft=useRef({text:input,refs:[] as string[],skill:null as ImageSkill|null,creationSettings:{} as CreationSettings});
   const [imageSkill, setImageSkill] = useState<ImageSkill | null>(null);
   const [busy, setBusy] = useState(false);
   const [running, setRunning] = useState(false);
   const [interject, setInterject] = useState("");
   const [attachments, setAttachments] = useState<string[]>([]);
-  activeDraft.current={text:input,refs:attachments,skill:imageSkill};
+  activeDraft.current={text:input,refs:attachments,skill:imageSkill,creationSettings};
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // 历史会话(自 /agent 收编)
@@ -333,7 +338,7 @@ export function WorkbenchClient({appearance="legacy"}:{appearance?:"legacy"|"cre
       setAttachments([]);
       sessionRecovery.attachments.resetIndex();
       setInput("");
-      drafts.current.clear();setHomeReferences([]);setImageSkill(null);
+      drafts.current.clear();setHomeReferences([]);setImageSkill(null);setCreationSettings({});
       setInterject("");
       setActiveTitle("");
       setSessions([]);
@@ -373,7 +378,7 @@ export function WorkbenchClient({appearance="legacy"}:{appearance?:"legacy"|"cre
   function recoveryContext(): WorkbenchRecoveryContext {
     return {ready, busy, unavailable:recoveryUnavailable, sessionId:()=>sessionIdRef.current,
       headers:authHeader, request:(input,init)=>fetch(input,init),
-      setMessages, setBusy, setRunning, setLoadingId:setSessionLoadingId,
+      setMessages, setCreationSettings, setBusy, setRunning, setLoadingId:setSessionLoadingId,
       setUnavailable:setRecoveryUnavailable, setError, setComposerError,
       setTitle:setActiveTitle, setInput, setAttachments, setSessionsOpen,
       installSession:id=>{sessionIdRef.current=id;}, resetAttachmentUploads, refreshSessions};
@@ -482,7 +487,7 @@ export function WorkbenchClient({appearance="legacy"}:{appearance?:"legacy"|"cre
     const scope=sessionRecovery.accountScope;
     await sessionRecovery.load(id,recoveryContext());
     if(scope?.active&&scope===sessionRecovery.accountScope&&sessionIdRef.current===id&&!sessionRecovery.blocksSend()){
-      const draft=drafts.current.get(id);setInput(draft?.text||"");setAttachments(draft?.refs||[]);setImageSkill(draft?.skill||null);
+      const draft=drafts.current.get(id);setInput(draft?.text||"");setAttachments(draft?.refs||[]);setImageSkill(draft?.skill||null);if(draft)setCreationSettings(draft.creationSettings);
     }
   }
 
@@ -503,7 +508,7 @@ export function WorkbenchClient({appearance="legacy"}:{appearance?:"legacy"|"cre
   function sendContext(): WorkbenchSendContext {
     return { ...recoveryContext(), headers: authHeader,
       allowed: can("agent"), authenticated: Boolean(user), uploading,
-      input, attachments, messages,
+      input, attachments, messages, creationSettings, agentModel:chosenFeatureModel("canvas.text-generate")||conversationModel.model,
       skill: imageSkill ? { id: imageSkill.id, revision: imageSkill.revision } : null,
       requestSignIn: () => openAuth("sign-in"),
       invalidateAccount: () => invalidateBrowserData(user?.email) };
@@ -532,6 +537,7 @@ export function WorkbenchClient({appearance="legacy"}:{appearance?:"legacy"|"cre
     setBusy(false);
     setRunning(false);
     sessionIdRef.current = "";
+    setCreationSettings({});
     setActiveTitle("");
     bootstrapRef.current = false;
     setMessages([]);
@@ -655,12 +661,12 @@ export function WorkbenchClient({appearance="legacy"}:{appearance?:"legacy"|"cre
       if(conversation){setInput(text);setAttachments(refs.slice(0,MAX_REF_FILES));}
       else{setComposerText(text);setHomeReferences(refs.slice(0,MAX_REF_FILES));setComposerFiles([]);setComposerPreviews(previous=>{previous.forEach(URL.revokeObjectURL);return [];});}
     };
-    const port:CreationWorkbenchPort={conversation,messages,sessions,sessionsLoading,sessionId:sessionIdRef.current,title:activeTitle,loadingId:sessionLoadingId,busy:busy||composerSubmitting,running,unavailable:recoveryUnavailable,uploading,error:error||composerError,text:conversation?input:composerText,refs:conversation?attachments:[...homeReferences,...composerPreviews],skill:imageSkill,recent,canNavigate:!busy&&!composerSubmitting&&!uploading||sessionRecovery.hasObserver(),
+    const port:CreationWorkbenchPort={creationSettings,setCreationSettings,conversation,messages,sessions,sessionsLoading,sessionId:sessionIdRef.current,title:activeTitle,loadingId:sessionLoadingId,busy:busy||composerSubmitting,running,unavailable:recoveryUnavailable,uploading,error:error||composerError,text:conversation?input:composerText,refs:conversation?attachments:[...homeReferences,...composerPreviews],skill:imageSkill,recent,canNavigate:!busy&&!composerSubmitting&&!uploading||sessionRecovery.hasObserver(),
       setText:conversation?setInput:setComposerText,setSkill:setImageSkill,stage,
       addReference:url=>{if(busy||uploading)return;if(conversation)setAttachments(previous=>[...previous,url].slice(0,MAX_REF_FILES));else setHomeReferences(previous=>[...previous,url].slice(0,Math.max(0,MAX_REF_FILES-composerFiles.length)));},
       addFiles:files=>{if(conversation)void uploadAttachments(files.slice(0,Math.max(0,MAX_REF_FILES-attachments.length)));else{const accepted=files.slice(0,Math.max(0,MAX_REF_FILES-composerFiles.length-homeReferences.length));const transfer=new DataTransfer();accepted.forEach(file=>transfer.items.add(file));pickComposerFiles(transfer.files);}},
       removeRef:index=>{if(conversation)setAttachments(previous=>previous.filter((_,i)=>i!==index));else if(index<homeReferences.length)setHomeReferences(previous=>previous.filter((_,i)=>i!==index));else removeComposerFile(index-homeReferences.length);},
-      send:()=>{if(conversation)void send();else void submitComposer();},regenerate:(text,refs)=>{if(!busy&&!uploading&&!sessionLoadingId&&!recoveryUnavailable)void send(text,refs);},stop:()=>void stopRun(),interject:text=>void sessionRecovery.interject(text,{running,sessionId:()=>sessionIdRef.current,headers:authHeader,request:(input,init)=>fetch(input,init),clear:()=>{}}),create:newConversation,load:id=>void loadSession(id),history:()=>setSessionsOpen(true),resolveArtwork:resolveArtworkId};
+      send:()=>{if(conversation)void send();else void submitComposer();},regenerate:(text,refs,settings,agentModel)=>{if(!busy&&!uploading&&!sessionLoadingId&&!recoveryUnavailable)void sessionRecovery.send({...sendContext(),creationSettings:settings||creationSettings,...(agentModel?{agentModel}:{})},text,refs);},stop:()=>void stopRun(),interject:text=>void sessionRecovery.interject(text,{running,sessionId:()=>sessionIdRef.current,headers:authHeader,request:(input,init)=>fetch(input,init),clear:()=>{}}),create:newConversation,load:id=>void loadSession(id),history:()=>setSessionsOpen(true),resolveArtwork:resolveArtworkId};
     return <CreationWorkbench port={port}><WorkbenchSessions key={user?.email||""} open={can("agent")&&sessionsOpen} onClose={()=>setSessionsOpen(false)} sessions={sessions} loading={sessionsLoading} activeSessionId={sessionIdRef.current} busy={busy&&!sessionRecovery.hasObserver()} loadingId={sessionLoadingId} onLoad={id=>void loadSession(id)} onRename={renameSession} onDelete={removeSession}/></CreationWorkbench>;
   }
   if (can("agent") && (messages.length > 0 || busy || composerSubmitting)) {

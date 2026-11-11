@@ -1,3 +1,4 @@
+import {assertVideoCreationSettings,type CreationSettings} from "../agent/creation-settings";
 import "server-only";
 import {agentVideoWorkflowIntent} from "../agent/video-workflow-intent";
 import {prepareCanvasVideoWorkflow,type PreparedCanvasVideoWorkflow} from "../video/canvas-workflow";
@@ -31,7 +32,7 @@ export const AGENT_FEATURES: Record<string, {
 export async function agentQuote(name: string, args: Record<string, any>, email: string, cred: {
     cookie: string;
     authorization: string;
-    imageQuality?: string; originalRequest?: string;
+    imageQuality?: string; originalRequest?: string; creationSettings?: CreationSettings;
     canvas?: CanvasAgentContext;
     imageSkill?:import("../imagegen/types").ImagegenRequest["skill"];
 }): Promise<{
@@ -43,7 +44,7 @@ export async function agentQuote(name: string, args: Record<string, any>, email:
 } | null> {
     const canvas = cred.canvas;
     const videoTool=["generate_video","extend_video","edit_video"].includes(name);
-    if(videoTool){const nodeId=args.node_id||canvas?.video?.nodeId,current=nodeId?await getVideoNode(email,String(nodeId)):null;if(nodeId&&!current)throw new Error("视频节点不存在");if(current&&canvas?.video?.projectKey&&current.projectKey!==canvas.video.projectKey)throw new Error("视频节点不属于当前项目");const config=current?.config||args.config||{};if(config.comfyWorkflowId)return null;if(current&&Number.isInteger(args.expected_revision)&&current.revision!==args.expected_revision)throw new Error("视频节点已更新，请重新读取后生成");args={...args,...config,quality:"medium"};}
+    if(videoTool){const nodeId=args.node_id||canvas?.video?.nodeId,current=nodeId?await getVideoNode(email,String(nodeId)):null;if(nodeId&&!current)throw new Error("视频节点不存在");if(current&&canvas?.video?.projectKey&&current.projectKey!==canvas.video.projectKey)throw new Error("视频节点不属于当前项目");const config=current?.config||args.config||{};if(current)assertVideoCreationSettings(config,cred.creationSettings);if(config.comfyWorkflowId)return null;if(current&&Number.isInteger(args.expected_revision)&&current.revision!==args.expected_revision)throw new Error("视频节点已更新，请重新读取后生成");args={...args,...config,quality:"medium"};}
 
     if (canvas && CANVAS_IMAGE_TOOLS.has(name) && name !== "generate_image") args = {...args,quality:canvas.quality,resolution:canvas.resolution,ratio:canvas.ratio,model:canvas.imageModelId,modelId:undefined};
     const entry = canvas && CANVAS_IMAGE_TOOLS.has(name) ? { feature: "canvas.image" as const, label: AGENT_FEATURES[name]?.label || "画布生图" } : AGENT_FEATURES[name];
@@ -52,6 +53,7 @@ export async function agentQuote(name: string, args: Record<string, any>, email:
     const runtime = await getBillingRuntime(), snapshot=currentModelBillingSnapshot()??await runtime.config.current(),threshold=snapshot.config.thresholds.agentConfirmCredits;
     if((SHARED_IMAGEGEN_TOOLS.has(name)||canvas&&CANVAS_IMAGE_TOOLS.has(name))&&!args._category){const request=await agentImagegenRequest(name,args,email,canvas,cred.imageQuality,cred.imageSkill,cred.originalRequest),bundle=currentExecutionBundle(),plan=await (request.mode==="batch"?planImagegenBatch:planImagegen)(request,email,bundle?{modelVersion:bundle.modelVersion,billingVersion:bundle.billingVersion}:undefined);return {quote:{configVersion:plan.billingVersion,modelVersion:plan.modelVersion,requestedCredits:plan.totalCredits,authorizedCredits:plan.totalCredits},label:entry.label,threshold:plan.confirmationRequired?0:threshold,imagegenPlan:plan};}
     if(name==="run_video_workflow"){
+      if(cred.creationSettings?.video)for(const node of args.nodes||[]){if(node.reuseCompleted)continue;const current=await getVideoNode(email,String(node.id));if(!current)throw new Error("视频节点不存在");assertVideoCreationSettings(current.config,cred.creationSettings);}
       const prepared=await prepareCanvasVideoWorkflow(email,agentVideoWorkflowIntent(args,canvas)),quotes=Object.values(prepared.frozen).map(stage=>stage.quote),credits=quotes.reduce((total,q)=>total+q.credits,0)+(prepared.assemblyQuote?.requestedCredits||0),authorizedCredits=quotes.reduce((total,q)=>total+q.authorizedCredits,0)+(prepared.assemblyQuote?.authorizedCredits||0);
       return {quote:{configVersion:quotes[0].version,requestedCredits:credits,authorizedCredits,modelVersion:quotes.find(q=>q.modelVersion)?.modelVersion},label:entry.label,threshold:credits>0||authorizedCredits>0?0:Number.MAX_SAFE_INTEGER,videoWorkflow:prepared,authorizationRequired:quotes.some(q=>q.authorization===true)};
     }
@@ -109,10 +111,11 @@ export type AgentBillingSession = {
     cred: {
         cookie: string;
         authorization: string;
-        imageQuality?: string; originalRequest?: string;
+        imageQuality?: string; originalRequest?: string; creationSettings?: CreationSettings;
         canvas?: CanvasAgentContext;
     };
     id: string;
+    creationSettings?: CreationSettings;
     turnId?: string;
     /** @deprecated Compatibility for historical verification scripts; never authorizes execution. */
     userConfirmedQuote?: boolean;
@@ -136,7 +139,7 @@ export async function agentBillingPrecheck(session: AgentBillingSession, name: s
     }
     let quoted;
     try {
-        quoted = await agentQuote(name, args as Record<string, any>, session.email, session.cred);
+        quoted = await agentQuote(name, args as Record<string, any>, session.email, {...session.cred,creationSettings:session.creationSettings});
     }
     catch (error) {
         const detail=error as {code?:string;issues?:{message?:string}[]};

@@ -1,3 +1,5 @@
+import {freezeCreationSettings,type CreationSettings} from "./creation-settings";
+import {reduceWorkbenchActivity,restoreWorkbenchMessages,type WorkbenchStep,type WorkbenchEvent} from "./workbench-activity";
 /** Browser application owner for one Agent conversation: account epochs,
  * history observation, explicit send/SSE/save and interjection. It never owns
  * the backend paid task. Detaching a view drains rather than cancels its run. */
@@ -7,7 +9,7 @@ import { createWorkbenchAttachments } from "./workbench-attachments";
 export type { WorkbenchMessage, WorkbenchAccountScope } from "./workbench-contract";
 export type { WorkbenchCatalogContext } from "./workbench-session-catalog";
 export type { WorkbenchAttachmentContext } from "./workbench-attachments";
-type SavedStep = { type?: string; tool?: string; summary?: string; items?: string[] };
+type SavedStep = WorkbenchEvent;
 type Observation = {
   id: string;
   generation: number;
@@ -35,6 +37,7 @@ export type WorkbenchRecoveryContext = {
   setUnavailable(value: boolean): void;
   setError(value: string | null): void;
   setComposerError(value: string): void;
+  setCreationSettings?(value: CreationSettings):void;
   setTitle(value: string): void;
   setInput(value: string): void;
   setAttachments(value: string[]): void;
@@ -56,6 +59,8 @@ export type WorkbenchSendContext = Pick<WorkbenchRecoveryContext,
   attachments: string[];
   messages: WorkbenchMessage[];
   skill: { id: string; revision: number } | null;
+  creationSettings?: CreationSettings;
+  agentModel?: string;
   headers(): Promise<Record<string, string>>;
   requestSignIn(): void;
   invalidateAccount(): void;
@@ -66,20 +71,7 @@ export type WorkbenchInterjectionContext = Pick<WorkbenchRecoveryContext, "sessi
   clear(): void;
 };
 
-function restoreMessages(rawMessages: WorkbenchMessage[], savedSteps: SavedStep[]) {
-  const restored = rawMessages.map(message => ({
-    role: message.role === "assistant" ? "assistant" : "user",
-    content: message.content,
-  })) as WorkbenchMessage[];
-  const visibleSteps = savedSteps.map(step => ({
-    tool: step.type === "plan" ? "任务计划" : step.tool || "工具",
-    summary: step.type === "plan" ? (step.items ?? []).join(" → ") : step.summary || "执行完成",
-  }));
-  if (visibleSteps.length && restored.at(-1)?.role === "assistant") {
-    restored[restored.length - 1] = { ...restored[restored.length - 1], steps: visibleSteps };
-  }
-  return restored;
-}
+const restoreMessages=restoreWorkbenchMessages;
 
 export function createWorkbenchSession() {
   let accountScope: WorkbenchAccountScope | null = null;
@@ -162,6 +154,12 @@ export function createWorkbenchSession() {
           context.setMessages(previous=>ownsObservation(owner)?restoreMessages(snapshot.session.messages,snapshot.session.steps||[]):previous);
         }
         const events = Array.isArray(data.events) ? data.events : [];
+        context.setMessages(previous=>{
+          if(!ownsObservation(owner))return previous;
+          const copy=[...previous],last=copy.at(-1);
+          if(last?.role==="assistant")copy[copy.length-1]={...last,steps:events.reduce((items:WorkbenchStep[],event:{type:string;data?:WorkbenchEvent})=>reduceWorkbenchActivity(items,event.type,event.data||{}),last.steps||[])};
+          return copy;
+        });
         const lastAssistant = [...events].reverse().find(event => event.type === "assistant");
         if (!data.reset && lastAssistant?.data?.text) {
           context.setMessages(previous => {
@@ -220,6 +218,8 @@ export function createWorkbenchSession() {
       context.setUnavailable(false);
       context.setTitle(((data.session?.title as string) || "").slice(0, 60) || "历史会话");
       context.setMessages(messages);
+      const lastSettings=[...messages].reverse().find(message=>message.creationSettings)?.creationSettings;
+      context.setCreationSettings?.(lastSettings||{});
       context.setAttachments([]);
       context.setInput("");
       const state = await read(owner, `/api/agent?sessionId=${encodeURIComponent(id)}&since=0`, context);
@@ -277,12 +277,15 @@ export function createWorkbenchSession() {
 
   async function send(context: WorkbenchSendContext, text?: string, attachmentUrls?: string[], onAccepted?: () => void) {
     if (!context.allowed) return;
+    const settings=freezeCreationSettings(context.creationSettings);
     const content = (text ?? context.input).trim();
     if (!content || context.busy || context.uploading || context.unavailable ||
         blocksSend()) return;
     const scope = accountScope;
     const entryGeneration = generation;
     if (!scope?.active) return;
+    // Capture conversation model headers before any auth await; later UI edits belong to the next turn.
+    const capturedHeaders=context.headers();
     // 未登录:先确认登录态再弹登录框,避免发出去吃 401
     if (!context.authenticated) {
       if (!context.ready) return;
@@ -302,15 +305,15 @@ export function createWorkbenchSession() {
     context.setError(null);
     const urls = attachmentUrls ?? context.attachments;
     const parts = [content, ...urls.map((u) => `[商品图] ${u}`)];
-    const userMsg: WorkbenchMessage = { role: "user", content: parts.join("\n") };
+    const userMsg: WorkbenchMessage = { role: "user", content: parts.join("\n"), creationSettings:settings };
     // Existing conversations are authoritative on the server; never echo a
     // potentially large model answer into the next bounded input request.
     const history = runSessionId ? [] : context.messages.filter(m=>!m.pending&&m.content).slice(-12).map(({role,content})=>({role,content}));
-    const runSteps: { tool: string; summary: string }[] = [];
+    let runSteps: WorkbenchStep[] = [];
     context.setMessages((prev) => [
       ...prev,
       userMsg,
-      { role: "assistant", content: "", pending: true },
+      { role: "assistant", content: "", pending: true, creationSettings:settings },
     ]);
     context.setInput("");
     context.setAttachments([]);
@@ -325,7 +328,9 @@ export function createWorkbenchSession() {
     let streamed = "", reply = "", receivedFinal = false, historyRequired = false;
     try {
       explicitStream = { scope, controller };
-      const headers = await context.headers();
+      const headers:Record<string,string> = {...await capturedHeaders,"x-naumi-image-quality":settings.image?.quality||"medium"};
+      if(context.agentModel)headers["x-naumi-text-model"]=context.agentModel;
+      userMsg.agentModel=headers["x-naumi-text-model"];
       if (!current()) return;
       const res = await context.request("/api/agent", {
         method: "PUT",
@@ -336,6 +341,7 @@ export function createWorkbenchSession() {
         body: JSON.stringify({
           message: userMsg.content,
           skill: context.skill,
+          creationSettings: settings,
           sessionId: runSessionId || undefined,
           history,
           // 视觉输入:服务端按模型自动判定,支持时随消息直喂模型
@@ -383,54 +389,14 @@ export function createWorkbenchSession() {
               }
               return copy;
             });
-          } else if (type === "plan") {
-            const items = Array.isArray(data.items) ? data.items.map(String) : [];
-            runSteps.push({ tool: "任务计划", summary: items.join(" → ") });
-            // React may defer this update until a later tool_end has already
-            // extended runSteps. Project this event's snapshot, not that array.
-            const plannedSteps = [...runSteps];
-            context.setMessages((prev) => {
-              if (!current()) return prev;
-              const copy = [...prev];
-              const last = copy[copy.length - 1];
-              if (last?.pending) {
-                copy[copy.length - 1] = { ...last, steps: plannedSteps };
-              }
-              return copy;
-            });
-          } else if (type === "tool_start") {
-            context.setMessages((prev) => {
-              if (!current()) return prev;
-              const copy = [...prev];
-              const last = copy[copy.length - 1];
-              if (last?.pending && !streamed) {
-                copy[copy.length - 1] = {
-                  ...last,
-                  content: `🔧 正在调用 ${data.tool || "工具"}…`,
-                };
-              }
-              return copy;
-            });
-          } else if (type === "tool_end") {
-            context.invalidateAccount();
-            const step = {
-              tool: (data.tool as string) || "",
-              summary: (data.summary as string) || "执行完成",
-            };
-            runSteps.push(step);
-            context.setMessages((prev) => {
-              if (!current()) return prev;
-              const copy = [...prev];
-              const last = copy[copy.length - 1];
-              if (last?.pending) {
-                copy[copy.length - 1] = {
-                  ...last,
-                  ...(streamed
-                    ? {}
-                    : { content: `✓ ${step.tool} ${step.summary}` }),
-                  steps: [...(last.steps ?? []), step],
-                };
-              }
+          } else if (["plan","image_skill","tool_start","tool_end"].includes(type)) {
+            if(type==="tool_end")context.invalidateAccount();
+            runSteps=reduceWorkbenchActivity(runSteps,type,data);
+            const steps=[...runSteps];
+            context.setMessages(previous=>{
+              if(!current())return previous;
+              const copy=[...previous],last=copy.at(-1);
+              if(last?.pending)copy[copy.length-1]={...last,steps};
               return copy;
             });
           } else if (type === "history_required") {
@@ -450,7 +416,7 @@ export function createWorkbenchSession() {
         const copy = [...prev];
         const last = copy[copy.length - 1];
         copy[copy.length - 1] = {
-          role: "assistant",
+          role: "assistant", creationSettings:settings, agentModel:userMsg.agentModel,
           content: reply || streamed,
           steps: last?.steps ?? runSteps,
         };

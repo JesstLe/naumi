@@ -69,6 +69,7 @@ export const useAuth=()=>{const [,r]=React.useState(0);React.useEffect(()=>{wind
 export const authHeader=async()=>{const actor=window.actor;if(window.authGate)await window.authGate;return {'x-fixture-actor':actor||'guest'}};
 export const useFeatureAccess=()=>({can:()=>true,canPage:()=>true});export const FeatureVisible=({children})=>children;
 export const useSiteProfile=()=>({mode:'personal',policy:{brand:'fixture'}});
+export const useTextModel=()=>({model:'fixture-chat'});export const chosenFeatureModel=()=>undefined;
 export const useI18n=()=>({t:k=>k,locale:'zh'});export const useAuthModal=()=>({openAuth:()=>{}});
 export const useSearchParams=()=>React.useMemo(()=>new URLSearchParams(window.location.search),[]);export const useWorkspaceRouter=()=>({push:()=>{}});
 export const loadAccountSnapshot=async()=>({artworks:[],stats:{today:0,total:0}});export const invalidateBrowserData=()=>{};
@@ -256,10 +257,10 @@ window.metrics=()=>({timers:timers.size,peakTimers,listeners:[...listeners.value
     await page.evaluate(()=>window.w.setImageSkill({id:'fixture-skill',revision:7}));
     plan('send','',1,{sse:'matrix',before:[event('plan',{items:['定位','生成']}),event('delta',{text:'正文已流出'}),event('tool_start',{tool:'image'}),event('tool_end',{tool:'image',summary:'已交付'})]});
     await page.evaluate(()=>{void window.w.send('原提示',['/media/reference.png'])});await until(()=>window.w.state().messages.at(-1)?.steps?.length===2);
-    const interim=(await snapshot()).messages.at(-1);assert.equal(interim.content,'正文已流出');assert.deepEqual(interim.steps,[{tool:'任务计划',summary:'定位 → 生成'},{tool:'image',summary:'已交付'}]);
+    const interim=(await snapshot()).messages.at(-1);assert.equal(interim.content,'正文已流出');assert.deepEqual(interim.steps.map(({tool,summary})=>({tool,summary})),[{tool:'任务计划',summary:'定位 → 生成'},{tool:'image',summary:'已交付'}]);
     await release('matrix');await until(()=>!window.w.state().busy);
     const send=JSON.parse(requests.find(r=>r.kind==='send').input);
-    assert.deepEqual(send,{message:'原提示\n[商品图] /media/reference.png',skill:{id:'fixture-skill',revision:7},sessionId:'A',history:[],images:['/media/reference.png']});
+    assert.deepEqual(send,{message:'原提示\n[商品图] /media/reference.png',skill:{id:'fixture-skill',revision:7},creationSettings:{},sessionId:'A',history:[],images:['/media/reference.png']});
     assert.equal(requests.filter(r=>r.kind==='save').length,0);
     assert.equal(requests.filter(r=>r.kind==='send').length,1);assert.equal(requests.filter(r=>r.kind==='save').length,0);assert.equal((await snapshot()).messages.at(-1).pending,undefined);
   });

@@ -1,3 +1,4 @@
+import type {CreationSettings} from "@/lib/agent/creation-settings";
 import type { ImageSkill } from "@/lib/image-skills/catalog";
 import type { WorkbenchMessage, WorkbenchSessionSummary } from "@/lib/agent/workbench-contract";
 
@@ -16,6 +17,8 @@ export type CreationWorkbenchPort = {
   unavailable: boolean;
   uploading: boolean;
   error: string | null;
+  creationSettings: CreationSettings;
+  setCreationSettings(value: CreationSettings):void;
   text: string;
   refs: string[];
   skill: ImageSkill | null;
@@ -28,7 +31,7 @@ export type CreationWorkbenchPort = {
   removeRef(index: number): void;
   stage(text: string, refs?: string[]): void;
   send(): void;
-  regenerate(text:string,refs:string[]):void;
+  regenerate(text:string,refs:string[],settings?:CreationSettings,agentModel?:string):void;
   stop(): void;
   interject(text: string): void;
   create(): void;

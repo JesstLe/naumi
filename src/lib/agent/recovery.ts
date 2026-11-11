@@ -58,7 +58,7 @@ export function buildTaskPlan(message: string, textStrategy = false): string[] {
   if (/套图|13张|十三张|suite/.test(text)) plan.push("生成完整电商套图");
   if (/a\+|详情|aplus/.test(text)) plan.push("规划并生成 A+ 详情页模块");
   if (/生成|出图|图片|图像/.test(text) && plan.length === 1) plan.push("调用匹配的图片生成工具");
-  if (plan.length > 1) plan.push("用视觉模型检查主体完整性、文字和版式，再汇总交付");
+  if (plan.length > 1) plan.push("交付生成结果，等待用户验收与修改意见");
   else plan.push("直接回答并说明可执行的下一步");
   return plan;
 }

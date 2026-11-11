@@ -1,3 +1,4 @@
+import {freezeCreationSettings} from "@/lib/agent/creation-settings";
 import {agentEventCursor, agentEventsSince} from "@/lib/agent/event-buffer";
 import {agentTurnOutcome, recordAuthoritativeReply} from "@/lib/agent/stream-recovery";
 import {getAgentSession} from "@/lib/agent/session-repository";
@@ -69,6 +70,7 @@ async function handlePut(request: Request) {
     history?: ChatMsg[];
     images?: string[];
     skill?: unknown;
+    creationSettings?: unknown;
   } | null;
   const message = (body?.message ?? "").trim().slice(0, 4000);
   const sessionId =
@@ -84,6 +86,8 @@ async function handlePut(request: Request) {
   if (!rateLimitResult) {
     return NextResponse.json({ error: "请求过于频繁，请稍后再试" }, { status: 429 });
   }
+  let creationSettings;
+  try { creationSettings=freezeCreationSettings(body?.creationSettings); } catch { return NextResponse.json({error:"本轮创作设置格式无效"},{status:400}); }
   let imageSkill;
   try { imageSkill = await resolveImageSkill(email, body?.skill); } catch (error) { if (error instanceof SkillError) return NextResponse.json({ error: error.message }, { status: error.status }); throw error; }
   const settings = await getOpenAISettings();
@@ -130,9 +134,11 @@ async function handlePut(request: Request) {
       { status: 409 }
     );
   }
-  session.turnId=randomUUID();
-  if (imageSkill) appendSessionEvent(session, "image_skill", { id:imageSkill.id, revision:imageSkill.revision, name:imageSkill.name, turnId:session.turnId });
   const eventCursor = agentEventCursor(session);
+  session.turnId=randomUUID();
+  session.creationSettings=creationSettings;
+  appendSessionEvent(session,"turn_settings",{settings:creationSettings,modelId,userIndex:session.agent.state.messages.filter(m=>m.role==="user").length});
+  if (imageSkill) appendSessionEvent(session, "image_skill", { id:imageSkill.id, revision:imageSkill.revision, name:imageSkill.name, turnId:session.turnId });
   if (session.agent.state.messages.length === 0) {
     session.title = message.slice(0, 120) || session.title;
   }
@@ -362,6 +368,7 @@ async function handlePost(request: Request) {
     history?: ChatMsg[];
     images?: string[];
     skill?: unknown;
+    creationSettings?: unknown;
   } | null;
   const message = (body?.message ?? "").trim().slice(0, 4000);
   if (!message) {
@@ -372,6 +379,8 @@ async function handlePost(request: Request) {
   if (!rateLimitResult2) {
     return NextResponse.json({ error: "请求过于频繁，请稍后再试" }, { status: 429 });
   }
+  let creationSettings;
+  try { creationSettings=freezeCreationSettings(body?.creationSettings); } catch { return NextResponse.json({error:"本轮创作设置格式无效"},{status:400}); }
   let imageSkill;
   try { imageSkill = await resolveImageSkill(email, body?.skill); } catch (error) { if (error instanceof SkillError) return NextResponse.json({ error: error.message }, { status: error.status }); throw error; }
   const tempId = body?.sessionId?.trim() || `ag-once-${randomUUID()}`;
@@ -402,6 +411,8 @@ async function handlePost(request: Request) {
   }
   if(request.signal.aborted) return harnessErrorResponse(new HarnessError("RUN_INACTIVE",409));
   session.running=true; session.turnId=randomUUID();
+  session.creationSettings=creationSettings;
+  appendSessionEvent(session,"turn_settings",{settings:creationSettings,modelId:postModelId,userIndex:session.agent.state.messages.filter(m=>m.role==="user").length});
   const onAbort=()=>session.agent.abort();request.signal.addEventListener("abort",onAbort,{once:true});
   const timeout = setTimeout(() => session.agent.abort(), 780_000);
   try {

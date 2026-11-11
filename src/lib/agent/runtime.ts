@@ -1,3 +1,4 @@
+import {creationToolArguments,creationSettingsPrompt,type CreationSettings} from "./creation-settings";
 import {appendAgentEvent, normalizeAgentEvents, type AgentEvent} from "./event-buffer";
 import {managedAgentReference} from "./managed-reference";
 
@@ -101,6 +102,7 @@ export type Session = {
   title: string;
   /** 凭证对(cookie+authorization),会话续期时刷新 */
   cred: { cookie: string; authorization: string; imageQuality?: string; originalRequest?: string; canvas?: CanvasAgentContext;imageSkill?:Pick<ImageSkill,"id"|"revision"> };
+  creationSettings?: CreationSettings;
   contextStamp?: string;
   onToolResult?: (result: unknown, tool: string, toolCallId: string) => Promise<void>;
   toolResultsPending?: Promise<void>;
@@ -318,7 +320,7 @@ async function createRuntimeSession(
   session.harness.registerSecret(settings.apiKey);
   const tools = createNaumiTools(
     new Request(process.env.INTERNAL_APP_ORIGIN || "http://127.0.0.1:3012/"), email,
-    () => ({...session.cred,...session.preparedBilling,imagegenPlan:session.preparedImagegen,videoWorkflow:session.preparedVideoWorkflow,originalRequest:session.taskContext?.request}),
+    () => ({...session.cred,...session.preparedBilling,imagegenPlan:session.preparedImagegen,videoWorkflow:session.preparedVideoWorkflow,originalRequest:session.taskContext?.request,creationSettings:session.creationSettings}),
     acceptedBundle ? () => signAcceptedModelContext(email, acceptedBundle) : undefined,
     options?.canvas, session.harness, () => session.taskContext,
   );
@@ -335,7 +337,7 @@ async function createRuntimeSession(
     toolExecution: "sequential",
     transformContext: async messages => {
       // Personal workflows and artwork metadata stay outside the system role.
-      const data = (options?.systemPrompt || "") + imageSkillPrompt(imageSkill || null);
+      const data = (options?.systemPrompt || "") + imageSkillPrompt(imageSkill || null) + creationSettingsPrompt(session.creationSettings);
       return data ? [{role:"user" as const,content:untrustedAgentData("canvas-and-skill",data),timestamp:Date.now()}, ...messages] : messages;
     },
     // 积分预检:工具执行前查余额,不足直接拦截(硬门禁,不靠提示词自觉)
@@ -366,7 +368,7 @@ async function createRuntimeSession(
           terminate: true,
         };
       }
-      const precheck = () => agentBillingPrecheck(session,toolCall.name,args as Record<string,unknown>,toolCall.id);
+      const precheck = () => agentBillingPrecheck(session,toolCall.name,creationToolArguments(toolCall.name,args as Record<string,unknown>,session.creationSettings),toolCall.id);
       const result = session.harness.sanitize(await (acceptedBundle ? withFrozenExecutionBundle(acceptedBundle, precheck) : precheck()));
       if(result?.block)session.preflightFailures.set(toolCall.id,{message:result.reason,code:'code' in result&&typeof result.code==='string'?result.code:'TOOL_NOT_SUBMITTED'});
       // Typed presentation signal only; billing decisions and public reply stay intact.
@@ -402,7 +404,7 @@ async function createRuntimeSession(
     };
     if (event.type === "tool_execution_start") {
       const e = event as unknown as { toolCallId: string; toolName?: string; args?: unknown };
-      push("tool_start", { id: e.toolCallId, tool: e.toolName ?? "", details: publicToolDetails(e.toolName || "", e.args, session.cred.canvas) });
+      push("tool_start", { id: e.toolCallId, tool: e.toolName ?? "", details: publicToolDetails(e.toolName || "", creationToolArguments(e.toolName || "",(e.args||{}) as Record<string,unknown>,session.creationSettings), session.cred.canvas) });
     } else if (event.type === "tool_execution_end") {
       const e = event as unknown as {
         toolCallId: string;
@@ -441,8 +443,8 @@ async function createRuntimeSession(
         catch { push("error", { message: "工具结果已生成，画布挂载需要恢复；请勿重新生成" }); }
       }
     } else if(event.type === "tool_execution_update") {
-      const update=event as unknown as {toolCallId:string;toolName?:string;partialResult?:{details?:{publicSummary?:string;stage?:string}}};
-      if(update.partialResult?.details?.publicSummary)push("tool_start",{id:update.toolCallId,tool:update.toolName||"",summary:update.partialResult.details.publicSummary,stage:update.partialResult.details.stage});
+      const update=event as unknown as {toolCallId:string;toolName?:string;partialResult?:{details?:{publicSummary?:string;stage?:string;progress?:{completed:number;total:number}}}};
+      if(update.partialResult?.details?.publicSummary)push("tool_start",{id:update.toolCallId,tool:update.toolName||"",summary:update.partialResult.details.publicSummary,stage:update.partialResult.details.stage,progress:update.partialResult.details.progress});
     } else if (event.type === "message_update") {
       // 流式:text_delta 实时推给订阅了 onDelta 的路由(无订阅者时忽略)
       const e = event as unknown as {
@@ -621,7 +623,7 @@ export function appendSessionEvent(
   type: string,
   data: Record<string, unknown>
 ) {
-  appendAgentEvent(session, { type, at: Date.now(), data: session.harness.sanitize(data) });
+  appendAgentEvent(session, { type, at: Date.now(), data: session.harness.sanitize({turnId:session.turnId,...data}) });
 }
 
 export async function persistAgentSession(session: Session): Promise<void> {
@@ -639,7 +641,7 @@ export async function persistAgentSession(session: Session): Promise<void> {
     return content ? [{ role: message.role, content: session.harness.publicText(content, message.role === "assistant") }] : [];
   });
   const steps = session.events
-    .filter((event) => ["harness","plan","tool_start","tool_end","attention","canvas_turn","image_skill","artifacts","video_nodes","text_nodes","agent_start","agent_end","canvas_terminal","assistant","canvas_reply","model_stream_end","error"].includes(event.type))
+    .filter((event) => ["turn_settings","harness","plan","tool_start","tool_end","attention","canvas_turn","image_skill","artifacts","video_nodes","text_nodes","agent_start","agent_end","canvas_terminal","assistant","canvas_reply","model_stream_end","error"].includes(event.type))
     .map((event) => ({ ...event.data, type: event.type, at: event.at, sequence: event.sequence }));
   try { session.persistedRevision = await saveAgentSession(
     session.email,

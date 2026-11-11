@@ -17,3 +17,7 @@
 @media(max-width:360px){.imageTools button{width:25px}.toolbarLeft{gap:9px}.toolbarRight{gap:9px}.accountButton>span:first-child{display:none}.composerToolbar{row-gap:9px}.composer{min-height:185px}.hero>h1{font-size:22px}.announcement{font-size:10px}.featurePromo{width:260px}}
 .toBottom{margin-top:-44px;position:relative;pointer-events:none}.toBottom button{pointer-events:auto}.support{bottom:76px}
 @media(prefers-reduced-motion:reduce){.root *{scroll-behavior:auto!important;transition:none!important}}
+
+.responseMarkdown{font-size:13px;line-height:1.85;overflow-wrap:anywhere}.responseParagraph{margin:0 0 12px}.responseMarkdown ul,.responseMarkdown ol{padding-left:22px;margin:8px 0 14px}.responseMarkdown li{margin:4px 0}.responseMarkdown strong{font-weight:600}.responseMarkdown pre{white-space:pre-wrap;padding:12px;background:var(--cr-soft);border-radius:8px}.responseMarkdown code{font-size:12px}.responseMarkdown a{text-decoration:underline;text-underline-offset:3px}
+
+.userMessage{justify-content:flex-end}.userMessage>p{padding:12px 16px;border-radius:17px;background:var(--cr-soft);max-width:82%}.userReference{flex:none}

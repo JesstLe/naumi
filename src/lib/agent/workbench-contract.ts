@@ -1,8 +1,13 @@
+import type { CreationSettings } from "./creation-settings";
+import type { WorkbenchStep } from "./workbench-activity";
 /** Browser-side conversation contracts. No React, HTTP implementation or task ownership. */
 export type WorkbenchMessage = {
   role: "user" | "assistant";
   content: string;
-  steps?: { tool: string; summary: string }[];
+  steps?: WorkbenchStep[];
+  creationSettings?: CreationSettings;
+  agentModel?: string;
+  turnId?: string;
   pending?: boolean;
 };
 export type WorkbenchAccountScope = { readonly account: string; active: boolean };

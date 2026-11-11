@@ -69,6 +69,7 @@ export const useAuth=()=>{const [,r]=React.useState(0);React.useEffect(()=>{wind
 export const authHeader=async()=>{const actor=window.actor;if(window.authGate)await window.authGate;return {'x-fixture-actor':actor||'guest'}};
 export const useFeatureAccess=()=>({can:()=>true,canPage:()=>true});export const FeatureVisible=({children})=>children;
 export const useSiteProfile=()=>({mode:'personal',policy:{brand:'fixture'}});
+export const useTextModel=()=>({model:'fixture-chat'});export const chosenFeatureModel=()=>undefined;
 export const useI18n=()=>({t:k=>k,locale:'zh'});export const useAuthModal=()=>({openAuth:()=>{}});
 export const useSearchParams=()=>React.useMemo(()=>new URLSearchParams(window.location.search),[]);export const useWorkspaceRouter=()=>({push:()=>{}});
 export const loadAccountSnapshot=async()=>({artworks:[],stats:{today:0,total:0}});export const invalidateBrowserData=()=>{};

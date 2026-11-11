@@ -1,3 +1,4 @@
+import {creationToolArguments,creationImageForm,type CreationSettings} from "./creation-settings";
 import {webBytes} from "@/platform/bytes/web";
 import {withAgentToolAttempt,agentToolAttempt,AgentToolHttpError} from "./tool-errors";
 import {appendOriginalRequest} from "./execution-evidence";
@@ -58,7 +59,7 @@ const TOOL_TIMEOUT_MS = {
   extend_video: 300_000,
   edit_video: 300_000,
   creative_tool: 300_000,
-  verify_image_output: 100_000,
+
   inspect_images: 100_000,
   read_only: 15_000,
 } as const;
@@ -66,7 +67,7 @@ const TOOL_TIMEOUT_MS = {
 export const AGENT_SYSTEM_PROMPT = `你是 Naumi 智能体 —— 电商 AI 出图工作站的任务助手。你可以调用站内工具完成图片生成与处理。
 
 ## 可用工具
-1. search_templates / list_my_artworks / get_balance / verify_image_output:只读,不消耗积分。
+1. search_templates / list_my_artworks / get_balance:只读,不消耗积分。
 2. generate_image:文生图/图生图。参数 prompt(必填)、ratio、resolution、count、model。用户指定模型优先；参数不匹配时用 list_image_models 查询真实目录，不把某个模型的限制说成全部工具不可用，不猜模型ID。计费金额以系统当前报价为准。
 3. retouch_product:商品精修。参数 image_url、options(数组)、text。计费金额以系统当前报价为准。
 4. recolor_product:产品换色。参数 image_url、color(如 #27AE60)、strength(20-100)。计费金额以系统当前报价为准。
@@ -107,11 +108,11 @@ ${VIDEO_PRODUCTION_PROMPT}
 3. 工具返回的图片 URL 用 Markdown 图片语法展示:![描述](url)。
 4. 长耗时工具(套图/A+)先告知用户等待时间。
  5. A+ 必须分两步：先调用 generate_aplus 展示每张白底母图，等待用户逐张确认；用户说某张不合格时调用 review_aplus_source(action=redo)并原样带上修改要求；只有全部通过后才调用 continue_aplus_generation。不得替用户默认通过母图。
- 6. 每个生成/精修/换色/复刻/套图/A+ 任务产出后，必须调用 verify_image_output 检查至少一张代表图；套图/A+ 优先检查首图和最后一图。未通过时明确列出问题，保留已有产物，等待用户明确选择后才重做；不自动重复收费生成。检查返回 verificationStatus=unavailable 表示检查未完成，不代表图片生成失败或图片不合格；保留并交付已生成图片，说明未自动验收，不因此重生成、重复扣费或宣称检查通过。
- 7. 任务完成后用中文简要总结:做了什么、视觉检查结果、产出哪些图、扣了多少积分。
+ 6. 生成完成后直接展示真实产物，由用户验收。不要自动调用视觉质检，不声称已验收或未通过，不因视觉检查重做或重复收费。需要修改时等待用户明确要求。读取用户提供的参考图仍可使用 inspect_images。
+ 7. 任务完成后用中文简要说明修改与产物；仅在工具返回真实扣费时说明费用，不输出任务总结模板或视觉验收段落。
  8. 与图片生成无关的问题直接回答,不要调用工具。`;
 
-export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => { cookie: string; authorization: string; imageQuality?: string;originalRequest?:string;billingVersion?:number;billingCredits?:number;billingOperationId?:string;imagegenPlan?:ImagegenPlan;videoWorkflow?:PreparedCanvasVideoWorkflow;imageSkill?:ImagegenPlan["request"]["skill"] }, acceptedModelContext?: string | (() => string), canvas?: CanvasAgentContext, harness?: AgentHarness, taskContext?: () => {request:string;references:string[]}|undefined): AgentTool[] {
+export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => { cookie: string; authorization: string; creationSettings?:CreationSettings;imageQuality?: string;originalRequest?:string;billingVersion?:number;billingCredits?:number;billingOperationId?:string;imagegenPlan?:ImagegenPlan;videoWorkflow?:PreparedCanvasVideoWorkflow;imageSkill?:ImagegenPlan["request"]["skill"] }, acceptedModelContext?: string | (() => string), canvas?: CanvasAgentContext, harness?: AgentHarness, taskContext?: () => {request:string;references:string[]}|undefined): AgentTool[] {
   // 双凭证:可变 getter —— 每次工具执行时读取最新 cookie/authorization,
   // 常驻会话的凭证刷新(runtime 层 existing.cred = cred)即刻生效,无需重建 Agent。
   const credGetter =
@@ -159,6 +160,8 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
     init?: RequestInit
   ): Promise<any> {
     assertInternalAgentPath(path, init?.method || "GET");
+    const cred=credGetter(),selected=creationImageForm(path,init?.body,"creationSettings" in cred?cred.creationSettings:undefined);
+    if(selected)init={...init,body:selected.body,headers:{...init?.headers,...selected.headers}};
     // 安全规则:只读 GET 指数退避重试(≤3);收费/写请求严禁自动重试
     // (防重复扣费);HTTP 错误属确定性失败,一律不重试。
     const isRead = !init?.method || init.method === "GET";
@@ -174,7 +177,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
           ...init,
           signal,
           redirect: "error",
-          headers: { ...(init?.headers ?? {}), ...authHeaders(), ...creationContinuationHeader(), "x-naumi-client-entry": "agent", ...(continuation?{[CONTINUATION_HEADER]:continuation}:{}) },
+          headers: { ...(init?.headers ?? {}), ...authHeaders(), ...(selected?.headers||{}), ...creationContinuationHeader(), "x-naumi-client-entry": "agent", ...(continuation?{[CONTINUATION_HEADER]:continuation}:{}) },
         });
         const bytes = await readBoundedBytes(res, 2 * 1024 * 1024);
         const data = JSON.parse(bytes.toString("utf8") || "{}");
@@ -1237,65 +1240,7 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
         return {content:[{type:"text",text:d.description}],details:{publicSummary:"图片读取完成",inspectionStatus:"completed"}};
       },
     },
-    {
-      name: "verify_image_output",
-      label: "视觉检查",
-      description:
-        "只读且不扣积分：使用视觉模型检查生成图片是否满足任务目标，包括主体完整、无裁切/变形、文字可读、版式正确。每次图片任务交付前必须调用。",
-      parameters: Type.Object({
-        image_url: Type.String({ description: "需要检查的站内图片 URL" }),
-        goal: Type.String({ description: "用户原始目标和本张图应满足的要求" }),
-        reference_image_urls: Type.Optional(Type.Array(Type.String(),{maxItems:6,description:"产品原图和构图/文字参考，按原始顺序，不用生成图冒充对照图"})),
-      }),
-      replay: "safe",
-      executionMode: "sequential",
-      execute: async (_id, params, signal) => {
-        const p = params as { image_url: string; goal: string;reference_image_urls?:string[] };
-        let result: any;
-        try {
-          // Vision inference is not a quick GET. Bound download + inference together,
-          // and propagate the owned timeout signal into both network operations.
-          result = await withToolTimeout("verify_image_output", async ownedSignal => {
-            const fd = new FormData();
-            fd.append("image", await urlToFile(p.image_url, ownedSignal));
-            const task=taskContext?.();
-            fd.append("goal", p.goal.slice(0, 2000));
-            if(task?.request)fd.append("original_request",task.request);
-            const references=[...new Set([...(task?.references||[]),...(p.reference_image_urls||[])])].filter(url=>url!==p.image_url).slice(0,6);
-            for(const url of references)fd.append("reference",await urlToFile(url,ownedSignal));
-            return internal("/api/agent/verify-image", ownedSignal, { method: "POST", body: fd });
-          }, signal);
-          if (typeof result.passed !== "boolean" || typeof result.score !== "number" || !Number.isFinite(result.score)) throw new Error("Invalid inspection result");
-        } catch (error) {
-          if (signal?.aborted) throw error;
-          return {
-            content: [{ type: "text", text: "视觉检查暂未完成，已生成图片保留，本次没有自动验收结果。不要因此重新生成、重复扣费或将图片判为不合格。" }],
-            details: { verificationStatus: "unavailable", imageUrl: p.image_url, publicSummary: "视觉检查暂未完成，图片已保留" },
-          };
-        }
-        const issues = Array.isArray(result.issues)
-          ? result.issues.map(String).slice(0, 8)
-          : [];
-        const passed = result.passed === true;
-        const text = passed
-          ? `视觉检查通过（${result.score ?? 0}/100）：${result.summary || "未发现明显问题"}`
-          : `视觉检查未通过（${result.score ?? 0}/100）：${result.summary || "存在交付风险"}\n问题：${issues.join("；") || "未返回具体问题"}\n建议：${result.retryAdvice || "调整提示词后重新生成"}`;
-        return {
-          content: [{ type: "text", text }],
-          details: {
-            verificationStatus: passed ? "passed" : "failed",
-            imageUrl: p.image_url,
-            passed,
-            score: Number(result.score) || 0,
-            issues,
-            retryAdvice: String(result.retryAdvice || ""),
-            publicSummary: passed
-              ? `视觉检查通过（${Number(result.score) || 0}/100）`
-              : `视觉检查未通过：${issues[0] || "存在交付风险"}`,
-          },
-        };
-      },
-    },
+
   ];
 
   if (canvas) {
@@ -1344,9 +1289,10 @@ export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => 
       await assertAgentToolAccess(agentEmail, tool.name, canvas ? "canvas" : "workbench", new Request(req.url, { headers: { cookie: credentials.cookie, authorization: credentials.authorization } }));
       validateToolArguments(tool.parameters, args);
       if (signal?.aborted) throw new HarnessError("RUN_INACTIVE", 409);
-      if (!harness) return execute(id, args, signal, onUpdate);
+      const effectiveArgs=creationToolArguments(tool.name,args as Record<string,unknown>,"creationSettings" in credentials?credentials.creationSettings:undefined);
+      if (!harness) return execute(id, effectiveArgs, signal, onUpdate);
       return harness.execute(tool.name, args, id, signal, async owned => {
-        const result = harness.sanitize(await execute(id, args, owned, onUpdate ? result => onUpdate(harness.sanitize(result)) : undefined));
+        const result = harness.sanitize(await execute(id, effectiveArgs, owned, onUpdate ? result => onUpdate(harness.sanitize(result)) : undefined));
         // Keep raw details for owned output mounting; only text goes back to the model.
         return {...result, content:result.content.map(part => part.type === "text" ? {...part,text:`[UNTRUSTED_TOOL_RESULT]\n${JSON.stringify(part.text)}\n[/UNTRUSTED_TOOL_RESULT]`} : part)};
       });
