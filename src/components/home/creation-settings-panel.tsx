@@ -1,16 +1,15 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { Box, Check, Film, ImageIcon, Loader2, RefreshCw, X } from "lucide-react";
-import { authHeader } from "@/lib/supabase";
-import { subscribeModelCatalogRefresh } from "@/lib/model-config/catalog-refresh";
-import { useFeatureCatalogScope } from "@/lib/model-config/feature-client";
+import { useFeatureModels } from "@/lib/model-config/feature-client";
 import type { FeatureCatalog } from "@/lib/model-config/feature-catalog";
 import { compactImageModelOptions } from "@/lib/image-model-routing";
 import { imageModelParameterOptions, imageCombinationSupported } from "@/lib/imagegen/parameter-options";
 import { ModelIcon } from "@/components/ui/model-icon";
 import { VideoDurationControl } from "@/components/video/duration-control";
 import { catalogCapability, type VideoCatalogModel } from "@/lib/video/client-settings";
+import { useVideoCatalogModels } from "@/lib/video/catalog-cache";
 import { videoParameterChoices } from "@/lib/video/parameter-options";
 import type { CreationSettings } from "@/lib/agent/creation-settings";
 import styles from "./creation-settings.module.css";
@@ -18,14 +17,16 @@ import styles from "./creation-settings.module.css";
 type ImageModel = FeatureCatalog["models"][number];
 type Catalog = { images: ImageModel[]; videos: VideoCatalogModel[]; imageError?: string; videoError?: string };
 export function CreationSettingsPanel({ value, onChange, onClose, nextTurn = false }: { value: CreationSettings; onChange: (value: CreationSettings) => void; onClose: () => void; nextTurn?: boolean }) {
-  const scope = useFeatureCatalogScope();
   const panel = useRef<HTMLElement>(null);
   const [position, setPosition] = useState<{left:number;top:number}>();
   const [tab, setTab] = useState<"image" | "video">("image");
-  const [loaded, setLoaded] = useState<{ scope:string; catalog:Catalog } | null>(null), [error, setError] = useState("");
-  const catalog = loaded?.scope === scope ? loaded.catalog : null;
-  const [attempt, setAttempt] = useState(0);
-  useEffect(() => subscribeModelCatalogRefresh(() => setAttempt(n => n + 1)), []);
+  // 图片模型走共享目录 store(缓存+失效总线),视频模型走 catalog-cache;首次打开前 composer 已预取,通常直接命中。
+  const imageStore = useFeatureModels("image.generate");
+  const videoStore = useVideoCatalogModels();
+  const images = imageStore.catalog && imageStore.catalog.managed ? compactImageModelOptions(imageStore.catalog.models) : [];
+  const imageError = imageStore.error ? "图片模型读取失败" : imageStore.catalog && !imageStore.catalog.managed ? "当前使用默认图像配置" : undefined;
+  const catalog: Catalog | null = (imageStore.catalog || imageStore.error) && videoStore.ready ? { images, videos: videoStore.models, imageError, videoError: videoStore.error || undefined } : null;
+  const retry = () => { imageStore.reload(); videoStore.reload(); };
   useLayoutEffect(() => {
     const element=panel.current, anchor=element?.parentElement;
     if(!element||!anchor)return;
@@ -36,19 +37,6 @@ export function CreationSettingsPanel({ value, onChange, onClose, nextTurn = fal
     window.addEventListener("resize",place);window.addEventListener("scroll",place,true);
     return()=>{observer.disconnect();window.removeEventListener("resize",place);window.removeEventListener("scroll",place,true);};
   }, []);
-  useEffect(() => {
-    let active = true; const controller = new AbortController();
-    setError("");
-    void (async () => {
-      const headers = await authHeader();
-      const read = async (url: string) => { const response = await fetch(url, { headers, signal: controller.signal, cache: "no-store" }); const data = await response.json(); if (!response.ok) throw Error(data.error || "创作模型读取失败"); return data; };
-      const [images, videos] = await Promise.allSettled([read("/api/models?feature=image.generate"), read("/api/video/catalog")]);
-      if (active) setLoaded({ scope, catalog: { images: images.status === "fulfilled" && images.value.managed ? compactImageModelOptions(images.value.models) : [], videos: videos.status === "fulfilled" ? videos.value.models || [] : [],
-        imageError: images.status === "rejected" ? "图片模型读取失败" : !images.value.managed ? "当前使用默认图像配置" : undefined,
-        videoError: videos.status === "rejected" ? "视频模型读取失败" : undefined } });
-    })().catch(cause => { if (active) setError(cause instanceof Error ? cause.message : "创作模型读取失败"); });
-    return () => { active = false; controller.abort(); };
-  }, [scope, attempt]);
   const image = catalog?.images.find(item => item.id === value.image?.modelId);
   const imageParameters = image ? imageModelParameterOptions(image) : { ratios: [], resolutions: [], combinations: undefined };
   const video = catalog?.videos.find(item => item.modelId === value.video?.modelId && item.providerId === value.video?.providerId);
@@ -73,12 +61,12 @@ export function CreationSettingsPanel({ value, onChange, onClose, nextTurn = fal
   }
   return <section ref={panel} style={position} className={styles.panel} role="dialog" aria-label="本轮创作设置" data-testid="creation-settings">
     <header><div className={styles.tabs}>{(["image", "video"] as const).map(kind => <button type="button" key={kind} aria-pressed={tab === kind} onClick={() => setTab(kind)}>{kind === "image" ? <ImageIcon size={15} /> : <Film size={15} />}{kind === "image" ? "图片" : "视频"}</button>)}</div><span>{nextTurn ? "下一轮设置" : "本轮设置"}</span><button type="button" aria-label="关闭创作设置" onClick={onClose}><X size={16} /></button></header>
-    {!catalog ? <div className={styles.state} role="status">{error ? <><span>{error}</span><button type="button" onClick={() => setAttempt(n => n + 1)}><RefreshCw size={15} />重试</button></> : <Loader2 className="animate-spin" />}</div> : <div className={styles.body}>
+    {!catalog ? <div className={styles.state} role="status">{imageStore.error || videoStore.error ? <><span>{imageStore.error || videoStore.error}</span><button type="button" onClick={retry}><RefreshCw size={15} />重试</button></> : <Loader2 className="animate-spin" />}</div> : <div className={styles.body}>
       <div className={styles.models} aria-label={tab === "image" ? "图片模型" : "视频模型"}>
         <button type="button" aria-pressed={!value[tab]?.modelId} onClick={() => onChange({ ...value, [tab]: {} })}><Box size={16} /><span>模型 · 智能</span>{!value[tab]?.modelId && <Check size={16} />}</button>
         {tab === "image" ? catalog.images.map(model => <button type="button" key={model.id} aria-pressed={model.id === value.image?.modelId} onClick={() => onChange({ ...value, image: { modelId: model.id } })}><ModelIcon modelId={model.id} modelName={model.label} size={17}/><span className={styles.modelLabel}>{model.label}</span>{model.id === value.image?.modelId && <Check size={16} />}</button>) : catalog.videos.map(model => <button type="button" key={`${model.providerId}:${model.modelId}`} aria-pressed={model === video} onClick={() => onChange({ ...value, video: { modelId: model.modelId, providerId: model.providerId } })}><ModelIcon modelId={model.modelId} modelName={model.label} size={17}/><span className={styles.modelLabel}>{model.label}</span>{model === video && <Check size={16} />}</button>)}
         {!(tab === "image" ? catalog.images : catalog.videos).length && <p role="status">{(tab === "image" ? catalog.imageError : catalog.videoError) || "暂无已配置模型"}</p>}
-        {(tab === "image" ? catalog.imageError : catalog.videoError) && <button type="button" onClick={() => setAttempt(n => n + 1)}><RefreshCw size={14}/>重新加载</button>}
+        {(tab === "image" ? catalog.imageError : catalog.videoError) && <button type="button" onClick={retry}><RefreshCw size={14}/>重新加载</button>}
       </div>
       <div className={styles.parameters}>{tab === "image" ? <>
         {choices("比例", value.image?.ratio, imageParameters.ratios, option => patchImage({ ratio: option as string | undefined }), undefined, option => !imageCombinationSupported(imageParameters, String(option), value.image?.resolution))}

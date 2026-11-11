@@ -14,15 +14,36 @@ const sessions=['咖啡机上新套图','保温杯场景主图'].map((title,i)=>
 const templates=['主图','白底图','场景图','套图','A+详情页','海报'].map((category,i)=>({id:'tpl-ui-'+i,title:category+' · 商品创作',category,industry:'电商',description:'公开测试素材',prompt:'保留产品材质，制作商品场景图',tags:['商品'],image:'/demos/workbench-v2/'+(['suite-coffee-main.webp','retouch-before.webp','image-after.webp','suite-after.webp','suite-coffee-structure.webp','replicate-after.webp'][i]),gradient:'',popular:false}));
 const results={tier:'Real Next application + browser API fixtures; no paid provider',checks:[],failures:[],requests:[],errors:[],screenshots:[]};
 const check=(name,condition)=>{assert.ok(condition,name);results.checks.push(name);console.log('PASS '+name);};
-let browser,context,page,member=true,unknown=false,submitted=[];
+// 只统计创作设置面板消费的两条目录(image.generate+video);首页其他组件也会拉自己的 /api/models feature,与本链路无关。
+const modelsFetches=()=>results.requests.filter(r=>r.path==='/api/models'&&r.query.includes('feature=image.generate')).length;
+const videoFetches=()=>results.requests.filter(r=>r.path==='/api/video/catalog').length;
+const catalogRequests=()=>modelsFetches()+videoFetches();
+let browser,context,page,member=true,unknown=false,submitted=[],published=false,failCatalog=false,delayCatalog=false,holdCatalog=false,heldFulfilled=0;
+const catalogWaiters=[];const releaseHeld=()=>{while(catalogWaiters.length)catalogWaiters.shift()();};
+const waitFor=async(predicate,timeout=10000)=>{const start=Date.now();while(Date.now()-start<timeout){if(predicate())return;await new Promise(resolve=>setTimeout(resolve,25));}throw Error('waitFor condition timeout');};
 async function setup(width=1600){
  context=await browser.newContext({viewport:{width,height:1000}});page=await context.newPage();page.setDefaultTimeout(15000);
  page.on('pageerror',e=>results.errors.push(String(e)));
  await context.route('**/media/creation-ui-coffee.webp',r=>r.fulfill({contentType:'image/webp',body:media}));
  await context.route('**/api/**',async route=>{
   const request=route.request(),url=new URL(request.url()),p=url.pathname;
-  results.requests.push({path:p,method:request.method()});
-  const json=(body,status=200)=>route.fulfill({status,contentType:'application/json',body:JSON.stringify(body)});
+  results.requests.push({path:p,method:request.method(),query:url.search});
+  const json=(body,status=200)=>route.fulfill({status,contentType:'application/json',body:JSON.stringify(body)}).catch(()=>{/* 停机竞态:route 已处理时静默 */});
+  if(p==='/api/models'){
+   const payload=failCatalog?{error:'模型列表加载失败'}:{managed:true,supported:true,feature:url.searchParams.get('feature'),version:published?2:1,defaultModelId:'img-alpha',models:[
+    {id:'img-alpha',label:published?'Alpha 图像 v2':'Alpha 图像',modality:'image',supportsEdit:true,qualities:['medium','high'],generationParameters:{ratios:['1:1','4:3'],resolutions:['1K','2K']}},
+    {id:'img-beta',label:'Beta 图像',modality:'image',supportsEdit:false}]};
+   if(delayCatalog)await new Promise(resolve=>setTimeout(resolve,400));
+   if(holdCatalog)await new Promise(resolve=>catalogWaiters.push(resolve)).then(()=>{heldFulfilled++;});
+   return json(payload,failCatalog?500:200);
+  }
+  if(p==='/api/video/catalog'){
+   const payload=failCatalog?{error:'视频模型读取失败'}:{ok:true,version:published?2:1,configured:true,defaultModel:'vid-alpha',models:[
+    {modelId:'vid-alpha',providerId:'managed-video',label:published?'Alpha 视频 v2':'Alpha 视频',definition:{modes:['text'],aspectRatios:['16:9'],resolutions:['1080p'],sources:{}},isDefault:true}]};
+   if(delayCatalog)await new Promise(resolve=>setTimeout(resolve,400));
+   if(holdCatalog)await new Promise(resolve=>catalogWaiters.push(resolve)).then(()=>{heldFulfilled++;});
+   return json(payload,failCatalog?500:200);
+  }
   if(p==='/api/config'){const response=await route.fetch();return json({...await response.json(),db:true,multiUser:true});}
   if(p==='/api/auth/session')return json({user:member?user:null});
   if(p==='/api/auth/logout'){member=false;return json({ok:true});}
@@ -67,6 +88,91 @@ async function run(){
  check('exact-primary-navigation',nav[0].replace(/\s/g,'')==='创作模板中心创作工具我的作品');
  check('exact-workspace-navigation',nav[1].replace(/\s/g,'')==='无限画布参考工作台视频工作台');
  check('real-conversation-history',await page.getByRole('button',{name:'咖啡机上新套图',exact:true}).count()===1);
+ // 创作设置链路:身份就绪后挂载预取恰好一次图片+一次视频目录;打开/重开面板全部命中缓存,不再发请求。
+ check('catalog-prefetched-on-mount',modelsFetches()===1&&videoFetches()===1);
+ await page.getByRole('button',{name:'创作设置',exact:true}).click();
+ await page.getByTestId('creation-settings').waitFor();
+ await page.getByRole('button',{name:/Alpha 图像/}).first().waitFor();
+ check('settings-models-render-from-cache',catalogRequests()===2);
+ await page.getByRole('button',{name:'视频',exact:true}).click();
+ await page.getByRole('button',{name:/Alpha 视频/}).first().waitFor();
+ check('settings-video-models-from-cache',catalogRequests()===2);
+ await page.getByRole('button',{name:'关闭创作设置',exact:true}).click();
+ await page.getByRole('button',{name:'创作设置',exact:true}).click();
+ await page.getByTestId('creation-settings').waitFor();
+ check('settings-reopen-no-refetch',catalogRequests()===2);
+ await page.getByRole('button',{name:'关闭创作设置',exact:true}).click();
+ // 场景:管理端发布即时失效,含当前无人订阅的目录——发布后打开面板必须重新拉取并渲染新目录。
+ await page.evaluate(()=>new BroadcastChannel('naumi:model-catalog-publication').postMessage({type:'refresh'}));
+ published=true;
+ await page.getByRole('button',{name:'创作设置',exact:true}).click();
+ await page.getByRole('button',{name:/Alpha 图像 v2/}).first().waitFor();
+ await page.getByRole('button',{name:'视频',exact:true}).click();
+ await page.getByRole('button',{name:/Alpha 视频 v2/}).first().waitFor();
+ check('publication-invalidates-unobserved-catalogs',modelsFetches()===2&&videoFetches()===2);
+ // 场景:成功后刷新失败必须呈现错误并可恢复,不把失败伪装成空目录。
+ // 按钮定位收窄到面板内:页面全局有 TextModelSelect 的常驻"重试"按钮,不能用作面板错误状态的信号。
+ const panel=page.getByTestId('creation-settings');
+ failCatalog=true;
+ await page.evaluate(()=>new BroadcastChannel('naumi:model-catalog-publication').postMessage({type:'refresh'}));
+ await panel.getByRole('button',{name:/重新加载|重试/}).first().waitFor({timeout:10000});
+ check('refresh-failure-shows-retry-not-empty',true);
+ failCatalog=false;
+ await panel.getByRole('button',{name:/重新加载|重试/}).first().click();
+ await panel.getByRole('button',{name:'图片',exact:true}).click();
+ await panel.getByRole('button',{name:/Alpha 图像 v2/}).first().waitFor();
+ // 恢复证明:面板内错误入口消失、发布版目录渲染、失败后确实发生了重拉(计数下限,不做精确计数——hover 预取可能带来额外合法请求)。
+ check('retry-recovers-after-failure',await panel.getByRole('button',{name:/重新加载|重试/}).count()===0&&modelsFetches()>=3&&videoFetches()>=3);
+ // 场景:发布跨越在途请求——旧代际响应不得把面板退回旧目录、不得标记新鲜,下一次挂载必须重拉发布版。
+ // 先发一次发布把全部缓存清旧,保证 hover 预取真的发出在途 R1(上一场景的重试缓存此时是新鲜的)。
+ await page.getByRole('button',{name:'关闭创作设置',exact:true}).click();
+ published=false;delayCatalog=true;
+ await page.evaluate(()=>new BroadcastChannel('naumi:model-catalog-publication').postMessage({type:'refresh'}));
+ const imageBefore=modelsFetches(),videoBefore=videoFetches();
+ await page.getByRole('button',{name:'创作设置',exact:true}).hover();
+ await page.waitForTimeout(120);
+ published=true;
+ await page.evaluate(()=>new BroadcastChannel('naumi:model-catalog-publication').postMessage({type:'refresh'}));
+ delayCatalog=false;
+ await page.getByRole('button',{name:'创作设置',exact:true}).click();
+ await page.getByTestId('creation-settings').waitFor();
+ // 图片挂载在途去重到旧代际 R1;视频经代际判定发起发布版 R2,旧 R1 晚到时提交被丢弃。
+ await page.waitForTimeout(600);
+ await panel.getByRole('button',{name:'视频',exact:true}).click();
+ await panel.getByRole('button',{name:/Alpha 视频 v2/}).first().waitFor();
+ check('inflight-publication-keeps-latest',await panel.getByRole('button',{name:/Alpha 视频 v2/}).first().isVisible()&&modelsFetches()>=imageBefore+1&&videoFetches()>=videoBefore+2);
+ await page.getByRole('button',{name:'关闭创作设置',exact:true}).click();
+ await page.getByRole('button',{name:'创作设置',exact:true}).click();
+ await panel.getByRole('button',{name:/Alpha 图像 v2/}).first().waitFor();
+ check('stale-generation-response-not-fresh',modelsFetches()>=imageBefore+2&&videoFetches()>=videoBefore+2);
+ await page.getByRole('button',{name:'关闭创作设置',exact:true}).click();
+ // 场景:面板保持挂载,用可控响应屏障代替固定延时——发布发起的旧代际 R1 被扣住,
+ // 再次发布的新代际 R2 先提交;放行 R1 后旧目录不得覆盖面板(面板提交守卫)。
+ await page.getByRole('button',{name:'创作设置',exact:true}).click();
+ await page.getByTestId('creation-settings').waitFor();
+ const panelBase={image:modelsFetches(),video:videoFetches()};
+ published=false;
+ await page.evaluate(()=>new BroadcastChannel('naumi:model-catalog-publication').postMessage({type:'refresh'}));
+ await panel.getByRole('button',{name:/Alpha 图像(?! v2)/}).first().waitFor();
+ check('mounted-panel-refreshes-to-published-baseline',modelsFetches()===panelBase.image+1&&videoFetches()===panelBase.video+1);
+ holdCatalog=true;
+ await page.evaluate(()=>new BroadcastChannel('naumi:model-catalog-publication').postMessage({type:'refresh'}));
+ await waitFor(()=>catalogWaiters.length>=2);            // 图片+视频旧代际 R1 均已到达屏障
+ check('mounted-panel-retains-known-models-while-refreshing',await panel.getByRole('button',{name:/Alpha 图像(?! v2)/}).first().isVisible());
+ published=true;holdCatalog=false;
+ await page.evaluate(()=>new BroadcastChannel('naumi:model-catalog-publication').postMessage({type:'refresh'}));
+ await panel.getByRole('button',{name:/Alpha 图像 v2/}).first().waitFor();
+ check('mounted-panel-commits-new-generation',modelsFetches()===panelBase.image+3&&videoFetches()===panelBase.video+3);
+ releaseHeld();                                          // 旧代际 R1 晚到
+ await waitFor(()=>heldFulfilled>=2);                    // 两条旧代际响应已确认送达
+ await page.waitForTimeout(150);                         // 页面侧提交守卫处理窗口
+ await panel.getByRole('button',{name:'视频',exact:true}).click();
+ await panel.getByRole('button',{name:/Alpha 视频 v2/}).first().waitFor();
+ check('mounted-panel-held-old-response-discarded-video',await panel.getByRole('button',{name:/Alpha 视频 v2/}).first().isVisible()&&modelsFetches()===panelBase.image+3&&videoFetches()===panelBase.video+3);
+ await panel.getByRole('button',{name:'图片',exact:true}).click();
+ await panel.getByRole('button',{name:/Alpha 图像 v2/}).first().waitFor();
+ check('mounted-panel-held-old-response-discarded-image',await panel.getByRole('button',{name:/Alpha 图像 v2/}).first().isVisible()&&modelsFetches()===panelBase.image+3&&videoFetches()===panelBase.video+3);
+ await page.getByRole('button',{name:'关闭创作设置',exact:true}).click();
  check('real-canvas-summary-link',await page.getByRole('link',{name:'咖啡机上新',exact:true}).getAttribute('href')==='/canvas?project=tree%3Aui-art-coffee');
  await page.getByRole('textbox',{name:'创作描述',exact:true}).fill('首页独立草稿');
  await page.getByRole('button',{name:'切换为深色主题'}).click();
@@ -121,4 +227,4 @@ async function run(){
  check('guest-does-not-submit',submitted.length===1);
  check('no-runtime-errors',results.errors.length===0);
 }
-run().catch(e=>{results.failures.push(String(e.stack||e));console.error(e);process.exitCode=1;}).finally(async()=>{await context?.unrouteAll({behavior:'wait'});await browser?.close();fs.writeFileSync(path.join(out,'RESULTS.json'),JSON.stringify(results,null,2));console.log('CREATION_HOME_BROWSER='+JSON.stringify({checks:results.checks.length,failed:results.failures.length,supplierCalls:0,source:'actual Next application'}));});
+run().catch(e=>{results.failures.push(String(e.stack||e));console.error(e);process.exitCode=1;}).finally(async()=>{try{await context?.unrouteAll({behavior:'ignoreErrors'});}catch{/* 停机竞态不得吞掉验收结果 */}try{await browser?.close();}catch{}fs.writeFileSync(path.join(out,'RESULTS.json'),JSON.stringify(results,null,2));console.log('CREATION_HOME_BROWSER='+JSON.stringify({checks:results.checks.length,failed:results.failures.length,supplierCalls:0,source:'actual Next application'}));});

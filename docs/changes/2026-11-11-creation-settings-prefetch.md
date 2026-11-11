@@ -1,0 +1,33 @@
+# 创作设置面板模型目录加载优化（2026-11-11）
+
+## 模块与职责
+- `src/components/home/creation-composer.tsx` + `creation-settings-panel.tsx`：首页工作台与对话共用的创作输入框及「创作设置」面板。
+- 新增 `src/lib/video/catalog-cache.ts`：视频模型目录的浏览器侧共享缓存。
+
+## 调研结论（原链路慢的原因）
+- 面板点击后才挂载，挂载后才发请求；`cache:"no-store"` 导致每次打开都重拉 `/api/models?feature=image.generate` 与 `/api/video/catalog`，两接口全部返回后才渲染模型列表。
+- 服务端两接口均为已发布快照的 DB 读（无上游供应商调用），延迟主要来自网络往返与串行等待；视频目录按模型做能力冻结查询，条目多时更慢。
+- 项目已有带内存缓存/在途去重/失效总线的 `feature-catalog-browser` store（图片模型目录），面板未复用，自成一条重复请求路径。
+
+## 实现内容
+- 图片模型：面板改用 `useFeatureModels("image.generate")` 共享 store，映射结果与原实现一致（managed→模型列表，否则"当前使用默认图像配置"）。
+- 图片目录新鲜度门控：`useFeatureModels` 挂载 effect 增加 120s 新鲜度判断。新鲜需同时满足：成功读取时间戳（`feature-catalog-browser` 包装层 `read()` 成功返回处记录，且**发布代际未变**——跨越发布的在途响应不标记新鲜，旧目录不得短路后续挂载/预取）**且**当前 scope 存在有效快照（无 error）——先成功后刷新失败时，error 快照使挂载路径照常重试恢复。时间戳在身份激活与 WORKSPACE_SELECTION 时清空；发布事件（管理端发布/跨 tab 广播）即时递增代际、清空**全部**时间戳（含无人订阅的 feature）并对已订阅项立即重拉。显式 reload 与 `naumi:feature-model-reload` 事件不经门控。管理员发布数据即时生效，符合"管理员显式维护的数据优先"。
+- **图片 store 代际防护（新增场景 `mounted-panel-*` 实测发现的同根缺口）**：`feature-catalog.ts` 的在途去重只按 feature 键，发布后 `reloadObserved` 会去重到**发布前**发起的旧在途请求；且 `accept()` 无代际防护，旧响应晚到会把已提交的新目录回退成旧目录。修复：store 增加**按 feature 记账**的 `generations` 与 `invalidate(feature?)`（发布传全局：所有有活动的 feature 代际递增、在途作废；显式 reload 传单项目：只作废自身，不打断其他 feature 的在途等待），发布监听先 `invalidate()` 再重拉；`load()` 捕获发起时代际，**被取代的旧响应晚到不提交、不误报为错误，而是衔接当前代际**（已在途的新请求直接等待、**当前代际**已提交的新目录直接采用、否则重发真实请求）——保证 `ensure()` 等待中的用户操作（标题生成/Canvas 提示词优化/OCR 等入口）不因发布跨过其请求而中止；同代际真实失败照常写错误快照；scope 切换仍走 `activate()` 既有清空与拒绝。
+- **superseded 衔接链两处加固（评审五）**：(1) 快照记**提交代际**（`snapshotGenerations`，accept 提交时写入、activate 清空）——失效保留旧快照仅供展示，只有当前代际提交的目录可作为衔接目标，连续两次失效且最后一次无接替时旧响应以"模型目录已更新"拒绝，不冒充上一代际快照；(2) 成功分支**先验 captured scope 再衔接**——身份切换的旧请求立即拒绝，不得等待甚至接上其他身份的在途请求（与失败分支的 `current(captured)` 防护对齐）。
+- **显式 reload 建立新代际（评审 F6）**：视频 `reload()` 先递增 `epoch` 再清缓存重拉；图片 hook `reload()` 与 `RELOAD` 事件先 `store.invalidate(feature)` 再 `load()`——三个显式失效入口都不再复用旧在途请求（此前视频 reload 只清缓存、图片直接 `load()`，都会去重到刷新前发起的请求，旧响应可冒充重试结果提交）。普通挂载/预取仍共享同代际在途请求。
+- 视频模型：新增 `catalog-cache.ts`（内存缓存 TTL 120s + 在途去重 + 发布失效），缓存所有者（模块层）自己订阅发布事件，面板从未挂载时发布同样使缓存失效。代际 epoch 隔离：发布递增代际，旧代际在途响应不回填缓存、**其 hook 状态提交也被丢弃**（scope ref + epoch 双防护，`.then`/`.catch` 均覆盖，防止旧响应把面板退回旧目录或跨 scope 覆盖触发永久加载）；在途请求按 scope 绑定，切 scope 不复用旧 promise；挂载读取与 load 共用同一 TTL 判断；刷新失败始终设置 error 并保留同 scope 已知模型（不把请求失败伪装成正常空目录），面板据此显示重试。**订阅安装顺序（评审 F4）**：hook effect 顶部先 `ensureInvalidationListener()` 安装模块级失效订阅，再订阅面板刷新——发布事件到达时先递增代际，面板 refresh 才能捕获新代际提交，否则新响应会被自家提交守卫全部丢弃、面板永久加载。HTTP 层保持 no-store，不改变服务端冻结语义。
+- 预取：Composer 在身份就绪（`useAuth().ready`）后挂载即预取两目录（`prefetchFeatureCatalog` 已内置新鲜度判断），「创作设置」按钮 hover/聚焦时补充预取；点击打开时直接命中，面板即时渲染。等 ready 再预取是关键：身份激活（`activateFeatureCatalogIdentity`）会切换 scope 并作废旧快照，激活前预取只会白费一次请求（浏览器验收曾实测到 `/api/models` 发 2 次，根因即此）。
+- 已知取舍（评审 A3 确认）：120s 是挂载/预取复用期限，不是自动刷新计时器；持续挂载且无失效事件时，过期本身不触发请求。管理端发布经总线即时失效；后台上游同步（无发布事件）依赖回前台/可见性聚合刷新，与原挂载重拉行为相比最大延迟 120s。
+
+## 验证命令、结果及证据层级
+- `npx tsc --noEmit`：全仓 0 错误（worktree 独立 node_modules）；改动文件 `npx next lint` 0 warning / 0 error。
+- `scripts/verify-creation-home-browser.cjs`：50 项断言全绿（真实 Next 应用 + 浏览器 API fixture，无供应商调用）。核心断言：`catalog-prefetched-on-mount`（身份就绪后挂载预取恰好 1+1 次）、`settings-models-render-from-cache`/`settings-video-models-from-cache`/`settings-reopen-no-refetch`（打开/切 tab/重开面板 0 新请求）、`publication-invalidates-unobserved-catalogs`（BroadcastChannel 模拟管理端发布→面板重拉并渲染发布版目录，含无人订阅项）、`refresh-failure-shows-retry-not-empty` + `retry-recovers-after-failure`（注入 500→面板内错误重试入口→恢复后渲染发布版目录）、`inflight-publication-keeps-latest` + `stale-generation-response-not-fresh`（发布跨越在途请求：旧代际响应晚到不回退面板视频目录、不标记图片新鲜，重开面板必须重拉发布版）、`mounted-panel-*` 五项（面板保持挂载 + 受控响应屏障：发布发起的旧代际 R1 被扣住→再次发布的新代际 R2 先提交并渲染（旧 R1 在途时图片侧新请求照常发起，精确计数 +3）→刷新等待期间保留已知模型→放行 R1 后视频/图片均不回退、请求数不变；屏障用 Node 侧 `catalogWaiters` 条件等待替代固定延时）。
+- `scripts/verify-video-catalog-cache.cjs`：31 项断言全绿（**源码级逻辑回归**：真实 `catalog-cache.ts` 经 esbuild 转译执行，React 原语以忠实语义最小 shim 驱动，总线/scope/fetch 全部受控桩）。覆盖：F4 冷挂载订阅顺序（无预取直接挂载→发布→旧代际响应丢弃→新代际响应正确提交；模块级失效订阅先于面板订阅安装，卸载后模块监听仍存活）、F2 面板提交守卫（成功/失败分支；**跨发布代际的旧失败晚到**：新代际已提交后旧代际 500 不得写入错误状态——此前 500 属同代际，未覆盖 `.catch` 的 epoch 守卫，评审四指出后补齐）、F3 scope 竞态（切 B 后旧 A 成功/500 晚到均不得覆盖新 scope 状态；同代际共享缓存命中属预期行为）、F6 显式 reload 新代际（扣住 R1→reload 真实发起 R2→旧 R1 成功/失败晚到均不覆盖）。**变异自检**：删除 `.catch` epoch 守卫 → `f2x-stale-failure-discarded` 失败；reload 去掉 `epoch++` → `f6-reload-starts-new-fetch` 失败（证明断言真实拦截错误实现，非恒真）。
+- `scripts/verify-feature-catalog-store.cjs`：24 项断言全绿（**源码级逻辑回归**：真实 `feature-catalog.ts` 转译执行，ports/read 受控桩 + 可控回调屏障）。覆盖：F5 `ensure()` 等待 R1→发布→R2 先提交→R1 成功/失败晚到均衔接当前代际有效选择（不再以"模型目录已更新"中断标题生成/Canvas/OCR 等等待中的用户操作）、F5 等待期间切换身份照常拒绝原 scope 操作、F6 单项目显式 reload 扣住 R1 后真实发起 R2 且旧 R1 晚到不回退快照、被取代且无接替时以"已更新"拒绝且不写错误快照、同代际真实失败照常记录错误、发布全局失效覆盖其他 feature 在途不回退、**评审五两处**：t8 连续两次失效且最后一次无接替时旧代际快照不得冒充衔接目标（G1 快照保留展示但不重提交）、t9 代际变化+身份切换+新身份请求在途时旧身份成功回调立即拒绝且不接上其他身份请求（read 桩以可控屏障复现"数据就绪→回调暂缓"窗口）。**变异自检**：衔接改回抛错 → t1 失败；删除快照代际守卫 → t8 失败；删除成功分支 scope 校验 → t9 失败；三处变异均拦截后源码逐字还原。
+- `scripts/verify-creation-home-browser.cjs`：50 项断言全绿（真实 Next 应用 + 浏览器 API fixture，无供应商调用）。核心断言：`catalog-prefetched-on-mount`（身份就绪后挂载预取恰好 1+1 次）、`settings-models-render-from-cache`/`settings-video-models-from-cache`/`settings-reopen-no-refetch`（打开/切 tab/重开面板 0 新请求）、`publication-invalidates-unobserved-catalogs`（BroadcastChannel 模拟管理端发布→面板重拉并渲染发布版目录，含无人订阅项）、`refresh-failure-shows-retry-not-empty` + `retry-recovers-after-failure`（注入 500→面板内错误重试入口→恢复后渲染发布版目录）、`inflight-publication-keeps-latest` + `stale-generation-response-not-fresh`（发布跨越在途请求：旧代际响应晚到不回退面板视频目录、不标记图片新鲜，重开面板必须重拉发布版）、`mounted-panel-*` 五项（面板保持挂载 + 受控响应屏障：发布发起的旧代际 R1 被扣住→再次发布的新代际 R2 先提交并渲染（旧 R1 在途时图片侧新请求照常发起，精确计数 +3）→刷新等待期间保留已知模型→放行 R1 后视频/图片均不回退、请求数不变；屏障用 Node 侧 `catalogWaiters` 条件等待替代固定延时，放行后以 `heldFulfilled` 送达确认替代固定等待再断言）。
+- 评审闭环（GPT gpt-6.1-sol，逐轮新委托复核）：初审"需修改"A1/B1/C1/C2/C3/C4 六项 → 全部修复；二审 F1（跨发布在途响应不得标记新鲜）/F2（面板状态需代际+scope 提交守卫）/F3（scope 竞态防护）→ 全部修复；三审确认 F1/F2/F3 已修，提出 F4（订阅安装顺序）"需修改"并要求补无预取冷挂载回归、固化 F3 为真实 hook 生命周期回归、以受控屏障强化在途场景 → F4 已修 + 三类回归已补；补屏障场景时实测发现图片 store 的同根缺口（发布后去重到旧代际在途请求 + `accept()` 无代际防护），已一并修复（见上）；四审确认 F4 修复有效、F6 发起逻辑与跨代际失败回归核对通过，提出 F5（ensure 被取代时须衔接当前代际而非报错）与 F6（显式 reload 须建立新代际）→ 已修；五审核对 F5 衔接链，提出两处加固（快照提交代际、成功分支先验 scope）→ 已修，三处变异自检拦截后源码还原；**六审放行**——独立复核两处修复（快照代际在 accept/select/error/activate 路径一致；前置 scope 校验与原 assertCurrent 等价且错误快照/finally 守卫不受影响），变异验证 t8/t9 均能拦截错误实现，另补 4/4 边界验证（同代际 scope 切换等价、select 不提升快照代际、error 快照不作衔接目标、activate 清空后新身份正常提交），并复查预取/新鲜度/发布/显式 reload/面板消费/视频缓存衔接，未发现新增阻断路径。
+- 调试备注：页面全局有 TextModelSelect 的常驻"重试"按钮（其 /api/text-models 在本地 dev 环境报错），浏览器断言因此收窄到面板 `data-testid` 作用域内；该按钮与本次改动无关。
+
+## 未完成项与下一步
+- 合入 main；发布后在 103 实测弱网下首次打开与二次打开的体感差异。
+- 文本模型选择器（`TextModelSelect`）本地 dev 环境下 /api/text-models 报错显示常驻重试按钮，与本次改动无关，另行任务核查（若线上同样有点击后加载问题，可复用本次预取+新鲜度模式）。

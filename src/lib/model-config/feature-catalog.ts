@@ -22,6 +22,12 @@ const canvasKind=(feature:FeatureId)=>feature.startsWith('canvas.')?(['canvas.im
  * Auth/HTTP/storage stay at the browser boundary;this owner never grants access. */
 export function createFeatureCatalog(ports:Ports){
  let scope:FeatureCatalogScope|undefined,key='';
+ // 按 feature 记代际:全局失效(发布)递增全部有活动的 feature;单项目失效(显式 reload)只递增自身,
+ // 不殃及其他 feature 的在途请求(否则它们的 ensure 等待会被无谓打断)。
+ const generations=new Map<FeatureId,number>();
+ // 快照提交代际:失效保留旧快照供展示,但只有当前代际提交的目录才能作为被取代请求的衔接目标。
+ const snapshotGenerations=new Map<FeatureId,number>();
+ const featureGen=(feature:FeatureId)=>generations.get(feature)||0;
  const snapshots=new Map<FeatureId,FeatureCatalogSnapshot>(),inflight=new Map<FeatureId,Promise<FeatureCatalog>>(),canvasSelections=new Map<string,string>();
  const listeners=new Map<FeatureId,Set<()=>void>>(),scopeListeners=new Set<()=>void>();
  const emit=(feature:FeatureId)=>{for(const listener of listeners.get(feature)??[])listener();};
@@ -29,7 +35,7 @@ export function createFeatureCatalog(ports:Ports){
  const assertCurrent=(captured:FeatureCatalogScope|undefined)=>{if(!current(captured))throw new Error('创作空间已切换');};
  function activate(next:FeatureCatalogScope){
   const nextKey=featureCatalogScopeKey(next);if(key===nextKey)return;
-  scope={...next};key=nextKey;snapshots.clear();inflight.clear();canvasSelections.clear();ports.version();
+  scope={...next};key=nextKey;snapshots.clear();snapshotGenerations.clear();inflight.clear();canvasSelections.clear();ports.version();
   for(const feature of listeners.keys())emit(feature);
   for(const listener of scopeListeners)listener();
   ports.selectionChanged();
@@ -54,16 +60,40 @@ export function createFeatureCatalog(ports:Ports){
    const saved=(kind?canvasSelections.get(kind):undefined)||previous?.selected||ports.preference(captured,`naumi:model:${feature}`);
    selected=catalog.models.find(model=>imageModelDisplayId(model.id)===imageModelDisplayId(canonicalPublicModelId(catalog.models,saved||'')))?.id||catalog.models.find(model=>model.id===catalog.defaultModelId)?.id||catalog.models[0]?.id||'';
   }
-  snapshots.set(feature,{catalog,selected,error:null});if(catalog.managed)ports.version(catalog.version);emit(feature);
+  snapshots.set(feature,{catalog,selected,error:null});snapshotGenerations.set(feature,featureGen(feature));if(catalog.managed)ports.version(catalog.version);emit(feature);
   if(previous?.catalog?.version&&previous.catalog.version!==catalog.version)ports.selectionChanged();
   return catalog;
+ }
+ /** 失效:发布传全局(所有有活动的 feature 代际递增、在途作废,后续 load 真实重拉);
+  * 显式 reload 传 feature,仅作废该 feature 的在途请求。旧响应晚到时由 load 的代际防护拒绝提交。 */
+ function invalidate(feature?:FeatureId){
+  if(feature!==undefined){generations.set(feature,featureGen(feature)+1);inflight.delete(feature);return;}
+  const all=new Set<FeatureId>([...inflight.keys(),...snapshots.keys(),...generations.keys()]);
+  for(const f of all)generations.set(f,featureGen(f)+1);
+  inflight.clear();
  }
  function load(feature:FeatureId,expected=key):Promise<FeatureCatalog>{
   if(expected!==key||!current())return Promise.reject(new Error('创作空间已切换'));
   const existing=inflight.get(feature);if(existing)return existing;
-  const captured=scope!;const state=snapshots.get(feature);if(state?.error){snapshots.set(feature,{...state,error:null});emit(feature);}
-  const promise=Promise.resolve().then(()=>{assertCurrent(captured);return ports.read(feature,captured,()=>current(captured));}).then(data=>accept(feature,data,captured)).catch(error=>{
-   if(current(captured)){snapshots.set(feature,{catalog:null,selected:'',error:error instanceof Error?error.message:'读取失败'});emit(feature);}
+  const captured=scope!,startedGeneration=featureGen(feature);const state=snapshots.get(feature);if(state?.error){snapshots.set(feature,{...state,error:null});emit(feature);}
+  // 被新代际取代(发布/显式失效后晚到):不提交旧响应、不把取代误报为错误,
+  // 直接衔接当前代际——等待已在途的新请求,或采用当前代际已提交的新目录,否则重发真实请求。
+  const superseded=():Promise<FeatureCatalog>|FeatureCatalog=>{
+   const retry=inflight.get(feature);if(retry)return retry;
+   const fresh=snapshots.get(feature)?.catalog;
+   if(fresh&&snapshotGenerations.get(feature)===featureGen(feature))return fresh;
+   throw new Error('模型目录已更新');
+  };
+  const promise=Promise.resolve().then(()=>{assertCurrent(captured);return ports.read(feature,captured,()=>current(captured));}).then(data=>{
+   // 身份校验先于衔接:scope 已切换的旧身份请求立即拒绝,不得等待甚至接上其他身份的在途请求。
+   if(!current(captured))throw new Error('创作空间已切换');
+   if(startedGeneration!==featureGen(feature))return superseded();
+   return accept(feature,data,captured);
+  },error=>{
+   if(startedGeneration!==featureGen(feature)&&current(captured))return superseded();
+   throw error;
+  }).catch(error=>{
+   if(startedGeneration===featureGen(feature)&&current(captured)){snapshots.set(feature,{catalog:null,selected:'',error:error instanceof Error?error.message:'读取失败'});emit(feature);}
    throw error;
   }).finally(()=>{if(inflight.get(feature)===promise)inflight.delete(feature);});
   inflight.set(feature,promise);return promise;
@@ -85,7 +115,7 @@ export function createFeatureCatalog(ports:Ports){
   for(const [other,value]of snapshots){const selected=chosen(other)||'';if(value.selected!==selected)snapshots.set(other,{...value,selected});emit(other);}
   ports.selectionChanged();
  }
- return{activate,scopeKey:()=>key,chosen,load,ensure,select,
+ return{activate,invalidate,scopeKey:()=>key,chosen,load,ensure,select,
   managed:(feature:FeatureId)=>current()&&snapshots.get(feature)?.catalog?.managed===true,
   snapshot:(feature:FeatureId)=>snapshots.get(feature)||EMPTY_FEATURE_CATALOG,
   subscribedFeatures:()=>[...listeners].filter(([,set])=>set.size).map(([feature])=>feature),

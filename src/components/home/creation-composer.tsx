@@ -1,5 +1,5 @@
 "use client";
-import { useEffect,useRef,useState } from "react";
+import { useCallback,useEffect,useRef,useState } from "react";
 import { ArrowUp,ChevronDown,Eraser,Images,Loader2,Plus,SlidersHorizontal,Square,Waves,X } from "lucide-react";
 import { TextModelSelect } from "@/components/ui/text-model-select";
 import { CreationSettingsPanel } from "./creation-settings-panel";
@@ -7,6 +7,9 @@ import { SkillBook } from "@/components/image-skills/skill-book";
 import { useAuth } from "@/lib/auth-context";
 import { useAuthModal } from "@/lib/auth-modal-context";
 import { useFeatureAccess } from "@/lib/feature-access/client";
+import { useFeatureCatalogScope } from "@/lib/model-config/feature-client";
+import { prefetchFeatureCatalog } from "@/lib/model-config/feature-catalog-browser";
+import { prefetchVideoCatalog } from "@/lib/video/catalog-cache";
 import { useWorkspaceRouter } from "@/lib/desktop/navigation";
 import { CachedImage } from "@/components/cached-image";
 import { agentMediaUrl } from "@/lib/agent/media-policy";
@@ -14,9 +17,14 @@ import type { CreationWorkbenchPort } from "./creation-contract";
 import styles from "./creation-workbench.module.css";
 
 export function CreationComposer({port}:{port:CreationWorkbenchPort}){
-  const {user}=useAuth(),{openAuth}=useAuthModal(),{can}=useFeatureAccess(),router=useWorkspaceRouter();
+  const {user,ready}=useAuth(),{openAuth}=useAuthModal(),{can}=useFeatureAccess(),router=useWorkspaceRouter();
   const [settings,setSettings]=useState(false),[works,setWorks]=useState(false),[mode,setMode]=useState(false),[steer,setSteer]=useState("");
   const root=useRef<HTMLDivElement>(null),files=useRef<HTMLInputElement>(null),text=useRef<HTMLTextAreaElement>(null);
+  // 创作设置面板的模型目录预取:身份就绪后挂载即拉、hover/聚焦补充预取,点击打开时通常已命中缓存,面板秒开。
+  // 等 ready 再预取:身份激活会切换 scope 并作废旧快照,提前拉取只会白费一次请求。
+  const scope=useFeatureCatalogScope();
+  const prefetchSettings=useCallback(()=>{prefetchFeatureCatalog("image.generate");prefetchVideoCatalog(scope);},[scope]);
+  useEffect(()=>{if(ready)prefetchSettings();},[prefetchSettings,ready]);
   useEffect(()=>{const close=(event:MouseEvent)=>{if(!root.current?.contains(event.target as Node)){setSettings(false);setMode(false);}};document.addEventListener("mousedown",close);return()=>document.removeEventListener("mousedown",close);},[]);
   useEffect(()=>{setSettings(false);setWorks(false);setMode(false);setSteer("");},[user?.email,port.sessionId]);
   function chooseFiles(){if(!user){openAuth("sign-in");return;}files.current?.click();}
@@ -34,7 +42,7 @@ export function CreationComposer({port}:{port:CreationWorkbenchPort}){
       <div className={styles.composerToolbar}>
         <div className={styles.toolbarLeft}>
           <div className={styles.relative}><button type="button" className={styles.agentMode} aria-expanded={mode} onClick={()=>setMode(!mode)}><Waves/><span>Agent 模式</span><ChevronDown/></button>{mode&&<div className={styles.modeMenu}><button type="button" onClick={()=>setMode(false)}>Agent 模式</button>{can("generate")&&<button type="button" onClick={()=>{const query=new URLSearchParams({prompt:port.text});const reference=port.refs.find(url=>agentMediaUrl(url));if(reference)query.set("src",reference);router.push("/generate?"+query);}}>直接生成</button>}</div>}</div>
-          <button type="button" aria-label="创作设置" aria-expanded={settings} onClick={()=>setSettings(!settings)}><SlidersHorizontal/><span className={styles.settingsLabel}>创作设置</span></button>
+          <button type="button" aria-label="创作设置" aria-expanded={settings} onMouseEnter={()=>{if(ready)prefetchSettings();}} onFocus={()=>{if(ready)prefetchSettings();}} onClick={()=>setSettings(!settings)}><SlidersHorizontal/><span className={styles.settingsLabel}>创作设置</span></button>
           <SkillBook compact selected={port.skill} onSelect={port.setSkill} accountKey={user?.email||""} busy={disabled} sessionId={port.sessionId} hasConversation={port.messages.some(m=>m.role==="assistant"&&!m.pending&&!!m.content)} onUse={prompt=>{if(!port.text.trim())port.setText(prompt);text.current?.focus();}}/>
           {can("works")&&<button type="button" aria-label="从作品选图" disabled={disabled} onClick={()=>{if(!user)openAuth("sign-in");else setWorks(true);}}><Images/></button>}
         </div>
