@@ -190,7 +190,7 @@ fixture扩展独立KIE motion模型，仅uiModels启用，单图/单视频/无�
 
 放大预览原截图虽有 loadeddata/videoWidth，但取图时 Chrome 尚未呈现视频帧，不能作为视觉通过。补充原始彩条素材像素比例断言，放大首次暂停画面和实际播放/暂停后都必须呈现彩色像素，最终截图已人工查看。完整原画布脚本 PASS：checkpoint-c/canvas-browser-6ed92695-b63a-47fe-8c7f-4da6451718cd/result.json，expandedPreviewActualColoredPixelsBeforeAndAfterPlayback=true；session19702 exit0，无产品播放器改动。
 
-固定上游制作规则重新核对：IC video-single-shot/video-multi-shot/video-extension/video-editing/script/audio 中还有更细的单镜头职责、多镜头时间线/效果清单/密度与叙事弧、分镜拼图面板保留、逐字剧本切片/正式资产与持续性变体、默认硬切及同机位三类例外、前传语义、四种编辑变化/保持条款、音色样本与最终朗读的独立职责。当前 production-prompt.ts 只覆盖通用规则，完整规则融合与相应行为验收仍未完成，不能凭 scripted Agent 用例宣称 V12—V14 全部通过。
+固定上游制作规则重新核对：参考实现的 video-single-shot/video-multi-shot/video-extension/video-editing/script/audio 中还有更细的单镜头职责、多镜头时间线/效果清单/密度与叙事弧、分镜拼图面板保留、逐字剧本切片/正式资产与持续性变体、默认硬切及同机位三类例外、前传语义、四种编辑变化/保持条款、音色样本与最终朗读的独立职责。当前 production-prompt.ts 只覆盖通用规则，完整规则融合与相应行为验收仍未完成，不能凭 scripted Agent 用例宣称 V12—V14 全部通过。
 
 完整 C 仍缺两窗口修改冲突、项目切换/复制/撤销/锁定/缩放/批量工作流、图片回归及上述规则；D 保持未完成。本批本机 fixture 都由 finally 停止，未连接103、持发布锁或发布。最新 fetch main 已从56e5480推进到3ab2418（新增画布性能/文字撤销/层级绘制等），准备在独立分支保存本批后整合，不覆盖共享checkout。
 
@@ -198,7 +198,7 @@ fixture扩展独立KIE motion模型，仅uiModels启用，单图/单视频/无�
 
 第六批测试已保存5ceb29f；将最新origin/main3ab2418整合到独立分支，合并SHA1eba865，只有canvas-client import区冲突，保留视频全部imports与CanvasPerformanceProbe，未切换/覆盖共享checkout。npm ci完成721包（新增主线fake-indexeddb）；合并后完整TypeScript、verify-canvas-render-layer-order和verify-canvas-text-edit-history均PASS。合并后原Chrome设置/视频生成/首帧/播放/真实下载/实际彩色预览/只读/390px/英文回归PASS：canvas-browser-2494ea71-055f-4698-92a8-45997fe13329/result.json，session9128 exit0。
 
-制作规则按固定IC的script/single-shot/multi-shot/extension/editing/audio细化，实际代码为src/lib/video/production-prompt.ts，范围及限制见[制作规则记录](2026-10-14-canvas-video-production-rules.md)。真实Agent供应商正常system消息已包含硬切、同机位例外、正式替换图片、拼图顺序及音色职责；更新后的完整Agent浏览器恢复用例PASS：agent-browser-bf739115-8044-48b0-bc9b-d6ddf5c03530/result.json，包含sourceAdaptedProductionRulesInActualModelSystem=true。首次合并回归把workflow查询返回数组顺序当镜头顺序导致对白断言错，改按规划的真实节点ID核对；未修改产品顺序或对白。
+制作规则按外部参考实现的script/single-shot/multi-shot/extension/editing/audio细化，实际代码为src/lib/video/production-prompt.ts，范围及限制见[制作规则记录](2026-10-14-canvas-video-production-rules.md)。真实Agent供应商正常system消息已包含硬切、同机位例外、正式替换图片、拼图顺序及音色职责；更新后的完整Agent浏览器恢复用例PASS：agent-browser-bf739115-8044-48b0-bc9b-d6ddf5c03530/result.json，包含sourceAdaptedProductionRulesInActualModelSystem=true。首次合并回归把workflow查询返回数组顺序当镜头顺序导致对白断言错，改按规划的真实节点ID核对；未修改产品顺序或对白。
 
 新增verify-video-fusion-canvas-interactions.ts/.mjs：真实两窗口同时编辑，第二窗口409仍保留完整草稿且不覆盖已保存对白；真实右键复制节点→页面导航到另一项目→粘贴，配置与有序正式引用完整复制；实际GUI撤销/重做同一副本身份；源项目仍一节点，目标项目原节点内容保持。真实锁定后textarea只读、拖动坐标不变、设置/生成禁用；解锁后实际鼠标调整宽高，完整对白/引用不变且刷新保留。最后换原生Cookie到账号B并访问B本人项目，不能粘贴A节点，读取A节点404，UI只显示B节点；无生成任务/供应商创建/pageerror。
 

@@ -16,7 +16,7 @@ export function buildTFRouterCreate(context:VideoWireContext):VideoWireRequest{
       if(refs.last)metadata.image_tail=refs.last;
     }
   }else if(profile==="tfrouter-grok"){
-    if(input.references.length)unsupportedWire(context,"此TF Grok元数据未声明媒体输入字段");
+    if(input.references.length)unsupportedWire(context,"此TF-router Grok元数据未声明媒体输入字段");
     metadata={aspectRatio:input.aspectRatio,...options};
   }else{
     const references=input.references.map(ref=>({role:["first_frame","last_frame"].includes(ref.role)?ref.role:`reference_${ref.kind}`,type:`${ref.kind}_url`,[`${ref.kind}_url`]:{url:ref.url}}));

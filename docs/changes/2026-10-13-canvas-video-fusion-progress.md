@@ -30,7 +30,7 @@
 
 2026-10-17本轮先刷新main至e997b29，与独立任务分支一致。当前33/34应用审核、50份注册证据：S02稳定生图/Agent/Windows与模拟Mac交互保护闭合，原站对照与整分支审阅通过（保留来源限制）。最终普通/桌面/企业Linux镜像构建和启动检查通过，固定production App在隔离Linux中完成任务/冻结/多结果保护。S01最终兼容、回滚、103发布和线上验收仍未完成；首次103只读SSH握手失败，未运行远端脚本或持锁。详见[最新整合复核](2026-10-17-canvas-video-integrated-review.md)。下文为阶段历史。
 
-2026-10-17最新：普通快进保留主线2d3e2ee全部整合。原IC前端/Go六段隔离生成对照实际通过，修复Omni视频编辑误套静音约束、时长类型及双图比例；当前主线四profile六个完整应用用例、拼图和四段连续链集中回归通过，V12/V13闭合，45份证据、32/34应用审核。新整合分支审阅重新pending，旧审阅只适用于其源码范围。6689普通/桌面/企业Linux镜像已成功构建并补实际启动/version/UID/匿名拒绝/媒体运行时检查，但已落后主线，不能直接发布。S01/S02、最终候选完整运行/兼容回滚、103发布保持未完成；新一轮稳定生图浏览器保护回归进行中，无SSH、无部署锁。详见[Omni对照](2026-10-17-canvas-video-omni-parity.md)及[候选构建](2026-10-13-canvas-video-fusion-release.md)。下文30/34与43份为历史阶段。
+2026-10-17最新：普通快进保留主线2d3e2ee全部整合。原参考前端/Go六段隔离生成对照实际通过，修复Omni视频编辑误套静音约束、时长类型及双图比例；当前主线四profile六个完整应用用例、拼图和四段连续链集中回归通过，V12/V13闭合，45份证据、32/34应用审核。新整合分支审阅重新pending，旧审阅只适用于其源码范围。6689普通/桌面/企业Linux镜像已成功构建并补实际启动/version/UID/匿名拒绝/媒体运行时检查，但已落后主线，不能直接发布。S01/S02、最终候选完整运行/兼容回滚、103发布保持未完成；新一轮稳定生图浏览器保护回归进行中，无SSH、无部署锁。详见[Omni对照](2026-10-17-canvas-video-omni-parity.md)及[候选构建](2026-10-13-canvas-video-fusion-release.md)。下文30/34与43份为历史阶段。
 
 2026-10-14后续整分支复核已闭合：四项首次发现及Gemini三项恢复补审问题都已处理，现代/原生/重复URI实际App/Worker/PG/私有媒体/旧清单/一次结算通过；四尺寸生图、Agent三尺寸及桌面工作台/API/共享入口通过。最新注册43份，完整应用逐项审核仍30/34；上游比较最终审核、S01/S02最终候选保护、Linux固定运行/兼容回滚与103发布交接保持未完成。没有本批SSH或部署锁。详见[整分支复核](2026-10-14-canvas-video-whole-branch-review.md)，下文41/39份等为此前阶段记录。
 
@@ -64,13 +64,13 @@ CI日志已通过GitHub连接器取得：定位积分镜像并发回写旧本金
 
 剧本正式资产链已补齐并集中PASS（7089 exit0）：完整原稿/逐字连续片段、原稿SHA及角色、可编辑镜头正文、参数不被工具改写、重放不覆盖用户编辑、拒绝分支无写入/费用；真实Ark三片段及原始两格拼图reference，KIE结构化multi_prompt/工作流冻结保留画面说明和对白；Chrome新文字事件/刷新、原图不遮挡及6节点实际范围通过。证据script-ce0e7019/script-multishot-096de602/agent-sse-beb5062a，详见script-assets模块。最新main f673ec0仅文档待整合。95b Image gateway终态failure在Billing admin browser acceptance，日志EOF、annotations PAT403，不能称整条CI通过；完整C/D/34项及103发布仍未完成。
 
-固定上游实操补证：IC v0.8.1及TF ae9e5f均在独立loopback启动并实际操作。TF原创4秒视频播放、音轨提取、1—3秒裁剪、尾帧、音视频分离及刷新恢复已执行，FFprobe/原SHA核对；IC同素材播放/放大及摄影开关启用已观察。comparison.json逐项记录V01—V24，明确部分观察/尚未实操，不当完整通过矩阵；Task14仍进行中。95b43c5已普通合入主线，Docker38508694578 success；Image gateway计费及模型执行已pass但整条仍待终态。完整C/D/34项和103发布保持未完成，详见demo-comparison。
+固定上游实操补证：两个外部参考实现均在独立loopback启动并实际操作。其中一个的原创4秒视频播放、音轨提取、1—3秒裁剪、尾帧、音视频分离及刷新恢复已执行，FFprobe/原SHA核对；另一个同素材播放/放大及摄影开关启用已观察。对比清单（已随来源标注清理移除）当时逐项记录V01—V24，明确部分观察/尚未实操，不当完整通过矩阵；Task14仍进行中。95b43c5已普通合入主线，Docker38508694578 success；Image gateway计费及模型执行已pass但整条仍待终态。完整C/D/34项和103发布保持未完成，详见demo-comparison。
 
 主线9245608整合后复核：保留员工工作台外部跳转，页面直接return redirect使桌面动态页面仍具有有效React返回类型；生图GUI fixture使用本机Canvas入口覆盖原完整测试，避免跳转47。TypeScript通过，稳定生图集中验收77057 exit0（1440/390px、透明像素、蒙版、普通节点、刷新/双击幂等、免费转换、JSONL ZIP，8次fixture调用/外部付费0）。混合布局404a623已完成，主线整合c6139a1待本批增量推送；完整C/D和103发布仍未完成。
 
 最新混合画布修复：历史发送持久布局，原图片/文字/视频不被新节点遮挡；媒体权限表探测按当前search_path一致；初始化缓存过期仅重读当前账号GET，不接纳旧响应、不重提生成。真实后台history-assets-df3f5fef及GUI workbench-0ada8bd9通过，6节点实际DOM无重叠且适应视图后全部在画布范围内，截图已查看；原3类内容/位置、SHA、完整历史/重放/费用保持。当前工作树生图1440/390px全GUI保护再PASS（28824，8次fixture图像调用、外部付费0），详见mixed-layout模块记录。最新main9245608的员工工作台交接入口需保留整合及受影响入口复核；完整C/D/34项与103发布仍未完成。
 
-最新保护与演示观察：当前源码实际imagegen GUI桌面/390px、蒙版/透明像素/普通节点/刷新幂等/免费格式处理/JSONL ZIP PASS（56300 exit0，8次fixture图像调用、外部付费0）；合法单图节点锁定前可生成、锁定后禁用及原两窗口/复制撤销/尺寸/账号隔离PASS f66e292f（62441 exit0）。全新本任务loopback DB从零18组billing-all再PASS（88019 exit0）。26520ca固定Docker构建success，远端Image gateway仍billing步骤失败且具体日志TLS EOF，诊断性rerun被PAT权限拒绝，未实际重跑；不能称整条CI通过。IC候选在线站v0.12.0已实际操作工作台参数/建画布/视频节点/完整文字，但指向另一仓库且commit未知；TF模型平台验证码未解，固定本地上游对照继续，见demo-comparison记录。完整C/D/34项和103发布仍未完成，整体约70%为18任务阶段估计。
+最新保护与演示观察：当前源码实际imagegen GUI桌面/390px、蒙版/透明像素/普通节点/刷新幂等/免费格式处理/JSONL ZIP PASS（56300 exit0，8次fixture图像调用、外部付费0）；合法单图节点锁定前可生成、锁定后禁用及原两窗口/复制撤销/尺寸/账号隔离PASS f66e292f（62441 exit0）。全新本任务loopback DB从零18组billing-all再PASS（88019 exit0）。26520ca固定Docker构建success，远端Image gateway仍billing步骤失败且具体日志TLS EOF，诊断性rerun被PAT权限拒绝，未实际重跑；不能称整条CI通过。一个外部参考的候选在线站v0.12.0已实际操作工作台参数/建画布/视频节点/完整文字，但指向另一仓库且commit未知；另一参考的模型平台验证码未解，固定本地上游对照继续，见demo-comparison记录。完整C/D/34项和103发布仍未完成，整体约70%为18任务阶段估计。
 
 最新BYOC/媒体GUI集中证据：真实Chrome选择工作流及三类引用/映射、完整多行文字/种子0/数值/声音false保存刷新恢复、模拟ComfyUI三类真实产物与0积分、原始彩条播放器、尾帧/音轨/分离/2秒裁剪、刷新同任务无重复创建均PASS，证据byoc-browser-6064d70f，详见界面记录。5fd8196完整Docker构建success，Image gateway模型执行阶段失败，本机同命令复现Agent fixture缺真实会话cookie的401，权限校验保持；正在补原生身份与未登录不调用供应商检查。2026-10-14 01:33:46 UTC只读103两锁无持有进程，本轮未正式部署。完整C/D/34项仍未完成。
 
@@ -104,8 +104,8 @@ CI日志已通过GitHub连接器取得：定位积分镜像并发回写旧本金
 | 规范能力/引用 | 完成 | 检查点 A 通过 | Task2；10模式、角色/顺序/实际时长及 false/0/omit，C仍需UI验收 |
 | 后台/资料/公开目录 | 完成 | 检查点 A及合并回归通过 | Task3；管理员优先、独立上游修订、发布冻结；保留生图配置 |
 | wire/素材提交 | 完成 | 检查点 A 通过 | Task4；授权实际私有字节/签名、wire严格响应，B真实探测/完整产物补齐 |
-| IC协议分支 | 完成 | 24个原生HTTP组合通过 | Task5；协议模拟验收，真实供应商视频质量/额度尚未验收 |
-| TokenDance/TF/Compshare | 完成 | 27个原生HTTP组合通过 | Task6；协议模拟验收，TF大inline/ModelVerse多视频在B通过 |
+| 参考协议分支 | 完成 | 24个原生HTTP组合通过 | Task5；协议模拟验收，真实供应商视频质量/额度尚未验收 |
+| TokenDance/TF-router/Compshare | 完成 | 27个原生HTTP组合通过 | Task6；协议模拟验收，TF-router大inline/ModelVerse多视频在B通过 |
 | 视频工作流 | 完成后台 | 检查点 A/B 通过 | Task7；A→B/C依赖、停止/报价、AutoDL/RunningHub/BYOC持久入口；C待UI |
 | 节点/项目 | 完成后台 | 检查点 A通过 | Task8；revision、复制/恢复/跨账号、事务预扣与生成关联；C待UI |
 | 持久任务/取消/计费 | 完成后台 | 检查点 A/B及合并回归通过 | Task9；未知创建不重提、冻结报价/恢复/完整重试/幂等结算、BYOC0积分 |
@@ -128,7 +128,7 @@ CI日志已通过GitHub连接器取得：定位积分镜像并发回写旧本金
 
 Task3实现记录（尚未功能验收）：
 
-- 供应商视频资料使用独立当前表和修订表；采集只读取显式能力定义或TF结构化声明，不凭模型名猜能力，不覆盖管理配置或客户积分价。来源URL去掉认证查询参数，认证参数不能进入能力选项。
+- 供应商视频资料使用独立当前表和修订表；采集只读取显式能力定义或TF-router结构化声明，不凭模型名猜能力，不覆盖管理配置或客户积分价。来源URL去掉认证查询参数，认证参数不能进入能力选项。
 - 模型版本发布事务内冻结视频默认定义、每字段来源、wire profile和供应商修订；公开目录和执行解析共享这一绑定。管理员false、0、null继续优先。旧配置不注入视频默认字段，旧digest兼容脚本归入A。升级前已有任务的冻结兼容在Task9落实。
 - 完整配置中心和常用模型管理添加视频编辑；常用管理保存沿用原操作ID、draft/发布、版本冲突及待核对流程。通道必须完整且不能重复或越权；图片仍保留32参考上限，视频专属上限128与通用声明须一致。
 - fixture seed加入真实加密凭据、公开/禁用视频模型和积分计费开关；每次App/Worker验收使用独立DB schema，避免沿用上次供应商URL。严格要求另外提供loopback的隔离Router管理地址和fixture凭据，不用正式Router，也不模拟Naumi内部API。该测试基础设施尚未启动。
@@ -142,7 +142,7 @@ Task4共享层记录（尚未功能验收）：引用解析核对artworkId、sto
 Task5初版实现记录（尚未运行验收）：
 
 - 新增6个协议模块与统一wire适配器；显式videoProfile才使用新分支，旧无profile任务继续原适配器。Grok2API、CogVideoX3、Agnes帧数与Agnes2.5独立配置，Kling2.6与3.0分开；Omni text/image/reference/transformation使用各自字段与数量限制，超量明确拒绝，未沿用上游slice截断。
-- Ark content角色、generate_audio、水印、seed=0/camera_fixed=false保留；Gemini依据固定IC源码使用inlineData原始图片字节和operation路径；MiniMax/METASO使用H3的content和v2创建/查询，不混用Hailuo v1。KIE3/Omni按固定Go翻译器对应multi_shots/kling_elements/elements及定制/智能分镜字段；API Mart分镜index与元素字段、Omni video_list和运动orientation分开。
+- Ark content角色、generate_audio、水印、seed=0/camera_fixed=false保留；Gemini依据参考实现源码使用inlineData原始图片字节和operation路径；MiniMax/METASO使用H3的content和v2创建/查询，不混用Hailuo v1。KIE3/Omni按参考Go翻译器对应multi_shots/kling_elements/elements及定制/智能分镜字段；API Mart分镜index与元素字段、Omni video_list和运动orientation分开。
 - 请求沿用域名/DNS固定与凭据保护，只有创建计入供应商费用观察；响应有明确状态/产物字段，缺ID保留创建结果未知，未知轮询/缺视频继续重试。下载当前拒绝重定向且凭据仅给本来源；完整安全重定向和流式媒体核验在Task10落实。停止204空响应已处理。
 - API参数格式HTTP用例覆盖24种组合，模拟端校验独立预期endpoint/模型和轮询路径，下载真实可播放fixture；媒体multipart记录收到的字节SHA。错误、无产物和回显URL不当结果已写断言。以上用例未运行，不能视为供应商或应用E2E通过。
 - profile加入幂等配置指纹；管理版任务仍按已有规则不自动重提不确定付费创建。Task9将完整请求、元素/分镜、false/省略、预扣前wire校验与恢复接通；Task10将真实时长、安全媒体处理和失败保存恢复接通。共享层提交107ad33。
@@ -151,9 +151,9 @@ Task5初版实现记录（尚未运行验收）：
 Task6实现记录（尚未功能验收）：
 
 - TokenDance保留seedance:generations、Kling text/image/motion/omni、Wan3、HappyHorse、MiniMax八种gateway协议，创建ID带协议前缀，轮询只能使用冻结的同一分支；模型选择取实际本次wireModel，不取供应商默认模型。source原本按名称猜路由的部分改为显式wireProfile。
-- tfRouter保留原生video/generateVideo和POST video/getVideoStatus(taskICode)，普通、Kling、Omni、Grok各自元数据。规范角色中的last_frame不被一图索引改成first_frame。TF源码Grok分支没有媒体字段，新实现拒绝带媒体而不是静默丢掉；该源码限制需要在演示对比里记录。TF明确base64结果有独立类型，较大JSON安全上限仍待媒体模块。
+- tfRouter保留原生video/generateVideo和POST video/getVideoStatus(taskICode)，普通、Kling、Omni、Grok各自元数据。规范角色中的last_frame不被一图索引改成first_frame。其源码Grok分支没有媒体字段，新实现拒绝带媒体而不是静默丢掉；该源码限制需要在演示对比里记录。该协议明确base64结果有独立类型，较大JSON安全上限仍待媒体模块。
 - Compshare H3与ModelVerse凭据/地址按独立供应商配置冻结；Hailuo原始字节首帧、Vidu文/图/首尾/参考、extend尾帧、lip-sync音频或文字、Wan、Seedance分别构造。ModelVerse所有输出URL保留在resultAssets，当前service完整保存/恢复仍待Task9/10，不以单URL下载初版声称多结果端到端完成。
-- 新协议进入配置schema/适配器注册与常用后台来源选择；注册模态按真实协议分类，视频可编辑专属定义与Profile。TF已声明的/v1/models?type=video目录进入真实采集。TokenDance/Compshare未确认标准目录端点，保留unsupported，不编造目录API；可在完整配置中心按已确认源码/供应商资料配置实际模型，独立资料来源记录继续保留。供应商刷新不覆盖手工配置。
+- 新协议进入配置schema/适配器注册与常用后台来源选择；注册模态按真实协议分类，视频可编辑专属定义与Profile。TF-router已声明的/v1/models?type=video目录进入真实采集。TokenDance/Compshare未确认标准目录端点，保留unsupported，不编造目录API；可在完整配置中心按已确认源码/供应商资料配置实际模型，独立资料来源记录继续保留。供应商刷新不覆盖手工配置。
 - 修正供应商级手工videoProfile也优先于vendor Profile，并计入来源；显式Profile与协议不匹配时发布拒绝。补API Mart运动控制单值image_url/video_url和Omni video_list原始音轨字段。Kling2.6限制5/10秒，测试请求不再沿用通用4秒，避免模拟接口掩盖实际字段限制。
 - 原始素材扩充到28份，新增5/6/10秒横/竖/方形，FFprobe/SHA清单及assets-expanded.log记录完成；这是素材准备，不是功能测试。27种新协议HTTP组合和多输出下载断言已写，仍在A集中运行。
 - 用户追加分阶段合并授权：A/B/C等大模块验收通过后先合入主线，持续刷新并解决冲突，不等整轮结束。未验收代码留任务分支；完整D交付和上线前全分支复核保持。再次fetch后origin/main仍3f1aa4a；Task5初版b669410已推送。本轮无新服务器连接或部署、无付费供应商调用。
@@ -173,7 +173,7 @@ Task9初版记录：统一提交先规范完整输入/素材权限、文字来�
 
 节点Task8提交1cf261a；最新main12105eb的账号授权/桌面分支已先同步到视频分支，新增视频节点generate复用video+canvas门槛。新增检查点A任务脚本（并发唯一提交、长提示词/false冻结、真实预扣队列取消、未知创建不重提、终态不重复结算、完整重试和自备工作流持久0积分），fixture队列准备调用实际DB预扣函数，不mock站内API。所有功能脚本、类型检查和构建仍未运行，阶段验收未通过、未回合main、未上线。下一步完成隔离测试环境并集中执行A，修复集中发现的问题后分批合并。
 
-检查点A已开始集中运行：原生规范contract通过，24个IC协议HTTP组合和27个TokenDance/TF/Compshare组合通过，下载使用原始可播放素材；完整TypeScript检查通过（初轮7类问题集中修复，包括脚本CJS入口、JS参数类型、管理发布原因分支、规范JSON类型、header类型及KIE处理中空resultJson）。这些不等于真实供应商质量/额度通过。已通过真实App私有媒体/跨账号隔离fixture与8个私有媒体引用实际签名读取、未经授权不预扣；配置优先/发布冻结/旧digest初轮通过。节点、工作流、任务/停止/计费完整检查仍在进行，没有宣布A完成或视频分支已回合main。
+检查点A已开始集中运行：原生规范contract通过，24个参考协议HTTP组合和27个TokenDance/TF-router/Compshare组合通过，下载使用原始可播放素材；完整TypeScript检查通过（初轮7类问题集中修复，包括脚本CJS入口、JS参数类型、管理发布原因分支、规范JSON类型、header类型及KIE处理中空resultJson）。这些不等于真实供应商质量/额度通过。已通过真实App私有媒体/跨账号隔离fixture与8个私有媒体引用实际签名读取、未经授权不预扣；配置优先/发布冻结/旧digest初轮通过。节点、工作流、任务/停止/计费完整检查仍在进行，没有宣布A完成或视频分支已回合main。
 
 隔离环境证据：103新建独立naumi-video-fixture-db-20261013容器，owner label=canvas-video-fusion-20261013，数据库naumi_video_fixture_20261013含public owner guard，只绑127.0.0.1:14732；Windows受保护临时目录存DPAPI fixture密码，SSH密码仅进stdin内存，loopback隧道本任务PID14868/57301。实际Router使用固定b3fc8dd源码本机Go1.26.4编译，SHA cb4bc506d7dc30a115d6c4bde0dec9669a906f6192da1bb963ece5339d2e39b0；每个App fixture独立Router进程/加密状态/密钥和回调本站真实capacity接口，未mock本站API。每轮独立DB schema与App/Worker，结束清理本轮进程树，不杀其他Node进程。未连接正式DB/Router，未修改正式配置/媒体或部署；只读锁内观察正式App已被同事更新到Image0cce99f4…，空间43%/66GiB，最终发布基线必须刷新。
 
@@ -185,7 +185,7 @@ A补充：节点验收通过，包括创建/位置更新/复制/软删除恢复/
 
 A最新通过项：任务脚本已实际验证同operation并发只创建一次、长提示词/false完整冻结、可靠未提交取消从不发供应商请求、完成不重复结算、已接单断线needs_attention保持并在App真实重启后不重提、失败原配置完整新任务重试，以及BYOC真实队列/历史/媒体保存0积分。AutoDL/RunningHub真实App→Worker→原生供应商HTTP→私有媒体/结果完整入口通过，使用所选workflowId，manifest加密冻结。上游取消支持/明确405不支持的边界补验正在运行；51个原生wire检查和配置/节点/依赖链已通过，A收尾后按用户要求先合回main。
 
-检查点A收尾通过：24个IC/27个新协议HTTP组合、contract、配置优先与发布冻结/旧digest/错误vendor协议拒绝、真实私有媒体fixture、8参考素材读取、节点持久化/复制/恢复/真实事务回滚、A→B/C依赖与重复恢复、完整任务并发/重启/取消/结算/BYOC0，以及AutoDL/RunningHub真实App/Worker工作流均通过。支持取消的Ark实际DELETE后轮询确认取消并释放预扣；明确405不支持取消的上游继续完成并结算，支持标志为false，不重发停止请求。最终完整TypeScript检查通过。结果核验/全产物保存与媒体处理仍在B、画布/Agent在C、完整34矩阵/演示/构建/线上交付在D；真实视频供应商质量和额度未验收。
+检查点A收尾通过：24个参考协议/27个新协议HTTP组合、contract、配置优先与发布冻结/旧digest/错误vendor协议拒绝、真实私有媒体fixture、8参考素材读取、节点持久化/复制/恢复/真实事务回滚、A→B/C依赖与重复恢复、完整任务并发/重启/取消/结算/BYOC0，以及AutoDL/RunningHub真实App/Worker工作流均通过。支持取消的Ark实际DELETE后轮询确认取消并释放预扣；明确405不支持取消的上游继续完成并结算，支持标志为false，不重发停止请求。最终完整TypeScript检查通过。结果核验/全产物保存与媒体处理仍在B、画布/Agent在C、完整34矩阵/演示/构建/线上交付在D；真实视频供应商质量和额度未验收。
 
 按用户要求准备首批合回main：再次fetch发现主线已到7b4c970，新增生图能力、folio预览和企业组织功能；本任务先保存A修复，再整合新主线并做受影响的合并验收，保护新功能与已发布版本。不能用之前12105eb或ee351d9覆盖最新代码；没有新部署。
 

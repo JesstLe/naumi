@@ -28,7 +28,7 @@
 
 ## 第八批：已声明视频参考的实际续写/编辑路径
 
-核查确认实际差异：此前extend_video/edit_video只接受专用extend/video_edit模式，而IC部分续写、前传及编辑使用正式视频参考与提示词表达意图。现在保留节点或工作台明确保存的reference模式，要求存在kind=video/role=source_video正式引用，并从真实公开目录读取该模型definition.modes明确含reference、limits.videos为已维护正数。没有视频、只有图片、视频角色未指定来源、数量明确0或未知时拒绝。后续真实生成API继续检查本人资产、真实完成状态、完整输入限制、revision和冻结配置；没有改为text模式、没有根据名称猜能力或放宽源媒体权限。既有专用模式继续由原服务契约验证。
+核查确认实际差异：此前extend_video/edit_video只接受专用extend/video_edit模式，而参考实现部分续写、前传及编辑使用正式视频参考与提示词表达意图。现在保留节点或工作台明确保存的reference模式，要求存在kind=video/role=source_video正式引用，并从真实公开目录读取该模型definition.modes明确含reference、limits.videos为已维护正数。没有视频、只有图片、视频角色未指定来源、数量明确0或未知时拒绝。后续真实生成API继续检查本人资产、真实完成状态、完整输入限制、revision和冻结配置；没有改为text模式、没有根据名称猜能力或放宽源媒体权限。既有专用模式继续由原服务契约验证。
 
 恢复原操作先查询持久任务，再验证新提交模式；已有工作台操作不因当前目录改变而重新创建。视频源码不接受模型提供的伪造完成状态、占位媒体或隐式模式转换。托管公开模型保持相同public model ID与现有managed-video目录别名匹配规则。
 

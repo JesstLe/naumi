@@ -33,3 +33,14 @@
 
 - git 历史旧提交仍含这些文件；按现行规则不改写历史、不强推。如需彻底清除历史需另行专项任务。
 - 若相关代码确为外部许可证衍生，对外分发时按许可证要求保留声明；根 LICENSE 是否调整由用户决定。
+
+## 二次补扫（同日）
+
+再检查一轮，处理大小写变体与缩写残留（base d00eac99，分支 codex/attribution-sweep2-20261111）：
+
+- `docs/changes/2026-10-13-canvas-video-fusion-progress.md`（11 处）：裸 "IC"/"TF" 缩写、"TF ae9e5f" 截断哈希、comparison.json 引用全部改为"外部参考实现/参考协议/对比清单（已移除）"表述；功能性协议名统一展开为 "TF-router"。
+- `docs/changes/2026-10-14-canvas-video-interface.md`（2 处）、`2026-10-14-canvas-video-production-rules.md`（1 处）：裸 "IC" 改"（外部）参考实现"。
+- `src/lib/video/providers/protocols/minimax.ts`：注释 "// IC MiniMax-H3/METASO protocol" 去掉 IC 前缀。
+- `src/lib/video/providers/protocols/tfrouter.ts`：错误消息中裸 "TF" 展开为 "TF-router"（功能性协议名，非来源标识）。
+
+补扫后验证：核心标识（tigerowo/infinite-canvas/HBAI-Ltd/toonflow/两哈希/开源来源）仅剩功能性网关地址 1 处；裸 "IC"/"TF" 命中均为功能性保留项（TF-router 协议名、IC-Light 无关模型）。两个协议文件 esbuild 语法通过。仍为本地静态核验，不触发发布。
