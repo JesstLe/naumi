@@ -73,5 +73,5 @@ export function useCanvasHistory(input: Input) {
     consumePending:(id:string)=>owner.consumePending(scope,id),
     discard:owner.discard,submit:(target:typeof scope,prepare:()=>CanvasHistoryAction|null,record=true)=>owner.submit(target,prepare,record),undoStack:lists.undo,redoStack:lists.redo,pushUndo,historySaving:owner.busy.current,historyBusyRef:owner.busy,
     setHistorySaving:owner.setBusy,applyHistory:(action: CanvasHistoryAction,undo: boolean,revision?:number) => owner.apply(scope,action,undo,revision),
-    doUndo:() => owner.step(scope,true),doRedo:() => owner.step(scope,false),historyCurrent:scope.viewCurrent};
+    retry:()=>owner.retry(scope),doUndo:() => owner.step(scope,true),doRedo:() => owner.step(scope,false),historyCurrent:scope.viewCurrent};
 }

@@ -1,4 +1,5 @@
 "use client";
+import {FeatureImageResolution} from '@/components/tools/feature-image-resolution';
 import {useFeatureBilling} from "@/lib/billing/preview";
 
 import * as React from "react";
@@ -11,25 +12,16 @@ import { authHeader } from "@/lib/supabase";
 const ACCENT = "#2E7CF6"; // 图像处理(蓝)
 
 export function UpscaleClient() {
-  const billing=useFeatureBilling("tool.upscale",{});
+  const [resolution,setResolution]=React.useState("1K");
+  const billing=useFeatureBilling("tool.upscale",{resolution});
   const { user } = useAuth();
   const { locale } = useI18n();
   const L = (z: string, e: string) => (locale === "en" ? e : z);
-  const [scale, setScale] = React.useState("2x");
   const [direction, setDirection] = React.useState("通用");
 
   const controls = (
     <>
-      <ToolChips
-        label={L("放大倍数", "Scale")}
-        options={[
-          { value: "2x", label: "2x" },
-          { value: "4x", label: "4x" },
-        ]}
-        value={scale}
-        onChange={setScale}
-        accent={ACCENT}
-      />
+      <FeatureImageResolution feature="tool.upscale" value={resolution} onChange={setResolution}/>
       <ToolChips
         label={L("增强方向", "Enhance for")}
         options={[
@@ -52,6 +44,7 @@ export function UpscaleClient() {
       tint="var(--c-tint-b)"
       accent={ACCENT}
       category="upscale"
+      resolution={resolution}
       regenLabel={L("以此图再放大", "Upscale from this image")}
       cost={billing.cost}
       action={L("高清修复", "Upscale")}
@@ -59,9 +52,8 @@ export function UpscaleClient() {
       onProcess={async (file) => {
         const fd = new FormData();
         fd.append("image", file);
-        fd.append("scale", scale === "4x" ? "4" : "2");
-        // 增强方向「人像」→ 开人脸修复;通用/商品 → 关。
-        fd.append("faceEnhance", direction === "人像" ? "1" : "0");
+        fd.append("resolution",resolution);
+        fd.append("direction",direction==="人像"?"portrait":direction==="商品"?"product":"general");
         if (user) fd.append("email", user.email);
         const res = await billing.submit("/api/upscale", {
           method: "POST",

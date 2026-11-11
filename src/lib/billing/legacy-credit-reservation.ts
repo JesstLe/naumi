@@ -40,7 +40,7 @@ export async function refundCredits(
   const context=currentSynchronousBilling();
   if(context?.operation){
     const {createBillingService,withBillingTransaction}=await import("@/lib/billing/service");
-    await withBillingTransaction(getPool(),tx=>createBillingService().settleTx(tx,context.operation!,{state:context.upstream==="rejected"||context.upstream==="unobserved"||context.feature==="tool.printfile"?"failed":"unknown",items:[]}));return;
+    await withBillingTransaction(getPool(),tx=>createBillingService().settleTx(tx,context.operation!,{state:context.upstream==="rejected"||context.upstream==="unobserved"?"failed":"unknown",items:[]}));return;
   }
   const meterOn = await creditMeteringEnabled();
   if (!meterOn) return;

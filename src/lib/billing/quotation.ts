@@ -60,9 +60,7 @@ export async function billingFactsForSelection(selection:QuoteSelection,input:Qu
     }else if(input.feature==="tool.cutout"){
         const config=await getCutoutSettings(),replicate=config.backend!=="openai"&&!!config.replicateToken;
         providerId=replicate?"replicate":"openai-images";model=replicate?config.replicateModel:config.openaiModel;
-    }else if(input.feature==="tool.upscale"){
-        providerId="replicate";model=process.env.REPLICATE_UPSCALE_MODEL||"nightmareai/real-esrgan";
-    }else if(!["tool.ipcheck","tool.printfile"].includes(input.feature)){
+    }else if(input.feature!=="tool.ipcheck"){
         if(input.feature!=="image.generate"&&input.feature!=="image.suite"&&input.feature!=="image.aplus")model=undefined;
         model=model||(input.feature==="image.generate"?await getUserDefaultImageModel(email):null)||(await getOpenAISettings()).model;
         if(input.feature==="image.generate"&&input.ratio&&isNewApiFlowImageModel(model))model=routeImageModel(model,input.ratio,await getImageModelCatalog(email));

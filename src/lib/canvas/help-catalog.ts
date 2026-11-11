@@ -33,6 +33,7 @@ export function canvasHelpSections(platform: HelpPlatform): HelpSection[] {
         { id: "marquee", label: text("框选工具", "Box select tool"), keys: [["M"]] },
         { id: "box-select", label: text("选择模式兼容 Shift 框选", "Shift box selection in select mode"), keys: [["Shift", "Drag"]] },
         { id: "multi-select", label: text("增选 / 取消选择", "Add / remove selection"), keys: [["Shift", "Click"]] },
+        { id: "save", label: text("保存画布", "Save canvas"), keys: [[mod, "S"]] },
         { id: "undo", label: text("撤销", "Undo"), keys: [[mod, "Z"]] },
         { id: "redo", label: text("重做", "Redo"), keys: platform === "mac" ? [["Shift", mod, "Z"]] : [[mod, "Y"]] },
         { id: "delete", label: text("删除选中节点或连线", "Delete selected nodes or edge"), keys: platform === "mac" ? [["⌫"], ["Fn", "⌫"]] : [["Delete"], ["Backspace"]] },

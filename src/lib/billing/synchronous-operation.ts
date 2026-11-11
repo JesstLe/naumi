@@ -154,7 +154,7 @@ export async function withSynchronousOperation(input:SynchronousOperation,action
                 if ((response.status>=200&&response.status<300) && !payload?.jobId && context.charge === undefined)
                     await settleSynchronous("工具完成");
                 else if (!(response.status>=200&&response.status<300) && context.charge === undefined) {
-                    const known = context.feature === "tool.printfile" || context.upstream === "rejected" || context.upstream === "unobserved";
+                    const known = context.upstream === "rejected" || context.upstream === "unobserved";
                     const failureCheckpoint = known ? synchronousFailureCheckpoint(response.status, payload) : undefined;
                     const settled = await withBillingTransaction(getPool(), async tx => {
                         // Failure receipt and final billing outcome commit together.

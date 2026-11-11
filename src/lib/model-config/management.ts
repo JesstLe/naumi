@@ -20,6 +20,7 @@ export const featureNames: Record<string, string> = {
   "tool.garment": "服装", "tool.avatar": "模特", "tool.dewrinkle": "去褶皱", "tool.dewatermark": "去水印",
   "tool.style": "风格", "tool.tryon": "试穿", "tool.retouch": "精修", "tool.recolor": "改色", "tool.replicate": "复刻",
   "tool.inpaint": "局部重绘", "tool.extract": "提取", "tool.garment3d": "服装 3D", "tool.packaging3d": "包装 3D",
+  "tool.upscale":"AI 变清晰", "tool.printfile":"印刷图",
 };
 export type ManagedModelRow = {
   parameterSources?:{id:string;model:string;protocol:string;provider:string;enabled?:boolean;nativeResolutions:string[];parameterMap:import("./types").UpstreamModel["parameterMap"]}[];
