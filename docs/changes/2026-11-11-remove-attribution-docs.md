@@ -33,3 +33,14 @@
 
 - git 历史旧提交仍含这些文件；按现行规则不改写历史、不强推。如需彻底清除历史需另行专项任务。
 - 若相关代码确为外部许可证衍生，对外分发时按许可证要求保留声明；根 LICENSE 是否调整由用户决定。
+
+## 二次补扫（同日）
+
+再检查一轮，处理大小写变体与缩写残留（base d00eac99，分支 codex/attribution-sweep2-20261111）：
+
+- `docs/changes/2026-10-13-canvas-video-fusion-progress.md`（11 处）：来源缩写、截断哈希与已删对比清单引用全部改为通用表述；功能性协议名统一展开为完整名。
+- `docs/changes/2026-10-14-canvas-video-interface.md`（2 处）、`2026-10-14-canvas-video-production-rules.md`（1 处）：来源缩写改"（外部）参考实现"。
+- `src/lib/video/providers/protocols/minimax.ts`：协议注释去掉来源前缀（保留 MiniMax-H3/METASO protocol）。
+- `src/lib/video/providers/protocols/tfrouter.ts`：错误消息中协议缩写展开为完整协议名（功能性协议名，非来源标识）。
+
+补扫后验证：核心标识词仅剩功能性网关地址 1 处；来源缩写命中均为功能性保留项（完整协议名、无关重打光模型）。两个协议文件 esbuild 语法通过。仍为本地静态核验，不触发发布。

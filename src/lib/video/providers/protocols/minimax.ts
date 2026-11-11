@@ -1,6 +1,6 @@
 import {createdResult,field,polled,rejectAdvanced,selectWireOptions,unsupportedWire,wireReferences} from "../wire-helpers";
 import type {VideoWireContext,VideoWireRequest,VideoWireCodec} from "../wire-contracts";
-// IC MiniMax-H3/METASO protocol, not the unrelated Hailuo v1 API. Frozen profiles keep that distinction.
+// MiniMax-H3/METASO protocol, not the unrelated Hailuo v1 API. Frozen profiles keep that distinction.
 export function buildMiniMaxCreate(context:VideoWireContext):VideoWireRequest{
   rejectAdvanced(context);const input=context.request,refs=wireReferences(context);
   if((refs.first||refs.last)&&(refs.images.length||refs.videos.length||refs.audios.length))unsupportedWire(context,"首尾帧不能与混合参考同时使用");

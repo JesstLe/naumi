@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
-import { ChevronDown, ChevronRight, Settings2 } from "lucide-react";
+import { AudioLines, Boxes, ChevronDown, ChevronRight, Clapperboard, ImageIcon, Settings2, Type } from "lucide-react";
 import type { ManagedModelRow } from "@/lib/model-config/management";
 import styles from "./model-mapping-card.module.css";
 import { orderedRoutes } from "./channel-display";
@@ -16,9 +16,9 @@ export type MappingAction = {
 
 const types: Record<string, string> = { image: "图片", text: "文字", video: "视频", audio: "声音" };
 
-export function ModelMappingHeader() {
-  return <div className={styles.tableHead} aria-hidden="true">
-    <span>前端显示名称</span><span>实际调用模型</span><span>应用范围</span><span>积分售价</span><span />
+export function ModelMappingHeader({workspace=false}:{workspace?:boolean}={}) {
+  return <div className={styles.tableHead} data-workspace={workspace} aria-hidden="true">
+    <span>{workspace?"模型":"前端显示名称"}</span><span>{workspace?"供应商与通道":"实际调用模型"}</span><span>应用范围</span><span>积分售价</span><span />
   </div>;
 }
 
@@ -40,6 +40,8 @@ export function ModelMappingCard({ row, actions, scopeDisabled, onScope, onManag
   const price = row.pricing?.[0];
   const priceKnown = price?.credits != null;
   const priceUnit = price?.unit === "image" ? "张" : price?.unit === "item" ? "项" : "次";
+  const ModalityIcon = ({image:ImageIcon,text:Type,video:Clapperboard,audio:AudioLines} as Record<string,typeof ImageIcon>)[row.modality] || Boxes;
+  const providerNames = [...new Set(enabled.map(route=>route.provider))];
   const RouteList = ({ routes }: { routes: ManagedModelRow["routes"] }) => <ul className={styles.routeList}>
     {routes.map((route, index) => {
       const policy = row.supplierRouting?.channels.find(channel => channel.upstreamId === route.upstreamId);
@@ -54,13 +56,11 @@ export function ModelMappingCard({ row, actions, scopeDisabled, onScope, onManag
   return <article className={styles.card} data-testid={`managed-model-${row.id}`} data-expanded={expanded} data-workspace={!!onManage}>
     <div className={styles.summary}>
       <div className={styles.identity}>
-        <span className={styles.modality}>{types[row.modality]}</span>
-        <h2>{row.label}</h2>
-        {row.publicIds.length > 1 && <small>{row.publicIds.length} 个比例分支</small>}
+        {onManage?<><span className={styles.modelIcon} aria-hidden="true"><ModalityIcon size={19}/></span><div className={styles.modelName}><h2><button type="button" className={styles.nameButton} onClick={onManage} aria-label={`打开 ${row.label} 详情`}>{row.label}</button></h2><span className={styles.modelMeta}>{types[row.modality]}{row.publicIds.length>1?` · ${row.publicIds.length} 个比例分支`:""}</span></div></>:<><span className={styles.modality}>{types[row.modality]}</span><h2>{row.label}</h2>{row.publicIds.length > 1 && <small>{row.publicIds.length} 个比例分支</small>}</>}
       </div>
       <div className={styles.actual}>
-        <span className={styles.mobileLabel}>实际调用模型</span>
-        {actualModels.length ? <><code title={actualModels.join(" / ")}>{actualModels[0]}</code>
+        <span className={styles.mobileLabel}>{onManage?"供应商与通道":"实际调用模型"}</span>
+        {actualModels.length ? <>{onManage&&<strong className={styles.providerName} title={providerNames.join(" / ")}>{providerNames[0]}{providerNames.length>1?` +${providerNames.length-1}`:""}</strong>}<code title={actualModels.join(" / ")}>{actualModels[0]}</code>
           <div className={styles.channelSummary}><span className={styles.enabledBadge}>{enabledChannels} 个启用通道</span>
             {actualModels.length > 1 && <span>另 {actualModels.length - 1} 个模型</span>}</div>
         </> : <span className={styles.noChannel}>暂无启用通道</span>}
@@ -75,7 +75,7 @@ export function ModelMappingCard({ row, actions, scopeDisabled, onScope, onManag
         {onPrice ? <button type="button" className={styles.priceLink} disabled={scopeDisabled || !row.features.length} onClick={onPrice}>查看价目</button> : <><span>{priceKnown ? <><b>{price.credits}</b> 积分/{priceUnit}</> : "按工具配置"}</span>{priceKnown && <small>{price.estimated ? "预估" : "标准 1K"} · {price.label}{price.source ? ` · ${price.source.label}` : ""}</small>}</>}
       </div>
       <button type="button" className={styles.configure} aria-expanded={onManage ? undefined : expanded} aria-controls={onManage ? undefined : panelId} onClick={onManage || (() => setExpanded(value => !value))}>
-        {onManage ? <ChevronRight size={15}/> : expanded ? <ChevronDown size={15} /> : <Settings2 size={15} />}{onManage ? "管理" : expanded ? "收起" : "配置"}
+        {onManage ? <>管理<ChevronRight size={14}/></> : <>{expanded ? <ChevronDown size={15} /> : <Settings2 size={15} />}{expanded ? "收起" : "配置"}</>}
       </button>
     </div>
     {expanded && <div id={panelId} className={styles.panel}>
