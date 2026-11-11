@@ -1,0 +1,109 @@
+{
+  "sourceUrl": "https://archive.org/metadata/peppercarrot-ep6",
+  "retrievedAt": "2026-11-11T02:30:30.742011+00:00",
+  "metadata": {
+    "identifier": "peppercarrot-ep6",
+    "creator": "Morevna Project",
+    "description": "Morevna Project presents an animated version of \"Pepper &amp; Carrot\" comic, originally created by David Revoy. In this episode\n Pepper goes to Komona island to participate in the Potion Contest. Of \ncourse she spent a lot of effort to prepare the best potion ever and \nready to meet the strongest rivals. What can go wrong here?",
+    "licenseurl": "http://creativecommons.org/licenses/by-sa/3.0/",
+    "title": "Pepper & Carrot Episode 6"
+  },
+  "files": [
+    {
+      "name": "pepper-en-basic.mp4",
+      "source": "original",
+      "format": "MPEG4",
+      "size": "239749688",
+      "md5": "6991f8be15a4b66956df76383c9821f6",
+      "sha1": "9b7ce14268ed2e2f7766cb5291b3b6ab7a884a69"
+    },
+    {
+      "name": "pepper-en-basic.ogv",
+      "source": "derivative",
+      "format": "Ogg Video",
+      "size": "35411750",
+      "md5": "817f293145e9aae8a5eff97bf065783f",
+      "sha1": "898861efb8f8d4954b9e66f5f2f6fcea5081a66d"
+    },
+    {
+      "name": "pepper-en-hq.mp4",
+      "source": "original",
+      "format": "MPEG4",
+      "size": "584177991",
+      "md5": "e598c50b4bbda796946d904fd6472a1a",
+      "sha1": "c237dd04eccf9d51def167eab885bf4073e78f09"
+    },
+    {
+      "name": "pepper-en-hq.ogv",
+      "source": "derivative",
+      "format": "Ogg Video",
+      "size": "35888920",
+      "md5": "e27fbbef185207f5d57bb665bde49b02",
+      "sha1": "4cdf1038f36ac7e486f465b97e13c4420288ef87"
+    },
+    {
+      "name": "pepper-en-lossless.mp4",
+      "source": "derivative",
+      "format": "h.264",
+      "size": "47306006",
+      "md5": "ff17416e4a025982d9028b3dc3e4b926",
+      "sha1": "56954adacd5a25e9d85d56307d4a7d82545403aa"
+    },
+    {
+      "name": "pepper-en-lossless.ogv",
+      "source": "derivative",
+      "format": "Ogg Video",
+      "size": "35939585",
+      "md5": "2fbb3bc13ed4dd8f604ba0115ce59526",
+      "sha1": "ef1953a650e1aee1806c47b5b75153603941107b"
+    },
+    {
+      "name": "pepper-ru-basic.mp4",
+      "source": "original",
+      "format": "MPEG4",
+      "size": "241626395",
+      "md5": "ed6525ca9b1dddd7026cf6dd568b6b67",
+      "sha1": "93ad334eadf714a9dff821658b95f06093db2352"
+    },
+    {
+      "name": "pepper-ru-basic.ogv",
+      "source": "derivative",
+      "format": "Ogg Video",
+      "size": "35871229",
+      "md5": "5bddfff7f9cc88934040458b8ae38afa",
+      "sha1": "1347b150fc07dbafc789f1686bcb68056e85abbb"
+    },
+    {
+      "name": "pepper-ru-hq.mp4",
+      "source": "original",
+      "format": "MPEG4",
+      "size": "584056820",
+      "md5": "ed57c61410b392834a1a7f23d1058b05",
+      "sha1": "ccf4c9eb34fd7f779207bbfb0b2d7baa487da9b4"
+    },
+    {
+      "name": "pepper-ru-hq.ogv",
+      "source": "derivative",
+      "format": "Ogg Video",
+      "size": "35870764",
+      "md5": "24666b934d305a45d3ea97ae2b86359e",
+      "sha1": "c749299b2ab01c4c4df179d0028c4e37bfa92a3f"
+    },
+    {
+      "name": "pepper-ru-lossless.mp4",
+      "source": "derivative",
+      "format": "h.264",
+      "size": "47389195",
+      "md5": "ec4f656808af19b20b996a5a36ced89b",
+      "sha1": "a536eb4536c097ce9827b8a1abee49b3b2fb4a51"
+    },
+    {
+      "name": "pepper-ru-lossless.ogv",
+      "source": "derivative",
+      "format": "Ogg Video",
+      "size": "35926581",
+      "md5": "115d8942a32cfc4ec6f621e5fd2d8c55",
+      "sha1": "e16c5b08a70f478fe01652bcca561ced9b1543c0"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "result": "PACKAGE_PASS",
+  "catalogCases": 384,
+  "mediaFiles": 509,
+  "manifestFiles": 746,
+  "mediaBytes": 506704139,
+  "zipBytes": 507079158,
+  "zipSha256": "e501a8afd528e18775c5dfcc0e0e4d2783cfbcfe79414d3cd718ea4c19894060",
+  "zipPath": "C:\\Users\\13357\\.t3\\worktrees\\naumi\\codex-public-case-collection-20261111\\output\\public-case-collection\\naumi-public-cases-20261111.zip",
+  "packagePath": "C:\\Users\\13357\\.t3\\worktrees\\naumi\\codex-public-case-collection-20261111\\output\\public-case-collection\\delivery"
+}

@@ -1,0 +1,23 @@
+{
+  "sourceUrl": "https://archive.org/metadata/pepper-carrot-episode-3-the-secret-ingredients-english",
+  "retrievedAt": "2026-11-11T02:30:30.739163+00:00",
+  "metadata": {
+    "identifier": "pepper-carrot-episode-3-the-secret-ingredients-english",
+    "creator": "Morevna project, David Revoy",
+    "date": "2022-10-28",
+    "description": "<div class=\"video-info-description-html\"><p>Pepper\n goes to the market, learns about the upcoming Potion Contest, and \nsearches for the secret ingredients! <br /></p>\n<p>Based on <a href=\"https://www.peppercarrot.com/en/webcomic/ep03_The-secret-ingredients.html\" rel=\"ugc nofollow\">Episode 3 of the Pepper &amp; Carrot</a> web comic by David Revoy.</p>\n<p>Produced by <a href=\"https://morevnaproject.org/\" rel=\"ugc nofollow\">Morevna Project</a>.</p>\n</div>",
+    "licenseurl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "title": "Pepper & Carrot - Episode 3: The Secret Ingredients (English)",
+    "website": "https://morevnaproject.org/"
+  },
+  "files": [
+    {
+      "name": "79780d2c-419b-42a3-adb5-85ae2aea4d1e-1080.mp4",
+      "source": "original",
+      "size": "47681875",
+      "md5": "0bd76cb34fc6ffe3de19c9242b858562",
+      "sha1": "26769ee5cab1a693ffeb05e5595480b8a99c8940",
+      "format": "MPEG4"
+    }
+  ]
+}

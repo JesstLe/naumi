@@ -1,0 +1,12 @@
+{
+  "existingNearMatches": [],
+  "internalNearMatches": [],
+  "threshold": 7,
+  "existingCoverage": {
+    "verified": 294,
+    "unknown": 59,
+    "total": 353
+  },
+  "videoNearMatches": [],
+  "videoNearMatchRule": "median of 3 frame pHash distances <=6 or all <=10"
+}

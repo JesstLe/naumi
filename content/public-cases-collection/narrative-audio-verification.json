@@ -1,0 +1,8 @@
+{
+  "result": "PASS",
+  "works": 6,
+  "originalAudioFullDecode": 6,
+  "browsingAudioFullDecode": 6,
+  "command": "ffmpeg -v error -xerror -threads 2 -i FILE -map 0:a -f null -",
+  "exitStatus": 0
+}

@@ -1,0 +1,74 @@
+{
+  "uuid": "2aae566a-0f2b-4149-9d23-6df734e49270",
+  "shortUUID": "6gFJDjiBhA3s3VGDKffd7U",
+  "url": "https://peertube.touhoppai.moe/videos/watch/2aae566a-0f2b-4149-9d23-6df734e49270",
+  "name": "Pepper & Carrot Episode 3: The Secret Ingredients",
+  "licence": {
+    "id": 2,
+    "label": "Attribution - Share Alike"
+  },
+  "description": "Based on the web-comic by David Revoy - https://www.peppercarrot.com/en/webcomic/ep03_The-secret-ingredients.html\r\n\r\nMade with free/open-source software: Krita, Blender, CoaTools, OpenToonz, RenderChan.\r\n\r\nLicense - CC-BY-SA 4.0.",
+  "duration": 205,
+  "files": [
+    {
+      "id": 28564,
+      "resolution": {
+        "id": 1080,
+        "label": "1080p"
+      },
+      "width": 1920,
+      "height": 1080,
+      "magnetUri": "magnet:?xs=https%3A%2F%2Fpeertube.touhoppai.moe%2Flazy-static%2Ftorrents%2F44a55fe1-83ef-4569-af62-60cadf746ebe-1080.torrent&xt=urn:btih:e09a09e55fd95966c57b609ebe5e1e4d45c35089&dn=Pepper+%26+Carrot+Episode+3%3A+The+Secret+Ingredients&tr=https%3A%2F%2Fpeertube.touhoppai.moe%2Ftracker%2Fannounce&tr=wss%3A%2F%2Fpeertube.touhoppai.moe%3A443%2Ftracker%2Fsocket&ws=https%3A%2F%2Fpeertube.touhoppai.moe%2Fstatic%2Fweb-videos%2F6150172d-ad29-4348-9463-69a64ad03cbe-1080.mp4",
+      "size": 158770196,
+      "fps": 24,
+      "torrentUrl": "https://peertube.touhoppai.moe/lazy-static/torrents/44a55fe1-83ef-4569-af62-60cadf746ebe-1080.torrent",
+      "torrentDownloadUrl": "https://peertube.touhoppai.moe/download/torrents/44a55fe1-83ef-4569-af62-60cadf746ebe-1080.torrent",
+      "fileUrl": "https://peertube.touhoppai.moe/static/web-videos/6150172d-ad29-4348-9463-69a64ad03cbe-1080.mp4",
+      "fileDownloadUrl": "https://peertube.touhoppai.moe/download/web-videos/2aae566a-0f2b-4149-9d23-6df734e49270-1080.mp4",
+      "metadataUrl": "https://peertube.touhoppai.moe/api/v1/videos/2aae566a-0f2b-4149-9d23-6df734e49270/metadata/28564",
+      "hasAudio": true,
+      "hasVideo": true,
+      "storage": 0
+    },
+    {
+      "id": 28567,
+      "resolution": {
+        "id": 720,
+        "label": "720p"
+      },
+      "width": 1280,
+      "height": 720,
+      "magnetUri": "magnet:?xs=https%3A%2F%2Fpeertube.touhoppai.moe%2Flazy-static%2Ftorrents%2F38c9ceae-9a34-4c5b-901e-f41f48a07878-720.torrent&xt=urn:btih:427d88c9fe250f7d93ca8cf5f2b5011db600e18b&dn=Pepper+%26+Carrot+Episode+3%3A+The+Secret+Ingredients&tr=https%3A%2F%2Fpeertube.touhoppai.moe%2Ftracker%2Fannounce&tr=wss%3A%2F%2Fpeertube.touhoppai.moe%3A443%2Ftracker%2Fsocket&ws=https%3A%2F%2Fpeertube.touhoppai.moe%2Fstatic%2Fweb-videos%2Ff538021d-9f34-4d47-8cfb-b27833eaaaab-720.mp4",
+      "size": 28873973,
+      "fps": 24,
+      "torrentUrl": "https://peertube.touhoppai.moe/lazy-static/torrents/38c9ceae-9a34-4c5b-901e-f41f48a07878-720.torrent",
+      "torrentDownloadUrl": "https://peertube.touhoppai.moe/download/torrents/38c9ceae-9a34-4c5b-901e-f41f48a07878-720.torrent",
+      "fileUrl": "https://peertube.touhoppai.moe/static/web-videos/f538021d-9f34-4d47-8cfb-b27833eaaaab-720.mp4",
+      "fileDownloadUrl": "https://peertube.touhoppai.moe/download/web-videos/2aae566a-0f2b-4149-9d23-6df734e49270-720.mp4",
+      "metadataUrl": "https://peertube.touhoppai.moe/api/v1/videos/2aae566a-0f2b-4149-9d23-6df734e49270/metadata/28567",
+      "hasAudio": true,
+      "hasVideo": true,
+      "storage": 0
+    },
+    {
+      "id": 28566,
+      "resolution": {
+        "id": 360,
+        "label": "360p"
+      },
+      "width": 640,
+      "height": 360,
+      "magnetUri": "magnet:?xs=https%3A%2F%2Fpeertube.touhoppai.moe%2Flazy-static%2Ftorrents%2F8005fa9d-0754-4b73-9b2b-d7196db4b4af-360.torrent&xt=urn:btih:94044a730a4c7788cb84509fc2415a95d780bdbf&dn=Pepper+%26+Carrot+Episode+3%3A+The+Secret+Ingredients&tr=https%3A%2F%2Fpeertube.touhoppai.moe%2Ftracker%2Fannounce&tr=wss%3A%2F%2Fpeertube.touhoppai.moe%3A443%2Ftracker%2Fsocket&ws=https%3A%2F%2Fpeertube.touhoppai.moe%2Fstatic%2Fweb-videos%2Fa9b4b0e3-f087-42b9-b0ab-3f0ce2167cc5-360.mp4",
+      "size": 14210262,
+      "fps": 24,
+      "torrentUrl": "https://peertube.touhoppai.moe/lazy-static/torrents/8005fa9d-0754-4b73-9b2b-d7196db4b4af-360.torrent",
+      "torrentDownloadUrl": "https://peertube.touhoppai.moe/download/torrents/8005fa9d-0754-4b73-9b2b-d7196db4b4af-360.torrent",
+      "fileUrl": "https://peertube.touhoppai.moe/static/web-videos/a9b4b0e3-f087-42b9-b0ab-3f0ce2167cc5-360.mp4",
+      "fileDownloadUrl": "https://peertube.touhoppai.moe/download/web-videos/2aae566a-0f2b-4149-9d23-6df734e49270-360.mp4",
+      "metadataUrl": "https://peertube.touhoppai.moe/api/v1/videos/2aae566a-0f2b-4149-9d23-6df734e49270/metadata/28566",
+      "hasAudio": true,
+      "hasVideo": true,
+      "storage": 0
+    }
+  ]
+}

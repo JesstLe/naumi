@@ -1,0 +1,76 @@
+Changed branch: codex/public-case-collection-20261111
+Base HEAD / origin/main at start: 974fa2c2191447771048d84a190cd80449778c3f
+Changed field: standalone catalog [] -> 384 entries (259 images, 125 video works); no app UI changes.
+MODIFIED_FILE: C:\Users\13357\.t3\worktrees\naumi\codex-public-case-collection-20261111\content\public-cases-collection\catalog.json
+DIFF_FILE: C:\Users\13357\.t3\worktrees\naumi\codex-public-case-collection-20261111\content\public-cases-collection\catalog.diff
+VERIFICATION: C:\Users\13357\.t3\worktrees\naumi\codex-public-case-collection-20261111\content\public-cases-collection\VERIFICATION.txt
+ROLLBACK: C:\Users\13357\.t3\worktrees\naumi\codex-public-case-collection-20261111\content\public-cases-collection\ROLLBACK.sh
+Original SHA256: a5338d955b09046ec0b16f3a9625b7955c763aae07dc722e474e6078745f932f
+Modified SHA256: 4a0286472c3e8498e4ef68d7f326f1e18d5ac10e4addece38340562d98810292
+
+BASELINE
+COMMAND: D:\DEV\Python\python.exe scripts/content/verify_public_case_catalog.py --catalog content/public-cases-collection/catalog.baseline.json --minimum 0 --expected 0
+INPUT: empty catalogue []
+STDOUT (literal):
+CATALOG_PASS cases=0 images=0 videos=0
+
+STDERR (literal):
+
+EXIT STATUS: 0
+
+MODIFIED
+COMMAND: D:\DEV\Python\python.exe scripts/content/verify_public_case_catalog.py --catalog content/public-cases-collection/catalog.json --minimum 300 --expected 384
+INPUT: 384-row catalogue with 259 images and 125 video works
+STDOUT (literal):
+CATALOG_PASS cases=384 images=259 videos=125
+
+STDERR (literal):
+
+EXIT STATUS: 0
+
+TESTS
+COMMAND: D:\DEV\Python\python.exe scripts/content/test_public_case_collection.py
+INPUT: schema/provenance/exclusion/rollback/narrative checks
+STDOUT (literal):
+
+STDERR (literal):
+.........
+----------------------------------------------------------------------
+Ran 9 tests in 0.017s
+
+OK
+
+EXIT STATUS: 0
+
+ROLLBACK
+COMMAND: D:\DEV\Git\bin\bash.exe content/public-cases-collection/ROLLBACK.sh output/public-case-collection/rollback-test/catalog.json
+INPUT: separate modified copy, SHA256=4a0286472c3e8498e4ef68d7f326f1e18d5ac10e4addece38340562d98810292
+STDOUT (literal):
+ROLLBACK_PASS restored=empty-catalog cases=0
+
+STDERR (literal):
+
+EXIT STATUS: 0
+
+ROLLBACK_VERIFY
+COMMAND: D:\DEV\Python\python.exe scripts/content/verify_public_case_catalog.py --catalog output/public-case-collection/rollback-test/catalog.json --minimum 0 --expected 0
+INPUT: restored separate copy []
+STDOUT (literal):
+CATALOG_PASS cases=0 images=0 videos=0
+
+STDERR (literal):
+
+EXIT STATUS: 0
+
+MEDIA COMMAND: python scripts/content/collect_public_cases.py verify
+MEDIA INPUT: 384 admitted originals + 384 posters + 125 browsing MP4s
+MEDIA OUTPUT (literal):
+{"result": "PASS", "cases": 384, "images": 259, "videos": 125, "allOriginalHashes": "PASS", "allPostersDecoded": "PASS", "allVideosFullyDecoded": "PASS", "allVideoFaststart": "PASS", "generationCalls": 0}
+MEDIA EXIT STATUS: 0
+LINK COMMAND: python scripts/content/audit_public_case_links.py
+LINK OUTPUT (literal):
+LINK_AUDIT 292 ACTIVE 292 UNKNOWN 0
+LINK EXIT STATUS: 0
+Restored behavior/status: rollback copy byte-identical to empty baseline; CATALOG_PASS cases=0 images=0 videos=0.
+Delivered MODIFIED_FILE remains changed: 384 cases.
+No generation APIs, paid generation, merge or deployment.

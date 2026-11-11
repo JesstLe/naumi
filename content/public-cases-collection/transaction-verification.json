@@ -1,0 +1,42 @@
+[
+  {
+    "stage": "BASELINE",
+    "command": "D:\\DEV\\Python\\python.exe scripts/content/verify_public_case_catalog.py --catalog content/public-cases-collection/catalog.baseline.json --minimum 0 --expected 0",
+    "input": "empty catalogue []",
+    "stdout": "CATALOG_PASS cases=0 images=0 videos=0\n",
+    "stderr": "",
+    "exitStatus": 0
+  },
+  {
+    "stage": "MODIFIED",
+    "command": "D:\\DEV\\Python\\python.exe scripts/content/verify_public_case_catalog.py --catalog content/public-cases-collection/catalog.json --minimum 300 --expected 384",
+    "input": "384-row catalogue with 259 images and 125 video works",
+    "stdout": "CATALOG_PASS cases=384 images=259 videos=125\n",
+    "stderr": "",
+    "exitStatus": 0
+  },
+  {
+    "stage": "TESTS",
+    "command": "D:\\DEV\\Python\\python.exe scripts/content/test_public_case_collection.py",
+    "input": "schema/provenance/exclusion/rollback/narrative checks",
+    "stdout": "",
+    "stderr": ".........\n----------------------------------------------------------------------\nRan 9 tests in 0.017s\n\nOK\n",
+    "exitStatus": 0
+  },
+  {
+    "stage": "ROLLBACK",
+    "command": "D:\\DEV\\Git\\bin\\bash.exe content/public-cases-collection/ROLLBACK.sh output/public-case-collection/rollback-test/catalog.json",
+    "input": "separate modified copy, SHA256=4a0286472c3e8498e4ef68d7f326f1e18d5ac10e4addece38340562d98810292",
+    "stdout": "ROLLBACK_PASS restored=empty-catalog cases=0\n",
+    "stderr": "",
+    "exitStatus": 0
+  },
+  {
+    "stage": "ROLLBACK_VERIFY",
+    "command": "D:\\DEV\\Python\\python.exe scripts/content/verify_public_case_catalog.py --catalog output/public-case-collection/rollback-test/catalog.json --minimum 0 --expected 0",
+    "input": "restored separate copy []",
+    "stdout": "CATALOG_PASS cases=0 images=0 videos=0\n",
+    "stderr": "",
+    "exitStatus": 0
+  }
+]

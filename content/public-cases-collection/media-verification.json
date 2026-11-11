@@ -1,0 +1,11 @@
+{
+  "result": "PASS",
+  "cases": 384,
+  "images": 259,
+  "videos": 125,
+  "allOriginalHashes": "PASS",
+  "allPostersDecoded": "PASS",
+  "allVideosFullyDecoded": "PASS",
+  "allVideoFaststart": "PASS",
+  "generationCalls": 0
+}

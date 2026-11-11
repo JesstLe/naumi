@@ -1,0 +1,9 @@
+{
+  "Pillow": "12.3.0",
+  "PyYAML": "6.0.3",
+  "pyarrow": "26.0.1",
+  "ImageHash": "4.3.2",
+  "numpy": "2.5.2",
+  "python": "3.14.7 (tags/v3.14.7:823f032, Aug  5 2026, 10:51:32) [MSC v.1944 64 bit (AMD64)]",
+  "ffmpeg": "ffmpeg version 9.0.1-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers"
+}

@@ -1,0 +1,23 @@
+{
+  "readOnlyParentFiles": [
+    {
+      "path": "E:\\Workspace\\naumi-public-cases-20261111\\src\\lib\\creation-cases\\catalog.ts",
+      "sha256": "c51ce3928ce5742e2df4b6af05268962e9712158501a33db88e9df7c100635fc"
+    },
+    {
+      "path": "E:\\Workspace\\naumi-public-cases-20261111\\src\\lib\\creation-cases\\catalog.json",
+      "sha256": "df7f74d28cdb189c76f9c76bf51e6dc58f575cfa43b05eb4b820db1ad48b0d3a"
+    },
+    {
+      "path": "E:\\Workspace\\naumi-public-cases-20261111\\public\\creation-cases\\ATTRIBUTION.json",
+      "sha256": "38a9ab63c9d0107053646a4fc955d3763feb14dca55b1c4a0687578715c035ed"
+    }
+  ],
+  "parentCatalogCount": 18,
+  "parentRawHashesStillMatchExclusionSnapshot": true,
+  "ownChangedPaths": [
+    "?? content/",
+    "?? scripts/content/"
+  ],
+  "mainBaseline": "974fa2c2191447771048d84a190cd80449778c3f"
+}

@@ -1,0 +1,37 @@
+{
+  "excludedParentItems": [
+    "gold-pendant",
+    "city-poster",
+    "oat-packaging",
+    "ocean-popsicle",
+    "mushroom-planter",
+    "keycap-world",
+    "panda-rest",
+    "city-weather",
+    "knitted-doll",
+    "boxed-landscape",
+    "silk-sculpture",
+    "paper-story",
+    "citrus-still-life",
+    "candle-light",
+    "lantern-fashion",
+    "sunset-cycling",
+    "harvest-aerial",
+    "morning-run"
+  ],
+  "rejectedDuplicates": [],
+  "accepted": 384,
+  "checks": [
+    "original SHA256",
+    "decoded pixels SHA256",
+    "normalized prompt",
+    "source URL",
+    "sampled video frame sequence",
+    "manual contact-sheet review"
+  ],
+  "oldTemplateMediaHashCoverage": {
+    "verified": 294,
+    "unknown": 59,
+    "total": 353
+  }
+}

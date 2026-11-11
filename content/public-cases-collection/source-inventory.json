@@ -1,0 +1,74 @@
+[
+  {
+    "key": "blender-open-movies",
+    "candidateCount": 3,
+    "acceptedCount": 3,
+    "revision": null,
+    "sourcePage": "https://peach.blender.org/",
+    "license": "CC-BY-3.0",
+    "licenseBasisUrl": "https://peach.blender.org/about/",
+    "evidenceFile": "source-evidence/big-buck-bunny-license.html",
+    "mediaLicenceScope": "source media/data release, not repository code inferred",
+    "snapshotAt": "2026-11-11T02:16:18.247057+00:00"
+  },
+  {
+    "key": "diffusiondb",
+    "candidateCount": 834,
+    "acceptedCount": 0,
+    "revision": "fb620fbe49fa4420e0734bd9c0df11f51176b61f",
+    "sourcePage": "https://huggingface.co/datasets/poloclub/diffusiondb/blob/fb620fbe49fa4420e0734bd9c0df11f51176b61f/README.md",
+    "license": "CC0-1.0",
+    "licenseBasisUrl": "https://huggingface.co/datasets/poloclub/diffusiondb/blob/fb620fbe49fa4420e0734bd9c0df11f51176b61f/README.md#licensing-information",
+    "evidenceFile": "source-evidence/diffusiondb-README.md",
+    "mediaLicenceScope": "source media/data release, not repository code inferred",
+    "snapshotAt": "2026-11-11T01:52:40.318317+00:00"
+  },
+  {
+    "key": "gpt4o",
+    "candidateCount": 100,
+    "acceptedCount": 49,
+    "revision": "3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596",
+    "sourcePage": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/1",
+    "license": "CC-BY-4.0",
+    "licenseBasisUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/1/ATTRIBUTION.yml",
+    "evidenceFile": "source-evidence/gpt4o/1/ATTRIBUTION.yml",
+    "mediaLicenceScope": "source media/data release, not repository code inferred",
+    "snapshotAt": "2026-11-11T01:52:38.431204+00:00"
+  },
+  {
+    "key": "pepper-carrot",
+    "candidateCount": 3,
+    "acceptedCount": 3,
+    "revision": null,
+    "sourcePage": "https://archive.org/details/pepper-carrot-episode-3-the-secret-ingredients-english",
+    "license": "CC-BY-SA-4.0",
+    "licenseBasisUrl": "https://peertube.touhoppai.moe/w/6gFJDjiBhA3s3VGDKffd7U",
+    "evidenceFile": "source-evidence/pepper-carrot-3-primary-video.json",
+    "mediaLicenceScope": "source media/data release, not repository code inferred",
+    "snapshotAt": "2026-11-11T02:16:18.248538+00:00"
+  },
+  {
+    "key": "rapidata-images",
+    "candidateCount": 272,
+    "acceptedCount": 210,
+    "revision": "5045367fb66da08dfdb1cbd225d74e35e57899b4",
+    "sourcePage": "https://huggingface.co/datasets/Rapidata/700k_Human_Preference_Dataset_FLUX_SD3_MJ_DALLE3/blob/5045367fb66da08dfdb1cbd225d74e35e57899b4/README.md",
+    "license": "CDLA-Permissive-2.0",
+    "licenseBasisUrl": "https://huggingface.co/datasets/Rapidata/700k_Human_Preference_Dataset_FLUX_SD3_MJ_DALLE3/blob/5045367fb66da08dfdb1cbd225d74e35e57899b4/README.md",
+    "evidenceFile": "source-evidence/rapidata-images-README.md",
+    "mediaLicenceScope": "source media/data release, not repository code inferred",
+    "snapshotAt": "2026-11-11T01:52:40.153042+00:00"
+  },
+  {
+    "key": "rapidata-videos",
+    "candidateCount": 198,
+    "acceptedCount": 119,
+    "revision": "36c4a5925f6f3f3cbebf0d84e8238ed816873d1b",
+    "sourcePage": "https://huggingface.co/datasets/Rapidata/text-2-video-Rich-Human-Feedback/blob/36c4a5925f6f3f3cbebf0d84e8238ed816873d1b/README.md",
+    "license": "Apache-2.0",
+    "licenseBasisUrl": "https://huggingface.co/datasets/Rapidata/text-2-video-Rich-Human-Feedback/blob/36c4a5925f6f3f3cbebf0d84e8238ed816873d1b/README.md",
+    "evidenceFile": "source-evidence/rapidata-videos-README.md",
+    "mediaLicenceScope": "source media/data release, not repository code inferred",
+    "snapshotAt": "2026-11-11T01:52:40.313781+00:00"
+  }
+]

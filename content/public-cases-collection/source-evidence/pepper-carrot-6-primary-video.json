@@ -1,0 +1,74 @@
+{
+  "uuid": "79ff0983-3f55-4111-9f7d-f3d3feeefb69",
+  "shortUUID": "g4Kni4fEskBSdurcY8K9AM",
+  "url": "https://peertube.touhoppai.moe/videos/watch/79ff0983-3f55-4111-9f7d-f3d3feeefb69",
+  "name": "Pepper & Carrot (MOTION COMIC) Episode 6: The Potion Contest",
+  "licence": {
+    "id": 2,
+    "label": "Attribution - Share Alike"
+  },
+  "description": "Based on the web-comic by David Revoy - https://www.peppercarrot.com/en/article271/episode-6-the-potion-contest\r\nRead details - https://morevnaproject.org/pepper-and-carrot/episode-6/\r\nDownload - https://gum.co/peppercarrot-episode6\r\n\r\nDo you want to create your own motion comic? We have special video course by Stas Kholodilin (Rigging assistant), where you can learn the same technique as was used for creating Pepper&Carrot motion comic! -\r\nhttps://www.youtube.com/watch?v=_IcXTg4OQMU\r\n\r\nMade with free/open-source software: Krita, Blender, CoaTools, Papagayo-NG, RenderChan.\r\n\r\nLicense - CC-BY-SA 4.0.\r\n\r\nSupport us on Patreon - https://www.patreon.com/morevna",
+  "duration": 454,
+  "files": [
+    {
+      "id": 35,
+      "resolution": {
+        "id": 1080,
+        "label": "1080p"
+      },
+      "width": 1920,
+      "height": 1080,
+      "magnetUri": "magnet:?xs=https%3A%2F%2Fpeertube.touhoppai.moe%2Flazy-static%2Ftorrents%2F79ff0983-3f55-4111-9f7d-f3d3feeefb69-1080.torrent&xt=urn:btih:00b41b7b4029587a5a1b39ff9e2b7a9b3b0d9c78&dn=Pepper+%26+Carrot+(MOTION+COMIC)+Episode+6%3A+The+Potion+Contest&tr=https%3A%2F%2Fpeertube.touhoppai.moe%2Ftracker%2Fannounce&tr=wss%3A%2F%2Fpeertube.touhoppai.moe%3A443%2Ftracker%2Fsocket&ws=https%3A%2F%2Fpeertube.touhoppai.moe%2Fstatic%2Fweb-videos%2F79ff0983-3f55-4111-9f7d-f3d3feeefb69-1080.mp4",
+      "size": 107142963,
+      "fps": 24,
+      "torrentUrl": "https://peertube.touhoppai.moe/lazy-static/torrents/79ff0983-3f55-4111-9f7d-f3d3feeefb69-1080.torrent",
+      "torrentDownloadUrl": "https://peertube.touhoppai.moe/download/torrents/79ff0983-3f55-4111-9f7d-f3d3feeefb69-1080.torrent",
+      "fileUrl": "https://peertube.touhoppai.moe/static/web-videos/79ff0983-3f55-4111-9f7d-f3d3feeefb69-1080.mp4",
+      "fileDownloadUrl": "https://peertube.touhoppai.moe/download/web-videos/79ff0983-3f55-4111-9f7d-f3d3feeefb69-1080.mp4",
+      "metadataUrl": "https://peertube.touhoppai.moe/api/v1/videos/79ff0983-3f55-4111-9f7d-f3d3feeefb69/metadata/35",
+      "hasAudio": true,
+      "hasVideo": true,
+      "storage": 0
+    },
+    {
+      "id": 60,
+      "resolution": {
+        "id": 720,
+        "label": "720p"
+      },
+      "width": 1280,
+      "height": 720,
+      "magnetUri": "magnet:?xs=https%3A%2F%2Fpeertube.touhoppai.moe%2Flazy-static%2Ftorrents%2F79ff0983-3f55-4111-9f7d-f3d3feeefb69-720.torrent&xt=urn:btih:b6eed75ed220eec37b14b479ca000ce39eda800b&dn=Pepper+%26+Carrot+(MOTION+COMIC)+Episode+6%3A+The+Potion+Contest&tr=https%3A%2F%2Fpeertube.touhoppai.moe%2Ftracker%2Fannounce&tr=wss%3A%2F%2Fpeertube.touhoppai.moe%3A443%2Ftracker%2Fsocket&ws=https%3A%2F%2Fpeertube.touhoppai.moe%2Fstatic%2Fweb-videos%2F79ff0983-3f55-4111-9f7d-f3d3feeefb69-720.mp4",
+      "size": 64684837,
+      "fps": 24,
+      "torrentUrl": "https://peertube.touhoppai.moe/lazy-static/torrents/79ff0983-3f55-4111-9f7d-f3d3feeefb69-720.torrent",
+      "torrentDownloadUrl": "https://peertube.touhoppai.moe/download/torrents/79ff0983-3f55-4111-9f7d-f3d3feeefb69-720.torrent",
+      "fileUrl": "https://peertube.touhoppai.moe/static/web-videos/79ff0983-3f55-4111-9f7d-f3d3feeefb69-720.mp4",
+      "fileDownloadUrl": "https://peertube.touhoppai.moe/download/web-videos/79ff0983-3f55-4111-9f7d-f3d3feeefb69-720.mp4",
+      "metadataUrl": "https://peertube.touhoppai.moe/api/v1/videos/79ff0983-3f55-4111-9f7d-f3d3feeefb69/metadata/60",
+      "hasAudio": true,
+      "hasVideo": true,
+      "storage": 0
+    },
+    {
+      "id": 59,
+      "resolution": {
+        "id": 360,
+        "label": "360p"
+      },
+      "width": 640,
+      "height": 360,
+      "magnetUri": "magnet:?xs=https%3A%2F%2Fpeertube.touhoppai.moe%2Flazy-static%2Ftorrents%2F79ff0983-3f55-4111-9f7d-f3d3feeefb69-360.torrent&xt=urn:btih:854c3d8facbdbea96c1449adda0ed857240e2ca0&dn=Pepper+%26+Carrot+(MOTION+COMIC)+Episode+6%3A+The+Potion+Contest&tr=https%3A%2F%2Fpeertube.touhoppai.moe%2Ftracker%2Fannounce&tr=wss%3A%2F%2Fpeertube.touhoppai.moe%3A443%2Ftracker%2Fsocket&ws=https%3A%2F%2Fpeertube.touhoppai.moe%2Fstatic%2Fweb-videos%2F79ff0983-3f55-4111-9f7d-f3d3feeefb69-360.mp4",
+      "size": 31051533,
+      "fps": 24,
+      "torrentUrl": "https://peertube.touhoppai.moe/lazy-static/torrents/79ff0983-3f55-4111-9f7d-f3d3feeefb69-360.torrent",
+      "torrentDownloadUrl": "https://peertube.touhoppai.moe/download/torrents/79ff0983-3f55-4111-9f7d-f3d3feeefb69-360.torrent",
+      "fileUrl": "https://peertube.touhoppai.moe/static/web-videos/79ff0983-3f55-4111-9f7d-f3d3feeefb69-360.mp4",
+      "fileDownloadUrl": "https://peertube.touhoppai.moe/download/web-videos/79ff0983-3f55-4111-9f7d-f3d3feeefb69-360.mp4",
+      "metadataUrl": "https://peertube.touhoppai.moe/api/v1/videos/79ff0983-3f55-4111-9f7d-f3d3feeefb69/metadata/59",
+      "hasAudio": true,
+      "hasVideo": true,
+      "storage": 0
+    }
+  ]
+}

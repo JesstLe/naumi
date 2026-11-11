@@ -1,0 +1,168 @@
+{
+  "openedPages": [
+    {
+      "page": "gpt4o-01.jpg",
+      "sha256": "32008be76882d7f109cde0447724750edfe6d6f1cc88a567238d39642c89ef97"
+    },
+    {
+      "page": "gpt4o-02.jpg",
+      "sha256": "ecdb5a350d48a7b878152605f6fc08865a096666682ba66b7cc21349844354fe"
+    },
+    {
+      "page": "gpt4o-03.jpg",
+      "sha256": "66491cd350e641eb20646c86c59caaba952b73f5b0a0f48d0576007cb4d3fd5d"
+    },
+    {
+      "page": "gpt4o-04.jpg",
+      "sha256": "6d072d6c32b48d295b7667d087c63134dd36e89ab8453791bab89437359c500a"
+    },
+    {
+      "page": "gpt4o-05.jpg",
+      "sha256": "a31da2484dd2de656143ab9fe0056502cd7a9f8ebb3d4abf0aac72af82ddbd89"
+    },
+    {
+      "page": "rapidata-images-01.jpg",
+      "sha256": "3833e89b71ffc21ac22b4ca33d9544c869a49169cacdaef9392697e5f373de02"
+    },
+    {
+      "page": "rapidata-images-02.jpg",
+      "sha256": "7b27439beca3ca19e68632316397255ae6337793f853b09b706a096c5d371142"
+    },
+    {
+      "page": "rapidata-images-03.jpg",
+      "sha256": "7f23448ff18d1c6ffff89f3e72c0273edbea060f545a1b0466e7c49264647e17"
+    },
+    {
+      "page": "rapidata-images-04.jpg",
+      "sha256": "13277ef5da199db8783afe2e9f328b18d45b441244ce58b383b74603fb26db7c"
+    },
+    {
+      "page": "rapidata-images-05.jpg",
+      "sha256": "acd23ceba2314269edbc7095fdc5b02af12be57495e74ac4545ce84998dcafd6"
+    },
+    {
+      "page": "rapidata-images-06.jpg",
+      "sha256": "e185195a734a69879461b3d0a007c33e96954c80a8f1420dacff2c427c5e1b52"
+    },
+    {
+      "page": "rapidata-images-07.jpg",
+      "sha256": "1f9ff65e8a2a19c4e66eca9c4a08b284f12e7f7ad668a1a70bc69b7b4bdf71a5"
+    },
+    {
+      "page": "rapidata-images-08.jpg",
+      "sha256": "f14403b1f3c3ba4eecb4773d799de9daeeba3985940f7fde0ab9d672d7ddd942"
+    },
+    {
+      "page": "rapidata-images-09.jpg",
+      "sha256": "952badd66920d227f3fa3d1a9c0973c725c0a564954a192645c52078531b9d9d"
+    },
+    {
+      "page": "rapidata-images-10.jpg",
+      "sha256": "41965ab2cd7de5becd1ec2c4d81b9dd75300376e3624fe654105dbbb6fb524bf"
+    },
+    {
+      "page": "rapidata-images-11.jpg",
+      "sha256": "a859064f71aeea89fa61974483cea776604daf8f4a5a7f0fd90fe19e430cb4dc"
+    },
+    {
+      "page": "rapidata-images-12.jpg",
+      "sha256": "d5e0cfda0fe29c3673f9d06ef5dd8174fbb59878ec84df01d16687cd01f00c0b"
+    },
+    {
+      "page": "rapidata-images-13.jpg",
+      "sha256": "06effdc2fd454fa46fe13d6e510d39305cf557045372de30606df7a465516016"
+    },
+    {
+      "page": "rapidata-images-14.jpg",
+      "sha256": "35997c18f461c8e80864419df7681b5b7f31541bbe7f20ae05997fc870f05bd6"
+    },
+    {
+      "page": "rapidata-videos-01.jpg",
+      "sha256": "ab15b989acfe57f2c2a9139bf98979c3d1c8e024a9ef1f741595d5c890e6ed3d"
+    },
+    {
+      "page": "rapidata-videos-02.jpg",
+      "sha256": "b2973ca86c12b3c8630041778f4b811fc4deb39d49defa6f5fd09e47aa6797e8"
+    },
+    {
+      "page": "rapidata-videos-03.jpg",
+      "sha256": "6ff02e7878304a897df0dd42eb02bf1ba951014cca67016c2ee2ff56efe833be"
+    },
+    {
+      "page": "rapidata-videos-04.jpg",
+      "sha256": "6a05dad989833082bb235652dd5f4ea03a205dc2b2116c936961b10fff69ece6"
+    },
+    {
+      "page": "rapidata-videos-05.jpg",
+      "sha256": "923658595923ceb9efb1dc733bc5df964f4cd99d2dde02787587f8bfc59d81b4"
+    },
+    {
+      "page": "rapidata-videos-06.jpg",
+      "sha256": "6e57a7e4dc11c97d3329fa1acb14264d77435c78894d69e9c7c43f71de9da87a"
+    },
+    {
+      "page": "rapidata-videos-07.jpg",
+      "sha256": "450333483685aee6a18769c4326684a8748cdd495d554c48ba6767440abefa8e"
+    },
+    {
+      "page": "rapidata-videos-08.jpg",
+      "sha256": "3cd80a968cd39e6178745a3ee5bee489bc5e6451b3deb743113bb753769f2e6c"
+    },
+    {
+      "page": "rapidata-videos-09.jpg",
+      "sha256": "fef9b55cd4fe4c0a963863e37b1dc20cf740c19b180ff39e1d91676ae8420c7d"
+    },
+    {
+      "page": "rapidata-videos-10.jpg",
+      "sha256": "85d91e4243d42f1ead4b4a1747c4b0935a7f2b734989f4dd6fb160a19f665cb4"
+    },
+    {
+      "page": "rapidata-videos-11.jpg",
+      "sha256": "2419f893ba5df60338a5666d9db102cce5cf750313d4b42035afab130f4233f1"
+    },
+    {
+      "page": "rapidata-videos-12.jpg",
+      "sha256": "5008d61e58168d9696544362e25e3bc30815f8b1b95811637e6e713855ec6ec9"
+    },
+    {
+      "page": "rapidata-videos-13.jpg",
+      "sha256": "13cb6d7486e680e757d792ad8698810bb74ace484db192279dbdad75a690bc48"
+    },
+    {
+      "page": "rapidata-videos-14.jpg",
+      "sha256": "c99408aaa22f4fc98d45a9baff09d3c544b8c25bbbe1ce3ea444fffdb418eed8"
+    },
+    {
+      "page": "rapidata-videos-15.jpg",
+      "sha256": "3ff659f9b8a2e7a1c27e76e65620be21efc8850b270b9c27c8f7dc30455b3ab5"
+    },
+    {
+      "page": "pc-story-pepper-carrot-03-story.jpg",
+      "sha256": "aad0d7ccbb023fac24e56dc63766ffc981b36c91ed46b36a0f952e04c7cbe0e0"
+    },
+    {
+      "page": "pc-story-pepper-carrot-04-story.jpg",
+      "sha256": "06ebb9ffcb1c952f5c370f8f29ebf55f434790d1d20487ed53e336980833de98"
+    },
+    {
+      "page": "pc-story-pepper-carrot-06-story.jpg",
+      "sha256": "8a217e64c4f4e443df5717e2c6192c233489dfb69b09aa36c97ade4304b26e37"
+    },
+    {
+      "page": "pc-story-big-buck-bunny-story.jpg",
+      "sha256": "11cb0ed930b52c82382975c9d11edea4240040c3e84152da3bdc8e3f449d45e3"
+    },
+    {
+      "page": "pc-story-sintel-story.jpg",
+      "sha256": "b73d28cb0551d2caebe85d187237fa86e1d067ba451620643aad4b5b8ef8c841"
+    },
+    {
+      "page": "pc-story-tears-of-steel-story.jpg",
+      "sha256": "7c4f9d39bb610603ccd99e5ffe42319ce6087fd3b00bd04191863ec0ec810341"
+    }
+  ],
+  "openedPageCount": 40,
+  "acceptedCaseCount": 384,
+  "reviewMethod": "Image view tool; all admitted cases appeared in opened contact sheets. 834 DiffusionDB candidates remain unreviewed.",
+  "notClaimed": "full real-time viewing of all video frames; full decode is a distinct check"
+}

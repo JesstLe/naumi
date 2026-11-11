@@ -1,0 +1,74 @@
+{
+  "uuid": "ad7901c1-a469-4fb5-9023-0a7b2ed50b0e",
+  "shortUUID": "nqqJJcgZe9W9q3KfnzPFQJ",
+  "url": "https://peertube.touhoppai.moe/videos/watch/ad7901c1-a469-4fb5-9023-0a7b2ed50b0e",
+  "name": "Pepper & Carrot Episode 4: Stroke of Genius",
+  "licence": {
+    "id": 2,
+    "label": "Attribution - Share Alike"
+  },
+  "description": "Based on the web-comic by David Revoy - https://www.peppercarrot.com/en/webcomic/ep04_Stroke-of-genius.html\r\n\r\nMade with free/open-source software: \r\n- Synfig - https://gumroad.com/a/683871059\r\n- Krita - https://krita.org/en/download/krita-desktop/ \r\n- Blender - https://www.blender.org/download/ \r\n- RenderChan - https://morevnaproject.org/renderchan/ \r\n\r\nLicense - CC-BY-SA 4.0.\r\n\r\nSupport creating more animated episodes of Pepper&Carrot:\r\n- https://morevnaproject.org/pepper-and-carrot/sponsor/\r\n\r\nLearn how to create animated videos like this - https://www.youtube.com/watch?v=_IcXTg4OQMU\r\n___________________________________________________________________________________________________\r\n\r\nMorevna Project is an experimental animation studio which adopts  open-source philosophy and uses open-source software to produce animation works.\r\n\r\n🌍  Find more on our website - https://morevnaproject.org/",
+  "duration": 215,
+  "files": [
+    {
+      "id": 28584,
+      "resolution": {
+        "id": 1080,
+        "label": "1080p"
+      },
+      "width": 1920,
+      "height": 1080,
+      "magnetUri": "magnet:?xs=https%3A%2F%2Fpeertube.touhoppai.moe%2Flazy-static%2Ftorrents%2Faba58691-677f-4a57-b9c6-d21bca7b9439-1080.torrent&xt=urn:btih:072c50b9f2d36f3e2410b8970ea25eae18fbdf71&dn=Pepper+%26+Carrot+Episode+4%3A+Stroke+of+Genius&tr=https%3A%2F%2Fpeertube.touhoppai.moe%2Ftracker%2Fannounce&tr=wss%3A%2F%2Fpeertube.touhoppai.moe%3A443%2Ftracker%2Fsocket&ws=https%3A%2F%2Fpeertube.touhoppai.moe%2Fstatic%2Fweb-videos%2F710ca925-6301-4b01-805c-fef4e6d4edb9-1080.mp4",
+      "size": 167243999,
+      "fps": 24,
+      "torrentUrl": "https://peertube.touhoppai.moe/lazy-static/torrents/aba58691-677f-4a57-b9c6-d21bca7b9439-1080.torrent",
+      "torrentDownloadUrl": "https://peertube.touhoppai.moe/download/torrents/aba58691-677f-4a57-b9c6-d21bca7b9439-1080.torrent",
+      "fileUrl": "https://peertube.touhoppai.moe/static/web-videos/710ca925-6301-4b01-805c-fef4e6d4edb9-1080.mp4",
+      "fileDownloadUrl": "https://peertube.touhoppai.moe/download/web-videos/ad7901c1-a469-4fb5-9023-0a7b2ed50b0e-1080.mp4",
+      "metadataUrl": "https://peertube.touhoppai.moe/api/v1/videos/ad7901c1-a469-4fb5-9023-0a7b2ed50b0e/metadata/28584",
+      "hasAudio": true,
+      "hasVideo": true,
+      "storage": 0
+    },
+    {
+      "id": 28587,
+      "resolution": {
+        "id": 720,
+        "label": "720p"
+      },
+      "width": 1280,
+      "height": 720,
+      "magnetUri": "magnet:?xs=https%3A%2F%2Fpeertube.touhoppai.moe%2Flazy-static%2Ftorrents%2Fb0e398cc-c060-4656-b820-bf5b4a207f8a-720.torrent&xt=urn:btih:403f8438705b4ec53ad33d6673f985052bc2e380&dn=Pepper+%26+Carrot+Episode+4%3A+Stroke+of+Genius&tr=https%3A%2F%2Fpeertube.touhoppai.moe%2Ftracker%2Fannounce&tr=wss%3A%2F%2Fpeertube.touhoppai.moe%3A443%2Ftracker%2Fsocket&ws=https%3A%2F%2Fpeertube.touhoppai.moe%2Fstatic%2Fweb-videos%2F57799aad-26a2-4101-9ff2-3de8a7c8044e-720.mp4",
+      "size": 30332959,
+      "fps": 24,
+      "torrentUrl": "https://peertube.touhoppai.moe/lazy-static/torrents/b0e398cc-c060-4656-b820-bf5b4a207f8a-720.torrent",
+      "torrentDownloadUrl": "https://peertube.touhoppai.moe/download/torrents/b0e398cc-c060-4656-b820-bf5b4a207f8a-720.torrent",
+      "fileUrl": "https://peertube.touhoppai.moe/static/web-videos/57799aad-26a2-4101-9ff2-3de8a7c8044e-720.mp4",
+      "fileDownloadUrl": "https://peertube.touhoppai.moe/download/web-videos/ad7901c1-a469-4fb5-9023-0a7b2ed50b0e-720.mp4",
+      "metadataUrl": "https://peertube.touhoppai.moe/api/v1/videos/ad7901c1-a469-4fb5-9023-0a7b2ed50b0e/metadata/28587",
+      "hasAudio": true,
+      "hasVideo": true,
+      "storage": 0
+    },
+    {
+      "id": 28586,
+      "resolution": {
+        "id": 360,
+        "label": "360p"
+      },
+      "width": 640,
+      "height": 360,
+      "magnetUri": "magnet:?xs=https%3A%2F%2Fpeertube.touhoppai.moe%2Flazy-static%2Ftorrents%2Fcc2d30a8-e3a1-4461-a35c-b1749ef9a47b-360.torrent&xt=urn:btih:53a9826bdeb3cc218a71742e2d1628eb5cbe9a85&dn=Pepper+%26+Carrot+Episode+4%3A+Stroke+of+Genius&tr=https%3A%2F%2Fpeertube.touhoppai.moe%2Ftracker%2Fannounce&tr=wss%3A%2F%2Fpeertube.touhoppai.moe%3A443%2Ftracker%2Fsocket&ws=https%3A%2F%2Fpeertube.touhoppai.moe%2Fstatic%2Fweb-videos%2F8d54ee21-0b58-41f3-8c14-c49e337dcbe6-360.mp4",
+      "size": 14690220,
+      "fps": 24,
+      "torrentUrl": "https://peertube.touhoppai.moe/lazy-static/torrents/cc2d30a8-e3a1-4461-a35c-b1749ef9a47b-360.torrent",
+      "torrentDownloadUrl": "https://peertube.touhoppai.moe/download/torrents/cc2d30a8-e3a1-4461-a35c-b1749ef9a47b-360.torrent",
+      "fileUrl": "https://peertube.touhoppai.moe/static/web-videos/8d54ee21-0b58-41f3-8c14-c49e337dcbe6-360.mp4",
+      "fileDownloadUrl": "https://peertube.touhoppai.moe/download/web-videos/ad7901c1-a469-4fb5-9023-0a7b2ed50b0e-360.mp4",
+      "metadataUrl": "https://peertube.touhoppai.moe/api/v1/videos/ad7901c1-a469-4fb5-9023-0a7b2ed50b0e/metadata/28586",
+      "hasAudio": true,
+      "hasVideo": true,
+      "storage": 0
+    }
+  ]
+}

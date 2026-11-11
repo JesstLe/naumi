@@ -1,0 +1,4 @@
+# Source evidence is an immutable byte snapshot, not authored application text.
+# Preserve original line endings and licence-file hashes across checkout systems.
+source-evidence/** -text -diff
+cases.csv -text -diff

@@ -1,0 +1,8 @@
+{
+  "result": "PASS",
+  "articles": 384,
+  "videos": 125,
+  "missingLocalMedia": [],
+  "allVideoPreloadNone": true,
+  "verificationTier": "static HTML parse + local path resolution; not browser interaction acceptance"
+}

@@ -1,0 +1,23 @@
+{
+  "sourceUrl": "https://archive.org/metadata/pepper-carrot-episode-4-stroke-of-genius-1080p",
+  "retrievedAt": "2026-11-11T02:30:30.740598+00:00",
+  "metadata": {
+    "identifier": "pepper-carrot-episode-4-stroke-of-genius-1080p",
+    "creator": "Morevna Project, David Revoy",
+    "date": "2022-11",
+    "description": "<div class=\"video-info-description-html\"><p>Based on the web-comic by David Revoy - <a href=\"https://www.peppercarrot.com/en/webcomic/ep04_Stroke-of-genius.html\" rel=\"ugc nofollow\">https://www.peppercarrot.com/en/webcomic/ep04_Stroke-of-genius.html</a></p>\n<p>Made with free/open-source software:</p>\n<ul><li>Synfig - <a href=\"https://gumroad.com/a/683871059\" rel=\"ugc nofollow\">https://gumroad.com/a/683871059</a></li><li>Krita - <a href=\"https://krita.org/en/download/krita-desktop/\" rel=\"ugc nofollow\">https://krita.org/en/download/krita-desktop/</a></li><li>Blender - <a href=\"https://www.blender.org/download/\" rel=\"ugc nofollow\">https://www.blender.org/download/</a></li><li>RenderChan - <a href=\"https://morevnaproject.org/renderchan/\" rel=\"ugc nofollow\">https://morevnaproject.org/renderchan/</a></li></ul>\n<p>License - CC-BY-SA 4.0.</p>\n<p>Support creating more animated episodes of Pepper&amp;Carrot:</p>\n<ul><li><a href=\"https://morevnaproject.org/pepper-and-carrot/sponsor/\" rel=\"ugc nofollow\">https://morevnaproject.org/pepper-and-carrot/sponsor/</a></li></ul>\n<p>Learn how to create animated videos like this - <a href=\"https://www.youtube.com/watch?v=_IcXTg4OQMU\" rel=\"ugc nofollow\">https://www.youtube.com/watch?v=_IcXTg4OQMU</a><br />\n___________________________________________________________________________________________________</p>\n<p>Morevna Project is an experimental animation studio which adopts  \nopen-source philosophy and uses open-source software to produce \nanimation works.</p>\n<p>🌍  Find more on our website - <a href=\"https://morevnaproject.org/\" rel=\"ugc nofollow\">https://morevnaproject.org/</a></p>\n</div>",
+    "licenseurl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "title": "Pepper & Carrot Episode 4: Stroke of Genius",
+    "website": "https://morevnaproject.org/"
+  },
+  "files": [
+    {
+      "name": "Pepper & Carrot Episode 4: Stroke of Genius 1080p.mp4",
+      "source": "original",
+      "format": "MPEG4",
+      "size": "167243999",
+      "md5": "dc53689e71a4936abda4400e1fe45b04",
+      "sha1": "d8d518865bb6600d396d024dfdf15bf9157369de"
+    }
+  ]
+}

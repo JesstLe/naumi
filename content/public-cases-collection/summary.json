@@ -1,0 +1,50 @@
+{
+  "candidates": 1410,
+  "accepted": 384,
+  "images": 259,
+  "videos": 125,
+  "sources": {
+    "rapidata-images": 210,
+    "gpt4o": 49,
+    "rapidata-videos": 119,
+    "pepper-carrot": 3,
+    "blender-open-movies": 3
+  },
+  "categories": {
+    "服饰人像": 25,
+    "3D创意": 20,
+    "场景建筑": 18,
+    "自然旅行": 31,
+    "家居空间": 20,
+    "食品餐饮": 21,
+    "文创玩具": 26,
+    "场景创意": 5,
+    "运动户外": 8,
+    "海报平面": 9,
+    "美妆个护": 1,
+    "商品摄影": 39,
+    "插画叙事": 29,
+    "包装设计": 3,
+    "数码科技": 4,
+    "科幻创意": 12,
+    "动画片段": 19,
+    "自然镜头": 31,
+    "人物短片": 7,
+    "运动人物": 9,
+    "镜头运动": 17,
+    "商品短片": 24,
+    "漫剧动画": 3,
+    "叙事动画短片": 2,
+    "真人叙事短片": 1
+  },
+  "statuses": {
+    "accepted": 384,
+    "not-selected": 127,
+    "excluded-existing": 12,
+    "pending-provenance": 2,
+    "pending-secondary-rights": 3,
+    "candidate": 48,
+    "awaiting-editorial-review": 834
+  },
+  "naumiGenerationVerified": 0
+}
