@@ -3,6 +3,8 @@ import { SiteProfileProvider } from '@/lib/site-control/client';
 
 import { FeatureAccessProvider } from "@/lib/feature-access/client";
 import type { Metadata } from "next";
+import { NO_INDEX } from "@/lib/seo/catalog";
+import { publicSeoEnabled } from "@/lib/seo/server";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { GeistSans } from "geist/font/sans";
@@ -48,6 +50,7 @@ const THEME_INIT = `(function(){try{if(localStorage.getItem('theme')==='dark')do
 
 const platformMetadata: Metadata = {
   title: `${BRAND}- 一站式AI设计平台`,
+  robots: NO_INDEX,
   description:
     `${BRAND} 是一站式 AI 设计平台，覆盖作图、短剧、平面设计与电商出图，帮品牌与创作团队高效产出商业视觉。`,
   keywords: [
@@ -108,6 +111,7 @@ export default async function RootLayout({
             pricingVisible={pricingVisible}
             rechargeEnabled={rechargeEnabled}
             official={officialSite}
+            publicDiscovery={await publicSeoEnabled()}
           >
           <BrandProvider
             name={site.mode === 'enterprise' ? site.policy.brand : brand.name}

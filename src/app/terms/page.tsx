@@ -1,3 +1,4 @@
+import { publicMetadata } from "@/lib/seo/server";
 import { FileText } from "lucide-react";
 import { getServerLocale } from "@/lib/i18n/server-locale";
 import { BRAND, BRAND_EMAIL } from "@/lib/brand";
@@ -8,7 +9,7 @@ import { publicCommerceEnabled } from "@/lib/commerce";
 // 条款当前版本日期(中英文共用)。
 const LAST_UPDATED = "2026-10-10";
 
-export const metadata = { title: `服务条款 — ${BRAND}` };
+export async function generateMetadata() { return publicMetadata("/terms", `服务条款 — ${BRAND}`); }
 
 export default async function TermsPage() {
   const locale = await getServerLocale();

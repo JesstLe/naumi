@@ -3,6 +3,7 @@
 import { createContext, useContext, useMemo } from "react";
 
 type Ctx = {
+  publicDiscovery: boolean;
   // 是否向普通前端访客公开价格、充值和销售入口。内测期默认 false。
   commerceVisible: boolean;
   pricingVisible: boolean;
@@ -18,20 +19,22 @@ const PaymentContext = createContext<Ctx | null>(null);
 
 export function PaymentProvider({
   commerceVisible,
+  publicDiscovery = false,
   pricingVisible = commerceVisible,
   rechargeEnabled,
   official,
   children,
 }: {
   commerceVisible: boolean;
+  publicDiscovery?: boolean;
   pricingVisible?: boolean;
   rechargeEnabled: boolean;
   official: boolean;
   children: React.ReactNode;
 }) {
   const value = useMemo<Ctx>(
-    () => ({ commerceVisible, pricingVisible, rechargeEnabled, official }),
-    [commerceVisible, pricingVisible, rechargeEnabled, official]
+    () => ({ publicDiscovery, commerceVisible, pricingVisible, rechargeEnabled, official }),
+    [publicDiscovery, commerceVisible, pricingVisible, rechargeEnabled, official]
   );
   return (
     <PaymentContext.Provider value={value}>{children}</PaymentContext.Provider>
@@ -43,6 +46,7 @@ export function usePaymentConfig(): Ctx {
   const c = useContext(PaymentContext);
   if (!c) {
     return {
+      publicDiscovery: false,
       commerceVisible: false,
       pricingVisible: false,
       rechargeEnabled: false,

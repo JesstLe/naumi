@@ -1,3 +1,4 @@
+import { publicMetadata } from "@/lib/seo/server";
 import Link from "next/link";
 import { Mail, Clock, MessageSquare } from "lucide-react";
 import { getServerLocale } from "@/lib/i18n/server-locale";
@@ -5,7 +6,7 @@ import { BRAND, BRAND_EMAIL } from "@/lib/brand";
 import { getSitePage } from "@/lib/settings";
 import { CustomPage } from "@/components/custom-page";
 
-export const metadata = { title: `联系我们 — ${BRAND}` };
+export async function generateMetadata() { return publicMetadata("/contact", `联系我们 — ${BRAND}`); }
 
 export default async function ContactPage() {
   const locale = await getServerLocale();
