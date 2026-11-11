@@ -1,3 +1,7 @@
+import {withBiRequest} from "@/lib/bi/request";
+import {generateToolImage} from "@/lib/tools/model-image";
+import {requestImageQuality} from "@/lib/image-quality-request";
+import type {ResolvedImageQuality} from "@/lib/image-quality";
 import {withBillingRequest} from "@/lib/billing/synchronous";
 import {configuredToolCost, synchronousChargedCredits} from "@/lib/billing/synchronous-operation";
 import { NextResponse } from "next/server";
@@ -19,15 +23,14 @@ import { safeError } from "@/lib/api-error";
 //
 // 把上传图按指定 DPI + 物理尺寸(毫米)重采样成符合印刷标准的高清文件,并写入
 // DPI 元数据(density),让印刷厂/排版软件正确识别成品尺寸。适配海报/画册/包装。
-// 纯本地 sharp 处理,不调用任何 AI 模型,故计费极低(1 积分/张)。
+// 清晰度和细节由用户所选模型生成；本地仅排版尺寸、编码与写 DPI 元数据。
 // 落库 category="printfile"。
 // ---------------------------------------------------------------------------
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 280;
 
-// 纯本地 sharp 处理、零 API 成本,定价做成免费(0),作为引流工具 —— 比同行更低。
-// (积分系统为整数列,无法表示 0.3;免费是更干净且更低的等价方案。)
+// 模型执行沿用冻结报价；不把本地重采样宣称为 AI 清晰度增强。
 const MM_PER_INCH = 25.4;
 // 单边像素上限,防超大尺寸把内存打爆(8000px ≈ 67cm@300dpi,够海报)。
 const MAX_PX = 8000;
@@ -35,6 +38,8 @@ const MAX_PX = 8000;
 type Fit = "contain" | "cover";
 
 type PrintInput = {
+  quality: ResolvedImageQuality;
+  resolution: string;
   bytes: Buffer;
   srcType: string; // 上传原图的 MIME(用于原图存档命名)
   email: string;
@@ -65,6 +70,8 @@ async function parseInput(request: Request): Promise<PrintInput | null> {
   if (!(file instanceof File && file.size > 0)) return null;
   const fitRaw = s("fit");
   return {
+    quality: requestImageQuality(request,f.get("quality")??undefined),
+    resolution: s("resolution") || "1K",
     bytes: Buffer.from(await file.arrayBuffer()),
     srcType: file.type || "image/png",
     email: s("email").trim(),
@@ -102,7 +109,7 @@ async function billingRoutePost(request: Request) {
       input.email = tokenEmail;
     }
     const useDb = dbEnabled && input.email.length > 0;
-    const cost = await configuredToolCost();
+    const cost = await configuredToolCost(input.resolution);
 
     if (dbEnabled && (await isBanned(input.email, ip))) {
       return NextResponse.json({ error: "账号或 IP 已被封禁" }, { status: 403 });
@@ -133,7 +140,8 @@ async function billingRoutePost(request: Request) {
         default?: typeof import("sharp").default;
       } & typeof import("sharp");
       const sharp = mod.default ?? mod;
-      out = await sharp(input.bytes)
+      const generated=await generateToolImage({tool:"printfile",bytes:input.bytes,type:input.srcType,quality:input.quality});
+      out = await sharp(generated)
         .rotate()
         .resize(wPx, hPx, {
           fit: input.fit, // contain=完整留白 / cover=填满裁切
@@ -244,4 +252,4 @@ async function billingRoutePost(request: Request) {
   }
 }
 
-export async function POST(request:Request){return withBillingRequest(request,"tool.printfile",()=>billingRoutePost(request));}
+export async function POST(request:Request){return withBillingRequest(request,"tool.printfile",()=>withBiRequest(request,()=>billingRoutePost(request)));}

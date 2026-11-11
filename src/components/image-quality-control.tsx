@@ -11,7 +11,7 @@ import { useI18n } from "@/lib/i18n/locale-context";
 import { ImageQualitySelect } from "@/components/ui/image-quality-select";
 import { useFeatureModels } from "@/lib/model-config/feature-client";
 
-export const QUALITY_TOOL_CATEGORIES = new Set(["retouch", "recolor", "replicate", "garment3d", "packaging3d", "garment", "avatar", "style", "tryon", "dewatermark", "dewrinkle", "inpaint", "print"]);
+export const QUALITY_TOOL_CATEGORIES = new Set(["cutout", "upscale", "printfile", "retouch", "recolor", "replicate", "garment3d", "packaging3d", "garment", "avatar", "style", "tryon", "dewatermark", "dewrinkle", "inpaint", "print"]);
 
 type Price = { quote?: PublicQuote; error?: string };
 type PriceResult = { key: string; request: ReturnType<typeof useBilling>["quote"]; retry: number; prices: Record<string, Price> };

@@ -120,7 +120,7 @@ async function runModelOperation<T>(input:ModelOperationInput,run:()=>Promise<T>
   const mainFeature = feature === "competitor.action" && parsed.body.action === "analyze" ? undefined : feature;
   const bundle: ExecutionBundle = { modelVersion: snapshot.version, billingVersion: billing.version, primary: purpose.primary };
   let standaloneSegmentation = false;
-  if (purpose.image === "image.cutout" && !snapshot.config.business?.["tool.cutout"] && !snapshot.config.bindings["image.cutout"]) {
+  if (purpose.image === "image.cutout" && !input.featureModel?.trim() && !parsed.body.modelId && !parsed.body.model && !quotedImage?.facts.modelId && !snapshot.config.business?.["tool.cutout"] && !snapshot.config.bindings["image.cutout"]) {
     const { getCutoutSettings } = await import("../settings");
     const cutout = await getCutoutSettings();
     standaloneSegmentation = cutout.backend !== "openai" && !!cutout.replicateToken;

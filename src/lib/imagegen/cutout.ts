@@ -70,7 +70,7 @@ export async function executeCutout(input:CutoutInput,context:{actor:()=>Promise
           cfg.openaiModel
         );
       };
-      if (currentImagegenStep()&&currentModelExecution("image") || cfg.backend === "openai" || !cfg.replicateToken) {
+      if (currentModelExecution("image") || cfg.backend === "openai" || !cfg.replicateToken) {
         out = await fallback(); // 主用 gpt-image,或没配 Replicate token → 直接兜底
       } else {
         try {

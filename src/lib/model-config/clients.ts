@@ -60,6 +60,12 @@ export function modelAwareOpenAI(options: ConstructorParameters<typeof OpenAI>[0
       let client = clients.get(scope);
       if (!client) { client = executionOpenAI(scope, { trustedOrigins: (process.env.MODEL_CONFIG_TRUSTED_ORIGINS || "").split(/[\s,]+/).filter(Boolean) }); clients.set(scope, client); }
       const target = role === "image" ? client.images : client.chat.completions;
+      // Older cutout callers omit SDK quality. Its newly exposed user selection
+      // still comes from the frozen operation, never a fresh global preference.
+      if(role==="image"&&scope.frozen.feature==="tool.cutout"&&args[0]?.quality===undefined){
+        const quality=scope.frozen.requestedParameters?.quality||scope.frozen.facts?.quality;
+        if(quality)args[0]={...args[0],quality};
+      }
       const call = () => (target as unknown as Record<string, (...values: any[]) => any>)[method](...args);
       return role === "image" && !currentImageOperationId() ? withToolImageOperation(scope.frozen.publicModelId, call) : call();
     };

@@ -13,7 +13,7 @@ export function selectFeatureModel(config:ModelConfig,input:{feature?:string;bin
   const requested=canonicalPublicModelId(config.publicModels,requestedFeatureModel(input.feature,input.requestedModelId));
   const preset=selectedImagePreset(config,input.feature,requested,input.binding);
   const option=selectedBusinessOption(config,input.feature,requested);
-  if(input.allowUnboundCutout&&input.feature==="tool.cutout"&&!preset&&!option&&!config.bindings[input.binding as ModelBinding])return null;
+  if(input.allowUnboundCutout&&input.feature==="tool.cutout"&&!requested&&!preset&&!option&&!config.bindings[input.binding as ModelBinding])return null;
   const id=preset?presetPublicId(preset,requested):option?.modelId||requested||featureDefaultModel(config,input.feature,input.binding as ModelBinding);
   const model=config.publicModels.find(m=>m.id===id&&m.enabled&&m.modality===purpose.modality&&(!(input.requireVisible||requested)||m.visible));
   if(!model)throw new ModelConfigError("MODEL_UNAVAILABLE","所选模型不可用，请刷新模型列表后重试",409);
