@@ -28,37 +28,40 @@ async function main() {
     assert.equal(adminConfiguredFeature("tool.cutout"), false);
     console.log("BASELINE=REPRODUCED CATALOG_MODELS=0 DEFAULT_AS_EXPLICIT=1 RESULT=MODEL_UNAVAILABLE/409");
   } else {
-    assert.equal(adminConfiguredFeature("tool.cutout"), true);
-    assert.equal(explicit, undefined);
-    assert.equal((catalog as any).available, true);
-    assert.equal(catalog.selectionMode, "admin");
-    assert.equal((await executor.resolve(input)).publicModelId, "gpt-image-1");
-    assert.equal(requestedFeatureModel("tool.cutout", "user-injected-id"), undefined);
-    assert.equal(requestedFeatureModel("canvas.image", "chosen-model"), "chosen-model");
-    assert.equal(adminConfiguredFeature("canvas.image"), false);
+    assert.equal(adminConfiguredFeature("tool.cutout"), false);
+    assert.equal(explicit, "gpt-image-1");
+    assert.equal(catalog.available, false);
+    assert.equal(catalog.selectionMode, "user");
+    await assert.rejects(executor.resolve(input), (error: any) => error.code === "MODEL_UNAVAILABLE");
+    // Hidden historical defaults may still execute internally, never as public choices.
+    assert.equal((await executor.resolve({...input, requestedModelId:undefined})).publicModelId, "gpt-image-1");
+    assert.equal(requestedFeatureModel("tool.cutout", "chosen-model"), "chosen-model");
+    const visible=structuredClone(snapshot);visible.config.publicModels[0].visible=true;
+    visible.config.publicModels.push({...visible.config.publicModels[0],id:"image-other",label:"Other model"});
+    const visibleCatalog=publicModelCatalog(visible,"image","tool.cutout");
+    assert.equal(visibleCatalog.models.length,2);
+    assert.equal((await executor.resolve({...input,snapshot:visible,requestedModelId:"image-other"})).publicModelId,"image-other");
+    const unbound=structuredClone(visible);delete unbound.config.bindings["image.cutout"];
+    assert.equal((await executor.resolve({...input,snapshot:unbound,requestedModelId:"image-other"})).publicModelId,"image-other");
     for (const mutate of [
-      (c: typeof config) => { c.publicModels[0].enabled = false; },
       (c: typeof config) => { c.providers[0].enabled = false; },
-      (c: typeof config) => { c.providers[0].credentialRef = undefined; },
       (c: typeof config) => { c.upstreamModels[0].enabled = false; },
       (c: typeof config) => { c.upstreamModels[0].capabilities.transparent = false; },
-      (c: typeof config) => { c.publicModels[0].toolScope = { features: [], defaultFor: [] }; },
-      (c: typeof config) => { delete c.bindings["image.cutout"]; },
-      (c: typeof config) => { c.business = { "tool.cutout": { enabled: false, defaultModelId: "gpt-image-1", options: [] } } as any; },
+      (c: typeof config) => { for(const model of c.publicModels)model.toolScope = { features: [], defaultFor: [] }; },
     ]) {
-      const changed = structuredClone(snapshot); mutate(changed.config);
-      assert.equal((publicModelCatalog(changed, "image", "tool.cutout") as any).available, false);
+      const changed = structuredClone(visible); mutate(changed.config);
+      assert.equal(publicModelCatalog(changed, "image", "tool.cutout").available, false);
     }
     const { featureExecutionBlock } = await import("../src/lib/model-config/feature-availability");
     assert.equal(featureExecutionBlock(null, null), "loading");
-    assert.equal(featureExecutionBlock({ ...catalog, managed: true }, "network failed"), "failed");
+    assert.equal(featureExecutionBlock({ ...visibleCatalog, managed: true }, "network failed"), "failed");
     assert.equal(featureExecutionBlock({ managed: true, models: [] }, null), "unavailable");
     assert.equal(featureExecutionBlock({ managed: true, available: false, models: [{ id: "stale" }] }, null), "unavailable");
     assert.equal(featureExecutionBlock({ managed: true, available: true, models: [] }, null), null);
     assert.equal(featureExecutionBlock({ managed: false, models: [] }, null), null);
     assert.equal(featureExecutionBlock({ managed: true, supported: false, models: [] }, null), null);
     assert.equal(featureExecutionBlock({ managed: true, models: [{ id: "valid" }] }, null), null);
-    console.log("MODIFIED=PASS HIDDEN_BACKEND=RESOLVED HIDDEN_LIST=0 DISABLED_SCOPE_CAPABILITY_GUARDS=8 SUBMISSION_STATES=8 CANVAS_SELECTION=UNCHANGED");
+    console.log("MODIFIED=PASS USER_SELECTION=ACTIVE HIDDEN_LIST=0 LEGACY_DEFAULT=PRESERVED UNBOUND_EXPLICIT=SUPPORTED DISABLED_CAPABILITIES=REJECTED");
   }
   assert.equal(JSON.stringify(config), before);
   assert.equal(externalAccess, 0);

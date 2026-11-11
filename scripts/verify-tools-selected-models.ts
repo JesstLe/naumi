@@ -67,6 +67,9 @@ async function main(){
     const form=new FormData();form.set('image',new File([new Uint8Array(transparent)],'source.png',{type:'image/png'}));form.set('description','测试产品');form.set('prompt','生成标题');
     const before=wire.length,response=await route.POST(new Request('http://internal/api/'+name,{method:'POST',headers:{cookie:`nv_user=${signUserSession(email,Date.now())}`,origin:'http://internal','x-naumi-feature-model':'text-b','x-naumi-text-model':'text-b','x-naumi-billing-operation-id':randomUUID()},body:form}));const data=await response.json();
     assert.equal(response.status,200,`${name}: ${JSON.stringify(data).slice(0,300)}`);assert.equal(wire.length,before+1);assert.equal(wire.at(-1).body.model,'selected-text-b');checks.push(name+' selected vision-capable text model succeeds');
+    textResult='{invalid-json';
+    const bad=await route.POST(new Request('http://internal/api/'+name,{method:'POST',headers:{cookie:`nv_user=${signUserSession(email,Date.now())}`,origin:'http://internal','x-naumi-feature-model':'text-b','x-naumi-text-model':'text-b','x-naumi-billing-operation-id':randomUUID()},body:form}));const badBody=await bad.json();
+    assert.ok(bad.status>=400);assert.ok(badBody.error);assert.equal(badBody.risk,undefined);assert.equal(badBody.titles,undefined);checks.push(name+' invalid upstream JSON never becomes a successful result');
   }
   fs.writeFileSync(path.join(out,'RESULT.json'),JSON.stringify({status:'PASS',checks,wire,supplier:'loopback fixture',realRoutes:true,realPostgres:true},null,2));console.log(`TOOLS_SELECTED_MODELS=PASS CHECKS=${checks.length} ROUTES=${names.length} REAL_PG=1 PAID_EXTERNAL=0`);
  }catch(error){fs.writeFileSync(path.join(out,'FAILURE.json'),JSON.stringify({error:String(error),checks,wire},null,2));throw error;}
