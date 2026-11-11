@@ -31,3 +31,6 @@
 
 /* Preserve result geometry during authorized reloads; never paint a broken-image icon. */
 .imageOpen>img{display:block}.imageOpen>img[data-browser-image-cache=pending]{visibility:hidden}.resultImageState{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--cr-muted);font-size:13px;pointer-events:none}.resultImageState>svg{width:22px;height:22px}.resultImageState button{pointer-events:auto;padding:7px 14px;border:1px solid var(--cr-border);border-radius:8px;background:var(--cr-card);color:var(--cr-text)}
+
+/* Keep the return shortcut in the sticky input layer, not in message flow. */
+.chatComposer .toBottom{position:absolute;right:0;bottom:calc(100% + 12px);margin:0;z-index:1}.chatComposer .toBottom button{min-height:36px;padding:8px 13px;border:1px solid var(--cr-border);border-radius:20px;background:var(--cr-card);box-shadow:0 3px 14px #192b4214;color:var(--cr-text)}

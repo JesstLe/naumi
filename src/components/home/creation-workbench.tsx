@@ -21,6 +21,7 @@ import { liveWorkbenchSessions } from "@/lib/agent/workbench-session-preview";
 import { CreationComposer } from "./creation-composer";
 import { CreationDiscovery } from "./creation-discovery";
 import { CreationMessage,CreationImageViewer } from "./creation-message";
+import { useConversationScroll } from "./use-conversation-scroll";
 import styles from "./creation-workbench.module.css";
 
 const navigation=[{label:"创作",href:"/",Icon:Sparkles},{label:"模板中心",href:"/templates",Icon:Compass},{label:"创作工具",href:"/tools",Icon:Shapes},{label:"我的作品",href:"/works",Icon:Images}];
@@ -32,12 +33,12 @@ export function CreationWorkbench({port,children}:{port:CreationWorkbenchPort;ch
   const site=useSiteProfile();
   const team=useTeamEntryAccess(user),projects=useCreationProjects(user?.email||"",ready,can("canvas"));
   const [dark,setDark]=useState(false),[collapsed,setCollapsed]=useState(false),[mobile,setMobile]=useState(false),[account,setAccount]=useState(false),[banner,setBanner]=useState(true),[tab,setTab]=useState("generate"),[preview,setPreview]=useState(""),[search,setSearch]=useState(""),[searching,setSearching]=useState(false);
-  const bottom=useRef<HTMLDivElement>(null),stream=useRef<HTMLDivElement>(null),follow=useRef(true),accountRoot=useRef<HTMLDivElement>(null);
+  const {stream,composer,showReturn,returnToBottom}=useConversationScroll(port.sessionId,port.conversation,port.messages);
+  const accountRoot=useRef<HTMLDivElement>(null);
   useEffect(()=>{const sync=()=>setDark(document.documentElement.classList.contains("dark"));sync();window.addEventListener(ACCOUNT_THEME_EVENT,sync);window.addEventListener("storage",sync);return()=>{window.removeEventListener(ACCOUNT_THEME_EVENT,sync);window.removeEventListener("storage",sync);};},[]);
   useEffect(()=>{const close=(e:MouseEvent)=>{if(!accountRoot.current?.contains(e.target as Node))setAccount(false);};document.addEventListener("mousedown",close);return()=>document.removeEventListener("mousedown",close);},[]);
   useEffect(()=>{setAccount(false);setPreview("");setSearch("");setSearching(false);},[user?.email]);
-  useEffect(()=>{setMobile(false);setTab("generate");follow.current=true;},[port.sessionId,port.conversation]);
-  useEffect(()=>{if(port.conversation&&follow.current)bottom.current?.scrollIntoView({block:"end"});},[port.messages,port.conversation]);
+  useEffect(()=>{setMobile(false);setTab("generate");},[port.sessionId,port.conversation]);
   const current=port.sessions.find(s=>s.id===port.sessionId),date=current?new Date(current.updatedAt):new Date();
   const title=Number.isNaN(date.getTime())?"对话":`${date.getMonth()+1}月${date.getDate()}日`;
   const skills=skillIds.flatMap(id=>{const skill=OFFICIAL_IMAGE_SKILLS.find(s=>s.id==="official:"+id);return skill?[skill]:[];});
@@ -67,7 +68,7 @@ export function CreationWorkbench({port,children}:{port:CreationWorkbenchPort;ch
           <div ref={accountRoot} className={styles.accountRoot}><button type="button" className={styles.accountButton} aria-expanded={!!user&&account} onClick={()=>user?setAccount(!account):openAuth("sign-in")}><span>{user?"我的账户":"登录 / 注册"}</span><span className={styles.avatar}>{(user?.name||brand.name||"N").slice(0,1).toUpperCase()}</span></button>{user&&account&&<AccountDockMenu user={user} remaining={remaining} dark={dark} className="right-0 top-full mt-2" onClose={()=>setAccount(false)} onToggleTheme={()=>setDark(toggleAccountTheme())} onRedeem={()=>openRecharge("code")} onSignOut={signOut}/>}</div>
         </header>
         {searching&&<div className={styles.searchHistory}><input aria-label="搜索对话" value={search} onChange={e=>setSearch(e.target.value)} placeholder="搜索对话"/>{recentSessions.map(s=><button type="button" disabled={!port.canNavigate} key={s.id} onClick={()=>{port.load(s.id);setSearching(false);}}>{s.title}</button>)}</div>}
-        {port.conversation?<section className={styles.conversation} aria-label="Agent 对话"><h1 className={styles.chatDate}>{title}</h1><div ref={stream} className={styles.messageStream} aria-busy={port.busy} onWheel={()=>{follow.current=false;}}>{port.messages.map((m,i)=><CreationMessage key={i} message={m} previous={port.messages[i-1]} port={port} onPreview={setPreview}/>)}</div><div className={styles.toBottom}><button type="button" onClick={()=>{follow.current=true;bottom.current?.scrollIntoView({behavior:"smooth",block:"end"});}}>回到底部<ChevronDown/></button></div><div className={styles.chatComposer}><CreationComposer port={port}/></div><div ref={bottom}/></section>:<>
+        {port.conversation?<section className={styles.conversation} aria-label="Agent 对话"><h1 className={styles.chatDate}>{title}</h1><div ref={stream} className={styles.messageStream} aria-busy={port.busy}>{port.messages.map((m,i)=><CreationMessage key={i} message={m} previous={port.messages[i-1]} port={port} onPreview={setPreview}/>)}</div><div ref={composer} className={styles.chatComposer}>{showReturn&&<div className={styles.toBottom}><button type="button" onClick={returnToBottom}>回到底部<ChevronDown/></button></div>}<CreationComposer port={port}/></div></section>:<>
           <section className={styles.hero}><h1>你好，今天想要创作什么？</h1><div className={styles.tabs} role="tablist" aria-label="创作方式"><button type="button" role="tab" aria-selected={tab==="generate"} onClick={()=>setTab("generate")}>生成</button>{can("canvas")&&<button type="button" role="tab" aria-selected={tab==="canvas"} onClick={canvasTab}>画布</button>}</div>
             {tab==="generate"?<>{can("agent")?<CreationComposer port={port}/>:<div className={styles.empty}>{!ready?"正在加载":"Agent 功能尚未授权"}</div>}<div className={styles.skillRow}>{skills.map(skill=><button type="button" key={skill.id} aria-pressed={port.skill?.id===skill.id} disabled={!can("agent")} onClick={()=>{port.setSkill(skill);if(!port.text.trim())port.setText(`使用「${skill.name}」创作：`);}}>/{skill.name}</button>)}</div></>:<div className={styles.canvasCards}><Link href="/canvas" className={styles.newCanvas}><Plus/>新建画布</Link>{projects.projects.slice(0,2).map(p=><Link href={`/canvas?project=${encodeURIComponent(p.projectKey)}`} key={p.projectKey}>{p.cover?<CachedImage src={p.cover} alt=""/>:<PanelsTopLeft/>}<span>{p.name}</span></Link>)}</div>}
           </section><CreationDiscovery/>{site.mode==="platform"&&<SiteFooter/>}
