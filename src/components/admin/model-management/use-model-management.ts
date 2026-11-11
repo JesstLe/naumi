@@ -1,7 +1,7 @@
 "use client";
 import {useEffect,useState} from "react";
 import {browserRandomUUID} from "@/lib/browser-crypto";
-import {MODEL_CATALOG_REFRESH} from "@/lib/model-config/public-client";
+import {notifyModelCatalogRefresh} from "@/lib/model-config/catalog-refresh";
 import {createModelManagementSession} from "@/lib/model-config/management-session";
 import {api} from "./client";
 import {pendingKey,type State,type Operation} from "./contracts";
@@ -16,7 +16,7 @@ export function useModelManagement(){
     read:request=>api(undefined,request),publish:(operation,request)=>api(operation,request),
     discover:(providerId,force,request)=>api({action:"discover",providerId,force},request),
     storage:{read:()=>sessionStorage.getItem(pendingKey),write:value=>sessionStorage.setItem(pendingKey,value),remove:()=>sessionStorage.removeItem(pendingKey)},
-    uuid:browserRandomUUID,refreshCatalog:()=>window.dispatchEvent(new Event(MODEL_CATALOG_REFRESH)),
+    uuid:browserRandomUUID,refreshCatalog:notifyModelCatalogRefresh,
     setState,setError,setNotice,setLoading,setBusy,setPending,setRefreshing,
   }));
   useEffect(()=>session.mount(),[session]);

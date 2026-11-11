@@ -3,13 +3,15 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Box, Check, Film, ImageIcon, Loader2, RefreshCw, X } from "lucide-react";
 import { authHeader } from "@/lib/supabase";
+import { subscribeModelCatalogRefresh } from "@/lib/model-config/catalog-refresh";
 import { useFeatureCatalogScope } from "@/lib/model-config/feature-client";
 import type { FeatureCatalog } from "@/lib/model-config/feature-catalog";
 import { compactImageModelOptions } from "@/lib/image-model-routing";
 import { imageModelParameterOptions, imageCombinationSupported } from "@/lib/imagegen/parameter-options";
 import { ModelIcon } from "@/components/ui/model-icon";
 import { VideoDurationControl } from "@/components/video/duration-control";
-import { catalogCapability, videoAspectRatios, videoDurations, videoResolutions, type VideoCatalogModel } from "@/lib/video/client-settings";
+import { catalogCapability, type VideoCatalogModel } from "@/lib/video/client-settings";
+import { videoParameterChoices } from "@/lib/video/parameter-options";
 import type { CreationSettings } from "@/lib/agent/creation-settings";
 import styles from "./creation-settings.module.css";
 
@@ -20,8 +22,10 @@ export function CreationSettingsPanel({ value, onChange, onClose, nextTurn = fal
   const panel = useRef<HTMLElement>(null);
   const [position, setPosition] = useState<{left:number;top:number}>();
   const [tab, setTab] = useState<"image" | "video">("image");
-  const [catalog, setCatalog] = useState<Catalog | null>(null), [error, setError] = useState("");
+  const [loaded, setLoaded] = useState<{ scope:string; catalog:Catalog } | null>(null), [error, setError] = useState("");
+  const catalog = loaded?.scope === scope ? loaded.catalog : null;
   const [attempt, setAttempt] = useState(0);
+  useEffect(() => subscribeModelCatalogRefresh(() => setAttempt(n => n + 1)), []);
   useLayoutEffect(() => {
     const element=panel.current, anchor=element?.parentElement;
     if(!element||!anchor)return;
@@ -34,14 +38,14 @@ export function CreationSettingsPanel({ value, onChange, onClose, nextTurn = fal
   }, []);
   useEffect(() => {
     let active = true; const controller = new AbortController();
-    setCatalog(null); setError("");
+    setError("");
     void (async () => {
       const headers = await authHeader();
       const read = async (url: string) => { const response = await fetch(url, { headers, signal: controller.signal, cache: "no-store" }); const data = await response.json(); if (!response.ok) throw Error(data.error || "创作模型读取失败"); return data; };
       const [images, videos] = await Promise.allSettled([read("/api/models?feature=image.generate"), read("/api/video/catalog")]);
-      if (active) setCatalog({ images: images.status === "fulfilled" && images.value.managed ? compactImageModelOptions(images.value.models) : [], videos: videos.status === "fulfilled" ? videos.value.models || [] : [],
+      if (active) setLoaded({ scope, catalog: { images: images.status === "fulfilled" && images.value.managed ? compactImageModelOptions(images.value.models) : [], videos: videos.status === "fulfilled" ? videos.value.models || [] : [],
         imageError: images.status === "rejected" ? "图片模型读取失败" : !images.value.managed ? "当前使用默认图像配置" : undefined,
-        videoError: videos.status === "rejected" ? "视频模型读取失败" : undefined });
+        videoError: videos.status === "rejected" ? "视频模型读取失败" : undefined } });
     })().catch(cause => { if (active) setError(cause instanceof Error ? cause.message : "创作模型读取失败"); });
     return () => { active = false; controller.abort(); };
   }, [scope, attempt]);
@@ -49,10 +53,16 @@ export function CreationSettingsPanel({ value, onChange, onClose, nextTurn = fal
   const imageParameters = image ? imageModelParameterOptions(image) : { ratios: [], resolutions: [], combinations: undefined };
   const video = catalog?.videos.find(item => item.modelId === value.video?.modelId && item.providerId === value.video?.providerId);
   const capability = catalogCapability(video), mode = capability.modes?.[0];
-  const durations = videoDurations(capability, mode).filter(duration => duration > 0);
-  const resolutions = value.video?.durationSeconds ? videoResolutions(capability, value.video.durationSeconds, mode) : [...new Set(durations.flatMap(duration => videoResolutions(capability, duration, mode)))];
+  const videoParameters = videoParameterChoices(capability, mode, value.video);
   const patchImage = (patch: Partial<NonNullable<CreationSettings["image"]>>) => onChange({ ...value, image: { ...value.image, ...patch } });
-  const patchVideo = (patch: Partial<NonNullable<CreationSettings["video"]>>) => onChange({ ...value, video: { ...value.video, ...patch } });
+  const patchVideo = (patch: Partial<NonNullable<CreationSettings["video"]>>) => {
+    const next = { ...value.video, ...patch };
+    const available = videoParameterChoices(capability, mode, next);
+    if (next.resolution && !available.resolutions.includes(next.resolution)) next.resolution = undefined;
+    const ratios = videoParameterChoices(capability, mode, next).aspectRatios;
+    if (next.aspectRatio && !ratios.includes(next.aspectRatio)) next.aspectRatio = undefined;
+    onChange({ ...value, video: next });
+  };
   function choices(label: string, selected: string | number | undefined, options: (string | number)[], change: (value: string | number | undefined) => void, labels?: Record<string, string>, disabled?: (option: string | number) => boolean) {
     return <fieldset className={styles.field}><legend>{label}</legend><div className={label === "比例" ? styles.ratios : styles.choices}>
       {[undefined, ...options.filter(option => option !== "auto")].map(option => <button type="button" key={option ?? "auto"} aria-label={`${label} ${labels?.[String(option)] || option || "智能"}`} aria-pressed={selected === option || !selected && option === undefined} disabled={option !== undefined && disabled?.(option)} onClick={() => change(option)}>
@@ -75,9 +85,9 @@ export function CreationSettingsPanel({ value, onChange, onClose, nextTurn = fal
         {choices("清晰度", value.image?.resolution, imageParameters.resolutions, option => patchImage({ resolution: option as NonNullable<CreationSettings["image"]>["resolution"] }), undefined, option => !imageCombinationSupported(imageParameters, value.image?.ratio, String(option)))}
         {!!image?.qualities?.length && choices("质量", value.image?.quality, image.qualities, option => patchImage({ quality: option as NonNullable<CreationSettings["image"]>["quality"] }), { low: "基础", medium: "标准", high: "高质量", xhigh: "超高", max: "最高", ...image.qualityLabels })}
       </> : <>
-        {choices("比例", value.video?.aspectRatio, videoAspectRatios(capability, mode, value.video?.resolution), option => patchVideo({ aspectRatio: option as string | undefined }))}
-        {choices("清晰度", value.video?.resolution, resolutions, option => patchVideo({ resolution: option as string | undefined, aspectRatio: undefined }))}
-        <VideoDurationControl capability={capability} mode={mode} value={value.video?.durationSeconds} onChange={durationSeconds => patchVideo({ durationSeconds, resolution: undefined })} onSmart={() => patchVideo({ durationSeconds: undefined, resolution: undefined })}/>
+        {choices("比例", value.video?.aspectRatio, videoParameters.aspectRatios, option => patchVideo({ aspectRatio: option as string | undefined }))}
+        {choices("清晰度", value.video?.resolution, videoParameters.resolutions, option => patchVideo({ resolution: option as string | undefined }))}
+        <VideoDurationControl capability={capability} mode={mode} value={value.video?.durationSeconds} onChange={durationSeconds => patchVideo({ durationSeconds })} onSmart={() => patchVideo({ durationSeconds: undefined })}/>
       </>}</div>
     </div>}
   </section>;

@@ -2,7 +2,8 @@
 
 import { Check } from "lucide-react";
 import type { ResolvedVideoCapability } from "@/lib/video/capability-schema";
-import { videoResolutions, videoAspectRatios, type VideoNodeConfig } from "@/lib/video/client-settings";
+import type { VideoNodeConfig } from "@/lib/video/client-settings";
+import { videoParameterChoices } from "@/lib/video/parameter-options";
 import { VideoDurationControl } from "@/components/video/duration-control";
 import { useVideoI18n } from "./i18n";
 
@@ -11,7 +12,7 @@ export function VideoParameterPanel({ config, capability: cap, count, onConfig, 
   onConfig: (value: VideoNodeConfig) => void; onCount: (value: number) => void; disabled?: boolean;
 }) {
   const V = useVideoI18n();
-  const ratios = videoAspectRatios(cap, config.mode, config.resolution);
+  const {aspectRatios:ratios,resolutions} = videoParameterChoices(cap,config.mode,config);
   const option = (selected: boolean) => `canvas-ui-control relative flex min-h-9 min-w-0 items-center justify-center gap-1 rounded-[9px] border px-2 py-2 text-xs font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 ${selected ? "border-[var(--canvas-ui-border-strong)] bg-[var(--canvas-ui-soft-hover)] text-[var(--canvas-ui-text)]" : "border-[var(--canvas-ui-border)] text-[var(--canvas-ui-muted)]"}`;
   return <fieldset disabled={disabled} className="space-y-4" data-testid="video-parameter-panel">
     {!!ratios.length && <section aria-label={V("视频画幅")} className="space-y-2">
@@ -24,9 +25,9 @@ export function VideoParameterPanel({ config, capability: cap, count, onConfig, 
         </button>;
       })}</div>
     </section>}
-    {!!videoResolutions(cap, config.durationSeconds, config.mode).length && <section aria-label={V("视频分辨率")} className="space-y-2">
+    {!!resolutions.length && <section aria-label={V("视频分辨率")} className="space-y-2">
       <h3 className="text-xs font-medium canvas-ui-muted">{V("清晰度")}</h3>
-      <div className="flex flex-wrap gap-2">{videoResolutions(cap, config.durationSeconds, config.mode).map(value => <button key={value} type="button" aria-pressed={config.resolution === value} className={`${option(config.resolution === value)} flex-1`} onClick={() => onConfig({ ...config, resolution: value })}>{value.toUpperCase()}</button>)}</div>
+      <div className="flex flex-wrap gap-2">{resolutions.map(value => <button key={value} type="button" aria-pressed={config.resolution === value} className={`${option(config.resolution === value)} flex-1`} onClick={() => onConfig({ ...config, resolution: value })}>{value.toUpperCase()}</button>)}</div>
     </section>}
     <VideoDurationControl capability={cap} mode={config.mode} value={config.durationSeconds} onChange={durationSeconds => onConfig({ ...config, durationSeconds })} disabled={disabled} translate={V}/>
     {cap.audio && <section aria-label={V("生成声音")} className="space-y-2">

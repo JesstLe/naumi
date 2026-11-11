@@ -3,7 +3,8 @@ import {VideoDurationControl} from "@/components/video/duration-control";
 import {CanvasModelSelect} from "../model-select";
 import {useVideoI18n} from "./i18n";
 import type { ResolvedVideoCapability } from "@/lib/video/capability-schema";
-import { catalogCapability, selectedVideoCatalogModel, VIDEO_MODE_LABELS, videoResolutions, videoAspectRatios, reconcileVideoSettings, type VideoCatalogModel, type VideoNodeConfig } from "@/lib/video/client-settings";
+import { catalogCapability, selectedVideoCatalogModel, VIDEO_MODE_LABELS, reconcileVideoSettings, type VideoCatalogModel, type VideoNodeConfig } from "@/lib/video/client-settings";
+import { videoParameterChoices } from "@/lib/video/parameter-options";
 import { VideoField, videoFieldClass, VideoSection } from "./form-controls";
 import { videoOptionLabel, videoOptionValueLabel } from "@/lib/video/option-labels";
 export function VideoSettingsPanel({ config, models, onChange, onNotice, disabled = false, advancedOnly = false }: {
@@ -16,6 +17,7 @@ export function VideoSettingsPanel({ config, models, onChange, onNotice, disable
 }) {
     const V = useVideoI18n();
     const model = selectedVideoCatalogModel(models,config), cap = catalogCapability(model);
+    const parameters = videoParameterChoices(cap, config.mode, config);
     function reconcile(next: VideoNodeConfig, definition: ResolvedVideoCapability) { const result = reconcileVideoSettings(next, definition); onChange(result.config); onNotice(result.changes.length ? `${V("已调整")}：${result.changes.map(V).join("、")}` : ""); }
     const field = (name: string, value: unknown) => <input aria-label={name} value={String(value ?? "")} className={videoFieldClass} readOnly/>;
     const options=Object.entries(cap.providerOptions||{}).filter(([,option])=>option.send!=="omit");
@@ -37,8 +39,8 @@ export function VideoSettingsPanel({ config, models, onChange, onNotice, disable
     <div className="grid grid-cols-2 gap-3">
       {!advancedOnly&&<>
       <div className="col-span-2"><VideoDurationControl capability={cap} mode={config.mode} value={config.durationSeconds} onChange={durationSeconds => reconcile({ ...config, durationSeconds }, cap)} disabled={disabled} translate={V}/></div>
-      <VideoField label={V("视频分辨率")}><select aria-label={V("视频分辨率")} className={videoFieldClass} value={config.resolution || ""} onChange={event => reconcile({ ...config, resolution: event.target.value },cap)}><option value="" disabled>{V("\u672A\u914D\u7F6E")}</option>{videoResolutions(cap, config.durationSeconds, config.mode).map(value => <option key={value}>{value}</option>)}</select></VideoField>
-      <VideoField label={V("视频画幅")}><select aria-label={V("视频画幅")} className={videoFieldClass} value={config.aspectRatio || ""} onChange={event => onChange({ ...config, aspectRatio: event.target.value })}><option value="" disabled>{V("\u672A\u914D\u7F6E")}</option>{videoAspectRatios(cap,config.mode,config.resolution).map(value => <option key={value}>{value}</option>)}</select></VideoField>
+      <VideoField label={V("视频分辨率")}><select aria-label={V("视频分辨率")} className={videoFieldClass} value={config.resolution || ""} onChange={event => reconcile({ ...config, resolution: event.target.value },cap)}><option value="" disabled>{V("\u672A\u914D\u7F6E")}</option>{parameters.resolutions.map(value => <option key={value}>{value}</option>)}</select></VideoField>
+      <VideoField label={V("视频画幅")}><select aria-label={V("视频画幅")} className={videoFieldClass} value={config.aspectRatio || ""} onChange={event => onChange({ ...config, aspectRatio: event.target.value })}><option value="" disabled>{V("\u672A\u914D\u7F6E")}</option>{parameters.aspectRatios.map(value => <option key={value}>{value}</option>)}</select></VideoField>
       </>}
       {!advancedOnly&&<VideoField label={V("生成声音")}>{cap.audio === "optional" ? <select aria-label={V("生成声音")} className={videoFieldClass} value={config.generateAudio === undefined ? "default" : String(config.generateAudio)} onChange={event => { const next = { ...config }; if (event.target.value === "default")
         delete next.generateAudio;

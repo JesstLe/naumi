@@ -27,3 +27,24 @@ export function videoDurationOptions(cap:VideoModelDefinition & {sources?:Record
     automatic:cap.supportsAutoDuration===true&&durations.includes(-1),
   };
 }
+
+export function videoResolutions(cap:VideoModelDefinition, duration?:number, mode?:VideoMode) {
+  return [...new Set((videoParameterScope(cap,mode).durationResolutionMap||[])
+    .filter(map=>duration!==undefined&&map.durations.includes(duration)).flatMap(map=>map.resolutions))];
+}
+export function videoAspectRatios(cap:VideoModelDefinition,mode?:VideoMode,resolution?:string) {
+  return videoParameterScope(cap,mode,resolution).aspectRatios||[];
+}
+
+/** Partial drafts must expose choices even before a duration is chosen.
+ * Exact execution validation still requires a concrete supported combination. */
+export function videoParameterChoices(cap:VideoModelDefinition, mode:VideoMode|undefined, selected:{durationSeconds?:number;resolution?:string}={}) {
+  const durations=videoDurations(cap,mode).filter(duration=>duration>0||duration===-1&&cap.supportsAutoDuration===true);
+  const resolutions=selected.durationSeconds===undefined
+    ? [...new Set(durations.flatMap(duration=>videoResolutions(cap,duration,mode)))]
+    : videoResolutions(cap,selected.durationSeconds,mode);
+  const aspectRatios=selected.resolution||!resolutions.length
+    ? videoAspectRatios(cap,mode,selected.resolution)
+    : [...new Set(resolutions.flatMap(resolution=>videoAspectRatios(cap,mode,resolution)))];
+  return {durations,resolutions,aspectRatios};
+}
