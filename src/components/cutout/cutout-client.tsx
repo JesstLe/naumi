@@ -1,5 +1,6 @@
 "use client";
 import {useFeatureBilling} from "@/lib/billing/preview";
+import {FeatureImageResolution} from '@/components/tools/feature-image-resolution';
 
 import * as React from "react";
 import { Scissors } from "lucide-react";
@@ -11,7 +12,8 @@ import { authHeader } from "@/lib/supabase";
 const ACCENT = "#2E7CF6"; // 图像处理(蓝)
 
 export function CutoutClient() {
-  const billing=useFeatureBilling("tool.cutout",{ quality: "medium" });
+  const [resolution,setResolution]=React.useState('1K');
+  const billing=useFeatureBilling("tool.cutout",{resolution});
   const { user } = useAuth();
   const { locale } = useI18n();
   const L = (z: string, e: string) => (locale === "en" ? e : z);
@@ -24,6 +26,8 @@ export function CutoutClient() {
       tint="var(--c-tint-b)"
       accent={ACCENT}
       category="cutout"
+      resolution={resolution}
+      controls={<FeatureImageResolution feature="tool.cutout" value={resolution} onChange={setResolution}/>}
       regenLabel={L("以此图重新抠", "Re-cut from this image")}
       cost={billing.cost}
       action={L("开始抠图", "Start cutout")}
@@ -31,8 +35,7 @@ export function CutoutClient() {
       onProcess={async (file) => {
         const fd = new FormData();
         fd.append("image", file);
-        // quality 是图片模型档位，不再混用已退役的分割器 fine/fast 标签。
-        fd.append("quality", "medium");
+        fd.append("resolution",resolution);
         fd.append("title", file.name.replace(/\.[^.]+$/, "") || "抠图");
         fd.append("category", "cutout");
         if (user) fd.append("email", user.email);

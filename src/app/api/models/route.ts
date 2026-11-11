@@ -12,9 +12,6 @@ export async function GET(request: Request) {
   const feature = new URL(request.url).searchParams.get("feature");
   if (!isFeatureId(feature)) return NextResponse.json({ error: "未知业务操作" }, { status: 400 });
   try {
-    // Upscale uses its dedicated super-resolution processor, not an image model
-    // selector. Publish its real readiness even when model management is off.
-    if (feature === "tool.upscale") return NextResponse.json({ managed: true, feature, supported: false, available: !!process.env.REPLICATE_API_TOKEN?.trim(), models: [] }, { headers: { "cache-control": "no-store" } });
     if (!await modelConfigurationEnabled()) return NextResponse.json({ managed: false, feature, models: [] }, { headers: { "cache-control": "no-store" } });
     const binding = FEATURE_BINDINGS[feature];
     if (!binding) return NextResponse.json({ managed: true, feature, supported: false, error: "该操作使用独立处理器，未接入模型选择", models: [] }, { headers: { "cache-control": "no-store" } });

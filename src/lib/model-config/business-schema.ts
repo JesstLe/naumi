@@ -40,7 +40,7 @@ export const businessOptionSchema = z.strictObject({
   parameters: z.strictObject({ ratios: z.array(z.string().regex(/^[1-9]\d{0,2}:[1-9]\d{0,2}$/)).min(1).max(30).optional(), qualities: z.array(z.enum(["low", "medium", "high", "xhigh", "max", "auto"])).min(1).max(6).optional(), resolutions: z.array(z.enum(["1K", "2K", "4K"])).min(1).max(3).optional(), inputTypes: z.array(z.enum(["text", "image", "mask"])).min(1).max(3).optional() }).optional(),
   routing: businessRoutingSchema.optional(), postprocess: postprocessSchema.optional(),
 });
-export const businessFeaturesSchema = z.partialRecord(z.enum(FEATURE_IDS), z.strictObject({ enabled: z.boolean(), defaultModelId: id, options: z.array(businessOptionSchema).min(1).max(100) }));
+export const businessFeaturesSchema = z.partialRecord(z.enum(FEATURE_IDS), z.strictObject({ enabled: z.boolean(), defaultModelId: id, inheritExisting:z.boolean().optional(), options: z.array(businessOptionSchema).min(1).max(100) }));
 export type BusinessOption = z.infer<typeof businessOptionSchema>;
 export type Procurement = z.infer<typeof procurementSchema>;
 export type BusinessRouting = z.infer<typeof businessRoutingSchema>;

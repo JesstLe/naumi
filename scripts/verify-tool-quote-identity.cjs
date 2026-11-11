@@ -9,7 +9,7 @@ const baseline=args.includes('--baseline'),loaded=new Map(),results=[];
 function moduleAt(relative,mocks={}){
  const file=path.join(source,relative),bytes=fs.readFileSync(file),loadedModule={exports:{}};
  loaded.set(relative,{path:file,sha256:crypto.createHash('sha256').update(bytes).digest('hex')});
- const context={module: loadedModule,exports:loadedModule.exports,require:name=>Object.hasOwn(mocks,name)?mocks[name]:{},console,Request,Response,Headers,FormData,File,Blob,URL,Buffer,structuredClone,crypto,Date,JSON,Map,Set,process:{env:{NAUMI_ROUTER_MANAGEMENT_URL:'http://fixture.invalid'}},setTimeout,clearTimeout};
+ const context={module: loadedModule,exports:loadedModule.exports,require:name=>Object.hasOwn(mocks,name)?mocks[name]:name.endsWith('public-identity')?moduleAt('src/lib/model-config/public-identity.ts'):name.endsWith('use-tool-reference')?{useToolReference:()=>{}}:{},console,Request,Response,Headers,FormData,File,Blob,URL,Buffer,structuredClone,crypto,Date,JSON,Map,Set,process:{env:{NAUMI_ROUTER_MANAGEMENT_URL:'http://fixture.invalid'}},setTimeout,clearTimeout};
  vm.runInNewContext(ts.transpileModule(bytes.toString('utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText,context,{filename:file});
  return loadedModule.exports;
 }
@@ -55,8 +55,8 @@ const routePorts={
  '@/lib/durable-image-jobs':{DurableImageJobs:Jobs,imageWorkerAuthorized:()=>false},'next/server':{NextResponse:Response},'@/lib/artwork-provenance':{provenanceEntry:x=>x},'@/lib/mock-data':{MAX_GENERATION_DIMENSION:10000},'@/lib/db':db,'@/lib/ip':{clientIp:()=>''},'@/lib/admin-auth':auth,'@/lib/api-error':{safeError:(e,f)=>e?.message||f},
  '@/lib/settings':{getOpenAISettings:async()=>({apiKey:'fixture',model:scope.current?.frozen.publicModelId||state.defaultModel})},'@/lib/prompt-config':{getStyleGuide:async()=>({})},
  '@/lib/image-model-catalog':{getUserDefaultImageModel:async()=>null,getImageModelCatalog:async()=>ids.map(id=>({id,supportsEdit:true,provider:'openai-images'}))},'@/lib/image-model-routing':routing,
- '@/lib/user-image-provider':{USER_IMAGE_MODEL_PREFIX:'byok:'},'@/lib/canvas/generation-parameters':{canvasParameterError:async()=>null},'@/lib/imagegen/legacy-frame-request':{normalizeLegacyFrameRequest:async req=>req},
- '@/lib/imagegen/ratio-support':{unsupportedReverseHubRatio:()=>false},'@/lib/imagegen/request-size':{exactImageRequestSize:()=>undefined}
+ '@/lib/user-image-provider':{USER_IMAGE_MODEL_PREFIX:'byok:'},'@/lib/canvas/generation-parameters':{canvasParameterError:async()=>null},'@/lib/imagegen/legacy-frame-request':{normalizeLegacyFrameRequest:async req=>req,LegacyFrameError:class LegacyFrameError extends Error{}},
+ '@/lib/imagegen/ratio-support':{unsupportedReverseHubRatio:()=>false},'@/lib/imagegen/request-size':{exactImageRequestSize:()=>undefined,ExactImageSizeError:class ExactImageSizeError extends Error{}}
 };
 routePorts['@/platform/db/pool']=db;
 routePorts['@/lib/accounts/repository']=db;
@@ -64,7 +64,7 @@ routePorts['@/lib/billing/reservations']=db;
 routePorts['@/lib/bi/request']=routePorts['@/lib/bi/model-observer'];
 routePorts['@/lib/worker/authorization']={imageWorkerAuthorized:()=>false};
 const promptModule=moduleAt('src/lib/imagegen/generation-prompt.ts');
-const submissionPorts={...routePorts,'../billing/request':{billingFailure:e=>({status:e.status||500,code:e.code,error:e.message})},'./generation-prompt':promptModule,'./generation-jobs':{JOBS:{create:async(...args)=>new Jobs().create(...args)}},'./generation-runtime':{kickGeneration:async()=>state.kicks++}};
+const submissionPorts={...routePorts,'../model-config/context':{...contextMock,imageExecutionSizingModel:()=>ORIGINAL},'@/lib/teams/errors':{TeamError:class TeamError extends Error{}},'../billing/request':{billingFailure:e=>({status:e.status||500,code:e.code,error:e.message})},'./generation-prompt':promptModule,'./generation-jobs':{JOBS:{create:async(...args)=>new Jobs().create(...args)}},'./generation-runtime':{kickGeneration:async()=>state.kicks++}};
 routePorts['@/lib/imagegen/generation-submission']=moduleAt('src/lib/imagegen/generation-submission.ts',submissionPorts);
 const route=moduleAt('src/app/api/generate-image/route.ts',routePorts);
 

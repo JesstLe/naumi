@@ -1,7 +1,7 @@
 import type {Artwork} from "../mock-data";
 import {readBrowserImage} from "../browser-image-cache";
 import {ImagegenHttpError,ImagegenPreparationCancelled} from "../imagegen/http";
-import {classifyGenerationFailure,type GenerationFailure} from "./generation-failure";
+import {canvasGenerationHttpError,classifyGenerationFailure,type GenerationFailure} from "./generation-failure";
 import type {CanvasImageTaskScope} from "./image-task-scope";
 import type {CanvasResultImage} from "./result-attachment";
 
@@ -34,14 +34,12 @@ export function createCanvasEditTask(input:{request:CanvasEditRequest;
       if(!resultId){
         prepared??=await prepareCanvasEditTask(input.request,scope);scope.assertCurrent();attempted=true;
         const response=await input.submit(prepared,scope);let data:Record<string,any>;
-        try{data=await response.json();}catch{throw new Error("服务响应异常，请检查原操作");}
+        try{data=await response.json();if(!data||typeof data!=="object"||Array.isArray(data))throw Error();}catch{throw new Error("服务响应异常，请检查原操作");}
         operationId=typeof data?.operationId==="string"?data.operationId:operationId;
         if(response.ok&&typeof data?.id==="string"&&data.id)resultId=data.id;
         scope.assertCurrent();
         if(!response.ok||!resultId){
-          const unknown=["OPERATION_PENDING","OPERATION_CONFLICT"].includes(data?.code);
-          const notAccepted=!unknown&&(data?.accepted===false||[400,401,402,403,404,413,415,422,429].includes(response.status));
-          throw new ImagegenHttpError(data?.error||input.errorText,response.status,notAccepted?false:undefined);
+          throw canvasGenerationHttpError(response.status,data,input.errorText);
         }
         if(data.user)input.user(data.user);
       }

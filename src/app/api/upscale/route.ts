@@ -1,6 +1,9 @@
-import { supplierCostFetch } from "@/lib/supplier-cost/collect";
+import {withBiRequest} from "@/lib/bi/request";
+import {generateToolImage} from "@/lib/tools/model-image";
+import {requestImageQuality} from "@/lib/image-quality-request";
+import type {ResolvedImageQuality} from "@/lib/image-quality";
 import {withBillingRequest} from "@/lib/billing/synchronous";
-import {configuredToolCost, synchronousChargedCredits, markBillingUpstream} from "@/lib/billing/synchronous-operation";
+import {configuredToolCost, synchronousChargedCredits} from "@/lib/billing/synchronous-operation";
 import { NextResponse } from "next/server";
 import {reserveCredits, refundCredits} from "@/lib/billing/legacy-credit-reservation";
 import {addLedgerEntry} from "@/lib/billing/legacy-ledger";
@@ -14,26 +17,20 @@ import { storageEnabled } from "@/lib/object-storage/runtime";
 import { uploadImage } from "@/lib/media-upload";
 import { safeError } from "@/lib/api-error";
 
-// ---------------------------------------------------------------------------
-// AI 变清晰(超分放大)专用端点。
-//
-// 走 Replicate 的 Real-ESRGAN(nightmareai/real-esrgan,BSD 许可可商用,9000万+次运行):
-// 真正修复细节、去噪、放大,而不是 sharp 插值拉大(那只变大不变清晰)。
-// 同步返回(轮询冷启动),完成后落库 category="upscale",扣固定小额积分。
-// ---------------------------------------------------------------------------
-
+// Model-backed enhancement. The selected model/quality/resolution belong to the
+// existing frozen execution; no dedicated Replicate token or local upscale.
 export const runtime = "nodejs";
-export const maxDuration = 120; // Replicate 冷启动可能 1-2 分钟
-
-const MODEL = process.env.REPLICATE_UPSCALE_MODEL || "nightmareai/real-esrgan";
+export const maxDuration = 280;
 
 type UpscaleInput = {
+  quality: ResolvedImageQuality;
+  resolution: string;
+  direction: string;
   bytes: Buffer;
   type: string;
   email: string;
   title: string;
-  scale: number; // 2 | 4
-  faceEnhance: boolean; // GFPGAN 人脸修复
+  scale?: number; // Legacy callers' requested enhancement intent, not a resize.
   parentId: string;
 };
 
@@ -65,120 +62,14 @@ async function parseInput(request: Request): Promise<UpscaleInput | null> {
   return {
     bytes,
     type,
+    quality: requestImageQuality(request,f.get("quality")??undefined),
+    resolution: s("resolution") || "1K",
+    direction: s("direction") || (s("faceEnhance")==="1"?"portrait":"general"),
     email: s("email").trim(),
     title: s("title").trim() || "高清放大",
-    scale: s("scale") === "4" ? 4 : 2,
-    faceEnhance: s("faceEnhance") === "1",
+    scale: s("scale") === "4" ? 4 : s("scale")==="2" ? 2 : undefined,
     parentId: s("parentId").trim(),
   };
-}
-
-// 解析社区模型最新版本哈希(进程内缓存,pm2 重启即刷新)。
-const REPLICATE_VERSION_CACHE = new Map<string, string>();
-async function resolveReplicateVersion(
-  model: string,
-  token: string
-): Promise<string> {
-  const cached = REPLICATE_VERSION_CACHE.get(model);
-  if (cached) return cached;
-  const r = await fetch(`https://api.replicate.com/v1/models/${model}`, {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store",
-  });
-  if (!r.ok) throw new Error(`Replicate 模型查询失败 ${r.status}`);
-  const j = (await r.json()) as { latest_version?: { id?: string } };
-  const version = j.latest_version?.id;
-  if (!version) throw new Error("Replicate 模型无可用版本");
-  REPLICATE_VERSION_CACHE.set(model, version);
-  return version;
-}
-
-// 调 Real-ESRGAN:输入 image + scale + face_enhance,输出超分后的图 URL。
-async function upscaleReplicate(
-  bytes: Buffer,
-  type: string,
-  token: string,
-  scale: number,
-  faceEnhance: boolean
-): Promise<{ buf: Buffer; contentType: string }> {
-  // real-esrgan 的 GPU 显存上限约 209 万像素(2096704)。输入超限会直接被模型拒绝
-  // (报 "greater than the max size that fits in GPU memory")。这里先等比缩小到上限
-  // 以内再放大——放大倍数照常,成品依然高清。
-  let inBytes = bytes;
-  let inType = type || "image/png";
-  try {
-    const sharp = (await import("sharp")).default;
-    const meta = await sharp(bytes).metadata();
-    const w = meta.width ?? 0;
-    const h = meta.height ?? 0;
-    const MAX_PIXELS = 2_000_000; // 留余量(硬件上限 2096704)
-    if (w > 0 && h > 0 && w * h > MAX_PIXELS) {
-      const f = Math.sqrt(MAX_PIXELS / (w * h));
-      inBytes = await sharp(bytes)
-        .resize(Math.floor(w * f), Math.floor(h * f), { fit: "inside" })
-        .toBuffer();
-      inType = "image/png";
-    }
-  } catch {
-    // sharp 解析失败 → 退回原图(可能仍因过大失败,但不影响小图正常工作)。
-  }
-  const dataUri = `data:${inType};base64,${inBytes.toString("base64")}`;
-  const version = await resolveReplicateVersion(MODEL, token);
-  markBillingUpstream("started");
-  const costFetch = supplierCostFetch(fetch,{providerId:"replicate",protocol:"replicate",baseUrl:"https://api.replicate.com",apiKey:token,wireModel:MODEL,phase:"upscale",observeTaskGets:true});
-  const create = await costFetch("https://api.replicate.com/v1/predictions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-      Prefer: "wait",
-    },
-    body: JSON.stringify({
-      version,
-      input: { image: dataUri, scale, face_enhance: faceEnhance },
-    }),
-  });
-  let pred = (await create.json()) as {
-    status?: string;
-    output?: string | string[];
-    error?: string;
-    detail?: string;
-    urls?: { get?: string };
-  };
-  if (!create.ok) {
-    markBillingUpstream([400,401,403,404,422,429].includes(create.status)?"rejected":"unknown");
-    throw new Error(pred?.detail || pred?.error || `Replicate ${create.status}`);
-  }
-  const deadline = Date.now() + 110_000;
-  while (
-    pred.status &&
-    pred.status !== "succeeded" &&
-    pred.status !== "failed" &&
-    pred.status !== "canceled"
-  ) {
-    if (Date.now() > deadline) throw new Error("Replicate 超时");
-    if (!pred.urls?.get) break;
-    await new Promise((r) => setTimeout(r, 2000));
-    const g = await costFetch(pred.urls.get, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: "no-store",
-    });
-    pred = await g.json();
-  }
-  if (pred.status !== "succeeded") {
-    markBillingUpstream(pred.status==="failed"||pred.status==="canceled"?"rejected":"unknown");
-    throw new Error(`Replicate 失败:${pred.error || pred.status || "未知"}`);
-  }
-  const outUrl = Array.isArray(pred.output) ? pred.output[0] : pred.output;
-  markBillingUpstream("succeeded");
-  if (!outUrl || typeof outUrl !== "string") {
-    throw new Error("Replicate 未返回图片");
-  }
-  const dl = await fetch(outUrl);
-  if (!dl.ok) throw new Error("下载放大结果失败");
-  const buf = Buffer.from(await dl.arrayBuffer());
-  const contentType = dl.headers.get("content-type") || "image/png";
-  return { buf, contentType };
 }
 
 async function billingRoutePost(request: Request) {
@@ -206,13 +97,7 @@ async function billingRoutePost(request: Request) {
       input.email = tokenEmail;
     }
     const useDb = dbEnabled && input.email.length > 0;
-    const token = process.env.REPLICATE_API_TOKEN?.trim() || "";
-    // A missing dedicated processor is known before accepting/reserving paid work.
-    if (!token) return NextResponse.json(
-      { error: "当前高清修复服务尚未配置，请联系管理员", code: "TOOL_NOT_CONFIGURED" },
-      { status: 503 }
-    );
-    const cost = await configuredToolCost();
+    const cost = await configuredToolCost(input.resolution);
 
     if (dbEnabled && (await isBanned(input.email, ip))) {
       return NextResponse.json({ error: "账号或 IP 已被封禁" }, { status: 403 });
@@ -230,13 +115,9 @@ async function billingRoutePost(request: Request) {
 
     let out: { buf: Buffer; contentType: string };
     try {
-      out = await upscaleReplicate(
-        input.bytes,
-        input.type,
-        token,
-        input.scale,
-        input.faceEnhance
-      );
+      const generated=await generateToolImage({tool:"upscale",bytes:input.bytes,type:input.type,quality:input.quality,direction:input.direction,scale:input.scale});
+      const sharp=(await import("sharp")).default;
+      out={buf:await sharp(generated).png().toBuffer(),contentType:"image/png"};
     } catch (e) {
       if (useDb && cost > 0)
         await refundCredits(input.email, cost).catch(() => {});
@@ -296,7 +177,7 @@ async function billingRoutePost(request: Request) {
               gradient: "from-sky-100 to-slate-100",
               style: null,
               ratio: null,
-              resolution: `${input.scale}x`,
+              resolution: input.resolution,
               source: srcUrl,
               parentId: input.parentId || null,
               parentIds: [],
@@ -335,4 +216,4 @@ async function billingRoutePost(request: Request) {
   }
 }
 
-export async function POST(request:Request){return withBillingRequest(request,"tool.upscale",()=>billingRoutePost(request));}
+export async function POST(request:Request){return withBillingRequest(request,"tool.upscale",()=>withBiRequest(request,()=>billingRoutePost(request)));}

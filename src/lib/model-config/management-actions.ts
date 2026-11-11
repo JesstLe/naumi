@@ -1,4 +1,5 @@
 import {editManagedModelIdentity} from "./management-identity";
+import {planModelOnboarding} from './onboarding';
 import "server-only";
 import { applyImageMappingEditor } from "./image-mapping-editor";
 import { applyResolutionParameters } from "./resolution-policy";
@@ -27,7 +28,17 @@ type ConfigAction = Exclude<ManagementInput, { action: "credential" | "discover"
 export async function applyManagementConfigAction({ admin, snapshot, body, fetcher }: { admin: ManagementAdministration; snapshot: ModelSnapshot; body: ConfigAction; fetcher?: typeof fetch }): Promise<ModelConfig> {
   const deps = { fetcher };
         let config = structuredClone(snapshot.config);
-        if(body.action === "video-capability-upgrade") {
+        if(body.action==='create-models'){
+          const billing=await admin.billing.current();
+          if(billing.version!==body.expectedBillingVersion)throw new ModelConfigError('CONFIG_CONFLICT','计费版本已变化，请重新核对售价',409);
+          const catalogs=[];
+          for(const providerId of [...new Set(body.entries.flatMap(e=>'upstream'in e.source?[e.source.upstream.providerId]:[]))]){
+            const provider=config.providers.find(p=>p.id===providerId);
+            if(!provider)throw new ModelConfigError('PROVIDER_UNAVAILABLE','供应商不存在',404);
+            catalogs.push(await refreshProviderCatalog(admin.pool,provider,admin.credentials,admin.trustedOrigins,deps.fetcher));
+          }
+          config=planModelOnboarding(snapshot,billing,body,catalogs).config;
+        } else if(body.action === "video-capability-upgrade") {
           config=applyReviewedVideoCapabilityUpgrade(config,snapshot.version,body.reviewDigest,body.publicIds).config;
         } else if(body.action === "scope-compat") {
           // Deployment rollback expands the system grant before an older image

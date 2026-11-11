@@ -13,6 +13,7 @@ import {ChannelsDialog} from "./channels-dialog";
 import {VideoParametersDialog} from "./video-parameters-dialog";
 import {VideoCapabilityUpgrade} from "./video-capability-upgrade";
 import {ImagegenRoutesEditor} from "./imagegen-routes-editor";
+import {OnboardingDialog} from './onboarding-dialog';
 
 /** Composition only: each editor owns and validates its existing local draft. */
 export function ModelEditor({editor,state,locked,busy,error,refreshing,onRefresh,onChange,operation,onPublish}:{
@@ -23,6 +24,7 @@ export function ModelEditor({editor,state,locked,busy,error,refreshing,onRefresh
   if(!editor) return null;
   const close=()=>onChange(null);
   switch(editor.kind){
+    case 'create':return <OnboardingDialog state={state} locked={locked} error={error} initialSource={editor.initialSource} onClose={close} onRefresh={onRefresh} operation={operation} onPublish={onPublish}/>;
     case "video-upgrade":return <VideoCapabilityUpgrade locked={locked} error={error} onClose={close} onApply={review=>void onPublish({...operation("video-capability-upgrade",{reviewDigest:review.reviewDigest,publicIds:review.publicIds}),expectedVersion:review.version})}/>;
     case "switch":return <SwitchDialog row={state.rows.find(row=>row.id===editor.row.id)||editor.row} state={state} initialProvider={editor.initialProvider} refreshing={refreshing} locked={locked} busy={busy} onRefresh={onRefresh} onRegister={(providerId,model)=>onChange({kind:"register",providerId,model,returnTo:{...editor,initialProvider:providerId}})} onClose={close} onSave={upstreamId=>void onPublish(operation("switch",{rowId:editor.row.id,upstreamId}))}/>;
     case "rename":return <RenameDialog row={editor.row} locked={locked} error={error} onClose={close} onSave={(publicId,label)=>void onPublish(operation("identity",{rowId:editor.row.id,publicId,label}))}/>;

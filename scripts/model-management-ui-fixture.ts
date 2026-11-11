@@ -4,6 +4,7 @@ import path from "node:path";
 import { mkdir, writeFile, rm } from "node:fs/promises";
 import { createModelFixture } from "./model-config-fixture";
 import { fixtureConfig } from "./billing-unit-fixture";
+import {GPT26_PROFILES} from '../src/lib/model-config/gpt26-onboarding';
 let cleanupOnFailure=async()=>{};
 
 async function main() {
@@ -14,7 +15,7 @@ async function main() {
     if (req.url === "/stop") { send(200, {}); setTimeout(() => void close(), 150); return; }
     if (req.url === "/drop-next") { dropNext = true; send(200, {}); return; }
     if (req.url === "/stats") { send(200, { queries, paid }); return; }
-    if (req.url?.endsWith("/models") && req.method === "GET") { queries++; if (queries === 1) await new Promise(resolve => setTimeout(resolve, 2500)); send(200, { data: [{ id: "gpt-image-2" }, { id: "gpt-image-1.5" }, { id: "catalog-image-new" }] }); return; }
+    if (req.url?.endsWith("/models") && req.method === "GET") { queries++; if (queries === 1) await new Promise(resolve => setTimeout(resolve, 2500)); send(200, { data: [{ id: "gpt-image-2" }, { id: "gpt-image-1.5" }, { id: "catalog-image-new" }, ...(process.env.NAUMI_GPT26_UI_FIXTURE==="1"?GPT26_PROFILES.map(p=>({id:p.wire})):[])] }); return; }
     const parts: Buffer[] = []; for await (const chunk of req) parts.push(chunk);
     const body = parts.length ? JSON.parse(Buffer.concat(parts).toString()) : {};
     if (req.url === "/internal/config/state") return send(200, { digest: activeDigest });
@@ -68,6 +69,11 @@ async function main() {
   f.config.upstreamModels[0].model = "gpt-image-2";
   f.config.publicModels[0].label = "灵动图片";
   f.config.upstreamModels.push({ ...structuredClone(f.config.upstreamModels[0]), id: "u2", label: "图片备用模型", model: "gpt-image-1.5" });
+  if(process.env.NAUMI_GPT26_UI_FIXTURE==='1'){
+    const key=await f.credentials.importPlain({providerId:'apib-image',plain:'isolated-gpt26-fixture-key',actor:'fixture'});
+    f.config.providers.push({...f.config.providers[0],id:'apib-image',name:'APIB fixture',protocol:'apimart-images',credentialRef:key.id});
+    f.config.publicModels[0].label='GPT-Image-2.5';
+  }
   const textKey = await f.credentials.importPlain({ providerId: "p2", plain: "isolated-ui-text-key", actor: "fixture" });
   f.config.providers.push({ id: "p2", name: "文字模型源", protocol: "openai-chat", baseUrl: `${f.origin}/text/v1`, enabled: true, credentialRef: textKey.id, maxConcurrent: 4, timeoutMs: 120000 });
   f.config.upstreamModels.push({ ...structuredClone(f.config.upstreamModels[0]), id: "text1", providerId: "p2", label: "文字模型", model: "gpt-4.1", modality: "text", capabilities: { ...f.config.upstreamModels[0].capabilities, edit: false, vision: true, qualities: [], nativeResolutions: [] } });
