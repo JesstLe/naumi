@@ -481,6 +481,16 @@ export function WorkbenchClient({appearance="legacy"}:{appearance?:"legacy"|"cre
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[appearance,ready,user?.email,can,creationWorkspace]);
 
+  useEffect(()=>{
+    if(appearance!=="creation"||!ready||!user?.email||!can("agent"))return;
+    const refreshVisible=()=>{if(document.visibilityState==="visible")void refreshSessions();};
+    const timer=window.setInterval(refreshVisible,15000);
+    window.addEventListener("focus",refreshVisible);document.addEventListener("visibilitychange",refreshVisible);
+    return()=>{window.clearInterval(timer);window.removeEventListener("focus",refreshVisible);document.removeEventListener("visibilitychange",refreshVisible);};
+    // The same account-scoped catalog owns polling, rather than per-row requests.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[appearance,ready,user?.email,can,creationWorkspace]);
+
   async function loadSession(id: string) {
     if(appearance!=="creation")return sessionRecovery.load(id,recoveryContext());
     if(sessionIdRef.current)drafts.current.set(sessionIdRef.current,activeDraft.current);
@@ -495,6 +505,7 @@ export function WorkbenchClient({appearance="legacy"}:{appearance?:"legacy"|"cre
     return sessionRecovery.catalog.rename(id, title, catalogContext());
   }
   function removeSession(id: string) { return sessionRecovery.catalog.remove(id, catalogContext()); }
+  function pinSession(id: string, pinned: boolean) { return sessionRecovery.catalog.pin(id, pinned, catalogContext()); }
   function uploadAttachments(files: File[]) {
     return sessionRecovery.attachments.append(files, { ...attachmentContext(), setAttachments });
   }
@@ -666,7 +677,7 @@ export function WorkbenchClient({appearance="legacy"}:{appearance?:"legacy"|"cre
       addReference:url=>{if(busy||uploading)return;if(conversation)setAttachments(previous=>[...previous,url].slice(0,MAX_REF_FILES));else setHomeReferences(previous=>[...previous,url].slice(0,Math.max(0,MAX_REF_FILES-composerFiles.length)));},
       addFiles:files=>{if(conversation)void uploadAttachments(files.slice(0,Math.max(0,MAX_REF_FILES-attachments.length)));else{const accepted=files.slice(0,Math.max(0,MAX_REF_FILES-composerFiles.length-homeReferences.length));const transfer=new DataTransfer();accepted.forEach(file=>transfer.items.add(file));pickComposerFiles(transfer.files);}},
       removeRef:index=>{if(conversation)setAttachments(previous=>previous.filter((_,i)=>i!==index));else if(index<homeReferences.length)setHomeReferences(previous=>previous.filter((_,i)=>i!==index));else removeComposerFile(index-homeReferences.length);},
-      send:()=>{if(conversation)void send();else void submitComposer();},regenerate:(text,refs,settings,agentModel)=>{if(!busy&&!uploading&&!sessionLoadingId&&!recoveryUnavailable)void sessionRecovery.send({...sendContext(),creationSettings:settings||creationSettings,...(agentModel?{agentModel}:{})},text,refs);},stop:()=>void stopRun(),interject:text=>void sessionRecovery.interject(text,{running,sessionId:()=>sessionIdRef.current,headers:authHeader,request:(input,init)=>fetch(input,init),clear:()=>{}}),create:newConversation,load:id=>void loadSession(id),history:()=>setSessionsOpen(true),resolveArtwork:resolveArtworkId};
+      send:()=>{if(conversation)void send();else void submitComposer();},regenerate:(text,refs,settings,agentModel)=>{if(!busy&&!uploading&&!sessionLoadingId&&!recoveryUnavailable)void sessionRecovery.send({...sendContext(),creationSettings:settings||creationSettings,...(agentModel?{agentModel}:{})},text,refs);},stop:()=>void stopRun(),interject:text=>void sessionRecovery.interject(text,{running,sessionId:()=>sessionIdRef.current,headers:authHeader,request:(input,init)=>fetch(input,init),clear:()=>{}}),create:newConversation,load:id=>void loadSession(id),history:()=>setSessionsOpen(true),rename:renameSession,pin:pinSession,remove:removeSession,resolveArtwork:resolveArtworkId};
     return <CreationWorkbench port={port}><WorkbenchSessions key={user?.email||""} open={can("agent")&&sessionsOpen} onClose={()=>setSessionsOpen(false)} sessions={sessions} loading={sessionsLoading} activeSessionId={sessionIdRef.current} busy={busy&&!sessionRecovery.hasObserver()} loadingId={sessionLoadingId} onLoad={id=>void loadSession(id)} onRename={renameSession} onDelete={removeSession}/></CreationWorkbench>;
   }
   if (can("agent") && (messages.length > 0 || busy || composerSubmitting)) {

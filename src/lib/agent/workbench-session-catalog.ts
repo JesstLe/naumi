@@ -1,4 +1,5 @@
 import type { WorkbenchAccountOwner, WorkbenchSessionSummary, WorkbenchTransport } from "./workbench-contract";
+import { sortWorkbenchSessions } from "./workbench-session-preview";
 
 export type WorkbenchCatalogContext = WorkbenchTransport & {
   ready: boolean;
@@ -39,7 +40,7 @@ export function createWorkbenchSessionCatalog(account: WorkbenchAccountOwner) {
       }
       const data = await response.json();
       if (!current()) return;
-      context.setSessions(previous => current() ? (data.sessions ?? []) as WorkbenchSessionSummary[] : previous);
+      context.setSessions(previous => current() ? sortWorkbenchSessions((data.sessions ?? []) as WorkbenchSessionSummary[]) : previous);
     } catch {
       if (current()) context.setError("历史会话列表读取失败，请重试");
     } finally {
@@ -101,5 +102,25 @@ export function createWorkbenchSessionCatalog(account: WorkbenchAccountOwner) {
       if (account.owns(scope)) context.setError("会话删除失败");
     }
   }
-  return { refresh, rename, remove, cancel };
+  async function pin(id: string, pinned: boolean, context: WorkbenchCatalogContext): Promise<boolean> {
+    const scope = account.current();
+    if (!account.owns(scope)) return false;
+    try {
+      const headers = await context.headers();
+      if (!account.owns(scope)) return false;
+      const response = await context.request("/api/agent/session", {method:"PATCH", headers:{"Content-Type":"application/json",...headers}, body:JSON.stringify({id,pinned})});
+      if (!account.owns(scope)) { await response.body?.cancel().catch(()=>{}); return false; }
+      const data = await response.json().catch(()=>({}));
+      if (!account.owns(scope)) return false;
+      if (!response.ok) { context.setError(data.error || "会话置顶失败"); return false; }
+      cancel();
+      context.setLoading(previous => account.owns(scope) && !read ? false : previous);
+      context.setSessions(previous => account.owns(scope) ? sortWorkbenchSessions(previous.map(session => session.id===id ? {...session,pinnedAt:typeof data.pinnedAt==="string"?data.pinnedAt:null} : session)) : previous);
+      return true;
+    } catch {
+      if (account.owns(scope)) context.setError("会话置顶失败");
+      return false;
+    }
+  }
+  return { refresh, rename, remove, pin, cancel };
 }

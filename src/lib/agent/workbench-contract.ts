@@ -21,6 +21,8 @@ export type WorkbenchSessionSummary = {
   createdAt: string;
   updatedAt: string;
   messageCount: number;
+  pinnedAt?: string | null;
+  preview?: import("./workbench-session-preview").WorkbenchSessionPreview;
 };
 export type WorkbenchTransport = {
   headers(): Promise<Record<string, string>>;

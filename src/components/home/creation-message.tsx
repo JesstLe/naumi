@@ -1,6 +1,6 @@
 "use client";
 
-import ReactMarkdown from "react-markdown";
+import { ConversationRichText } from "./conversation-richtext";
 import { CreationActivity } from "./creation-activity";
 import { useEffect,useRef,useState } from "react";
 import { Download, Ellipsis, Expand, Loader2, Palette, PanelsTopLeft, RotateCcw, ScanEye, Scissors, Shirt, SquarePen, Sun, Blend, X } from "lucide-react";
@@ -58,17 +58,17 @@ export function CreationMessage({message,previous,port,onPreview}:{message:Workb
     const refs=messageReferences(message.content);
     return <div className={styles.userMessage}>
       {refs.length>0&&<button type="button" className={styles.userReference} aria-label="查看参考图" onClick={()=>onPreview(refs[0])}><CachedImage src={refs[0]} alt="参考图"/><span>{refs.length}</span></button>}
-      <p>{messagePrompt(message.content)}</p>
+      <div className={styles.userRichText}><ConversationRichText content={messagePrompt(message.content)}/></div>
     </div>;
   }
   const source=previous?.role==="user"?previous.content:"",prompt=messagePrompt(source);
   const images=message.content.split("\n").flatMap(line=>{const m=line.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);return m&&agentMediaUrl(m[2])&&!/\.(mp4|webm|mov|m4v)(\?|$)/i.test(m[2])?[m[2]]:[];});
   return <div className={styles.assistantMessage}>
     {(message.pending||!!message.steps?.length)&&<CreationActivity steps={message.steps||[]} pending={message.pending}/>}
-    <div className={styles.responseMarkdown}><ReactMarkdown components={{
-      p:({children})=><div className={styles.responseParagraph}>{children}</div>,
+    <ConversationRichText components={{
+      p:({node,children})=>node?.children.some(child=>child.type==="element"&&child.tagName==="img")?<div className={styles.responseParagraph}>{children}</div>:<p>{children}</p>,
       img:({src,alt})=>{const url=typeof src==="string"?src:"";if(!agentMediaUrl(url))return null;return /\.(mp4|webm|mov|m4v)(\?|$)/i.test(url)?<video controls playsInline preload="metadata" src={url} className={styles.resultVideo}/>:<ResultImage url={url} alt={alt||""} prompt={prompt} port={port} onPreview={onPreview}/>;},
-    }}>{message.content.replace(/^视频链接\s*[:：]\s*(\S+)$/gm,"![视频]($1)")}</ReactMarkdown></div>
+    }} content={message.content.replace(/^视频链接\s*[:：]\s*(\S+)$/gm,"![视频]($1)")}/>
     {message.pending&&message.steps?.flatMap(step=>step.outputs||[]).filter((url,index,urls)=>urls.indexOf(url)===index&&!images.includes(url)).map(url=>/\.(mp4|webm|mov|m4v)(\?|$)/i.test(url)?<video key={url} controls playsInline src={url} className={styles.resultVideo}/>:<ResultImage key={url} url={url} alt="生成图片" prompt={prompt} port={port} onPreview={onPreview}/>)}
     {!message.pending&&prompt&&<div className={styles.resultActions}>
       <button type="button" disabled={port.busy||port.unavailable} onClick={()=>port.stage(prompt,images.length?[images[0]]:messageReferences(source))}><SquarePen/>重新编辑</button>

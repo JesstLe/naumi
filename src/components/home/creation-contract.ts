@@ -37,5 +37,8 @@ export type CreationWorkbenchPort = {
   create(): void;
   load(id: string): void;
   history(): void;
+  rename(id:string,title:string):Promise<boolean>;
+  pin(id:string,pinned:boolean):Promise<boolean>;
+  remove(id:string):Promise<void>;
   resolveArtwork(url: string): Promise<string | null>;
 };

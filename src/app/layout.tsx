@@ -7,6 +7,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { GeistSans } from "geist/font/sans";
 import "./globals.css";
+import "katex/dist/katex.min.css";
 import { AuthProvider } from "@/lib/auth-context";
 import { authMode } from "@/lib/auth-mode";
 import { SessionBridge } from "@/components/session-bridge";

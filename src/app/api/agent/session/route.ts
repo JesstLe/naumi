@@ -4,7 +4,8 @@ import { NextResponse } from "next/server";
 import { resolveUserEmail } from "@/lib/admin-auth";
 import { dbEnabled } from "@/platform/db/pool";
 import { readHarnessBody, harnessErrorResponse, validateHarnessHistory, AgentHarness } from "@/lib/agent/harness";
-import {saveAgentSession, getAgentSession, listAgentSessions, deleteAgentSession, renameAgentSession} from "@/lib/agent/session-repository";
+import {saveAgentSession, getAgentSession, listAgentSessions, deleteAgentSession, renameAgentSession, setAgentSessionPinned} from "@/lib/agent/session-repository";
+import {workbenchSessionPreview} from "@/lib/agent/workbench-session-preview";
 import {
   getSession,
   removeRuntimeSession,
@@ -52,6 +53,8 @@ async function localGET(request: Request) {
       createdAt: session.created_at,
       updatedAt: session.updated_at,
       messageCount: Array.isArray(session.messages) ? session.messages.length : 0,
+      pinnedAt: session.pinned_at ?? null,
+      preview: workbenchSessionPreview(session.messages, getSession(email,session.id)?.events.map(event=>({...event.data,type:event.type})) ?? session.steps),
     })),
   });
 }
@@ -90,23 +93,32 @@ async function localPOST(request: Request) {
 }
 
 async function localPATCH(request: Request) {
-  const legacy = await forwardLegacyAgentSession(request);
-  if (legacy) return legacy;
   const email = await authedEmail(request);
   if (!email) {
     return NextResponse.json({ error: "请先登录" }, { status: 401 });
   }
   let input;
-  try { input=await readHarnessBody(request); } catch(error) { return harnessErrorResponse(error); }
+  try { input=await readHarnessBody(request.clone()); } catch(error) { return harnessErrorResponse(error); }
   const body = input as {
     id?: string;
     title?: string;
+    pinned?: boolean;
   } | null;
   const id = (body?.id ?? "").trim().slice(0, 64);
   const title = (body?.title ?? "").trim().replace(/\s+/g, " ").slice(0, 120);
   if (!id) {
     return NextResponse.json({ error: "缺少会话 id" }, { status: 400 });
   }
+  if(id.startsWith("cv-"))return NextResponse.json({error:"请从画布管理此会话"},{status:400});
+  if (body && Object.prototype.hasOwnProperty.call(body, "pinned")) {
+    if (typeof body.pinned !== "boolean" || body.title !== undefined) return NextResponse.json({error:"置顶参数无效"},{status:400});
+    const pinned = await setAgentSessionPinned(email, id, body.pinned);
+    return pinned ? NextResponse.json({ok:true,...pinned}) : NextResponse.json({error:"会话不存在"},{status:404});
+  }
+  // Pin metadata is owned by the current shared catalog, not the legacy run
+  // process. Content/title mutations retain their original owner forwarding.
+  const legacy = await forwardLegacyAgentSession(request);
+  if (legacy) return legacy;
   if (!title) {
     return NextResponse.json({ error: "会话名称不能为空" }, { status: 400 });
   }

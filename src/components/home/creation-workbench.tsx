@@ -16,6 +16,8 @@ import { useSiteProfile } from "@/lib/site-control/client";
 import { OFFICIAL_IMAGE_SKILLS } from "@/lib/image-skills/catalog";
 import { useCreationProjects } from "./use-creation-projects";
 import type { CreationWorkbenchPort } from "./creation-contract";
+import { ConversationHistory } from "./conversation-history";
+import { liveWorkbenchSessions } from "@/lib/agent/workbench-session-preview";
 import { CreationComposer } from "./creation-composer";
 import { CreationDiscovery } from "./creation-discovery";
 import { CreationMessage,CreationImageViewer } from "./creation-message";
@@ -39,7 +41,7 @@ export function CreationWorkbench({port,children}:{port:CreationWorkbenchPort;ch
   const current=port.sessions.find(s=>s.id===port.sessionId),date=current?new Date(current.updatedAt):new Date();
   const title=Number.isNaN(date.getTime())?"对话":`${date.getMonth()+1}月${date.getDate()}日`;
   const skills=skillIds.flatMap(id=>{const skill=OFFICIAL_IMAGE_SKILLS.find(s=>s.id==="official:"+id);return skill?[skill]:[];});
-  const recentSessions=port.sessions.filter(s=>!search.trim()||s.title.includes(search.trim())).slice(0,searching?20:6);
+  const recentSessions=liveWorkbenchSessions(port.sessions,port.sessionId,port.messages,port).filter(s=>!search.trim()||s.title.includes(search.trim())).slice(0,searching?20:6);
   const defaultBrand=brand.logo.startsWith("/brand/naumi/");
   function create(){if(!port.canNavigate)return;setTab("generate");port.create();setMobile(false);}
   function canvasTab(){if(port.conversation&&!port.canNavigate)return;port.create();setTab("canvas");}
@@ -51,7 +53,7 @@ export function CreationWorkbench({port,children}:{port:CreationWorkbenchPort;ch
         <div className={styles.brandRow}><Link href="/" onClick={e=>{e.preventDefault();create();}} className={styles.brand}><CachedImage src={defaultBrand?(dark?"/brand/naumi/horizontal-white.svg":"/brand/naumi/horizontal-black.svg"):brand.logo} alt={brand.name}/>{!defaultBrand&&!brand.logoHasText&&<span>{brand.name}</span>}</Link><button type="button" aria-label={collapsed?"展开导航":"收起导航"} onClick={()=>{if(window.innerWidth<=760)setMobile(false);else setCollapsed(!collapsed);}}><PanelLeftClose/></button></div>
         <nav className={styles.primaryNav}>{navigation.filter(n=>canPage(n.href)).map(n=>n.href==="/"?<button type="button" title={n.label} key={n.href} disabled={!port.canNavigate} aria-current={!port.conversation&&tab==="generate"?"page":undefined} onClick={create}><n.Icon/><span>{n.label}</span></button>:<Link title={n.label} href={n.href} key={n.href}><n.Icon/><span>{n.label}</span></Link>)}</nav>
         <nav className={styles.workspaceNav}>{workspaces.filter(n=>canPage(n.href)).map(n=><Link title={n.label} href={n.href} key={n.href}><n.Icon/><span>{n.label}</span></Link>)}</nav>
-        {can("agent")&&<section className={styles.historySection}><div className={styles.historyHeading}><h2>对话</h2><button type="button" aria-label="新对话" disabled={!port.canNavigate} onClick={create}><Plus/></button></div>{!user?<button type="button" className={styles.historyEmpty} onClick={()=>openAuth("sign-in")}>登录后查看对话</button>:<>{recentSessions.map(s=><button type="button" className={styles.historyItem} aria-current={port.sessionId===s.id?"page":undefined} key={s.id} disabled={!port.canNavigate||!!port.loadingId} title={s.title} onClick={()=>port.load(s.id)}><span className={styles.conversationIcon}><MessageSquare/></span><span>{s.title||"新对话"}</span></button>)}{!port.sessions.length&&<span className={styles.historyEmpty}>{port.sessionsLoading?"正在读取":"暂无对话"}</span>}<button type="button" className={styles.historyMore} onClick={port.history}>更多</button></>}</section>}
+        {can("agent")&&<section className={styles.historySection}><div className={styles.historyHeading}><h2>对话</h2><button type="button" aria-label="新对话" disabled={!port.canNavigate} onClick={create}><Plus/></button></div>{!user?<button type="button" className={styles.historyEmpty} onClick={()=>openAuth("sign-in")}>登录后查看对话</button>:<><ConversationHistory key={user?.email||""} sessions={recentSessions} activeId={port.sessionId} loadingId={port.loadingId} canNavigate={port.canNavigate} onLoad={port.load} onRename={port.rename} onPin={port.pin} onDelete={port.remove}/>{!port.sessions.length&&<span className={styles.historyEmpty}>{port.sessionsLoading?"正在读取":"暂无对话"}</span>}<button type="button" className={styles.historyMore} onClick={port.history}>更多</button></>}</section>}
         {can("canvas")&&<section className={styles.historySection}><div className={styles.historyHeading}><h2>画布</h2><Link href="/canvas" aria-label="打开画布"><Plus/></Link></div>{!user?<button type="button" className={styles.historyEmpty} onClick={()=>openAuth("sign-in")}>登录后查看画布</button>:<>{projects.projects.slice(0,4).map(p=><Link className={styles.historyItem} key={p.projectKey} title={p.name} href={`/canvas?project=${encodeURIComponent(p.projectKey)}`}>{p.cover?<CachedImage src={p.cover} alt=""/>:<span className={styles.conversationIcon}><PanelsTopLeft/></span>}<span>{p.name}</span></Link>)}{projects.error?<button type="button" className={styles.historyEmpty} onClick={projects.retry}>读取失败 · 重试</button>:!projects.projects.length&&<span className={styles.historyEmpty}>{projects.loading?"正在读取":"暂无画布"}</span>}</>}</section>}
       </aside>
       <div className={styles.main}>

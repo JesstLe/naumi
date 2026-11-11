@@ -28,6 +28,7 @@ export type AgentSessionRow = {
   updated_at: string;
   /** Exact database timestamp, not a JS Date rounded to milliseconds. */
   revision?: string;
+  pinned_at?: string | null;
 };
 
 export async function saveAgentSession(
@@ -83,12 +84,23 @@ export async function listAgentSessions(
 ): Promise<AgentSessionRow[]> {
   await ensureSchema();
   const { rows } = await getPool().query(
-    `SELECT id, email, title, messages, steps, created_at, updated_at
+    `SELECT id, email, title, messages, steps, created_at, updated_at, pinned_at
        FROM app_agent_sessions WHERE email = $1 AND ($3::boolean=false OR id NOT LIKE 'cv-%')
-      ORDER BY updated_at DESC LIMIT $2`,
+      ORDER BY pinned_at DESC NULLS LAST, updated_at DESC LIMIT $2`,
     [email.toLowerCase(), limit, excludeCanvas]
   );
   return rows as AgentSessionRow[];
+}
+
+/** Pinning is catalog metadata, not conversation content: do not change the
+ * history CAS revision or interrupt an already accepted/running generation. */
+export async function setAgentSessionPinned(email: string, id: string, pinned: boolean): Promise<{ pinnedAt: string | null } | null> {
+  await ensureSchema();
+  const result = await getPool().query(
+    `UPDATE app_agent_sessions SET pinned_at=CASE WHEN $3::boolean THEN COALESCE(pinned_at,clock_timestamp()) ELSE NULL END
+      WHERE id=$1 AND email=$2 RETURNING pinned_at::text AS "pinnedAt"`, [id, email.toLowerCase(), pinned]
+  );
+  return result.rows[0] ?? null;
 }
 
 export async function renameAgentSession(
