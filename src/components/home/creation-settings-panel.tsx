@@ -11,8 +11,8 @@ import type { CreationSettings } from "@/lib/agent/creation-settings";
 import styles from "./creation-settings.module.css";
 
 type ImageModel = FeatureCatalog["models"][number];
-type Catalog = { images: ImageModel[]; videos: VideoCatalogModel[] };
-export function CreationSettingsPanel({ value, onChange, onClose }: { value: CreationSettings; onChange: (value: CreationSettings) => void; onClose: () => void }) {
+type Catalog = { images: ImageModel[]; videos: VideoCatalogModel[]; imageError?: string; videoError?: string };
+export function CreationSettingsPanel({ value, onChange, onClose, nextTurn = false }: { value: CreationSettings; onChange: (value: CreationSettings) => void; onClose: () => void; nextTurn?: boolean }) {
   const scope = useFeatureCatalogScope();
   const panel = useRef<HTMLElement>(null);
   const [position, setPosition] = useState<{left:number;top:number}>();
@@ -35,9 +35,10 @@ export function CreationSettingsPanel({ value, onChange, onClose }: { value: Cre
     void (async () => {
       const headers = await authHeader();
       const read = async (url: string) => { const response = await fetch(url, { headers, signal: controller.signal, cache: "no-store" }); const data = await response.json(); if (!response.ok) throw Error(data.error || "创作模型读取失败"); return data; };
-      const [images, videos] = await Promise.all([read("/api/models?feature=image.generate"), read("/api/video/catalog")]);
-      const legacy = images.managed ? undefined : await read("/api/config");
-      if (active) setCatalog({ images: compactImageModelOptions(images.managed ? images.models : (legacy.imageModels || []).map((item: ImageModel) => ({ ...item, modality: "image" }))), videos: videos.models || [] });
+      const [images, videos] = await Promise.allSettled([read("/api/models?feature=image.generate"), read("/api/video/catalog")]);
+      if (active) setCatalog({ images: images.status === "fulfilled" && images.value.managed ? compactImageModelOptions(images.value.models) : [], videos: videos.status === "fulfilled" ? videos.value.models || [] : [],
+        imageError: images.status === "rejected" ? "图片模型读取失败" : !images.value.managed ? "当前使用默认图像配置" : undefined,
+        videoError: videos.status === "rejected" ? "视频模型读取失败" : undefined });
     })().catch(cause => { if (active) setError(cause instanceof Error ? cause.message : "创作模型读取失败"); });
     return () => { active = false; controller.abort(); };
   }, [scope, attempt]);
@@ -57,12 +58,13 @@ export function CreationSettingsPanel({ value, onChange, onClose }: { value: Cre
     </div></fieldset>;
   }
   return <section ref={panel} style={position} className={styles.panel} role="dialog" aria-label="本轮创作设置" data-testid="creation-settings">
-    <header><div className={styles.tabs}>{(["image", "video"] as const).map(kind => <button type="button" key={kind} aria-pressed={tab === kind} onClick={() => setTab(kind)}>{kind === "image" ? <ImageIcon size={15} /> : <Film size={15} />}{kind === "image" ? "图片" : "视频"}</button>)}</div><span>本轮设置</span><button type="button" aria-label="关闭创作设置" onClick={onClose}><X size={16} /></button></header>
+    <header><div className={styles.tabs}>{(["image", "video"] as const).map(kind => <button type="button" key={kind} aria-pressed={tab === kind} onClick={() => setTab(kind)}>{kind === "image" ? <ImageIcon size={15} /> : <Film size={15} />}{kind === "image" ? "图片" : "视频"}</button>)}</div><span>{nextTurn ? "下一轮设置" : "本轮设置"}</span><button type="button" aria-label="关闭创作设置" onClick={onClose}><X size={16} /></button></header>
     {!catalog ? <div className={styles.state} role="status">{error ? <><span>{error}</span><button type="button" onClick={() => setAttempt(n => n + 1)}><RefreshCw size={15} />重试</button></> : <Loader2 className="animate-spin" />}</div> : <div className={styles.body}>
       <div className={styles.models} aria-label={tab === "image" ? "图片模型" : "视频模型"}>
         <button type="button" aria-pressed={!value[tab]?.modelId} onClick={() => onChange({ ...value, [tab]: {} })}><Box size={16} /><span>模型 · 智能</span>{!value[tab]?.modelId && <Check size={16} />}</button>
         {tab === "image" ? catalog.images.map(model => <button type="button" key={model.id} aria-pressed={model.id === value.image?.modelId} onClick={() => onChange({ ...value, image: { modelId: model.id } })}><ImageIcon size={15} /><span>{model.label}</span>{model.id === value.image?.modelId && <Check size={16} />}</button>) : catalog.videos.map(model => <button type="button" key={`${model.providerId}:${model.modelId}`} aria-pressed={model === video} onClick={() => onChange({ ...value, video: { modelId: model.modelId, providerId: model.providerId } })}><Film size={15} /><span>{model.label}</span>{model === video && <Check size={16} />}</button>)}
-        {!(tab === "image" ? catalog.images : catalog.videos).length && <p role="status">暂无已配置模型</p>}
+        {!(tab === "image" ? catalog.images : catalog.videos).length && <p role="status">{(tab === "image" ? catalog.imageError : catalog.videoError) || "暂无已配置模型"}</p>}
+        {(tab === "image" ? catalog.imageError : catalog.videoError) && <button type="button" onClick={() => setAttempt(n => n + 1)}><RefreshCw size={14}/>重新加载</button>}
       </div>
       <div className={styles.parameters}>{tab === "image" ? <>
         {choices("比例", value.image?.ratio, image?.generationParameters?.ratios || [], option => patchImage({ ratio: option as string | undefined }))}

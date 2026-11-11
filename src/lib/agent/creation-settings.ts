@@ -15,9 +15,9 @@ export function freezeCreationSettings(value: unknown): CreationSettings {
   return Object.freeze(settings);
 }
 
-export const CREATION_IMAGE_TOOLS = new Set(["generate_image", "retouch_product", "recolor_product", "replicate_hot", "generate_suite", "generate_aplus", "generate_packaging_3d", "generate_variations", "fuse_images", "inpaint_image", "transfer_style", "remove_watermark", "try_on_clothing", "extract_garment", "generate_garment_3d", "dewrinkle_clothing", "extract_print"]);
+export const CREATION_IMAGE_TOOLS = new Set(["generate_image", "cutout_image", "cutout_avatar", "upscale_image", "prepare_print_file", "retouch_product", "recolor_product", "replicate_hot", "generate_suite", "generate_aplus", "generate_packaging_3d", "generate_variations", "fuse_images", "inpaint_image", "transfer_style", "remove_watermark", "try_on_clothing", "extract_garment", "generate_garment_3d", "dewrinkle_clothing", "extract_print"]);
 const videoConfigTools = new Set(["generate_video", "extend_video", "edit_video", "create_video_node", "set_video_config", "plan_video_shot", "plan_video_storyboard"]);
-const imagePaths = new Set(["/api/generate-image", "/api/retouch", "/api/recolor", "/api/replicate", "/api/suite", "/api/aplus", "/api/packaging3d", "/api/inpaint", "/api/style", "/api/dewatermark", "/api/tryon", "/api/garment", "/api/garment3d", "/api/dewrinkle", "/api/extract"]);
+const imagePaths = new Set(["/api/generate-image", "/api/cutout", "/api/avatar", "/api/upscale", "/api/printfile", "/api/retouch", "/api/recolor", "/api/replicate", "/api/suite", "/api/aplus", "/api/packaging3d", "/api/inpaint", "/api/style", "/api/dewatermark", "/api/tryon", "/api/garment", "/api/garment3d", "/api/dewrinkle", "/api/extract"]);
 
 /** The same policy is applied before quoting and before execution. Unspecified
  * fields remain the tool's decision; explicitly selected fields always win. */

@@ -76,6 +76,8 @@ async function main() {
         assert.equal((await agentBillingPrecheck(poor, "generate_image", { prompt: "balance check" }, randomUUID()))?.attention, "restricted");
         assert.equal((await agentBillingPrecheck(poor, "generate_image", { prompt: "balance check",confirm:true }, randomUUID()))?.attention, "restricted","A legacy fee-confirm flag never bypasses the real balance");
         assert.equal(supplierCalls,0);
+        const {resolveCreationSettings}=await import('../src/lib/agent/creation-settings-server');
+        await resolveCreationSettings({image:{modelId:'image-a'}});await assert.rejects(()=>resolveCreationSettings({image:{modelId:'hidden-unknown'}}));
         session.turnId='creation-a';session.creationSettings=freezeCreationSettings({image:{modelId:'image-a',ratio:'1:1',resolution:'2K'}});
         const llmArgs={prompt:'product',model:'image-b',ratio:'16:9',resolution:'1K'};
         assert.equal(await check(creationToolArguments('generate_image',llmArgs,session.creationSettings)),undefined);
@@ -97,6 +99,19 @@ async function main() {
         }
         assert.equal(wireRequests.length,2);assert.equal(wireRequests[0].model,'wire-image-one');assert.equal(wireRequests[0].size,'2048x2048');assert.equal(wireRequests[1].model,'wire-image-two');
         assert.equal(Number((await f.pool.query("SELECT count(*) AS n FROM app_ledger WHERE email=$1 AND kind='consume'",[email])).rows[0].n),0);
+        const {recordTurnCreationSettings,persistAgentSession}=await import('../src/lib/agent/runtime');
+        const {AgentHarness}=await import('../src/lib/agent/harness'),{getAgentSession}=await import('../src/lib/agent/session-repository'),{restoreWorkbenchMessages}=await import('../src/lib/agent/workbench-activity');
+        const durable={id:'ag-fixture-'+randomUUID(),email,title:'turn settings',agent:{state:{messages:[] as any[]}},harness:new AgentHarness(email,'ag-fixture'),events:[],turnId:'turn-a'} as unknown as import('../src/lib/agent/runtime').Session;
+        recordTurnCreationSettings(durable,freezeCreationSettings({image:{modelId:'image-a',resolution:'2K'}}),'chat-a');
+        durable.agent.state.messages.push({role:'user',content:'first'} as any,{role:'assistant',content:[{type:'text',text:'first result'}]} as any);
+        await persistAgentSession(durable);
+        durable.turnId='turn-b';recordTurnCreationSettings(durable,freezeCreationSettings({image:{modelId:'image-b',resolution:'1K'}}),'chat-b');
+        durable.agent.state.messages.push({role:'user',content:'second'} as any,{role:'assistant',content:[{type:'text',text:'second result'}]} as any);
+        durable.events=[];await persistAgentSession(durable);
+        const saved=await getAgentSession(email,durable.id);const reopened=restoreWorkbenchMessages(saved!.messages as any[],saved!.steps as any[]);
+        assert.equal(reopened[1].creationSettings?.image?.modelId,'image-a');assert.equal(reopened[3].creationSettings?.image?.modelId,'image-b');assert.equal(reopened[1].agentModel,'chat-a');
+        await f.pool.query('DELETE FROM app_agent_sessions WHERE id=$1 AND email=$2',[durable.id,email]);
+        console.log('TURN_PERSISTENCE_PG=PASS original_round_metadata=preserved event_compaction=preserved replay_calls=0');
         console.log('TURN_PARAMETERS_PG=PASS quotes=A2K/B1K frozen_A=unchanged actual_wire_models=one/two wire_A_size=2048x2048 real_supplier_calls=0');
 
     }

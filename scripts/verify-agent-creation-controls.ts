@@ -1,3 +1,4 @@
+import {publicToolDetails} from "../src/lib/agent/tool-presentation";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { freezeCreationSettings, creationToolArguments, creationImageForm, assertVideoCreationSettings } from "../src/lib/agent/creation-settings";
@@ -20,9 +21,11 @@ async function main() {
   check("smart-settings-preserve-tool-choice",automatic===args);
   const clean=freezeCreationSettings({image:{ratio:undefined}});
   check("undefined-ui-reset-does-not-erase-tool-choice",creationToolArguments("generate_image",args,clean).ratio==="9:16");
-  check("independent-processors-unchanged",creationToolArguments("upscale_image",args,turn)===args&&creationToolArguments("cutout_image",args,turn)===args);
+  check("merged-main-model-backed-tools-follow-round-settings",creationToolArguments("upscale_image",args,turn).model==="image-a"&&creationToolArguments("cutout_image",args,turn).model==="image-a");
+  check("reference-inspection-and-custom-workflow-unchanged",creationToolArguments("inspect_images",args,turn)===args&&creationToolArguments("run_comfy_workflow",args,turn)===args);
   const v=creationToolArguments("generate_video",{config:{prompt:"clip",modelId:"llm-video",providerId:"other",resolution:"1080p"}},turn).config as Record<string,unknown>;
   check("video-config-pinned",v.modelId==="video-a"&&v.providerId==="managed-video"&&v.resolution==="720p"&&v.prompt==="clip");
+  check("video-public-details-use-effective-config",publicToolDetails("generate_video",{config:v}).parameters.some(pair=>pair.name==="model"&&pair.value==="video-a"));
   assertVideoCreationSettings(v,turn);assert.throws(()=>assertVideoCreationSettings({...v,modelId:"other"},turn));checks++;
   const form=new FormData();form.set("model","other");form.set("ratio","9:16");
   const forwarded=creationImageForm("/api/recolor",form,turn)!;
@@ -41,6 +44,8 @@ async function main() {
     {type:"turn_settings",turnId:"t2",userIndex:1,settings:{image:{modelId:"image-b"}},modelId:"chat-b"},{type:"tool_end",turnId:"t2",id:"c2",tool:"retouch_product",summary:"已精修"},
   ]);
   check("history-attaches-settings-and-tools-to-original-turn",restored[1].steps?.length===1&&restored[1].steps[0].tool==="recolor_product"&&restored[1].creationSettings?.image?.modelId==="image-a"&&restored[3].steps?.[0].tool==="retouch_product"&&restored[3].creationSettings?.image?.modelId==="image-b"&&restored[1].agentModel==="chat-a");
+  const compacted=restoreWorkbenchMessages(restored,[]);
+  check("old-round-settings-survive-event-buffer-compaction",compacted[0].creationSettings?.image?.modelId==="image-a"&&compacted[3].creationSettings?.image?.modelId==="image-b");
   check("automatic-verification-removed-from-prompt-and-plan",!AGENT_SYSTEM_PROMPT.includes("verify_image_output")&&!buildTaskPlan("生成商品图").some(item=>item.includes("视觉模型")));
 
   // Real tool adapters, network receipts isolated. No provider or database call.

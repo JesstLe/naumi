@@ -34,7 +34,10 @@ export function reduceWorkbenchActivity(previous: WorkbenchStep[], type: string,
 export function workbenchStepLabel(step: WorkbenchStep) { return step.kind === "skill" ? `已加载技能：${step.summary}` : step.kind === "plan" ? "任务安排" : agentToolLabel(step.tool); }
 
 export function restoreWorkbenchMessages(raw: WorkbenchMessage[], events: WorkbenchEvent[]): WorkbenchMessage[] {
-  const messages: WorkbenchMessage[] = raw.map(message => ({ role: message.role === "assistant" ? "assistant" : "user", content: message.content }));
+  const messages: WorkbenchMessage[] = raw.map(message => {
+    let snapshot;try{if(message.creationSettings)snapshot=freezeCreationSettings(message.creationSettings);}catch{/* invalid metadata is not an execution input */}
+    return {role:message.role==="assistant"?"assistant":"user",content:message.content,creationSettings:snapshot,agentModel:typeof message.agentModel==="string"?message.agentModel:undefined,turnId:typeof message.turnId==="string"?message.turnId:undefined};
+  });
   const turns = new Map<string, { events: WorkbenchEvent[]; index?: number; text?: string }>();
   for (const event of events) {
     const id = typeof event.turnId === "string" ? event.turnId : "legacy";
@@ -56,8 +59,8 @@ export function restoreWorkbenchMessages(raw: WorkbenchMessage[], events: Workbe
     const steps = group.events.reduce((items, event) => reduceWorkbenchActivity(items, event.type || "", event), [] as WorkbenchStep[]);
     const settings = group.events.find(event => event.type === "turn_settings");
     let snapshot; try { if (settings) snapshot = freezeCreationSettings(settings.settings); } catch { /* old invalid metadata is not execution input */ }
-    messages[end] = { ...messages[end], steps, turnId, creationSettings: snapshot, agentModel: typeof settings?.modelId === "string" ? settings.modelId : undefined };
-    if (start >= 0) messages[start] = { ...messages[start], turnId, creationSettings: snapshot, agentModel: messages[end].agentModel };
+    messages[end] = { ...messages[end], steps, turnId, creationSettings: snapshot||messages[end].creationSettings, agentModel: typeof settings?.modelId === "string" ? settings.modelId : messages[end].agentModel };
+    if (start >= 0) messages[start] = { ...messages[start], turnId, creationSettings: snapshot||messages[start].creationSettings, agentModel: messages[end].agentModel };
   }
   return messages;
 }

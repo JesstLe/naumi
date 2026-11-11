@@ -1,4 +1,4 @@
-import {creationToolArguments,creationSettingsPrompt,type CreationSettings} from "./creation-settings";
+import {creationToolArguments,creationSettingsPrompt,freezeCreationSettings,type CreationSettings} from "./creation-settings";
 import {appendAgentEvent, normalizeAgentEvents, type AgentEvent} from "./event-buffer";
 import {managedAgentReference} from "./managed-reference";
 
@@ -103,6 +103,7 @@ export type Session = {
   /** 凭证对(cookie+authorization),会话续期时刷新 */
   cred: { cookie: string; authorization: string; imageQuality?: string; originalRequest?: string; canvas?: CanvasAgentContext;imageSkill?:Pick<ImageSkill,"id"|"revision"> };
   creationSettings?: CreationSettings;
+  turnSnapshots?: Map<number,{creationSettings:CreationSettings;agentModel:string;turnId:string}>;
   contextStamp?: string;
   onToolResult?: (result: unknown, tool: string, toolCallId: string) => Promise<void>;
   toolResultsPending?: Promise<void>;
@@ -287,8 +288,15 @@ async function createRuntimeSession(
   if (!model) throw new Error("模型不可用");
 
   const savedHistory = Array.isArray(persisted?.messages) ? persisted.messages.filter((turn:any)=>["user","assistant"].includes(turn?.role)&&typeof turn?.content==="string").map((turn:any)=>({role:String(turn.role),content:String(turn.content)})) : history;
+  const turnSnapshots=new Map<number,{creationSettings:CreationSettings;agentModel:string;turnId:string}>();
+  let userIndex=-1;
+  for(const message of Array.isArray(persisted?.messages)?persisted.messages:[]){
+    if(message?.role!=="user")continue;userIndex++;
+    if(message.creationSettings)try{turnSnapshots.set(userIndex,{creationSettings:freezeCreationSettings(message.creationSettings),agentModel:typeof message.agentModel==="string"?message.agentModel:modelId,turnId:typeof message.turnId==="string"?message.turnId:""});}catch{/* old malformed metadata is not an execution input */}
+  }
   const historicUrls = savedHistory.flatMap(turn => [...turn.content.matchAll(/\/media\/[\w./%-]+/g)].map(match => match[0]));
   const session: Session = {
+    turnSnapshots,
     creationScope:currentCreationContext()?{...currentCreationContext()!}:undefined,
     harness: new AgentHarness(email, sessionId, event => appendSessionEvent(session, "harness", event)),
     id: sessionId,
@@ -618,6 +626,14 @@ export function refreshSessionCredentials(
   session.lastUsedAt = Date.now();
 }
 
+export function recordTurnCreationSettings(session:Session,settings:CreationSettings,modelId:string){
+  session.creationSettings=freezeCreationSettings(settings);
+  const userIndex=session.agent.state.messages.filter(message=>message.role==="user").length;
+  session.turnSnapshots??=new Map();
+  session.turnSnapshots.set(userIndex,{creationSettings:session.creationSettings,agentModel:modelId,turnId:session.turnId||""});
+  appendSessionEvent(session,"turn_settings",{settings:session.creationSettings,modelId,userIndex});
+}
+
 export function appendSessionEvent(
   session: Session,
   type: string,
@@ -630,6 +646,7 @@ export async function persistAgentSession(session: Session): Promise<void> {
   if (!dbEnabled || session.id.startsWith("tmp-")) return;
   session.persistPending = (session.persistPending || Promise.resolve()).catch(() => undefined).then(async () => {
   if (session.persistenceConflict) throw Object.assign(new Error("会话已更新，请重新打开会话；已有任务不会重新执行"), { code: "AGENT_SESSION_CONFLICT" });
+  let userIndex=-1;
   const messages = session.agent.state.messages.flatMap((message) => {
     if (message.role !== "user" && message.role !== "assistant") return [];
     const content = Array.isArray(message.content)
@@ -638,7 +655,9 @@ export async function persistAgentSession(session: Session): Promise<void> {
           .join("")
           .trim()
       : typeof message.content === "string" ? message.content : "";
-    return content ? [{ role: message.role, content: session.harness.publicText(content, message.role === "assistant") }] : [];
+    if(message.role==="user")userIndex++;
+    const snapshot=session.turnSnapshots?.get(userIndex);
+    return content ? [{ role: message.role, content: session.harness.publicText(content, message.role === "assistant"),...(snapshot||{}) }] : [];
   });
   const steps = session.events
     .filter((event) => ["turn_settings","harness","plan","tool_start","tool_end","attention","canvas_turn","image_skill","artifacts","video_nodes","text_nodes","agent_start","agent_end","canvas_terminal","assistant","canvas_reply","model_stream_end","error"].includes(event.type))

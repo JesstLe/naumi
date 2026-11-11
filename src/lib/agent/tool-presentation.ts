@@ -8,7 +8,11 @@ export type PublicToolDetails = {
 };
 
 export function publicToolDetails(tool: string, input: unknown, canvas?: CanvasAgentContext): PublicToolDetails {
-  const args = input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : {};
+  let args = input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : {};
+  if (["generate_video", "extend_video", "edit_video", "set_video_config", "create_video_node"].includes(tool) && args.config && typeof args.config === "object" && !Array.isArray(args.config)) {
+    const config = args.config as Record<string, unknown>;
+    args = { ...args, model: config.modelId, ratio: config.aspectRatio, resolution: config.resolution, duration: config.durationSeconds };
+  }
   const parameters: PublicToolDetails["parameters"] = [];
   const add = (name: string, value: unknown, valid: (value: string) => boolean) => {
     if ((typeof value === "string" || typeof value === "number") && valid(String(value))) parameters.push({ name, value: String(value) });
@@ -20,7 +24,7 @@ export function publicToolDetails(tool: string, input: unknown, canvas?: CanvasA
   const imageCanvas = canvas && CANVAS_IMAGE_TOOLS.has(tool);
   const canvasEdit = imageCanvas && ["recolor_product", "retouch_product", "replicate_hot"].includes(tool);
   add("ratio", canvasEdit ? canvas.ratio : args.ratio ?? (imageCanvas ? canvas.ratio : undefined), value => /^\d{1,3}:\d{1,3}$/.test(value));
-  add("resolution", canvasEdit ? canvas.resolution : args.resolution ?? (imageCanvas ? canvas.resolution : undefined), value => /^(?:1K|2K|4K|720p|1080p|2160p)$/.test(value));
+  add("resolution", canvasEdit ? canvas.resolution : args.resolution ?? (imageCanvas ? canvas.resolution : undefined), value => /^(?:1K|2K|4K|5K|480p|720p|1080p|2160p)$/.test(value));
   add("quality", canvasEdit ? canvas.quality : args.quality ?? (imageCanvas ? canvas.quality : undefined), value => /^(?:low|medium|high|xhigh|max)$/.test(value));
   add("output_format", args.output_format, value => /^(?:png|jpeg|webp|mp4|webm)$/.test(value));
   add("background", args.background, value => /^(?:transparent|opaque)$/.test(value));

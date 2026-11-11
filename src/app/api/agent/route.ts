@@ -1,4 +1,4 @@
-import {freezeCreationSettings} from "@/lib/agent/creation-settings";
+import {resolveCreationSettings} from "@/lib/agent/creation-settings-server";
 import {agentEventCursor, agentEventsSince} from "@/lib/agent/event-buffer";
 import {agentTurnOutcome, recordAuthoritativeReply} from "@/lib/agent/stream-recovery";
 import {getAgentSession} from "@/lib/agent/session-repository";
@@ -18,6 +18,7 @@ import { getOpenAISettings } from "@/lib/settings";
 import {
   AgentVisionInputError,
   appendSessionEvent,
+  recordTurnCreationSettings,
   agentVisionEnabled,
   getOrCreateSession,
   getSession,
@@ -87,7 +88,7 @@ async function handlePut(request: Request) {
     return NextResponse.json({ error: "请求过于频繁，请稍后再试" }, { status: 429 });
   }
   let creationSettings;
-  try { creationSettings=freezeCreationSettings(body?.creationSettings); } catch { return NextResponse.json({error:"本轮创作设置格式无效"},{status:400}); }
+  try { creationSettings=await resolveCreationSettings(body?.creationSettings); } catch(error) { return NextResponse.json({error:error instanceof Error&&!error.message.startsWith("[")?error.message:"本轮创作设置格式无效"},{status:400}); }
   let imageSkill;
   try { imageSkill = await resolveImageSkill(email, body?.skill); } catch (error) { if (error instanceof SkillError) return NextResponse.json({ error: error.message }, { status: error.status }); throw error; }
   const settings = await getOpenAISettings();
@@ -136,8 +137,7 @@ async function handlePut(request: Request) {
   }
   const eventCursor = agentEventCursor(session);
   session.turnId=randomUUID();
-  session.creationSettings=creationSettings;
-  appendSessionEvent(session,"turn_settings",{settings:creationSettings,modelId,userIndex:session.agent.state.messages.filter(m=>m.role==="user").length});
+  recordTurnCreationSettings(session,creationSettings,modelId);
   if (imageSkill) appendSessionEvent(session, "image_skill", { id:imageSkill.id, revision:imageSkill.revision, name:imageSkill.name, turnId:session.turnId });
   if (session.agent.state.messages.length === 0) {
     session.title = message.slice(0, 120) || session.title;
@@ -380,7 +380,7 @@ async function handlePost(request: Request) {
     return NextResponse.json({ error: "请求过于频繁，请稍后再试" }, { status: 429 });
   }
   let creationSettings;
-  try { creationSettings=freezeCreationSettings(body?.creationSettings); } catch { return NextResponse.json({error:"本轮创作设置格式无效"},{status:400}); }
+  try { creationSettings=await resolveCreationSettings(body?.creationSettings); } catch(error) { return NextResponse.json({error:error instanceof Error&&!error.message.startsWith("[")?error.message:"本轮创作设置格式无效"},{status:400}); }
   let imageSkill;
   try { imageSkill = await resolveImageSkill(email, body?.skill); } catch (error) { if (error instanceof SkillError) return NextResponse.json({ error: error.message }, { status: error.status }); throw error; }
   const tempId = body?.sessionId?.trim() || `ag-once-${randomUUID()}`;
@@ -411,8 +411,7 @@ async function handlePost(request: Request) {
   }
   if(request.signal.aborted) return harnessErrorResponse(new HarnessError("RUN_INACTIVE",409));
   session.running=true; session.turnId=randomUUID();
-  session.creationSettings=creationSettings;
-  appendSessionEvent(session,"turn_settings",{settings:creationSettings,modelId:postModelId,userIndex:session.agent.state.messages.filter(m=>m.role==="user").length});
+  recordTurnCreationSettings(session,creationSettings,postModelId);
   const onAbort=()=>session.agent.abort();request.signal.addEventListener("abort",onAbort,{once:true});
   const timeout = setTimeout(() => session.agent.abort(), 780_000);
   try {
