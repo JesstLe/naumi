@@ -1,26 +1,17 @@
 import {frameRatio} from "../imagegen/frame-ratio";
 
-/** New canvas submissions only. Never mutate artwork metadata or frozen jobs. */
-export const CANVAS_RATIO_OPTIONS = [
-  { id: "auto", w: 0, h: 0 },
-  { id: "1:1", w: 1, h: 1 },
-  { id: "2:3", w: 2, h: 3 },
-  { id: "3:2", w: 3, h: 2 },
-  { id: "3:4", w: 3, h: 4 },
-  { id: "4:3", w: 4, h: 3 },
-  { id: "9:16", w: 9, h: 16 },
-  { id: "16:9", w: 16, h: 9 },
-] as const;
-export const CANVAS_RESOLUTIONS = ["1K", "2K", "4K"] as const;
+import { IMAGE_RATIO_OPTIONS as CANVAS_RATIO_OPTIONS, IMAGE_RESOLUTIONS as CANVAS_RESOLUTIONS, validImageRatio as validCanvasRatio } from "../imagegen/parameter-options";
+// Compatibility names for existing Canvas callers; image parameter rules have
+// one owner shared with the per-turn creation settings editor.
+export { IMAGE_RATIO_OPTIONS as CANVAS_RATIO_OPTIONS, IMAGE_RESOLUTIONS as CANVAS_RESOLUTIONS,
+  validImageRatio as validCanvasRatio, imageParameterOptions as canvasModelParameters,
+  imageCombinationSupported as canvasCombinationSupported, type ImageParameterDeclaration as CanvasModelParameters } from "../imagegen/parameter-options";
+
 export const CANVAS_QUALITIES = ["low", "medium", "high", "xhigh", "max"] as const;
 export const CANVAS_MAX_COUNT = 4;
 
 export function normalizeCanvasRatio(value: unknown): string {
   return value === "auto" || validCanvasRatio(value) ? String(value) : "auto";
-}
-/** Syntax only. The published model/adapter owns actual ratio admission. */
-export function validCanvasRatio(value: unknown): value is string {
-  return typeof value === "string" && /^[1-9]\d{0,5}:[1-9]\d{0,5}$/.test(value);
 }
 /** These edits keep their source frame; expansion and new image generation do not. */
 export function canvasSourceFrameEdit(path: string) {
@@ -39,20 +30,6 @@ export function normalizeCanvasCount(value: unknown): number {
 export function normalizeCanvasQuality(value: unknown): typeof CANVAS_QUALITIES[number] {
   return (CANVAS_QUALITIES as readonly unknown[]).includes(value) ? value as typeof CANVAS_QUALITIES[number] : "medium";
 }
-export type CanvasModelParameters = { ratios?: string[]; resolutions?: string[]; combinations?: string[] };
-export function canvasModelParameters(declared?: CanvasModelParameters) {
-  return {
-    ratios: ["auto", ...new Set(declared?.ratios?.filter(validCanvasRatio) ?? CANVAS_RATIO_OPTIONS.filter(r => r.id !== "auto").map(r => r.id))],
-    resolutions: (Array.from(CANVAS_RESOLUTIONS) as string[]).filter(r => !declared?.resolutions || declared.resolutions.includes(r)),
-    combinations: declared?.combinations,
-  };
-}
-export function canvasCombinationSupported(parameters: CanvasModelParameters | undefined, ratio: string, resolution: string) {
-  return !parameters?.combinations || (ratio === "auto"
-    ? parameters.combinations.some(value => value.startsWith(`${resolution}:`))
-    : parameters.combinations.includes(`${resolution}:${ratio}`));
-}
-
 export function validateCanvasParameters(body: Record<string, unknown>, headerQuality?: string | null): string | null {
   if (body.targetWidth !== undefined || body.targetHeight !== undefined) return "画布不支持自定义像素尺寸，请选择标准比例和分辨率";
   if (body.ratio !== undefined && body.ratio !== "auto" && !validCanvasRatio(body.ratio)) return "画布比例无效，请重新选择比例";

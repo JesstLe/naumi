@@ -6,6 +6,7 @@ import { authHeader } from "@/lib/supabase";
 import { useFeatureCatalogScope } from "@/lib/model-config/feature-client";
 import type { FeatureCatalog } from "@/lib/model-config/feature-catalog";
 import { compactImageModelOptions } from "@/lib/image-model-routing";
+import { imageModelParameterOptions, imageCombinationSupported } from "@/lib/imagegen/parameter-options";
 import { ModelIcon } from "@/components/ui/model-icon";
 import { VideoDurationControl } from "@/components/video/duration-control";
 import { catalogCapability, videoAspectRatios, videoDurations, videoResolutions, type VideoCatalogModel } from "@/lib/video/client-settings";
@@ -45,15 +46,16 @@ export function CreationSettingsPanel({ value, onChange, onClose, nextTurn = fal
     return () => { active = false; controller.abort(); };
   }, [scope, attempt]);
   const image = catalog?.images.find(item => item.id === value.image?.modelId);
+  const imageParameters = image ? imageModelParameterOptions(image) : { ratios: [], resolutions: [], combinations: undefined };
   const video = catalog?.videos.find(item => item.modelId === value.video?.modelId && item.providerId === value.video?.providerId);
   const capability = catalogCapability(video), mode = capability.modes?.[0];
   const durations = videoDurations(capability, mode).filter(duration => duration > 0);
   const resolutions = value.video?.durationSeconds ? videoResolutions(capability, value.video.durationSeconds, mode) : [...new Set(durations.flatMap(duration => videoResolutions(capability, duration, mode)))];
   const patchImage = (patch: Partial<NonNullable<CreationSettings["image"]>>) => onChange({ ...value, image: { ...value.image, ...patch } });
   const patchVideo = (patch: Partial<NonNullable<CreationSettings["video"]>>) => onChange({ ...value, video: { ...value.video, ...patch } });
-  function choices(label: string, selected: string | number | undefined, options: (string | number)[], change: (value: string | number | undefined) => void, labels?: Record<string, string>) {
+  function choices(label: string, selected: string | number | undefined, options: (string | number)[], change: (value: string | number | undefined) => void, labels?: Record<string, string>, disabled?: (option: string | number) => boolean) {
     return <fieldset className={styles.field}><legend>{label}</legend><div className={label === "比例" ? styles.ratios : styles.choices}>
-      {[undefined, ...options.filter(option => option !== "auto")].map(option => <button type="button" key={option ?? "auto"} aria-label={`${label} ${labels?.[String(option)] || option || "智能"}`} aria-pressed={selected === option || !selected && option === undefined} onClick={() => change(option)}>
+      {[undefined, ...options.filter(option => option !== "auto")].map(option => <button type="button" key={option ?? "auto"} aria-label={`${label} ${labels?.[String(option)] || option || "智能"}`} aria-pressed={selected === option || !selected && option === undefined} disabled={option !== undefined && disabled?.(option)} onClick={() => change(option)}>
         {label === "比例" && <i style={{ aspectRatio: option ? String(option).replace(":", "/") : "1" }} />}
         <span>{labels?.[String(option)] || option || "智能"}</span>
       </button>)}
@@ -69,8 +71,8 @@ export function CreationSettingsPanel({ value, onChange, onClose, nextTurn = fal
         {(tab === "image" ? catalog.imageError : catalog.videoError) && <button type="button" onClick={() => setAttempt(n => n + 1)}><RefreshCw size={14}/>重新加载</button>}
       </div>
       <div className={styles.parameters}>{tab === "image" ? <>
-        {choices("比例", value.image?.ratio, image?.generationParameters?.ratios || [], option => patchImage({ ratio: option as string | undefined }))}
-        {choices("清晰度", value.image?.resolution, image?.generationParameters?.resolutions || image?.nativeResolutions || [], option => patchImage({ resolution: option as NonNullable<CreationSettings["image"]>["resolution"] }))}
+        {choices("比例", value.image?.ratio, imageParameters.ratios, option => patchImage({ ratio: option as string | undefined }), undefined, option => !imageCombinationSupported(imageParameters, String(option), value.image?.resolution))}
+        {choices("清晰度", value.image?.resolution, imageParameters.resolutions, option => patchImage({ resolution: option as NonNullable<CreationSettings["image"]>["resolution"] }), undefined, option => !imageCombinationSupported(imageParameters, value.image?.ratio, String(option)))}
         {!!image?.qualities?.length && choices("质量", value.image?.quality, image.qualities, option => patchImage({ quality: option as NonNullable<CreationSettings["image"]>["quality"] }), { low: "基础", medium: "标准", high: "高质量", xhigh: "超高", max: "最高", ...image.qualityLabels })}
       </> : <>
         {choices("比例", value.video?.aspectRatio, videoAspectRatios(capability, mode, value.video?.resolution), option => patchVideo({ aspectRatio: option as string | undefined }))}
