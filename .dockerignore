@@ -8,6 +8,10 @@ data
 docs/*
 # Runtime pricing imports this source-locked data file during next build.
 !docs/apimart-image25-pricing-20261008.json
+# Model onboarding imports this published parameter manifest at build time.
+!docs/providers/
+docs/providers/*
+!docs/providers/apib-image26-preparation-20261110.json
 *.log
 .env
 .env.*
