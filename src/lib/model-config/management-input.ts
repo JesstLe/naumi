@@ -9,6 +9,7 @@ import { MODEL_MANAGEMENT_PROTOCOLS } from "./management";
 import { DISPLAY_QUALITY_IDS, qualityPolicySchema } from "./quality-policy";
 import { FEATURE_IDS, QUALITY_IDS, RESOLUTION_IDS } from "../billing/rules/registry";
 import { z } from "zod";
+import {onboardingFields} from './onboarding-schema';
 import type { getModelAdministration } from "./server";
 /** Wire contract of POST /api/admin/model-management (and the legacy /api/admin/mvp alias).
  * Operation ids, actions and field names are a persisted compatibility protocol. */
@@ -17,6 +18,7 @@ const common = { id: z.uuid(), expectedVersion: z.number().int().positive() };
 const credits=z.number().int().min(0).max(2147483647);
 const creditPricing=z.discriminatedUnion("mode",[z.strictObject({mode:z.literal("matrix"),prices:z.record(z.enum(QUALITY_IDS),z.record(z.enum(RESOLUTION_IDS),credits.nullable()))}),z.strictObject({mode:z.literal("fixed"),credits}),z.strictObject({mode:z.literal("quality-resolution"),quality:z.record(z.enum(QUALITY_IDS),credits),resolutionExtra:z.record(z.enum(RESOLUTION_IDS),credits)})]);
 export const managementInput = z.discriminatedUnion("action", [
+  z.strictObject({action:z.literal('create-models'),...common,...onboardingFields}),
   z.strictObject({action:z.literal("video-capability-upgrade"),...common,reviewDigest:z.string().regex(/^[a-f0-9]{64}$/),publicIds:z.array(identifier).min(1).max(100)}),
   z.strictObject({action:z.literal("video-parameters"),...common,rowId:identifier,routes:videoParametersSchema}),
   z.strictObject({action:z.literal("imagegen-parameters"),...common,rowId:identifier,routes:z.array(imagegenRoutePolicySchema).max(100).nullable()}),

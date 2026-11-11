@@ -20,7 +20,7 @@ export function validateBusinessConfig(config: ModelConfig) {
     if (!binding) fail("该功能使用独立处理器，尚未接入可选供应商模型", field);
     const compatible = compatiblePublicModels(config, binding!, feature);
     if (new Set(f!.options.map(o => o.modelId)).size !== f!.options.length) fail("功能中的模型 ID 重复", field);
-    if (!f!.options.some(o => o.enabled && o.modelId === f!.defaultModelId)) fail("默认模型必须是启用的选项", field);
+    if (!f!.options.some(o => o.enabled && o.modelId === f!.defaultModelId) && !(f!.inheritExisting&&compatible.some(m=>m.id===f!.defaultModelId)&&!f!.options.some(o=>o.modelId===f!.defaultModelId&&!o.enabled))) fail("默认模型必须是启用的选项", field);
     for (const o of f!.options) {
       const model = config.publicModels.find(m => m.id === o.modelId);
       if (!model || o.enabled && !compatible.some(m => m.id === model.id)) fail("功能模型能力不兼容或未启用", field);
@@ -41,7 +41,13 @@ export function validateBusinessConfig(config: ModelConfig) {
         if (o.parameters?.inputTypes?.includes("mask") && config.providers.find(p => p.id === u.providerId)?.protocol !== "openai-images") fail("所选协议不支持蒙版输入", field);
         if (o.parameters?.inputTypes?.includes("image") && u.modality === "text" && !u.capabilities.vision) fail("文字模型不支持图片输入", field);
       }
-      if (p && !["cny-fixed", "usage"].includes(p.mode)) fail("业务模型售价必须明确使用人民币固定或用量价格", field);
+      if (p && !["cny-fixed", "usage", "fixed", "matrix"].includes(p.mode)) fail("业务模型售价需要明确的积分、规格矩阵或人民币价格", field);
+      if(p?.mode==='matrix'&&o.enabled){
+        for(const id of targetIds){const u=config.upstreamModels.find(u=>u.id===id)!;
+          for(const q of u.capabilities.qualities.length?u.capabilities.qualities:['medium'])for(const r of u.capabilities.nativeResolutions.length?u.capabilities.nativeResolutions:['1K'])
+            if(p.prices[q as keyof typeof p.prices]?.[r as keyof typeof p.prices.low]===null||p.prices[q as keyof typeof p.prices]?.[r as keyof typeof p.prices.low]===undefined)fail('请设置全部可用规格的积分售价',field);
+        }
+      }
       if (p?.mode === "usage" && (MODEL_BINDINGS[binding!].modality !== "text" || o.unit !== "task")) fail("首版实际用量结算仅开放有 usage 回执的文字任务", field);
       const policy = o.routing;
       if (policy?.enabled) {

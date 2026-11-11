@@ -16,7 +16,7 @@ export function publicModelCatalog(snapshot: ModelSnapshot, modality: Modality, 
   const compatible = feature && FEATURE_BINDINGS[feature] ? compatiblePublicModels(config, FEATURE_BINDINGS[feature]!, feature).map(m => m.id) : undefined;
   const preset = selectedImagePreset(config,feature,undefined,feature ? undefined : "image.generate");
   let defaultModelId = preset ? preset.aliases[0].id : featureDefaultModel(config,feature,feature ? FEATURE_BINDINGS[feature] : undefined);
-  const configuredIds = f?.enabled===false ? [] : preset ? [...preset.aliases.map(a => a.id),...(f?.options.filter(o => o.enabled && !preset.defaultModelIds.includes(o.modelId)).map(o => o.modelId) || [])] : f ? [...f.options].filter(o => o.enabled).sort((a,b) => a.sort-b.sort).map(o => o.modelId) : undefined;
+  const configuredIds = f?.enabled===false ? [] : f?.inheritExisting ? config.publicModels.filter(m=>!f.options.some(o=>o.modelId===m.id&&!o.enabled)).map(m=>m.id) : preset ? [...preset.aliases.map(a => a.id),...(f?.options.filter(o => o.enabled && !preset.defaultModelIds.includes(o.modelId)).map(o => o.modelId) || [])] : f ? [...f.options].filter(o => o.enabled).sort((a,b) => a.sort-b.sort).map(o => o.modelId) : undefined;
   const configuredProcessor = adminConfiguredFeature(feature) && f?.enabled !== false
     ? config.publicModels.find(m => m.id === defaultModelId && m.enabled && m.modality === modality && modelAllowedForFeature(m, feature) && (!configuredIds || configuredIds.includes(m.id)))
     : undefined;

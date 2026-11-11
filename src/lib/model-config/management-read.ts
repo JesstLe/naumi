@@ -14,6 +14,7 @@ import { managedModelRows, managedModelCandidates } from "./management";
 import { managedModelPriceViews } from "./management-pricing";
 import type { ModelSnapshot } from "./types";
 import type { ManagementAdministration } from "./management-input";
+import {onboardingView} from './onboarding';
 /** Read model of the model-management page: rows, supplier defaults, pricing and health. */
 export function managementRows(snapshot: ModelSnapshot) {
   return managedModelRows(snapshot, Object.entries(FEATURE_BINDINGS).map(([feature, binding]) => ({ ...publicModelCatalog(snapshot, MODEL_BINDINGS[binding!].modality, feature as keyof typeof FEATURE_BINDINGS), feature })));
@@ -43,5 +44,5 @@ export async function readManagementView(admin: ManagementAdministration, snapsh
         }))};
         for(const row of modelRows)for(const route of row.resolutionConfig?.routes||[]){const d=resolutionDefaults.get(route.upstreamId);route.metadataDefaults=d||null;if(d)route.nativeValues=d.nativeValues;if(route.editable&&!route.configured&&d?.available){route.mode=d.mode;route.field=d.field;route.ratioField=d.ratioField;route.fieldKnown=true;route.values={...d.values};route.metadataRef={id:d.id,revision:d.revision};}}
         for(const row of modelRows)for(const route of row.qualityConfig?.routes || []){const d=defaults.get(route.upstreamId);route.metadataDefaults=d || null;if(!route.configured&&d?.available){route.mode=d.mode;route.values={...d.values};route.metadataRef={id:d.id,revision:d.revision};}else if(!route.configured){route.mode="omit";route.values={};}}
-        return { version: snapshot.version,billingVersion:billing.version, managed, rows: modelRows.map(row=>({...row,pricing:managedModelPriceViews(billing,snapshot,row)})), candidates: managedModelCandidates(snapshot.config), channelHealth,providerCapacity,providers: snapshot.config.providers.map(p => ({ id: p.id, name: p.name, protocol: p.protocol, maxConcurrent:p.maxConcurrent, baseUrl: p.baseUrl, enabled: p.enabled, configured: !!p.credentialRef })), catalogs };
+        return { version: snapshot.version,billingVersion:billing.version, managed, rows: modelRows.map(row=>({...row,pricing:managedModelPriceViews(billing,snapshot,row)})), candidates: managedModelCandidates(snapshot.config), channelHealth,providerCapacity,providers: snapshot.config.providers.map(p => ({ id: p.id, name: p.name, protocol: p.protocol, maxConcurrent:p.maxConcurrent, baseUrl: p.baseUrl, enabled: p.enabled, configured: !!p.credentialRef })), catalogs,onboarding:onboardingView(snapshot.config) };
 }

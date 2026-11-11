@@ -8,6 +8,7 @@ type ReturnEditor = SwitchEditor | ChannelsEditor;
 export type EditorState = ReturnEditor
   | {kind:"rename"|"mapping"|"advanced"|"resolution"|"parameters"|"video"|"scope"|"price"; row:ManagedModelRow}
   | {kind:"order"|"connect"|"video-upgrade"}
+  | {kind:'create';initialSource?:{providerId:string;model:string}}
   | {kind:"register";providerId:string;model:string;returnTo?:ReturnEditor};
 
 /** One active editor, with only routing drafts carried across registration. */
