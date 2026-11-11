@@ -17,7 +17,7 @@ SEO 是搜索发现、理解和索引；GEO 是生成式搜索对公开资料的
 1. 首页、关于、联系、隐私、条款、指南列表及三篇指南，共 9 个公开 URL，分别配置标题、描述、自引用 canonical、Open Graph 与 Twitter 分享字段。
 2. 所有 canonical 指向 `https://naumi.top`；请求中的跟踪参数不进入 canonical。Next 可能将根 URL 序列化为不带尾斜杠的域名，两种形式的 URL 归一化一致。
 3. 站点地图只列入公开白名单，不列后台、API、私有作品、画布项目、工作台和登录页。仅指南携带真实编辑日期，不用每次请求的时间伪造更新。
-4. 全站默认 `noindex,nofollow`，白名单页面显式开启索引。robots 允许白名单精确路径以及公开品牌/Next 资源，其他路径不作为抓取目标。robots 不是鉴权，现有账号/素材权限保持。
+4. 全站默认 `noindex,nofollow`，白名单页面显式开启索引。robots 允许白名单精确路径以及公开品牌/Next 资源，其他路径不作为抓取目标。robots 不是鉴权，现有账号/素材权限保持；已经收录的历史 URL 还需通过站长平台核对移除，不把禁止抓取当作历史索引已删除的证明。
 5. 仅 `naumi.top` / `www.naumi.top` 且非独立企业站、非 Fleet 模式启用公开 SEO。非本站域名输出空 sitemap 和禁止抓取规则，指南/llms 返回 404，不输出 Naumi 产品 JSON-LD；保留自部署站的原品牌标题。
 6. 首页发布 Organization、WebSite、WebPage、SoftwareApplication；指南发布 Article、BreadcrumbList 和与可见正文一致的 FAQPage。不编造评分、评论、用户数、价格、套餐、采购渠道或效果保证。FAQ 标注不等于搜索引擎承诺展示富结果。
 7. Next 保留原有 HTML-limited 爬虫集合，并补充 AI 检索 User-Agent 的阻塞 Metadata：这些客户端在初始 `<head>` 就能读取 canonical/描述，普通浏览器保留流式渲染。Next 升级时核对该正则是否覆盖新默认集合。
