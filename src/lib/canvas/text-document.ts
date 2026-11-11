@@ -131,7 +131,7 @@ export function createCanvasTextDocument(options:Options) {
         const response=await canvasDocumentFetch({...scope,project:node.projectKey},"/api/canvas/text-nodes",{method:"POST",headers:{"content-type":"application/json"},body:attempt.body,signal:AbortSignal.timeout(20_000)});
         const data=await response.json();
         if(!response.ok){if(response.status>=400&&response.status<500)state.pending.delete(node.id);if(data?.code==="CANVAS_TEXT_CONFLICT")history.conflict?.(scope,{id:node.id,fields:data.fields||[],current:data.current||null});throw new Error(data?.error||"文字保存失败");}
-        if(data?.persisted!==false&&!data?.node)throw new Error("文字保存结果待核实");
+        if(data?.persisted!==false&&(!data?.node||data.node.id!==node.id||data.node.projectKey!==attempt.node.projectKey))throw new Error("文字保存结果待核实，请重试原操作");
         const saved=(data.node||attempt.node) as CanvasTextNode;state.pending.delete(node.id);state.confirmed.set(node.id,saved);state.bases.set(node.id,saved);written(state,node.id);
         const current=state.snapshot.nodes.find(n=>n.id===node.id);let cached;
         if(current){const rebased=rebaseText(saved,attempt.requested,current);if(sameText(rebased,saved)){state.drafts.delete(node.id);state.bases.delete(node.id);}else state.drafts.set(node.id,rebased);cached=publish(state,{nodes:state.snapshot.nodes.map(n=>n.id===node.id?rebased:n)});}else cached=publish(state);
@@ -182,12 +182,28 @@ export function createCanvasTextDocument(options:Options) {
         for(const [id,revision] of state.written)if(revision>writes){const latest=state.confirmed.get(id);if(latest)merged.set(id,latest);else merged.delete(id);}
         state.confirmed=merged;
         for(const [id,draft] of state.drafts)if(sameText(draft,merged.get(id)))state.drafts.delete(id);
+        // A lost save ACK may have reached the server. A confirmed, matching
+        // read retires that exact journal entry as well as its draft. Otherwise
+        // retry() has no draft to send, yet hasUnsaved() stays true forever.
+        if(data.persisted)for(const [id,attempt] of state.pending){
+          const canonical=merged.get(id);
+          if(canonical&&sameText(attempt.node,canonical)){
+            state.pending.delete(id);
+            if(state.drafts.has(id))state.bases.set(id,canonical);else state.bases.delete(id);
+          }
+        }
         publish(state,{nodes:mergeTextDrafts(Array.from(merged.values()),state.drafts.values()),phase:"ready",error:""});return true;
       } catch(error){if(scope.documentCurrent()&&version===state.loadVersion)publish(state,{phase:"error",error:error instanceof Error?error.message:"文字节点加载失败"});return false;}
     };
     return {getSnapshot:()=>state.snapshot,subscribe:(listener:()=>void)=>{state.listeners.add(listener);return()=>{state.listeners.delete(listener);};},set,accept,save,load,attachImageResults,refreshSaved,
       resolve,hasUnsaved:(id:string)=>state.drafts.has(id)||state.pending.has(id)||state.queues.has(id)||state.scheduled.has(id),
-      flush:(ids?:readonly string[])=>Promise.all(ids?ids.map(id=>state.queues.get(id)):Array.from(state.queues.values())),retry:()=>Promise.all(Array.from(state.drafts.values(),save)),history};
+      flush:(ids?:readonly string[])=>Promise.all(ids?ids.map(id=>state.queues.get(id)):Array.from(state.queues.values())),retry:()=>{
+        // Older caches can contain a pending operation without a dirty counter.
+        // Recover its original body instead of leaving an invisible dead end.
+        const nodes=new Map([...state.pending].map(([id,attempt])=>[id,attempt.requested]));
+        for(const [id,draft]of state.drafts)nodes.set(id,draft);
+        return Promise.all(Array.from(nodes.values(),save));
+      },history};
   }
   return {bind,history};
 }

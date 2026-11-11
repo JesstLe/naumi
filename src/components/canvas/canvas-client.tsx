@@ -18,6 +18,8 @@ import {useCanvasNodePreferences} from "./use-canvas-node-preferences";
 import {useCanvasTextEditing} from "./use-canvas-text-editing";
 import {useCanvasProjectNavigation} from "./use-canvas-project-navigation";
 import {canvasHistoryFailureMessage} from '@/lib/canvas/history-scope';
+import {createCanvasSaveCommand} from '@/lib/canvas/save-command';
+import {Save} from 'lucide-react';
 import {canvasDeletableIds,applyCanvasLocalHistory,type CanvasLocalHistoryAction} from '@/lib/canvas/node-commands';
 import {useComfyNodes} from "./comfy/use-comfy-nodes";
 import {editComfyField,projectComfyGraph,type ComfyDocument} from "@/lib/comfyui/document";
@@ -1782,6 +1784,19 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
   function doUndo() { if((directorNodesStore.saving||characterNodesStore.saving||sceneNodesStore.saving||audioNodesStore.saving||timelineNodesStore.saving))return Promise.resolve();return canvasHistory.doUndo(); }
   function doRedo() { if((directorNodesStore.saving||characterNodesStore.saving||sceneNodesStore.saving||audioNodesStore.saving||timelineNodesStore.saving))return Promise.resolve();return canvasHistory.doRedo(); }
+  const saveCommand=useRef(createCanvasSaveCommand()),[manualSaving,setManualSaving]=useState(false);
+  async function saveCanvasChanges(){
+    if(readOnly||!user||browsing)return;
+    const scope=canvasHistory.scope;setManualSaving(true);
+    try{
+      await saveCommand.current.run(scope,{flush:textAutosave.flushAll,
+        retry:[()=>canvasTextDocument.retry(),()=>videoNodesStore.retryPending(),flushImagePrompts,
+          ()=>Promise.all([directorNodesStore.flush(),characterNodesStore.flush(),sceneNodesStore.flush(),audioNodesStore.flush(),timelineNodesStore.flush(),comfyNodesStore.flush()])],
+        history:()=>canvasHistory.retry(),unsaved:()=>canvasTextDocument.getSnapshot().unsaved>0||videoNodesStore.getSnapshot().unsavedCount>0});
+      if(scope.viewCurrent())flashTip(L("修改已保存","Changes saved"));
+    }catch(error){if(scope.viewCurrent())flashTip(canvasHistoryFailureMessage(error,t("canvas.saveFailed")));}
+    finally{setManualSaving(false);}
+  }
   function applyPendingLinkHistory(act:CanvasLocalHistoryAction,undo:boolean,checkOnly=false,scope=canvasHistory.scope){
     const hidden=applyCanvasLocalHistory(act,undo,{pending:pendingPresentation.atScope(scope),generation:generationPresentation.atScope(scope)},checkOnly);
     if(!checkOnly&&scope.viewCurrent()&&hidden.length){const ids=new Set(hidden);canvasSelection.patch({selectedId:selectedId&&ids.has(selectedId)?null:selectedId,selectedPendId:selectedPendId&&ids.has(selectedPendId)?null:selectedPendId,multiSel:multiSel.filter(id=>!ids.has(id))});}
@@ -2012,6 +2027,15 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     setSpawnMenu(null);
     const p = relPoint(e);
     setCtxMenu({ x: p.x, y: p.y, cx: e.clientX, cy: e.clientY });
+  }
+  function onSelectionContextMenu(e:ReactMouseEvent,selectedNodes:{id:string}[]){
+    e.preventDefault();e.stopPropagation();
+    // React Flow's multi-selection overlay receives the event instead of the
+    // node/pane. Reuse the same selection owner and existing batch menu.
+    const ids=selectedNodes.map(node=>node.id);if(!ids.length)return;
+    canvasSelection.selectIds(ids);contextSelectionBaseRef.current=ids;
+    setSpawnMenu(null);const p=relPoint(e);
+    setCtxMenu({x:p.x,y:p.y,cx:e.clientX,cy:e.clientY,nodeId:ids[0]});
   }
   // Layout owns preparation/fit; history remains the single transaction/undo owner.
   async function tidyLayout() {
@@ -2464,6 +2488,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
   function performCanvasShortcut(action:CanvasKeyboardAction){
     switch(action.kind){
+      case "save":void saveCanvasChanges();return;
       case "tool":viewControls.selectTool(action.tool);return;
       case "add-text":{const center=centerScreen();addTextNodeAtScreen(center.x,center.y);return;}
       case "copy":clipboard.copyShortcut();return;
@@ -2610,7 +2635,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           <CanvasTextConflicts conflicts={canvasTextDocument.conflicts} nodes={textNodes} onResolve={resolveTextConflict}/></div>}
       {(unsavedTextCount>0||videoNodesStore.unsavedCount>0) && <div role="alert" className="fixed bottom-6 left-1/2 z-[200] flex -translate-x-1/2 items-center gap-3 rounded-lg border border-amber-500 bg-background px-4 py-3 text-sm shadow-lg">
         <span>{videoNodesStore.error||t("canvas.unsavedChanges")} ({unsavedTextCount+videoNodesStore.unsavedCount})</span>
-        <button className="font-semibold underline" onClick={()=>void Promise.all([videoNodesStore.retryPending(),canvasTextDocument.retry()]).catch(error=>flashTip(error instanceof Error?error.message:t("canvas.saveFailed")))}>{t("canvas.retrySave")}</button>
+        <button className="font-semibold underline" disabled={manualSaving} onClick={()=>void saveCanvasChanges()}>{manualSaving?L("保存中…","Saving…"):t("canvas.retrySave")}</button>
       </div>}
       {historySaving && <div className="fixed inset-0 z-[190] cursor-wait" aria-label={t("canvas.savingChanges")}>
         <div role="status" className="absolute bottom-6 left-1/2 -translate-x-1/2 rounded-lg bg-background px-4 py-3 text-sm shadow-lg">{t("canvas.savingChanges")}</div>
@@ -2842,6 +2867,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               }}
               onNodeContextMenu={onNodeContextMenu}
               onPaneContextMenu={onPaneContextMenu}
+              onSelectionContextMenu={onSelectionContextMenu}
               onSelectionChange={({nodes,edges})=>canvasSelection.flowSelection(nodes,edges)}
               onSelectionStart={()=>{canvasSelection.clearFocus();setCtxMenu(null);}}
               onNodeDragStart={(_,node,nodes)=>canvasDrag.start(node,nodes)}
@@ -3020,6 +3046,11 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                     <Clock className="h-[18px] w-[18px]" aria-hidden="true" />
                   </button>
                   <span className="mx-0.5 h-5 w-px flex-none bg-[var(--canvas-ui-border)] sm:mx-1 sm:h-6" />
+                  <button type="button" data-tool="save" data-testid="canvas-save-button" aria-label={L("保存画布","Save canvas")} title={`${L("保存画布","Save canvas")} (${shortcut("S")})`}
+                    disabled={manualSaving||historySaving} onClick={()=>void saveCanvasChanges()}
+                    className="canvas-ui-action flex h-7 w-7 flex-none items-center justify-center rounded-md transition-colors disabled:opacity-35 sm:h-9 sm:w-9">
+                    {manualSaving?<Loader2 className="h-[18px] w-[18px] animate-spin"/>:<Save className="h-[18px] w-[18px]"/>}
+                  </button>
                   <button type="button" data-tool="undo" aria-label={t("canvas.undo")} title={`${t("canvas.undo")} (${shortcut("Z")})`}
                     disabled={historySaving || (directorNodesStore.saving||characterNodesStore.saving||sceneNodesStore.saving||audioNodesStore.saving||timelineNodesStore.saving) || undoStack.length === 0} onClick={() => void doUndo()}
                     className="canvas-ui-action flex h-7 w-7 flex-none items-center justify-center rounded-md transition-colors disabled:opacity-40 sm:h-9 sm:w-9">

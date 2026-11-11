@@ -7,7 +7,7 @@ import { ModelConfigError, type ModelConfig, type PublicModel, type UpstreamMode
  * management. No repository, current snapshot, SDK, or business orchestration. */
 export const FEATURE_BINDINGS: Partial<Record<FeatureId, ModelBinding>> = {
   "image.generate": "image.generate", "image.suite": "image.generate", "image.aplus": "image.generate",
-  "tool.cutout": "image.cutout", "tool.ipcheck": "text.competitor", "competitor.action": "image.edit",
+  "tool.cutout": "image.cutout", "tool.upscale":"image.edit", "tool.printfile":"image.edit", "tool.ipcheck": "text.competitor", "competitor.action": "image.edit",
   "canvas.text-generate": "text.generate", "canvas.assistant": "text.generate", "canvas.ocr": "vision.ocr",
   ...Object.fromEntries(["tool.garment", "tool.avatar", "tool.dewrinkle", "tool.dewatermark", "tool.style", "tool.tryon", "tool.retouch", "tool.recolor", "tool.replicate", "tool.inpaint", "tool.extract", "tool.garment3d", "tool.packaging3d", "canvas.image", "canvas.expand", "canvas.text-edit", "canvas.annotate"].map(id => [id, "image.edit"])),
   "video.generate": "video.generate",

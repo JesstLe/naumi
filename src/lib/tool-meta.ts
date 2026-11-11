@@ -165,7 +165,7 @@ export const TOOLS: ToolMeta[] = [
     key: "AI 变清晰", en: "Upscale", slug: "upscale", href: "/upscale", category: "图像处理",
     Icon: Wand2, desc: "模糊图、老照片一键高清修复放大",
     action: "高清修复", cost: 6,
-    ctrls: [{ label: "放大倍数", opts: ["2x", "4x"] }, { label: "增强方向", opts: ["通用", "人像", "商品"] }],
+    ctrls: [{ label: "增强方向", opts: ["通用", "人像", "商品"] }],
     live: true, inMenu: true,
   },
   {
