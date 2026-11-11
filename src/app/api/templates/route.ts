@@ -6,6 +6,7 @@ import { resolveUserEmail } from "@/lib/admin-auth";
 import { TEMPLATES as SEED } from "@/lib/templates-data";
 import {publishTemplateMedia} from "@/lib/template-published-media";
 import {templateImageDeliveryUrl} from "@/lib/templates/image-source";
+import {withTemplateCovers} from "@/lib/templates/cover-metadata";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -74,10 +75,13 @@ export async function GET(req: Request) {
         page,
         pageSize,
       });
-    const deliveredItems = await Promise.all(items.map(async (row) => {
+    const publishedItems = await Promise.all(items.map(async (row) => {
       const t=await publishTemplateMedia(row);
       return {...t,image:templateImageDeliveryUrl(t.id,t.image)};
     }));
+    // Missing dimensions do not block browsing; the client reserves a stable
+    // fallback slot. Metadata is tied to this exact delivered image URL.
+    const deliveredItems = await withTemplateCovers(publishedItems).catch(() => publishedItems);
     const safeItems = authed
       ? deliveredItems
       : deliveredItems.map((t) => ({ ...t, prompt: "" }));

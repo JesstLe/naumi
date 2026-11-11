@@ -64,6 +64,7 @@ export type PromptTemplate = {
   image: string;
   gradient: string;
   popular?: boolean;
+  cover?: import("./templates/cover-layout").TemplateCover;
   // 管理员手动「上首页」开关:true=强制加入首页 hero/showcase 轮换池
   homepageFeatured?: boolean;
   // 白底原图:作品转模板时带进来的原作品上传图,做同款时载入产品图(库模板为空)

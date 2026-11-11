@@ -19,16 +19,14 @@ import type { PromptTemplate } from "@/lib/mock-data";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { cdnUrl, cdnThumb } from "@/lib/cdn";
+import { cdnUrl } from "@/lib/cdn";
 import { useI18n } from "@/lib/i18n/locale-context";
 import { cn, lockBodyScroll } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
 import { browserSupabase } from "@/lib/supabase";
 import { useAuthModal } from "@/lib/auth-modal-context";
-// Pre-probed natural dimensions {id: [w, h]} for every bundled template image.
-// Passing width/height to <CachedImage> lets the browser reserve the exact slot before
-// the image bytes arrive → no layout shift in the masonry grid.
-import templateDims from "@/lib/template-dims.json";
+import { templateCoverDimensions } from "@/lib/templates/cover-layout";
+import { TemplateCover } from "./template-cover";
 
 function fmt(s: string, vars: Record<string, string | number>): string {
   return Object.entries(vars).reduce(
@@ -67,7 +65,7 @@ function mergeUnique(
 // SWR-style 本地缓存:首次访问后,把每个 (filter+q+favsKey) 组合下的第一页结果
 // 存起来。回访用户进入页面瞬时显示上次的卡片,后台拉新数据再 swap,避免每次都
 // 出现"加载模板中..."的空白等待。1 小时 TTL。
-const CACHE_KEY = "naumi:templatesCacheV1";
+const CACHE_KEY = "naumi:templatesCacheV2";
 const CACHE_TTL_MS = 60 * 60 * 1000;
 type CacheEntry = { templates: PromptTemplate[]; total: number; ts: number };
 const isCachedTemplate = (value: unknown): value is PromptTemplate => {
@@ -370,8 +368,8 @@ export function TemplatesClient({
     const buckets: PromptTemplate[][] = Array.from({ length: n }, () => []);
     const heights = new Array(n).fill(0);
     for (const t of shownTemplates) {
-      const wh = (templateDims as Record<string, number[]>)[t.id];
-      const ratio = wh && wh[0] ? wh[1] / wh[0] : 1.25; // 图片相对高度(每单位列宽)
+      const wh = templateCoverDimensions(t);
+      const ratio = wh[1] / wh[0]; // 图片相对高度(每单位列宽)
       const est = ratio + 0.6; // 加上标题/标签文字块的大致固定高度
       let m = 0;
       for (let i = 1; i < n; i++) if (heights[i] < heights[m]) m = i;
@@ -607,36 +605,10 @@ export function TemplatesClient({
                       className="group/img relative block w-full text-left"
                       title={tr("tpl.useTitle")}
                     >
-                      {(() => {
-                        const wh = (templateDims as Record<string, number[]>)[t.id];
-                        return (
-                          <div
-                            className={cn(
-                              "relative w-full bg-gradient-to-br",
-                              t.gradient
-                            )}
-                            style={
-                              wh
-                                ? { aspectRatio: `${wh[0]} / ${wh[1]}` }
-                                : undefined
-                            }
-                          >
-                            {/* 自然宽高比;预存尺寸 → 浏览器加载前就锁住位,无抖动 */}
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <CachedImage
-                              src={cdnThumb(t.image, 640)}
-                              alt={t.title}
-                              loading="lazy"
-                              width={wh ? wh[0] : undefined}
-                              height={wh ? wh[1] : undefined}
-                              className="block h-auto w-full"
-                            />
-                            <span className="absolute inset-0 flex items-center justify-center bg-slate-900/0 text-sm font-medium text-transparent transition-all group-hover/img:bg-slate-900/35 group-hover/img:text-white">
-                              {tr("tpl.hoverUse")}
-                            </span>
-                          </div>
-                        );
-                      })()}
+                      <TemplateCover key={t.image} image={t.image} title={t.title} gradient={t.gradient} cover={t.cover}/>
+                      <span className="absolute inset-0 flex items-center justify-center bg-slate-900/0 text-sm font-medium text-transparent transition-all group-hover/img:bg-slate-900/35 group-hover/img:text-white">
+                        {tr("tpl.hoverUse")}
+                      </span>
                     </button>
                     {t.popular && (
                       <Badge
@@ -753,7 +725,6 @@ export function TemplatesClient({
 
       {/* 预览弹窗 — 点图触发。固定高度(92vh),内部 prompt 区域单独滚动。 */}
       {preview && (() => {
-        const pWh = (templateDims as Record<string, number[]>)[preview.id];
         return (
         <div
           className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/60 p-0 backdrop-blur-sm sm:items-center sm:p-6"
