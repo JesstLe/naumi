@@ -47,16 +47,16 @@ import { CollaborationProvider } from "@/components/collaboration/collaboration-
 const THEME_INIT = `(function(){try{if(localStorage.getItem('theme')==='dark')document.documentElement.classList.add('dark');}catch(e){}})();`;
 
 const platformMetadata: Metadata = {
-  title: `${BRAND}- AI创作平台`,
+  title: `${BRAND}- 一站式AI设计平台`,
   description:
-    `${BRAND} 是一款面向电商营销的 B2B 生产力工具，帮品牌与卖家高效产出电商主图、Banner、场景图与详情页视觉。`,
+    `${BRAND} 是一站式 AI 设计平台，覆盖作图、短剧、平面设计与电商出图，帮品牌与创作团队高效产出商业视觉。`,
   keywords: [
-    "电商营销工具",
-    "电商主图制作",
-    "商品视觉生产力",
-    "Banner 制作",
-    "商品场景图",
-    "B2B 电商工具",
+    "一站式AI设计平台",
+    "AI作图",
+    "短剧",
+    "平面设计",
+    "电商出图",
+    "AI设计工具",
     `${BRAND}`,
   ],
   // 浏览器 tab 图标 — 走 BRAND_FAVICON (方形小图);未设则 fallback 到 BRAND_LOGO
