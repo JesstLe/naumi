@@ -2,11 +2,11 @@
 
 <img src="public/brand/naumi/horizontal-black.svg" width="200" alt="Naumi" />
 
-# AI 电商视觉工作站
+# 一站式 AI 设计平台
 
-**商品生图 · 可视化画布 · 创作 Agent · 批量生产**
+**AI 作图 · 短剧视频 · 平面设计 · 电商出图**
 
-Self-hosted AI visual studio for e-commerce.
+Self-hosted all-in-one AI design platform.
 
 [部署核心](#deployment-core) · [如果你是 AI Agent](#for-ai-agents) · [如果你是人类](#for-humans) · [验收与排错](#deployment-acceptance) · [界面预览](#界面预览) · [文档](#文档)
 
@@ -14,7 +14,7 @@ Self-hosted AI visual studio for e-commerce.
 
 ![Naumi 浅色画布、节点工作流与侧边创作 Agent](docs/screenshots/canvas-agent-20261013.jpg)
 
-Naumi 把商品图片、提示词、生成结果和图像工具放在同一个创作流程中。你可以直接出图，也可以在画布上连接图片与文字节点，通过 Agent 或批量任务继续处理，最后保存、复用和导出素材。
+Naumi 把图片、提示词、生成结果和设计工具放在同一个创作流程中。你可以直接出图或制作短剧视频，也可以在画布上连接图片与文字节点编排平面设计与电商视觉，通过 Agent 或批量任务继续处理，最后保存、复用和导出素材。
 
 部署说明按 **2026-11-10 的 main 源码**核对；功能说明描述仓库实现，不代表每个运行实例都已部署或启用。依赖版本以 [package.json](package.json) 和锁文件为准，界面图片保留原始拍摄日期。
 

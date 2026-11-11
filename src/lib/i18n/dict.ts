@@ -454,7 +454,7 @@ const zh: Dict = {
   },
   footer: {
     tagline:
-      "面向电商卖家的商业视觉生产力工具。让每一张商品图，都成为能卖货的视觉资产。",
+      "一站式 AI 设计平台。作图、短剧、平面设计、电商出图，一站完成。",
     colProduct: "产品",
     colScene: "场景",
     colCompany: "公司",
@@ -537,7 +537,7 @@ const zh: Dict = {
       greetEvening: "晚上好",
       greetGuest: "欢迎来到 {brand}",
       welcome: "欢迎回来，继续你的创作",
-      tagline: "AI 电商视觉工作台",
+      tagline: "一站式 AI 设计平台",
       badge: "双语模板 · 一键做同款",
       heroQ: "想做点什么？",
       heroSub: "上传产品图、写一句话，或从模板做同款 —— 几秒出电商级商品图。",
@@ -1463,7 +1463,7 @@ const en: Dict = {
   },
   footer: {
     tagline:
-      "A commerce visual productivity tool for online sellers. Turn every product photo into a visual asset that sells.",
+      "The all-in-one AI design platform. Images, short drama, graphic design and e-commerce visuals — created in one place.",
     colProduct: "Product",
     colScene: "Use cases",
     colCompany: "Company",
@@ -1546,7 +1546,7 @@ const en: Dict = {
       greetEvening: "Good evening",
       greetGuest: "Welcome to {brand}",
       welcome: "Welcome back — keep creating",
-      tagline: "AI e-commerce visual studio",
+      tagline: "All-in-one AI design platform",
       badge: "Bilingual templates · one-click looks",
       heroQ: "What do you want to make?",
       heroSub: "Upload a product photo, write a line, or recreate a template — e-commerce visuals in seconds.",

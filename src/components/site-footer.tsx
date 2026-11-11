@@ -64,8 +64,8 @@ export function SiteFooter() {
           <Logo />
           <p className="max-w-xs text-sm text-muted-foreground">
             {L(
-              "AI 电商出图工作站,一句话生成商业级商品图。",
-              "AI e-commerce image studio — product shots from a single sentence."
+              "一站式 AI 设计平台,支持作图、短剧、平面设计与电商出图。",
+              "The all-in-one AI design platform — images, short drama, graphic design and e-commerce visuals."
             )}
           </p>
         </div>

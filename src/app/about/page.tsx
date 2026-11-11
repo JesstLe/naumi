@@ -143,8 +143,8 @@ export default async function AboutPage() {
   return locale === "en" ? (
     <AboutLayout
       kicker="About us"
-      title="Turn every product photo into a visual asset that sells"
-      intro={`${BRAND} is a B2B productivity tool for e-commerce marketing, built for online sellers, brands and agencies. With advanced image generation we turn the "hard, slow, expensive" process of producing visuals into a faster, stable and reusable workflow.`}
+      title="Turn every idea into commercial visuals that deliver"
+      intro={`${BRAND} is an all-in-one AI design platform covering image creation, short drama, graphic design and e-commerce visuals, built for brands, sellers and creative teams. With advanced generation we turn the "hard, slow, expensive" production process into a faster, stable and reusable workflow.`}
       problemsLabel="The problems we solve"
       problems={[
         {
@@ -191,8 +191,8 @@ export default async function AboutPage() {
   ) : (
     <AboutLayout
       kicker="关于我们"
-      title="让每一张商品图，都成为能卖货的视觉资产"
-      intro={`${BRAND} 是一款面向电商营销的 B2B 生产力工具，服务对象是电商卖家、品牌方与代运营团队。我们用先进的图像生成技术，把「出图难、出图慢、出图贵」的流程变得更快、更稳定，让营销视觉产出成为可复用的工作流。`}
+      title="让每一个创意，都成为可交付的商业视觉"
+      intro={`${BRAND} 是一站式 AI 设计平台，覆盖作图、短剧、平面设计与电商出图，服务品牌方、电商卖家与创作团队。我们用先进的生成技术，把「出图难、出图慢、出图贵」的流程变得更快、更稳定，让商业视觉产出成为可复用的工作流。`}
       problemsLabel="我们解决什么问题"
       problems={[
         {
