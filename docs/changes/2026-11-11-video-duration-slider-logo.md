@@ -34,3 +34,24 @@
 - Logo 回归：33 种本地 SVG、129 覆盖、51 身份规则、10 种彩色变体通过。原 Node runner 因本机共享 `lucide-react` 包 CJS 与 type=module 冲突失败；只在输出目录副本将该包交给 esbuild 打包，同断言通过，未修改共享依赖。
 - UI runner 初次缺 BillingProvider、目录外入口依赖解析、缩窗时未等待布局稳定均记录为测试夹具修正；应用代码的拖动断言和触屏断言最终通过。
 - 兼容大设置面板也使用同一时长控件；相应旧 UI 测试定位器已迁移到 slider。先前图片比例 / 缺时长清晰度 / 目录刷新待办保持未完成。
+
+## 103 实际发布与收尾
+- 固定运行源码 `2d70d5e5ebf24234f2f1ecbc4233674868c199da`，构建版号 `1794389019`。已合入 GitHub main；后续本段交付文档提交不是新运行版本。
+- 事务 `release103-refactor-duration-logo-20261111-r2`：最终 **COMPLETE / revision 643**。Web 与 Worker 同镜像 `sha256:03fd0a5cf8df4fa85a09f4085e37d993b028921a2bfacbe23dd99f4b74f9072e`。
+- 新 Web/Worker 正常运行且 `restart=unless-stopped`；旧 `model-supplier-20261111-r2` 双实例已排空停止、`restart=no`。公网、内部恢复、Router 回调、配置指纹、原任务与账务保护核验通过；三个部署/生命周期锁已重新取得和释放，确认为 FREE。
+- 真实候选与实际 103 公网分别验证首页图片/视频 Logo、鼠标滑条中间值、原生视频节点 PATCH 保存、刷新读回 9 秒。旧页面同一 document 跨切流保存、另页读回、未发送草稿和旧 JS/CSS 原字节通过。
+- 所有验收视频/文字节点及自有项目名已用原生接口删除并重读确认；其他原节点与名称保持。真实付费供应商调用 0，不等于成片质量验收。
+- 回退：16 个任务文件在另一副本恢复原 SHA256，并重现旧下拉、秒数按钮、通用图标；修改制品保持。服务器路由副本恢复/语法核验与最后运行回退条件核对通过；没有线上切回或数据库/媒体回灌。
+- 本轮成功发布 +1；本机盘点缓存并保留其他任务资源，目标服务器最后磁盘 71%、约 33.5 GiB 可用、MemAvailable 约 6026 MiB。47 未连接或变更。
+
+### 保留的失败与纠正
+- r1 镜像归档内容 SHA 被误用为运行镜像 ID，导入后 inspect 阶段中止，未创建新实例/未切流；保留原 ABORTED 记录，按实际加载镜像 ID、源码/版本/运行文件字节复核后启用唯一 r2。
+- r2 候选被旧部署验收脚本写死的目录 v117 拦下，实际旧/新均为 v121、计费 v8。原候选保留；在原记录、原两实例、原任务快照、旧入口和配置指纹逐项核对后，只把比较依据改成实际旧站鉴权结果，持锁续办同一事务，没有重建候选或重放已确认发布操作。
+- 原回执中失败期 `gatewaySwitched=false` / `candidatesRetained=true` 的旧标记在最终 COMPLETE 后仍残留。持锁复核真实公网、网关后像、新旧实例及全部 ACK 后，以 revision CAS 修正为实际状态，原失败标记另字段保留；不改变运行环境或业务数据。
+- 浏览器测试夹具先错误地用 POST 监听真实节点的 PATCH、请求尚未创建的 projectKey，并在 localhost 网关隧道触发同源 403。已保留失败记录；最终公网测试使用 `http://103.30.76.93` 原生同源及实际 PATCH，未修改应用同源校验。
+- 跨切流六项断言已在原浏览器完成，后续参数测试等待失败后关闭了该页；原断言记录、continuity 采样、原 before 文档身份原样保留，另开实际公网页补完保存/重读。记录这两段证据，不冒充全程同一个浏览器运行。
+
+### 交付文件与未完成项
+- 证据根：`E:/Workspace/naumi-task-evidence/video-duration-logo-20261111`；四制品 `MODIFIED_FILE.zip`、`DIFF_FILE.patch`、`VERIFICATION.txt`、可执行 `ROLLBACK.sh` 已重开核验。
+- 真实发布及复核：`release103/r2/final-receipts/`、`FINAL_METADATA_RECONCILIATION.json`、`BROWSER_RESULT-cross-switch.json`、`BROWSER_COMPLETION_RESULT.json`、`QA_CLEANUP.json`。
+- 本版仅完成共享视频时长滑条与首页模型族 Logo。先前诊断中的图片比例完整性、缺时长时清晰度展示、跨标签页目录刷新仍列为独立待办，不计入本轮完成。
