@@ -2,7 +2,8 @@
 
 import { ConversationRichText } from "./conversation-richtext";
 import { CreationActivity } from "./creation-activity";
-import { useEffect,useRef,useState } from "react";
+import { createContext,useContext,useEffect,useRef,useState } from "react";
+import type { Components } from "react-markdown";
 import { Download, Ellipsis, Expand, Loader2, Palette, PanelsTopLeft, RotateCcw, ScanEye, Scissors, Shirt, SquarePen, Sun, Blend, X } from "lucide-react";
 import { useWorkspaceRouter } from "@/lib/desktop/navigation";
 import { agentMediaUrl } from "@/lib/agent/media-policy";
@@ -20,6 +21,20 @@ const tools = [
   {name:"服装上身",route:"/tryon",Icon:Shirt}, {name:"发送到画布",route:"/canvas",Icon:PanelsTopLeft},
 ];
 
+type ResultContextValue={prompt:string;port:CreationWorkbenchPort;onPreview:(url:string)=>void};
+const ResultContext=createContext<ResultContextValue|null>(null);
+// Component types must stay stable across focus/list/auth and streamed-text
+// renders. Current action ports flow through context, not new component closures.
+const resultComponents:Components={
+  p:({node,children})=>node?.children.some(child=>child.type==="element"&&child.tagName==="img")?<div className={styles.responseParagraph}>{children}</div>:<p>{children}</p>,
+  img:ResultMedia,
+};
+function ResultMedia({src,alt}:{src?:string|Blob;alt?:string}){
+  const context=useContext(ResultContext),url=typeof src==="string"?src:"";
+  if(!context||!agentMediaUrl(url))return null;
+  return /\.(mp4|webm|mov|m4v)(\?|$)/i.test(url)?<video controls playsInline preload="metadata" src={url} className={styles.resultVideo}/>:<ResultImage key={url} url={url} alt={alt||""} {...context}/>;
+}
+
 export function messageReferences(content:string) {
   return content.split("\n").flatMap(line=>{const m=line.match(/^\[商品图\]\s*(\S+)$/);return m && agentMediaUrl(m[1]) ? [m[1]]:[];});
 }
@@ -28,6 +43,7 @@ export function messagePrompt(content:string) {return content.split("\n").filter
 function ResultImage({url,alt,prompt,port,onPreview}:{url:string;alt:string;prompt:string;port:CreationWorkbenchPort;onPreview:(url:string)=>void}) {
   const router=useWorkspaceRouter(), {canPage}=useFeatureAccess();
   const [error,setError]=useState(""),[pending,setPending]=useState(false),[more,setMore]=useState(false);
+  const [attempt,setAttempt]=useState(0),[imageState,setImageState]=useState<"loading"|"ready"|"failed">("loading"),[dimensions,setDimensions]=useState<{width:number;height:number}|null>(null);
   async function openTool(route:string) {
     setPending(true);setError("");
     try {
@@ -40,14 +56,15 @@ function ResultImage({url,alt,prompt,port,onPreview}:{url:string;alt:string;prom
   }
   return <div className={styles.resultBlock}>
     <div className={styles.resultImage}>
-      <button type="button" className={styles.imageOpen} aria-label="放大查看图片" onClick={()=>onPreview(url)}><CachedImage src={url} alt={alt||"生成图片"}/></button>
-      <div className={styles.imageTop}>
+      <button type="button" className={styles.imageOpen} aria-label="放大查看图片" disabled={imageState!=="ready"} style={{aspectRatio:dimensions?`${dimensions.width}/${dimensions.height}`:undefined,minHeight:dimensions?undefined:220,maxHeight:660}} onClick={()=>onPreview(url)}><CachedImage key={attempt} src={url} alt={alt||"生成图片"} style={{visibility:imageState==="failed"?"hidden":undefined}} onLoad={event=>{const image=event.currentTarget;if(image.naturalWidth){setDimensions({width:image.naturalWidth,height:image.naturalHeight});setImageState("ready");}}} onError={()=>setImageState("failed")}/></button>
+      {imageState!=="ready"&&<div className={styles.resultImageState} role="status">{imageState==="loading"?<Loader2 className="animate-spin" aria-label="正在加载图片"/>:<><span>图片暂未加载</span><button type="button" onClick={()=>{setImageState("loading");setAttempt(value=>value+1);}}>重新加载</button></>}</div>}
+      {imageState==="ready"&&<><div className={styles.imageTop}>
         <button type="button" aria-label="下载图片" title="下载图片" onClick={()=>void downloadImage(url).catch(()=>setError("下载失败，请重试"))}><Download/></button>
         <button type="button" aria-label="更多图片操作" aria-expanded={more} onClick={()=>setMore(!more)}><Ellipsis/></button>
         <button type="button" aria-label="放大图片" onClick={()=>onPreview(url)}><Expand/></button>
       </div>
       {more&&<div className={styles.imageMenu}><button type="button" onClick={()=>{port.stage(prompt,[url]);setMore(false);}}>用作参考</button>{canPage("/canvas")&&<button type="button" disabled={pending} onClick={()=>void openTool("/canvas")}>发送到画布</button>}</div>}
-      <div className={styles.imageTools} aria-label="图片工具">{tools.filter(t=>canPage(t.route)).map(t=><button type="button" key={t.route} disabled={pending} aria-label={t.name} title={t.name} onClick={()=>void openTool(t.route)}><t.Icon/><span>{t.name}</span></button>)}</div>
+      <div className={styles.imageTools} aria-label="图片工具">{tools.filter(t=>canPage(t.route)).map(t=><button type="button" key={t.route} disabled={pending} aria-label={t.name} title={t.name} onClick={()=>void openTool(t.route)}><t.Icon/><span>{t.name}</span></button>)}</div></>}
     </div>
     {error&&<p className={styles.error} role="alert">{error}</p>}
   </div>;
@@ -65,10 +82,7 @@ export function CreationMessage({message,previous,port,onPreview}:{message:Workb
   const images=message.content.split("\n").flatMap(line=>{const m=line.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);return m&&agentMediaUrl(m[2])&&!/\.(mp4|webm|mov|m4v)(\?|$)/i.test(m[2])?[m[2]]:[];});
   return <div className={styles.assistantMessage}>
     {(message.pending||!!message.steps?.length)&&<CreationActivity steps={message.steps||[]} pending={message.pending}/>}
-    <ConversationRichText components={{
-      p:({node,children})=>node?.children.some(child=>child.type==="element"&&child.tagName==="img")?<div className={styles.responseParagraph}>{children}</div>:<p>{children}</p>,
-      img:({src,alt})=>{const url=typeof src==="string"?src:"";if(!agentMediaUrl(url))return null;return /\.(mp4|webm|mov|m4v)(\?|$)/i.test(url)?<video controls playsInline preload="metadata" src={url} className={styles.resultVideo}/>:<ResultImage url={url} alt={alt||""} prompt={prompt} port={port} onPreview={onPreview}/>;},
-    }} content={message.content.replace(/^视频链接\s*[:：]\s*(\S+)$/gm,"![视频]($1)")}/>
+    <ResultContext.Provider value={{prompt,port,onPreview}}><ConversationRichText components={resultComponents} content={message.content.replace(/^视频链接\s*[:：]\s*(\S+)$/gm,"![视频]($1)")}/></ResultContext.Provider>
     {message.pending&&message.steps?.flatMap(step=>step.outputs||[]).filter((url,index,urls)=>urls.indexOf(url)===index&&!images.includes(url)).map(url=>/\.(mp4|webm|mov|m4v)(\?|$)/i.test(url)?<video key={url} controls playsInline src={url} className={styles.resultVideo}/>:<ResultImage key={url} url={url} alt="生成图片" prompt={prompt} port={port} onPreview={onPreview}/>)}
     {!message.pending&&prompt&&<div className={styles.resultActions}>
       <button type="button" disabled={port.busy||port.unavailable} onClick={()=>port.stage(prompt,images.length?[images[0]]:messageReferences(source))}><SquarePen/>重新编辑</button>
