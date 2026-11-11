@@ -1,0 +1,89 @@
+// Actual production React components; local catalog and node persistence, never a supplier.
+const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict');
+const {build}=require('esbuild'),postcss=require('postcss'),tailwind=require('tailwindcss'),{chromium}=require('playwright');
+const root=process.cwd(),out=path.resolve(process.env.DURATION_EVIDENCE||'output/video-duration-ui');
+const baseline=process.argv.includes('--baseline');
+const range=(min,max)=>Array.from({length:max-min+1},(_,i)=>min+i);
+const model=(id,label,seconds,extra={})=>({modelId:id,providerId:'managed-video',label,definition:{sources:{},modes:['text','single_image'],aspectRatios:['16:9','9:16'],durationResolutionMap:[{durations:seconds,resolutions:['720p']}],...extra}});
+const models=[model('duration-seed','Seedance 2.0',range(4,15)),model('duration-kling','Kling 4.0',range(4,30)),model('duration-wan','Wan Long',range(2,60)),model('duration-sparse','Kling Discrete',[5,10,15]),model('duration-fixed','Seedance Fixed',[4]),model('duration-auto','Wan Auto',[-1,...range(4,15)],{supportsAutoDuration:true}),model('duration-mode','Seedance Scoped',range(4,30),{modeParameters:{single_image:{durationResolutionMap:[{durations:range(6,12),resolutions:['720p']}]}}}),model('duration-unknown','Unknown Model',[])];
+const images=[{id:'image-gpt',label:'GPT-Image-2.5'},{id:'image-banana',label:'Nano Banana Pro'},{id:'image-jimeng',label:'即梦 5.0 Pro'},{id:'image-unknown',label:'Unbranded Image'}].map(m=>({...m,modality:'image',supportsEdit:true,qualities:['medium'],nativeResolutions:['1K','2K'],generationParameters:{ratios:['1:1','16:9'],resolutions:['1K','2K']}}));
+let node={id:'fixture-duration',title:'视频创作',projectKey:'tree:fixture-duration',revision:1,inputs:[],config:{modelId:models[0].modelId,providerId:'managed-video',mode:'text',prompt:'海岸镜头',durationSeconds:4,resolution:'720p',aspectRatio:'16:9'},x:0,y:0,width:480,height:320};
+const receipt={tier:'actual React controls + local HTTP persistence; no Next/production database/supplier',checks:[],errors:[],writes:[],external:[],supplierCalls:0,baseline};
+let server,browser,page;
+async function main(){
+ fs.mkdirSync(out,{recursive:true});
+ const entry=path.join(out,'entry.tsx');
+ fs.writeFileSync(entry,`import React,{useState,useEffect,useRef} from 'react';import {createRoot} from 'react-dom/client';
+import {AuthProvider} from '@/lib/auth-context';import {BillingProvider} from '@/lib/billing/client';import {SurfaceAppearanceProvider} from '@/components/ui/surface-appearance';
+import {CreationSettingsPanel} from '@/components/home/creation-settings-panel';import {VideoSettingsDialog} from '@/components/canvas/video/settings-dialog';
+const models=${JSON.stringify(models)};
+function App(){const [node,setNode]=useState(null),[open,setOpen]=useState(true),[home,setHome]=useState(false),[dark,setDark]=useState(false),[locked,setLocked]=useState(false),[settings,setSettings]=useState({}),[generation,setGeneration]=useState(0);const dockRef=useRef(null);
+useEffect(()=>{fetch('/fixture/node').then(r=>r.json()).then(setNode)},[]);
+window.fixture={settings,node,generated:generation};window.selectFixture=(id,extra={})=>{setNode(n=>({...n,revision:n.revision+1,config:{...n.config,modelId:id,mode:'text',...extra}}));};
+return <SurfaceAppearanceProvider value={dark?'dark':'light'}><main className={dark?'canvas-ui-dark':'canvas-ui-light'} data-dark={dark}><header><strong>Naumi</strong><button onClick={()=>setHome(!home)}>首页创作设置</button><button onClick={()=>setOpen(!open)}>重新打开节点</button><label><input type="checkbox" checked={dark} onChange={e=>setDark(e.target.checked)}/>深色</label><label><input type="checkbox" checked={locked} onChange={e=>setLocked(e.target.checked)}/>只读</label></header><div className="preview">视频节点</div><div className="home-anchor">{home&&<CreationSettingsPanel value={settings} onChange={setSettings} onClose={()=>setHome(false)}/>}</div>{node&&open&&<VideoSettingsDialog key={node.config.modelId+':'+node.config.mode} node={node} models={models} choices={[]} light={!dark} readOnly={locked} onClose={()=>setOpen(false)} presentation="dock" dockRef={dockRef} dockStyle={{position:'relative',width:'100%',maxWidth:'960px',margin:'0 auto',left:'auto',bottom:'auto',transform:'none'}} onSave={async draft=>{const r=await fetch('/fixture/node',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(draft)});if(!r.ok)throw Error('save failed');const saved=await r.json();setNode(saved);return {revision:saved.revision}}} onGenerate={async()=>setGeneration(n=>n+1)} onOptimize={async p=>p}/>}</main></SurfaceAppearanceProvider>};createRoot(document.getElementById('app')).render(<AuthProvider><BillingProvider><App/></BillingProvider></AuthProvider>);`);
+ await build({absWorkingDir:root,nodePaths:[path.join(root,"node_modules")],entryPoints:[entry],bundle:true,platform:'browser',format:'iife',jsx:'automatic',outfile:path.join(out,'app.js'),loader:{'.css':'local-css'},tsconfig:path.join(root,'tsconfig.json'),define:{'process.env.NODE_ENV':'"development"'},banner:{js:'var process={env:{},browser:true};'},logLevel:'silent'});
+ const config=require(path.join(root,'tailwind.config.ts')).default;
+ const css=await postcss([tailwind({...config,content:[...config.content,entry]})]).process(fs.readFileSync('src/app/globals.css','utf8'),{from:'src/app/globals.css'});
+ fs.writeFileSync(path.join(out,'style.css'),css.css);
+ fs.writeFileSync(path.join(out,'index.html'),'<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Naumi 时长与模型族验收</title><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/app.css"><style>body{margin:0;background:#f6f7f9;font-family:Arial,"Microsoft YaHei",sans-serif}main{min-height:100vh;padding:36px;color:#263344;--cr-card:#fff;--cr-text:#263344;--cr-soft:#f1f3f6;--cr-muted:#758096;--cr-border:#e0e5ec}main[data-dark=true]{background:#1b2029;color:#eef1f6;--cr-card:#242c38;--cr-text:#eef1f6;--cr-soft:#323c4c;--cr-muted:#aab4c3;--cr-border:#455065}header{display:flex;align-items:center;gap:20px;font-size:13px;margin-bottom:24px}header strong{font-size:24px}header button{padding:8px 12px;background:#e9edf3;border-radius:8px;color:#27364a}.preview{max-width:960px;height:320px;margin:auto;background:linear-gradient(145deg,#dce7e9,#f0f3f5);border-radius:16px 16px 0 0;display:grid;place-items:center;color:#7d909b}.home-anchor{position:absolute;top:150px;left:60px} @media(max-width:600px){main{padding:12px}header{flex-wrap:wrap;gap:10px}.preview{height:220px}.home-anchor{left:12px;top:150px}}</style><div id="app"></div><script src="/app.js"></script></html>');
+ server=http.createServer(async(req,res)=>{
+  const url=new URL(req.url,'http://localhost'),json=(body,status=200)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(body));};
+  if(url.pathname==='/fixture/node'){
+   if(req.method==='POST'){let raw='';for await(const c of req)raw+=c;const draft=JSON.parse(raw);receipt.writes.push(draft);if(draft.expectedRevision!==node.revision)return json({error:'revision'},409);node={...node,...draft,revision:node.revision+1};}
+   return json(node);
+  }
+  if(url.pathname==='/api/models')return json({managed:true,models:images});
+  if(url.pathname==='/api/video/catalog')return json({models});
+  if(url.pathname==='/api/billing/quote')return json({version:1,credits:0,reserveCredits:0,feature:'video',quantity:1});
+  if(url.pathname.startsWith('/api/'))return json({});
+  const name=({'/':'index.html','/app.js':'app.js','/app.css':'app.css','/style.css':'style.css'})[url.pathname];
+  if(!name){res.writeHead(404);return res.end();}res.setHeader('content-type',name.endsWith('.js')?'application/javascript':name.endsWith('.css')?'text/css':'text/html; charset=utf-8');res.end(fs.readFileSync(path.join(out,name)));
+ });await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ browser=await chromium.launch({headless:true});const context=await browser.newContext({viewport:{width:1366,height:900}});page=await context.newPage();page.setDefaultTimeout(8000);
+ page.on('pageerror',e=>receipt.errors.push(e.message));
+ await context.route('**/*',route=>{if(new URL(route.request().url()).hostname!=='127.0.0.1'){receipt.external.push(route.request().url());return route.abort();}return route.continue();});
+ const check=(name,value)=>{assert.ok(value,name);receipt.checks.push(name);};
+ const state=()=>page.evaluate(()=>window.fixture);
+ const shot=async name=>page.screenshot({path:path.join(out,name+'.png'),fullPage:true});
+ const durationDialog=()=>page.getByRole('dialog',{name:'视频时长',exact:true});
+ const openDuration=async()=>{await page.getByRole('button',{name:'视频时长',exact:true}).click();return durationDialog().getByRole('slider');};
+ const closeDuration=()=>durationDialog().getByRole('button',{name:'关闭',exact:true}).click();
+ const drag=async(slider,fraction)=>{await slider.scrollIntoViewIfNeeded();const box=await slider.boundingBox();assert.ok(box);const current=Number(await slider.inputValue()),max=Number(await slider.getAttribute('max'));const x=box.x+9+(box.width-18)*current/max,y=box.y+box.height/2;await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(box.x+9+(box.width-18)*fraction,y,{steps:12});await page.mouse.up();};
+ await page.goto('http://127.0.0.1:'+server.address().port);await page.getByTestId('video-node-dock').waitFor();
+ if(baseline){
+  check('baseline-footer-dropdown-not-slider',await page.getByRole('combobox',{name:'视频时长',exact:true}).count()===1);
+  await page.getByRole('button',{name:'首页创作设置',exact:true}).click();const panel=page.getByTestId('creation-settings');await panel.getByRole('button',{name:'GPT-Image-2.5',exact:true}).waitFor();
+  check('baseline-home-no-model-brand',await panel.locator('[data-model-brand]').count()===0);
+  await panel.getByRole('button',{name:'视频',exact:true}).click();await panel.getByRole('button',{name:'Seedance 2.0',exact:true}).click();
+  check('baseline-home-seconds-buttons-not-slider',await panel.getByRole('slider').count()===0&&await panel.getByRole('button',{name:'时长 9 秒',exact:true}).count()===1);
+  console.log('VIDEO_DURATION_UI_BASELINE=PASS checks=3 footer=dropdown home=buttons logos=generic');return;
+ }
+ let slider=await openDuration();check('4-15-published-bounds',await slider.getAttribute('aria-valuemin')==='4'&&await slider.getAttribute('aria-valuemax')==='15');
+ await drag(slider,5/11);check('mouse-drag-intermediate-9s',await slider.getAttribute('aria-valuetext')==='9s');
+ await slider.focus();await slider.press('ArrowRight');check('keyboard-next-second-10s',await slider.getAttribute('aria-valuetext')==='10s');
+ await slider.press('Home');check('keyboard-min-4s',await slider.getAttribute('aria-valuetext')==='4s');await slider.press('End');check('keyboard-max-15s',await slider.getAttribute('aria-valuetext')==='15s');
+ await drag(slider,5/11);await shot('canvas-duration-light');await closeDuration();await page.getByRole('button',{name:'保存设置',exact:true}).click();await page.waitForFunction(()=>window.fixture.node.config.durationSeconds===9);
+ check('real-save-callback-payload-9s',receipt.writes.at(-1).config.durationSeconds===9);await page.reload();await page.getByTestId('video-node-dock').waitFor();slider=await openDuration();check('saved-reopen-9s',await slider.getAttribute('aria-valuetext')==='9s');await closeDuration();
+ const choose=async(label)=>{await page.getByRole('combobox',{name:'视频模型',exact:true}).click();await page.getByRole('option',{name:label,exact:true}).click();};
+ for(const [label,max,fraction,expected] of [['Kling 4.0',30,19/26,23],['Wan Long',60,45/58,47],['Kling Discrete',15,.5,10]]){
+  await choose(label);slider=await openDuration();check(label+'-bounds',Number(await slider.getAttribute('aria-valuemax'))===max);await drag(slider,fraction);check(label+'-drag-'+expected,await slider.getAttribute('aria-valuetext')===expected+'s');await closeDuration();
+ }
+ await choose('Seedance Fixed');await openDuration();check('fixed-4-no-fake-slider',await durationDialog().getByRole('slider').count()===0&&await durationDialog().getByRole('button',{name:'4s',exact:true}).count()===1);await closeDuration();
+ await choose('Wan Auto');slider=await openDuration();await durationDialog().getByRole('button',{name:'自动',exact:true}).click();check('provider-auto-separated',await slider.getAttribute('aria-valuetext')==='自动');await drag(slider,5/11);check('auto-back-to-manual-drag',await slider.getAttribute('aria-valuetext')==='9s');await closeDuration();
+ await page.evaluate(()=>window.selectFixture('duration-mode',{mode:'single_image',durationSeconds:4}));slider=await openDuration();check('mode-specific-6-12',await slider.getAttribute('aria-valuemin')==='6'&&await slider.getAttribute('aria-valuemax')==='12');check('historical-value-not-mutated-on-open',await slider.getAttribute('aria-valuetext')==='4s'&&await slider.getAttribute('aria-invalid')==='true');await drag(slider,.5);check('mode-specific-drag-9s',await slider.getAttribute('aria-valuetext')==='9s');await closeDuration();await choose('Unknown Model');await openDuration();check('unknown-no-guessed-range',await durationDialog().getByRole('slider').count()===0);await closeDuration();
+ await page.evaluate(()=>window.selectFixture('duration-seed',{mode:'text',durationSeconds:4}));await page.getByRole('button',{name:'视频生成参数',exact:true}).click();slider=page.getByTestId('video-parameter-panel').getByRole('slider');await drag(slider,7/11);check('parameter-panel-shared-slider-11s',await slider.getAttribute('aria-valuetext')==='11s');await page.getByRole('dialog',{name:'视频生成参数'}).getByRole('button',{name:'关闭',exact:true}).click();
+ await page.getByRole('checkbox',{name:'只读'}).check();check('read-only-duration-disabled',await page.getByRole('button',{name:'视频时长',exact:true}).isDisabled());await page.getByRole('checkbox',{name:'只读'}).uncheck();
+ await page.getByRole('checkbox',{name:'深色'}).check();await openDuration();await shot('canvas-duration-dark');await closeDuration();await page.getByRole('checkbox',{name:'深色'}).uncheck();
+ await page.getByRole('button',{name:'首页创作设置',exact:true}).click();const panel=page.getByTestId('creation-settings');await panel.getByRole('button',{name:'GPT-Image-2.5',exact:true}).waitFor();
+ for(const [label,brand] of [['GPT-Image-2.5','openai'],['Nano Banana Pro','nano-banana'],['即梦 5.0 Pro','jimeng'],['Unbranded Image','unknown']])check('image-logo-'+brand,await panel.getByRole('button',{name:label,exact:true}).locator('[data-model-brand]').getAttribute('data-model-brand')===brand);
+ await panel.getByRole('button',{name:'GPT-Image-2.5',exact:true}).click();await shot('home-image-logos');await panel.getByRole('button',{name:'视频',exact:true}).click();
+ for(const [label,brand] of [['Seedance 2.0','bytedance'],['Kling 4.0','kling'],['Wan Long','alibaba']])check('video-logo-'+brand,await panel.getByRole('button',{name:label,exact:true}).locator('[data-model-brand]').getAttribute('data-model-brand')===brand);
+ await panel.getByRole('button',{name:'Seedance 2.0',exact:true}).click();slider=panel.getByRole('slider');check('home-smart-unspecified',(await state()).settings.video.durationSeconds===undefined);await drag(slider,5/11);check('home-shared-drag-9s',(await state()).settings.video.durationSeconds===9);await panel.getByRole('button',{name:'智能',exact:true}).click();check('home-smart-not-provider-auto',(await state()).settings.video.durationSeconds===undefined);
+ await slider.focus();await slider.press('Home');check('smart-can-select-min',(await state()).settings.video.durationSeconds===4);await drag(slider,7/11);await shot('home-duration-logos-light');
+ await panel.getByRole('button',{name:'Kling 4.0',exact:true}).click();check('home-model-switch-range',await slider.getAttribute('aria-valuemax')==='30');await drag(slider,19/26);check('home-model-switch-23s',(await state()).settings.video.durationSeconds===23);
+ await page.setViewportSize({width:390,height:844});await drag(slider,13/26);check('mobile-drag-17s',(await state()).settings.video.durationSeconds===17);check('mobile-panel-fits',await panel.evaluate(el=>{const r=el.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth}));await shot('home-duration-mobile');
+ await panel.getByRole('button',{name:'关闭创作设置'}).click();slider=await openDuration();await drag(slider,6/11);check('canvas-mobile-drag-10s',await slider.getAttribute('aria-valuetext')==='10s');await shot('canvas-duration-mobile');const cdp=await context.newCDPSession(page),box=await slider.boundingBox();const tx=box.x+9+(box.width-18)*6/11,ty=box.y+box.height/2;await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:tx,y:ty}]});for(let i=1;i<=8;i++)await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:tx+(box.width-18)*3/11*i/8,y:ty}]});await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});check('mobile-native-touch-13s',await slider.getAttribute('aria-valuetext')==='13s');await cdp.detach();await closeDuration();
+ check('no-generated-tasks',(await state()).generated===0);check('no-external-requests',receipt.external.length===0);check('no-browser-errors',receipt.errors.length===0);
+ console.log('VIDEO_DURATION_UI=PASS checks='+receipt.checks.length+' mouse_drag=9,23,47 sparse=10 save_reopen=9 logos=7 supplier_calls=0');
+}
+main().catch(async error=>{receipt.failure=String(error.stack||error);if(page)await page.screenshot({path:path.join(out,'failure.png'),fullPage:true}).catch(()=>{});console.error(error);process.exitCode=1;}).finally(async()=>{fs.writeFileSync(path.join(out,'RESULT.json'),JSON.stringify(receipt,null,2));await browser?.close();await new Promise(resolve=>server?server.close(resolve):resolve());});

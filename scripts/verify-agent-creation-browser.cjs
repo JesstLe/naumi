@@ -59,7 +59,7 @@ async function run(){
  await page.goto(origin);await page.getByRole('button',{name:'创作设置',exact:true}).click();let panel=page.getByRole('dialog',{name:'本轮创作设置'});
  await panel.getByRole('button',{name:'图像模型 A',exact:true}).click();await panel.getByRole('button',{name:'比例 16:9',exact:true}).click();await panel.getByRole('button',{name:'清晰度 2K',exact:true}).click();await panel.getByRole('button',{name:'质量 高质量',exact:true}).click();
  await shot('settings-image-light');
- await panel.getByRole('button',{name:'视频',exact:true}).click();await panel.getByRole('button',{name:'视频模型 A',exact:true}).click();await panel.getByRole('button',{name:'时长 5 秒',exact:true}).click();await panel.getByRole('button',{name:'清晰度 720p',exact:true}).click();await panel.getByRole('button',{name:'比例 9:16',exact:true}).click();await shot('settings-video-light');
+ await panel.getByRole('button',{name:'视频',exact:true}).click();await panel.getByRole('button',{name:'视频模型 A',exact:true}).click();await panel.getByRole('slider',{name:'视频时长',exact:true}).focus();await panel.getByRole('slider',{name:'视频时长',exact:true}).press('Home');await panel.getByRole('button',{name:'清晰度 720p',exact:true}).click();await panel.getByRole('button',{name:'比例 9:16',exact:true}).click();await shot('settings-video-light');
  await page.getByRole('button',{name:'关闭创作设置'}).click();
  await page.getByRole('textbox',{name:'创作描述',exact:true}).fill('把商品换成红色');await page.getByRole('button',{name:'发送',exact:true}).click();
  await page.getByTestId('creation-activity').waitFor();

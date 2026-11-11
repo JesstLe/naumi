@@ -3,11 +3,11 @@ import {useEffect,useRef,useState,type ReactNode} from "react";
 import {Clapperboard,Plus,X,ChevronDown,AtSign,Upload,Film,Music2,Type,SlidersHorizontal,Volume2,VolumeX,RectangleHorizontal,Clock3,UserRound,Mountain} from "lucide-react";
 import {CachedImage} from "@/components/cached-image";
 import {CanvasComposerFooter} from "../composer-shell";
-import {SelectMenu} from "@/components/ui/select-menu";
+import {VideoDurationControl} from "@/components/video/duration-control";
 import {CanvasModelSelect} from "../model-select";
 import {CanvasActionPanel} from "../canvas-action-menu";
 import {browserRandomUUID} from "@/lib/browser-crypto";
-import {catalogCapability,selectedVideoCatalogModel,reconcileVideoSettings,videoModeRoles,videoDurations,VIDEO_ROLE_LABELS,type VideoNodeConfig,type VideoCatalogModel,type VideoInputChoice} from "@/lib/video/client-settings";
+import {catalogCapability,selectedVideoCatalogModel,reconcileVideoSettings,videoModeRoles,VIDEO_ROLE_LABELS,type VideoNodeConfig,type VideoCatalogModel,type VideoInputChoice} from "@/lib/video/client-settings";
 import {attachVideoInputs,currentVideoIntent,selectVideoIntent,VIDEO_CREATION_LABELS,type VideoCreationIntent} from "@/lib/video/mode-selection";
 import {numberVideoInputs,type OrderedInput} from "@/lib/video/references";
 import {insertVideoPromptReference,remapVideoPromptReferences,videoReferenceNames} from "@/lib/video/prompt-references";
@@ -26,8 +26,8 @@ export function VideoCompactComposer({config,inputs,models,choices,nodeId,light,
  onStoryboard?:()=>void;count:number;onCount:(value:number)=>void;onOptimize:(prompt:string,signal:AbortSignal)=>Promise<string>;
  actions:ReactNode;feedback:ReactNode;advancedOpen?:boolean;onCloseAdvanced?:()=>void;advancedContent?:ReactNode;
 }){
- const V=useVideoI18n(),[picker,setPicker]=useState(false),[parameters,setParameters]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
- const addRef=useRef<HTMLButtonElement>(null),parameterRef=useRef<HTMLButtonElement>(null),advancedRef=useRef<HTMLButtonElement>(null),editor=useRef<VideoPromptEditorHandle>(null),file=useRef<HTMLInputElement>(null);
+ const V=useVideoI18n(),[picker,setPicker]=useState(false),[parameters,setParameters]=useState(false),[durationOpen,setDurationOpen]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
+ const addRef=useRef<HTMLButtonElement>(null),parameterRef=useRef<HTMLButtonElement>(null),durationRef=useRef<HTMLButtonElement>(null),advancedRef=useRef<HTMLButtonElement>(null),editor=useRef<VideoPromptEditorHandle>(null),file=useRef<HTMLInputElement>(null);
  const importing=useRef(false),model=selectedVideoCatalogModel(models,config),cap=catalogCapability(model);
  const [referenceIntent,setReferenceIntent]=useState<{scope:string;value:"image_reference"|"omni_reference"}>();
  const referenceScope=JSON.stringify([nodeId,config.providerId,config.modelId]);
@@ -102,7 +102,7 @@ export function VideoCompactComposer({config,inputs,models,choices,nodeId,light,
     options={models.map(m=>({value:`${m.providerId}/${m.modelId}`,modelId:m.modelId,label:m.label}))}
     onChange={value=>{const chosen=models.find(m=>`${m.providerId}/${m.modelId}`===value);if(chosen)reconcile({...config,workflowTaskId:undefined,providerId:chosen.providerId,modelId:chosen.modelId});}} />
    <VideoModeSelect key={nodeId} className={chip} disabled={blocked||!!config.comfyWorkflowId} value={modeIntent} model={model} models={models} onSelect={chooseMode}/>
-   <SelectMenu label={V('视频时长')} size="sm" className={chip} popoverClassName="canvas-ui-light" disabled={blocked||!!config.comfyWorkflowId} value={String(config.durationSeconds??'')} onChange={value=>reconcile({...config,durationSeconds:Number(value)})} options={videoDurations(cap, config.mode).map(value=>({value:String(value),label:<span className="flex items-center gap-1.5"><Clock3 size={13}/>{value===-1?V('自动'):V(`${value} 秒`)}</span>}))}/>
+   <button ref={durationRef} type="button" className={chip} aria-label={V('视频时长')} aria-haspopup="dialog" aria-expanded={durationOpen} disabled={blocked||!!config.comfyWorkflowId} onClick={()=>setDurationOpen(!durationOpen)}><Clock3 size={13}/><span>{config.durationSeconds===-1?V('自动'):config.durationSeconds!==undefined?`${config.durationSeconds}s`:V('视频时长')}</span><ChevronDown size={12}/></button>
    <button ref={parameterRef} type="button" className={chip} aria-label={V('视频生成参数')} aria-expanded={parameters} disabled={blocked} onClick={()=>setParameters(true)}><RectangleHorizontal size={13}/><span className="truncate">{[config.aspectRatio==='adaptive'?V('自动'):config.aspectRatio,config.resolution?.toUpperCase(),config.durationSeconds===-1?V('自动'):config.durationSeconds?`${config.durationSeconds}s`:undefined,`${count} ${V('个视频')}`].filter(Boolean).join(' · ')}</span>{cap.audio&&<span title={V(config.generateAudio===undefined&&cap.audio==='optional'?'声音跟随模型':config.generateAudio===true||cap.audio==='required'?'开启':'关闭声音')}>{config.generateAudio===false||cap.audio==='disabled'?<VolumeX size={13}/>:<Volume2 size={13}/>}</span>}<ChevronDown size={12}/></button>
    <VideoPromptOptimizer prompt={config.prompt||''} disabled={blocked} light={light} onOptimize={onOptimize} onApply={prompt=>onConfig({...config,prompt})}/>
    <button type="button" className={chip} aria-label={V('引用素材')} title={V('引用素材')} disabled={blocked} onClick={()=>editor.current?.openMentions()}><AtSign size={15}/></button>
@@ -111,6 +111,10 @@ export function VideoCompactComposer({config,inputs,models,choices,nodeId,light,
   </>} actions={actions}/>
   {(error||notice)&&<p role={error?'alert':'status'} className="px-4 py-2 text-xs text-amber-600">{error||notice}</p>}
   <input ref={file} type="file" multiple accept="image/png,image/jpeg,image/webp,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/wav,audio/mp4,audio/webm" className="sr-only" aria-label={V('上传视频参考素材')} disabled={blocked} onChange={event=>{const files=Array.from(event.target.files||[]);event.target.value='';void upload(files);}}/>
+  {durationOpen&&<CanvasActionPanel anchorRef={durationRef} label={V('视频时长')} light={light} width={288} onClose={()=>setDurationOpen(false)}>
+    <div className="mb-1 flex justify-end"><button type="button" aria-label={V('关闭')} className="canvas-ui-action rounded-md p-1" onClick={()=>setDurationOpen(false)}><X size={14}/></button></div>
+    <VideoDurationControl capability={cap} mode={config.mode} value={config.durationSeconds} onChange={durationSeconds=>reconcile({...config,durationSeconds})} disabled={blocked||!!config.comfyWorkflowId} translate={V}/>
+  </CanvasActionPanel>}
   {picker&&<CanvasActionPanel anchorRef={addRef} label={V('添加引用')} light={light} width={320} onClose={()=>setPicker(false)}>
     {onImport&&<button type="button" className={`${videoButtonClass} mb-2 flex w-full items-center gap-2`} disabled={blocked} onClick={()=>file.current?.click()}><Upload size={15}/>{V('上传图片 / 视频 / 音频')}</button>}
     <div className="max-h-64 space-y-1 overflow-y-auto">{choices.filter(choice=>choice.nodeId!==nodeId&&!inputs.some(i=>i.nodeId===choice.nodeId)).map(choice=><button type="button" key={choice.id} className="canvas-ui-action flex w-full items-center gap-2 rounded-lg p-2 text-left text-xs disabled:opacity-40" disabled={blocked||!choice.available} onClick={()=>add(choice)}>

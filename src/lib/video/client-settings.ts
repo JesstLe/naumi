@@ -8,7 +8,8 @@ import {compileVideoPrompt} from "./prompt";
 import {videoByocOverridesSchema} from "./byoc-settings";
 import {videoWorkflowManifestSchema} from "./workflow-schema";
 import {compileVideoCamera} from "./camera";
-import {videoParameterScope} from "./parameter-options";
+import {videoParameterScope,videoDurations} from "./parameter-options";
+export {videoDurations} from "./parameter-options";
 import {previewCanvasInputs} from "../canvas/input-preview";
 
 export type VideoNodeConfig=CanvasVideoNode["config"];
@@ -33,7 +34,6 @@ export function selectedVideoCatalogModel(models:VideoCatalogModel[],config:Vide
   return managed.length===1?managed[0]:undefined;
 }
 export function catalogCapability(model?:VideoCatalogModel):ResolvedVideoCapability{return model?.definition||{sources:{}};}
-export function videoDurations(cap:ResolvedVideoCapability,mode?:VideoMode){return Array.from(new Set((videoParameterScope(cap,mode).durationResolutionMap||[]).flatMap(map=>map.durations)));}
 export function videoResolutions(cap:ResolvedVideoCapability,duration?:number,mode?:VideoMode){return Array.from(new Set((videoParameterScope(cap,mode).durationResolutionMap||[]).filter(map=>duration!==undefined&&map.durations.includes(duration)).flatMap(map=>map.resolutions)));}
 export function videoAspectRatios(cap:ResolvedVideoCapability,mode?:VideoMode,resolution?:string){return videoParameterScope(cap,mode,resolution).aspectRatios||[];}
 /** Defaults apply only to an explicit new node; an existing selection is never replaced. */

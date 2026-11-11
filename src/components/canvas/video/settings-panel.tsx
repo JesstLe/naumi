@@ -1,8 +1,9 @@
 "use client";
+import {VideoDurationControl} from "@/components/video/duration-control";
 import {CanvasModelSelect} from "../model-select";
 import {useVideoI18n} from "./i18n";
 import type { ResolvedVideoCapability } from "@/lib/video/capability-schema";
-import { catalogCapability, selectedVideoCatalogModel, VIDEO_MODE_LABELS, videoDurations, videoResolutions, videoAspectRatios, reconcileVideoSettings, type VideoCatalogModel, type VideoNodeConfig } from "@/lib/video/client-settings";
+import { catalogCapability, selectedVideoCatalogModel, VIDEO_MODE_LABELS, videoResolutions, videoAspectRatios, reconcileVideoSettings, type VideoCatalogModel, type VideoNodeConfig } from "@/lib/video/client-settings";
 import { VideoField, videoFieldClass, VideoSection } from "./form-controls";
 import { videoOptionLabel, videoOptionValueLabel } from "@/lib/video/option-labels";
 export function VideoSettingsPanel({ config, models, onChange, onNotice, disabled = false, advancedOnly = false }: {
@@ -35,7 +36,7 @@ export function VideoSettingsPanel({ config, models, onChange, onNotice, disable
     </>}
     <div className="grid grid-cols-2 gap-3">
       {!advancedOnly&&<>
-      <VideoField label={V("视频时长")}><select aria-label={V("视频时长")} className={videoFieldClass} value={config.durationSeconds ?? ""} onChange={event => reconcile({ ...config, durationSeconds: Number(event.target.value) }, cap)}><option value="" disabled>{V("\u672A\u914D\u7F6E")}</option>{videoDurations(cap, config.mode).map(value => <option key={value} value={value}>{value === -1 ? V("自动") : V(`${value} 秒`)}</option>)}</select></VideoField>
+      <div className="col-span-2"><VideoDurationControl capability={cap} mode={config.mode} value={config.durationSeconds} onChange={durationSeconds => reconcile({ ...config, durationSeconds }, cap)} disabled={disabled} translate={V}/></div>
       <VideoField label={V("视频分辨率")}><select aria-label={V("视频分辨率")} className={videoFieldClass} value={config.resolution || ""} onChange={event => reconcile({ ...config, resolution: event.target.value },cap)}><option value="" disabled>{V("\u672A\u914D\u7F6E")}</option>{videoResolutions(cap, config.durationSeconds, config.mode).map(value => <option key={value}>{value}</option>)}</select></VideoField>
       <VideoField label={V("视频画幅")}><select aria-label={V("视频画幅")} className={videoFieldClass} value={config.aspectRatio || ""} onChange={event => onChange({ ...config, aspectRatio: event.target.value })}><option value="" disabled>{V("\u672A\u914D\u7F6E")}</option>{videoAspectRatios(cap,config.mode,config.resolution).map(value => <option key={value}>{value}</option>)}</select></VideoField>
       </>}

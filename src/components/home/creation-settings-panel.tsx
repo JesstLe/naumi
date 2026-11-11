@@ -6,6 +6,8 @@ import { authHeader } from "@/lib/supabase";
 import { useFeatureCatalogScope } from "@/lib/model-config/feature-client";
 import type { FeatureCatalog } from "@/lib/model-config/feature-catalog";
 import { compactImageModelOptions } from "@/lib/image-model-routing";
+import { ModelIcon } from "@/components/ui/model-icon";
+import { VideoDurationControl } from "@/components/video/duration-control";
 import { catalogCapability, videoAspectRatios, videoDurations, videoResolutions, type VideoCatalogModel } from "@/lib/video/client-settings";
 import type { CreationSettings } from "@/lib/agent/creation-settings";
 import styles from "./creation-settings.module.css";
@@ -62,7 +64,7 @@ export function CreationSettingsPanel({ value, onChange, onClose, nextTurn = fal
     {!catalog ? <div className={styles.state} role="status">{error ? <><span>{error}</span><button type="button" onClick={() => setAttempt(n => n + 1)}><RefreshCw size={15} />重试</button></> : <Loader2 className="animate-spin" />}</div> : <div className={styles.body}>
       <div className={styles.models} aria-label={tab === "image" ? "图片模型" : "视频模型"}>
         <button type="button" aria-pressed={!value[tab]?.modelId} onClick={() => onChange({ ...value, [tab]: {} })}><Box size={16} /><span>模型 · 智能</span>{!value[tab]?.modelId && <Check size={16} />}</button>
-        {tab === "image" ? catalog.images.map(model => <button type="button" key={model.id} aria-pressed={model.id === value.image?.modelId} onClick={() => onChange({ ...value, image: { modelId: model.id } })}><ImageIcon size={15} /><span>{model.label}</span>{model.id === value.image?.modelId && <Check size={16} />}</button>) : catalog.videos.map(model => <button type="button" key={`${model.providerId}:${model.modelId}`} aria-pressed={model === video} onClick={() => onChange({ ...value, video: { modelId: model.modelId, providerId: model.providerId } })}><Film size={15} /><span>{model.label}</span>{model === video && <Check size={16} />}</button>)}
+        {tab === "image" ? catalog.images.map(model => <button type="button" key={model.id} aria-pressed={model.id === value.image?.modelId} onClick={() => onChange({ ...value, image: { modelId: model.id } })}><ModelIcon modelId={model.id} modelName={model.label} size={17}/><span className={styles.modelLabel}>{model.label}</span>{model.id === value.image?.modelId && <Check size={16} />}</button>) : catalog.videos.map(model => <button type="button" key={`${model.providerId}:${model.modelId}`} aria-pressed={model === video} onClick={() => onChange({ ...value, video: { modelId: model.modelId, providerId: model.providerId } })}><ModelIcon modelId={model.modelId} modelName={model.label} size={17}/><span className={styles.modelLabel}>{model.label}</span>{model === video && <Check size={16} />}</button>)}
         {!(tab === "image" ? catalog.images : catalog.videos).length && <p role="status">{(tab === "image" ? catalog.imageError : catalog.videoError) || "暂无已配置模型"}</p>}
         {(tab === "image" ? catalog.imageError : catalog.videoError) && <button type="button" onClick={() => setAttempt(n => n + 1)}><RefreshCw size={14}/>重新加载</button>}
       </div>
@@ -73,7 +75,7 @@ export function CreationSettingsPanel({ value, onChange, onClose, nextTurn = fal
       </> : <>
         {choices("比例", value.video?.aspectRatio, videoAspectRatios(capability, mode, value.video?.resolution), option => patchVideo({ aspectRatio: option as string | undefined }))}
         {choices("清晰度", value.video?.resolution, resolutions, option => patchVideo({ resolution: option as string | undefined, aspectRatio: undefined }))}
-        {choices("时长", value.video?.durationSeconds, durations, option => patchVideo({ durationSeconds: option as number | undefined, resolution: undefined }), Object.fromEntries(durations.map(n => [n, `${n} 秒`])))}
+        <VideoDurationControl capability={capability} mode={mode} value={value.video?.durationSeconds} onChange={durationSeconds => patchVideo({ durationSeconds, resolution: undefined })} onSmart={() => patchVideo({ durationSeconds: undefined, resolution: undefined })}/>
       </>}</div>
     </div>}
   </section>;

@@ -13,3 +13,17 @@ export function videoParameterScope<T extends VideoModelDefinition>(cap:T,mode?:
   return {...cap,durationResolutionMap:preferMode("durationResolutionMap")?scoped!.durationResolutionMap:cap.durationResolutionMap,
     aspectRatios:allowed?ratios?.filter(ratio=>allowed.includes(ratio)):ratios};
 }
+
+/** Published, mode-scoped values only. Keep catalog order for existing defaults. */
+export function videoDurations(cap:VideoModelDefinition & {sources?:Record<string,string>},mode?:VideoMode){
+  return Array.from(new Set((videoParameterScope(cap,mode).durationResolutionMap||[]).flatMap(map=>map.durations)));
+}
+
+/** A slider must never fill gaps in a supplier's discrete duration declaration. */
+export function videoDurationOptions(cap:VideoModelDefinition & {sources?:Record<string,string>},mode?:VideoMode){
+  const durations=videoDurations(cap,mode);
+  return {
+    seconds:durations.filter(value=>Number.isInteger(value)&&value>0&&value<=3600).sort((a,b)=>a-b),
+    automatic:cap.supportsAutoDuration===true&&durations.includes(-1),
+  };
+}

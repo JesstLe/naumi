@@ -65,7 +65,8 @@ async function main() {
     await dock.getByRole("button", { name: "视频生成参数", exact: true }).click();
     let panel = page.getByRole("dialog", { name: "视频生成参数", exact: true });
     await panel.getByRole("button", { name: "1080P", exact: true }).click();
-    await panel.getByLabel("选择视频秒数", { exact: true }).selectOption("12");
+    await panel.getByRole("slider", { name: "视频时长", exact: true }).focus();
+    await panel.getByRole("slider", { name: "视频时长", exact: true }).press("End");
     await expect(panel.getByRole("button", { name: "1080P", exact: true })).toHaveCount(0);
     await panel.getByRole("button", { name: "9:16", exact: true }).click();
     await panel.getByRole("button", { name: "关闭", exact: true }).last().click(); // Audio off (header uses a separate close button).
