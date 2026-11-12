@@ -26,9 +26,28 @@ export type AgentSessionRow = {
   steps: unknown;
   created_at: string;
   updated_at: string;
+  pinned?: boolean;
+  last_image_url?: string | null;
+  message_count?: number;
   /** Exact database timestamp, not a JS Date rounded to milliseconds. */
   revision?: string;
 };
+
+/** Sidebar thumbnail: the last inline markdown image of the latest message that
+ * has one. Content is already media-sanitized at admission; this only picks the
+ * URL and keeps a cheap shape guard, never parses the whole conversation. */
+function extractLastSessionImage(messages: unknown): string | null {
+  if (!Array.isArray(messages)) return null;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const content = (messages[i] as { content?: unknown } | null)?.content;
+    if (typeof content !== "string" || !content.includes("!(")) continue;
+    const matches = content.matchAll(/!\[[^\]]*\]\(([^)\s]+)[^)]*\)/g);
+    let url: string | undefined;
+    for (const match of matches) url = match[1];
+    if (url && /^(https?:\/\/|\/)/.test(url)) return url.slice(0, 500);
+  }
+  return null;
+}
 
 export async function saveAgentSession(
   email: string,
@@ -39,23 +58,24 @@ export async function saveAgentSession(
   expectedRevision?: string | null
 ): Promise<string> {
   await ensureSchema();
-  const values = [id, email.toLowerCase(), title.slice(0, 120), JSON.stringify(messages ?? []), JSON.stringify(steps ?? [])];
+  const values = [id, email.toLowerCase(), title.slice(0, 120), JSON.stringify(messages ?? []), JSON.stringify(steps ?? []), extractLastSessionImage(messages)];
   // UPDATE must never become INSERT: a deleted session cannot be resurrected by
   // a late cached writer, including a delete racing this statement.
   const saved = typeof expectedRevision === "string" ? await getPool().query(
-    `UPDATE app_agent_sessions SET title=$3,messages=$4,steps=$5,
+    `UPDATE app_agent_sessions SET title=$3,messages=$4,steps=$5,last_image_url=$6,
        updated_at=GREATEST(clock_timestamp(),updated_at + interval '1 microsecond')
-     WHERE id=$1 AND email=$2 AND updated_at=$6::timestamptz
+     WHERE id=$1 AND email=$2 AND updated_at=$7::timestamptz
      RETURNING updated_at::text AS revision`, [...values, expectedRevision]
   ) : await getPool().query(
-    `INSERT INTO app_agent_sessions (id, email, title, messages, steps, updated_at)
-     VALUES ($1,$2,$3,$4,$5,clock_timestamp())
+    `INSERT INTO app_agent_sessions (id, email, title, messages, steps, last_image_url, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,clock_timestamp())
      ON CONFLICT (email, id) DO UPDATE SET
        title = EXCLUDED.title,
        messages = EXCLUDED.messages,
        steps = EXCLUDED.steps,
+       last_image_url = EXCLUDED.last_image_url,
        updated_at = GREATEST(clock_timestamp(),app_agent_sessions.updated_at + interval '1 microsecond')
-     WHERE $6::boolean
+     WHERE $7::boolean
      RETURNING updated_at::text AS revision`,
     [...values, expectedRevision === undefined]
   );
@@ -83,12 +103,28 @@ export async function listAgentSessions(
 ): Promise<AgentSessionRow[]> {
   await ensureSchema();
   const { rows } = await getPool().query(
-    `SELECT id, email, title, messages, steps, created_at, updated_at
+    `SELECT id, title, created_at, updated_at, pinned, last_image_url,
+            jsonb_array_length(messages) AS message_count
        FROM app_agent_sessions WHERE email = $1 AND ($3::boolean=false OR id NOT LIKE 'cv-%')
-      ORDER BY updated_at DESC LIMIT $2`,
+      ORDER BY pinned DESC, updated_at DESC LIMIT $2`,
     [email.toLowerCase(), limit, excludeCanvas]
   );
   return rows as AgentSessionRow[];
+}
+
+export async function pinAgentSession(
+  email: string,
+  id: string,
+  pinned: boolean,
+  localIdle:()=>void=()=>{}
+): Promise<boolean> {
+  return mutateHistory(email,id,localIdle,async tx=>{
+    const result = await tx.query(
+      `UPDATE app_agent_sessions SET pinned = $3 WHERE id = $1 AND email = $2`,
+      [id, email.toLowerCase(), pinned]
+    );
+    return (result.rowCount ?? 0) > 0;
+  });
 }
 
 export async function renameAgentSession(

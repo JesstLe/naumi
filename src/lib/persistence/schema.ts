@@ -450,6 +450,9 @@ export async function ensureSchema(): Promise<void> {
         );
         CREATE INDEX IF NOT EXISTS app_agent_email_idx
           ON app_agent_sessions (email, updated_at DESC);
+        -- 侧栏会话条目:置顶标记 + 最近一次创作缩略图(保存时从消息 markdown 提取)。
+        ALTER TABLE app_agent_sessions ADD COLUMN IF NOT EXISTS pinned boolean NOT NULL DEFAULT false;
+        ALTER TABLE app_agent_sessions ADD COLUMN IF NOT EXISTS last_image_url text;
         -- ComfyUI 工作流(BYOC:算力在用户自备端点,站内不扣积分)。
         -- 端点 = base URL + 可选 Bearer 密钥(本机/NAS/租的 GPU);
         -- 工作流 = API 格式 JSON + 导入时解析出的输入清单(inputs)+依赖节点类(required)。

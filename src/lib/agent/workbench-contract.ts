@@ -21,6 +21,10 @@ export type WorkbenchSessionSummary = {
   createdAt: string;
   updatedAt: string;
   messageCount: number;
+  /** Sidebar presentation: server sort puts pinned first; thumbnail is the
+   * latest creation image extracted at save time. */
+  pinned?: boolean;
+  lastImageUrl?: string;
 };
 export type WorkbenchTransport = {
   headers(): Promise<Record<string, string>>;
