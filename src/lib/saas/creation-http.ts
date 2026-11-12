@@ -7,7 +7,7 @@ import {enterpriseAuthorize} from '@/lib/enterprise/access';
 import {teamJson,PRIVATE_HEADERS} from '@/lib/teams/access';
 import { TeamError } from "@/lib/teams/errors";
 import {creationFiltersSchema} from './creation-contracts';
-import {listCreations,creationDetail,creationAsset,type CreationReader} from './creations';
+import {listCreations,listUnifiedCreations,creationDetail,creationAsset,type CreationReader} from './creations';
 import {enterpriseMediaResponse} from '@/lib/enterprise/media-response';
 import {z} from 'zod';
 import {listLegacyCreations,legacyCreationDetail,legacyCreationAsset} from './legacy-creations';
@@ -25,19 +25,21 @@ export async function creationReader(request:Request,enterprise:boolean):Promise
 export async function creationListRoute(request:Request,enterprise=false){
  try{const reader=await creationReader(request,enterprise);if(reader instanceof NextResponse)return reader;
  const query=Object.fromEntries(new URL(request.url).searchParams);if(query.email&&!query.user)query.user=query.email;
- if(query.source==='legacy'&&!query.from&&!query.to&&!query.period)query.period='all';
+ if(query.view==='unified'&&query.source==='legacy')delete query.source;
+ if((query.source==='legacy'||query.view==='unified')&&!query.from&&!query.to&&!query.period)query.period='all';
  const today=new Date(Date.now()+8*3600000).toISOString().slice(0,10);if(!query.from&&!query.to&&query.period!=='all'){query.to=today;query.from=new Date(Date.parse(today)-6*86400000).toISOString().slice(0,10);}
  const parsed=creationFiltersSchema.safeParse(query);if(!parsed.success)return teamJson({error:'创作筛选参数无效'},400);
+ if(parsed.data.view==='unified')return teamJson(await listUnifiedCreations(reader,parsed.data));
  if(parsed.data.source==='legacy'){if(!reader.platform)return teamJson(await enterpriseHistory(reader.actor,reader.tenantId,parsed.data));if(parsed.data.tenantId)return teamJson({error:'历史记录没有企业归属，不能用于此筛选'},400);return teamJson(await listLegacyCreations(parsed.data));}
  return teamJson(await listCreations(reader,parsed.data));}catch(e){return creationFailure(e);}
 }
 export async function creationDetailRoute(request:Request,id:string,enterprise=false){try{
  const reader=await creationReader(request,enterprise);if(reader instanceof NextResponse)return reader;
- if(id.startsWith('legacy-')&&!reader.platform){const page=Number(new URL(request.url).searchParams.get('assetPage')||1);if(!Number.isSafeInteger(page)||page<1||page>100000)return teamJson({error:'详情分页参数无效'},400);return teamJson(await enterpriseHistoryDetail(reader.actor,reader.tenantId,id,page));}
- if(id.startsWith('legacy-')&&reader.platform){const page=Number(new URL(request.url).searchParams.get('assetPage')||1);if(!Number.isSafeInteger(page)||page<1||page>100000)return teamJson({error:'详情分页参数无效'},400);return teamJson((await legacyCreationDetail(id,{assetPage:page})).detail);}
- if(!/^cr-[a-f0-9-]{36}$/i.test(id))return teamJson({error:'记录不存在或无权访问'},404);
  const q=new URL(request.url).searchParams,pages=z.object({assetPage:z.coerce.number().int().min(1).max(100000).default(1),eventPage:z.coerce.number().int().min(1).max(100000).default(1),childPage:z.coerce.number().int().min(1).max(100000).default(1)}).safeParse(Object.fromEntries(q));
  if(!pages.success)return teamJson({error:'详情分页参数无效'},400);
+ if(id.startsWith('legacy-')&&!reader.platform)return teamJson(await enterpriseHistoryDetail(reader.actor,reader.tenantId,id,pages.data));
+ if(id.startsWith('legacy-')&&reader.platform)return teamJson((await legacyCreationDetail(id,pages.data)).detail);
+ if(!/^cr-[a-f0-9-]{36}$/i.test(id))return teamJson({error:'记录不存在或无权访问'},404);
  return teamJson(await creationDetail(reader,id,pages.data));}catch(e){return creationFailure(e);}}
 export async function creationAssetRoute(request:Request,id:string,assetId:string,enterprise=false){try{
  const query=new URL(request.url).searchParams,token=query.get('mediaToken');

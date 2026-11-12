@@ -12,6 +12,8 @@ import type {CreationStatus} from './creation-contracts';
 import { uploadImage } from "@/lib/media-upload";
 import {currentObservedCallId} from '@/lib/bi/call-scope';
 import { TeamError } from "@/lib/teams/errors";
+import {publicCreationParameters,creationRequestFacts} from './creation-parameters';
+export {publicCreationParameters} from './creation-parameters';
 const obj=(v:unknown):Record<string,any>=>v&&typeof v==='object'&&!Array.isArray(v)?v as Record<string,any>:{};
 const key=(...values:string[])=>createHash('sha256').update(values.join('\0')).digest('hex');
 export async function creationEventTx(tx:PoolClient,id:string,eventKey:string,type:string,status:string,summary:string){
@@ -37,8 +39,8 @@ export async function acceptCreationTx(tx:PoolClient,kind:string,sourceId:string
  }
  const existing=(await tx.query('SELECT id,tenant_id,scope_kind FROM app_creation_records WHERE source_kind=$1 AND source_id=$2 AND actor_email=$3',[kind,sourceId,email.toLowerCase()])).rows[0];
  if(existing){if(existing.tenant_id!==context.tenantId||existing.scope_kind!==context.scopeKind)throw new Error('创作归属不一致');return existing.id as string;}
- const publicParams=publicCreationParameters({...obj(request.parameters),...obj(request.output),...obj(p.parameters),...context.parameters});
- const prompt=context.requestText??request.prompt??obj(p.p).prompt??p.prompt;
+ const publicParams=publicCreationParameters({...creationRequestFacts(payload).values,...context.parameters});
+ const prompt=context.requestText??creationRequestFacts(payload).text;
  const id=creationId(),parent=context.creationId||null;
  const model=currentModelExecution(currentExecutionBundle()?.primary)||currentModelExecution('image')||currentModelExecution('text')||currentModelExecution('video');const label=model?.frontendModel?.label;
  await tx.query(`INSERT INTO app_creation_records(id,actor_email,scope_kind,tenant_id,payer_account_id,source_kind,source_id,parent_id,request_snapshot,parameters_snapshot,model_snapshot)
@@ -237,12 +239,6 @@ export async function addCreationAssetTx(tx:PoolClient,id:string,email:string,a:
  const mime=a.mime||metadata?.content_type||null,mediaType=a.mediaType||(mime?.startsWith('video/')?'video':mime?.startsWith('audio/')?'audio':mime&&!mime.startsWith('image/')?'file':'image');
  await tx.query(`INSERT INTO app_creation_assets(id,creation_id,actor_email,direction,role,position,variant,storage_ref,mime,media_type,text_content,hash,byte_size,availability,input_position,execution_ref,storage_snapshot) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) ON CONFLICT(creation_id,direction,role,position,variant) DO NOTHING`,[a.id||`ca-${randomUUID()}`,id,email,a.direction,a.role,position,a.variant||'original',a.storageRef,mime,mediaType,a.text??null,metadata?.sha256||null,metadata?.bytes??null,a.availability||'recorded',a.sourcePosition??null,a.captureRef??null,storageSnapshot]);
 }
-export function publicCreationParameters(value:unknown):Record<string,unknown>{
- const p=obj(value),allowed=['ratio','resolution','quality','count','quantity','size','seconds','durationSeconds','aspectRatio','generateAudio','watermark','mode','width','height','x','y','platform','style','lang','seed','variants','inputFidelity','moderation','format','compression','background','compressionMode','flattenColor','downscaleMaxDim'];
- const out:Record<string,unknown>={};for(const k of allowed)if(Object.hasOwn(p,k)&&['string','number','boolean'].includes(typeof p[k]))out[k]=typeof p[k]==='string'?p[k].slice(0,120):p[k];
- for(const k of ['parameters','output','intent','crop'])if(p[k]&&typeof p[k]==='object'){const nested=publicCreationParameters(p[k]);if(Object.keys(nested).length)out[k]=nested;}
- return out;
-}
 export async function attachBillingCreationTx(tx:PoolClient,id:string,email:string,feature:string,reserved:number){
  const context=currentCreationContext();if(!context)return;
  const record=context.creationId||await acceptCreationTx(tx,feature,id,email);if(record){await creationLinkTx(tx,record,email,'billing',id);await tx.query("UPDATE app_creation_links SET reserved_credits=$3 WHERE creation_id=$1 AND target_type='billing' AND target_id=$2",[record,id,reserved]);
@@ -281,5 +277,5 @@ export async function durableCreationOutcomeTx(client:PoolClient,kind:'video'|'c
 export async function recordImageParameterPlan(plan:import('../model-config/image-parameter-plan').ImageParameterPlan){
  const scope=currentCreationContext();if(!dbEnabled||!scope?.creationId)return;
  const id=key(plan.upstreamId,JSON.stringify(plan.requested));
- await getPool().query(`UPDATE app_creation_records SET parameters_snapshot=jsonb_set(parameters_snapshot,'{values}',COALESCE(parameters_snapshot->'values','{}'::jsonb)||jsonb_build_object('executionPlans',COALESCE(parameters_snapshot#>'{values,executionPlans}','{}'::jsonb)||jsonb_build_object($3::text,$4::jsonb))) WHERE id=$1 AND actor_email=$2`,[scope.creationId,scope.actorEmail,id,JSON.stringify(plan)]);
+ await getPool().query(`UPDATE app_creation_records SET parameters_snapshot=jsonb_set(parameters_snapshot||'{"state":"recorded"}'::jsonb,'{values}',COALESCE(parameters_snapshot->'values','{}'::jsonb)||jsonb_build_object('executionPlans',COALESCE(parameters_snapshot#>'{values,executionPlans}','{}'::jsonb)||jsonb_build_object($3::text,$4::jsonb))) WHERE id=$1 AND actor_email=$2`,[scope.creationId,scope.actorEmail,id,JSON.stringify(plan)]);
 }
