@@ -1,6 +1,6 @@
 'use client';
 import { forwardRef, useEffect, useLayoutEffect, useRef, useState, useCallback, type ImgHTMLAttributes } from 'react';
-import { type BrowserImageReadOptions, acquireCanvasImageByteSlot, acquireBrowserImage, borrowActiveBrowserImage, imageCacheAccount, imageCacheSource, publicCachedImage } from '@/lib/browser-image-cache';
+import { ImageCacheDenied, type BrowserImageReadOptions, acquireCanvasImageByteSlot, acquireBrowserImage, borrowActiveBrowserImage, imageCacheAccount, imageCacheSource, publicCachedImage } from '@/lib/browser-image-cache';
 
 type ImageLease = Awaited<ReturnType<typeof acquireBrowserImage>>;
 type Display = ImageLease & { identity: string; source: string; owner: string; revision: number };
@@ -37,6 +37,7 @@ export const CachedImage = forwardRef<HTMLImageElement, Props>(function CachedIm
   const [revision, setRevision] = useState(0);
   const [resolved, setResolved] = useState<Display | null>(null), [denied, setDenied] = useState('');
   const callbacks = useRef({ onCacheSettled }); callbacks.current = { onCacheSettled };
+  const retries = useRef({ src: '', attempts: 0 }), retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const managed = typeof src === 'string' ? imageCacheSource(src) : null;
   const controlled = !!managed || networkQueue === 'canvas';
   const identity = imageIdentity ?? (typeof src === 'string' ? src : '');
@@ -62,6 +63,8 @@ export const CachedImage = forwardRef<HTMLImageElement, Props>(function CachedIm
     const reset = () => {
       // Revoke pixels synchronously, including a hidden project cover.
       if (controlled) ref.current?.removeAttribute('src');
+      if (retryTimer.current) { clearTimeout(retryTimer.current); retryTimer.current = null; }
+      retries.current = { src: '', attempts: 0 };
       releaseDisplay(); setResolved(null); setDenied(''); setRevision(n => n + 1);
     };
     const invalidate = (event: Event) => {
@@ -119,11 +122,26 @@ export const CachedImage = forwardRef<HTMLImageElement, Props>(function CachedIm
       candidate = undefined; // display now owns this lease, not the request effect
       if (held.current) retired.current.push(held.current);
       held.current = next; setResolved(next);
-    })().catch(() => {
+      if (retries.current.src === src) retries.current = { src: '', attempts: 0 };
+    })().catch(error => {
       candidate?.release(); candidate = undefined;
-      if (!controller.signal.aborted) { releaseDisplay(); setResolved(null); setDenied(src); }
+      if (!controller.signal.aborted) {
+        releaseDisplay(); setResolved(null);
+        if (error instanceof ImageCacheDenied) setDenied(src);
+        else {
+          // A transport outage (429/5xx/network) is recoverable: retry a
+          // bounded number of times, then stay blank so the next session
+          // event or remount repairs it. Never paint a permanent broken
+          // icon for a condition the cache layer explicitly calls temporary.
+          const prior = retries.current.src === src ? retries.current.attempts : 0;
+          if (prior < 2) {
+            retries.current = { src, attempts: prior + 1 };
+            retryTimer.current = setTimeout(() => { retryTimer.current = null; setRevision(n => n + 1); }, prior === 0 ? 800 : 4000);
+          }
+        }
+      }
     }).finally(() => { if (!controller.signal.aborted) callbacks.current.onCacheSettled?.(); });
-    return () => { controller.abort(); candidate?.release(); };
+    return () => { controller.abort(); candidate?.release(); if (retryTimer.current) { clearTimeout(retryTimer.current); retryTimer.current = null; } };
   }, [src, managed, controlled, identity, owner, visible, revision, networkQueue, props.crossOrigin, releaseDisplay]);
   const frame = src && resolved?.identity === identity && resolved.owner === owner && resolved.revision === revision ? resolved : null;
   // Preview buttons already have an accessible name. A cold request must not

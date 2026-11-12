@@ -7,11 +7,13 @@ export {ensureMediaSchema};
 
 import 'server-only';
 import {createHash} from 'node:crypto';
+import {stat} from 'node:fs/promises';
+import path from 'node:path';
 import {dbEnabled,getPool} from "@/platform/db/pool";
 import {ensureSchema} from "@/lib/persistence/schema";
 import {currentBiContext} from "@/lib/bi/context";
 import {readManagedObject} from './object-storage/managed-read';
-import {storageDriver} from './object-storage/runtime';
+import {MEDIA_DIR,storageDriver} from './object-storage/runtime';
 import {getMediaAsset} from './media-assets-reader';
 export {getMediaAsset,getMediaAssets,getMediaAssetTx,type MediaAsset} from './media-assets-reader';
 import {ensureMediaVariants} from "./media-assets/variants";
@@ -44,8 +46,12 @@ export async function importLegacyMedia(key:string, email?:string) {
   const asset=await getMediaAsset(key); if(asset) return asset;
   const original=await readManagedObject(`/media/${key}`,250*1024*1024);
   const ext=key.split('.').pop()?.toLowerCase(), mime=({png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',webp:'image/webp',avif:'image/avif',gif:'image/gif',mp4:'video/mp4',webm:'video/webm'} as Record<string,string>)[ext||''] || 'application/octet-stream';
-  // Historical originals stay local initially; only bounded previews go to R2.
-  await registerMediaAsset(key,original.bytes,mime,false,email);
+  // Record where the bytes actually live. Claiming a local mirror that does
+  // not exist poisons later managed reads (they strictly validate mirrors)
+  // and leaves remote-sourced originals without any resolvable descriptor.
+  let remoteReady=false;
+  if(storageDriver!=='local'){try{remoteReady=!(await stat(path.resolve(MEDIA_DIR,key))).isFile();}catch{remoteReady=true;}}
+  await registerMediaAsset(key,original.bytes,mime,remoteReady,email);
   return getMediaAsset(key);
 }
 export async function registerMediaAsset(key:string, raw:Uint8Array, contentType:string, remoteReady:boolean, owner?:string,prepareVariants=true) {

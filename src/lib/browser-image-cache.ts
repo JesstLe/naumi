@@ -65,6 +65,9 @@ const batches=new Map<string, {resolve:(value:BrowserImageDescriptor|null)=>void
 let batchTimer:ReturnType<typeof setTimeout>|undefined;
 let channel:BroadcastChannel|undefined;
 export class ImageCacheDenied extends Error {}
+/** A recoverable outage (descriptor and direct media fetch both failed),
+ * never an authorization decision; callers may retry or fall back. */
+export class ImageCacheUnavailable extends Error {}
 class ImageNotCacheable extends Error {constructor(readonly freshUrl:string){super('图片超过本地缓存上限');}}
 const valid=(owner:string,generation:number)=>(owner==='public'||owner===account) && generation===epoch && !!owner;
 export function imageCacheAccount(){return account;}
@@ -294,7 +297,7 @@ export async function acquireBrowserImage(raw:string,signal?:AbortSignal,options
     try{
     if(!valid(owner,generation))throw new ImageCacheDenied('登录状态已改变');
     const response=await fetch(source,{cache:'no-store',headers:await authHeader(),credentials:'same-origin',signal});
-    if(!response.ok||response.type==='opaque'||!/^image\/(png|jpeg|webp|avif|gif)(;|$)/.test(response.headers.get('content-type')||''))throw new ImageCacheDenied('素材暂时不可用');
+    if(!response.ok||response.type==='opaque'||!/^image\/(png|jpeg|webp|avif|gif)(;|$)/.test(response.headers.get('content-type')||''))throw new ImageCacheUnavailable('素材暂时不可用');
     const reader=response.body?.getReader();if(!reader)throw new Error('素材响应为空');const parts:Uint8Array<ArrayBuffer>[]=[];let size=0;
     for(;;){const chunk=await reader.read();if(chunk.done)break;size+=chunk.value.length;if(size>MAX_IMAGE){await reader.cancel();throw new Error('素材超过浏览器缓存上限');}parts.push(new Uint8Array(chunk.value));}
     result={blob:new Blob(parts,{type:response.headers.get('content-type')!}),owner,generation};
