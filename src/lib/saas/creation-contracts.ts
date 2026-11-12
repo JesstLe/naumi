@@ -6,10 +6,10 @@ export type EvidenceState = 'recorded'|'not_recorded'|'unavailable'|'not_applica
 export const creationFiltersSchema = z.object({
   tenantId:z.string().uuid().optional(), q:z.string().max(200).default(''), user:z.string().max(254).default(''),
   status:z.enum(creationStatuses).optional(),source:z.string().max(100).optional(),
-  period:z.literal('all').optional(),
+  period:z.literal('all').optional(),view:z.literal('unified').optional(),
   page:z.coerce.number().int().min(1).max(100000).default(1),size:z.coerce.number().int().min(1).max(100).default(20),
   from:z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),to:z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-}).superRefine((v,c)=>{for(const k of ['from','to'] as const)if(v[k]&&(!Number.isFinite(Date.parse(v[k]!))||new Date(v[k]!).toISOString().slice(0,10)!==v[k]))c.addIssue({code:'custom',message:'日期无效'});if(v.from&&v.to&&(v.to<v.from||Date.parse(v.to)-Date.parse(v.from)>366*86400000))c.addIssue({code:'custom',message:'日期范围无效'});if(v.period==='all'&&(v.source!=='legacy'||v.from||v.to))c.addIssue({code:'custom',message:'全部日期仅用于未指定日期的历史记录'});});
+}).superRefine((v,c)=>{for(const k of ['from','to'] as const)if(v[k]&&(!Number.isFinite(Date.parse(v[k]!))||new Date(v[k]!).toISOString().slice(0,10)!==v[k]))c.addIssue({code:'custom',message:'日期无效'});if(v.from&&v.to&&(v.to<v.from||Date.parse(v.to)-Date.parse(v.from)>366*86400000))c.addIssue({code:'custom',message:'日期范围无效'});if(v.period==='all'&&(v.source!=='legacy'&&v.view!=='unified'||v.from||v.to))c.addIssue({code:'custom',message:'全部日期仅用于未指定日期的历史记录'});});
 export type CreationFilters = z.infer<typeof creationFiltersSchema>;
 /** Platform-only, allowlisted diagnostic projection. Never a retry permission. */
 export type CreationFailure = {

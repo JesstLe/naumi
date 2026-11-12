@@ -5,7 +5,8 @@ import {enterpriseRead} from './server';
 import {ensureBiSchema} from '@/lib/bi/repository';
 import {ensureMediaSchema} from '@/lib/media-assets-schema';
 import {listLegacyCreations,legacyCreationDetail,legacyCreationAsset,type LegacyReadScope} from '@/lib/saas/legacy-creations';
-import {publicCreationParameters} from '@/lib/saas/creation-writer';
+import {publicCreationParameters} from '@/lib/saas/creation-parameters';
+import type {DetailPages} from '@/lib/saas/creations';
 import type {CreationFilters,CreationPage} from '@/lib/saas/creation-contracts';
 
 /** Same live hierarchy as member history, including the owner's own records.
@@ -14,7 +15,7 @@ async function read<T>(actor:TeamActor,enterpriseId:string,run:(access:LegacyRea
   await ensureBiSchema();
   return enterpriseRead({...actor,admin:false,consoleAdmin:false},enterpriseId,async(client,scope)=>{
     const allowed=new Set(scope.visible);if(scope.owner)allowed.add(scope.team.owner_email);
-    return run({client,allowedEmails:[...allowed]});
+    return run({client,allowedEmails:[...allowed],tenantId:enterpriseId});
   });
 }
 export async function enterpriseHistory(actor:TeamActor,id:string,filters:CreationFilters):Promise<CreationPage>{
@@ -24,9 +25,9 @@ export async function enterpriseHistory(actor:TeamActor,id:string,filters:Creati
     return {...page,scope:'member'};
   });
 }
-export async function enterpriseHistoryDetail(actor:TeamActor,id:string,creationId:string,assetPage:number){
+export async function enterpriseHistoryDetail(actor:TeamActor,id:string,creationId:string,pages:number|DetailPages){
   return read(actor,id,async access=>{
-    const {detail}=await legacyCreationDetail(creationId,{assetPage,diagnostics:false},access);
+    const {detail}=await legacyCreationDetail(creationId,{...(typeof pages==='number'?{assetPage:pages}:pages),diagnostics:false},access);
     const {technical,failure,...publicDetail}=detail;
     return {...publicDetail,parameters:{...detail.parameters,values:publicCreationParameters(detail.parameters.values)}};
   });

@@ -68,7 +68,7 @@ async function main(){
  // Exercise historical visibility through the real authorized route, not a
  // fixture-only query. Original code is also runnable as a rollback baseline.
  const historyVisible=process.env.NAUMI_VERIFY_HISTORY_ENTRY_EXPECTED!=='hidden';
- const ancient=`ancient-${randomUUID()}`;await pool.query("INSERT INTO app_image_jobs(id,email,kind,snapshot,payload,metered,billing_settled,created_at) VALUES($1,$2,'generate','{\"status\":\"done\"}','{}',false,true,'2001-01-01')",[ancient,departed]);
+ const ancient=`ancient-${randomUUID()}`;await pool.query("INSERT INTO app_image_jobs(id,email,kind,snapshot,payload,metered,billing_settled,created_at) VALUES($1,$2,'generate','{\"status\":\"done\"}','{}',false,true,'2001-01-01T00:00:00Z')",[ancient,departed]);
  const historyRequest=`/api/admin/creations?source=legacy&user=${encodeURIComponent(departed)}`;
  const historyDefault=await(await adminRoutes.GET(request(historyRequest,admin))).json();
  const historyHasOld=historyDefault.items.some((x:any)=>x.acceptedAt.startsWith('2001-01-01'));
@@ -83,7 +83,7 @@ async function main(){
   const ordinary=await(await adminRoutes.GET(request('/api/admin/creations',admin))).json();assert.ok(ordinary.appliedFilters.from);assert.equal(ordinary.appliedFilters.period,undefined);
  }
  assert.equal((await adminRoutes.GET(request(historyRequest+`&tenantId=${a.tenantId}`,admin))).status,400);
- assert.equal((await enterpriseRoutes.GET(request(`/api/enterprise/creations?tenantId=${a.tenantId}&source=legacy&period=all`,ownerA))).status,400);
+ const enterpriseHistoryResponse=await enterpriseRoutes.GET(request(`/api/enterprise/creations?tenantId=${a.tenantId}&source=legacy&period=all`,ownerA));assert.equal(enterpriseHistoryResponse.status,200);const enterpriseHistoryBody=await enterpriseHistoryResponse.json();assert.equal(enterpriseHistoryBody.scope,'member');assert.ok(enterpriseHistoryBody.items.every((item:any)=>item.actorEmail!==departed&&item.actorEmail!==ownerB));
  assert.ok([401,403].includes((await adminRoutes.GET(request(historyRequest+'&period=all'))).status));
  console.log(`HISTORY_ENTRY_STATE=${historyVisible?'VISIBLE':'HIDDEN'} oldJobVisible=${historyHasOld} real_route=1 scope_preserved=1`);
  const legacyFull=await(await adminDetail.GET(request(`/api/admin/creations/${legacy.id}`,admin),detailCtx(legacy.id))).json();assert.equal(legacyFull.request.text,'旧图片原话 fixture');assert.equal(legacyFull.model.state,'not_recorded');assert.equal(legacyFull.billing.charged,0);assert.equal(legacyFull.events.length,0);

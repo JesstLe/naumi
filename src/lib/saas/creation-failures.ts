@@ -111,6 +111,10 @@ async function readFailures(tx:Reader,refs:Ref[],roots:string[],incomplete=false
  return result;
 }
 
+export async function legacyCreationFailuresInTransaction(tx:Reader,refs:Ref[]){
+ if(refs.length>100)throw new Error('FAILURE_PAGE_LIMIT');
+ return refs.length?readFailures(tx,refs.filter(r=>tables.includes(r.table_name)),refs.map(r=>r.root)):new Map<string,CreationFailure>();
+}
 export async function legacyCreationFailures(pool:Pool,refs:Ref[]){
  if(refs.length>100)throw new Error('FAILURE_PAGE_LIMIT');
  if(!refs.length)return new Map<string,CreationFailure>();
