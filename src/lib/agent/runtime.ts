@@ -59,34 +59,16 @@ const MAX_TURNS = 24;
 const SESSION_TTL = 60 * 60 * 1000; // 空闲会话 1 小时后回收
 
 
-/** 视觉输入能力判定(默认自动):
- *  - AGENT_VISION=1 或 0 强制开或关(兜底,处理特殊中转站);
- *  - 否则按模型 id 家族正则识别(gpt-4o、gpt-5 系列、claude、gemini、qwen-vl 等天然多模态);
- *  - 运行时发图被 API 拒绝的模型记入证伪表,后续自动降级纯文本。
- *  误报是安全的:API 收了图但模型没真用时,消息里的「[商品图] url」文本行仍可走工具兜底。 */
-const VISION_REJECT_RE =
-  /image|vision|multimodal|多模态|图片|image_url|content[_ ]?type|modalit/i;
-const visionRejectedModels = new Set<string>();
-
+/** Frozen managed settings own vision input. Legacy chat uses the existing
+ * image-content serializer unless explicitly disabled; errors never blacklist
+ * another request or silently remove its images. */
 export function agentVisionEnabled(modelId: string): boolean {
   const scope = currentModelExecution("text") || currentModelExecution("vision");
   if (scope) return scope.capabilities.vision;
   const forced = (process.env.AGENT_VISION || "").trim();
   if (forced === "1") return true;
   if (forced === "0") return false;
-  if (visionRejectedModels.has(modelId)) return false;
   return legacyAgentVision(modelId);
-}
-
-/** 发图后报错时调用:错误特征像"不接受图片输入"则记入证伪表并返回 true。 */
-export function markVisionUnsupported(
-  modelId: string,
-  err: unknown
-): boolean {
-  const msg = err instanceof Error ? err.message : String(err ?? "");
-  if (!VISION_REJECT_RE.test(msg)) return false;
-  visionRejectedModels.add(modelId);
-  return true;
 }
 
 // 各工具的预估单价(积分),与站内 API 实际扣费保持一致(粗粒度预检用)。

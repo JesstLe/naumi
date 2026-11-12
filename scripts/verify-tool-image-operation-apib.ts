@@ -20,7 +20,10 @@ async function main(){
     if(url.pathname.startsWith("/media/"))return res.end(output);
     const chunks:Buffer[]=[];for await(const c of req)chunks.push(Buffer.from(c));
     res.setHeader("content-type","application/json");
-    if(url.pathname==="/v1/uploads/images"){uploads++;return res.end(JSON.stringify({url:"https://fixture.invalid/uploaded.png"}));}
+    if(url.pathname==="/v1/uploads/images"){
+      const form=await new Request(origin+url.pathname,{method:"POST",headers:{"content-type":String(req.headers["content-type"])},body:Buffer.concat(chunks)}).formData();
+      const uploaded=[...form.values()].find(v=>v instanceof File) as File;assert.ok(uploaded);assert.deepEqual(Buffer.from(await uploaded.arrayBuffer()),input,"reference bytes survive the real upload adapter");
+      uploads++;return res.end(JSON.stringify({url:"https://fixture.invalid/uploaded.png"}));}
     if(url.pathname==="/v1/images/generations"){
       const payload=JSON.parse(Buffer.concat(chunks).toString());posts.push({payload,idempotency:req.headers["idempotency-key"]});
       const id=`task_${posts.length}`;tasks.set(id,posts.length);return res.end(JSON.stringify({data:{id,status:"submitted"}}));
@@ -38,7 +41,7 @@ async function main(){
   try{
     const c=f.config,u=c.upstreamModels[0];
     c.providers[0].protocol="apimart-images";c.providers[0].timeoutMs=5000;
-    u.model="wire-apib-image";u.capabilities.transparent=true;u.capabilities.edit=true;u.capabilities.preserveIdentity=true;u.capabilities.maxReferenceImages=16;u.capabilities.qualities=["medium","high"];
+    u.model="wire-apib-image";u.capabilities.verified=false;u.capabilities.transparent=true;u.capabilities.edit=true;u.capabilities.preserveIdentity=true;u.capabilities.maxReferenceImages=16;u.capabilities.qualities=["medium","high"];
     u.parameterMap={apimartImages:{schemaVersion:1,maxOutputs:4,supportsMask:true,ratios:["1:1"],outputDimensions:{"1K:1:1":{width:64,height:64},"2K:1:1":{width:64,height:64}}},
       qualityPolicy:{mode:"map",choices:[{id:"medium",label:"标准",value:"standard"},{id:"high",label:"高",value:"high"}]},
       resolutionPolicy:{mode:"map",field:"resolution",ratioField:"aspect_ratio",values:{"1K":"1MP","2K":"2K"}}} as any;
@@ -75,6 +78,7 @@ async function main(){
     const operationId=randomUUID(),first=await cutout(operationId),body=await first.json();
     check([first.status,body.ok,typeof body.id],[200,true,"string"],`toolbox cutout on APIB succeeds (got ${first.status} ${JSON.stringify(body).slice(0,200)})`);
     check([posts.length,uploads],[1,1],"one upload and one paid generation POST");
+    check(posts[0].payload.image_urls,["https://fixture.invalid/uploaded.png"],"unverified source still receives uploaded reference URL");
     check(posts[0].payload.background,"transparent","cutout submission explicitly requests a transparent background");
     const unit=(await f.sql.query("SELECT billing_unit_id FROM app_supplier_calls ORDER BY updated_at")).rows.map((r:any)=>r.billing_unit_id);
     check(unit,[`tool-${operationId}:tool-image:0`],"supplier unit derives from the billing operation");

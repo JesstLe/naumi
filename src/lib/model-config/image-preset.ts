@@ -1,3 +1,4 @@
+import {publishedImagegenCapabilities} from "../imagegen/capabilities";
 import { z } from "zod";
 import type { ModelConfig } from "./types";
 import { ModelConfigError } from "./types";
@@ -80,10 +81,8 @@ export function validateImagePreset(config: ModelConfig) {
   const fail = (s: string): never => { throw new ModelConfigError("INVALID_CONFIG", s, 400, ["defaultImagePreset"]); };
   const u = config.upstreamModels.find(u => u.id === p.upstreamId), provider = config.providers.find(v => v.id === u?.providerId);
   if(BigInt(p.creditsPerCnyMicros)<=BigInt(0)||BigInt(p.authorizationCnyMicros)<=BigInt(0)) fail("请核实积分兑换规则并配置用户确认的售价上限，不能使用未知或零兑换率");
-  if (!u?.enabled || !provider?.enabled || provider.protocol !== "apimart-images" || !u.capabilities.verified || !u.capabilities.generate || !u.capabilities.edit) fail("预设需要已核验、启用且支持生成/编辑的 APIMart 实际模型");
-  if (!p.evidence?.confirmed || p.evidence.actualModel !== u!.model || !p.evidence.source.trim()) fail("请先核实当前默认实际模型 ID 与能力，填写核验来源");
-  if (p.qualityParameter === "quality" && !["low", "medium"].every(q => u!.capabilities.qualities.includes(q as any))) fail("当前模型尚未核实 low/medium quality 参数");
-  if (p.resolutions.some(r => !u!.capabilities.nativeResolutions.includes(r) || !p.resolutionMap[r]) || p.ratios.some(r => !p.ratioMap[r])) fail("支持尺寸和比例必须提供真实参数映射");
+  if (!u?.enabled || !provider?.enabled || provider.protocol !== "apimart-images" || !u.capabilities.generate || publishedImagegenCapabilities(u.capabilities).edit?.state!=="supported") fail("预设需要启用且支持生成/编辑的 APIMart 实际模型");
+  if (p.resolutions.some(r => !p.resolutionMap[r]) || p.ratios.some(r => !p.ratioMap[r])) fail("支持尺寸和比例必须提供实际参数映射");
   if (p.resolutions.some(r=>!p.ratios.some(a=>p.outputDimensions?.[`${r}:${a}`])) || p.ratios.some(a=>!p.resolutions.some(r=>p.outputDimensions?.[`${r}:${a}`]))) fail("原生尺寸/比例至少需要一个已核验的像素组合；矩阵缺失的组合只使用提示词约束，4K档不等于4096边长");
   if (new Set(p.aliases.map(a => a.id)).size !== p.aliases.length || new Set(p.prices.map(v => `${v.quality}:${v.resolution}`)).size !== p.prices.length) fail("预设别名或有效规格价格重复");
   for (const quality of ["low", "medium"] as const) for (const resolution of ["1K", "2K", "4K"] as const) {

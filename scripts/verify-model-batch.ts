@@ -45,7 +45,7 @@ assert.deepEqual(planModelBatch(result.config, reuse).config, result.config, "re
 const disabled = structuredClone(result.config); disabled.business!["tool.garment"]!.enabled = false;
 assert.throws(() => planModelBatch(disabled, reuse), /停用/);
 const unverified = structuredClone(config); unverified.upstreamModels[0].capabilities.verified = false;
-assert.throws(() => planModelBatch(unverified, input), /未核验/);
+const unverifiedResult=planModelBatch(unverified,input); assert.equal(unverifiedResult.config.upstreamModels[0].capabilities.verified,false);
 const masked = structuredClone(config); masked.upstreamModels[0].capabilities.edit = false;
 assert.equal(batchFeatureAvailability(masked, "u1").find(a => a.feature === "canvas.image")?.compatible, true, "plain canvas generation needs no editing capability");
 assert.equal(batchFeatureAvailability(masked, "u1").find(a => a.feature === "tool.retouch")?.compatible, false);

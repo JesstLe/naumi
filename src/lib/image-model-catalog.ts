@@ -29,8 +29,8 @@ export async function getImageModelCatalog(email?: string | null, supplied?: Mod
     // legacy execution. Its immutable scope retains the original edit flag.
     return { ...m, ...(scope&&m.id===scope.frozen.publicModelId?{supportsEdit:scope.capabilities.edit}:{}), provider: !model.supplierRouting && protocol === "new-api-flow" ? "new-api-flow" : "openai-images" };
   });
-  const custom = email ? await getUserImageProvider(email) : null;
-  if (custom?.baseUrl && custom.apiKey) for (const id of custom.models) managed.unshift({ id: userImageModelId(id), label: `自定义 · ${id}`, supportsEdit: custom.protocol === "chat-completions" || id.startsWith("gpt-image"), provider: custom.protocol === "chat-completions" ? "user-chat-completions" : "user-openai-images" });
+  // New account-owned endpoints are retired. Existing BYOK tasks restore their
+  // encrypted provider snapshot; do not resurrect them in the managed catalog.
   return managed;
 }
 

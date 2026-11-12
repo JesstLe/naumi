@@ -65,7 +65,7 @@ export function BusinessEditor({ config, billing, onChange, onPreview }: { confi
         const p = o.pricing || defaultPrice(), money = procurementCny(u?.procurement), cost = u?.procurement;
         const fixed = !!o.pricing && p.mode === "cny-fixed", usage = !!o.pricing && p.mode === "usage";
         const price = fixed ? BigInt(p.amountMicros) : null, profit = price !== null && money?.basis !== "tokens" && money?.amountMicros && !o.routing?.enabled ? price-BigInt(money.amountMicros) : null;
-        const routeTargets = upstreams.filter(t => t.capabilities.verified).map(t => ({ value: t.id, label: `${config.providers.find(p => p.id === t.providerId)?.name} / ${t.model}` }));
+        const routeTargets = upstreams.map(t => ({ value: t.id, label: `${config.providers.find(p => p.id === t.providerId)?.name} / ${t.model}` }));
         const routeEdit = (fn: (r: BusinessRouting) => void) => optionEdit(index, x => { x.routing ||= { enabled: false, defaultUpstreamId: u?.id || "", maxAttempts: 1, costCapCnyMicros: "10000000", rules: [] }; fn(x.routing); });
         return <Panel key={`${feature}:${index}`} title={`${index + 1}. ${m?.label || o.modelId}`}>
           <div className="grid gap-3 md:grid-cols-3">

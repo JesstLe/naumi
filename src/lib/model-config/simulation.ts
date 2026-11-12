@@ -14,8 +14,6 @@ import {conventionalContract} from "./parameter-contract";
 
 export type RoutingSimulation = { eligible: { upstreamId: string; providerId: string; rank: number }[]; excluded: { upstreamId: string; codes: string[] }[]; modelVersion: number; billingVersion: number };
 
-function rankFor(quality: string) { return ({ low: 1, medium: 2, high: 3, xhigh: 4, max: 5 } as Record<string,number>)[quality] || 1; }
-
 function matchesRule(when: ModelConfig["pools"][number]["rules"][number]["when"], f: ModelFacts) {
   return (!when.task || when.task.includes(f.task)) && (!when.quality || (when.quality as string[]).includes(f.quality)) && (!when.resolution || (when.resolution as string[]).includes(f.resolution)) && (["needsEdit", "needsText", "preserveIdentity", "nativeResolution"] as const).every(key => when[key] === undefined || when[key] === f[key]);
 }
@@ -38,34 +36,29 @@ export function simulateModel(snapshot: ModelSnapshot, billing: ConfigSnapshot, 
     const codes: string[] = [];
     // Conventional channels: supplier capability/metadata lists are hints, not admission rules.
     const conventional = conventionalContract(u.parameterMap);
+    const declared=publishedImagegenCapabilities(c);
     if(facts.imagegenRequirements){
       if(facts.imagegenRequirements.conflicts.length)codes.push("IMAGEGEN_INTENT_CONFLICT");
-      for(const key of missingImagegenCapabilities(facts.imagegenRequirements,options.imageParameterPlanVersion===0?publishedImagegenCapabilities(c):configuredImageCapabilities(u,publishedImagegenCapabilities(c))))codes.push(`IMAGEGEN_${key.toUpperCase()}_UNSUPPORTED`);
+      for(const key of missingImagegenCapabilities(facts.imagegenRequirements,options.imageParameterPlanVersion===0?declared:configuredImageCapabilities(u,declared)))codes.push(`IMAGEGEN_${key.toUpperCase()}_UNSUPPORTED`);
     }
     if (!u.enabled || !p.enabled) codes.push("DISABLED");
-    if(model.supplierRouting&&!c[facts.needsEdit?"edit":"generate"])codes.push("OPERATION_UNSUPPORTED");
+    if(model.supplierRouting&&(facts.needsEdit?declared.edit?.state!=="supported":!c.generate))codes.push("OPERATION_UNSUPPORTED");
     if (pool?.rules.length && !rule) codes.push("RULE_UNMATCHED");
-    let nativeQuality = facts.quality;
     if (u.parameterMap.qualityPolicy) {
-      try { nativeQuality = policyQuality(u.parameterMap.qualityPolicy, facts.quality, u.parameterMap.parameterContract) || "medium"; }
+      try { policyQuality(u.parameterMap.qualityPolicy, facts.quality, u.parameterMap.parameterContract); }
       catch { codes.push("QUALITY_UNSUPPORTED"); }
     }
     // An explicitly named display tier is not a promise that the model has a
     // corresponding intrinsic quality rank. Explicit route requirements still apply.
     if(!conventional&&u.parameterMap.resolutionPolicy?.mode==="map"&&!u.parameterMap.resolutionPolicy.values[(facts.requestedResolution||facts.resolution) as "1K"|"2K"|"4K"])codes.push("RESOLUTION_MAPPING_MISSING");
-    const rank = Math.max(u.parameterMap.qualityPolicy ? 1 : rankFor(nativeQuality), facts.task === "draft" ? 1 : 2, rule?.require.minQualityRank || 1);
-    if (!conventional && (options.imageParameterPlanVersion===0||!u.parameterMap.qualityPolicy) && c.verified && c.qualityRank < rank) codes.push("QUALITY_RANK");
-    if (!conventional && !u.parameterMap.qualityPolicy && c.verified && c.qualities.length && !c.qualities.includes(facts.quality as any)) codes.push("QUALITY_UNSUPPORTED");
-    if ((facts.needsEdit || rule?.require.edit) && !c.edit) codes.push("EDIT_UNSUPPORTED");
-    const supportsMask = preset ? preset.supportsMask : c.edit && (p.protocol === "openai-images" || p.protocol === "apimart-images" && u.parameterMap.apimartImages?.supportsMask === true);
+    if (rule?.require.minQualityRank && c.qualityRank < rule.require.minQualityRank) codes.push("QUALITY_RANK");
+    if ((facts.needsEdit || rule?.require.edit) && declared.edit?.state!=="supported") codes.push("EDIT_UNSUPPORTED");
+    const supportsMask = preset ? preset.supportsMask : declared.edit?.state==="supported" && (p.protocol === "openai-images" || p.protocol === "apimart-images" && u.parameterMap.apimartImages?.supportsMask === true);
     if (facts.needsMask && !supportsMask) codes.push("MASK_UNSUPPORTED");
-    if (!conventional && c.verified && (facts.preserveIdentity || rule?.require.preserveIdentity) && !c.preserveIdentity) codes.push("IDENTITY_UNSUPPORTED");
-    if (!conventional && c.verified && (facts.needsText || rule?.require.textAccuracy) && !c.textAccuracy) codes.push("TEXT_UNSUPPORTED");
-    if ((rule?.require.nativeResolution || !conventional && facts.nativeResolution&&(options.imageParameterPlanVersion===0||!u.parameterMap.resolutionPolicy)) && !c.nativeResolutions.includes(facts.resolution as any)) codes.push("NATIVE_RESOLUTION");
-    const maxPixels = c.nativeResolutions.includes("4K") ? 4096 * 4096 : c.nativeResolutions.includes("2K") ? 2048 * 2048 : 1536 * 1024;
-    const requestedPixels = facts.resolution === "4K" ? 3840 * 2160 : facts.resolution === "2K" ? 2048 * 2048 : 1024 * 1024;
-    if (pool && !conventional && (options.imageParameterPlanVersion===0||!u.parameterMap.resolutionPolicy) && requestedPixels > maxPixels) codes.push("PIXEL_LIMIT");
-    if ((c.verified || model.supplierRouting && c.maxReferenceImages > 0) && facts.references > c.maxReferenceImages) codes.push("REFERENCE_LIMIT");
+    if (rule?.require.preserveIdentity && !c.preserveIdentity) codes.push("IDENTITY_UNSUPPORTED");
+    if (rule?.require.textAccuracy && !c.textAccuracy) codes.push("TEXT_UNSUPPORTED");
+    if (rule?.require.nativeResolution && !c.nativeResolutions.includes(facts.resolution as any)) codes.push("NATIVE_RESOLUTION");
+    if (facts.references > c.maxReferenceImages) codes.push("REFERENCE_LIMIT");
     if(options.imageParameterPlanVersion!==0&&(u.parameterMap.qualityPolicy||u.parameterMap.resolutionPolicy||u.parameterMap.apimartImages))try{compileImageParameterPlan(u,imagePlanSelection(facts),{publicModelId:parameterModelIdentity(config,model.id),protocol:p.protocol,modelVersion:snapshot.version,adapter:p.options?.imageAdapter});}catch(error){codes.push(error instanceof ModelConfigError?error.code:'IMAGE_MAPPING_INVALID');}
     if(options.imageParameterPlanVersion!==0&&u.parameterMap.apimartImages&&imageRequestAdmission(facts.ratio||"1:1",parameterModelIdentity(config,model.id),!!model.supplierRouting,u,p.options?.imageAdapter).includes("ADAPTER_RATIO_UNSUPPORTED"))codes.push("IMAGEGEN_RATIO_UNSUPPORTED");
     const money = monetaryCost(modelCostRate(billing, u, facts.quality, facts.resolution, facts.needsEdit ? "edit" : "generate"));

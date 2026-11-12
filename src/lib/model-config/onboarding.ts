@@ -27,7 +27,6 @@ function copiedPrice(billing:ConfigSnapshot,snapshot:ModelSnapshot,sourceId:stri
 /** One additive publication: public identity, executable source, parameters and price.
  * Never updates an old source, old price, purpose binding, or feature default. */
 export function planModelOnboarding(snapshot:ModelSnapshot,billing:ConfigSnapshot,input:OnboardingInput,catalogs:CatalogEntry[]=[]){
- if(input.enabled&&!input.capabilityConfirmed)fail('CAPABILITY_CONFIRMATION_REQUIRED','请先核对实际模型的协议、参数与能力');
  const config=structuredClone(snapshot.config),changes:{publicId:string;upstreamId:string;wireModel:string;features:FeatureId[];priceSource:string;enabled:boolean}[]=[];
  const ids=new Set<string>();
  for(const entry of input.entries){
@@ -48,15 +47,15 @@ export function planModelOnboarding(snapshot:ModelSnapshot,billing:ConfigSnapsho
     if(!isDeepStrictEqual(old,expected))fail('UPSTREAM_COLLISION','已有实际模型配置不同，请选择已有模型或使用新的上游标识');
     upstream=old;
    }else{
-    const catalog=catalogs.find(c=>c.providerId===incoming.providerId);
-    if(!catalog||catalog.status!=='ok'||catalog.stale||!catalog.models.some(m=>m.id===incoming.model))fail('CATALOG_UNAVAILABLE','请先刷新供应商目录并选择其中的精确型号');
+    // Explicit administrator definitions do not depend on a live discovery cache.
+    // Provider identity, protocol, parameters and prices are still validated.
     incoming.enabled=input.enabled;
     incoming.capabilities.verified=input.capabilityConfirmed;
     config.upstreamModels.push(incoming);upstream=incoming;
    }
   }
   if(upstream.modality==='image'&&imageModelDisplayId(entry.publicId)!==entry.publicId)fail('INVALID_PUBLIC_ID','新图片家族ID不能使用历史比例分支后缀');
-  if(input.enabled&&(!upstream.enabled||!upstream.capabilities.generate||!upstream.capabilities.verified))fail('MODEL_NOT_READY','请先确认实际模型能力并启用上游；已有上游不会被新增流程自动改写');
+  if(input.enabled&&(!upstream.enabled||!upstream.capabilities.generate))fail('MODEL_NOT_READY','请先启用上游及生成用途；已有上游不会被新增流程自动改写');
   if(new Set(entry.features).size!==entry.features.length)fail('INVALID_TOOL_SCOPE','适用功能不能重复');
   for(const feature of entry.features){const binding=FEATURE_BINDINGS[feature];if(!binding||!upstreamSupportsFeature(upstream.capabilities,binding,feature))fail('MODEL_INCOMPATIBLE','实际模型不支持所选用途');if(config.business?.[feature]?.enabled===false)fail('FEATURE_DISABLED','所选功能已停用，不会因新增模型自动启用');}
   if(upstream.modality==='image'&&upstream.parameterMap.apimartImages){

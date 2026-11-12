@@ -4,7 +4,7 @@ import { IMAGEGEN_USE_CASES } from "./catalog";
 export const IMAGEGEN_CAPABILITY_KEYS=["edit","mask","transparent","inputFidelity","outputFormat","outputCompression","moderation","pixelSize"] as const;
 const evidenceSchema=z.strictObject({state:z.enum(["supported","unsupported","unknown"]),
   values:z.array(z.string().min(1).max(100)).max(100).optional(),source:z.string().max(1000),
-  checkedAt:z.union([z.literal(""),z.iso.date()])}).refine(v=>v.state!=="supported"||!!v.source.trim()&&!!v.checkedAt,"声明支持需要依据和核对日期");
+  checkedAt:z.union([z.literal(""),z.iso.date()])});
 export const imagegenCapabilitySetSchema=z.strictObject({
   edit:evidenceSchema.optional(),mask:evidenceSchema.optional(),transparent:evidenceSchema.optional(),inputFidelity:evidenceSchema.optional(),
   outputFormat:evidenceSchema.optional(),outputCompression:evidenceSchema.optional(),moderation:evidenceSchema.optional(),pixelSize:evidenceSchema.optional(),
@@ -45,6 +45,10 @@ export function eligibleImagegenChannels(intent:Intent,candidates:{id:string;cap
 /** Published legacy booleans remain authoritative; missing proof dates are explicitly unrecorded. */
 export function publishedImagegenCapabilities(capabilities:{verified:boolean;edit:boolean;transparent:boolean;imagegen?:CapabilitySet}):CapabilitySet {
   const legacy:CapabilitySet={};
-  for(const key of ["edit","transparent"] as const)legacy[key]={state:capabilities.verified?(capabilities[key]?"supported":"unsupported"):"unknown",source:"既有发布配置（历史核对日期未记录）",checkedAt:""};
-  return resolveImagegenCapabilities(capabilities.imagegen,legacy);
+  for(const key of ["edit","transparent"] as const)legacy[key]={state:capabilities[key]?"supported":"unsupported",source:"既有发布配置（历史核对日期未记录）",checkedAt:""};
+  const published=resolveImagegenCapabilities(capabilities.imagegen,legacy);
+  // Unknown is a documentation state, not a revocation of an enabled operation.
+  // A deliberate per-capability refusal still overrides the legacy declaration.
+  for(const key of ["edit","transparent"] as const)if(published[key]?.state==="unknown")published[key]=legacy[key];
+  return published;
 }

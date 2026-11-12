@@ -73,7 +73,7 @@ throws(() => mapResolution({}, fixture().upstreamModels[0].parameterMap.resoluti
 {
   const strict = fixture(c => { c.upstreamModels[0].parameterMap = {} as any; });
   const strictRun = simulateModel(snapshot(strict), billing, "image-a", facts("low", "4K", { nativeResolution: true, needsText: true }));
-  eq(strictRun.eligible.length, 0, "strict channel excluded by stale metadata");
+  eq(strictRun.eligible.length, 1, "published mappings are not excluded by stale metadata");
   const conv = fixture(c => { c.upstreamModels[0].parameterMap = { parameterContract: "conventional" } as any; });
   const convRun = simulateModel(snapshot(conv), billing, "image-a", facts("low", "4K", { nativeResolution: true, needsText: true }));
   eq(convRun.eligible.map(e => e.upstreamId), ["u1"], "conventional channel eligible despite stale metadata");
