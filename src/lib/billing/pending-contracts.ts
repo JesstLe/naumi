@@ -11,3 +11,5 @@ export type PendingOverview = {
     items: PendingItem[];
     generatedAt: string;
 };
+/** Sidebar badge view: total only, no per-source breakdown and no items. */
+export type PendingSummary = { total: number; generatedAt: string };

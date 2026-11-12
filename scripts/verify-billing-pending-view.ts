@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { Pool } from "pg";
 import { exposeAbandonedBillingOperations } from "../src/lib/billing/synchronous-operation";
-import { readPendingOverview } from "../src/lib/billing/pending-read";
+import { readPendingOverview, readPendingSummary } from "../src/lib/billing/pending-read";
+import { appendManagementLog } from "../src/lib/bi/management-log";
 import { providerCapacityDetail, resetProviderBudget } from "../src/lib/model-config/capacity";
+import { resetChannelProbes, supplierChannelKey } from "../src/lib/model-config/channel-scheduler";
 import type { ModelConfig } from "../src/lib/model-config/types";
 
 /** Isolated-PostgreSQL regression for the pending-review read model: the
@@ -31,6 +33,10 @@ async function main() {
       CREATE TABLE app_model_capacity_accounts(alias text PRIMARY KEY,identity text NOT NULL,updated_at timestamptz NOT NULL DEFAULT now());
       CREATE TABLE app_model_provider_budgets(identity text PRIMARY KEY,max_concurrent integer NOT NULL);
       CREATE TABLE app_model_provider_leases(identity text NOT NULL,token text PRIMARY KEY,expires_at timestamptz NOT NULL);
+      CREATE TABLE app_model_channel_health(key text PRIMARY KEY,failures int NOT NULL DEFAULT 0,open_until timestamptz,probe_until timestamptz,last_status int,last_success_at timestamptz,updated_at timestamptz NOT NULL DEFAULT now());
+      ALTER TABLE app_model_channel_health ADD COLUMN last_failure_kind text;
+      ALTER TABLE app_model_channel_health ADD COLUMN last_failure_at timestamptz;
+      ALTER TABLE app_model_channel_health ADD COLUMN probe_token uuid;
     `);
     const insertOp = (id: string, state: string, ageMinutes: number, reserved = 6) =>
       pool.query("INSERT INTO app_billing_operations(id,email,feature,state,reserved_credits,created_at,updated_at) VALUES($1,$2,'tool.cutout',$3,$4,now()-($5*interval '1 minute'),now()-($5*interval '1 minute'))", [id, "user@example.com", state, reserved, ageMinutes]);
@@ -77,12 +83,21 @@ async function main() {
     assert.ok(!view.items.some(item => item.id === "tool-fresh"), "fresh reservations are not listed");
     console.log("PASS pending view aggregates four sources with linkage, ordering and reserved credits");
 
+    const summary = await readPendingSummary(pool);
+    assert.equal(summary.total, 8, "badge summary counts the same backlog without item lists or exposure writes");
+    const reservedBefore = (await pool.query("SELECT count(*)::int AS n FROM app_billing_operations WHERE state='reserved'")).rows[0].n;
+    assert.equal(reservedBefore, 2, "summary view is read-only: no exposure conversion happened");
+    console.log("PASS pending summary view exposes badge total without side effects");
+
     const baseUrl = "https://p1.example.com";
     const logical = createHash("sha256").update(`p1\n${new URL(baseUrl).origin}`).digest("hex");
     await pool.query("INSERT INTO app_model_capacity_accounts(alias,identity) VALUES($1,'merged-1')", [logical]);
     await pool.query("INSERT INTO app_model_provider_budgets(identity,max_concurrent) VALUES('merged-1',2)");
     await pool.query("INSERT INTO app_model_provider_leases(identity,token,expires_at) VALUES('merged-1','lease-live',now()+interval '5 minutes'),('merged-1','lease-dead',now()-interval '1 minute')");
-    const config = { providers: [{ id: "p1", name: "P1", baseUrl, enabled: true, maxConcurrent: 5, timeoutMs: 30000 }] } as unknown as ModelConfig;
+    const config = {
+      providers: [{ id: "p1", name: "P1", baseUrl, enabled: true, maxConcurrent: 5, timeoutMs: 30000 }],
+      upstreamModels: [{ id: "u1", providerId: "p1", model: "wire-model-1" }],
+    } as unknown as ModelConfig;
     const detail = await providerCapacityDetail(pool, config);
     assert.equal(detail.length, 1);
     assert.equal(detail[0].budgetMaxConcurrent, 2);
@@ -98,6 +113,31 @@ async function main() {
     assert.equal(repeat.changed, false, "second reset is a no-op");
     await assert.rejects(() => resetProviderBudget(pool, "missing", config), error => (error as { code?: string }).code === "PROVIDER_UNAVAILABLE");
     console.log("PASS budget reset restores published limit and rejects unknown providers");
+
+    const healthKey = supplierChannelKey({ providerId: "p1", baseUrl, wireModel: "wire-model-1" });
+    await pool.query("INSERT INTO app_model_channel_health(key,failures,open_until,last_status,last_failure_kind,last_failure_at) VALUES($1,3,now()+interval '5 minutes',503,'upstream_5xx',now()-interval '2 minutes')", [healthKey]);
+    const probeReset = await resetChannelProbes(pool, "p1", "u1", config);
+    assert.equal(probeReset.cleared, true);
+    assert.equal(probeReset.wireModel, "wire-model-1");
+    assert.equal(probeReset.previous?.failures, 3, "previous facts are returned for the audit record");
+    assert.ok(probeReset.previous?.cooldownUntil, "cooldown deadline is part of the previous facts");
+    const health = (await pool.query("SELECT failures,open_until,probe_until,probe_token FROM app_model_channel_health WHERE key=$1", [healthKey])).rows[0];
+    assert.equal(health.failures, 0);
+    assert.equal(health.open_until, null, "open cooldown is cleared so claimChannel considers the channel again");
+    assert.equal(health.probe_until, null);
+    assert.equal(health.probe_token, null);
+    await assert.rejects(() => resetChannelProbes(pool, "p1", "missing-upstream", config), error => (error as { code?: string }).code === "CHANNEL_UNAVAILABLE");
+    await assert.rejects(() => resetChannelProbes(pool, "other-provider", "u1", config), error => (error as { code?: string }).code === "CHANNEL_UNAVAILABLE");
+    console.log("PASS channel probe reset clears cooldown and failures, rejects channels outside the published config");
+
+    const logId = await appendManagementLog({ actor: "admin@example.com", subject: "provider:p1", action: "channel-budget-reset", reason: "发布并发已恢复", changes: { providerId: "p1", previous: 2, restored: 5, changed: true } });
+    // entry.subject persists in the email column (typed subject convention).
+    const logRow = (await pool.query("SELECT actor,email,action,reason,changes FROM app_bi_management_log WHERE id=$1", [logId])).rows[0];
+    assert.equal(logRow.email, "provider:p1");
+    assert.equal(logRow.action, "channel-budget-reset");
+    assert.equal(logRow.reason, "发布并发已恢复");
+    assert.equal(logRow.changes.restored, 5, "before/after facts persist as jsonb for the management log page");
+    console.log("PASS management log records audit entries with typed subject and fact-only changes");
   }
   finally {
     await pool.end();

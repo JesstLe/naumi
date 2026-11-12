@@ -8,6 +8,7 @@
 .navigation a svg{flex:none;stroke-width:1.7}
 .navigation a:hover{background:var(--admin-surface)}
 .navigation a.active{background:var(--admin-accent-soft);color:var(--admin-accent);font-weight:650}
+.navBadge{margin-left:auto;min-width:20px;box-sizing:border-box;padding:2px 6px;border-radius:999px;background:#b53f48;color:#fff;font-size:11px;font-weight:650;line-height:16px;text-align:center;font-variant-numeric:tabular-nums}
 .navigation a[href="/admin/deployments"]{margin-top:16px}
 .sidebarFooter{display:flex;flex-direction:column;gap:3px;border-top:1px solid var(--admin-border);padding-top:14px;margin-top:16px}
 .sidebarFooter a,.sidebarFooter button{display:flex;align-items:center;gap:10px;padding:9px 13px;color:var(--admin-secondary);text-align:left;background:none;border:0;border-radius:8px;text-decoration:none;font:inherit;cursor:pointer}

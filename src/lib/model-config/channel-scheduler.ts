@@ -21,6 +21,31 @@ export function supplierChannelKey(c: {
 }) { return createHash("sha256").update(JSON.stringify([c.providerId, c.baseUrl, imageModelDisplayId(c.wireModel)])).digest("hex"); }
 export function channelHealthKey(c: ChannelTarget) { return supplierChannelKey(c.scope.connection); }
 export async function channelHealthSummary(pool: Pool, config: import("./types").ModelConfig) { const keys = config.upstreamModels.map(u => { const p = config.providers.find(p => p.id === u.providerId)!; return { id: u.id, key: supplierChannelKey({ providerId: p.id, baseUrl: p.baseUrl, wireModel: u.model }) }; }); const rows = (await pool.query("SELECT key,failures,last_status,last_failure_kind,last_success_at,open_until,open_until>now() opened,probe_until>now() probing FROM app_model_channel_health WHERE key=ANY($1)", [keys.map(k => k.key)])).rows; return Object.fromEntries(keys.map(k => { const r = rows.find(r => r.key === k.key); return [k.id, { state: r?.opened ? "cooldown" : r?.probing ? "recovering" : r?.failures > 0 ? "failed" : r?.last_success_at ? "available" : "unobserved", failures: r?.failures || 0, retryAt: r?.open_until?.toISOString() || null, lastStatus: r?.last_status || null, failureKind: r?.last_failure_kind || null }]; })); }
+export type ChannelProbeReset = {
+    upstreamId: string; providerId: string; wireModel: string;
+    previous: { failures: number; cooldownUntil: string | null; probeUntil: string | null } | null;
+    cleared: boolean;
+};
+/**
+ * Manual recovery after a supplier incident is fixed outside the app: clear
+ * the failure count and open cooldown/probe window so claimChannel considers
+ * the channel again immediately. Last-status history is kept on purpose.
+ * The channel must exist in the currently published config; unknown ids are
+ * rejected so stale admin UIs cannot clear rows of removed channels.
+ */
+export async function resetChannelProbes(pool: Pool, providerId: string, upstreamId: string, config: import("./types").ModelConfig): Promise<ChannelProbeReset> {
+    const provider = config.providers.find(p => p.id === providerId);
+    const upstream = config.upstreamModels.find(u => u.id === upstreamId && u.providerId === providerId);
+    if (!provider || !upstream) throw new ModelConfigError("CHANNEL_UNAVAILABLE", "目标通道不在当前发布配置中", 404);
+    const key = supplierChannelKey({ providerId, baseUrl: provider.baseUrl, wireModel: upstream.model });
+    const previous = (await pool.query("SELECT failures,open_until,probe_until FROM app_model_channel_health WHERE key=$1", [key])).rows[0];
+    const cleared = ((await pool.query("UPDATE app_model_channel_health SET failures=0,open_until=NULL,probe_until=NULL,probe_token=NULL,updated_at=now() WHERE key=$1", [key])).rowCount ?? 0) > 0;
+    return {
+        upstreamId, providerId, wireModel: upstream.model,
+        previous: previous ? { failures: Number(previous.failures) || 0, cooldownUntil: previous.open_until?.toISOString() || null, probeUntil: previous.probe_until?.toISOString() || null } : null,
+        cleared,
+    };
+}
 export function compareChannels(a: {
     priority: number;
     weight: number;
