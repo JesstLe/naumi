@@ -29,7 +29,7 @@ import {
   refreshSessionCredentials,
   resolveVisionImages,
 } from "@/lib/agent/runtime";
-import { buildTaskPlan, classifyAgentFailure } from "@/lib/agent/recovery";
+import { classifyAgentFailure } from "@/lib/agent/recovery";
 import { requestedTextModel } from "@/lib/text-models";
 import { readHarnessBody, assertHarnessSessionId, harnessErrorResponse, HarnessError } from "@/lib/agent/harness";
 
@@ -142,7 +142,6 @@ async function handlePut(request: Request) {
   if (session.agent.state.messages.length === 0) {
     session.title = message.slice(0, 120) || session.title;
   }
-  appendSessionEvent(session, "plan", { items: buildTaskPlan(message, !!imageSkill?.instructions.includes("name: brand-packaging-strategy")) });
   session.running = true;
   try { await persistAgentSession(session); }
   catch(error) {

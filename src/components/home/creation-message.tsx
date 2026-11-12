@@ -1,6 +1,9 @@
 "use client";
 
 import ReactMarkdown, { type Components } from "react-markdown";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
 import { CreationActivity } from "./creation-activity";
 import { createContext,useContext,useEffect,useRef,useState,type ComponentPropsWithoutRef } from "react";
 import { Download, Ellipsis, Expand, Loader2, Palette, PanelsTopLeft, RotateCcw, ScanEye, Scissors, Shirt, SquarePen, Sun, Blend, X } from "lucide-react";
@@ -90,7 +93,7 @@ export function CreationMessage({message,previous,port,onPreview}:{message:Workb
   const images=message.content.split("\n").flatMap(line=>{const m=line.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);return m&&agentMediaUrl(m[2])&&!/\.(mp4|webm|mov|m4v)(\?|$)/i.test(m[2])?[m[2]]:[];});
   return <div className={styles.assistantMessage}>
     {(message.pending||!!message.steps?.length)&&<CreationActivity steps={message.steps||[]} pending={message.pending}/>}
-    <div className={styles.responseMarkdown}><ResultContext.Provider value={{prompt,port,onPreview}}><ReactMarkdown components={MESSAGE_COMPONENTS}>{message.content.replace(/^视频链接\s*[:：]\s*(\S+)$/gm,"![视频]($1)")}</ReactMarkdown></ResultContext.Provider></div>
+    <div className={styles.responseMarkdown}><ResultContext.Provider value={{prompt,port,onPreview}}><ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]} components={MESSAGE_COMPONENTS}>{message.content.replace(/^视频链接\s*[:：]\s*(\S+)$/gm,"![视频]($1)")}</ReactMarkdown></ResultContext.Provider></div>
     {message.pending&&message.steps?.flatMap(step=>step.outputs||[]).filter((url,index,urls)=>urls.indexOf(url)===index&&!images.includes(url)).map(url=>/\.(mp4|webm|mov|m4v)(\?|$)/i.test(url)?<video key={url} controls playsInline src={url} className={styles.resultVideo}/>:<ResultImage key={url} url={url} alt="生成图片" prompt={prompt} port={port} onPreview={onPreview}/>)}
     {!message.pending&&prompt&&<div className={styles.resultActions}>
       <button type="button" disabled={port.busy||port.unavailable} onClick={()=>port.stage(prompt,images.length?[images[0]]:messageReferences(source))}><SquarePen/>重新编辑</button>

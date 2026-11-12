@@ -6,7 +6,6 @@ import { reduceWorkbenchActivity, restoreWorkbenchMessages } from "../src/lib/ag
 import { createWorkbenchSession, type WorkbenchSendContext } from "../src/lib/agent/workbench-session";
 import type { WorkbenchMessage } from "../src/lib/agent/workbench-contract";
 import { createNaumiTools, AGENT_SYSTEM_PROMPT } from "../src/lib/agent/naumi-tools";
-import { buildTaskPlan } from "../src/lib/agent/recovery";
 
 async function main() {
   let checks=0; const check=(name:string,value:unknown)=>{assert.ok(value,name);checks++;console.log("PASS "+name);};
@@ -46,7 +45,11 @@ async function main() {
   check("history-attaches-settings-and-tools-to-original-turn",restored[1].steps?.length===1&&restored[1].steps[0].tool==="recolor_product"&&restored[1].creationSettings?.image?.modelId==="image-a"&&restored[3].steps?.[0].tool==="retouch_product"&&restored[3].creationSettings?.image?.modelId==="image-b"&&restored[1].agentModel==="chat-a");
   const compacted=restoreWorkbenchMessages(restored,[]);
   check("old-round-settings-survive-event-buffer-compaction",compacted[0].creationSettings?.image?.modelId==="image-a"&&compacted[3].creationSettings?.image?.modelId==="image-b");
-  check("automatic-verification-removed-from-prompt-and-plan",!AGENT_SYSTEM_PROMPT.includes("verify_image_output")&&!buildTaskPlan("生成商品图").some(item=>item.includes("视觉模型")));
+  check("automatic-verification-removed-from-prompt",!AGENT_SYSTEM_PROMPT.includes("verify_image_output"));
+  const routeSource=fs.readFileSync(new URL("../src/app/api/agent/route.ts",import.meta.url),"utf8");
+  check("synthetic-plan-emission-removed",!routeSource.includes('appendSessionEvent(session, "plan"')&&!routeSource.includes("buildTaskPlan"));
+  const planReplay=reduceWorkbenchActivity([],"plan",{items:["历史会话的计划步骤"]});
+  check("historical-plan-events-still-replay",planReplay.length===1&&planReplay[0].kind==="plan"&&planReplay[0].summary==="历史会话的计划步骤");
 
   // Real tool adapters, network receipts isolated. No provider or database call.
   const originalFetch=globalThis.fetch;const requests:{path:string;headers:Headers;body:unknown}[]=[];

@@ -46,19 +46,3 @@ export function classifyAgentFailure(error: unknown): AgentFailure {
   }
   return { code: "UNKNOWN", message: "任务执行失败", recoverable: false, action: "保留当前轨迹并联系管理员排查" };
 }
-
-export function buildTaskPlan(message: string, textStrategy = false): string[] {
-  if (textStrategy) return ["核对简报事实与待确认项", "制定信息层级与差异化创意方向", "交付推荐策略、产品线规则与验证动作"];
-  const text = message.toLowerCase();
-  const plan = ["确认任务要求、商品图和积分条件"];
-  if (/模板|参考/.test(text)) plan.push("检索适合的站内模板或参考作品");
-  if (/精修|retouch/.test(text)) plan.push("调用商品精修工具并保留主体细节");
-  if (/换色|颜色|recolor/.test(text)) plan.push("生成指定颜色版本");
-  if (/复刻|爆款|replicate/.test(text)) plan.push("按参考图复刻视觉风格");
-  if (/套图|13张|十三张|suite/.test(text)) plan.push("生成完整电商套图");
-  if (/a\+|详情|aplus/.test(text)) plan.push("规划并生成 A+ 详情页模块");
-  if (/生成|出图|图片|图像/.test(text) && plan.length === 1) plan.push("调用匹配的图片生成工具");
-  if (plan.length > 1) plan.push("交付生成结果，等待用户验收与修改意见");
-  else plan.push("直接回答并说明可执行的下一步");
-  return plan;
-}

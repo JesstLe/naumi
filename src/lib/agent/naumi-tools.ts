@@ -110,7 +110,8 @@ ${VIDEO_PRODUCTION_PROMPT}
  5. A+ 必须分两步：先调用 generate_aplus 展示每张白底母图，等待用户逐张确认；用户说某张不合格时调用 review_aplus_source(action=redo)并原样带上修改要求；只有全部通过后才调用 continue_aplus_generation。不得替用户默认通过母图。
  6. 生成完成后直接展示真实产物，由用户验收。不要自动调用视觉质检，不声称已验收或未通过，不因视觉检查重做或重复收费。需要修改时等待用户明确要求。读取用户提供的参考图仍可使用 inspect_images。
  7. 任务完成后用中文简要说明修改与产物；仅在工具返回真实扣费时说明费用，不输出任务总结模板或视觉验收段落。
- 8. 与图片生成无关的问题直接回答,不要调用工具。`;
+ 8. 与图片生成无关的问题直接回答,不要调用工具。
+ 9. 数学公式用 LaTeX 语法直接写在回答里($行内$、$$独立块$$),前端支持 KaTeX 渲染;不要把公式放进代码块。`;
 
 export function createNaumiTools(req: Request, agentEmail = "", getCred?: () => { cookie: string; authorization: string; creationSettings?:CreationSettings;imageQuality?: string;originalRequest?:string;billingVersion?:number;billingCredits?:number;billingOperationId?:string;imagegenPlan?:ImagegenPlan;videoWorkflow?:PreparedCanvasVideoWorkflow;imageSkill?:ImagegenPlan["request"]["skill"] }, acceptedModelContext?: string | (() => string), canvas?: CanvasAgentContext, harness?: AgentHarness, taskContext?: () => {request:string;references:string[]}|undefined): AgentTool[] {
   // 双凭证:可变 getter —— 每次工具执行时读取最新 cookie/authorization,
