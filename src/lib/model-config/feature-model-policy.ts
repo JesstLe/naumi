@@ -1,3 +1,4 @@
+import {publishedImagegenCapabilities} from "../imagegen/capabilities";
 import type { FeatureId } from "../billing/rules/registry";
 import { MODEL_BINDINGS, type ModelBinding } from "./bindings";
 import { publicUpstreamIds } from "./channel-policy";
@@ -26,7 +27,9 @@ export function featureDefaultModel(config: ModelConfig, feature?: string, bindi
 export function upstreamSupportsFeature(capabilities: UpstreamModel["capabilities"], binding: ModelBinding, feature?: string) {
   // Canvas admits both plain generation and reference editing. The concrete
   // request still resolves its own binding and compatible supplier subset.
-  return feature === "canvas.image" ? capabilities.generate || capabilities.edit : capabilities[MODEL_BINDINGS[binding].capability];
+  const capability=MODEL_BINDINGS[binding].capability;
+  const edit=publishedImagegenCapabilities(capabilities).edit?.state==="supported";
+  return feature === "canvas.image" ? capabilities.generate || edit : capability==="edit" ? edit : capabilities[capability];
 }
 
 export function compatiblePublicModels(config: ModelConfig, binding: ModelBinding, feature?: string) {

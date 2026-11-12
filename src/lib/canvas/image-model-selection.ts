@@ -28,7 +28,7 @@ export function canvasImageModelSelection(input:{catalog:Catalog;selected:string
  if(mode==='unchanged')return;
  const options=Array.isArray(config!.imageModels)?config!.imageModels.filter(item=>item?.id&&item?.label):[];
  const fallback=config!.defaultImageModel||options[0]?.id||'';
- const models:PublicImageModel[]=options.length?compactImageModelOptions(options,[fallback,saved]):fallback?[{id:fallback,label:fallback,supportsEdit:fallback.startsWith('gpt-image')}]:[];
+ const models:PublicImageModel[]=options.length?compactImageModelOptions(options,[fallback,saved]):fallback?[{id:fallback,label:fallback,supportsEdit:true}]:[];
  previous=canonicalPublicModelId(models,previous);saved=canonicalPublicModelId(models,saved);
  const model=models.some(item=>item.id===previous)?previous:models.some(item=>item.id===saved)?saved:models.find(item=>item.id===fallback)?.id||models[0]?.id||'';
  return {models,model};

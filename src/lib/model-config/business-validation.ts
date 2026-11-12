@@ -1,9 +1,19 @@
-import type { ModelConfig } from "./types";
+import {publishedImagegenCapabilities} from "../imagegen/capabilities";
+import type { ModelConfig, PublicModel, UpstreamModel } from "./types";
+import type { BusinessOption } from "./business-schema";
+import {compileImageParameterPlan} from "./image-parameter-plan";
+import {qualityPresentation} from "./quality-policy";
 import { ModelConfigError } from "./types";
 import { procurementCny } from "./business";
 import { compatiblePublicModels, FEATURE_BINDINGS, upstreamSupportsFeature } from "./feature-model-policy";
 import { MODEL_BINDINGS } from "./bindings";
 import { cnyCredits } from "../billing/money";
+
+function configuredImageSpecs(u:UpstreamModel,option:BusinessOption,model:PublicModel){
+  return {qualities:option.parameters?.qualities||qualityPresentation([u])?.qualities||(u.capabilities.qualities.length?u.capabilities.qualities:["medium"]),
+    resolutions:option.parameters?.resolutions||model.displayResolutions||(u.parameterMap.resolutionPolicy?.mode==="map"?Object.keys(u.parameterMap.resolutionPolicy.values):u.capabilities.nativeResolutions.length?u.capabilities.nativeResolutions:["1K"]),
+    ratios:option.parameters?.ratios||u.parameterMap.apimartImages?.ratios||["1:1"]};
+}
 
 export function validateBusinessConfig(config: ModelConfig) {
   const fail = (message: string, field: string): never => { throw new ModelConfigError("INVALID_CONFIG", message, 400, [field]); };
@@ -36,15 +46,20 @@ export function validateBusinessConfig(config: ModelConfig) {
       const targetIds = model!.target.type === "upstream" ? [model!.target.id] : config.pools.find(p => p.id === model!.target.id)!.candidates;
       for (const id of targetIds) {
         const u = config.upstreamModels.find(u => u.id === id)!;
-        if (o.enabled && !u.capabilities.verified) fail("功能模型必须先核验真实供应商能力，未核验目录只保留旧用途兼容", field);
-        if (o.parameters?.qualities?.some(q => !u.capabilities.qualities.includes(q)) || o.parameters?.resolutions?.some(r => !u.capabilities.nativeResolutions.includes(r))) fail("配置的质量/尺寸超出模型真实声明能力", field);
+        if(u.modality==="image"&&o.parameters){
+          const specs=configuredImageSpecs(u,o,model!),supplier=config.providers.find(p=>p.id===u.providerId)!;
+          for(const quality of specs.qualities)for(const resolution of specs.resolutions)for(const ratio of specs.ratios)
+            try{compileImageParameterPlan(u,{quality,resolution,ratio},{publicModelId:model!.id,protocol:supplier.protocol,modelVersion:0,adapter:supplier.options?.imageAdapter});}
+            catch(error){fail(error instanceof Error?error.message:"图片参数映射无效",field);}
+        }
         if (o.parameters?.inputTypes?.includes("mask") && config.providers.find(p => p.id === u.providerId)?.protocol !== "openai-images") fail("所选协议不支持蒙版输入", field);
         if (o.parameters?.inputTypes?.includes("image") && u.modality === "text" && !u.capabilities.vision) fail("文字模型不支持图片输入", field);
       }
       if (p && !["cny-fixed", "usage", "fixed", "matrix"].includes(p.mode)) fail("业务模型售价需要明确的积分、规格矩阵或人民币价格", field);
       if(p?.mode==='matrix'&&o.enabled){
         for(const id of targetIds){const u=config.upstreamModels.find(u=>u.id===id)!;
-          for(const q of u.capabilities.qualities.length?u.capabilities.qualities:['medium'])for(const r of u.capabilities.nativeResolutions.length?u.capabilities.nativeResolutions:['1K'])
+          const specs=configuredImageSpecs(u,o,model!);
+          for(const q of specs.qualities)for(const r of specs.resolutions)
             if(p.prices[q as keyof typeof p.prices]?.[r as keyof typeof p.prices.low]===null||p.prices[q as keyof typeof p.prices]?.[r as keyof typeof p.prices.low]===undefined)fail('请设置全部可用规格的积分售价',field);
         }
       }
@@ -59,9 +74,18 @@ export function validateBusinessConfig(config: ModelConfig) {
         const base = config.upstreamModels.find(u => u.id === model!.target.id)!;
         for (const id of targets) {
           const u = config.upstreamModels.find(u => u.id === id), supplier = config.providers.find(s => s.id === u?.providerId);
-          if (!u?.enabled || !supplier?.enabled || !u.capabilities.verified || u.modality !== model!.modality || !upstreamSupportsFeature(u.capabilities, binding!, feature) || !["openai-images", "openai-chat", "new-api-flow"].includes(supplier.protocol)) fail("阶段路由目标能力未核验或协议尚未接通", field);
+          if (!u?.enabled || !supplier?.enabled || u.modality !== model!.modality || !upstreamSupportsFeature(u.capabilities, binding!, feature) || !["openai-images", "openai-chat", "new-api-flow"].includes(supplier.protocol)) fail("阶段路由目标未启用、能力不兼容或协议尚未接通", field);
           const caps = u!.capabilities, promised = base.capabilities;
-          if (caps.qualityRank < promised.qualityRank || promised.edit && !caps.edit || promised.vision && !caps.vision || promised.transparent && !caps.transparent || promised.preserveIdentity && !caps.preserveIdentity || promised.textAccuracy && !caps.textAccuracy || caps.maxReferenceImages < promised.maxReferenceImages || promised.nativeResolutions.some(n => !caps.nativeResolutions.includes(n)) || promised.qualities.some(q => !caps.qualities.includes(q))) fail("路由目标低于公开模型承诺的能力或规格", field);
+          const targetImage=publishedImagegenCapabilities(caps),promisedImage=publishedImagegenCapabilities(promised);
+          const editMissing=u!.modality==="image" ? promisedImage.edit?.state==="supported" && targetImage.edit?.state!=="supported" : promised.edit && !caps.edit;
+          const transparencyMissing=u!.modality==="image" ? promisedImage.transparent?.state==="supported" && targetImage.transparent?.state!=="supported" : promised.transparent && !caps.transparent;
+          if (editMissing || promised.vision && !caps.vision || transparencyMissing || caps.maxReferenceImages < promised.maxReferenceImages) fail("路由目标低于公开模型承诺的输入或透明能力", field);
+          if(u!.modality==="image"){
+            const specs=configuredImageSpecs(base,o,model!);
+            for(const quality of specs.qualities)for(const resolution of specs.resolutions)for(const ratio of specs.ratios)
+              try{compileImageParameterPlan(u!,{quality,resolution,ratio},{publicModelId:model!.id,protocol:supplier!.protocol,modelVersion:0,adapter:supplier!.options?.imageAdapter});}
+              catch(error){fail(error instanceof Error?error.message:"路由目标参数映射不完整",field);}
+          }
           if (!procurementCny(u!.procurement) || u!.procurement?.basis === "tokens") fail("阶段路由预算需要明确的按张/按次人民币采购成本（含 USD 折算）", field);
           if (BigInt(procurementCny(u!.procurement)!.amountMicros!) > BigInt(policy.costCapCnyMicros)) fail("单次采购成本超过路由上限", field);
         }

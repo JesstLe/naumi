@@ -21,12 +21,13 @@ assert.deepEqual(eligibleImagegenChannels({...cutout,background:null},[{id:"opaq
 assert.deepEqual(eligibleImagegenChannels(cutout,[{id:"no-edit",capabilities:resolved}]),[],"Native generation transparency alone is not enough for cutout");
 const mask:Intent={...transparent,background:null,operation:"edit",requirements:[{name:"mask",value:"required",source:"ui"}]};
 assert.deepEqual(eligibleImagegenChannels(mask,[{id:"A",capabilities:{edit:supported}},{id:"B",capabilities:{edit:supported,mask:supported}}]),["B"]);
-assert.equal(imagegenCapabilitySetSchema.safeParse({transparent:{state:"supported",source:"",checkedAt:""}}).success,false);
+assert.equal(imagegenCapabilitySetSchema.safeParse({transparent:{state:"supported",source:"",checkedAt:""}}).success,true);
 assert.equal(imagegenCapabilitySetSchema.safeParse({password:"secret"}).success,false);
 const request=imagegenRequestSchema.parse({version:1,operationId:"1472c152-3faa-4f06-a047-815e3f34848f",entry:"canvas",mode:"generate",prompt:"鹈鹕",output:{format:"webp",compression:0},parameters:{inputFidelity:"high"}});
 const capabilities={inputFidelity:{...supported,values:["high"]},outputCompression:supported};
 assert.deepEqual(mapImagegenParameters(request,capabilities,{inputFidelity:"input_fidelity",outputCompression:"output_compression"}),{input_fidelity:"high",output_compression:0});
-assert.throws(()=>mapImagegenParameters(request,{},{inputFidelity:"input_fidelity"}),/未核实|支持/);
+assert.deepEqual(mapImagegenParameters(request,{},{inputFidelity:"input_fidelity",outputCompression:"omit"}),{input_fidelity:"high"});
+assert.throws(()=>mapImagegenParameters(request,{inputFidelity:unsupported},{inputFidelity:"input_fidelity",outputCompression:"omit"}),/inputFidelity/);
 assert.throws(()=>mapImagegenParameters(request,capabilities,{inputFidelity:"base_url",outputCompression:"output_compression"}),/参数名/);
 assert.throws(()=>mapImagegenParameters(request,capabilities,{inputFidelity:"background",outputCompression:"output_compression"}),/参数名/);
 assert.deepEqual(mapImagegenParameters(request,capabilities,{inputFidelity:"omit",outputCompression:"omit"}),{});

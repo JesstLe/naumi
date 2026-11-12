@@ -34,7 +34,6 @@ const sha = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("he
 function assertScope(scope: ModelExecutionScope, binding: "audio.speech" | "audio.transcribe") {
   if (scope.frozen.modality !== "audio" || scope.frozen.binding !== binding || scope.connection.protocol !== "openai-audio" || scope.frozen.target.type !== "upstream" || scope.supplierRouting || scope.routing)
     invalid("声音操作需要对应的直连音频用途");
-  if (!scope.capabilities.verified) invalid("音频通道能力尚未核验");
 }
 async function bounded(response: Response, limit: number): Promise<Uint8Array> {
   const length = response.headers.get("content-length");

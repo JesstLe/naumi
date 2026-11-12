@@ -53,6 +53,7 @@ async function main() {
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
   const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   const options = { trustedOrigins: [origin] };
+  try {
   const config = fixtureModelConfig(`${origin}/v1`, randomUUID());
   config.providers.push({ ...config.providers[0], id: "audio-provider", protocol: "openai-audio", credentialRef: randomUUID() });
   config.upstreamModels.push({ ...structuredClone(config.upstreamModels[0]), id: "audio-upstream", providerId: "audio-provider", model: "explicit-audio-wire", modality: "audio", parameterMap: {}, procurement: undefined,
@@ -61,12 +62,12 @@ async function main() {
         transcription: { enabled: true, inputFormats:["audio/wav" as const], formats: ["json", "verbose_json"], timestamps: ["segment", "word"], maxInputBytes: wav.length, maxDurationSeconds: 0.5, language: true, prompt: false } } } });
   config.publicModels.push({ id: "audio-public", label: "测试声音", modality: "audio", enabled: true, visible: true, target: { type: "upstream", id: "audio-upstream" }, toolScope: { features: ["audio.speech", "audio.transcribe"], defaultFor: [] } });
   config.bindings["audio.speech"] = "audio-public"; config.bindings["audio.transcribe"] = "audio-public";
-  let active = validateModelConfig(config, options); pass();
+  config.upstreamModels[1].capabilities.verified = false;
+  let active = validateModelConfig(config, options); assert.equal(active.upstreamModels[1].capabilities.verified,false); pass();
   const mutate = (change: (c: ModelConfig) => void) => { const c = structuredClone(config); change(c); return c; };
   for (const change of [
     (c: ModelConfig) => { c.upstreamModels[1].modality = "video"; },
     (c: ModelConfig) => { c.upstreamModels[1].capabilities.audio!.speech!.voices = []; },
-    (c: ModelConfig) => { c.upstreamModels[1].capabilities.verified = false; },
     (c: ModelConfig) => { c.upstreamModels[1].capabilities.audio!.transcription!.formats = ["json"]; },
     (c: ModelConfig) => { c.upstreamModels[1].capabilities.maxReferenceImages = 1; },
     (c: ModelConfig) => { c.upstreamModels[1].parameterMap = { resolution: { "1K": "1024" } }; },
@@ -101,7 +102,6 @@ async function main() {
   const asrScope = { ...await executor.describe(frozenTranscribe), channelGuard: undefined };
   const speech = { text: "爸爸，我到了。", voice: "published_voice", format: "wav" as const };
   const asr = { bytes: wav, mimeType: "audio/wav" as const, durationSeconds: 0.5, format: "verbose_json" as const, timestamps: ["segment" as const, "word" as const], language: "zh" };
-  try {
     const result = await executeSpeech(speechScope, speech, options);
     assert.deepEqual(Buffer.from(result.bytes), wav); assert.equal(result.sha256, createHash("sha256").update(wav).digest("hex")); assert.equal(result.textSha256, createHash("sha256").update(speech.text).digest("hex")); pass();
     assert.deepEqual(JSON.parse(requests[0].bytes.toString()), { model: "explicit-audio-wire", input: speech.text, voice: "published_voice", response_format: "wav" }); assert.equal(requests[0].headers.get("authorization"), "Bearer isolated-fixture-key"); pass();

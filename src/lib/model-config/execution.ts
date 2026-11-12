@@ -1,6 +1,6 @@
 import {canonicalPublicModelId,parameterModelIdentity} from "./public-identity";
 import {canonicalConfig} from './snapshot-value';
-import {compileImageParameterPlan,imagePlanSelection,type ImageParameterPlans} from './image-parameter-plan';
+import {compileImageParameterPlan,imagePlanSelection,configuredImageCapabilities,type ImageParameterPlans} from './image-parameter-plan';
 import {resolveImageResolution, resolutionFacts, upstreamAcceptsResolution} from "./resolution-fallback";
 import { applicationAPIMartImages } from "./apimart-image-policy";
 import "server-only";
@@ -13,16 +13,22 @@ import type { ModelRuntime } from "./runtime";
 import {simulateModel} from "@/lib/model-config/simulation";
 import { MODEL_BINDINGS, type ModelBinding } from "./bindings";
 import { validateModelConfig, type ValidationOptions } from "./schema";
-import { ModelConfigError, type ModelFacts, type ModelSnapshot, type Modality, type ModelProvider } from "./types";
+import { ModelConfigError, type ModelFacts, type ModelSnapshot, type Modality, type ModelProvider, type UpstreamModel } from "./types";
 import { runModelExecution, runExecutionBundle, type ExecutionBundle, type ResolvedExecutionBundle, type ModelExecutionScope } from "./context";
 import { executionOpenAI } from "./clients";
 import { businessRoutePlan, selectedBusinessOption } from "./business";
 import { selectedImagePreset, effectiveImageParameters } from "./image-preset";
 import {selectFeatureModel} from "./model-selection";
-import {featureDefaultModel} from "./feature-model-policy";
+import {featureDefaultModel,upstreamSupportsFeature} from "./feature-model-policy";
 import {validatePreparedImage,type PreparedImageOperation} from "./prepared-image-contract";
 import {freezeManagedVideoCapability} from "../video/frozen-capability";
 import {type FrozenVideoCapability} from "../video/frozen-capability-schema";
+
+function executionCapabilities(upstream:UpstreamModel){
+  if(upstream.modality!=="image")return upstream.capabilities;
+  const declared=publishedImagegenCapabilities(upstream.capabilities);
+  return {...upstream.capabilities,edit:declared.edit?.state==="supported",transparent:declared.transparent?.state==="supported"};
+}
 
 export type ExecutionModel = { imageParameterPlanVersion?:1; imageParameterPlans?:ImageParameterPlans; imageUpstreamIds?: string[]; video?: FrozenVideoCapability; requestedParameters?: import("./image-preset").ImageParameters; feature?: string; modelVersion: number; billingVersion: number; modelDigest: string; publicModelId: string; binding: string; modality: Modality; target: { type: "upstream" | "pool"; id: string }; credentialRef?: string; routerDigest?: string; facts?: ModelFacts };
 export type ExecutionConnection = { providerId: string; protocol: string; baseUrl: string; apiKey: string; wireModel: string; timeoutMs: number; credentialRef?: string; maxConcurrent?: number; options?: ModelProvider["options"] };
@@ -59,8 +65,8 @@ export function createModelExecutor(deps: Dependencies) {
       if (!gateway.apiKey || !gateway.baseUrl) throw new ModelConfigError("ROUTER_UNAVAILABLE", "未配置私有生成连接", 503);
       const pool = frozen.target.type === "pool" ? snapshot.config.pools.find(p => p.id === frozen.target.id) : undefined;
       const candidates = snapshot.config.upstreamModels.filter(u => pool ? pool.candidates.includes(u.id) : u.id === upstream!.id);
-      if(frozen.facts?.imagegenRequirements&&candidates.some(u=>missingImagegenCapabilities(frozen.facts!.imagegenRequirements!,publishedImagegenCapabilities(u.capabilities)).length))throw new ModelConfigError("MODEL_INCOMPATIBLE","外部路由包含不满足必要图像参数的候选，不能静默回退",400);
-      const capabilities = { ...candidates[0].capabilities, qualities: Array.from(new Set(candidates.flatMap(u => u.capabilities.qualities))), nativeResolutions: Array.from(new Set(candidates.flatMap(u => u.capabilities.nativeResolutions))), edit: candidates.some(u => u.capabilities.edit), maxReferenceImages: Math.max(...candidates.map(u => u.capabilities.maxReferenceImages)) };
+      if(frozen.facts?.imagegenRequirements&&candidates.some(u=>missingImagegenCapabilities(frozen.facts!.imagegenRequirements!,configuredImageCapabilities(u,publishedImagegenCapabilities(u.capabilities))).length))throw new ModelConfigError("MODEL_INCOMPATIBLE","外部路由包含不满足必要图像参数的候选，不能静默回退",400);
+      const capabilities = { ...executionCapabilities(candidates[0]), qualities: Array.from(new Set(candidates.flatMap(u => u.capabilities.qualities))), nativeResolutions: Array.from(new Set(candidates.flatMap(u => u.capabilities.nativeResolutions))), edit: candidates.some(u => executionCapabilities(u).edit), maxReferenceImages: Math.max(...candidates.map(u => u.capabilities.maxReferenceImages)) };
       return { frozen, frontendModel, connection: { ...gateway, protocol: "router-images", providerId: "managed-router", wireModel: frozen.publicModelId, timeoutMs: 280000 }, capabilities, parameterMap: {}, businessOption, audited: true };
     }
     const connectionFor = async (id: string) => {
@@ -79,18 +85,18 @@ export function createModelExecutor(deps: Dependencies) {
       // that the generic simulator cannot reconstruct. Never widen it on resume.
       // The absent field preserves the interpretation of historical paid tasks.
       if(frozen.imageUpstreamIds)for(const id of eligible)if(!frozen.imageUpstreamIds.includes(id))eligible.delete(id);
-      const targets=await Promise.all(publicModel.supplierRouting.channels.filter(c=>c.enabled&&eligible.has(c.upstreamId)).map(async c=>{const u=snapshot.config.upstreamModels.find(u=>u.id===c.upstreamId)!;return {...c,scope:{parameterModelId:parameterModelIdentity(snapshot.config,frozen.publicModelId),frozen,frontendModel,channelGuard:{upstreamId:u.id},connection:await connectionFor(u.id),capabilities:u.capabilities,parameterMap:u.parameterMap,procurement:u.procurement,businessOption,audited:true}};}));
+      const targets=await Promise.all(publicModel.supplierRouting.channels.filter(c=>c.enabled&&eligible.has(c.upstreamId)).map(async c=>{const u=snapshot.config.upstreamModels.find(u=>u.id===c.upstreamId)!;return {...c,scope:{parameterModelId:parameterModelIdentity(snapshot.config,frozen.publicModelId),frozen,frontendModel,channelGuard:{upstreamId:u.id},connection:await connectionFor(u.id),capabilities:executionCapabilities(u),parameterMap:u.parameterMap,procurement:u.procurement,businessOption,audited:true}};}));
       if(!targets.length)throw new ModelConfigError("MODEL_INCOMPATIBLE","没有符合本次参数的供应通道",400);
       // Resolve only eligible targets. A disabled/incompatible first entry must
       // not require its credentials or dictate the healthy targets' transport.
       scope={...targets[0].scope,supplierRouting:{policy:publicModel.supplierRouting,targets},connection:{...targets[0].scope.connection,protocol:"supplier-channels",wireModel:frozen.publicModelId}};
       scope.capabilities={...targets[0].scope.capabilities,vision:targets.some(c=>c.scope.capabilities.vision),edit:targets.some(c=>c.scope.capabilities.edit),generate:targets.some(c=>c.scope.capabilities.generate),maxReferenceImages:Math.max(...targets.map(c=>c.scope.capabilities.maxReferenceImages))};
-    }else scope={frozen,frontendModel,...(!plan&&!preset&&upstream&&frozen.modality!=="video"?{channelGuard:{upstreamId:upstream.id}}:{}),connection:await connectionFor(upstream!.id),capabilities:frozen.video?{...upstream!.capabilities,video:frozen.video.definition}:upstream!.capabilities,parameterMap:upstream!.parameterMap,businessOption,procurement:upstream!.procurement};
+    }else scope={frozen,frontendModel,...(!plan&&!preset&&upstream&&frozen.modality!=="video"?{channelGuard:{upstreamId:upstream.id}}:{}),connection:await connectionFor(upstream!.id),capabilities:frozen.video?{...upstream!.capabilities,video:frozen.video.definition}:executionCapabilities(upstream!),parameterMap:upstream!.parameterMap,businessOption,procurement:upstream!.procurement};
     if (preset) Object.assign(scope,{ imagePreset: structuredClone(preset), audited:true });
     if (plan) {
       const targets = Object.fromEntries(await Promise.all(plan.targets.map(async id => {
         const u = snapshot.config.upstreamModels.find(u => u.id === id)!;
-        return [id, { connection: await connectionFor(id), capabilities: u.capabilities, parameterMap: u.parameterMap, procurement: u.procurement! }];
+        return [id, { connection: await connectionFor(id), capabilities: executionCapabilities(u), parameterMap: u.parameterMap, procurement: u.procurement! }];
       })));
       scope.routing = { policy: plan.policy, matchedRuleId: plan.matchedRuleId, targets, spentMicros: BigInt(0) };
     }
@@ -133,7 +139,7 @@ export function createModelExecutor(deps: Dependencies) {
       const target = plan ? { type: "upstream" as const, id: plan.initialId } : model.target;
       const upstream = target.type === "upstream" ? config.upstreamModels.find(u => u.id === target.id)! : undefined;
       const provider = upstream ? config.providers.find(p => p.id === upstream.providerId)! : undefined;
-      if (upstream && !model.supplierRouting && (!upstream.capabilities[purpose.capability] || input.feature==="canvas.assistant"&&!!input.facts?.references&&!upstream.capabilities.vision)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型不支持当前操作", 400);
+      if (upstream && !model.supplierRouting && (!upstreamSupportsFeature(upstream.capabilities,input.binding as ModelBinding) || input.feature==="canvas.assistant"&&!!input.facts?.references&&!upstream.capabilities.vision)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型不支持当前操作", 400);
       if (purpose.modality === "image" && input.facts) {
         const result = simulateModel(input.snapshot, input.billing, model.id, input.facts, deps);
         const admitted=imageUpstreamIds;
@@ -161,7 +167,7 @@ export function createModelExecutor(deps: Dependencies) {
       const routed = !preset && (model.target.type === "pool" || provider && ["apimart-images", "fal-images"].includes(provider.protocol) && !applicationAPIMartImages(provider.protocol,upstream?.parameterMap));
       if(routed&&input.facts?.imagegenRequirements){
         const ids=model.target.type==="pool"?config.pools.find(p=>p.id===model.target.id)!.candidates:[upstream!.id];
-        if(config.upstreamModels.filter(u=>ids.includes(u.id)).some(u=>missingImagegenCapabilities(input.facts!.imagegenRequirements!,publishedImagegenCapabilities(u.capabilities)).length))throw new ModelConfigError("MODEL_INCOMPATIBLE","外部路由无法保证所有回退候选满足必要图像参数",400);
+        if(config.upstreamModels.filter(u=>ids.includes(u.id)).some(u=>missingImagegenCapabilities(input.facts!.imagegenRequirements!,configuredImageCapabilities(u,publishedImagegenCapabilities(u.capabilities))).length))throw new ModelConfigError("MODEL_INCOMPATIBLE","外部路由无法保证所有回退候选满足必要图像参数",400);
       }
       const projection = routed ? await deps.runtime.prepareExecution({ snapshot: input.snapshot, billing: input.billing }) : undefined;
       const video = purpose.modality === "video" && upstream && provider ? await freezeManagedVideoCapability(input.snapshot,upstream,provider) : undefined;

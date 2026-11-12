@@ -83,7 +83,7 @@ export function applyImageParameterPlan(body:Record<string,any>,plan:ImageParame
  * Structural edit/mask constraints remain separate and are never fabricated. */
 export function configuredImageCapabilities(source:Pick<UpstreamModel,'capabilities'|'parameterMap'>,legacy:CapabilitySet):CapabilitySet{
  const result=structuredClone(legacy);
- for(const [key,field]of Object.entries(source.parameterMap.imagegen||{}))if(field!=='omit'&&IMAGEGEN_FIELDS_BY_CAPABILITY[key as CapabilityKey]?.includes(field))result[key as CapabilityKey]={state:'supported',source:'管理员已发布参数映射',checkedAt:''};
+ for(const [key,field]of Object.entries(source.parameterMap.imagegen||{}))if(field!=='omit'&&source.capabilities.imagegen?.[key as CapabilityKey]?.state!=='unsupported'&&IMAGEGEN_FIELDS_BY_CAPABILITY[key as CapabilityKey]?.includes(field))result[key as CapabilityKey]={state:'supported',source:'管理员已发布参数映射',checkedAt:''};
  return result;
 }
 

@@ -8,8 +8,8 @@ export function mapImagegenParameters(request:ImagegenRequest,capabilities:Capab
     const field=map[key];if(field==="omit")return;
     if(!field&&!required)return;
     if(!field||!IMAGEGEN_FIELDS_BY_CAPABILITY[key].includes(field))throw new Error(`实际参数名未维护或不允许：${key}`);
-    const cap=capabilities[key];if(cap?.state!=="supported")throw new Error(`实际参数尚未核实支持：${key}`);
-    if(cap.values!==undefined&&!cap.values.includes(String(value)))throw new Error(`实际参数值不在已核实支持范围：${key}`);
+    const cap=capabilities[key];if(cap?.state==="unsupported")throw new Error(`实际参数已明确禁用：${key}`);
+    if(cap?.state==="supported"&&cap.values!==undefined&&!cap.values.includes(String(value)))throw new Error(`实际参数值不在已配置范围：${key}`);
     if(Object.hasOwn(result,field))throw new Error(`实际参数名重复：${field}`);
     result[field]=value;
   };

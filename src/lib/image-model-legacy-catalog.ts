@@ -1,7 +1,6 @@
 import "server-only";
 import {getLegacyOpenAISettings} from "@/lib/settings";
 import {currentModelExecution} from "./model-config/context";
-import {getUserImageProvider,userImageModelId} from "@/lib/user-image-provider";
 import {imageModelFamily} from "@/lib/image-model-routing";
 import type {ImageModelDescriptor} from "./image-model-catalog-types";
 
@@ -33,24 +32,17 @@ function normalizeModels(value: unknown): string[] {
 }
 
 export function isNewApiFlowImageModel(model: string) {
-  return (
-    /^gemini-\d+(?:\.\d+)?-(?:pro|flash)-image-(?:landscape|portrait|square|four-three|three-four)$/i.test(
-      model
-    ) ||
-    /^imagen-\d+(?:\.\d+)?-generate-preview-(?:landscape|portrait)$/i.test(model) ||
-    /^nano-banana-(?:pro|2(?:\.1)?)$/i.test(model) ||
-    // 即梦 jimeng-free-api:chat/completions 流式生图协议与 new-api-flow 兼容
-    /^jimeng-image-[a-z0-9][a-z0-9.-]*$/i.test(model)
-  );
+  const scope=currentModelExecution("image");
+  if(scope&&[scope.frozen.publicModelId,scope.connection.wireModel].includes(model))return scope.connection.protocol==="new-api-flow";
+  return getLegacyNewApiImageSettings().configuredModels.includes(model)||!!newApiCatalogCache?.models.includes(model);
 }
 
-export function isOpenAIImagesEditModel(model: string) {
+export function isOpenAIImagesEditModel(_model: string) {
   const scope = currentModelExecution("image");
-  if (scope && [scope.frozen.publicModelId,scope.connection.wireModel].includes(model)) return scope.capabilities.edit;
-  return (
-    model.startsWith("gpt-image") ||
-    /^naumi-image-(?:auto|economy|standard|premium)$/i.test(model)
-  );
+  if (scope) return scope.capabilities.edit;
+  // This legacy adapter implements /images/edits. The model's marketing name
+  // is not an additional permission check; upstream rejection stays explicit.
+  return true;
 }
 
 function aspectLabel(model: string) {
@@ -85,7 +77,7 @@ async function discoverNewApiModels(): Promise<string[]> {
     return newApiCatalogCache.models;
   }
 
-  const fallback = settings.configuredModels.filter(isNewApiFlowImageModel);
+  const fallback = settings.configuredModels;
   try {
     const response = await fetch(`${settings.baseUrl}/models`, {
       headers: { Authorization: `Bearer ${settings.apiKey}` },
@@ -93,11 +85,11 @@ async function discoverNewApiModels(): Promise<string[]> {
       signal: AbortSignal.timeout(10_000),
     });
     if (!response.ok) throw new Error(`model catalog ${response.status}`);
-    const body = (await response.json()) as { data?: { id?: string }[] };
-    const models = normalizeModels((body.data || []).map((item) => item.id || "")).filter(
-      isNewApiFlowImageModel
-    );
-    const resolved = models.length ? models : fallback;
+    const body = (await response.json()) as { data?: { id?: string; modality?:string; output_modalities?:string[] }[] };
+    const imageEntries=(body.data||[]).filter(item=>item.modality==="image"||item.output_modalities?.includes("image"));
+    // Never infer a modality from an ID or let an incomplete directory erase
+    // the administrator's explicitly configured image model list.
+    const resolved=normalizeModels([...fallback,...imageEntries.map(item=>item.id||"")]);
     newApiCatalogCache = {
       models: resolved,
       expiresAt: Date.now() + 5 * 60_000,
@@ -128,25 +120,8 @@ export async function getLegacyImageModelCatalog(
     supportsEdit: true,
     provider: "new-api-flow" as const,
   }));
-  const userProvider = email ? await getUserImageProvider(email) : null;
-  const userModels =
-    userProvider &&
-    userProvider.baseUrl &&
-    userProvider.apiKey &&
-    userProvider.models.length
-      ? userProvider.models.map((model) => ({
-          id: userImageModelId(model),
-          label: `自定义 · ${model}`,
-          supportsEdit:
-            userProvider.protocol === "chat-completions" || model.startsWith("gpt-image"),
-          provider:
-            userProvider.protocol === "chat-completions"
-              ? ("user-chat-completions" as const)
-              : ("user-openai-images" as const),
-        }))
-      : [];
   const merged = new Map<string, ImageModelDescriptor>();
-  for (const model of [...userModels, ...openaiModels, ...flowModels]) {
+  for (const model of [...openaiModels, ...flowModels]) {
     if (!merged.has(model.id)) merged.set(model.id, model);
   }
   return Array.from(merged.values());

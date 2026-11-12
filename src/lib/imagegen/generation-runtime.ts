@@ -157,7 +157,7 @@ export async function kickGeneration(id: string,onReleased?:import("../image-job
     const imageModel: ImageModelDescriptor | undefined = provider ? {
       id: p.model, label: `自定义 · ${upstreamUserImageModel(p.model)}`,
       provider: provider.protocol === "chat-completions" ? "user-chat-completions" : "user-openai-images",
-      supportsEdit: provider.protocol === "chat-completions" || upstreamUserImageModel(p.model).startsWith("gpt-image"),
+      supportsEdit: true,
     } : (await getImageModelCatalog(p.email)).find((model) => model.id === p.model);
     if (!imageModel) throw new Error("任务模型暂时不可用");
     if (payload.byok && !provider) throw new Error("自定义图片接口暂时不可用");

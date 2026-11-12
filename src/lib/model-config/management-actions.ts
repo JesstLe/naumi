@@ -18,7 +18,6 @@ import { MODEL_BINDINGS } from "./bindings";
 import { MODEL_MANAGEMENT_PROTOCOLS, switchManagedModel, renameManagedModel, applyModelToolScope, applyModelQualityParameters, orderManagedModels } from "./management";
 import { validateModelEndpoint } from "./schema";
 import { ModelConfigError } from "./types";
-import { isNewApiFlowImageModel } from "@/lib/image-model-legacy-catalog";
 import type { ModelConfig, ModelSnapshot } from "./types";
 import type { ManagementAdministration, ManagementInput } from "./management-input";
 import { managementRows as rows } from "./management-read";
@@ -87,7 +86,6 @@ export async function applyManagementConfigAction({ admin, snapshot, body, fetch
           const catalog = await refreshProviderCatalog(admin.pool, p, admin.credentials, admin.trustedOrigins, deps.fetcher);
           if (catalog.status !== "ok" || catalog.stale || !catalog.models.some(m => m.id === body.model)) throw new ModelConfigError("CATALOG_UNAVAILABLE", "请先成功刷新该来源的模型目录，再添加目录中的模型");
           if (config.upstreamModels.some(m => m.providerId === p.id && m.model === body.model)) throw new ModelConfigError("MODEL_EXISTS", "该模型已接入，可直接在切换列表中选择");
-          if (p.protocol === "new-api-flow" && !isNewApiFlowImageModel(body.model)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "该模型 ID 尚未由当前图片适配器支持，请在完整配置中心核验协议");
           if (body.resolutions.some(r => r !== "1K") && p.protocol === "openai-images") throw new ModelConfigError("MODEL_INCOMPATIBLE", "OpenAI 图片 2K/4K 需要专用尺寸参数映射，请在完整配置中心配置");
           const modality = p.protocol === "openai-chat" ? "text" : ["openai-images","new-api-flow","apimart-images","fal-images"].includes(p.protocol) ? "image" : "video";
           config.upstreamModels.push({ id: `mvp-${body.id}`, providerId: p.id, model: body.model, label: body.model.slice(0, 100), modality, enabled: true, parameterMap: {...(body.qualityPolicy?{qualityPolicy:body.qualityPolicy}:{}),...(body.videoProfile?{videoProfile:body.videoProfile}:{})}, capabilities: { verified: body.capabilityVerified ?? true, generate: true, edit: modality === "image" && body.edit, vision: modality === "text" && body.vision, transparent: false, preserveIdentity: false, textAccuracy: false, qualityRank: body.qualityRank, qualities: modality === "image" ? body.qualities : [], nativeResolutions: modality === "image" ? body.resolutions : [], maxReferenceImages: body.maxReferenceImages, expectedLatencyMs: 30000,...(body.videoDefinition?{video:body.videoDefinition}:{}) } });

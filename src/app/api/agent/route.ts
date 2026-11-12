@@ -22,7 +22,6 @@ import {
   agentVisionEnabled,
   getOrCreateSession,
   getSession,
-  markVisionUnsupported,
   MODEL_ID,
   persistAgentSession,
   primeAgentSystemPrompt,
@@ -229,7 +228,6 @@ async function handlePut(request: Request) {
           await session.agent.prompt(message, visionImages.length ? visionImages : undefined);
         } catch (error) {
           failure = error;
-          if (visionImages.length && markVisionUnsupported(modelId, error)) failure = new Error("当前模型不接受图片输入，请选择支持图片的模型后继续");
         } finally {
           clearTimeout(timeout);
           session.running = false;
@@ -420,14 +418,6 @@ async function handlePost(request: Request) {
       visionImages.length ? visionImages : undefined
     );
   } catch (e) {
-    // 发图被拒:证伪该模型的视觉能力,提示重发(纯文本即可正常执行)
-    if (visionImages.length && markVisionUnsupported(postModelId, e)) {
-      return NextResponse.json({
-        reply:
-          "当前模型不接受图片输入,已自动关闭视觉并降级为纯文本。请把这条消息再发一次即可。",
-        error: "vision_unsupported",
-      });
-    }
     const msg = session.harness.publicText(e instanceof HarnessError ? e.message : "Agent 执行失败，请检查任务轨迹");
     return NextResponse.json({
       reply: `任务中断:${msg}`,

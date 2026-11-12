@@ -1,3 +1,4 @@
+import { upstreamSupportsFeature } from "./feature-model-policy";
 import {ensureModelSchema} from "@/lib/model-config/storage-schema";
 export {ensureModelSchema};
 
@@ -10,7 +11,7 @@ import {z} from "zod";
 import {channelPolicySchema,validateChannelPolicies,publicUpstreamIds} from "./channel-policy";
 
 import {isIP,BlockList} from "node:net";
-import {MODEL_BINDINGS} from "./bindings";
+import {MODEL_BINDINGS,type ModelBinding} from "./bindings";
 import {ModelConfigError,type ModelConfig} from "./types";
 import {FEATURE_IDS} from "../billing/rules/registry";
 import {validateToolScopes} from "./tool-scope";
@@ -119,7 +120,6 @@ export function validateModelConfig(input: unknown, options: ValidationOptions =
     if(m.modality==="audio"){
       const c=m.capabilities;
       if(c.generate && !c.audio?.speech?.enabled || c.transcribe && !c.audio?.transcription?.enabled)fail("音频用途需要显式声明可执行能力");
-      if(m.enabled && (c.generate || c.transcribe) && !c.verified)fail("启用的音频用途需要先核验能力");
       if(c.edit || c.vision || c.transparent || c.preserveIdentity || c.textAccuracy || c.maxReferenceImages || c.qualities.length || c.nativeResolutions.length || c.video || c.imagegen || Object.keys(m.parameterMap).length)fail("音频模型不能继承图片或视频能力与参数映射");
     }
     const profile=m.parameterMap.videoProfile??p.options?.videoProfile;
@@ -136,10 +136,6 @@ export function validateModelConfig(input: unknown, options: ValidationOptions =
   for (const pool of config.pools) {
     unique(pool.candidates, `pools.${pool.id}.candidates`); unique(pool.rules.map(r => r.id), `pools.${pool.id}.rules`);
     for (const u of pool.candidates) { if (upstreams.get(u)?.modality !== "image") fail("候选图片模型不存在或模态错误"); }
-    if (pool.candidates.some(u => !upstreams.get(u)!.capabilities.verified)) {
-      // Unverified legacy models may remain direct targets; a new pool must not invent their capabilities.
-      if (config.publicModels.some(m => m.enabled && m.target.type === "pool" && m.target.id === pool.id)) fail("混合路由候选能力尚未确认");
-    }
   }
   validateChannelPolicies(config);
   const candidates = (m: ModelConfig["publicModels"][number]) => publicUpstreamIds(config,m).map(id=>upstreams.get(id));
@@ -153,7 +149,7 @@ export function validateModelConfig(input: unknown, options: ValidationOptions =
   for (const [binding, model] of Object.entries(config.bindings)) {
     const purpose = MODEL_BINDINGS[binding as keyof typeof MODEL_BINDINGS]; const m = publics.get(model);
     if (!purpose || !m || !m.enabled || m.modality !== purpose.modality) fail("用途绑定无效或模型模态错误", [`bindings.${binding}`]);
-    if (!candidates(m)?.some(u => u!.enabled && providers.get(u!.providerId)!.enabled && u!.capabilities[purpose.capability])) fail("默认用途模型不满足能力要求", [`bindings.${binding}`]);
+    if (!candidates(m)?.some(u => u!.enabled && providers.get(u!.providerId)!.enabled && upstreamSupportsFeature(u!.capabilities,binding as ModelBinding))) fail("默认用途模型不满足能力要求", [`bindings.${binding}`]);
   }
   for (const [kind, binding] of [["image", "image.generate"], ["text", "agent.text"], ["video", "video.generate"]] as const) {
     if (config.publicModels.some(m => m.enabled && m.modality === kind) && !config.bindings[binding]) fail("缺少有效默认用途模型", [`bindings.${binding}`]);

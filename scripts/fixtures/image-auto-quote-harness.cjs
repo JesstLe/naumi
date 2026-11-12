@@ -10,7 +10,7 @@ function createHarness(sourceRoot=process.cwd()){
  const load=p=>require(path.join(root,p));
  const {fixtureModelConfig}=load('scripts/model-config-unit-fixture.ts'),{fixtureConfig}=load('scripts/billing-unit-fixture.ts');
  const state={models:{version:152,digest:'a'.repeat(64),config:fixtureModelConfig('https://fixture.invalid/v1',crypto.randomUUID())},billing:{version:8,config:fixtureConfig()},rows:new Map(),writes:0,calls:[]};
- const cfg=state.models.config,u=cfg.upstreamModels[0];
+ const cfg=state.models.config,u=cfg.upstreamModels[0];cfg.providers[0].protocol="apimart-images";
  u.model='gpt-image-2.5-sunburst';u.parameterMap={qualityPolicy:{mode:'map',choices:['low','medium','high','xhigh','max'].map(id=>({id,label:id,value:id}))},resolutionPolicy:{mode:'map',field:'resolution',ratioField:'size',values:{'1K':'1k','2K':'2k','4K':'4k'}},apimartImages:{schemaVersion:1,ratios:['1:1','3:4','16:9'],maxOutputs:4,supportsMask:true}};
  cfg.publicModels[0].id='gpt-image-2';cfg.publicModels[0].supplierRouting={mode:'balanced',channels:[{upstreamId:'u1',enabled:true,weight:1,priority:1}]};
  cfg.bindings={'image.generate':'gpt-image-2','image.edit':'gpt-image-2'};
@@ -34,9 +34,9 @@ function createHarness(sourceRoot=process.cwd()){
   ...load('src/lib/model-config/types.ts'),...load('src/lib/billing/types.ts'),...load('src/lib/billing/failure.ts'),...load('src/lib/billing/quote.ts'),...load('src/lib/billing/rules/registry.ts'),
   ...load('src/lib/model-config/selection-policy.ts'),...load('src/lib/model-config/cutout-quality.ts'),...load('src/lib/billing/canvas-defaults.ts'),
   ...load('src/lib/model-config/model-selection.ts'),...load('src/lib/model-config/image-quality-selection.ts'),...load('src/lib/model-config/business.ts'),...load('src/lib/model-config/image-preset.ts'),...load('src/lib/model-config/resolution-fallback.ts'),
-  ...load('src/lib/model-config/resolution-options.ts'),...load('src/lib/model-config/credit-overrides.ts'),...load('src/lib/model-config/quality-policy.ts'),
+  ...load('src/lib/model-config/resolution-options.ts'),...load('src/lib/model-config/public-identity.ts'),...load('src/lib/model-config/billing-identity.ts'),...load('src/lib/model-config/credit-overrides.ts'),...load('src/lib/model-config/quality-policy.ts'),
   ...load('src/lib/model-config/image-parameter-plan.ts'),...load('src/lib/model-config/channel-policy.ts'),...load('src/lib/billing/api-cost.ts'),...load('src/lib/billing/money.ts'),
-  ...load('src/lib/billing/validation.ts'),...load('src/lib/billing/image-quote-policy.ts'),PRIVATE_HEADERS:load('src/lib/billing/access.ts').PRIVATE_HEADERS,z:require('zod').z};
+  ...load('src/lib/request-origin.ts'),...load('src/lib/billing/validation.ts'),...load('src/lib/billing/image-quote-policy.ts'),PRIVATE_HEADERS:load('src/lib/billing/access.ts').PRIVATE_HEADERS,z:require('zod').z};
  // Unused legacy fallbacks fail loudly rather than silently inventing a model.
  for(const name of ['getOpenAISettings','getCutoutSettings','getUserDefaultImageModel','isNewApiFlowImageModel','getImageModelCatalog','routeImageModel','configuredVideoProviders','getVideoProviderConfig','requestedTextModel'])c[name]=()=>{throw Error('Unexpected legacy fallback '+name)};
  const sourceFiles=new Map();

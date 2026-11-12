@@ -1,9 +1,8 @@
 import "server-only";
 import {publishedImagegenCapabilities} from "../imagegen/capabilities";
-import { compatiblePublicModels, FEATURE_BINDINGS, featureDefaultModel, modelAllowedForFeature } from "./feature-model-policy";
+import { compatiblePublicModels, FEATURE_BINDINGS, featureDefaultModel, modelAllowedForFeature, upstreamSupportsFeature } from "./feature-model-policy";
 import {isSeedreamWire} from "./seedream-preflight";
 import {adminConfiguredFeature} from "./selection-policy";
-import {MODEL_BINDINGS} from "./bindings";
 import {publicUpstreamIds} from "./channel-policy";
 import type {FeatureId} from "../billing/rules/registry";
 import type {ModelSnapshot,Modality} from "./types";
@@ -23,12 +22,12 @@ export function publicModelCatalog(snapshot: ModelSnapshot, modality: Modality, 
   const processorAvailable = !!configuredProcessor && publicUpstreamIds(config, configuredProcessor).some(id => {
     const upstream = config.upstreamModels.find(u => u.id === id);
     const binding = feature ? FEATURE_BINDINGS[feature] : undefined;
-    return upstream?.enabled && binding && upstream.capabilities[MODEL_BINDINGS[binding].capability] && config.providers.some(p => p.id === upstream.providerId && p.enabled && !!p.credentialRef);
+    return upstream?.enabled && binding && upstreamSupportsFeature(upstream.capabilities,binding,feature) && config.providers.some(p => p.id === upstream.providerId && p.enabled && !!p.credentialRef);
   });
   const models = config.publicModels.filter(m => m.enabled && m.visible && m.modality === modality && modelAllowedForFeature(m,feature) && (!compatible || compatible.includes(m.id)) && (!configuredIds || configuredIds.includes(m.id))).sort((a,b) => configuredIds ? configuredIds.indexOf(a.id)-configuredIds.indexOf(b.id) : 0).map(m => {
     const ids = publicUpstreamIds(config,m);
     const upstreams = config.upstreamModels.filter(u => ids.includes(u.id) && u.enabled && config.providers.some(p => p.id === u.providerId && p.enabled));
-    const referenceChannels=upstreams.filter(u=>u.capabilities.edit&&publishedImagegenCapabilities(u.capabilities).edit?.state==="supported"&&config.providers.some(p=>p.id===u.providerId&&!!p.credentialRef));
+    const referenceChannels=upstreams.filter(u=>publishedImagegenCapabilities(u.capabilities).edit?.state==="supported"&&config.providers.some(p=>p.id===u.providerId&&!!p.credentialRef));
     const references={maxReferenceImages:referenceChannels.length?Math.max(...referenceChannels.map(u=>u.capabilities.maxReferenceImages)):0,referenceLimitVerified:referenceChannels.length>0&&referenceChannels.every(u=>u.capabilities.verified)};
     const option = f?.options.find(o => o.modelId === m.id);
     const adapterRatios = upstreams.map(u => config.providers.find(p => p.id === u.providerId)?.options?.imageRatios).find(Boolean)

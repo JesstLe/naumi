@@ -86,7 +86,8 @@ async function main(){
   const preview=await drafts(request({...operation,action:'preview',id:undefined}));assert.equal(preview.status,200,await preview.clone().text());assert.equal((await preview.json()).changes.length,4);checks++;
   const catalog=(await discover.clone().json());
   const reject=(input:any,code:string)=>{assert.throws(()=>planModelOnboarding(baseline,billing,input,[catalog]),(e:any)=>e.code===code);checks++;};
-  reject({...operation,capabilityConfirmed:false},'CAPABILITY_CONFIRMATION_REQUIRED');
+  const unverifiedPlan=planModelOnboarding(baseline,billing,{...operation,capabilityConfirmed:false},[catalog]);
+  assert.ok(unverifiedPlan.config.upstreamModels.some(u=>!u.capabilities.verified));checks++;
   reject({...operation,entries:[entries[0],entries[0]]},'PUBLIC_ID_CONFLICT');
   reject({...operation,entries:[{...entries[0],publicId:old.id}]},'PUBLIC_ID_CONFLICT');
   reject({...operation,entries:[{...entries[0],price:{mode:'copy',sourceModelId:'missing'}}]},'PRICE_SOURCE_UNAVAILABLE');
