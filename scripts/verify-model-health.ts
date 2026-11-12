@@ -56,7 +56,8 @@ async function main(){
     console.log("PASS 24 concurrent claimants -> 1 running; global daily limit -> 12 including failures/reservations");
     await reset();
     const processes=await Promise.all(Array.from({length:4},()=>new Promise<{id:string|null}>((resolve,reject)=>{
-      const child=spawn(process.execPath,["--conditions=react-server","node_modules/tsx/dist/cli.mjs","scripts/model-health-claim-fixture.ts",JSON.stringify(snapshot)],{env:process.env,windowsHide:true});
+      // tsx forwards its CLI arguments, not the outer Node process's execArgv.
+      const child=spawn(process.execPath,["node_modules/tsx/dist/cli.mjs","--conditions=react-server","scripts/model-health-claim-fixture.ts",JSON.stringify(snapshot)],{env:process.env,windowsHide:true});
       let stdout="",stderr="";child.stdout.on("data",b=>stdout+=b);child.stderr.on("data",b=>stderr+=b);child.on("error",reject);child.on("exit",code=>{if(code)reject(Error(stderr));else try{resolve(JSON.parse(stdout));}catch(e){reject(e);}});
     })));
     assert.equal(processes.filter(p=>p.id).length,1);await repo.finish(processes.find(p=>p.id)!.id!,success);
