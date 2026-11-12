@@ -117,7 +117,7 @@ export function RecolorClient() {
   }
 
   return (
-    <div className="w-full px-5 py-6 sm:px-6 lg:px-8">
+    <div className="workspace-page w-full px-5 py-6 sm:px-6 lg:px-8">
       {/* 面包屑 */}
       <div className="mb-4">
         <nav className="flex items-center gap-1.5 text-[13px]">
@@ -133,15 +133,12 @@ export function RecolorClient() {
         {/* 左:参数面板 */}
         <fieldset disabled={loading} className="h-fit space-y-5 rounded-card border border-c-border bg-c-card p-5 shadow-card nv-panel-scroll lg:h-full lg:min-h-0 lg:overflow-y-auto">
           {/* 工具头 */}
-          <div className="flex items-center gap-3">
+          <div data-tool-heading className="flex items-center gap-3">
             <span className="grid h-11 w-11 flex-none place-items-center rounded-[10px]" style={{ background: "rgba(79,70,229,.12)", color: "#4F46E5" }}>
               <Droplet className="h-[21px] w-[21px]" strokeWidth={1.9} />
             </span>
             <div className="min-w-0">
               <h1 className="text-[16px] font-bold text-c-text">产品换色</h1>
-              <p className="text-[12px] text-c-text3">
-                选择目标颜色,AI 即刻为商品换上新配色
-              </p>
             </div>
           </div>
 
@@ -365,11 +362,6 @@ export function RecolorClient() {
           )}
         </div>
       </div>
-
-      <p className="mt-4 flex items-center gap-1.5 text-[12px] text-c-text3">
-        <Clock className="h-3.5 w-3.5" />
-        生成结果与「作品库」同步,可在作品页查看与下载。
-      </p>
     </div>
   );
 }

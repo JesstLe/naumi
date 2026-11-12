@@ -350,16 +350,18 @@ export function TemplatesClient({
   // 上限取 gridClass 声明的最大列数(画布弹窗等窄容器会传更少的列)。
   useEffect(() => {
     const measure = () => {
-      const w = window.innerWidth;
-      const full =
+      const w = variant === "creation" ? (gridRef.current?.clientWidth || window.innerWidth) : window.innerWidth;
+      const full = variant === "creation" ? (w >= 1150 ? 4 : w >= 760 ? 3 : 2) :
         w >= 1536 ? 6 : w >= 1280 ? 5 : w >= 1024 ? 4 : w >= 768 ? 3 : 2;
       const n = Math.min(maxCols, full);
-      setColCount((c) => (c === n ? c : n));
+      setColCount(c => c === n ? c : n);
     };
     measure();
+    const observer = variant === "creation" && typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    if (gridRef.current) observer?.observe(gridRef.current);
     window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
-  }, [maxCols]);
+    return () => { observer?.disconnect(); window.removeEventListener("resize", measure); };
+  }, [maxCols, variant]);
 
   // JS 列桶瀑布流:按估算高度把卡片顺序贪心分到当前最矮的列。
   // 顺序处理 → 加载新一页只往各列尾部追加,已渲染的卡片不会重排/挪位。

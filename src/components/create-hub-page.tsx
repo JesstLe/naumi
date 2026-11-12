@@ -4,13 +4,15 @@ import { useFeatureAccess } from "@/lib/feature-access/client";
 
 import * as React from "react";
 import Link from "next/link";
-import { Search, ChevronRight } from "lucide-react";
+import { Search, ArrowUpRight } from "lucide-react";
+import { CachedImage } from "@/components/cached-image";
+import { toolCovers } from "@/components/workspace/tool-covers";
+import directory from "@/components/workspace/tool-directory.module.css";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n/locale-context";
 import {
   TOOLS,
   TOOL_CATEGORIES,
-  TOOL_COUNT_LABEL,
   type ToolCategory,
   type ToolMeta,
 } from "@/lib/tool-meta";
@@ -20,37 +22,13 @@ export function ToolCard({ tool }: { tool: ToolMeta }) {
   const { canPage } = useFeatureAccess();
   const { locale } = useI18n();
   const L = (z: string, e: string) => (locale === "en" ? e : z);
-  const cat = TOOL_CATEGORIES.find((c) => c.name === tool.category)!;
-
-  const inner = (
-    <>
-      <span
-        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[10px]"
-        style={{ background: cat.tintVar, color: cat.accent }}
-      >
-        <tool.Icon className="h-[21px] w-[21px]" strokeWidth={1.9} />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-2">
-          <span className="truncate text-[15px] font-semibold text-c-text">
-            {L(tool.key, tool.en)}
-          </span>
-          {tool.live === false && (
-            <span className="shrink-0 rounded-[5px] bg-c-warn-bg px-1.5 py-0.5 text-[10px] font-bold text-c-warn">
-              {L("即将上线", "Soon")}
-            </span>
-          )}
-        </span>
-        <span className="mt-0.5 block truncate text-[12.5px] text-c-text3">
-          {tool.desc}
-        </span>
-      </span>
-      <ChevronRight className="h-4 w-4 shrink-0 text-c-text4 transition-transform group-hover:translate-x-0.5" />
-    </>
-  );
-
-  const cls =
-    "group flex items-center gap-3 rounded-[14px] border border-c-border bg-c-card p-4 text-left transition-all hover:-translate-y-0.5 hover:border-c-border2 hover:shadow-card";
+  const cover = toolCovers[tool.slug];
+  const inner = <>
+    {cover ? <CachedImage src={`/demos/workbench-v2/${cover}.webp`} alt="" className={directory.cover}/> : <tool.Icon className={directory.cover}/>}
+    <span className={directory.name}><span>{L(tool.key, tool.en)}</span>{tool.live === false && <span className={directory.soon}>{L("即将上线", "Soon")}</span>}</span>
+    <ArrowUpRight className={directory.arrow}/>
+  </>;
+  const cls = directory.card;
 
   if (!canPage(tool.href)) return null;
   if (tool.live === false) {
@@ -97,14 +75,11 @@ export function CreateHubPage() {
     .filter((s) => s.tools.length > 0);
 
   return (
-    <div className="w-full px-5 py-7 sm:px-6 lg:px-8">
+    <div className="workspace-page w-full px-5 py-7 sm:px-6 lg:px-8">
       {/* Header */}
-      <div className="flex flex-wrap items-end justify-between gap-4">
+      <div data-page-header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-[26px] font-bold text-c-text">{L("创作", "Create")}</h1>
-          <p className="mt-1 text-[13.5px] text-c-text3">
-            {L(`${TOOLS.filter(tool => canPage(tool.href)).length} 个创作工具`, `${TOOLS.filter(tool => canPage(tool.href)).length} creative tools`)}
-          </p>
+          <h1 className="text-[26px] font-bold text-c-text">{L("创作工具", "Creative tools")}</h1>
         </div>
         <div className="relative w-full sm:w-[300px]">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-c-text4" />
@@ -119,7 +94,7 @@ export function CreateHubPage() {
       </div>
 
       {/* Filter chips */}
-      <div className="mt-5 flex flex-wrap gap-2">
+      <div className="workspace-filter-row mt-5">
         {chips.map((c) => {
           const active = filter === c;
           const en =
@@ -161,7 +136,7 @@ export function CreateHubPage() {
                 {tools.length}
               </span>
             </div>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="workspace-catalog-grid">
               {tools.map((t) => (
                 <ToolCard key={t.slug} tool={t} />
               ))}

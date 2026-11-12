@@ -10,6 +10,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { CachedImage } from "@/components/cached-image";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n/locale-context";
 
@@ -122,7 +123,7 @@ export function WorkbenchSessions({
         className="nv-fade-in absolute inset-0 cursor-default bg-black/30 backdrop-blur-[2px]"
       />
       {/* 抽屉面板 */}
-      <aside className="drawer-in absolute inset-y-0 right-0 flex w-[320px] max-w-[88vw] flex-col border-l border-c-border bg-c-card shadow-2xl">
+      <aside role="dialog" aria-modal="true" aria-label="历史会话" className="drawer-in absolute inset-y-0 right-0 flex w-[320px] max-w-[88vw] flex-col border-l border-c-border bg-c-card shadow-2xl">
         <div className="flex items-center justify-between border-b border-c-border px-4 py-3.5">
           <span className="flex items-center gap-2 text-[12.5px] font-semibold text-c-text2">
             <History className="h-3.5 w-3.5" />
@@ -246,7 +247,7 @@ export function WorkbenchSessions({
                               {loadingId === session.id ? (
                                 <Loader2 className="h-3.5 w-3.5 flex-none animate-spin" />
                               ) : (
-                                <MessageSquare className="h-3.5 w-3.5 flex-none text-c-text3" />
+                                session.lastImageUrl ? <CachedImage src={session.lastImageUrl} alt="" className="h-7 w-7 flex-none rounded-md object-cover"/> : <MessageSquare className="h-3.5 w-3.5 flex-none text-c-text3" />
                               )}
                               <span
                                 className={cn(

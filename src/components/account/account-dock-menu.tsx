@@ -49,6 +49,7 @@ export function AccountDockMenu({
   onToggleTheme,
   onRedeem,
   onSignOut,
+  showThemeToggle = true,
 }: {
   user: SessionUser;
   remaining: number;
@@ -58,6 +59,7 @@ export function AccountDockMenu({
   onToggleTheme: () => void;
   onRedeem: () => void;
   onSignOut: () => void;
+  showThemeToggle?: boolean;
 }) {
   const { t, locale } = useI18n();
   const L = (zh: string, en: string) => (locale === "en" ? en : zh);
@@ -88,7 +90,7 @@ export function AccountDockMenu({
           </div>
         </div>
       </div>
-      <button
+      {showThemeToggle && <button
         type="button"
         onClick={onToggleTheme}
         className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-[13px] text-foreground hover:bg-secondary"
@@ -100,7 +102,7 @@ export function AccountDockMenu({
         <span className="text-[12px] text-muted-foreground">
           {dark ? t("nav.themeDark") : t("nav.themeLight")}
         </span>
-      </button>
+      </button>}
       <Link
         href="/account?tab=credits"
         onClick={onClose}

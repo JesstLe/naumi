@@ -13,6 +13,7 @@ import { AuthProvider } from "@/lib/auth-context";
 import { authMode } from "@/lib/auth-mode";
 import { SessionBridge } from "@/components/session-bridge";
 import { AppShell } from "@/components/app-shell";
+import { ProductSurface } from "@/components/workspace/product-surface";
 import { LocaleProvider } from "@/lib/i18n/locale-context";
 import { getServerLocale } from "@/lib/i18n/server-locale";
 import { PaymentProvider } from "@/lib/payment-context";
@@ -122,7 +123,7 @@ export default async function RootLayout({
             <FeatureAccessProvider><BillingProvider><TextModelProvider><ImageQualityProvider>
             <AuthModalProvider>
               <RechargeModalProvider>
-                <ToastProvider>
+                <ProductSurface><ToastProvider>
                   <CollaborationProvider>
                   {authMode === "supabase" && <SessionBridge />}
                   <AppShell>{children}</AppShell>
@@ -133,7 +134,7 @@ export default async function RootLayout({
                   </Suspense>
                   <RechargeModal />
                   </CollaborationProvider>
-                </ToastProvider>
+                </ToastProvider></ProductSurface>
               </RechargeModalProvider>
             </AuthModalProvider>
             </ImageQualityProvider></TextModelProvider></BillingProvider></FeatureAccessProvider>

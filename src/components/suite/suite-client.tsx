@@ -578,7 +578,7 @@ export function SuiteClient() {
   }
 
   return (
-    <div className="w-full px-5 py-6 sm:px-6 lg:px-8">
+    <div className="workspace-page w-full px-5 py-6 sm:px-6 lg:px-8">
       <div className="w-full">
         <div className="mb-4">
           <nav className="flex items-center gap-1.5 text-[13px]">
@@ -596,7 +596,7 @@ export function SuiteClient() {
       {/* 左:参数面板 */}
       <fieldset disabled={loading} className="h-fit space-y-5 rounded-card border border-c-border bg-c-card p-5 shadow-card nv-panel-scroll lg:h-full lg:min-h-0 lg:overflow-y-auto">
         {/* 工具头:图标 + 名称 + 描述(与其它工具页一致) */}
-        <div className="flex items-center gap-3">
+        <div data-tool-heading className="flex items-center gap-3">
           <span className="grid h-11 w-11 flex-none place-items-center rounded-[10px]" style={{ background: "rgba(79,70,229,.12)", color: "#4F46E5" }}>
             <ImageIcon className="h-[21px] w-[21px]" strokeWidth={1.9} />
           </span>
@@ -604,9 +604,6 @@ export function SuiteClient() {
             <h1 className="text-[16px] font-bold text-c-text">
               {t("suite.title")}
             </h1>
-            <p className="text-[12px] text-c-text3">
-              上传产品图,自动出 1 主图 + 4 副图 + 8 详情页图
-            </p>
           </div>
         </div>
         <div>

@@ -491,6 +491,28 @@ export function WorkbenchClient({appearance="legacy"}:{appearance?:"legacy"|"cre
     }
   }
 
+  // Navigation from other workspaces restores the existing session; it never
+  // submits or replays a task. Catalog/restore retain their account fences.
+  const openedLink = useRef("");
+  const canOpenLinkedSession = can("agent");
+  useEffect(() => {
+    if (appearance !== "creation" || !ready || !user?.email || !canOpenLinkedSession) return;
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get("session");
+    const key = JSON.stringify([user.email, creationWorkspace, id, params.get("history")]);
+    if (openedLink.current === key) return;
+    // StrictMode retires its first account scope before replaying effects. Defer
+    // until that lifecycle has settled; a cancelled callback is never consumed.
+    const timer = window.setTimeout(() => {
+      openedLink.current = key;
+      if (params.get("history") === "1") setSessionsOpen(true);
+      if (id && id.length <= 200) void loadSession(id);
+    }, 0);
+    return () => window.clearTimeout(timer);
+    // loadSession delegates to the existing scoped restore owner.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appearance, ready, user?.email, creationWorkspace, canOpenLinkedSession]);
+
   function renameSession(id: string, title: string): Promise<boolean> {
     return sessionRecovery.catalog.rename(id, title, catalogContext());
   }

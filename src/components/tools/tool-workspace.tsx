@@ -408,7 +408,6 @@ export function ToolWorkspace({
             </span>
             <div className="min-w-0">
               <h1 className="text-[16px] font-bold text-c-text">{name}</h1>
-              <p className="text-[12px] text-c-text3">{desc}</p>
             </div>
           </div>
 

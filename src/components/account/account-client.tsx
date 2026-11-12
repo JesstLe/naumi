@@ -110,8 +110,8 @@ export function AccountClient() {
   ];
 
   return (
-    <div className="w-full px-5 py-7 sm:px-6 lg:px-8">
-      <h1 className="text-[26px] font-bold text-c-text">{t("acct.title")}</h1>
+    <div className="workspace-page w-full px-5 py-7 sm:px-6 lg:px-8">
+      <header data-page-header><h1 className="text-[26px] font-bold text-c-text">{t("acct.title")}</h1></header>
 
       {/* 资料卡 */}
       <div className="mt-5 flex flex-wrap items-center justify-between gap-4 rounded-card border border-c-border bg-c-card p-5 shadow-card">

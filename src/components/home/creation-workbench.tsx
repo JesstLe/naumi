@@ -1,7 +1,7 @@
 "use client";
 import { useEffect,useRef,useState } from "react";
 import Link from "next/link";
-import { Bell,Check,ChevronDown,Clapperboard,Compass,FolderClosed,Headset,Images,Menu,MessageSquare,MessageSquarePlus,Moon,PanelLeftClose,PanelsTopLeft,MoreHorizontal,Pencil,Pin,Plus,Search,Shapes,SlidersHorizontal,Sparkles,Sun,Trash2,Users,X } from "lucide-react";
+import { Bell,Check,ChevronDown,FolderClosed,Headset,Menu,MessageSquare,MessageSquarePlus,Moon,PanelLeftClose,PanelsTopLeft,MoreHorizontal,Pencil,Pin,Plus,Search,SlidersHorizontal,Sun,Trash2,Users,X } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useAuthModal } from "@/lib/auth-modal-context";
 import { useBrand } from "@/lib/brand-context";
@@ -20,10 +20,11 @@ import { CreationComposer } from "./creation-composer";
 import { CreationDiscovery } from "./creation-discovery";
 import { CreationMessage,CreationImageViewer } from "./creation-message";
 import styles from "./creation-workbench.module.css";
+import { creationNavigation as navigation, creationWorkspaces as workspaces } from "@/components/workspace/navigation";
 
-const navigation=[{label:"创作",href:"/",Icon:Sparkles},{label:"模板中心",href:"/templates",Icon:Compass},{label:"创作工具",href:"/tools",Icon:Shapes},{label:"我的作品",href:"/works",Icon:Images}];
+
 function awayFromBottom(){const doc=document.scrollingElement;return doc?doc.scrollHeight-doc.scrollTop-doc.clientHeight:0;}
-const workspaces=[{label:"无限画布",href:"/canvas",Icon:PanelsTopLeft},{label:"参考工作台",href:"/batchshot",Icon:PanelsTopLeft},{label:"视频工作台",href:"/video",Icon:Clapperboard}];
+
 const skillIds=["product-white","product-scene","product-suite","product-retouch","product-color","campaign-poster","packaging"];
 
 export function CreationWorkbench({port,children}:{port:CreationWorkbenchPort;children?:React.ReactNode}){

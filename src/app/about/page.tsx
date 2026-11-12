@@ -20,7 +20,6 @@ export async function generateMetadata() { return publicMetadata("/about", `关�
 type Item = { icon?: LucideIcon; title: string; desc: string };
 
 function AboutLayout({
-  kicker,
   title,
   intro,
   problemsLabel,
@@ -47,10 +46,7 @@ function AboutLayout({
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-14 sm:px-6 lg:px-8">
       {/* Hero */}
-      <p className="inline-flex items-center gap-1.5 text-sm font-semibold uppercase tracking-widest text-primary">
-        <Sparkles className="h-4 w-4" />
-        {kicker}
-      </p>
+
       <h1 className="mt-3 max-w-3xl text-3xl font-bold leading-tight tracking-tight sm:text-4xl lg:text-[2.75rem]">
         {title}
       </h1>
@@ -144,7 +140,7 @@ export default async function AboutPage() {
   return locale === "en" ? (
     <AboutLayout
       kicker="About us"
-      title="Turn every idea into commercial visuals that deliver"
+      title={`About ${BRAND}`}
       intro={`${BRAND} is an all-in-one AI design platform covering image creation, short drama, graphic design and e-commerce visuals, built for brands, sellers and creative teams. With advanced generation we turn the "hard, slow, expensive" production process into a faster, stable and reusable workflow.`}
       problemsLabel="The problems we solve"
       problems={[
@@ -192,7 +188,7 @@ export default async function AboutPage() {
   ) : (
     <AboutLayout
       kicker="关于我们"
-      title="让每一个创意，都成为可交付的商业视觉"
+      title={`关于 ${BRAND}`}
       intro={`${BRAND} 是一站式 AI 设计平台，覆盖作图、短剧、平面设计与电商出图，服务品牌方、电商卖家与创作团队。我们用先进的生成技术，把「出图难、出图慢、出图贵」的流程变得更快、更稳定，让商业视觉产出成为可复用的工作流。`}
       problemsLabel="我们解决什么问题"
       problems={[

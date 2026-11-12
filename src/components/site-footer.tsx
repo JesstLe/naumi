@@ -10,7 +10,7 @@ import { useBrand } from "@/lib/brand-context";
 import { BRAND_PARENT_URL, BRAND_PARENT_LABEL } from "@/lib/brand";
 import { usePaymentConfig } from "@/lib/payment-context";
 
-export function SiteFooter() {
+export function SiteFooter({compact=false}:{compact?:boolean}={}) {
   const { canPage } = useFeatureAccess();
   const { locale } = useI18n();
   const { name: brandName } = useBrand();
@@ -59,7 +59,7 @@ export function SiteFooter() {
 
   return (
     <footer className="border-t border-border bg-secondary/50">
-      <div className="grid w-full gap-10 px-5 py-14 sm:px-6 lg:px-8 md:grid-cols-[1.6fr_1fr_1fr_1fr]">
+      {!compact && <div className="grid w-full gap-10 px-5 py-14 sm:px-6 lg:px-8 md:grid-cols-[1.6fr_1fr_1fr_1fr]">
         {/* 品牌块:Logo + 一句话 + GitHub 药丸 */}
         <div className="space-y-4">
           <Logo />
@@ -102,7 +102,7 @@ export function SiteFooter() {
             </ul>
           </div>
         ))}
-      </div>
+      </div>}
 
       {/* 底栏:版权 · 隐私 · 条款 · 部署/自托管 */}
       <div className="border-t border-border">

@@ -415,7 +415,7 @@ export function GenChatClient() {
 
   if (!ready || !user) {
     return (
-      <div className="flex h-[calc(100dvh-58px)] items-center justify-center text-sm text-muted-foreground md:h-dvh">
+      <div className="flex h-[var(--workspace-height,100dvh)] items-center justify-center text-sm text-muted-foreground">
         {t("genchat.loading")}
       </div>
     );
@@ -427,7 +427,7 @@ export function GenChatClient() {
     sessionId && !sessions.some((s) => s.id === sessionId) && liveTitle;
 
   return (
-    <div className="flex h-[calc(100dvh-58px)] md:h-dvh">
+    <div className="flex h-[var(--workspace-height,100dvh)]">
       {/* 左:会话列表 */}
       <aside className="hidden w-[236px] flex-none flex-col border-r border-border bg-card md:flex">
         <button

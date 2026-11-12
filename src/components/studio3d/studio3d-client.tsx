@@ -419,7 +419,6 @@ export function StudioWorkspace({ owner }: { owner: string }) {
         {hiddenFiles}
         <header className="s3-library-header">
           <div>
-            <span className="s3-eyebrow">PRODUCT STUDIO</span>
             <h1>
               <Box size={28} />
               3D 工作台

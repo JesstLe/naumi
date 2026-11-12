@@ -535,7 +535,7 @@ export function GenerateClient({
   }
 
   return (
-    <div className="w-full px-5 py-6 sm:px-6 lg:px-8">
+    <div className="workspace-page w-full px-5 py-6 sm:px-6 lg:px-8">
       <div className="w-full">
         <div className="relative mb-4">
           {/* 面包屑:创作工具 › AI 生图(与其它工具页一致,独占一行) */}
@@ -599,7 +599,7 @@ export function GenerateClient({
               onChange={(e) => pickFiles(e.target.files)}
             />
             {/* 工具头:图标 + 名称 + 描述(与其它工具页一致) */}
-            <div className="flex items-center gap-3">
+            <div data-tool-heading className="flex items-center gap-3">
               <span
                 className="grid h-11 w-11 flex-none place-items-center rounded-[10px]"
                 style={{ background: "rgba(79,70,229,.12)", color: "#4F46E5" }}
@@ -608,9 +608,6 @@ export function GenerateClient({
               </span>
               <div className="min-w-0">
                 <h1 className="text-[16px] font-bold text-c-text">AI 生图</h1>
-                <p className="text-[12px] text-c-text3">
-                  文字描述或产品图,一键生成电商视觉
-                </p>
               </div>
             </div>
             {/* 参考图 */}

@@ -16,7 +16,7 @@ export default async function GuidePage({ params }: Props) {
   const { slug } = await params;
   const guide = guides.find(g => g.slug === slug);
   if (!guide) notFound();
-  return <div className={styles.surface}><article className={styles.article}>
+  return <div data-guide-surface className={styles.surface}><article className={styles.article}>
     <JsonLd data={guideJsonLd(guide)} />
     <nav className={styles.breadcrumb} aria-label="面包屑"><Link href="/">Naumi</Link><span aria-hidden="true">/</span><Link href="/guides">使用指南</Link></nav>
     <header className={styles.header}><h1>{guide.title}</h1><p>{guide.description}</p><time dateTime={guide.modified}>更新于 {guide.modified}</time></header>

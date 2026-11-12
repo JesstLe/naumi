@@ -1,0 +1,10 @@
+.card{display:flex;align-items:center;gap:16px;min-width:0;padding:7px;border:1px solid var(--c-border);border-radius:16px;background:var(--c-subtle2);text-align:left;transition:border-color .15s,background .15s}
+.card:hover{border-color:var(--acc-border);background:var(--acc-tint)}
+.cover{width:112px;height:94px;flex:none;object-fit:cover;border-radius:11px;background:var(--c-subtle)}
+.name{display:flex;align-items:center;gap:6px;min-width:0;flex:1;font-size:14px;font-weight:500;color:var(--c-text)}
+.name>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.arrow{width:16px;height:16px;flex:none;margin-right:10px;color:var(--c-text3)}
+.soon{font-size:10px;color:var(--c-text3);white-space:nowrap}
+@container workspace (max-width:1100px){.cover{width:96px;height:86px}.card{gap:12px}}
+@container workspace (max-width:460px){.cover{width:112px;height:88px}}
+@media(prefers-reduced-motion:reduce){.card{transition:none}}

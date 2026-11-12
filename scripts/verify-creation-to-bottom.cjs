@@ -95,7 +95,7 @@ async function build(){
   const outfile=path.join(os.tmpdir(),`verify-to-bottom-${process.pid}.cjs`);
   await esbuild.build({entryPoints:[SRC],bundle:true,format:"cjs",platform:"node",jsx:"transform",jsxFactory:"React.createElement",jsxFragment:"React.Fragment",outfile,logLevel:"silent",
     plugins:[{name:"stub",setup(b){
-      b.onResolve({filter:STUB_FILTER},args=>({path:args.path,namespace:"stub"}));
+      b.onResolve({filter:STUB_FILTER},args=>args.path==="@/components/workspace/navigation"?{path:path.join(ROOT,"src/components/workspace/navigation.ts")}:{path:args.path,namespace:"stub"});
       b.onLoad({filter:/.*/,namespace:"stub"},args=>({contents:STUBS[args.path]||"module.exports={};",loader:"js"}));}}]});
   return outfile;}
 

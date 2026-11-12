@@ -14,6 +14,8 @@ import "@/components/tools/tool-surface.css";
 import {toolImageError} from "@/lib/tool-ui";
 import {useToast} from "@/components/ui/toast";
 import {useI18n} from "@/lib/i18n/locale-context";
+import { WorkspaceShell } from "@/components/workspace/workspace-shell";
+import { workspacePresentation } from "@/components/workspace/route-policy";
 
 /**
  * 全站工作台壳:左侧图标导航栏(手机为底部 tab)+ 右侧内容区。
@@ -33,8 +35,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isToolPage = path === "/tools" || path === "/dashboard" || TOOLS.some(tool => tool.href === path);
   // 沉浸全屏(无页脚):画布 / 对话生成。生图/套图/工作台改成和工具页一致的自然流(带页脚)。
   const isImmersive = path.startsWith("/studio3d") || isCanvas || path.startsWith("/genchat");
+  const presentation = workspacePresentation(path);
 
   if (path === "/desktop" || path.startsWith("/desktop/")) return <>{children}</>;
+
+  if (presentation === "auth") return <main className="workspace-auth"><Link href="/">← 返回创作</Link>{children}</main>;
 
   if (noShell) return <main className="min-h-screen">{children}</main>;
 
@@ -44,13 +49,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     {user && !canPage(path) ? <section className="flex min-h-[60vh] flex-col items-center justify-center gap-4 p-6"><h1 className="text-xl font-semibold">{ready ? "此页面尚未授权" : "正在加载权限"}</h1>{ready && <Link href="/account" className="rounded-xl border px-5 py-2 text-sm">返回我的账户</Link>}</section> : children}
   </main>;
 
-  return (
+  // Preserve the suspended Canvas navigation and viewport exactly. Other user
+  // pages share the creation shell; no execution runtime is mounted by the shell.
+  const body = (
     <div className={isToolPage ? "tool-page" : undefined}>
-      <AppRail />
+      {isCanvas && <AppRail />}
       <div
         className={cn(
-          "flex min-h-screen flex-col transition-[padding] duration-300 ease-out",
-          isCanvas ? "pb-0 md:pt-0" : "pb-[58px] md:pb-0 md:pt-[60px]"
+          "flex flex-col transition-[padding] duration-300 ease-out",
+          isCanvas ? "min-h-screen pb-0 md:pt-0" : "min-h-[calc(100dvh-64px)]"
         )}
       >
         <main className={cn("min-w-0 flex-1", isToolPage && "tool-page")}
@@ -65,8 +72,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             event.stopPropagation();input.value="";
             toast(issue==="size"?(locale==="en"?`Each file must be under ${max/1024/1024}MB`:`单个文件需小于${max/1024/1024}MB`):(locale==="en"?"Choose a supported file":"请选择支持的文件格式"),"error");
           }}>{user && !canPage(path) ? <section className="flex min-h-[60vh] flex-col items-center justify-center gap-4 p-6"><h1 className="text-xl font-semibold">{ready ? "此页面尚未授权" : "正在加载权限"}</h1>{ready && <Link href="/account" className="rounded-xl border bg-white px-5 py-2 text-sm">返回我的账户</Link>}</section> : children}</main>
-        {!isImmersive && site.mode === 'platform' && <SiteFooter />}
+        {!isImmersive && site.mode === 'platform' && <SiteFooter compact />}
       </div>
     </div>
   );
+  return isCanvas ? body : <WorkspaceShell immersive={isImmersive}>{body}</WorkspaceShell>;
 }

@@ -35,7 +35,7 @@ export function TeamEntry() {
     check(); const timer=window.setInterval(check,30_000);window.addEventListener("focus",check);
     return () => { controller.abort();window.clearInterval(timer);window.removeEventListener("focus",check); };
   }, [user?.email, router]);
-  if (!mode || mode.email !== user?.email) return <main className={styles.page}><div className={styles.empty}>加载中…</div></main>;
+  if (!mode || mode.email !== user?.email) return <main data-team-page className={styles.page}><div className={styles.empty}>加载中…</div></main>;
   return <TeamManager key={`${mode.email || "anonymous"}:${mode.admin}:${mode.generation || 0}`} admin={mode.admin} standalone />;
 }
 
@@ -107,7 +107,7 @@ export function TeamManager({ admin = false, standalone = false, initialTeamId =
   const expired = (member: TeamMember) => !!member.account_expires_at && new Date(member.account_expires_at).getTime() <= Date.now();
   const memberBody = (m: TeamMember) => ({ teamId: data.team?.id, email: m.email, expectedVersion: m.management_version });
   const select = (m: TeamMember) => { setSelected(m); setSection("artworks"); setPage(1); setContent(null); setConversation(null); };
-  return <main className={styles.page} data-testid="team-manager">
+  return <main data-team-page className={styles.page} data-testid="team-manager">
     <header className={styles.header}><div>{(!admin || standalone) && <Link className={styles.back} href="/dashboard"><ArrowLeft size={16} />工作台</Link>}<h1><Building2 size={25} />{admin ? "团队与子账号" : data.team?.name || "团队管理"}</h1></div><div className={styles.actions}><button onClick={() => void load()} disabled={loading || pending}><RefreshCw size={16} />刷新</button>{admin && <button className={styles.primary} onClick={() => openEditor({ kind: "create" })}><Plus size={16} />新建团队</button>}</div></header>
     {error && <div role="alert" className={styles.error}>{error}{error === "请先登录" && <button onClick={() => openAuth()}>登录</button>}</div>}
     {notice && <p role="status" className={styles.notice}>{notice}</p>}

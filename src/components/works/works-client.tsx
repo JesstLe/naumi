@@ -343,18 +343,15 @@ export function WorksClient() {
   const empty = ready && works !== null && filtered.length === 0;
 
   return (
-    <div className="flex w-full flex-col gap-5 px-5 py-7 pb-24 sm:px-6 lg:px-8">
+    <div className="workspace-page flex w-full flex-col gap-5 px-5 py-7 pb-24 sm:px-6 lg:px-8">
       {/* 头部 */}
-      <div className="flex items-end justify-between gap-4">
+      <div data-page-header className="flex items-end justify-between gap-4">
         <div>
           <h1 className="text-[26px] font-bold tracking-tight text-c-text">
-            作品库
+            我的作品 <span className="ml-2 text-sm font-normal text-c-text3">{count}</span>
           </h1>
-          <p className="mt-1 text-[13.5px] text-c-text3">
-            {count} 张作品 · 生成结果自动保留 180 天
-          </p>
         </div>
-        <div className="flex items-center gap-2.5">
+        <div data-page-actions className="flex items-center gap-2.5">
           {/* 搜索当前已加载作品的标题与提示词。 */}
           <div className="flex h-9 items-center gap-1.5 rounded-field border border-c-border2 bg-c-card px-3">
             <Search size={14} className="text-c-text4" strokeWidth={1.8} />
@@ -378,13 +375,14 @@ export function WorksClient() {
       </div>
 
       {/* 功能筛选 tab(active = accent 实心) */}
-      <div className="flex flex-wrap gap-2">
+      <div className="workspace-filter-row">
         {tabs.map((f) => {
           const on = filter === f.key;
           return (
             <button
               key={f.key}
               type="button"
+              aria-pressed={on}
               onClick={() => setFilter(f.key)}
               className={cn(
                 "rounded-[10px] border px-4 py-2 text-[13px] font-medium transition-colors",
