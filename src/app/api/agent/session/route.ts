@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { resolveUserEmail } from "@/lib/admin-auth";
 import { dbEnabled } from "@/platform/db/pool";
 import { readHarnessBody, harnessErrorResponse, validateHarnessHistory, AgentHarness } from "@/lib/agent/harness";
-import {saveAgentSession, getAgentSession, listAgentSessions, deleteAgentSession, renameAgentSession} from "@/lib/agent/session-repository";
+import {saveAgentSession, getAgentSession, listAgentSessions, deleteAgentSession, renameAgentSession, pinAgentSession} from "@/lib/agent/session-repository";
 import {
   getSession,
   removeRuntimeSession,
@@ -51,7 +51,9 @@ async function localGET(request: Request) {
       title: session.title || "未命名会话",
       createdAt: session.created_at,
       updatedAt: session.updated_at,
-      messageCount: Array.isArray(session.messages) ? session.messages.length : 0,
+      messageCount: session.message_count ?? 0,
+      pinned: !!session.pinned,
+      lastImageUrl: session.last_image_url || undefined,
     })),
   });
 }
@@ -101,17 +103,27 @@ async function localPATCH(request: Request) {
   const body = input as {
     id?: string;
     title?: string;
+    pinned?: boolean;
   } | null;
   const id = (body?.id ?? "").trim().slice(0, 64);
+  const pinned = typeof body?.pinned === "boolean" ? body.pinned : undefined;
   const title = (body?.title ?? "").trim().replace(/\s+/g, " ").slice(0, 120);
   if (!id) {
     return NextResponse.json({ error: "缺少会话 id" }, { status: 400 });
   }
-  if (!title) {
+  if (pinned === undefined && !title) {
     return NextResponse.json({ error: "会话名称不能为空" }, { status: 400 });
   }
   if(id.startsWith("cv-"))return NextResponse.json({error:"请从画布管理此会话"},{status:400});
   if(getSession(email,id)?.running)return NextResponse.json({error:"请先停止任务"},{status:409});
+  if (pinned !== undefined) {
+    await getSession(email,id)?.persistPending?.catch(()=>undefined);
+    const updated = await pinAgentSession(email, id, pinned,()=>assertLocalAgentIdle(email,id));
+    if (!updated) {
+      return NextResponse.json({ error: "会话不存在" }, { status: 404 });
+    }
+    return NextResponse.json({ ok: true, pinned });
+  }
   await getSession(email,id)?.persistPending?.catch(()=>undefined);
   const renamed = await renameAgentSession(email, id, title,()=>assertLocalAgentIdle(email,id));
   if (!renamed) {

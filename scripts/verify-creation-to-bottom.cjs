@@ -21,8 +21,9 @@ const shim=(()=>{const api={};
 api.Fragment="@@fragment";
 api.createElement=function(type,config,...kids){const props={...(config||{})};props.children=kids.length===1?kids[0]:kids;return{__el:1,type,props};};
 let renderState=null;
-function normalize(kid){if(kid==null||typeof kid==="boolean")return null;if(Array.isArray(kid))return kid.map(normalize).filter(Boolean);return kid;}
+function normalize(kid){if(kid==null||typeof kid==="boolean")return null;if(Array.isArray(kid))return kid.map(normalize).filter(Boolean).flat();return kid;}
 function walk(node){if(node==null)return null;
+  if(Array.isArray(node))return{type:"@@fragment",props:{},children:node.map(walk).filter(Boolean)};
   if(node.__el){
     if(typeof node.type==="function"){const value=node.type(node.props);return walk(normalize(value));}
     const dom={type:node.type,props:node.props,children:[]};
@@ -31,6 +32,7 @@ function walk(node){if(node==null)return null;
     const kids=normalize(node.props.children);const list=Array.isArray(kids)?kids:[kids];
     for(const k of list){if(k==null)continue;const c=walk(k);if(c)dom.children.push(c);}
     dom.scrollIntoView=(opts)=>{globalThis.__scrollCalls.push({node:dom,opts});};
+    dom.contains=()=>false;
     return dom;}
   if(typeof node==="object"&&"text" in node)return node;
   return{text:String(node)};}
@@ -56,6 +58,9 @@ function scrollListenerCount(){return (listeners.get("scroll")||new Set()).size;
 const scrollState={scrollHeight:2000,scrollTop:2000,clientHeight:900};
 globalThis.document={scrollingElement:scrollState,documentElement:{classList:{contains:()=>false}},addEventListener(){},removeEventListener(){}};
 globalThis.__scrollCalls=[];
+const docListeners=new Map();
+globalThis.document={scrollingElement:scrollState,documentElement:{classList:{contains:()=>false}},addEventListener(type,fn){if(!docListeners.has(type))docListeners.set(type,new Set());docListeners.get(type).add(fn);},removeEventListener(type,fn){if(docListeners.has(type))docListeners.get(type).delete(fn);}};
+function fireDocMouseDown(target){for(const fn of docListeners.get("mousedown")||new Set())fn({target});}
 function away(v){scrollState.scrollHeight=scrollState.scrollTop+scrollState.clientHeight+v;}
 let activeRenderer=null;
 function flush(){const r=activeRenderer;let guard=0;while(r.scheduled&&guard++<50){r.scheduled=false;r.commit();}}
@@ -81,7 +86,7 @@ const STUBS={
   "./creation-composer":'module.exports={CreationComposer:()=>globalThis.React.createElement("div",{className:"stub-composer"},"composer")};',
   "./creation-discovery":'module.exports={CreationDiscovery:()=>"@@null"};',
   "./creation-message":'module.exports={CreationMessage:()=>globalThis.React.createElement("div",{className:"stub-message"},"m"),CreationImageViewer:()=>"@@null"};',
-  "lucide-react":'module.exports=new Proxy({},{get:(_t,k)=>(props)=>globalThis.React.createElement("svg",{"data-icon":String(k),...props})});',
+  "lucide-react":'const mk=k=>(props)=>globalThis.React.createElement("svg",{"data-icon":k,...props});const icons={};for(const n of ["Bell","Check","ChevronDown","Clapperboard","Compass","FolderClosed","Headset","Images","Menu","MessageSquare","MessageSquarePlus","Moon","PanelLeftClose","PanelsTopLeft","MoreHorizontal","Pencil","Pin","Plus","Search","Shapes","SlidersHorizontal","Sparkles","Sun","Trash2","Users","X"])icons[n]=mk(n);module.exports=new Proxy(icons,{get:(t,k)=>k in t?t[k]:mk(String(k))});',
   "next/link":'module.exports=(p)=>globalThis.React.createElement("a",{href:p.href,onClick:p.onClick,className:p.className,title:p.title,"aria-label":p["aria-label"]},p.children);',
   "./creation-workbench.module.css":'const h=new Proxy({},{get:(_t,k)=>typeof k==="string"?"cx_"+k:""});export default h;',
 };
@@ -95,7 +100,8 @@ async function build(){
   return outfile;}
 
 /* ---------- Port 夹具 ---------- */
-function makePort(overrides={}){return Object.assign({conversation:true,sessions:[{id:"s1",title:"长对话",updatedAt:"2026-11-12T10:00:00Z"}],sessionId:"s1",messages:[{role:"user",text:"第一句"},{role:"assistant",text:"回复一"}],busy:false,sessionsLoading:false,loadingId:null,canNavigate:true,load(){},history(){},create(){},setSkill(){},skill:null,text:"",setText(){},refs:[],recent:[],unavailable:false,uploading:false,error:null,running:false,creationSettings:{},setCreationSettings(){}},overrides);}
+const sessionCalls={rename:[],remove:[],pin:[]};
+function makePort(overrides={}){return Object.assign({conversation:true,sessions:[{id:"s1",title:"长对话",updatedAt:"2026-11-12T10:00:00Z"}],sessionId:"s1",messages:[{role:"user",text:"第一句"},{role:"assistant",text:"回复一"}],busy:false,sessionsLoading:false,loadingId:null,canNavigate:true,load(){},history(){},create(){},setSkill(){},skill:null,text:"",setText(){},refs:[],recent:[],unavailable:false,uploading:false,error:null,running:false,creationSettings:{},setCreationSettings(){},renameSession:async(id,title)=>{sessionCalls.rename.push([id,title]);return true;},deleteSession:async id=>{sessionCalls.remove.push(id);},pinSession:(id,pinned)=>{sessionCalls.pin.push([id,pinned]);}},overrides);}
 
 (async()=>{
   const outfile=await build();
@@ -161,6 +167,58 @@ function makePort(overrides={}){return Object.assign({conversation:true,sessions
   render({port:makePort({conversation:false,sessions:[],sessionId:"",messages:[]})});
   check("t8a home-no-chip",!chipNode());
   check("t8b home-no-scroll-listener",scrollListenerCount()===0);
+
+  /* ---------- 侧栏会话列表：缩略图 / 三个点菜单 / 置顶 / 重命名 / 删除 ---------- */
+  const sidebarSessions=[
+    {id:"s1",title:"带图会话",createdAt:"",updatedAt:"2026-11-12T09:00:00Z",messageCount:4,pinned:true,lastImageUrl:"https://cdn.example/latest.webp"},
+    {id:"s2",title:"普通会话",createdAt:"",updatedAt:"2026-11-12T08:00:00Z",messageCount:2},
+    {id:"s3",title:"第三会话",createdAt:"",updatedAt:"2026-11-12T07:00:00Z",messageCount:1},
+  ];
+  render({port:makePort({sessionId:"s2",sessions:sidebarSessions,conversation:false,messages:[]})});
+  const wrappers=()=>findAll(activeRenderer.dom,n=>n.className==="cx_historyItem");
+  check("t10a session-with-image-shows-thumbnail",!!findAll(wrappers()[0],n=>n.type==="img"&&n.props.src==="https://cdn.example/latest.webp")[0]);
+  check("t10b session-without-image-falls-back-to-icon",!!findAll(wrappers()[1],n=>n.className==="cx_conversationIcon")[0]);
+  check("t10c pinned-session-shows-pin-marker",!!findAll(wrappers()[0],n=>n.props&&n.props["data-icon"]==="Pin")[0]);
+  const dotsOf=w=>findAll(w,n=>n.className==="cx_historyDots")[0];
+  const renameInputIn=w=>findAll(w,n=>n.type==="input")[0];
+  const menuItems=w=>findAll(w,n=>n.props&&n.props.role==="menuitem");
+  const itemWithText=(w,label)=>menuItems(w).find(b=>(b.children||[]).some(c=>c.text===label));
+  dotsOf(wrappers()[1]).props.onClick();
+  flush();
+  check("t11a dots-opens-menu",!!findAll(wrappers()[1],n=>n.className==="cx_historyMenu")[0]);
+  check("t11b menu-has-three-actions",!!itemWithText(wrappers()[1],"置顶")&&!!itemWithText(wrappers()[1],"重命名")&&!!itemWithText(wrappers()[1],"删除"));
+  check("t11c dots-aria-expanded",dotsOf(wrappers()[1]).props["aria-expanded"]===true);
+  dotsOf(wrappers()[2]).props.onClick();
+  flush();
+  check("t11d single-menu-only",!findAll(wrappers()[1],n=>n.className==="cx_historyMenu")[0]&&!!findAll(wrappers()[2],n=>n.className==="cx_historyMenu")[0]);
+  itemWithText(wrappers()[2],"置顶").props.onClick();
+  flush();
+  check("t12 pin-dispatches-and-closes",sessionCalls.pin.length===1&&sessionCalls.pin[0][0]==="s3"&&sessionCalls.pin[0][1]===true&&!findAll(wrappers()[2],n=>n.className==="cx_historyMenu")[0]);
+  dotsOf(wrappers()[1]).props.onClick();flush();
+  itemWithText(wrappers()[1],"重命名").props.onClick();flush();
+  check("t13a rename-shows-inline-input",!!renameInputIn(wrappers()[1])&&renameInputIn(wrappers()[1]).props.value==="普通会话");
+  renameInputIn(wrappers()[1]).props.onChange({target:{value:"改名后的会话"}});
+  flush();
+  findAll(wrappers()[1],n=>n.type==="form")[0].props.onSubmit({preventDefault(){}});
+  flush();
+  check("t13b rename-submits-and-clears",sessionCalls.rename.length===1&&sessionCalls.rename[0][0]==="s2"&&sessionCalls.rename[0][1]==="改名后的会话"&&!renameInputIn(wrappers()[1]));
+  dotsOf(wrappers()[1]).props.onClick();flush();
+  itemWithText(wrappers()[1],"删除").props.onClick();flush();
+  check("t14a delete-asks-confirmation",!!findAll(wrappers()[1],n=>n.children&&n.children.some(c=>c.text==="删除这条会话记录？"))[0]);
+  itemWithText(wrappers()[1],"取消").props.onClick();flush();
+  check("t14b cancel-keeps-menu-no-delete",sessionCalls.remove.length===0&&!!findAll(wrappers()[1],n=>n.className==="cx_historyMenu")[0]);
+  itemWithText(wrappers()[1],"删除").props.onClick();flush();
+  itemWithText(wrappers()[1],"删除").props.onClick();flush();
+  check("t14c confirmed-delete-dispatches",sessionCalls.remove.length===1&&sessionCalls.remove[0]==="s2");
+  dotsOf(wrappers()[2]).props.onClick();flush();
+  fireDocMouseDown({closest:()=>null});
+  flush();
+  check("t15 outside-click-closes-menu",!findAll(wrappers()[2],n=>n.className==="cx_historyMenu")[0]);
+  dotsOf(wrappers()[2]).props.onClick();flush();
+  itemWithText(wrappers()[2],"重命名").props.onClick();flush();
+  renameInputIn(wrappers()[2]).props.onKeyDown({key:"Escape"});
+  flush();
+  check("t16 escape-cancels-rename",!renameInputIn(wrappers()[2])&&sessionCalls.rename.length===1);
 
   console.log(`CREATION_TO_BOTTOM={"checks":${checks},"failed":${failures},"source":"actual creation-workbench.tsx via esbuild"}`);
   fs.unlinkSync(outfile);
