@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {readFile,writeFile} from "node:fs/promises";
+import {mkdir,readFile,writeFile} from "node:fs/promises";
 import {spawn} from "node:child_process";
 import {chromium,expect as baseExpect} from "@playwright/test";
 const origin="http://127.0.0.1:54987",out="output/model-health-20261015";
@@ -17,10 +17,13 @@ try{
   const page=await context.newPage(),errors=[];page.on("pageerror",e=>errors.push(e.message));
   await page.goto(origin+"/admin/model-health",{waitUntil:"domcontentloaded",timeout:120000});
   await expect(page.getByRole("heading",{name:"模型健康巡检",exact:true})).toBeVisible();
+  // The capacity panel has its own refresh action; target the health header.
+  const refresh=page.locator("header").filter({has:page.getByRole("heading",{name:"模型健康巡检",exact:true})}).getByRole("button",{name:"刷新",exact:true});
   await expect(page.getByRole("heading",{name:"业务近期已验证",exact:true})).toBeVisible();
   const api=async()=>{const r=await context.request.get(origin+"/api/admin/model-health");assert.equal(r.status(),200);return r.json();};
   let data=await api();assert.equal(data.providers[0].models.length,3);assert.equal(data.budget.used,0);
   assert.equal(data.providers[0].state,"degraded");
+  await mkdir(out,{recursive:true});
   await page.screenshot({path:out+"/model-health-desktop.png",fullPage:true});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
   await page.getByLabel("每日巡检上限（次）",{exact:false}).fill("8");
@@ -28,9 +31,9 @@ try{
   assert.equal((await api()).budget.limit,8);
   await page.getByLabel("每日巡检上限（次）",{exact:false}).fill("12");
   data=await api();assert.equal((await context.request.post(origin+"/api/admin/model-health",{data:{action:"policy",revision:data.revision,policy:{...data.policy,dailyMaxCalls:12}}})).status(),200);
-  await page.getByRole("button",{name:"刷新",exact:true}).click();
+  await refresh.click();
   await page.getByRole("button",{name:"保存设置",exact:true}).click();await expect(page.getByRole("button",{name:"拉取最新配置",exact:true})).toBeVisible();
-  await page.getByRole("button",{name:"拉取最新配置",exact:true}).click();await expect(page.getByRole("button",{name:"刷新",exact:true})).toBeEnabled();
+  await page.getByRole("button",{name:"拉取最新配置",exact:true}).click();await expect(refresh).toBeEnabled();
   await expect(page.getByLabel("每日巡检上限（次）",{exact:false})).toHaveValue("12");
   await page.getByRole("switch",{name:"启用自动巡检",exact:true}).uncheck();await page.getByRole("button",{name:"保存设置",exact:true}).click();await expect.poll(async()=>(await api()).policy.enabled).toBe(false);
   await context.request.post(origin+"/api/admin/model-health",{data:{action:"tick"}});assert.equal((await api()).budget.used,0);
@@ -42,7 +45,7 @@ try{
   worker=spawn(process.execPath,["scripts/model-health-worker.mjs"],{windowsHide:true,env:{...process.env,NODE_OPTIONS:"",NAUMI_APP_ORIGIN:origin,MODEL_HEALTH_WORKER_SECRET:"model-health-ui-fixture-worker-secret-only"},stdio:["ignore","pipe","pipe"]});
   let workerLog="";worker.stdout.on("data",b=>workerLog+=b);worker.stderr.on("data",b=>workerLog+=b);
   await expect.poll(async()=>(await api()).budget.used,{timeout:60000}).toBe(2);worker.kill();
-  await page.getByRole("button",{name:"刷新",exact:true}).click();
+  await refresh.click();
   await expect(page.getByRole("progressbar")).toHaveAttribute("aria-valuenow","2");
   await page.setViewportSize({width:390,height:844});
   await expect(page.getByRole("heading",{name:"模型健康巡检",exact:true})).toBeVisible();
@@ -50,7 +53,7 @@ try{
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
   assert.equal(await page.evaluate(()=>getComputedStyle(document.querySelector('h1')).color==="rgb(255, 255, 255)"),false);
   const stats=await(await fetch(f.control+"/stats")).json();assert.equal(stats.paid,2);assert.equal(stats.catalogCalls,0);
-  await fetch(f.control+"/seed-unknown",{method:"POST"});await page.getByRole("button",{name:"刷新",exact:true}).click();
+  await fetch(f.control+"/seed-unknown",{method:"POST"});await refresh.click();
   page.once("dialog",dialog=>void dialog.accept());await page.getByRole("button",{name:"核查原任务后解除暂停",exact:true}).click();
   await expect(page.getByText("原任务已核查，等待下一次到期巡检",{exact:true})).toBeVisible();
   assert.equal((await api()).budget.used,2);

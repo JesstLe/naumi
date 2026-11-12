@@ -28,7 +28,7 @@ const controlPort=reserve.address().port;await new Promise(resolve=>reserve.clos
 async function until(read,test,label,timeout=12000) {
  const end=Date.now()+timeout;
  while(Date.now()<end) {try{const v=await Promise.race([read(),sleep(100).then(()=>{throw Error('pending');})]);if(test(v))return v;}catch{}await sleep(30);}
- throw Error('TIMEOUT '+label+' '+stderr);
+ throw Error('TIMEOUT '+label+' '+stderr+' '+JSON.stringify({exitCode:child?.exitCode,signalCode:child?.signalCode,output:child?.output}));
 }
 const status=async()=>{
  const response=await fetch(`http://127.0.0.1:${controlPort}/status`,{headers:{'x-video-worker-secret':secret},signal:AbortSignal.timeout(1000)});
@@ -40,23 +40,43 @@ const control=async(action,s)=>{
  assert.equal(response.status,200);return response.json();
 };
 async function start() {
+ const ipcShutdown=process.platform==='win32';
  const p=spawn(process.execPath,[path.join(root,'video-worker.mjs')],{env:{...process.env,NAUMI_APP_ORIGIN:`http://127.0.0.1:${appPort}`,
   VIDEO_WORKER_SECRET:secret,VIDEO_WORKER_INTERVAL_MS:'5000',NAUMI_WORKER_RELEASE_CONTROL:'1',NAUMI_WORKER_START_PAUSED:'1',
   NAUMI_WORKER_STATE_FILE:path.join(directory,'worker.json'),NAUMI_INSTANCE_ID:'fixture-worker-1',SOURCE_COMMIT:commit,
   NAUMI_WORKER_TARGET_INSTANCE_ID:'fixture-web-1',
-  NAUMI_WORKER_CONTROL_PORT:String(controlPort)},stdio:['ignore','pipe','pipe']});
+  NAUMI_WORKER_PARENT_START:ipcShutdown?'1':'0',
+  NAUMI_WORKER_CONTROL_PORT:String(controlPort)},windowsHide:true,stdio:ipcShutdown?['ignore','pipe','pipe','ipc']:['ignore','pipe','pipe']});
  p.on('error',error=>{stderr+=String(error);});p.stderr.on('data',b=>{stderr+=b;});
- p.stdout.on('data',()=>{});p.done=new Promise(resolve=>p.on('exit',(code,signal)=>resolve({code,signal})));child=p;
- return until(status,s=>s.instanceId==='fixture-worker-1','worker start');
+ p.output='';p.stdout.on('data',b=>{p.output+=b;});p.done=new Promise(resolve=>p.on('exit',(code,signal)=>resolve({code,signal})));child=p;
+ const state=await until(status,s=>s.instanceId==='fixture-worker-1','worker start');
+ if(ipcShutdown) {
+  const id=randomUUID();let acknowledged=false;
+  p.on('message',message=>{if(message?.type==='naumi-worker-gate-ack'&&message.id===id&&message.allowed===true&&message.started===true)acknowledged=true;});
+  p.send({type:'naumi-worker-gate',id,allowed:true,start:true});
+  await until(async()=>acknowledged,Boolean,'parent start acknowledgement');
+ }
+ return state;
+}
+function requestShutdown() {
+ // Windows kill('SIGTERM') terminates forcibly; the existing supervisor IPC
+ // disconnect invokes the same graceful stop handler without aborting the tick.
+ if(process.platform==='win32')child.disconnect();else assert.equal(child.kill('SIGTERM'),true);
+}
+async function gracefulExit() {
+ const stopped=await until(()=>child.done,()=>true,'graceful exit');
+ assert.equal(stopped.code,0);assert.equal(stopped.signal,null);
+ await until(async()=>child.output,output=>output.includes('WORKER_TICK_DRAIN=COMPLETE'),'drain acknowledgement');
+ assert.match(child.output,/WORKER_TICK_DRAIN=COMPLETE/);
 }
 try {
  let s=await start();assert.equal(s.phase,'QUIESCENT');await sleep(100);assert.equal(calls,0);
  const unauthorized=await fetch(`http://127.0.0.1:${controlPort}/status`);assert.equal(unauthorized.status,401);
  await control('resume',s);await until(async()=>calls,n=>n===1,'first tick');
  s=await status();assert.equal(s.activeTicks,1);s=(await control('drain',s)).state;assert.equal(s.phase,'DRAINING');
- child.kill('SIGTERM');await sleep(150);assert.equal(child.exitCode,null);assert.equal(held.destroyed,false);
+ requestShutdown();await sleep(150);assert.equal(child.exitCode,null);assert.equal(child.signalCode,null);assert.equal(held.destroyed,false);
  assert.equal(calls,1);Object.assign(heldTick,{phase:'completed',completedAt:new Date().toISOString(),result:{ok:true,processed:1,at:'fixture'}});held.writeHead(200,{'content-type':'application/json'});held.end(JSON.stringify(envelope(heldTick)));
- const stopped=await until(()=>child.done,()=>true,'graceful exit');assert.equal(stopped.code,0);
+ await gracefulExit();
  s=await start();assert.equal(s.phase,'QUIESCENT');await sleep(100);assert.equal(calls,1);
  await control('resume',s);await until(async()=>calls,n=>n===2,'crash tick');
  child.kill('SIGKILL');await child.done;
@@ -72,9 +92,9 @@ try {
  Object.assign(heldTick,{phase:'completed',completedAt:new Date().toISOString(),result:{ok:true,processed:1,at:'fixture-lost-response'}});
  const reconciled=await reconcile();assert.equal(reconciled.status,200);s=(await reconciled.json()).state;assert.equal(s.phase,'QUIESCENT');assert.equal(s.paused,true);assert.equal(s.tickDrainComplete,true);
  assert.equal((await(await reconcile()).json()).duplicate,true);assert.equal(calls,2);
- child.kill('SIGTERM');assert.equal((await child.done).code,0);
+ requestShutdown();await gracefulExit();
  s=await start();assert.equal(s.phase,'QUIESCENT');assert.equal(s.lastTick.phase,'complete');assert.equal(calls,2);
- child.kill('SIGTERM');assert.equal((await child.done).code,0);
+ requestShutdown();await gracefulExit();
  console.log('WORKER_HANDOFF_PROCESS=PASS PAUSED_START=YES NO_ABORT_ON_DRAIN=YES RESTART_PAUSED=YES CRASH=UNKNOWN READONLY_RECONCILE=YES NO_REPLAY=YES CALLS=2_FIXTURE SUPPLIER_CALLS=0 EXIT=0');
 } finally {
  if(child&&child.exitCode===null) {child.kill('SIGKILL');await child.done;}
