@@ -1,5 +1,19 @@
 [
   {
+    "version": "1794458731",
+    "title": {
+      "zh": "创作界面体验更新",
+      "en": "Creation workspace update"
+    },
+    "improvements": [
+      {
+        "zh": "统一创作界面的导航与布局，优化模板、工具、作品及账户页面的使用体验；无限画布和原生参考工作台保持原样。",
+        "en": "Unified navigation and layouts improve templates, tools, creations and account pages. The infinite canvas and native reference workbench remain unchanged."
+      }
+    ],
+    "fixes": []
+  },
+  {
     "version": "1794453713",
     "title": {
       "zh": "创作界面体验更新",
@@ -21,14 +35,14 @@
     },
     "improvements": [
       {
-        "zh": "首页与画布的创作参数保持一致，视频时长、清晰度与比例联动更准确。",
-        "en": "Creation parameters are consistent across the home page and canvas, with more accurate video duration, resolution and aspect-ratio choices."
+        "zh": "首页与画布的图片创作参数保持一致。",
+        "en": "Image creation parameters are consistent across the home page and canvas."
       }
     ],
     "fixes": [
       {
-        "zh": "修复部分图片比例选项缺失，以及视频时长状态重复显示的问题。",
-        "en": "Fixed missing image aspect ratios and duplicate video duration labels."
+        "zh": "修复部分图片比例选项缺失的问题。",
+        "en": "Fixed missing image aspect-ratio options."
       },
       {
         "zh": "提升对话结果图片和模板封面的加载稳定性，恢复部分失效封面。",
@@ -53,56 +67,6 @@
       }
     ],
     "fixes": []
-  },
-  {
-    "version": "1794327098",
-    "title": {
-      "zh": "视频审片与声音编辑更新",
-      "en": "Video review and audio editing"
-    },
-    "improvements": [
-      {
-        "zh": "新增画面与原片声音辅助检查入口，检查结果供人工复核。",
-        "en": "Added visual and source-audio review tools with findings for manual review."
-      },
-      {
-        "zh": "支持配音、转写和逐句声音采用，保留原稿与已有剪辑。",
-        "en": "Create narration, transcribe audio and adopt individual lines while preserving the script and existing edits."
-      }
-    ],
-    "fixes": [
-      {
-        "zh": "完善检查中断后的恢复，修复生成按钮加载时的状态显示。",
-        "en": "Improved interrupted-review recovery and corrected the generation button while loading."
-      }
-    ]
-  },
-  {
-    "version": "1794310315",
-    "title": {
-      "zh": "分镜创作与成片交付更新",
-      "en": "Storyboard creation and final delivery"
-    },
-    "improvements": [
-      {
-        "zh": "从原稿建立分镜方案，保留独立创意版本和明确选片。",
-        "en": "Create storyboards from a script while keeping independent creative versions and explicit shot selections."
-      },
-      {
-        "zh": "按时间点记录审片意见，定点返工并保留原有剪辑。",
-        "en": "Review at specific timecodes, remake selected shots and keep existing edits."
-      },
-      {
-        "zh": "支持独立录音、逐句字幕和分镜结构同步。",
-        "en": "Add recordings and line-by-line subtitles, and synchronize storyboard structure."
-      }
-    ],
-    "fixes": [
-      {
-        "zh": "完善中断恢复和合成失败后的单独重试，修复成片下载。",
-        "en": "Improved interruption recovery and assembly-only retry, and fixed final-video downloads."
-      }
-    ]
   },
   {
     "version": "1794310093",
@@ -141,33 +105,6 @@
       {
         "zh": "修复读取已保存版本失败时，本地未保存内容可能被清空的问题。",
         "en": "Fixed unsaved local content being cleared when loading a saved version fails."
-      }
-    ]
-  },
-  {
-    "version": "1793620641",
-    "title": {
-      "zh": "视频创作与分镜流程更新",
-      "en": "Video creation and storyboard workflow update"
-    },
-    "improvements": [
-      {
-        "zh": "优化视频创作模式选择，按当前可用能力展示选项。",
-        "en": "Improved video mode selection with options matching available capabilities."
-      },
-      {
-        "zh": "完善分镜编辑、顺序调整和已有视频复用流程。",
-        "en": "Improved storyboard editing, shot ordering and reuse of existing videos."
-      },
-      {
-        "zh": "完善最终成片合成，保留有声片段并兼容无声片段。",
-        "en": "Improved final assembly while preserving audio and supporting silent clips."
-      }
-    ],
-    "fixes": [
-      {
-        "zh": "修复部分合成失败后需要重复生成视频的问题，支持单独重试已确认失败的合成步骤。",
-        "en": "Fixed cases requiring videos to be regenerated after assembly failure; confirmed failed assembly can be retried separately."
       }
     ]
   },
@@ -406,14 +343,10 @@
   {
     "version": "1793175770",
     "title": {
-      "zh": "画布多轨编辑与创作体验优化",
-      "en": "Multitrack editing and smoother creation"
+      "zh": "画布创作体验优化",
+      "en": "Canvas creation improvements"
     },
     "improvements": [
-      {
-        "zh": "新增多轨编辑，可编排图片、视频和音频，预览并导出成片。",
-        "en": "Arrange images, video and audio in a multitrack editor, preview the result and export a finished video."
-      },
       {
         "zh": "减少大图结果处理中的重复工作，改善图片交付效率。",
         "en": "Reduced repeated processing of large images for more efficient delivery."
@@ -425,10 +358,6 @@
     ],
     "fixes": [
       {
-        "zh": "修复部分视频任务等待和停止处理中的异常。",
-        "en": "Fixed issues affecting waiting video tasks and stop requests."
-      },
-      {
         "zh": "改善部分任务连接异常时的错误反馈。",
         "en": "Improved feedback when a task encounters a connection error."
       }
@@ -437,14 +366,10 @@
   {
     "version": "1793164841",
     "title": {
-      "zh": "画布创作与音频编辑更新",
-      "en": "Canvas creation and audio editing update"
+      "zh": "画布图片创作更新",
+      "en": "Canvas image creation update"
     },
     "improvements": [
-      {
-        "zh": "新增音频节点，可剪辑音频、调整音量与淡入淡出，并将采用的结果连接到视频创作。",
-        "en": "New audio nodes let you trim audio, adjust volume and fades, and connect adopted results to video creation."
-      },
       {
         "zh": "已有图片可在原节点重新生成，并通过版本历史查看、切换和撤销结果。",
         "en": "Regenerate an existing image in place, then review, switch and undo results through version history."
@@ -693,43 +618,11 @@
         "en": "Reference images by number and see missing references after removing an image."
       },
       {
-        "zh": "视频节点支持更多参数控制与批量生成。",
-        "en": "Use additional video node controls and batch generation."
-      },
-      {
         "zh": "对话处理中可继续添加图片，刷新后可恢复处理进度。",
         "en": "Add images while a conversation is processing and restore its progress after a refresh."
       }
     ],
-    "fixes": [
-      {
-        "zh": "修复页面刚打开或刷新后，新建视频节点偶尔未选中默认选项的问题；加载失败时支持重试。",
-        "en": "Fixed missing defaults when creating video nodes immediately after opening or refreshing a page, and added a retry action when loading fails."
-      },
-      {
-        "zh": "修复部分视频生成无法识别参考图片的问题。",
-        "en": "Fixed reference images not being recognized by some video generation options."
-      }
-    ]
-  },
-  {
-    "version": "1792696653",
-    "title": {
-      "zh": "视频创作选项更新",
-      "en": "Video creation options"
-    },
-    "improvements": [
-      {
-        "zh": "视频节点新增多种生成选项，按所选模式显示可用参数。",
-        "en": "Added video generation choices with settings matched to the selected mode."
-      }
-    ],
-    "fixes": [
-      {
-        "zh": "修复私有参考素材无法用于部分视频生成的问题。",
-        "en": "Fixed private reference media being unavailable for some video generation options."
-      }
-    ]
+    "fixes": []
   },
   {
     "version": "1792674911",
@@ -830,8 +723,8 @@
     },
     "improvements": [
       {
-        "zh": "文字、图片和视频的创作工具栏采用统一布局。",
-        "en": "Text, image and video creation toolbars now share a consistent layout."
+        "zh": "文字与图片的创作工具栏采用统一布局。",
+        "en": "Text and image creation toolbars now share a consistent layout."
       }
     ],
     "fixes": [
@@ -898,10 +791,6 @@
       {
         "zh": "画布可批量运行选中节点，并显示生成进度。",
         "en": "Run selected canvas nodes in batches and see generation progress."
-      },
-      {
-        "zh": "视频节点支持选中后直接编辑提示词、参数与引用。",
-        "en": "Edit video prompts, settings and references directly from selected nodes."
       }
     ],
     "fixes": [
