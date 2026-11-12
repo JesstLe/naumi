@@ -225,14 +225,15 @@ async function checkpointToolArtwork(context: Context, tx?: Tx, expectedId?: str
     context.resultCheckpointed = true;
 }
 /** Expired request ownership never permits a supplier resubmission or a refund. */
-export async function exposeAbandonedBillingOperations() {
-    await getPool().query(`UPDATE app_billing_operations SET state='manual'
+export async function exposeAbandonedBillingOperations(): Promise<number> {
+    const exposed = await getPool().query(`UPDATE app_billing_operations SET state='manual'
       WHERE state='reserved' AND (
         (id LIKE 'tool-%' AND updated_at < now()-make_interval(mins=>GREATEST(30,COALESCE((quote->>'staleReservationMinutes')::int,30))))
         OR EXISTS (SELECT 1 FROM app_canvas_image_tasks c WHERE c.id=app_billing_operations.id AND c.status='needs_attention')
         OR EXISTS (SELECT 1 FROM app_image_jobs j WHERE j.id=app_billing_operations.id AND j.snapshot->>'status'='needs_attention')
         OR EXISTS (SELECT 1 FROM app_video_tasks v WHERE v.id=app_billing_operations.id AND v.status='needs_attention'))
       ${excludeImportedHistory("app_billing_operations")}`);
+    return exposed.rowCount ?? 0;
 }
 export async function synchronousCost(quality?: ResolvedImageQuality, resolution = "1K") {
     const context = storage.getStore();

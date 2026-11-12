@@ -2,6 +2,7 @@ import "server-only";
 import {scanVideoWorkerOnce} from "../video/worker";
 import {recoverCanvasImageTasks} from "../canvas-image-tasks";
 import {recoverDurableImageJobs} from "./image-recovery";
+import {exposeAbandonedBillingOperations} from "../billing/synchronous-operation";
 import {scanSupplierCostsOnce} from "../supplier-cost/worker";
 import {scheduleMediaRecovery} from "./media-recovery";
 
@@ -15,6 +16,10 @@ export async function scanApplicationWorkerOnce() {
   const imageProcessed = await phase('canvasImage',()=>recoverCanvasImageTasks(2));
   const generationProcessed = await phase('generation',()=>recoverDurableImageJobs());
   await phase('reference',()=>import("../reference-workbench/service").then(m=>m.recoverReferenceWorkbench()));
+  // Stale reservations become reviewable on the tick cadence; waiting for an
+  // admin page visit left paid tasks invisible to operations until someone
+  // opened the reconciliation console.
+  const billingExposed = await phase('billingExposure',()=>exposeAbandonedBillingOperations());
   const supplierCostsProcessed = await phase('supplierCosts',()=>scanSupplierCostsOnce());
   const mediaRecovery=await phase('mediaAdmission',()=>scheduleMediaRecovery());
   return {
@@ -23,6 +28,7 @@ export async function scanApplicationWorkerOnce() {
     // This receipt confirms dispatch, not completion of detached media work.
     mediaProcessed:0,
     generationProcessed,
+    billingExposed,
     supplierCostsProcessed,
     mediaSaved:0,
     mediaRecovery,

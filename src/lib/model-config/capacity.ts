@@ -18,6 +18,56 @@ export async function providerCapacitySummary(pool: Pool, config: ModelConfig) {
   const byIdentity = new Map(rows.map(row => [row.alias, row]));
   return Object.fromEntries(config.providers.map((p, i) => { const row = byIdentity.get(identities[i]); return [p.id, { maxConcurrent: row?.max_concurrent ?? p.maxConcurrent, inFlight: row?.in_flight ?? 0, unlimited: false }]; }));
 }
+export type ProviderCapacityLease = { token: string; expiresAt: string };
+export type ProviderCapacityDetail = {
+  id: string; name: string; enabled: boolean; merged: boolean;
+  configuredMaxConcurrent: number; budgetMaxConcurrent: number | null;
+  inFlight: number; leases: ProviderCapacityLease[];
+};
+/** Operations visibility for budgets and leases: a budget below the published
+ * limit (historic ratchet or disabled-provider residue) stalls claims silently;
+ * in-flight leases show who occupies the slots until which expiry. */
+export async function providerCapacityDetail(pool: Pool, config: ModelConfig): Promise<ProviderCapacityDetail[]> {
+  const identities = config.providers.map(p => capacityIdentity(p.id, p.baseUrl));
+  const [aliasRows, leaseRows] = await Promise.all([
+    pool.query("SELECT alias,identity FROM app_model_capacity_accounts WHERE alias=ANY($1)", [identities]),
+    pool.query("SELECT identity,token,expires_at FROM app_model_provider_leases WHERE expires_at>now() ORDER BY expires_at ASC LIMIT 200"),
+  ]);
+  const identityByAlias = new Map(aliasRows.rows.map(row => [row.alias, row.identity] as const));
+  const resolved = new Map(config.providers.map((p, i) => [p.id, identityByAlias.get(identities[i]) || identities[i]] as const));
+  const usedIdentities = Array.from(new Set(resolved.values()));
+  const [budgetRows, inFlightRows] = await Promise.all([
+    pool.query("SELECT identity,max_concurrent FROM app_model_provider_budgets WHERE identity=ANY($1)", [usedIdentities]),
+    pool.query("SELECT identity,count(*)::int AS n FROM app_model_provider_leases WHERE identity=ANY($1) AND expires_at>now() GROUP BY identity", [usedIdentities]),
+  ]);
+  const budgets = new Map(budgetRows.rows.map(row => [row.identity, Number(row.max_concurrent)]));
+  const inFlight = new Map(inFlightRows.rows.map(row => [row.identity, Number(row.n)]));
+  return config.providers.map(p => {
+    const alias = capacityIdentity(p.id, p.baseUrl), identity = resolved.get(p.id)!;
+    return {
+      id: p.id, name: p.name, enabled: p.enabled,
+      merged: identity !== alias,
+      configuredMaxConcurrent: p.maxConcurrent, budgetMaxConcurrent: budgets.get(identity) ?? null,
+      inFlight: inFlight.get(identity) ?? 0,
+      leases: leaseRows.rows.filter(row => row.identity === identity).map(row => ({ token: row.token, expiresAt: row.expires_at.toISOString() })),
+    };
+  });
+}
+/** Restore the published limit as the budget for a provider identity. Acquire
+ * no longer ratchets down and publication raises enabled budgets, so this only
+ * clears residue from historic ratchets, disabled providers or merged aliases. */
+export async function resetProviderBudget(pool: Pool, providerId: string, config: ModelConfig) {
+  const provider = config.providers.find(p => p.id === providerId);
+  if (!provider) throw new ModelConfigError("PROVIDER_UNAVAILABLE", "供应商不在当前发布配置中", 404);
+  const alias = capacityIdentity(provider.id, provider.baseUrl);
+  const identity = (await pool.query("SELECT identity FROM app_model_capacity_accounts WHERE alias=$1", [alias])).rows[0]?.identity || alias;
+  const rows = await pool.query("SELECT max_concurrent FROM app_model_provider_budgets WHERE identity=$1", [identity]);
+  const previous = rows.rows[0] ? Number(rows.rows[0].max_concurrent) : null;
+  if (previous === null) throw new ModelConfigError("BUDGET_UNAVAILABLE", "该供应商尚无预算记录，无需重置", 409);
+  if (previous === provider.maxConcurrent) return { providerId, identity, previous, restored: previous, changed: false };
+  const updated = await pool.query("UPDATE app_model_provider_budgets SET max_concurrent=$2 WHERE identity=$1 RETURNING max_concurrent", [identity, provider.maxConcurrent]);
+  return { providerId, identity, previous, restored: Number(updated.rows[0].max_concurrent), changed: true };
+}
 /** Run in the publication transaction, so old tasks see a lowered limit as soon as the pointer changes. */
 export async function registerProviderCapacities(tx: PoolClient, config: ModelConfig) {
   // Registration can merge two previously separate accounts. Claims take the shared

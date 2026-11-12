@@ -30,6 +30,7 @@
     "verify:image-mapping-ui": "node scripts/verify-image-mapping-ui.cjs",
     "verify:model-credit-source": "tsx --conditions react-server scripts/verify-model-credit-source.ts",
     "verify:billing-publication-check": "tsx --conditions react-server scripts/verify-billing-publication-check.ts",
+    "verify:billing-pending-view": "tsx --conditions react-server scripts/verify-billing-pending-view.ts",
     "verify:model-draft-retention": "tsx --conditions react-server scripts/verify-model-draft-retention.ts",
     "verify:image-parameter-golden": "tsx --conditions react-server scripts/verify-image-parameter-golden.ts",
     "verify:model-management-ui": "node scripts/verify-model-management-ui.mjs",

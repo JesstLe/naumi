@@ -704,3 +704,45 @@
     padding: 13px 14px;
   }
 }
+
+.kpiGrid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  margin: 0;
+}
+
+.kpiGrid dd {
+  margin: 0;
+}
+
+.leaseList {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.leaseList li {
+  margin-top: 4px;
+}
+
+.channelRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.reasonInput {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font: inherit;
+  color: inherit;
+  background: #fff;
+}
+
+.reasonInput:focus-visible {
+  border-color: var(--blue);
+  outline: 2px solid var(--blueTint);
+}
