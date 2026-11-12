@@ -1,5 +1,19 @@
 [
   {
+    "version": "1794453713",
+    "title": {
+      "zh": "创作界面体验更新",
+      "en": "Creation workspace update"
+    },
+    "improvements": [
+      {
+        "zh": "统一创作界面的导航与布局，优化模板、工具、作品及账户页面的使用体验；无限画布和原生参考工作台保持原样。",
+        "en": "Unified navigation and layouts improve templates, tools, creations and account pages. The infinite canvas and native reference workbench remain unchanged."
+      }
+    ],
+    "fixes": []
+  },
+  {
     "version": "1794396691",
     "title": {
       "zh": "创作设置与图片显示优化",

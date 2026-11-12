@@ -7,7 +7,9 @@ export type PublicReleaseNote = {
 };
 
 // A secondary guard, not a substitute for a human public-content review.
-const internal = /(?:admin|后台|管理员|供应商|上游|采购|成本|密钥|凭据|账号|账户|邮箱|手机号|服务器|端口|容器|部署|蓝绿|回滚|分支|提交|数据库|内网|运维|模型|接口|worker|nginx|docker|ssh|api\b|token|secret|password|credential|provider|supplier|database|backend|deployment|rollback|internal|account|email|phone|hostname|upstream|gpt|glm|kimi|claude|gemini|deepseek|openai|imagegen|geeknow|tdh|replicate|qwen|midjourney|智谱|通义|千问|豆包|文心|\.pem\b|https?:|www\.|@[a-z0-9]|\b1[3-9]\d{9}\b|\b(?:[a-z0-9-]+\.)+(?:com|cn|net|org|top|local|test|internal|io)\b|[a-f0-9]{32,}|(?:\d{1,3}\.){3}\d{1,3}|[a-z]:[\\/]|[<>`])/i;
+// A generic public UI page name is not an account identifier. Keep all other
+// identity/secret checks and the separate human-review requirement intact.
+const internal = /(?:admin|后台|管理员|供应商|上游|采购|成本|密钥|凭据|账号|账户(?!页面)|邮箱|手机号|服务器|端口|容器|部署|蓝绿|回滚|分支|提交|数据库|内网|运维|模型|接口|worker|nginx|docker|ssh|api\b|token|secret|password|credential|provider|supplier|database|backend|deployment|rollback|internal|account(?! pages\b)|email|phone|hostname|upstream|gpt|glm|kimi|claude|gemini|deepseek|openai|imagegen|geeknow|tdh|replicate|qwen|midjourney|智谱|通义|千问|豆包|文心|\.pem\b|https?:|www\.|@[a-z0-9]|\b1[3-9]\d{9}\b|\b(?:[a-z0-9-]+\.)+(?:com|cn|net|org|top|local|test|internal|io)\b|[a-f0-9]{32,}|(?:\d{1,3}\.){3}\d{1,3}|[a-z]:[\\/]|[<>`])/i;
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw Error("Invalid public release note");
   return value as Record<string, unknown>;
