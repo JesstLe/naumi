@@ -100,8 +100,11 @@ export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{m
  const append=async(key:string,operation:Intent["operation"],modelId:string,requirements:Intent,featureId:"image.generate"|"canvas.image"|"tool.cutout")=>{
   const stageInputFacts=operation==="cutout"?{...facts(requirements),needsEdit:true,references:1,quantity:1}:facts(requirements);
   const binding=operation==="cutout"?"image.cutout":stageInputFacts.needsEdit?"image.edit":"image.generate";
-  const preparedImage=prepareImageOperation({path:operation==="cutout"?"/api/cutout":"/api/generate-image",binding,feature:featureId,featureModel:modelId,references:stageInputFacts.references,allowResolutionFallback:!request.parameters.width&&!request.parameters.height&&!versions,
-   body:{model:modelId,prompt:request.prompt,origin:featureId==="canvas.image"?"canvas":"",quality:request.parameters.quality||"medium",resolution:request.parameters.resolution||"1K",ratio:request.parameters.ratio||"1:1",needsMask:stageInputFacts.needsMask,...(request.parameters.width?{targetWidth:request.parameters.width,targetHeight:request.parameters.height}:{})},
+  // Cutout stages use the server-configured processor, not a public user choice.
+  // Preparation and quotation resolve that default from the same frozen snapshot.
+  const requestedModelId=operation==="cutout"?undefined:modelId;
+  const preparedImage=prepareImageOperation({path:operation==="cutout"?"/api/cutout":"/api/generate-image",binding,feature:featureId,featureModel:requestedModelId,references:stageInputFacts.references,allowResolutionFallback:!request.parameters.width&&!request.parameters.height&&!versions,
+   body:{model:requestedModelId,prompt:request.prompt,origin:featureId==="canvas.image"?"canvas":"",quality:request.parameters.quality||"medium",resolution:request.parameters.resolution||"1K",ratio:request.parameters.ratio||"1:1",needsMask:stageInputFacts.needsMask,...(request.parameters.width?{targetWidth:request.parameters.width,targetHeight:request.parameters.height}:{})},
    advanced:{intent:requirements},resolvedFrame:{ratio:request.parameters.ratio,preserveModelIdentity:true}},models,billing);
   preparedImage.facts.quantity=operation==="cutout"?1:request.variants;
   const effectiveResolution=preparedImage.facts.requestedResolution||preparedImage.facts.resolution;
@@ -144,7 +147,8 @@ export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{m
   if(model.target.type==="pool"&&!model.supplierRouting&&(request.parameters.inputFidelity!==undefined||request.parameters.moderation!==undefined||request.parameters.width!==undefined||request.output.compressionMode==="native"&&request.output.compression!==undefined))throw new ImagegenPlanError("外部Router尚未开放这些原生参数的发送，请选择已发布参数映射的直连供应通道");
   assertToolScope(models.config,featureId,modelId);
   if(model.target.type!=="upstream"&&!model.supplierRouting&&candidates.excluded.length)throw new ImagegenPlanError("当前聚合通道尚不能限制高级参数候选，请管理员维护全部候选能力");
-  const q=await runExecutionBundle({frozen:{modelVersion:models.version,billingVersion:billing.version},billing,models},()=>quoteForActor(owner,{feature:featureId,quantity:operation==="cutout"?1:request.variants,modelId,quality:requestedQuality,resolution:requestedResolution,ratio:targetRatio},{effectiveResolution:stageFacts.resolution,...(frameChoice?{effectiveRatio:request.parameters.ratio}:{})}));
+  const q=await runExecutionBundle({frozen:{modelVersion:models.version,billingVersion:billing.version},billing,models},()=>quoteForActor(owner,{feature:featureId,quantity:operation==="cutout"?1:request.variants,modelId:requestedModelId,quality:requestedQuality,resolution:requestedResolution,ratio:targetRatio},{effectiveResolution:stageFacts.resolution,...(frameChoice?{effectiveRatio:request.parameters.ratio}:{})}));
+  if(preparedImage.modelId!==modelId||q.facts.modelId!==modelId)throw new ImagegenPlanError("图片步骤与报价模型不一致，请重新准备", "IMAGEGEN_MODEL_MISMATCH", 409);
   if(q.imageParameterPlanVersion===1)q.imageParameterPlans=Object.fromEntries(candidates.eligible.map(c=>{const u=models.config.upstreamModels.find(u=>u.id===c.upstreamId)!,p=models.config.providers.find(p=>p.id===u.providerId)!;return [u.id,compileImageParameterPlan(u,imagePlanSelection({...stageFacts,requestedResolution:stageFacts.resolution},{...request,output:{...request.output,background:operation==="cutout"?"transparent":requirements.background||undefined}}),{publicModelId:parameterModelIdentity(models.config,modelId),protocol:p.protocol,modelVersion:models.version,adapter:p.options?.imageAdapter})];}));
   if(stageResolution?.changed)warnings.push(resolutionFallbackMessage(stageResolution));
   const eligibleUpstreamIds=candidates.eligible.map(c=>c.upstreamId);

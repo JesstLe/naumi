@@ -19,6 +19,7 @@ import { executionOpenAI } from "./clients";
 import { businessRoutePlan, selectedBusinessOption } from "./business";
 import { selectedImagePreset, effectiveImageParameters } from "./image-preset";
 import {selectFeatureModel} from "./model-selection";
+import {featureDefaultModel} from "./feature-model-policy";
 import {validatePreparedImage,type PreparedImageOperation} from "./prepared-image-contract";
 import {freezeManagedVideoCapability} from "../video/frozen-capability";
 import {type FrozenVideoCapability} from "../video/frozen-capability-schema";
@@ -111,7 +112,10 @@ export function createModelExecutor(deps: Dependencies) {
         const parameters = effectiveImageParameters(preset,{quality:input.facts.quality,resolution:input.facts.requestedResolution||input.facts.resolution,ratio:input.facts.ratio||"1:1"});
         input = {...input,facts:{...input.facts,...parameters.effective,nativeResolution:parameters.nativeResolution && input.facts.resolution !== "1K"}};
       }
-      const selection=selectFeatureModel(config,{feature:input.feature,binding:input.binding,requestedModelId:input.requestedModelId,scopeSystem:input.scopeSystem})!;
+      // Prepared images are server-owned. An already prepared configured default
+      // must not become a new user selection (internal cutout models stay hidden).
+      const preparedDefault=prepared&&prepared.modelId===featureDefaultModel(config,input.feature,input.binding as ModelBinding);
+      const selection=selectFeatureModel(config,{feature:input.feature,binding:input.binding,requestedModelId:preparedDefault?undefined:input.requestedModelId,scopeSystem:input.scopeSystem})!;
       const {model,option}=selection;
       if(prepared&&model.id!==prepared.modelId)throw new ModelConfigError("EXECUTION_MISMATCH","准备模型与执行用途不一致",503);
       let imageUpstreamIds = input.imageUpstreamIds === undefined ? undefined : imageUpstreamIdsSchema.parse(input.imageUpstreamIds);
