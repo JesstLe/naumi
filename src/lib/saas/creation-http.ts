@@ -7,7 +7,7 @@ import {enterpriseAuthorize} from '@/lib/enterprise/access';
 import {teamJson,PRIVATE_HEADERS} from '@/lib/teams/access';
 import { TeamError } from "@/lib/teams/errors";
 import {creationFiltersSchema} from './creation-contracts';
-import {listCreations,listUnifiedCreations,creationDetail,creationAsset,type CreationReader} from './creations';
+import {listCreations,listUnifiedCreations,listUnifiedCreationPage,creationDetail,creationAsset,type CreationReader} from './creations';
 import {enterpriseMediaResponse} from '@/lib/enterprise/media-response';
 import {z} from 'zod';
 import {listLegacyCreations,legacyCreationDetail,legacyCreationAsset} from './legacy-creations';
@@ -29,7 +29,7 @@ export async function creationListRoute(request:Request,enterprise=false){
  if((query.source==='legacy'||query.view==='unified')&&!query.from&&!query.to&&!query.period)query.period='all';
  const today=new Date(Date.now()+8*3600000).toISOString().slice(0,10);if(!query.from&&!query.to&&query.period!=='all'){query.to=today;query.from=new Date(Date.parse(today)-6*86400000).toISOString().slice(0,10);}
  const parsed=creationFiltersSchema.safeParse(query);if(!parsed.success)return teamJson({error:'创作筛选参数无效'},400);
- if(parsed.data.view==='unified')return teamJson(await listUnifiedCreations(reader,parsed.data));
+ if(parsed.data.view==='unified')return teamJson(await (parsed.data.projection==='list'?listUnifiedCreationPage:listUnifiedCreations)(reader,parsed.data));
  if(parsed.data.source==='legacy'){if(!reader.platform)return teamJson(await enterpriseHistory(reader.actor,reader.tenantId,parsed.data));if(parsed.data.tenantId)return teamJson({error:'历史记录没有企业归属，不能用于此筛选'},400);return teamJson(await listLegacyCreations(parsed.data));}
  return teamJson(await listCreations(reader,parsed.data));}catch(e){return creationFailure(e);}
 }

@@ -6,7 +6,7 @@ export type EvidenceState = 'recorded'|'not_recorded'|'unavailable'|'not_applica
 export const creationFiltersSchema = z.object({
   tenantId:z.string().uuid().optional(), q:z.string().max(200).default(''), user:z.string().max(254).default(''),
   status:z.enum(creationStatuses).optional(),source:z.string().max(100).optional(),
-  period:z.literal('all').optional(),view:z.literal('unified').optional(),
+  period:z.literal('all').optional(),view:z.literal('unified').optional(),projection:z.literal('list').optional(),
   page:z.coerce.number().int().min(1).max(100000).default(1),size:z.coerce.number().int().min(1).max(100).default(20),
   from:z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),to:z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 }).superRefine((v,c)=>{for(const k of ['from','to'] as const)if(v[k]&&(!Number.isFinite(Date.parse(v[k]!))||new Date(v[k]!).toISOString().slice(0,10)!==v[k]))c.addIssue({code:'custom',message:'日期无效'});if(v.from&&v.to&&(v.to<v.from||Date.parse(v.to)-Date.parse(v.from)>366*86400000))c.addIssue({code:'custom',message:'日期范围无效'});if(v.period==='all'&&(v.source!=='legacy'&&v.view!=='unified'||v.from||v.to))c.addIssue({code:'custom',message:'全部日期仅用于未指定日期的历史记录'});});
@@ -26,6 +26,8 @@ export type CreationEvent = {id:string;eventKey:string;type:string;status:string
 export type EvidencePagination={page:number;size:number;total:number};
 export type CreationDetail = CreationSummary & {evidencePending:boolean;request:{state:EvidenceState;text:string|null};parameters:{state:EvidenceState;values:Record<string,unknown>};model:{state:EvidenceState;label:string|null};assets:CreationAsset[];events:CreationEvent[];children:CreationSummary[];assetPagination:EvidencePagination;eventPagination:EvidencePagination;childPagination:EvidencePagination;billing:{payerAccountId:string|null;source:string;quoted:number|null;reserved:number|null;charged:number|null;released:number|null;refunded:number|null;state:string;operations:{id:string;state:string;charged:number|null}[]};technical?:Record<string,unknown>};
 export type CreationPage = {items:CreationSummary[];pagination:{total:number;page:number;size:number};appliedFilters:CreationFilters;generatedAt:string;scope:'platform'|'tenant'|'member';availability:'available';summary:{total:number;activeMembers:number;settledCredits:number|null;pending:number;failed:number;needsReview:number};memberUsage:{email:string;name:string;settledCredits:number}[]};
+/** The record browser does not consume whole-history accounting/leaderboards. */
+export type CreationListPage = Omit<CreationPage,'summary'|'memberUsage'>;
 
 export function creationStatus(raw:unknown):CreationStatus {
  const s=String(raw||'');if(creationStatuses.includes(s as CreationStatus))return s as CreationStatus;
