@@ -14,7 +14,7 @@ type CompactDockSlot = {
  left:number;width:number;start:number;end:number;align:'start'|'end'|'node';
 };
 
-/** Image-only screen-space placement. Slots and their height limits depend on
+/** Compact media screen-space placement. Slots and their height limits depend on
  * geometry, never on the previous rendered Dock height. The latter only picks
  * a fitting slot and bottom-aligns an upper Dock, so clipping cannot feed a
  * different maximum height back into ResizeObserver on every frame. */

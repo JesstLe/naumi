@@ -1,0 +1,23 @@
+import assert from 'node:assert/strict';
+import {videoResultComposerNode as resolve} from '../src/lib/canvas/video-result-composer';
+import type {CanvasVideoNode} from '../src/lib/canvas/video-node-schema';
+import type {PublicVideoTaskView} from '../src/lib/video/queries';
+const node={id:'v',projectKey:'p',lastResultId:'result',displayResultId:null,deletedAt:null} as CanvasVideoNode;
+const task={id:'t',projectKey:'p',source:'canvas',sourceId:'v',status:'completed',artworkId:'result',resultAssets:[{artworkId:'other'}]} as PublicVideoTaskView;
+let cases=0;function check(actual:unknown,expected:unknown){assert.equal(actual,expected);cases++;}
+check(resolve('result','p',[node],[]),node);
+check(resolve('older','p',[{...node,displayResultId:'older'}],[])?.id,'v');
+check(resolve('other','p',[node],[task]),node);
+check(resolve('result','p',[{...node,lastResultId:null}],[task])?.id,'v');
+check(resolve('result','p',[node],[{...task,source:'workflow',sourceId:'workflow-id',nodeId:'v'}]),node);
+check(resolve('imported','p',[node],[task]),null);
+check(resolve('result',null,[node],[task]),null);
+check(resolve('result','another-project',[node],[task]),null);
+check(resolve('result','p',[{...node,deletedAt:'deleted'}],[task]),null);
+check(resolve('result','p',[node,{...node,id:'another'}],[task]),null);
+check(resolve('result','p',[node],[{...task,sourceId:'deleted-owner'}]),null);
+check(resolve('other','p',[node],[{...task,status:'processing'}]),null);
+check(resolve('other','p',[node],[{...task,projectKey:'other'}]),null);
+check(resolve('other','p',[node],[{...task,source:'workbench'}]),null);
+check(resolve('result','p',[],[task]),null);
+console.log(`VIDEO_RESULT_COMPOSER=PASS CASES=${cases}`);

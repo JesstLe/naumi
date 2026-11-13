@@ -44,6 +44,15 @@ const server=http.createServer(async(req,res)=>{
   const bytes=fs.readFileSync(file);res.writeHead(200,{'content-type':'video/mp4','content-length':bytes.length,...(p==='/api/download'?{'content-disposition':'attachment; filename="video.mp4"'}:{})});return res.end(bytes);
  }
  if(p==='/__fixture/task'){const status=u.searchParams.get('status');const node=videos[0];node.lastTaskId='fixture-task';state.videoTasks=[{id:'fixture-task',sourceId:node.id,projectKey:node.projectKey,status,progress:33,resultAssets:[]}];return json(res,{ok:true});}
+ if(p==='/__fixture/video-complete'){
+  const node=videos[0],task=state.videoTasks.find(task=>task.id===node.lastTaskId);
+  if(!task)return json(res,{error:'submit a local video task first'},409);
+  const ids=Array.from({length:Number(u.searchParams.get('count')||1)},(_,i)=>'continuity-result-'+i);
+  for(const id of ids)if(!arts.some(art=>art.id===id))arts.push({...art,id,parentId:art.id,title:'生成视频 '+id,videoUrl:'/media/fixture-result.mp4',prompt:node.config.prompt,canvasX:120+ids.indexOf(id)*460,canvasY:780});
+  Object.assign(task,{source:'canvas',nodeId:node.id,status:'completed',progress:100,artworkId:ids[0],videoUrl:'/media/fixture-result.mp4',resultAssets:ids.map(artworkId=>({artworkId,url:'/media/fixture-result.mp4'}))});
+  Object.assign(node,{lastResultId:ids[0],revision:node.revision+1});
+  return json(res,{ok:true,ids});
+ }
  if(p==='/__fixture/lock'){state.locked=u.searchParams.get('value')==='1';return json(res,{ok:true});}
  if(p==='/__fixture/result'){if(!arts.some(a=>a.id==='video-result-art'))arts.push({...art,id:'video-result-art',parentId:'placement-root',title:'已生成视频',videoUrl:'/media/fixture-result.mp4',canvasX:120,canvasY:780,prompt:'已完成视频的原始描述'});return json(res,{ok:true});}
  if(p==='/__fixture/bump'){videos[0].revision++;if(u.searchParams.get('config'))videos[0].config.prompt='external edit';return json(res,{ok:true});}

@@ -47,19 +47,19 @@
 .actions button:disabled { cursor: not-allowed; opacity: .45; }
 .actions button:last-child svg { width: 17px; height: 17px; }
 
-/* Image dock density is opt-in; text/video and full-size image composers keep
- * their existing layout. The body remains the only vertical scroll surface. */
-.shell[data-composer-kind="image"][data-composer-density="compact"] .header { min-height: 32px; padding: 1px 10px 1px 12px; }
-.shell[data-composer-kind="image"][data-composer-density="compact"] [data-composer-body] { padding: 2px 12px 8px; }
-.shell[data-composer-kind="image"][data-composer-density="compact"] [data-composer-body] [role="textbox"][contenteditable] { min-height: 112px; }
-.shell[data-composer-kind="image"][data-composer-density="compact"][data-composer-expanded="true"] [data-composer-body] [role="textbox"][contenteditable] { min-height: 160px; }
-.shell[data-composer-kind="image"][data-composer-density="compact"] .footer { min-height: 62px; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; }
-.shell[data-composer-kind="image"][data-composer-density="compact"] .controls { flex: 1 1 300px; }
-.shell[data-composer-kind="image"][data-composer-density="compact"] .actions { max-width: 100%; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
-.shell[data-composer-kind="image"][data-composer-density="compact"] [data-testid="canvas-model-control"] { max-width: 150px; }
-.shell[data-composer-kind="image"][data-composer-density="compact"] .controls { gap: 5px; }
-.shell[data-composer-kind="image"][data-composer-density="compact"] .controls button { padding-left: 7px; padding-right: 7px; }
-.shell[data-composer-kind="image"][data-composer-density="compact"] .headerActions button { width: 28px; height: 28px; min-height: 28px; padding: 0; border-color: transparent; background: transparent; }
+/* Image, video and audio companions share opt-in compact chrome. Text and
+ * full-size composers keep their existing layout and single scroll owner. */
+.shell[data-composer-density="compact"] .header { min-height: 32px; padding: 1px 10px 1px 12px; }
+.shell[data-composer-density="compact"] [data-composer-body] { padding: 2px 12px 8px; }
+.shell[data-composer-density="compact"] [data-composer-body] [role="textbox"][contenteditable] { min-height: 112px; }
+.shell[data-composer-density="compact"][data-composer-expanded="true"] [data-composer-body] [role="textbox"][contenteditable] { min-height: 160px; }
+.shell[data-composer-density="compact"] .footer { min-height: 62px; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; }
+.shell[data-composer-density="compact"] .controls { flex: 1 1 300px; }
+.shell[data-composer-density="compact"] .actions { max-width: 100%; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
+.shell[data-composer-density="compact"] [data-testid="canvas-model-control"] { max-width: 150px; }
+.shell[data-composer-density="compact"] .controls { gap: 5px; }
+.shell[data-composer-density="compact"] .controls button { padding-left: 7px; padding-right: 7px; }
+.shell[data-composer-density="compact"] .headerActions button { width: 28px; height: 28px; min-height: 28px; padding: 0; border-color: transparent; background: transparent; }
 
 .referenceStrip { display: flex; min-width: 0; flex-wrap: nowrap; align-items: center; gap: 6px; margin-bottom: 6px; padding: 2px 2px 4px; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: thin; }
 .referenceStrip > button { height: 44px; max-height: 44px; flex: 0 0 auto; }
@@ -84,9 +84,9 @@
   .controls button:not([role="menuitem"]), .controls > label { font-size: 11px; }
   .actions { margin-left: auto; max-width: 100%; gap: 5px; }
   .shell [data-composer-body] { padding-right: 12px; padding-left: 12px; }
-  .shell[data-composer-kind="image"][data-composer-density="compact"] .footer { gap: 6px; padding: 8px 10px; }
-  .shell[data-composer-kind="image"][data-composer-density="compact"] .controls { flex-basis: 100%; }
-  .shell[data-composer-kind="image"][data-composer-density="compact"] .actions { flex: 1 1 100%; }
+  .shell[data-composer-density="compact"] .footer { gap: 6px; padding: 8px 10px; }
+  .shell[data-composer-density="compact"] .controls { flex-basis: 100%; }
+  .shell[data-composer-density="compact"] .actions { flex: 1 1 100%; }
 }
 /* Slot height matters as well as viewport height. This also covers a dock
  * squeezed beside a large node on an otherwise tall desktop. */

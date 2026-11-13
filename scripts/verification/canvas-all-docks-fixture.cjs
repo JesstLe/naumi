@@ -14,7 +14,7 @@ module.exports=({arts,videos,text,state})=>{
   nodes[kind]=[node];index++;
  }
  arts.push({...arts[0],id:'audit-video-result',parentId:'placement-root',title:'视频结果',videoUrl:'/media/fixture-result.mp4',canvasX:120,canvasY:680,prompt:Array.from({length:35},(_,i)=>`镜头 ${i+1}：晨光经过街道，保持主体与自然光线。`).join('\n')});
- const initial={nodes:structuredClone(nodes),text:structuredClone(text),videos:structuredClone(videos)},writes=[],blocked=[];
+ const initial={nodes:structuredClone(nodes),text:structuredClone(text),videos:structuredClone(videos),arts:structuredClone(arts)},writes=[],blocked=[];
  const sound=Buffer.alloc(44+44100*3*2);sound.write('RIFF');sound.writeUInt32LE(sound.length-8,4);sound.write('WAVEfmt ',8);sound.writeUInt32LE(16,16);sound.writeUInt16LE(1,20);sound.writeUInt16LE(1,22);sound.writeUInt32LE(44100,24);sound.writeUInt32LE(88200,28);sound.writeUInt16LE(2,32);sound.writeUInt16LE(16,34);sound.write('data',36);sound.writeUInt32LE(sound.length-44,40);for(let i=0;i<44100*3;i++)sound.writeInt16LE(Math.round(Math.sin(i*440*2*Math.PI/44100)*4000),44+i*2);
  let prompt=require('../canvas-image-prompt-fixture.cjs').createImagePromptFixture({getArtworks:()=>arts,state});
  return async({req,res,url,body,json})=>{
@@ -24,6 +24,7 @@ module.exports=({arts,videos,text,state})=>{
   if(p==='/api/video/media-jobs/quote'){json(res,{quote:{credits:0,version:1}});return true;}
   if(p==='/api/artworks/get'){const ids=(url.searchParams.get('ids')||'').split(',');state.artworkReads||=[];state.artworkReads.push(ids);json(res,{artworks:arts.filter(art=>ids.includes(art.id))});return true;}
   if(p==='/__fixture/all-docks/reset'&&req.method==='POST'){
+   arts.splice(0,arts.length,...structuredClone(initial.arts));state.videoTasks=[];
    for(const kind of Object.keys(nodes))nodes[kind]=structuredClone(initial.nodes[kind]);
    Object.assign(text,structuredClone(initial.text));videos.splice(0,videos.length,...structuredClone(initial.videos));writes.length=0;blocked.length=0;
    const audioIndex=arts.findIndex(art=>art.id==='audit-audio-source');if(audioIndex>=0)arts.splice(audioIndex,1);
