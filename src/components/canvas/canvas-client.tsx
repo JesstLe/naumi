@@ -143,6 +143,7 @@ import {runCanvasDerivedImage,runCanvasBlankImage,type CanvasImageRunContext,typ
 import {captureCanvasImageTaskScope,captureCanvasTaskOwner} from "@/lib/canvas/image-task-scope";
 import {appendCanvasImageReferences,type CanvasImageGenerationOptions} from "@/lib/canvas/image-task-request";
 import {generateCanvasVideo} from "@/lib/video/canvas-submission";
+import {videoResultComposerNode} from "@/lib/canvas/video-result-composer";
 import {readVideoReceipt,clearVideoReceipt} from "@/lib/video/canvas-receipts";
 import {VideoSettingsDialog,type VideoNodeDraft} from "./video/settings-dialog";
 import {StoryboardPanel} from "./video/storyboard-panel";
@@ -1067,6 +1068,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     [activeKey,active?.members,textNodes,pendNodes,videoNodesStore.nodes,directorNodesStore.nodes,characterNodesStore.nodes,sceneNodesStore.nodes,audioNodesStore.nodes,timelineNodesStore.nodes,comfyNodesStore.nodes]);
   const selectionTargets=useMemo(()=>canvasSelectionTargets(selectionCatalogue,{selectedId,selectedTextId,selectedPendId}),[selectionCatalogue,selectedId,selectedTextId,selectedPendId]);
   const {artwork:selected,text:selectedText,pending:selectedPend,video:selectedVideo,director:selectedDirector,character:selectedCharacter,scene:selectedScene,audio:selectedAudio,timeline:selectedTimeline}=selectionTargets;
+  // Keep result selection/geometry/media actions intact; only its composer
+  // reuses the explicitly recorded native generation owner.
+  const resultVideoComposer=useMemo(()=>selected?.videoUrl&&selected.category!=="audio"
+    ?videoResultComposerNode(selected.id,activeKey,videoNodesStore.nodes,videoTaskStore.tasks):null,
+    [selected,activeKey,videoNodesStore.nodes,videoTaskStore.tasks]);
+  const videoComposerNode=selectedVideo||(canFeature("video")?resultVideoComposer:null);
   const selectedProperties=canvasSelectionProperties(selectionTargets);
   const mixedNativeSelection=multiSel.length>1&&(multiSel.some(id=>videoNodesStore.getNode(id)||directorNodesStore.getNode(id)||characterNodesStore.getNode(id)||sceneNodesStore.getNode(id)||audioNodesStore.getNode(id)||timelineNodesStore.getNode(id))||multiSel.some(id=>textNodesRef.current.some(node=>node.id===id))&&multiSel.some(id=>!textNodesRef.current.some(node=>node.id===id)));
 
@@ -1268,8 +1275,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
   const {nodeScreen,dockStyle,topbarStyle,overlaySafeArea,panelRef,textComposerDockRef,nodeToolbarRef,nodeRenamePositionRef,updateLiveViewport}=useCanvasOverlayLayout({
     flow:rfRef,viewport:viewportRef,nodes:rfNodes,size:canvasSize,selection:{selectedId,selectedPendId,selectedTextId},contextMenuOpen:!!ctxMenu,
-    textComposerExpanded,mediaComposerExpanded,readOnly,nodeTitleHeight:selectedVideo||selected?.videoUrl?38:0,anchorTitleHeight:selectedVideo?38:0,protectImageNodeTitle:!!selected&&!selected.videoUrl,compactImage:!!selected&&!selected.videoUrl||!!selectedPend,
-    measurementKey:JSON.stringify([selectedBatchArts.length,selectedTextBatchNodes.length,browsing]),
+    textComposerExpanded,mediaComposerExpanded,readOnly,nodeTitleHeight:selectedVideo||selected?.videoUrl?38:0,anchorTitleHeight:selectedVideo?38:0,protectImageNodeTitle:!!selected&&!selected.videoUrl,compactImage:!!selected||!!selectedPend||!!selectedVideo,
+    measurementKey:JSON.stringify([selectedBatchArts.length,selectedTextBatchNodes.length,browsing,videoComposerNode?.id??null]),
     contextKey:JSON.stringify([canvasArtworkDocument.scope.key,canvasContextEpochRef.current]),syncZoom:viewControls.syncZoom});
 
   // 重命名节点:本地改标题 + 落库(节点标签 = 作品 title)
@@ -3600,10 +3607,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             onDelete={()=>batchDelete([selectedVideo.id])} onProperties={openProperties} management={nodeManagementItems(selectedVideo.id)}/>}
           {selected?.videoUrl&&selectedBatchArts.length<=1&&multiSel.length<=1&&!propertiesOpen&&topbarStyle&&<VideoNodeToolbar
             ref={nodeToolbarRef} style={{left:topbarStyle.left,top:topbarStyle.top}} light={lightCanvas}
-            readOnly={readOnly} locked={isNodeLocked(selected.id)} busy={!nodeSettingsReady||historySaving} hasResult hasHistory={false}
+            readOnly={readOnly} locked={isNodeLocked(selected.id)} busy={!nodeSettingsReady||historySaving} hasResult hasHistory={!!resultVideoComposer}
             settingsLabel={selected.category==="audio"?L("编辑音频","Edit audio"):L("视频处理","Video tools")}
             downloadLabel={selected.category==="audio"?L("下载音频","Download audio"):undefined}
-            onSettings={()=>selected.category==="audio"?editAudioResult(selected):extractVideoToCanvas(selected.id,{action:'trim'})} onHistory={()=>{}}
+            onSettings={()=>selected.category==="audio"?editAudioResult(selected):extractVideoToCanvas(selected.id,{action:'trim'})} onHistory={()=>{if(resultVideoComposer)setVideoHistoryId(resultVideoComposer.id);}}
             onRename={()=>{setNodeRenameValue(selected.title);setRenamingNodeId(selected.id);}}
             onCopy={()=>clipboard.copySelection([selected.id])} onDuplicate={()=>void duplicateArt(selected)} onDownload={()=>downloads.video(selected.videoUrl!)}
             onDelete={()=>void deleteTree(selected.id)} onProperties={openProperties} management={nodeManagementItems(selected.id)}/>}
@@ -4021,22 +4028,23 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             nodes={videoNodesStore.nodes} initialNodeIds={storyboardPanel.nodeIds} request={privateFetchRaw} english={locale==='en'}
             onClose={()=>setStoryboardPanel(null)} onEditNode={id=>{setStoryboardPanel(null);openVideoEditor(id);}}
             onChanged={run=>{void videoNodesStore.refresh();const ids=(run.assembly?.outputs||[]).map(output=>output.artworkId).filter((id):id is string=>!!id);if(ids.length)void mergeWorks(ids);}}/>}
-          {selectedVideo&&multiSel.length<=1&&!propertiesOpen&&canFeature("video")&&<VideoSettingsDialog
-            key={`${user?.email}:${targetEmail}:${activeKey}:${selectedVideo.id}`} node={selectedVideo} presentation="dock"
-            dockRef={panelRef} dockStyle={dockStyle??{left:12,bottom:12,maxHeight:"60%"}} expanded={mediaComposerExpanded} onToggleExpand={()=>setMediaComposerExpanded(value=>!value)} draftScope={JSON.stringify([user?.email,targetEmail,activeKey])} advanced={videoDockAdvancedId===selectedVideo.id} onCloseAdvanced={()=>setVideoDockAdvancedId(null)}
-            task={videoTaskStore.tasks.find(task=>task.id===selectedVideo.lastTaskId)}
-            generationBlocked={!!selectedVideo.lastTaskId&&!videoTaskStore.tasks.some(task=>task.id===selectedVideo.lastTaskId)}
-            onCancel={()=>{if(selectedVideo.lastTaskId)void videoTaskStore.cancel(selectedVideo.lastTaskId).catch(error=>flashTip(error.message));}}
+          {videoComposerNode&&multiSel.length<=1&&!propertiesOpen&&canFeature("video")&&<VideoSettingsDialog
+            key={`${user?.email}:${targetEmail}:${activeKey}:${videoComposerNode.id}`} node={videoComposerNode} presentation="dock"
+            dockRef={panelRef} dockStyle={dockStyle??{left:12,bottom:12,maxHeight:"60%"}} expanded={mediaComposerExpanded} onToggleExpand={()=>setMediaComposerExpanded(value=>!value)} draftScope={JSON.stringify([user?.email,targetEmail,activeKey])} advanced={videoDockAdvancedId===videoComposerNode.id} onCloseAdvanced={()=>setVideoDockAdvancedId(null)}
+            task={videoTaskStore.tasks.find(task=>task.id===videoComposerNode.lastTaskId)}
+            generationBlocked={!!videoComposerNode.lastTaskId&&!videoTaskStore.tasks.some(task=>task.id===videoComposerNode.lastTaskId)}
+            onCancel={()=>{if(videoComposerNode.lastTaskId)void videoTaskStore.cancel(videoComposerNode.lastTaskId).catch(error=>flashTip(error.message));}}
             email={targetEmail||user?.email} models={videoCatalog} catalogLoading={videoModelCatalog.loading} catalogError={videoModelCatalog.error} onRetryCatalog={videoModelCatalog.refresh}
-            choices={videoInputChoices} light={lightCanvas} readOnly={readOnly||!nodeSettingsReady||isNodeLocked(selectedVideo.id)} onClose={()=>{setVideoDockAdvancedId(null);setSelectedId(null);}}
-            onStoryboard={()=>setStoryboardPanel({projectKey:selectedVideo.projectKey,nodeIds:[selectedVideo.id]})}
-            onSave={draft=>saveVideoDraft(selectedVideo.id,draft)} onGenerate={(draft,quote,onPersisted,count)=>generateVideoDraft(selectedVideo.id,draft,quote,onPersisted,count)}
+            choices={videoInputChoices} light={lightCanvas} readOnly={readOnly||!nodeSettingsReady||isNodeLocked(videoComposerNode.id)||!!selected&&isNodeLocked(selected.id)} onClose={()=>{setVideoDockAdvancedId(null);setSelectedId(null);}}
+            onStoryboard={()=>setStoryboardPanel({projectKey:videoComposerNode.projectKey,nodeIds:[videoComposerNode.id]})}
+            onSave={draft=>saveVideoDraft(videoComposerNode.id,draft)} onGenerate={(draft,quote,onPersisted,count)=>generateVideoDraft(videoComposerNode.id,draft,quote,onPersisted,count)}
             onOptimize={(prompt,signal)=>optimizeCanvasVideoPrompt(privateFetchRaw,prompt,signal)}
-            onImport={async files=>{try{const choices=await videoAssetStore.upload(files,selectedVideo.projectKey);await mergeWorks(choices.map(choice=>choice.nodeId));return choices;}catch(cause){if(cause instanceof VideoAssetImportError&&cause.choices.length)await mergeWorks(cause.choices.map(choice=>choice.nodeId));throw cause;}}}
+            onImport={async files=>{try{const choices=await videoAssetStore.upload(files,videoComposerNode.projectKey);await mergeWorks(choices.map(choice=>choice.nodeId));return choices;}catch(cause){if(cause instanceof VideoAssetImportError&&cause.choices.length)await mergeWorks(cause.choices.map(choice=>choice.nodeId));throw cause;}}}
             onLoadMoreAssets={videoAssetStore.loadMore} canLoadMoreAssets={!!videoAssetStore.nextCursor}/>}
           {/* 底部生成器(配方):选中节点正下方居中,横向 dock(原型 dock) */}
-          {selected?.videoUrl&&selectedBatchArts.length<=1&&multiSel.length<=1&&!propertiesOpen&&<VideoResultDock
-            ref={panelRef} style={dockStyle??{left:12,bottom:12,maxHeight:"60%"}} prompt={selected.prompt||""}
+          {selected?.videoUrl&&!videoComposerNode&&selectedBatchArts.length<=1&&multiSel.length<=1&&!propertiesOpen&&<VideoResultDock
+            ref={panelRef} style={dockStyle??{left:12,bottom:12,maxHeight:"60%"}} title={selected.title} prompt={selected.prompt||""}
+            expanded={mediaComposerExpanded} onToggleExpand={()=>setMediaComposerExpanded(value=>!value)} onDismiss={()=>setSelectedId(null)}
             readOnly={readOnly||!nodeSettingsReady||isNodeLocked(selected.id)} canGenerate={canFeature("video")}
             kind={selected.category==="audio"?"audio":"video"} onEditAudio={()=>editAudioResult(selected)}
             onProcess={action=>extractVideoToCanvas(selected.id,action)} onContinue={()=>void openVideoNodeFromSelection()}/>}
