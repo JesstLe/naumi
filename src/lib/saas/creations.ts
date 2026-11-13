@@ -8,14 +8,14 @@ import {ensureCreationSchema} from './creation-schema';
 import {creationSourceEvidence,videoWorkflowEvidenceAvailable} from './creation-source-evidence';
 import {publicCreationParameters} from './creation-parameters';
 import {creationRequestEvidence} from './creation-request-evidence';
-import {creationStatus,type CreationFilters,type CreationPage,type CreationSummary,type CreationDetail,type CreationAsset} from './creation-contracts';
+import {creationStatus,type CreationFilters,type CreationPage,type CreationListPage,type CreationSummary,type CreationDetail,type CreationAsset} from './creation-contracts';
 import {legacyCreationId} from './creation-history-identity';
 import {legacyCreationCandidates} from './creation-unified-query';
 import {creationFailures,legacyCreationFailuresInTransaction,hasCreationFailure} from './creation-failures';
 import {creationAssetViewSql,creationAssetViewOrder} from './creation-asset-view';
 import {workflowOutcomeStagesSql} from '../video/workflow-outcome';
 
-export type CreationDetailReader={platform:true;boundTenantId?:string}|{platform:false;tenantId:string};
+export type CreationDetailReader={platform:true;boundTenantId?:string}|{platform:false;tenantId:string;historyEmails?:readonly string[]};
 export type CreationReader={platform:true;boundTenantId?:string}|{platform:false;actor:TeamActor;tenantId:string};
 async function scoped<T>(reader:CreationReader,run:(tx:PoolClient,visible:string[]|null,historyVisible:readonly string[]|null)=>Promise<T>){
  await ensureCreationSchema();
@@ -63,7 +63,7 @@ export async function listUnifiedCreations(reader:CreationReader,f:CreationFilte
 async function readCreationList(reader:CreationReader,f:CreationFilters,unified:boolean):Promise<CreationPage>{return scoped(reader,async(tx,visible,historyVisible)=>{
  const filter=where(reader,f,visible);let values=[...filter.values],sql=`SELECT id,actor_email,tenant_id,accepted_at,live_status,source_kind,source_id FROM (${await recordSelect(tx,false)} WHERE ${filter.sql}) records`;
  if(f.status){values.push(f.status);sql+=` WHERE CASE WHEN live_status IN ('done','completed','success') THEN 'succeeded' WHEN live_status IN ('error','rejected') THEN 'failed' WHEN live_status IN ('pending','reviewing') THEN 'queued' WHEN live_status IN ('processing','generating') THEN 'running' WHEN live_status IN ('queued','running','succeeded','partial','failed','cancel_requested','cancelled','needs_review') THEN live_status ELSE 'needs_review' END=$${values.length}`;}
- const historical=unified?legacyCreationCandidates(f,reader.platform&&(reader.boundTenantId||f.tenantId)?[]:historyVisible,value=>{values.push(value);return `$${values.length}`;}):null;
+ const historical=unified?legacyCreationCandidates(f,reader.platform&&(reader.boundTenantId||f.tenantId)?[]:historyVisible,value=>{values.push(value);return `$${values.length}`;},{...(!reader.platform?{tenantId:reader.tenantId}:{})}):null;
  // The exact status and recursive billing facts are needed for whole-result
  // totals/ranking, but must not be recomputed by four independent queries.
  // Keep snapshots and thumbnail lookup out of this materialized row set.
@@ -111,15 +111,62 @@ async function readCreationList(reader:CreationReader,f:CreationFilters,unified:
    for(const item of items)if(failures.has(item.id)||historicalFailures.has(item.id))item.failure=failures.get(item.id)||historicalFailures.get(item.id);}
   return {items,pagination:{total,page:f.page,size:f.size},appliedFilters:f,generatedAt:new Date().toISOString(),scope:reader.platform?'platform':visible?'member':'tenant',availability:'available',summary:{total,activeMembers:aggregate.active_members,settledCredits:aggregate.charged??null,pending:aggregate.pending,failed:aggregate.failed,needsReview:aggregate.review},memberUsage};
 });}
+/** Exact global keys/count first; expensive evidence and billing only for the
+ * selected page. No cross-request cache or authorization snapshot is reused. */
+export async function listUnifiedCreationPage(reader:CreationReader,f:CreationFilters):Promise<CreationListPage>{return scoped(reader,async(tx,visible,historyVisible)=>{
+ const filter=where(reader,f,visible),values=[...filter.values];
+ const bind=(value:unknown)=>{values.push(value);return `$${values.length}`;};
+ const tenant=!reader.platform?reader.tenantId:undefined;
+ const history=reader.platform&&(reader.boundTenantId||f.tenantId)?[]:historyVisible;
+ const columns='id,actor_email,accepted_at,source_id';
+ let canonical=f.status?`SELECT ${columns},NULL::text AS legacy_table FROM (${await recordSelect(tx,false)} WHERE ${filter.sql}) record_status`:
+  `SELECT c.id,c.actor_email,c.accepted_at,c.source_id,NULL::text AS legacy_table FROM app_creation_records c WHERE ${filter.sql}`;
+ if(f.status){const status=bind(f.status);canonical+=` WHERE CASE WHEN live_status IN ('done','completed','success') THEN 'succeeded' WHEN live_status IN ('error','rejected') THEN 'failed' WHEN live_status IN ('pending','reviewing') THEN 'queued' WHEN live_status IN ('processing','generating') THEN 'running' WHEN live_status IN ('queued','running','succeeded','partial','failed','cancel_requested','cancelled','needs_review') THEN live_status ELSE 'needs_review' END=${status}`;}
+ const keys=legacyCreationCandidates(f,history,bind,{tenantId:tenant,keysOnly:true});
+ const legacyPage=legacyCreationCandidates(f,history,bind,{tenantId:tenant,selectedOnly:true});
+ const limit=bind(f.size),offset=bind((f.page-1)*f.size);
+ const result=(await tx.query(`WITH creation_keys AS MATERIALIZED(
+ ${canonical} UNION ALL SELECT ${columns},legacy_table FROM (${keys}) historical),
+ selected AS MATERIALIZED(SELECT * FROM creation_keys ORDER BY accepted_at DESC,id DESC LIMIT ${limit} OFFSET ${offset}),
+ canonical_page AS (${await recordSelect(tx)} WHERE c.id IN(SELECT id FROM selected WHERE legacy_table IS NULL)),
+ historical_page AS (${legacyPage}),
+ page_rows AS(
+ SELECT id,actor_email,scope_kind,tenant_id,source_kind,status,request_snapshot,accepted_at,actor_name,charged,live_status,
+ NULL::text AS legacy_table,source_id,thumbnail_asset_id FROM canonical_page
+ UNION ALL SELECT k.id,k.actor_email,'legacy_unconfirmed',NULL::uuid,k.source_kind,k.live_status,
+ jsonb_build_object('state',CASE WHEN COALESCE(j.payload#>>'{plan,request,prompt}',j.payload#>>'{p,userPrompt}',j.payload#>>'{p,prompt}',ci.parameters->>'newText',ci.parameters->>'prompt',v.parameters->>'prompt') IS NULL THEN 'not_recorded' ELSE 'recorded' END,
+ 'text',COALESCE(j.payload#>>'{plan,request,prompt}',j.payload#>>'{p,userPrompt}',j.payload#>>'{p,prompt}',ci.parameters->>'newText',ci.parameters->>'prompt',v.parameters->>'prompt')),
+ k.accepted_at,COALESCE(u.name,k.actor_email),k.charged,k.live_status,k.legacy_table,k.source_id,NULL::text
+ FROM historical_page k LEFT JOIN app_users u ON u.email=k.actor_email
+ LEFT JOIN app_image_jobs j ON k.legacy_table='app_image_jobs' AND j.id=k.source_id AND j.email=k.actor_email
+ LEFT JOIN app_canvas_image_tasks ci ON k.legacy_table='app_canvas_image_tasks' AND ci.id=k.source_id AND ci.email=k.actor_email
+ LEFT JOIN app_video_tasks v ON k.legacy_table='app_video_tasks' AND v.id=k.source_id AND v.email=k.actor_email)
+ SELECT (SELECT count(*)::int FROM creation_keys) AS total,COALESCE((SELECT jsonb_agg(p ORDER BY accepted_at DESC,id DESC) FROM page_rows p),'[]'::jsonb) AS items`,values)).rows[0];
+ const items:CreationSummary[]=result.items.map(summary);
+ if(reader.platform){
+  const canonicalFailures=await creationFailures(tx,items.filter(i=>!i.id.startsWith('legacy-')&&hasCreationFailure(i.status)).map(i=>({id:i.id,email:i.actorEmail})));
+  const legacyFailures=await legacyCreationFailuresInTransaction(tx,result.items.filter((r:Record<string,any>)=>r.legacy_table&&hasCreationFailure(r.live_status)).map((r:Record<string,any>)=>({root:legacyCreationId({table:r.legacy_table,id:r.source_id,email:r.actor_email}),table_name:r.legacy_table,id:r.source_id,email:r.actor_email})));
+  for(const item of items)if(canonicalFailures.has(item.id)||legacyFailures.has(item.id))item.failure=canonicalFailures.get(item.id)||legacyFailures.get(item.id);
+ }
+ return {items,pagination:{total:Number(result.total),page:f.page,size:f.size},appliedFilters:f,generatedAt:new Date().toISOString(),scope:reader.platform?'platform':visible?'member':'tenant',availability:'available'};
+});}
+
 async function authorizedRecord(tx:PoolClient,reader:CreationDetailReader,id:string,visible:readonly string[]|null){
  const tenant=reader.platform?reader.boundTenantId:reader.tenantId;
- const row=(await tx.query(`${await recordSelect(tx)} WHERE c.id=$1 ${tenant?'AND c.tenant_id=$2':''}`,[id,...(tenant?[tenant]:[])])).rows[0];
+ // Match the existing member-history port, not arbitrary personal ledger data.
+ // A personal image/video source can expose its recorded execution evidence to
+ // that same live member scope without changing its original tenant or owner.
+ const history=!reader.platform?reader.historyEmails||[]:[];
+ const row=(await tx.query(`${await recordSelect(tx)} WHERE c.id=$1 ${tenant?`AND (c.tenant_id=$2 OR (c.tenant_id IS NULL AND c.scope_kind='personal' AND c.actor_email=ANY($3::text[]) AND (
+  EXISTS(SELECT 1 FROM app_image_jobs j WHERE j.id=c.source_id AND j.email=c.actor_email AND c.source_kind='image:'||j.kind)
+  OR c.source_kind IN ('canvas-image','canvas') AND EXISTS(SELECT 1 FROM app_canvas_image_tasks j WHERE j.id=c.source_id AND j.email=c.actor_email)
+  OR c.source_kind='video' AND EXISTS(SELECT 1 FROM app_video_tasks j WHERE j.id=c.source_id AND j.email=c.actor_email))))`:''}`,[id,...(tenant?[tenant,history]:[])])).rows[0];
  if(!row||!reader.platform&&visible&&!visible.includes(row.actor_email))throw new TeamError('记录不存在或无权访问',404);return row;
 }
 const asset=(a:Record<string,any>):CreationAsset=>({id:a.id,direction:a.direction,role:a.role,...(Array.isArray(a.roles)?{roles:a.roles.filter((v:unknown)=>typeof v==='string')}:{}),position:a.position,...(Number.isInteger(a.input_position)?{inputPosition:a.input_position}:{}),...(a.execution_ref?{executionRef:a.execution_ref}:{}),variant:a.variant,mime:a.mime,bytes:a.byte_size===null?null:Number(a.byte_size),hash:a.hash,availability:a.availability,mediaType:a.media_type,...(a.text_content?{text:a.text_content}:{})});
 export type DetailPages={assetPage?:number;eventPage?:number;childPage?:number};
 const familySql=`WITH RECURSIVE family AS(SELECT id,actor_email,tenant_id FROM app_creation_records WHERE id=$1 UNION ALL SELECT c.id,c.actor_email,c.tenant_id FROM app_creation_records c JOIN family p ON c.parent_id=p.id AND c.actor_email=p.actor_email AND c.tenant_id IS NOT DISTINCT FROM p.tenant_id)`;
-export async function creationDetail(reader:CreationReader,id:string,pages:DetailPages={}):Promise<CreationDetail>{return scoped(reader,(tx,visible)=>creationDetailInTransaction(tx,reader,id,visible,pages));}
+export async function creationDetail(reader:CreationReader,id:string,pages:DetailPages={}):Promise<CreationDetail>{return scoped(reader,(tx,visible,historyEmails)=>creationDetailInTransaction(tx,reader.platform?reader:{...reader,historyEmails:historyEmails||[]},id,visible,pages));}
 /** Reuse the caller's authorization snapshot; no nested pool checkout. */
 export async function creationDetailInTransaction(tx:PoolClient,reader:CreationDetailReader,id:string,visible:readonly string[]|null,pages:DetailPages={}):Promise<CreationDetail>{
  const row=await authorizedRecord(tx,reader,id,visible);const size=24,assetPage=pages.assetPage||1,eventPage=pages.eventPage||1,childPage=pages.childPage||1;
@@ -158,7 +205,7 @@ export async function creationDetailInTransaction(tx:PoolClient,reader:CreationD
  state:ops.length?settled?'settled':'pending':noCharge?'not_applicable':'not_recorded',operations:ops.map(o=>({id:o.id,state:o.state,charged:['settled','released'].includes(o.state)?Number(o.charged_credits):null}))},
  ...(reader.platform?{technical:{sourceKind:row.source_kind,sourceId:row.source_id,parentId:row.parent_id,schemaVersion:row.schema_version,links:links.rows}}:{})};
 }
-export async function creationAsset(reader:CreationReader,id:string,assetId:string){return scoped(reader,(tx,visible)=>creationAssetInTransaction(tx,reader,id,assetId,visible));}
+export async function creationAsset(reader:CreationReader,id:string,assetId:string){return scoped(reader,(tx,visible,historyEmails)=>creationAssetInTransaction(tx,reader.platform?reader:{...reader,historyEmails:historyEmails||[]},id,assetId,visible));}
 export async function creationAssetInTransaction(tx:PoolClient,reader:CreationDetailReader,id:string,assetId:string,visible:readonly string[]|null){
  await authorizedRecord(tx,reader,id,visible);let a=(await tx.query(`${familySql} SELECT a.* FROM app_creation_assets a JOIN family f ON f.id=a.creation_id WHERE a.id=$2`,[id,assetId])).rows[0];
  if(!a&&assetId.startsWith('recovered-'))a=(await creationSourceEvidence(tx,id)).assets.find(asset=>asset.id===assetId);

@@ -12,7 +12,7 @@ import {legacyCreationFailures,hasCreationFailure} from './creation-failures';
 import {readImagegenInputAssetReference} from '@/lib/imagegen/input-asset-reference';
 import {legacyCreationId,parseLegacyCreationId as parseId,type LegacySource as Source} from './creation-history-identity';
 export {legacyCreationId} from './creation-history-identity';
-import {linkedCreation} from './creation-history-link';
+import {linkedCreation,assertLegacySourceTenant} from './creation-history-link';
 import {creationDetailInTransaction,creationAssetInTransaction,type DetailPages} from './creations';
 import {creationRequestFacts} from './creation-parameters';
 import {legacyImageChildren,legacyOutputFilter,confirmedParentCharge} from './legacy-creation-family';
@@ -30,11 +30,12 @@ type LegacyMedia={asset:CreationAsset;storageRef:string;actorEmail:string};
 export async function legacyCreationDetail(id:string,pages:DetailPages&{diagnostics?:boolean;canonical?:boolean}={},access?:LegacyReadScope){
  const ref=parseId(id);if(access&&!access.allowedEmails.includes(ref.email))throw new TeamError('记录不存在或无权访问',404);
  if(!access)await ensureBiSchema();const pool=access?.client||getPool();
+ if(access)await assertLegacySourceTenant(access.client,ref,access.tenantId);
  // Table names come exclusively from the closed schema above; values stay bound.
  const row=(await pool.query(`SELECT * FROM ${ref.table} WHERE id=$1 AND email=$2`,[ref.id,ref.email])).rows[0];if(!row)throw new TeamError('记录不存在或无权访问',404);
  if(pages.canonical!==false&&(!access||access.tenantId)){
   const linked=await linkedCreation(pool as PoolClient,ref,access?.tenantId);
-  if(linked){const run=async(tx:PoolClient)=>({detail:await creationDetailInTransaction(tx,access?{platform:false,tenantId:access.tenantId!}:{platform:true},linked.id,access?.allowedEmails||null,pages),media:[] as LegacyMedia[]});
+  if(linked){const run=async(tx:PoolClient)=>({detail:await creationDetailInTransaction(tx,access?{platform:false,tenantId:access.tenantId!,historyEmails:access.allowedEmails}:{platform:true},linked.id,access?.allowedEmails||null,pages),media:[] as LegacyMedia[]});
    if(access)return run(access.client);
    const tx=await getPool().connect();try{await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');const result=await run(tx);await tx.query('COMMIT');return result;}catch(error){await tx.query('ROLLBACK');throw error;}finally{tx.release();}
   }
@@ -66,9 +67,10 @@ export async function legacyCreationDetail(id:string,pages:DetailPages&{diagnost
 }
 export async function legacyCreationAsset(id:string,assetId:string,access?:LegacyReadScope){const pool=access?.client||getPool();
  const ref=parseId(id);if(access&&!access.allowedEmails.includes(ref.email))throw new TeamError('记录不存在或无权访问',404);
+ if(access)await assertLegacySourceTenant(access.client,ref,access.tenantId);
  if(!assetId.startsWith('legacy-')&&(!access||access.tenantId)){
   if(!access)await ensureBiSchema();const linked=await linkedCreation(pool as PoolClient,ref,access?.tenantId);
-  if(linked){if(access)return creationAssetInTransaction(access.client,{platform:false,tenantId:access.tenantId!},linked.id,assetId,access.allowedEmails);
+  if(linked){if(access)return creationAssetInTransaction(access.client,{platform:false,tenantId:access.tenantId!,historyEmails:access.allowedEmails},linked.id,assetId,access.allowedEmails);
    const tx=await getPool().connect();try{await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');const result=await creationAssetInTransaction(tx,{platform:true},linked.id,assetId,null);await tx.query('COMMIT');return result;}catch(error){await tx.query('ROLLBACK');throw error;}finally{tx.release();}
   }
  }

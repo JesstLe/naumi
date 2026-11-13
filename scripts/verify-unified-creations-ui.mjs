@@ -14,7 +14,7 @@ try{
  await list.getByRole('button',{name:/Actual user words/}).waitFor();
  assert.equal(await page.getByRole('navigation',{name:'创作记录来源'}).count(),0);
  assert.equal(await page.getByRole('button',{name:/^(新创作|历史生成)$/}).count(),0);
- assert.ok(await page.evaluate(()=>window.__requests[0].includes('view=unified')));cases.push('single-unified-list');
+ assert.ok(await page.evaluate(()=>window.__requests[0].includes('view=unified')&&window.__requests[0].includes('projection=list')));cases.push('single-unified-list');
  await list.getByRole('button',{name:/Original request fixture/}).last().click();
  await detail.getByText('2K',{exact:false}).first().waitFor();
  assert.equal(await detail.getByText('原始要求',{exact:true}).count(),1);cases.push('record-selection-and-recovered-parameters');
