@@ -61,6 +61,7 @@ export async function ensureVideoWorkflowSchema(){
  CREATE TABLE IF NOT EXISTS app_video_workflow_run_nodes(run_id uuid NOT NULL REFERENCES app_video_workflow_runs(id),node_id text NOT NULL,status text NOT NULL DEFAULT 'pending',
    task_id text,error text,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(run_id,node_id));
  ALTER TABLE app_video_workflow_run_nodes ADD COLUMN IF NOT EXISTS result_assets jsonb NOT NULL DEFAULT '[]'::jsonb;
+ ALTER TABLE app_video_workflow_run_nodes ADD COLUMN IF NOT EXISTS confirmation_quote jsonb;
 `).then(()=>undefined).catch(error=>{state.pending=undefined;throw error;});await state.pending;}
 
 export async function ensureVideoBatchSchema() {

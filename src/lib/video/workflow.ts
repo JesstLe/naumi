@@ -15,6 +15,7 @@ import {listArtworksByIds} from "@/lib/artworks/repository";
 import {acquireVideoCoordinationLock} from "./coordination-pool";
 import {ModelConfigError} from "../model-config/types";
 import {BillingError} from "../billing/types";
+import {WorkflowBudgetChanged,matchesWorkflowStageConfirmation,type WorkflowStageQuote} from './workflow-budget';
 import {createVideoGeneration,withVideoCreationModel} from "./creation";
 import {currentModelExecution} from "../model-config/context";
 import {type CreateVideoInput} from "./submission-types";
@@ -102,12 +103,12 @@ export async function scheduleVideoWorkflow(actor:string,raw:unknown,canvasInten
   }catch(error){await tx.query("ROLLBACK");throw error;}finally{tx.release();}
   const result=await resumeVideoWorkflow(plan.id,actor);return {runId:plan.id,taskIds:result.nodes.map(node=>node.taskId).filter((id):id is string=>!!id)};
 }
-type StoredNode={node_id:string;status:VideoWorkflowNodeStatus;task_id:string|null;error:string|null;result_assets?:import("./result-assets").SavedVideoResultAsset[]};
+type StoredNode={node_id:string;status:VideoWorkflowNodeStatus;task_id:string|null;error:string|null;confirmation_quote?:WorkflowStageQuote|null;result_assets?:import("./result-assets").SavedVideoResultAsset[]};
 export async function getVideoWorkflow(actor:string,runId:string){
   await ensureWorkflowSchema();const pool=getPool(),run=(await pool.query("SELECT * FROM app_video_workflow_runs WHERE id=$1 AND email=$2",[runId,actor])).rows[0];
   if(!run)throw new ModelConfigError("WORKFLOW_UNAVAILABLE","工作流不存在",404);
   const rows=(await pool.query<StoredNode>("SELECT * FROM app_video_workflow_run_nodes WHERE run_id=$1 ORDER BY created_at,node_id",[runId])).rows;
-  const nodes=rows.map(node=>({id:node.node_id,status:node.status,taskId:node.task_id,error:node.error,quote:run.public_frozen_nodes?.[node.node_id]||null})),assembly=publicWorkflowAssembly(run.plan,run.assembly_state);
+  const nodes=rows.map(node=>({id:node.node_id,status:node.status,taskId:node.task_id,error:node.error,quote:node.status==='needs_confirmation'&&node.confirmation_quote?node.confirmation_quote:run.public_frozen_nodes?.[node.node_id]||null,...(node.confirmation_quote?{frozenQuote:run.public_frozen_nodes?.[node.node_id]||null}:{})})),assembly=publicWorkflowAssembly(run.plan,run.assembly_state);
   return {runId,projectKey:String(run.project_key),plan:run.plan as VideoWorkflowPlan,cancellationRequestedAt:run.cancellation_requested_at,
     progress:Math.round((nodes.filter(node=>node.status==="completed").length+(assembly?.status==="completed"?1:0))/Math.max(1,nodes.length+(assembly?1:0))*100),nodes,assembly};
 }
@@ -134,14 +135,14 @@ async function resumeVideoWorkflowLocal(runId:string,actor?:string){
     const frozen:Record<string,FrozenWorkflowStage>|null=decrypted?JSON.parse(decrypted):null;
     const creationScope=assertWorkflowCreationScope(run.creation_scope,run.email);
     const plan=run.plan as VideoWorkflowPlan,rows=(await pool.query<StoredNode>("SELECT * FROM app_video_workflow_run_nodes WHERE run_id=$1",[runId])).rows,states=new Map(rows.map(node=>[node.node_id,node]));
-    const update=async(node:StoredNode,status:VideoWorkflowNodeStatus,error?:string,taskId?:string)=>{
+    const update=async(node:StoredNode,status:VideoWorkflowNodeStatus,error?:string,taskId?:string,confirmationQuote?:WorkflowStageQuote)=>{
       // Worker completion and result caching share one transaction. A late create response
       // must not demote that terminal state or lose its durable dependency outputs.
       const saved=(await pool.query<StoredNode>(`UPDATE app_video_workflow_run_nodes
         SET status=CASE WHEN status='completed' THEN status ELSE $3 END,
           error=CASE WHEN status='completed' THEN NULL ELSE $4 END,
-          task_id=COALESCE($5,task_id),updated_at=now()
-        WHERE run_id=$1 AND node_id=$2 RETURNING *`,[runId,node.node_id,status,error||null,taskId||null])).rows[0];
+          task_id=COALESCE($5,task_id),confirmation_quote=CASE WHEN $3='needs_confirmation' THEN COALESCE($6::jsonb,confirmation_quote) ELSE NULL END,updated_at=now()
+        WHERE run_id=$1 AND node_id=$2 RETURNING *`,[runId,node.node_id,status,error||null,taskId||null,confirmationQuote?JSON.stringify(confirmationQuote):null])).rows[0];
       if(saved)Object.assign(node,saved);
     };
     for(const node of rows){
@@ -169,7 +170,7 @@ async function resumeVideoWorkflowLocal(runId:string,actor?:string){
       }catch(error){
         const recovered=await getVideoTaskByIdempotencyKey(run.email,operationId(runId,node.id));
         if(recovered)await update(state,recovered.status==="completed"?"completed":["failed","cancelled"].includes(recovered.status)?"blocked":"needs_attention","提交结果已保留，等待核对",recovered.id);
-        else await update(state,error instanceof BillingError&&error.code==="PRICE_CHANGED"?"needs_confirmation":"blocked",error instanceof Error?error.message:"工作流提交失败");
+        else await update(state,error instanceof BillingError&&error.code==="PRICE_CHANGED"?"needs_confirmation":"blocked",error instanceof Error?error.message:"工作流提交失败",undefined,error instanceof WorkflowBudgetChanged?error.quote:undefined);
       }
     };
     if(!run.cancellation_requested_at)for(let offset=0;offset<readyNodes.length;offset+=3)await Promise.allSettled(readyNodes.slice(offset,offset+3).map(submitNode));
@@ -220,6 +221,7 @@ export async function confirmVideoWorkflowNode(actor:string,runId:string,nodeId:
     if(run.cancellation_requested_at)throw new ModelConfigError("WORKFLOW_STOPPED","工作流已经停止",409);
     const node=(await client.query("SELECT * FROM app_video_workflow_run_nodes WHERE run_id=$1 AND node_id=$2 FOR UPDATE",[runId,nodeId])).rows[0];
     if(!node||node.status!=="needs_confirmation")throw new ModelConfigError("WORKFLOW_CONFIRMATION_UNAVAILABLE","此节点无需确认报价",409);
+    if(node.confirmation_quote&&!matchesWorkflowStageConfirmation(node.confirmation_quote,confirmation))throw new ModelConfigError('WORKFLOW_CONFIRMATION_STALE','阶段报价已更新，请读取当前报价后确认',409);
     await client.query("UPDATE app_video_workflow_runs SET confirmations=jsonb_set(confirmations,$2::text[],$3::jsonb),updated_at=now() WHERE id=$1",[runId,[nodeId],JSON.stringify(confirmation)]);
     await client.query("UPDATE app_video_workflow_run_nodes SET status='pending',error=NULL,updated_at=now() WHERE run_id=$1 AND node_id=$2",[runId,nodeId]);
     await client.query("COMMIT");
