@@ -54,9 +54,12 @@ def main():
     p=argparse.ArgumentParser();p.add_argument('--image',required=True);p.add_argument('--root',type=pathlib.Path,required=True)
     p.add_argument('--evidence',type=pathlib.Path,required=True)
     p.add_argument('--tasks',action='store_true');p.add_argument('--driver-container')
+    p.add_argument('--prior-image');p.add_argument('--nginx-image')
     args=p.parse_args()
     assert os.name=='posix' and args.root.is_relative_to('/opt/naumi-staging/releases')
     assert args.image.startswith('sha256:') and len(args.image)==71
+    if args.prior_image:
+        assert args.tasks and args.nginx_image and args.prior_image.startswith('sha256:') and len(args.prior_image)==71
     args.evidence.mkdir(parents=True,exist_ok=True);args.root.mkdir(parents=True,exist_ok=True)
     suffix=uuid.uuid4().hex[:12];prefix='naumi-release-direct-fixture-'+suffix;schema='release_direct_'+suffix
     network=api('POST','/networks/create',{'Name':prefix,'Driver':'bridge'})['Id']
@@ -89,10 +92,24 @@ def main():
                 assert argv[2] in slots;api('POST','/containers/'+argv[2]+'/start');return b''
             if argv[1]=='network':
                 api('POST','/networks/'+argv[3]+'/connect',{'Container':argv[4]});return b''
+            if argv[1]=='run':
+                # Only the existing rollback owner's passive fixed-package
+                # reader. No credentials, scan factory or network are started.
+                assert args.prior_image in argv and '--network=none' in argv and '--read-only' in argv
+                index=argv.index(args.prior_image)
+                probe=api('POST','/containers/create',{'Image':args.prior_image,'Entrypoint':['node'],'Cmd':argv[index+1:],
+                    'Env':['NODE_OPTIONS='],'HostConfig':{'NetworkMode':'none','ReadonlyRootfs':True,'Memory':256*1024**2,
+                        'PidsLimit':32,'CapDrop':['ALL'],'Tmpfs':{'/data':'rw,size=1m'}}})['Id']
+                try:
+                    api('POST','/containers/'+probe+'/start');result=api('POST','/containers/'+probe+'/wait');assert result['StatusCode']==0
+                    raw=api('GET','/containers/'+probe+'/logs?stdout=1',raw=True);out=b'';pos=0
+                    while pos<len(raw):n=int.from_bytes(raw[pos+4:pos+8],'big');out+=raw[pos+8:pos+8+n];pos+=8+n
+                    return out
+                finally:api('DELETE','/containers/'+probe)
             assert argv[1]=='create'
             config={'HostConfig':{},'NetworkingConfig':{'EndpointsConfig':{}}};host=config['HostConfig'];mounts=[];envfile=None
             index=2
-            while index<len(argv) and argv[index]!=args.image:
+            while index<len(argv) and argv[index] not in [args.image,args.prior_image]:
                 flag=argv[index]
                 if flag=='--name':name=argv[index+1];assert name.startswith(prefix);index+=2;continue
                 if flag=='--network':config['NetworkingConfig']['EndpointsConfig'][argv[index+1]]={};host['NetworkMode']=argv[index+1];index+=2;continue
@@ -113,9 +130,9 @@ def main():
                 elif key=='--security-opt':host.setdefault('SecurityOpt',[]).append(value)
                 else:raise AssertionError('UNREVIEWED_FIXTURE_FLAG '+key)
                 index+=1
-            config.update(Image=args.image,Cmd=argv[index+1:],Env=envfile.read_text().splitlines());host['Mounts']=mounts
+            config.update(Image=argv[index],Cmd=argv[index+1:],Env=envfile.read_text().splitlines());host['Mounts']=mounts
             container=api('POST','/containers/create?name='+name,config)['Id'];slots.append(container)
-            events.append({'action':'actual-release-docker-create','id':container,'image':args.image,'name':name,
+            events.append({'action':'actual-release-docker-create','id':container,'image':config['Image'],'name':name,
                            'environmentNames':sorted(environment({'Config':{'Env':config['Env']}}))})
             return container.encode()
     tx=Tx()
@@ -235,16 +252,23 @@ def main():
             eventually(state,lambda s:s.get('phase')=='QUIESCENT' and s.get('backgroundTasks')==0)
             check(name+'-actual-tick-drain-no-replay')
             if args.tasks and combined:
+                gateway=None
+                if args.prior_image:
+                    from video_release_gateway_fixture import VideoReleaseGateway
+                    gateway=VideoReleaseGateway(api=api,execute=exec_in,tx=tx,args=args,prefix=prefix,network=prefix,
+                        slots=slots,web=web,worker=worker,values=values,mounts=mounts,wait=eventually,check=check)
+                    peer_state['web']=gateway.old_web_name
                 def fixture(action,**fields):
                     return json.loads(exec_in(web,['node','/fixture/task-fixture.cjs',json.dumps({'action':action,**fields})],env=['NODE_OPTIONS=','NODE_PATH=/app/node_modules']))
                 seed=fixture('init',origin='http://release-peer:18080')
                 def http(route,body=None):
-                    payload={'route':route,'body':body,'cookie':seed['cookie']}
-                    script="const x=JSON.parse(process.argv[1]);fetch('http://127.0.0.1:3000'+x.route,{method:x.body===null?'GET':'POST',headers:{cookie:x.cookie,'content-type':'application/json'},...(x.body===null?{}:{body:JSON.stringify(x.body)}),signal:AbortSignal.timeout(60000)}).then(async r=>console.log(JSON.stringify({status:r.status,body:await r.json()})))"
+                    payload={'route':route,'body':body,'cookie':seed['cookie'],'origin':gateway.origin if gateway else 'http://127.0.0.1:3000'}
+                    script="const x=JSON.parse(process.argv[1]);fetch(x.origin+x.route,{method:x.body===null?'GET':'POST',headers:{cookie:x.cookie,'content-type':'application/json'},...(x.body===null?{}:{body:JSON.stringify(x.body)}),signal:AbortSignal.timeout(60000)}).then(async r=>console.log(JSON.stringify({status:r.status,body:await r.json(),slot:r.headers.get('x-release-slot')})))"
                     return json.loads(exec_in(web,['node','-e',script,json.dumps(payload)]))
                 # Open only this fixture Web through the actual admission owner.
                 app=controls.app_status(tx,public_identity(tx.inspect(web)))
-                controls.control_app(tx,public_identity(tx.inspect(web)),'resume',str(uuid.uuid4()))
+                if gateway:gateway.open_old()
+                else:controls.control_app(tx,public_identity(tx.inspect(web)),'resume',str(uuid.uuid4()))
                 base={'source':'workbench','modelId':seed['modelId'],'prompt':'RELEASE_ACCEPTED','mode':'text',
                     'parameters':{'durationSeconds':1,'resolution':'4K'},'references':[{'id':'ref','artworkId':seed['artworkId'],'kind':'image','role':'reference'}],
                     'idempotencyKey':str(uuid.uuid4())}
@@ -257,10 +281,18 @@ def main():
                 check(name+'-preview-digest-equals-accepted-plan',row['planDigest']==preview['body']['value']['planDigest'])
                 replay=http('/api/video/generate',base);check(name+'-exact-operation-replay',replay['body']['taskId']==task_id)
                 fixture('change',origin='http://release-peer:18080')
-                expected.action='resume';expected.operation_id=str(uuid.uuid4());worker_handoff.execute(expected,control_folder,lambda argv:tx.run(argv).decode())
+                if gateway:gateway.control_old('resume')
+                else:
+                    expected.action='resume';expected.operation_id=str(uuid.uuid4());worker_handoff.execute(expected,control_folder,lambda argv:tx.run(argv).decode())
                 eventually(lambda:fixture('task',id=task_id),lambda r:bool(r.get('upstreamId')))
-                expected.action='drain';expected.operation_id=str(uuid.uuid4());worker_handoff.execute(expected,control_folder,lambda argv:tx.run(argv).decode())
-                eventually(state,lambda s:s.get('phase')=='QUIESCENT')
+                if gateway:
+                    gateway.control_old('drain');eventually(gateway.state,lambda s:s.get('phase')=='QUIESCENT')
+                    controls.control_app(tx,public_identity(tx.inspect(gateway.old_web)),'drain',str(uuid.uuid4()))
+                    controls.control_app(tx,public_identity(tx.inspect(web)),'resume',str(uuid.uuid4()))
+                    gateway.switch('new');peer_state['web']=web_name
+                else:
+                    expected.action='drain';expected.operation_id=str(uuid.uuid4());worker_handoff.execute(expected,control_folder,lambda argv:tx.run(argv).decode())
+                    eventually(state,lambda s:s.get('phase')=='QUIESCENT')
                 check(name+'-frozen-old-model-price-and-one-mapping',len(peer_state['calls'])==1 and peer_state['calls'][0]['body']['model']=='future-release-model'
                     and peer_state['calls'][0]['body']['resolution']=='2k' and row['quotedCredits']==7)
                 check(name+'-supplier-retrieves-original-input',peer_state['reads'][0]['sha256']==seed['inputSha256'])
@@ -308,15 +340,34 @@ def main():
                 expected.action='drain';expected.operation_id=str(uuid.uuid4());worker_handoff.execute(expected,control_folder,lambda argv:tx.run(argv).decode());eventually(state,lambda s:s.get('phase')=='QUIESCENT')
                 check(name+'-unknown-survives-restart-without-repost',fixture('task',id=unknown_id)==original_unknown
                     and len([c for c in peer_state['calls'] if c['body']['prompt']=='RELEASE_UNKNOWN'])==1)
+                if gateway:
+                    before_ledger=fixture('ledger',ids=[task_id,second_id,unknown_id],artworks=[done['artworkId'],second_done['artworkId']])
+                    controls.control_app(tx,public_identity(tx.inspect(web)),'drain',str(uuid.uuid4()))
+                    gateway.rollback(lambda query:sql('SET search_path TO '+schema+';'+query))
+                    peer_state['web']=gateway.old_web_name
+                    check('gateway-rollback-preserves-history-and-UNKNOWN',http('/api/video/tasks/'+task_id)['body']['task']['status']=='completed'
+                        and fixture('task',id=unknown_id)==original_unknown)
+                    check('gateway-rollback-does-not-rewind-billing-assets',fixture('ledger',ids=[task_id,second_id,unknown_id],artworks=[done['artworkId'],second_done['artworkId']])==before_ledger)
+                    rollback_input={**base,'prompt':'RELEASE_AFTER_ROLLBACK','references':[],'idempotencyKey':str(uuid.uuid4())}
+                    rollback_http=http('/api/video/generate',rollback_input);assert rollback_http['status']==200,rollback_http
+                    rollback_id=rollback_http['body']['taskId'];gateway.control_old('resume')
+                    rollback_done=eventually(lambda:fixture('task',id=rollback_id),lambda r:r['status']=='completed')
+                    gateway.control_old('drain');eventually(gateway.state,lambda s:s.get('phase')=='QUIESCENT')
+                    rollback_ledger=fixture('ledger',ids=[task_id,second_id,rollback_id,unknown_id],artworks=[])
+                    check('gateway-old-build-accepts-new-operation-after-rollback',rollback_done['quotedCredits']==17 and len(rollback_ledger['rows'])==3
+                        and sum(-int(x['delta']) for x in rollback_ledger['rows'])==41 and len(peer_state['calls'])==4)
+                    task_proof['gateway']={'phases':gateway.phases,'oldImage':args.prior_image,'newImage':args.image,
+                        'oldStaticAssets':len(gateway.assets_before),'rollbackTask':rollback_done,'ledger':rollback_ledger}
             for target in [worker,web]:
                 api('POST','/containers/'+target+'/stop?t=60')
                 row=tx.inspect(target);check(name+'-stopped-'+target[:8],row['State']['ExitCode']==0)
                 (args.evidence/(target[:12]+'.log')).write_bytes(api('GET','/containers/'+target+'/logs?stdout=1&stderr=1',raw=True))
         paid=json.loads(sql('SET search_path TO '+schema+";SELECT json_build_object('tasks',(SELECT count(*) FROM app_video_tasks),'ledger',(SELECT count(*) FROM app_ledger WHERE id LIKE 'led-video-%'));").splitlines()[-1])
-        check('exact-generation-and-billing-counts',paid==({'tasks':3,'ledger':2} if args.tasks else {'tasks':0,'ledger':0}))
+        check('exact-generation-and-billing-counts',paid==({'tasks':4,'ledger':3} if args.prior_image else {'tasks':3,'ledger':2} if args.tasks else {'tasks':0,'ledger':0}))
         (args.evidence/'RESULT.json').write_text(json.dumps({'ok':True,'checks':checks,'count':len(checks),'image':args.image,
             'schema':schema,'events':events,'tasks':task_proof,'paidCalls':0,'siteOperations':0},indent=2))
-        print('RELEASE_DIRECT_ACTUAL=PASS CHECKS='+str(len(checks))+' REAL_CREATORS=2 REAL_NEXT=2 REAL_WORKERS=2 REAL_PG=1 PAID_CALLS=0 SITE_OPERATIONS=0')
+        roles=3 if args.prior_image else 2
+        print('RELEASE_DIRECT_ACTUAL=PASS CHECKS='+str(len(checks))+' REAL_CREATORS='+str(roles)+' REAL_NEXT='+str(roles)+' REAL_WORKERS='+str(roles)+' REAL_PG=1 NGINX='+str(int(bool(args.prior_image)))+' PAID_CALLS=0 SITE_OPERATIONS=0')
     finally:
         for target in reversed(slots):
             row=tx.inspect(target)

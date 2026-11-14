@@ -122,3 +122,9 @@
 [模块记录](2026-11-15-video-compiler-canvas-recovery.md)：确认初始项目刷新失败后，原重试只恢复作品、遗漏导航凭证；现有错误按钮接入同一导航读取入口。同一请求并发共享，项目/账号/工作空间 ABA 和晚完成隔离；文字 load=false 不再是成功。新增实际 React/实际 Canvas 读取组合及按钮8项，既有导航30、Assistant联动95、作品49、缓存20及完整tsc通过。实际Next两场景读取恢复与完整分镜10项通过。旧独立版本UI超时确认由夹具缺process.env导致，仅修测试环境后原6项通过。
 
 本片集中副本、回滚和最终集成结果以新模块记录及四产物VERIFICATION.txt为准；冷启动瞬态Invalid or unexpected token的具体脚本/字节根因仍开放，不能据后续暖路由、重试成功或UI修复关单。固定生产镜像需重新构建。全目标ACTIVE，47 HOLD/生产写入0/付费0/部署0保持。
+
+## 双固定包真实 Nginx 切流与回滚（2026-11-15）
+
+[模块记录](2026-11-15-video-compiler-nginx-acceptance.md)：旧完整包7ce2f729/1794692423与新完整包526148e8/1794693854，复用既有静态资源并集、网关完整CAS/语法/原子替换/reload、Worker控制和固定格式回滚守卫。在本地真实Nginx/Next/独立原生Worker/PG中最终源55项通过：旧Worker受理后新Worker续查原回执、全部645旧资源在旧→新→旧SHA相同、两次切流各60HTTP全200、陈旧CAS/错误语法负控、UNKNOWN不重放、账务资产不回退、回旧包仍可接受新任务；最终4任务/3笔video账本/41 fixture积分，7槽/schema/网络清理。独立副本、四产物与main集成以证据VERIFICATION/INTEGRATION为准。
+
+两个固定包之间产品运行源码相同，不泛化为任意跨版本兼容；调用真实组件所有者不等于整站lifecycle/controller CLI已验收，资源HTTP不等于浏览器水合/RSC零刷新。新完整包构建/Worker49/包7项50HTTP46资源/核心137/tsc与现有发布回归通过。真实目标站、全部启用绑定/环境路线、授权上游和浏览器连续性仍开放。总目标ACTIVE、47 HOLD、生产写入/付费/部署0。
