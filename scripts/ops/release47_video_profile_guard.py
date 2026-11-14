@@ -1,4 +1,4 @@
-"""Read-only rollback barrier for the six verified video-family wire profiles.
+"""Read-only rollback barrier for frozen video protocols and software formats.
 
 The active model configuration is deliberately not consulted: accepted tasks and
 encrypted workflow stages retain their original model version after a config
@@ -6,6 +6,7 @@ rollback. No task, incident, credential, or billing record is changed here.
 """
 import datetime as dt
 import json
+import re
 
 from release47_host import environment, require
 
@@ -19,16 +20,18 @@ TABLES = {
     'defaults': 'app_video_model_defaults', 'runs': 'app_video_workflow_runs',
     'nodes': 'app_video_workflow_run_nodes',
 }
+SCHEMA_KEYS = set(TABLES) | {'workflowExecutionVersion'}
 
 
 def schema_sql():
     fields = ','.join("'%s',to_regclass('public.%s') IS NOT NULL" % item
                       for item in TABLES.items())
+    fields += ", 'workflowExecutionVersion',EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid=to_regclass('public.app_video_workflow_runs') AND attname='execution_version' AND NOT attisdropped)"
     return "BEGIN READ ONLY;SET LOCAL statement_timeout='5s';SELECT json_build_object(" + fields + ');COMMIT;'
 
 
 def build_readonly_sql(tables):
-    require(set(tables) == set(TABLES) and all(type(v) is bool for v in tables.values()),
+    require(set(tables) == SCHEMA_KEYS and all(type(v) is bool for v in tables.values()),
             'VIDEO_PROFILE_SCHEMA_OBSERVATION_INVALID')
     require(tables['tasks'] and tables['versions'] and tables['runs'] == tables['nodes'],
             'VIDEO_PROFILE_SCHEMA_INCOMPLETE')
@@ -51,6 +54,13 @@ def build_readonly_sql(tables):
         FROM jsonb_array_elements(r.plan->'nodes') x(node) WHERE x.node->>'id'=n.node_id) p ON true
       WHERE COALESCE(n.status,'') NOT IN ('completed','failed','blocked','cancelled')
     """ if tables['runs'] else "SELECT NULL::jsonb AS row WHERE false"
+    # Full history matters to readers/retry, not only the executor's queue. Only
+    # grouped nonsecret format markers cross the connection, never ciphertext,
+    # prompts, URLs or large task JSON. No schema writes on old installations.
+    execution_version = 'to_jsonb(r.execution_version)' if tables['workflowExecutionVersion'] else "'0'::jsonb"
+    workflow_formats = """SELECT %s AS version,
+        count(*) AS count FROM app_video_workflow_runs r GROUP BY 1""" % execution_version if tables['runs'] else \
+        "SELECT NULL::jsonb AS version,0::bigint AS count WHERE false"
     return """BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;
 SET LOCAL statement_timeout='5s';
 WITH cfg AS (
@@ -92,13 +102,23 @@ WITH cfg AS (
       THEN v.parameters#>'{modelExecutions,video,target,id}' END),
     'wireModelIds',jsonb_build_array(v.model)) AS row
   FROM app_video_tasks v WHERE COALESCE(v.status,'') NOT IN ('completed','failed','cancelled')
-), workflows AS (%s)
+), workflows AS (%s), task_formats AS (
+  SELECT COALESCE(v.parameters->'version','0'::jsonb) AS version,
+    v.capability_snapshot->'planVersion' AS "planVersion",
+    (jsonb_typeof(v.parameters->'compiledPlanEnc')='string' AND length(v.parameters->>'compiledPlanEnc')>0) IS TRUE AS "hasCompiledPlan",
+    (v.parameters->>'compiledPlanDigest' ~ '^[a-f0-9]{64}$') IS TRUE AS "hasPlanDigest",count(*) AS count
+  FROM app_video_tasks v GROUP BY 1,2,3,4
+), workflow_formats AS (%s)
 SELECT jsonb_build_object('schemaVersion',1,'complete',true,
   'observedAt',clock_timestamp(),'readOnly',current_setting('transaction_read_only'),
   'bindings',COALESCE((SELECT jsonb_agg(row) FROM bindings),'[]'::jsonb),
   'taskCount',(SELECT count(*) FROM tasks),'taskRows',COALESCE((SELECT jsonb_agg(row) FROM tasks),'[]'::jsonb),
-  'workflowCount',(SELECT count(*) FROM workflows),'workflowRows',COALESCE((SELECT jsonb_agg(row) FROM workflows),'[]'::jsonb));
-COMMIT;""" % (profiles, defaults, workflows)
+  'workflowCount',(SELECT count(*) FROM workflows),'workflowRows',COALESCE((SELECT jsonb_agg(row) FROM workflows),'[]'::jsonb),
+  'formatSummary',jsonb_build_object('taskCount',(SELECT count(*) FROM app_video_tasks),
+    'taskFormats',COALESCE((SELECT jsonb_agg(to_jsonb(f)) FROM task_formats f),'[]'::jsonb),
+    'workflowCount',COALESCE((SELECT sum(count) FROM workflow_formats),0),
+    'workflowFormats',COALESCE((SELECT jsonb_agg(to_jsonb(f)) FROM workflow_formats f),'[]'::jsonb)));
+COMMIT;""" % (profiles, defaults, workflows, workflow_formats)
 
 
 def _strings(values):
@@ -113,7 +133,77 @@ def _versions(values):
     return {v for v in values if v is not None}
 
 
-def evaluate(snapshot, additional_scope=None, *, now=None):
+def assess_formats(summary, runtime_formats=None):
+    """Compare durable envelope versions with the pinned executable's readers.
+
+    A descriptor is a format claim, not a certificate of release/UNKNOWN/drain
+    correctness. All the existing lifecycle guards still apply independently.
+    Missing old descriptors only establish legacy compatibility, never v3.
+    """
+    require(isinstance(summary, dict), 'VIDEO_FORMAT_SCAN_MISSING')
+    readers = {'taskParameterVersions': [0, 2], 'compiledPlanVersions': [],
+               'workflowExecutionVersions': [0], 'publishedProfileVersions': {}}
+    if runtime_formats is not None:
+        require(isinstance(runtime_formats, dict) and type(runtime_formats.get('schemaVersion')) is int
+                and runtime_formats['schemaVersion'] == 1, 'VIDEO_RUNTIME_FORMAT_CONTRACT_INVALID')
+        for key in ['taskParameterVersions', 'compiledPlanVersions', 'workflowExecutionVersions',
+                    'workflowCompiledVersions']:
+            values = runtime_formats.get(key)
+            require(isinstance(values, list) and values and all(type(v) is int and v >= 0 for v in values)
+                    and len(values) == len(set(values)), 'VIDEO_RUNTIME_FORMAT_CONTRACT_INVALID')
+        profiles = runtime_formats.get('publishedProfileVersions')
+        require(isinstance(profiles, dict) and all(isinstance(k, str) and k and type(v) is int and v > 0
+                for k, v in profiles.items()), 'VIDEO_RUNTIME_FORMAT_CONTRACT_INVALID')
+        readers = runtime_formats
+    blocked = []
+    for field, count, key in [('taskFormats', 'taskCount', 'taskParameterVersions'),
+                              ('workflowFormats', 'workflowCount', 'workflowExecutionVersions')]:
+        rows = summary.get(field)
+        require(isinstance(rows, list) and type(summary.get(count)) is int and summary[count] >= 0,
+                'VIDEO_FORMAT_SCAN_INCOMPLETE')
+        total, seen = 0, set()
+        for row in rows:
+            require(isinstance(row, dict) and type(row.get('count')) is int and row['count'] > 0,
+                    'VIDEO_FORMAT_ROW_INVALID')
+            marker = json.dumps({k: v for k, v in row.items() if k != 'count'}, sort_keys=True)
+            require(marker not in seen, 'VIDEO_FORMAT_SCAN_DUPLICATE')
+            seen.add(marker); total += row['count']
+            version = row.get('version')
+            reason = None
+            if type(version) is not int or version < 0:
+                reason = 'durable-format-version-unknown'
+            elif version not in readers[key]:
+                reason = 'prior-program-reader-not-proven'
+            if field == 'workflowFormats' and version == 1 and not reason:
+                # Encrypted stages have no public profile/plan-version marker.
+                # The operator does not decrypt them or guess from model names.
+                if not set([1, 2, 3, 4, 5]).issubset(readers['compiledPlanVersions']) or \
+                        1 not in readers.get('workflowCompiledVersions', []) or \
+                        any(readers['publishedProfileVersions'].get(p) != 1 for p in
+                            ['json-video', 'native-video', 'workflow-video']):
+                    reason = 'prior-program-encrypted-workflow-reader-not-proven'
+            if field == 'taskFormats':
+                plan = row.get('planVersion')
+                # Corrupt/partially written version markers must not masquerade
+                # as legacy. Never decrypt or downgrade them on the operator.
+                compiled = version == 3 or any(row.get(k) is not None and row.get(k) is not False for k in
+                           ['planVersion', 'hasCompiledPlan', 'hasPlanDigest'])
+                if compiled:
+                    if version != 3 or type(plan) is not int \
+                            or row.get('hasCompiledPlan') is not True or row.get('hasPlanDigest') is not True:
+                        reason = 'compiled-task-format-markers-incomplete'
+                    elif plan not in readers['compiledPlanVersions'] or \
+                            any(readers['publishedProfileVersions'].get(p) != 1 for p in
+                                ['json-video', 'native-video', 'workflow-video']):
+                        reason = 'prior-program-compiled-reader-not-proven'
+            if reason:
+                blocked.append({'kind': field, 'count': row['count'], 'version': version, 'reason': reason})
+        require(total == summary[count], 'VIDEO_FORMAT_SCAN_TRUNCATED')
+    return {'safe': not blocked, 'taskCount': summary['taskCount'], 'workflowCount': summary['workflowCount'],
+            'descriptorPresent': runtime_formats is not None, 'blockers': blocked}
+
+
+def evaluate(snapshot, additional_scope=None, *, now=None, runtime_formats=None):
     """Pure assessment. Unknown/incomplete relevant observations never mean zero."""
     require(isinstance(snapshot, dict) and snapshot.get('schemaVersion') == 1 and
             snapshot.get('complete') is True and snapshot.get('readOnly') == 'on',
@@ -151,7 +241,8 @@ def evaluate(snapshot, additional_scope=None, *, now=None):
                 for key in ['knownPublicModelIds', 'knownUpstreamIds', 'knownWireModelIds']:
                     extra[key].update(scope[key])
         scopes.append(extra)
-    blocked, ignored = [], 0
+    formats = assess_formats(snapshot.get('formatSummary'), runtime_formats)
+    blocked, ignored = list(formats['blockers']), 0
     for kind, field, count, terminal in [
         ('video-task', 'taskRows', 'taskCount', {'completed', 'failed', 'cancelled'}),
         ('workflow-stage', 'workflowRows', 'workflowCount', {'completed', 'failed', 'blocked', 'cancelled'}),
@@ -202,18 +293,68 @@ def evaluate(snapshot, additional_scope=None, *, now=None):
             'modelVersions': sorted(set().union(*(scope['versions'] for scope in scopes))) if scopes else [],
             'scannedTasks': snapshot['taskCount'], 'scannedWorkflowStages': snapshot['workflowCount'],
             'unrelatedNonterminalRows': ignored, 'blockers': blocked, 'historicalRowsChanged': False,
-            'acceptedTasksReplayed': False}
+            'acceptedTasksReplayed': False, 'formatCompatibility': formats}
 
 
-def check_live(tx, config):
+# Also exercised against actual historical/fixed packages by the local verifier.
+RUNTIME_PACKAGE_PROBE = r"""
+const fs=require('node:fs'),crypto=require('node:crypto');
+const root=process.argv[1]||'/app/dist/worker';
+if(!fs.existsSync(root+'/manifest.json')){
+ console.log(JSON.stringify({schemaVersion:1,bundleVerified:false,legacyPackage:true,videoRuntimeFormats:null}));process.exit(0);
+}
+const m=JSON.parse(fs.readFileSync(root+'/manifest.json'));
+if(m.schema!==1||m.entry!=='application.cjs')throw Error('VIDEO_RUNTIME_MANIFEST_INVALID');
+const bytes=fs.readFileSync(root+'/application.cjs');
+if(crypto.createHash('sha256').update(bytes).digest('hex')!==m.sha256||bytes.length!==m.bytes)throw Error('VIDEO_RUNTIME_BUNDLE_HASH_CHANGED');
+const formats=m.videoRuntimeFormats??null;
+if(formats!==null){
+ const actual=require(root+'/application.cjs').videoRuntimeFormats;
+ if(JSON.stringify(actual)!==JSON.stringify(formats))throw Error('VIDEO_RUNTIME_DESCRIPTOR_DRIFT');
+}
+console.log(JSON.stringify({schemaVersion:1,bundleVerified:true,bundleSha256:m.sha256,videoRuntimeFormats:formats}));
+"""
+
+
+def read_runtime_formats(tx, prior):
+    """Read the stopped prior slot without starting a scanner. A manifest claim
+    is accepted only from the pinned image AND exact bundle bytes. No config
+    flag, model name, date, or current binding can supply reader permission."""
+    require(isinstance(prior, dict) and re.fullmatch(r'[a-f0-9]{64}', prior.get('id', ''))
+            and re.fullmatch(r'sha256:[a-f0-9]{64}', prior.get('image', '')),
+            'VIDEO_RUNTIME_PRIOR_IDENTITY_REQUIRED')
+    row = tx.inspect(prior['id'])
+    require(row['Image'] == prior['image'] and not row['State']['Running'], 'VIDEO_RUNTIME_PRIOR_CHANGED')
+    # Execute only passive package inspection in the immutable image. No Web,
+    # application factory, scanner, network, mounts or runtime credentials.
+    result = json.loads(tx.run(['docker', 'run', '--rm', '--network=none', '--read-only',
+        '--cap-drop=ALL', '--security-opt=no-new-privileges:true', '--memory=256m',
+        '--pids-limit=32', '-e', 'NODE_OPTIONS=', '--entrypoint=node', prior['image'],
+        '--input-type=commonjs', '-e', RUNTIME_PACKAGE_PROBE], timeout=30))
+    require(isinstance(result, dict) and result.get('schemaVersion') == 1 and
+            (result.get('bundleVerified') is True or result.get('legacyPackage') is True
+             and result.get('videoRuntimeFormats') is None), 'VIDEO_RUNTIME_BUNDLE_HASH_CHANGED')
+    formats = result.get('videoRuntimeFormats')
+    if formats is not None:
+        assess_formats({'taskCount': 0, 'taskFormats': [], 'workflowCount': 0, 'workflowFormats': []}, formats)
+    # Re-pin after IO; do not consume a changed/running prior slot.
+    after = tx.inspect(prior['id'])
+    require(after['Image'] == prior['image'] and not after['State']['Running'], 'VIDEO_RUNTIME_PRIOR_CHANGED')
+    return formats
+
+
+def check_live(tx, config, prior=None):
     """Collect only non-secret markers under the caller's existing three locks."""
+    runtime_formats = read_runtime_formats(tx, prior) if prior is not None else None
     db = tx.inspect('naumi-staging-db-1')
     env = environment(db)
     command = ['docker', 'exec', '-i', db['Id'], 'psql', '-XqAt', '-v', 'ON_ERROR_STOP=1',
                '-U', env['POSTGRES_USER'], '-d', env['POSTGRES_DB']]
     tables = json.loads(tx.run(command, stdin=schema_sql().encode()))
     snapshot = json.loads(tx.run(command, stdin=build_readonly_sql(tables).encode(), timeout=30))
-    proof = evaluate(snapshot, config.get('videoProfileRollbackScope'))
+    proof = evaluate(snapshot, config.get('videoProfileRollbackScope'), runtime_formats=runtime_formats)
+    if prior is not None:
+        proof['priorProgram'] = {'containerId': prior['id'], 'image': prior['image']}
     return proof
 
 

@@ -68,7 +68,7 @@ def run(config,apply=False,existing_tx=None):
    require(sha(after[patch['path']])==patch['beforeSha256'],'ROLLBACK_CONFIG_HASH_CHANGED')
   result={'check':'PASS','fixedPriorImage':pm['image'],'currentImage':m['image'],'databaseBackupReadable':True,'inverseGatewayHashesVerified':True,'priorSlotsStopped':True,'historicalIncidentsPreserved':True,'productionCutbackExecuted':False,
           'isolatedUnknownScannerRetained':bool(config.get('preservedWorkerTick')),'priorWorkerRecovery':'fresh-same-prior-image-worker' if config.get('preservedWorkerTick') else 'resume-prior-worker'}
-  video_proof=video_profile_guard.check_live(tx,config)
+  video_proof=video_profile_guard.check_live(tx,config,prior=pm['web'])
   if existing_tx or apply:tx.save('video-profile-rollback-check-'+uuid.uuid4().hex+'.json',video_proof)
   video_profile_guard.enforce(video_proof)
   result['videoProfileCompatibility']=video_proof
@@ -114,7 +114,7 @@ SELECT json_build_object('jobs',(SELECT count(*) FROM app_image_jobs j WHERE
    domain=json.loads(tx.run(['docker','exec','-e','NODE_OPTIONS=',current['id'],'node','--input-type=module','-e',js]));return domain['drained'] and obs['agentRuns']==0 and obs['trackedAcceptedWork']==0 and t['activeRequests']==0
   wait(drained,'CURRENT_EXECUTION_DRAIN_PENDING')
   # Recheck after admission/ticks are paused: a task may have arrived since --check.
-  try:video_proof=video_profile_guard.check_live(tx,config)
+  try:video_proof=video_profile_guard.check_live(tx,config,prior=pm['web'])
   except (Hold,ValueError,KeyError,TypeError) as error:
    video_proof={'safe':False,'kind':'video-profile-program-rollback-compatibility',
                 'errorCode':str(error) if isinstance(error,Hold) else type(error).__name__}

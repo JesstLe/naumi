@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import {isBuiltin} from 'node:module';
+import {isBuiltin,createRequire} from 'node:module';
 import {createHash} from 'node:crypto';
 import {build} from 'esbuild';
 
@@ -16,5 +16,8 @@ const dependencies=Object.fromEntries([...new Set(imports.map(packageName))].map
 }));
 const source=Object.fromEntries(Object.keys(result.metafile.inputs).map(file=>[file,createHash('sha256').update(fs.readFileSync(file)).digest('hex')]));
 const bundle=fs.readFileSync(path.join(out,'application.cjs'));
-fs.writeFileSync(path.join(out,'manifest.json'),JSON.stringify({schema:1,node:'24',entry:'application.cjs',sha256:createHash('sha256').update(bundle).digest('hex'),bytes:bundle.length,imports,dependencies,source},null,2)+'\n');
+// Passive module import only: no application factory, persistence or scan runs.
+const {videoRuntimeFormats}=createRequire(import.meta.url)(path.join(out,'application.cjs'));
+if(videoRuntimeFormats?.schemaVersion!==1)throw Error('VIDEO_RUNTIME_FORMATS_MISSING');
+fs.writeFileSync(path.join(out,'manifest.json'),JSON.stringify({schema:1,node:'24',entry:'application.cjs',sha256:createHash('sha256').update(bundle).digest('hex'),bytes:bundle.length,imports,dependencies,source,videoRuntimeFormats},null,2)+'\n');
 console.log('APPLICATION_WORKER_BUILD=PASS INPUTS='+Object.keys(source).length+' PACKAGES='+Object.keys(dependencies).length+' BYTES='+bundle.length+' HTTP_ROUTE_INPUTS='+Object.keys(source).filter(f=>f.startsWith('src/app/')).length);
