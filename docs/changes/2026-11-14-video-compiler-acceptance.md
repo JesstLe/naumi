@@ -140,3 +140,7 @@
 ## Workflow未来元素分组与格式2（2026-11-15）
 
 [模块记录](2026-11-15-video-structured-workflow.md)：复现明确未来video元素因无目标字段/空refs被拒，新增可选elementId，统一冻结/物化位置规则。只有Workflow允许受已声明future slot支撑的空组；普通生成/Canvas schema仍要求具体素材，原flat身份和历史值保持。含新目标的持久run标execution_version2，原run仍1/历史0；reader/固定Worker描述/原回滚守卫一并核对，旧0/1包不得回退消费新组。真实HTTP/独立Worker增量覆盖镜头＋静态元素＋未来普通/分组素材、冻结后改配置/文字/价格和重启、历史欠授权确认、物理超限、取消、UNKNOWN/拒绝和零副作用负控；最终固定包/副本数量与回退以四产物VERIFICATION/INTEGRATION为准。生产启用绑定/全高级家族/真实授权上游/浏览器和整站蓝绿仍开放，总目标ACTIVE、47 HOLD、生产写入/付费/部署0。
+
+## 固定包与真实 lifecycle CLI 事务（2026-11-15）
+
+[模块记录](2026-11-15-video-lifecycle-acceptance.md)：既有真实Nginx/固定Next/独立Worker/PG验证器接到原deploy-release.sh --lifecycle；实际旧槽仍运行时finish→CLEANUP_PENDING，下一发布与陈旧CAS拒绝；实际排空/退役/兼容材料及候选状态分别支持complete/rollback事务。新增fixture适配不被生产调用，原partial覆盖不升级成全局事实，数据库/媒体/UNKNOWN不回退；131集中回归与首次complete51项通过，最终源/独立副本数字、四产物及main以VERIFICATION/INTEGRATION为准。真实生产controller/全部业务覆盖、实际启用配置/授权上游、浏览器/TLS与目标站发布仍开放；A19/总目标ACTIVE，47 HOLD，生产写入/付费/部署0。
