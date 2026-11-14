@@ -1,4 +1,5 @@
 import {z} from 'zod';
+import {videoRuntimeFormats} from './runtime-formats';
 
 // New execution contracts deliberately do not import legacy capability/schema
 // resolvers. Descriptions and test evidence are not execution permissions.
@@ -143,7 +144,7 @@ export interface VideoModelProfile {
   compile(draft:ResolvedVideoDraft,contract:VideoInputContract,binding:PublishedVideoModelBinding):VideoResult<VideoProfileOutput>;
 }
 export type CompiledVideoPlan={
-  schemaVersion:1|2|3|4|5;
+  schemaVersion:typeof videoRuntimeFormats.compiledPlanVersions[number];
   identity:Pick<PublishedVideoModelBinding,'publicModelId'|'wireModel'|'connectionId'|'profileId'|'profileVersion'>&{bindingRevision:number;policyRevision:number};
   binding:PublishedVideoModelBinding;
   policy:VideoExecutionPolicy;
@@ -159,7 +160,7 @@ export type CompiledVideoPlan={
   digest:string;
 };
 export const compiledVideoPlanSchema=z.strictObject({
-  schemaVersion:z.union([z.literal(1),z.literal(2),z.literal(3),z.literal(4),z.literal(5)]),
+  schemaVersion:z.literal(videoRuntimeFormats.compiledPlanVersions),
   identity:videoModelBindingSchema.omit({recipe:true,revision:true}).extend({bindingRevision:revision,policyRevision:revision}),
   binding:videoModelBindingSchema,policy:videoExecutionPolicySchema,
   scope:videoExecutionScopeSchema,intent:videoExecutionIntentSchema,originalPrompt:z.string().max(65536),

@@ -8,6 +8,8 @@ import {createHash} from 'node:crypto';
 const root=path.resolve(process.argv[2]||'.next/standalone'),bundleRoot=path.resolve(process.argv[3]||'dist/worker');
 const manifest=JSON.parse(fs.readFileSync(path.join(bundleRoot,'manifest.json'),'utf8'));
 if(createHash('sha256').update(fs.readFileSync(path.join(bundleRoot,manifest.entry))).digest('hex')!==manifest.sha256)throw Error('WORKER_BUNDLE_HASH_MISMATCH');
+const packaged=createRequire(import.meta.url)(path.join(bundleRoot,manifest.entry));
+if(!manifest.videoRuntimeFormats||JSON.stringify(packaged.videoRuntimeFormats)!==JSON.stringify(manifest.videoRuntimeFormats))throw Error('VIDEO_RUNTIME_DESCRIPTOR_DRIFT');
 const require=createRequire(path.join(root,'worker-package-check.cjs')),realRoot=fs.realpathSync(root);
 for(const spec of manifest.imports){
  const resolved=fs.realpathSync(require.resolve(spec)),relative=path.relative(realRoot,resolved);

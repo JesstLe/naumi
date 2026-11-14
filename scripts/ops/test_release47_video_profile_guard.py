@@ -28,7 +28,8 @@ def observation(tasks=(), workflows=(), bindings=None):
                 'knownWireModelIds': ['kling-v3', 'legacy-model'],
                 'knownPublicModelIds': ['video-kling', 'legacy-video']}],
             'taskCount': len(tasks), 'taskRows': list(tasks),
-            'workflowCount': len(workflows), 'workflowRows': list(workflows)}
+            'workflowCount': len(workflows), 'workflowRows': list(workflows),
+            'formatSummary': {'taskCount': 0, 'taskFormats': [], 'workflowCount': 0, 'workflowFormats': []}}
 
 
 class VideoProfileGuard(unittest.TestCase):
@@ -134,7 +135,7 @@ class VideoProfileGuard(unittest.TestCase):
                 self.evaluate(observation([row(**change)]))
 
     def test_query_reads_all_frozen_versions_and_never_uses_current_active(self):
-        sql = guard.build_readonly_sql(dict.fromkeys(guard.TABLES, True))
+        sql = guard.build_readonly_sql(dict.fromkeys(guard.SCHEMA_KEYS, True))
         self.assertIn('REPEATABLE READ READ ONLY', sql)
         self.assertIn('app_video_model_defaults', sql)
         self.assertIn("d.value->>'profile'", sql)
@@ -146,7 +147,7 @@ class VideoProfileGuard(unittest.TestCase):
         self.assertNotIn('UPDATE ', sql)
 
     def test_confirmed_absent_legacy_optional_tables_are_not_created(self):
-        tables = dict.fromkeys(guard.TABLES, True)
+        tables = dict.fromkeys(guard.SCHEMA_KEYS, True)
         tables.update(defaults=False, runs=False, nodes=False)
         sql = guard.build_readonly_sql(tables)
         self.assertNotIn('FROM app_video_model_defaults', sql)
@@ -165,7 +166,7 @@ class VideoProfileGuard(unittest.TestCase):
                 self.inputs.append(stdin.decode())
                 value = observation(bindings=[])
                 value['observedAt'] = dt.datetime.now(dt.timezone.utc).isoformat()
-                return json.dumps(dict.fromkeys(guard.TABLES, True) if len(self.inputs) == 1 else value).encode()
+                return json.dumps(dict.fromkeys(guard.SCHEMA_KEYS, True) if len(self.inputs) == 1 else value).encode()
         fixture = Fixture()
         self.assertTrue(guard.check_live(fixture, {})['safe'])
         self.assertEqual(len(fixture.inputs), 2)
@@ -173,7 +174,7 @@ class VideoProfileGuard(unittest.TestCase):
 
     def test_apply_rechecks_after_drain_before_starting_prior_worker(self):
         text = (pathlib.Path(__file__).parent / 'release47_normal_rollback.py').read_text()
-        self.assertEqual(text.count('video_profile_guard.check_live(tx,config)'), 2)
+        self.assertEqual(text.count("video_profile_guard.check_live(tx,config,prior=pm['web'])"), 2)
         self.assertLess(text.index("wait(drained,'CURRENT_EXECUTION_DRAIN_PENDING')"),
                         text.index("'video-profile-rollback-drained-'"))
         self.assertLess(text.index("'video-profile-rollback-drained-'"),
