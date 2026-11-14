@@ -6,4 +6,5 @@ export type VideoUiParameter={type:'string'|'number'|'integer'|'boolean'|'json';
   values?:Array<string|number|boolean|null>;minimum?:number;maximum?:number};
 export type VideoUiContract={version:1;modelVersion:number;modelDigest:string;policyRevision:number;
   defaults:{ordinaryImage?:'single_image'|'reference';sourceVideo?:'video_edit'|'reference'};
-  operations:Array<{intent:VideoExecutionIntent;structure?:{shots?:{min?:number;max?:number;maxPromptChars?:number;minDurationSeconds?:number;durationStep?:number};elements?:{min?:number;max?:number;media:Array<{kinds:Array<'image'|'video'|'audio'>;min?:number;max?:number}>}};parameters:Record<string,VideoUiParameter>}>};
+  workflow?:{parameters:Record<string,VideoUiParameter>;slots:Array<{name:string;type:string;required?:boolean}>};
+  operations:Array<{intent:Exclude<VideoExecutionIntent,'workflow'>;structure?:{shots?:{min?:number;max?:number;maxPromptChars?:number;minDurationSeconds?:number;durationStep?:number};elements?:{min?:number;max?:number;media:Array<{kinds:Array<'image'|'video'|'audio'>;min?:number;max?:number}>}};parameters:Record<string,VideoUiParameter>}>};

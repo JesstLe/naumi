@@ -22,7 +22,13 @@ export async function withPreparedAgentVideo<T>(actor:string,input:{config:Video
   if(projectKey&&projectKey!==current.projectKey)throw new ModelConfigError('VIDEO_NODE_PROJECT_CONFLICT','视频节点不属于当前项目',409);
   config=current.config;inputs=current.inputs;projectKey=current.projectKey;
  }
- if(config.comfyWorkflowId)return run(undefined);
+ if(config.comfyWorkflowId){
+  const {prepareByocVideoPreview}=await import('./byoc-preview');const {videoByocDraft}=await import('./ui-draft');
+  if(input.requiredIntent&&!inputs.some(item=>item.kind==='video'&&item.role==='source_video'))throw new VideoContractError('SOURCE_VIDEO_REQUIRED','编辑或续写需要明确的来源视频',['inputs']);
+  const result=await prepareByocVideoPreview(actor,{...videoByocDraft(config,inputs),projectKey,draftRevision:0});
+  if(!result.ok){const d=result.diagnostics[0];throw new VideoContractError(d.code,d.reason,[d.field]);}
+  return run(result.value.plan);
+ }
  return withVideoCreationModel(config.modelId,async()=>{
   const execution=currentModelExecution('video');
   if(!execution?.frozen.video?.execution){

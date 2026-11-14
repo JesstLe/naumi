@@ -1,5 +1,6 @@
 import 'server-only';
 import {bindPublishedVideoExecution,type FrozenVideoExecution} from './published-execution';
+import {workflowVideoRecipeSchema} from './profiles/workflow-profile';
 import {jsonVideoRecipeSchema} from './profiles/json-profile';
 import type {VideoUiContract,VideoUiParameter} from './ui-contract';
 import {ModelConfigError} from '../model-config/types';
@@ -9,6 +10,10 @@ import {ModelConfigError} from '../model-config/types';
 export function projectVideoUiContract(frozen:FrozenVideoExecution,identity:{publicModelId:string;wireModel:string;connectionId:string}):VideoUiContract {
   const {binding,policy,profile}=bindPublishedVideoExecution(frozen,identity),described=profile.describe(binding);
   if(!described.ok)throw new ModelConfigError(described.diagnostics[0].code,described.diagnostics[0].reason,422);
+  if(frozen.profileId==='workflow-video'){
+    const recipe=workflowVideoRecipeSchema.parse(described.value.description);
+    return {version:1,modelVersion:frozen.modelVersion,modelDigest:frozen.modelDigest,policyRevision:policy.revision,defaults:{},operations:[],workflow:{parameters:Object.fromEntries(Object.entries(recipe.parameters).filter(([,rule])=>rule.send!=='omit').map(([name,rule])=>[name,{type:rule.type,required:rule.required,default:rule.default,values:rule.values,minimum:rule.minimum,maximum:rule.maximum}])),slots:recipe.manifest.inputs.map(({name,type,required})=>({name,type,required}))}};
+  }
   const recipe=jsonVideoRecipeSchema.parse(described.value.description);
   return {version:1,modelVersion:frozen.modelVersion,modelDigest:frozen.modelDigest,policyRevision:policy.revision,defaults:recipe.defaults,
     operations:recipe.operations.map(operation=>({intent:operation.intent,...(operation.shots||operation.elements?{structure:{

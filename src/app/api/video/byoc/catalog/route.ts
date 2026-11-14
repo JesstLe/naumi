@@ -1,3 +1,4 @@
+import {parseComfyDocument,projectComfyGraph,compileComfyDocument} from "@/lib/comfyui/document";
 import {NextResponse} from "next/server";
 import {authorizedTargetEmail} from "@/lib/request-auth";
 import {getActiveComfyEndpoint, listComfyWorkflows, getComfyWorkflow} from "@/lib/comfyui/repository";
@@ -8,7 +9,14 @@ export const runtime="nodejs",dynamic="force-dynamic";
 export async function GET(request:Request){
   const actor=await authorizedTargetEmail(request,new URL(request.url).searchParams.get("email"),true);if(!actor)return NextResponse.json({error:"未登录或无权访问"},{status:401});
   try{const [endpoint,list]=await Promise.all([getActiveComfyEndpoint(actor),listComfyWorkflows(actor)]),workflows:VideoByocWorkflow[]=[];
-    for(const item of list){const workflow=await getComfyWorkflow(actor,item.id);if(!workflow)continue;if(Array.isArray(workflow.apiJson.nodes))continue;const api=workflow.apiJson as ApiWorkflow,inputs=extractWorkflowInputs(api);
+    for(const item of list){const workflow=await getComfyWorkflow(actor,item.id);if(!workflow)continue;let api:ApiWorkflow;
+      if(Array.isArray(workflow.apiJson.nodes)){
+        const document=parseComfyDocument(workflow.apiJson);
+        try{api=compileComfyDocument(document);}catch{
+          const graph=projectComfyGraph(document);workflows.push({id:item.id,name:item.name,videoOutput:graph.nodes.some(node=>['SaveVideo','VHS_VideoCombine','VideoCombine'].includes(node.classType)),inputs:{images:[],texts:[],seeds:[],numerics:[],requiredNodes:graph.nodes.map(node=>node.classType)},paths:[],defaultMappings:[]});continue;
+        }
+      }else api=workflow.apiJson as ApiWorkflow;
+      const inputs=extractWorkflowInputs(api);
       workflows.push({id:item.id,name:item.name,videoOutput:knownComfyVideoOutput(api),inputs,paths:Object.entries(api).flatMap(([nodeId,node])=>Object.entries(node.inputs).filter(([,value])=>!Array.isArray(value)&&!(value&&typeof value==="object")).map(([field])=>({nodeId,field,label:`${node._meta?.title||node.class_type} ${nodeId}.${field}`}))),defaultMappings:inputs.images.map((slot,index)=>({name:`image-${slot.nodeId}`,type:"image",path:[slot.nodeId,"inputs","image"],index,required:true}))});
     }
     return NextResponse.json({endpoint:endpoint?{id:endpoint.id,name:endpoint.name}:null,workflows},{headers:{"cache-control":"private, no-store"}});

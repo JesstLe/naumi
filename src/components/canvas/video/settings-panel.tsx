@@ -25,10 +25,10 @@ export function VideoSettingsPanel({ config, models, onChange, onNotice, disable
     if(model?.execution)return <fieldset disabled={disabled} className='space-y-3' data-testid='video-settings-panel'>
       {!advancedOnly&&<><VideoField label={V('视频模型')}><CanvasModelSelect fullWidth disabled={disabled} label={V('视频模型')} placeholder={V('未选择模型')} value={`${model.providerId}/${model.modelId}`}
         options={models.map(item=>({value:`${item.providerId}/${item.modelId}`,modelId:item.modelId,label:item.label}))} onChange={value=>{const selected=models.find(item=>`${item.providerId}/${item.modelId}`===value);if(selected)onChange(selectVideoUiModel(config,selected));}}/></VideoField>
-        <VideoField label={V('视频生成模式')}><select aria-label={V('视频生成模式')} className={videoFieldClass} value={preference??''} onChange={event=>onChange({...config,intentPreference:event.target.value?event.target.value as VideoNodeConfig['intentPreference']:undefined,mode:undefined})}>
+        {!model.execution.workflow&&<VideoField label={V('视频生成模式')}><select aria-label={V('视频生成模式')} className={videoFieldClass} value={preference??''} onChange={event=>onChange({...config,intentPreference:event.target.value?event.target.value as VideoNodeConfig['intentPreference']:undefined,mode:undefined})}>
           <option value=''>{V('自动')}</option>{preference&&!model.execution.operations.some(op=>op.intent===preference)&&<option value={preference}>{V(VIDEO_CREATION_LABELS[preference as keyof typeof VIDEO_CREATION_LABELS]||VIDEO_MODE_LABELS[preference as keyof typeof VIDEO_MODE_LABELS]||preference)}</option>}
           {model.execution.operations.map(operation=><option key={operation.intent} value={operation.intent}>{V(VIDEO_MODE_LABELS[operation.intent]||operation.intent)}</option>)}
-        </select></VideoField></>}
+        </select></VideoField>}</>}
       <VideoContractFields config={config} inputs={inputs} contract={model.execution} onChange={onChange} disabled={disabled} advancedOnly={advancedOnly}/>
     </fieldset>;
     const parameters = videoParameterChoices(cap, config.mode, config);

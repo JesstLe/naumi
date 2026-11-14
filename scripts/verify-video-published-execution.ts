@@ -44,12 +44,12 @@ async function main(){
     const frozen=await freezeManagedVideoCapability(snapshot,snapshot.config.upstreamModels[0],snapshot.config.providers[0],f.sql);
     check('frozen-binding-not-legacy-caps',()=>{assert.deepEqual(frozen.definition,{});assert.deepEqual(frozen.sources,{});assert.equal(frozen.execution?.modelVersion,snapshot.version);assert.equal(frozen.execution?.modelDigest,snapshot.digest);assert.equal(frozen.execution?.policy,undefined);});
     const draft=await f.repo.draft('fixture-admin'),changed=structuredClone(draft.config);
-    changed.upstreamModels[0].parameterMap.videoExecution!.recipe.createPath='/v3/new-request';
+    (changed.upstreamModels[0].parameterMap.videoExecution!.recipe as import('zod').infer<typeof import('../src/lib/video/profiles/json-profile').jsonVideoRecipeSchema>).createPath='/v3/new-request';
     const saved=await f.repo.saveDraft({id:draft.id,expectedRevision:draft.revision,config:changed,actor:'fixture-admin'});
     const publication=await f.repo.stage({id:randomUUID(),draftId:saved.id,expectedRevision:saved.revision,expectedVersion:snapshot.version,actor:'fixture-admin',reason:'fixture published mapping revision'});
     const next=await f.repo.markApplied(publication.id,publication.digest,saved.id);
-    check('published-mapping-roundtrip',()=>assert.equal(next.config.upstreamModels[0].parameterMap.videoExecution?.recipe.createPath,'/v3/new-request'));
-    check('historical-binding-immutable',()=>assert.equal(frozen.execution?.recipe.createPath,'/v2/video/generations'));
+    check('published-mapping-roundtrip',()=>assert.equal((next.config.upstreamModels[0].parameterMap.videoExecution?.recipe as import('zod').infer<typeof import('../src/lib/video/profiles/json-profile').jsonVideoRecipeSchema>)?.createPath,'/v3/new-request'));
+    check('historical-binding-immutable',()=>assert.equal((frozen.execution?.recipe as import('zod').infer<typeof import('../src/lib/video/profiles/json-profile').jsonVideoRecipeSchema>)?.createPath,'/v2/video/generations'));
     const old=await f.repo.byVersion(snapshot.version);check('historical-published-version-retained',()=>assert.deepEqual(old.config.upstreamModels[0].parameterMap.videoExecution,mapping));
     await f.sql.query("UPDATE app_video_model_defaults SET value=jsonb_set(value,'{execution,modelDigest}',to_jsonb($2::text)) WHERE model_version=$1",[snapshot.version,'0'.repeat(64)]);
     await assert.rejects(()=>freezeManagedVideoCapability(snapshot,snapshot.config.upstreamModels[0],snapshot.config.providers[0],f.sql),{code:'EXECUTION_MISMATCH'});cases++;console.log('CASE=frozen-revision-tamper PASS');
@@ -60,7 +60,7 @@ async function main(){
     const executor=await getModelExecutor(),billing=await getModelExecutionServices().billing.current();
     const execution=await executor.resolve({binding:'video.generate',feature:'video.generate',requestedModelId:'video-fixture',snapshot:next,billing});
     const restored=await executor.describe(execution);check('real-executor-restores-published-binding',()=>assert.equal(restored.connection.wireModel,'new-model-not-in-any-list'));
-    const poisoned=structuredClone(execution);poisoned.video!.execution!.recipe.createPath='/forged-request';
+    const poisoned=structuredClone(execution);(poisoned.video!.execution!.recipe as import('zod').infer<typeof import('../src/lib/video/profiles/json-profile').jsonVideoRecipeSchema>).createPath='/forged-request';
     await assert.rejects(()=>executor.describe(poisoned),{code:'EXECUTION_MISMATCH'});cases++;console.log('CASE=executor-rejects-changed-frozen-recipe PASS');
     const {ensureVideoNodeSchema}=await import('../src/lib/canvas/storage-schema');await ensureVideoNodeSchema();
     const {ensureCreationSchema}=await import('../src/lib/saas/creation-schema');await ensureCreationSchema();
