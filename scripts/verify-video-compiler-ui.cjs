@@ -47,7 +47,7 @@ async function main(){
  try{
   await page.goto('http://video-compiler.fixture/');await page.waitForFunction(()=>window.pending.length===1);
   await click('改提示词');assert.equal((await state()).status,'pending');await reply(0);assert.notEqual((await state()).status,'ready');await settle();pass('stale_success_ignored_even_when_transport_ignores_abort');
-  const before=await count();await click('改提示词');await click('改提示词');await click('改提示词');await settle();assert.equal(await count(),before+1);pass('draft_edits_debounced_one_request');
+  const before=await count();await page.evaluate(async()=>{for(let i=0;i<3;i++){Array.from(document.querySelectorAll('nav button')).find(b=>b.textContent==='改提示词').click();await new Promise(resolve=>setTimeout(resolve,15));}});await settle();assert.equal(await count(),before+1);pass('draft_edits_debounced_one_request');
   await click('连接一');await click('连接二');assert.deepEqual((await state()).inputs.map(x=>x.role),['reference','reference']);assert.equal((await state()).config.mode,'text');await settle();pass('ordinary_images_not_automatically_frames_or_capability_vetoed');
   await click('指定首尾');await settle();await click('断开一');assert.deepEqual((await state()).inputs.map(x=>x.role),['last_frame']);await settle();pass('link_removal_keeps_explicit_role');
   await page.getByRole('combobox',{name:'视频生成模式',exact:true}).click();await page.getByRole('option',{name:'首尾帧',exact:true}).click();assert.equal((await state()).config.intentPreference,'frames_required');await settle('invalid');
