@@ -100,6 +100,10 @@
 
 ## 发布与总目标
 
+### 完整固定构建与发布创建器带任务验收（2026-11-15）
+
+[模块记录](2026-11-15-video-compiler-release-e2e.md)：完整main7ce2f729/1794692423镜像ac0aadbe构建exit0，实际Worker577个源码输入匹配归档；LinuxWorker49、无DB包7/50HTTP/46资源通过。现有发布创建器扩展实际单图受理、冻结后换型号/价格、Worker重启接续原回执、native保存、结果进入下一Canvas节点、7+17账本及UNKNOWN不重发/不记账；最终源/副本检查与精确数量以四产物VERIFICATION为准。只增加验证驱动，不改产品规则；新旧Nginx/旧资源/完整回滚、启用绑定及真实上游仍独立待验，A19与总目标ACTIVE，47 HOLD/生产写入0/付费0/部署0。
+
 ### 发布工具 direct Worker 接入（2026-11-15）
 
 [模块记录](2026-11-15-video-worker-release-mode.md)：修复候选Web已分配worker、但原发布创建器仍生成缺DB/加密配置的HTTP tick caller的问题。沿用原JS配置投影/发布owner，普通与combined direct创建、共享媒体、自己执行身份、启动/恢复核对接通；HTTP历史路径保持。真实创建器→固定Web/Worker→隔离PG的20项空扫描/控制/停启与环境分离验证补充A14/A19，独立副本回退与集成以四产物为准。当前proof包不是新整站生产构建，不替代带任务、付费上游或Nginx蓝绿。总目标ACTIVE、47 HOLD/生产写入0/付费0/部署0。
