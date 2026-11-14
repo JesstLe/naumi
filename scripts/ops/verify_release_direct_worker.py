@@ -55,11 +55,14 @@ def main():
     p.add_argument('--evidence',type=pathlib.Path,required=True)
     p.add_argument('--tasks',action='store_true');p.add_argument('--driver-container')
     p.add_argument('--prior-image');p.add_argument('--nginx-image')
+    p.add_argument('--lifecycle',choices=['complete','rollback']);p.add_argument('--retained-image')
     args=p.parse_args()
     assert os.name=='posix' and args.root.is_relative_to('/opt/naumi-staging/releases')
     assert args.image.startswith('sha256:') and len(args.image)==71
     if args.prior_image:
         assert args.tasks and args.nginx_image and args.prior_image.startswith('sha256:') and len(args.prior_image)==71
+    if args.lifecycle:
+        assert args.prior_image and args.retained_image and args.retained_image.startswith('sha256:') and len(args.retained_image)==71
     args.evidence.mkdir(parents=True,exist_ok=True);args.root.mkdir(parents=True,exist_ok=True)
     suffix=uuid.uuid4().hex[:12];prefix='naumi-release-direct-fixture-'+suffix;schema='release_direct_'+suffix
     network=api('POST','/networks/create',{'Name':prefix,'Driver':'bridge'})['Id']
@@ -95,9 +98,10 @@ def main():
             if argv[1]=='run':
                 # Only the existing rollback owner's passive fixed-package
                 # reader. No credentials, scan factory or network are started.
-                assert args.prior_image in argv and '--network=none' in argv and '--read-only' in argv
-                index=argv.index(args.prior_image)
-                probe=api('POST','/containers/create',{'Image':args.prior_image,'Entrypoint':['node'],'Cmd':argv[index+1:],
+                pinned=next((image for image in [args.prior_image,args.retained_image] if image and image in argv),None)
+                assert pinned and '--network=none' in argv and '--read-only' in argv
+                index=argv.index(pinned)
+                probe=api('POST','/containers/create',{'Image':pinned,'Entrypoint':['node'],'Cmd':argv[index+1:],
                     'Env':['NODE_OPTIONS='],'HostConfig':{'NetworkMode':'none','ReadonlyRootfs':True,'Memory':256*1024**2,
                         'PidsLimit':32,'CapDrop':['ALL'],'Tmpfs':{'/data':'rw,size=1m'}}})['Id']
                 try:
@@ -261,6 +265,8 @@ def main():
                 def fixture(action,**fields):
                     return json.loads(exec_in(web,['node','/fixture/task-fixture.cjs',json.dumps({'action':action,**fields})],env=['NODE_OPTIONS=','NODE_PATH=/app/node_modules']))
                 seed=fixture('init',origin='http://release-peer:18080')
+                if gateway and args.lifecycle:
+                    gateway.start_lifecycle(lambda query:sql('SET search_path TO '+schema+';'+query))
                 def http(route,body=None):
                     payload={'route':route,'body':body,'cookie':seed['cookie'],'origin':gateway.origin if gateway else 'http://127.0.0.1:3000'}
                     script="const x=JSON.parse(process.argv[1]);fetch(x.origin+x.route,{method:x.body===null?'GET':'POST',headers:{cookie:x.cookie,'content-type':'application/json'},...(x.body===null?{}:{body:JSON.stringify(x.body)}),signal:AbortSignal.timeout(60000)}).then(async r=>console.log(JSON.stringify({status:r.status,body:await r.json(),slot:r.headers.get('x-release-slot')})))"
@@ -342,28 +348,35 @@ def main():
                     and len([c for c in peer_state['calls'] if c['body']['prompt']=='RELEASE_UNKNOWN'])==1)
                 if gateway:
                     before_ledger=fixture('ledger',ids=[task_id,second_id,unknown_id],artworks=[done['artworkId'],second_done['artworkId']])
-                    controls.control_app(tx,public_identity(tx.inspect(web)),'drain',str(uuid.uuid4()))
-                    gateway.rollback(lambda query:sql('SET search_path TO '+schema+';'+query))
-                    peer_state['web']=gateway.old_web_name
-                    check('gateway-rollback-preserves-history-and-UNKNOWN',http('/api/video/tasks/'+task_id)['body']['task']['status']=='completed'
-                        and fixture('task',id=unknown_id)==original_unknown)
-                    check('gateway-rollback-does-not-rewind-billing-assets',fixture('ledger',ids=[task_id,second_id,unknown_id],artworks=[done['artworkId'],second_done['artworkId']])==before_ledger)
-                    rollback_input={**base,'prompt':'RELEASE_AFTER_ROLLBACK','references':[],'idempotencyKey':str(uuid.uuid4())}
-                    rollback_http=http('/api/video/generate',rollback_input);assert rollback_http['status']==200,rollback_http
-                    rollback_id=rollback_http['body']['taskId'];gateway.control_old('resume')
-                    rollback_done=eventually(lambda:fixture('task',id=rollback_id),lambda r:r['status']=='completed')
-                    gateway.control_old('drain');eventually(gateway.state,lambda s:s.get('phase')=='QUIESCENT')
-                    rollback_ledger=fixture('ledger',ids=[task_id,second_id,rollback_id,unknown_id],artworks=[])
-                    check('gateway-old-build-accepts-new-operation-after-rollback',rollback_done['quotedCredits']==17 and len(rollback_ledger['rows'])==3
-                        and sum(-int(x['delta']) for x in rollback_ledger['rows'])==41 and len(peer_state['calls'])==4)
+                    rollback_done=None;rollback_ledger=before_ledger
+                    if args.lifecycle=='complete':
+                        gateway.lifecycle.complete()
+                        check('lifecycle-complete-keeps-history-and-UNKNOWN',fixture('task',id=unknown_id)==original_unknown
+                            and fixture('ledger',ids=[task_id,second_id,unknown_id],artworks=[done['artworkId'],second_done['artworkId']])==before_ledger)
+                    else:
+                        controls.control_app(tx,public_identity(tx.inspect(web)),'drain',str(uuid.uuid4()))
+                        gateway.rollback(lambda query:sql('SET search_path TO '+schema+';'+query))
+                        peer_state['web']=gateway.old_web_name
+                        check('gateway-rollback-preserves-history-and-UNKNOWN',http('/api/video/tasks/'+task_id)['body']['task']['status']=='completed'
+                            and fixture('task',id=unknown_id)==original_unknown)
+                        check('gateway-rollback-does-not-rewind-billing-assets',fixture('ledger',ids=[task_id,second_id,unknown_id],artworks=[done['artworkId'],second_done['artworkId']])==before_ledger)
+                        rollback_input={**base,'prompt':'RELEASE_AFTER_ROLLBACK','references':[],'idempotencyKey':str(uuid.uuid4())}
+                        rollback_http=http('/api/video/generate',rollback_input);assert rollback_http['status']==200,rollback_http
+                        rollback_id=rollback_http['body']['taskId'];gateway.control_old('resume')
+                        rollback_done=eventually(lambda:fixture('task',id=rollback_id),lambda r:r['status']=='completed')
+                        gateway.control_old('drain');eventually(gateway.state,lambda s:s.get('phase')=='QUIESCENT')
+                        rollback_ledger=fixture('ledger',ids=[task_id,second_id,rollback_id,unknown_id],artworks=[])
+                        check('gateway-old-build-accepts-new-operation-after-rollback',rollback_done['quotedCredits']==17 and len(rollback_ledger['rows'])==3
+                            and sum(-int(x['delta']) for x in rollback_ledger['rows'])==41 and len(peer_state['calls'])==4)
                     task_proof['gateway']={'phases':gateway.phases,'oldImage':args.prior_image,'newImage':args.image,
                         'oldStaticAssets':len(gateway.assets_before),'rollbackTask':rollback_done,'ledger':rollback_ledger}
+                    if gateway.lifecycle and args.lifecycle=='rollback':gateway.lifecycle.rolled_back()
             for target in [worker,web]:
                 api('POST','/containers/'+target+'/stop?t=60')
                 row=tx.inspect(target);check(name+'-stopped-'+target[:8],row['State']['ExitCode']==0)
                 (args.evidence/(target[:12]+'.log')).write_bytes(api('GET','/containers/'+target+'/logs?stdout=1&stderr=1',raw=True))
         paid=json.loads(sql('SET search_path TO '+schema+";SELECT json_build_object('tasks',(SELECT count(*) FROM app_video_tasks),'ledger',(SELECT count(*) FROM app_ledger WHERE id LIKE 'led-video-%'));").splitlines()[-1])
-        check('exact-generation-and-billing-counts',paid==({'tasks':4,'ledger':3} if args.prior_image else {'tasks':3,'ledger':2} if args.tasks else {'tasks':0,'ledger':0}))
+        check('exact-generation-and-billing-counts',paid==({'tasks':4,'ledger':3} if args.prior_image and args.lifecycle!='complete' else {'tasks':3,'ledger':2} if args.tasks else {'tasks':0,'ledger':0}))
         (args.evidence/'RESULT.json').write_text(json.dumps({'ok':True,'checks':checks,'count':len(checks),'image':args.image,
             'schema':schema,'events':events,'tasks':task_proof,'paidCalls':0,'siteOperations':0},indent=2))
         roles=3 if args.prior_image else 2

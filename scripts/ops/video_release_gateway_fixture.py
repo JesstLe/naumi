@@ -59,6 +59,11 @@ class VideoReleaseGateway:
         wait(lambda:self.fetch(web,self.origin+'/api/version'),lambda r:r['status']==200 and json.loads(r['body'])['commit']==self.old_commit)
         check('actual-nginx-starts-on-distinct-prior-build',self.old_commit!=values['SOURCE_COMMIT'])
         self.assets_before=self.read_assets('old')
+        self.lifecycle=None
+
+    def start_lifecycle(self, query):
+        from video_release_lifecycle_fixture import VideoReleaseLifecycle
+        self.lifecycle=VideoReleaseLifecycle(self,query)
 
     def fetch(self, container, url):
         script="const x=process.argv[1];fetch(x,{signal:AbortSignal.timeout(5000)}).then(async r=>{const b=Buffer.from(await r.arrayBuffer());console.log(JSON.stringify({status:r.status,body:b.toString(),sha256:require('node:crypto').createHash('sha256').update(b).digest('hex'),slot:r.headers.get('x-release-slot')}))})"
@@ -135,6 +140,7 @@ class VideoReleaseGateway:
         finally:self.api('DELETE','/containers/'+validation)
 
     def switch(self, phase):
+        if self.lifecycle and phase=='new':self.lifecycle.ready()
         current=self.execute(self.gateway,['sh','-c',"nginx -T -c /fixture/nginx.conf 2>/tmp/check-error || { cat /tmp/check-error >&2; exit 1; }"])
         parsed=static.Dump(current.decode());assert set(parsed.files)=={'/fixture/nginx.conf'}
         before=self.config.read_bytes();after=self.render(phase);expected=self.expected_dump(phase)
@@ -190,6 +196,7 @@ class VideoReleaseGateway:
         self.phases.append({'phase':phase,'version':json.loads(observed['body']),'beforeDump':sha(current),'afterDump':sha(expected),'reload':'smooth'})
         self.check('actual-nginx-CAS-reload-'+phase,observed['slot']==phase)
         assert self.read_assets(phase)==self.assets_before
+        if self.lifecycle and phase=='new':self.lifecycle.switched()
 
     def rollback(self, query):
         # Stop the drained prior slots, then run the actual pinned-image format
