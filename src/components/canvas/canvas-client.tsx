@@ -378,7 +378,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const artworkPlacementRef = useRef({ scope: "", positions: new Map<string, CanvasPoint>() });
   // 管理员看指定用户:?email=<用户> → 只读查看该用户画布;?node=<作品id> → 预选中那张
   const projectView=useCanvasProjectNavigation({ready,email:user?.email,requestedProject,ports:()=>({
-    refreshProject:()=>Promise.all([canvasArtworkDocument.refresh(),canvasTextDocument.load()]),
+    refreshProject:()=>Promise.all([canvasArtworkDocument.refresh(),canvasTextDocument.load().then(loaded=>{if(!loaded)throw new Error("文字节点加载失败");})]),
     select:(project,id)=>{
       const text=!!id&&textNodes.some(node=>node.id===id&&node.projectKey===project);
       selectCanvasProject(project,{selectedId:text?null:id,selectedTextId:text?id:null,selectedPendId:null});
@@ -2633,10 +2633,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       }}/>}
       {(canvasArtworkDocument.error||canvasTextDocument.error) && <div className="fixed top-20 left-1/2 z-[200] flex -translate-x-1/2 flex-col gap-2">
       {canvasArtworkDocument.error && !importSynchronizationVisible && <div role="alert" data-testid="canvas-artwork-load-error" className="flex items-center gap-3 rounded-lg border border-amber-400 bg-white px-4 py-3 text-sm text-slate-700 shadow-lg">
-        <span>{canvasArtworkDocument.error}</span><button className="font-semibold underline" onClick={()=>void canvasArtworkDocument.retry().catch(()=>{})}>重试同步作品</button>
+        <span>{canvasArtworkDocument.error}</span><button className="font-semibold underline" onClick={()=>void (projectView.requestedProjectReady?canvasArtworkDocument.retry():projectView.retryRequestedProject()).catch(()=>{})}>重试同步作品</button>
       </div>}
       {canvasTextDocument.error && <div role="alert" data-testid="canvas-text-load-error" className="flex items-center gap-3 rounded-lg border border-amber-400 bg-white px-4 py-3 text-sm text-slate-700 shadow-lg">
-        <span>{canvasTextDocument.error}</span><button className="font-semibold underline" onClick={()=>void canvasTextDocument.load()}>重新加载文字</button>
+        <span>{canvasTextDocument.error}</span><button className="font-semibold underline" onClick={()=>void (projectView.requestedProjectReady?canvasTextDocument.load():projectView.retryRequestedProject()).catch(()=>{})}>重新加载文字</button>
       </div>}
       </div>}
       {(Object.keys(canvasTextDocument.conflicts).length>0||Object.keys(canvasArtworkDocument.conflicts).length>0)&&<div className="fixed bottom-20 left-1/2 z-[200] flex -translate-x-1/2 flex-col gap-2"><CanvasArtworkConflicts conflicts={canvasArtworkDocument.conflicts} onResolve={resolveArtworkConflict} />
