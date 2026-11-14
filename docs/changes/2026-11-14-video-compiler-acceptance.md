@@ -44,6 +44,10 @@
 
 [本轮记录](2026-11-15-video-compiler-production-build.md)：main固定 `dcbb9494`、版号1794674158，完整现有Dockerfile构建退出0，Next standalone及Worker依赖闭包通过。镜像内Worker49项、真实standalone7项/50HTTP/46JS-CSS资源通过；manifest中574个tracked源码输入与git archive逐一核对。运行容器无网络、无数据库、无供应商凭据并已移除。不能把无DB包验收或development96项组合升级为生产镜像的DB/浏览器/生成全链路通过。
 
+## 固定生产镜像带DB/独立Worker/原生sandbox验收（2026-11-15）
+
+[本轮记录](2026-11-15-video-compiler-production-process.md)：扩展同一实际进程驱动的`--production-package`，不修改或替换产品实现。固定dcbb9494/1794674158镜像内standalone Web、独立Worker及原生C launcher/chroot/seccomp媒体处理，随机隔离PG schema、本地供应商，首轮61项和最终解包副本62项均退出0。最终包括底座15、预算10、Agent6、RunningHub/AutoDL10、Workflow13、ComfyUI8，19笔313 fixture积分、18次JSON创建、22次结果下载；13子进程退出、schema及pool清理。实际UID/版本/包哈希、媒体无数据库配置的spawn参数和sandbox health已核对；基线14、默认dev14、tsc、核心137及三项生产运行反控通过。完整精确回执在`video-compiler-production-process-20261115/VERIFICATION.txt`。这不是生产浏览器、combined supervisor活动中断、新旧双槽或真实付费上游证明。
+
 ## A01–A19 逐项状态
 
 | ID | 当前证据 | 仍需完成或证据边界 |
@@ -61,12 +65,12 @@
 | A11 | 注册57个 wire Profile 的分族序列化、上传/JSON/multipart/DAG；ComfyUI、RunningHub、AutoDL新增真实Next/独立Worker上传或签名素材、冻结与结果回执 | 注册覆盖≠所有在用配置已迁移；全部生产启用配置和env-only仍需明确审计/迁移，不能从本地显式recipe推断线上已配置 |
 | A12 | 真实PG Workflow22项：future slots、真实前序时长、静态hash、冻结报价确认、批次/不重放 | 已新增真实Next+独立Worker的8run/13项：冻结型号/路径/文本/原价、前序真实产物/时长、重启/回执、批次、Storyboard采用旧片、取消/UNKNOWN/拒绝；新增真实HTTP待确认报价、拒绝陈旧确认、并发确认/Worker恢复、旧无提案记录恢复、取消待确认阶段；欠授权历史检查点显式seed，未冒称新准入自然涨价或真实成本加成供应商验收 |
 | A13 | 本轮实际 requested4K→effective2K→wire2k 恰好一次，历史恢复4K；冻结原价7、后续新任务17，账本三笔41 | 更多映射组合由各Profile固定输入测试；不把wire值回填用户选择 |
-| A14 | 本轮独立应用Worker、持久tick原身份、原任务重启/UNKNOWN/LIVE lease/取消/显式重试，生产环境投影实际运行；Worker组合49项及Windows真实500次控制/501状态写入；本地原子替换EPERM有界重试且耗尽保持故障 | 新增Workflow/BYOC的独立Worker重启与UNKNOWN不重放；当前进程为Windows、停机前drain，Linux活动发送中断/真正多槽回滚仍需新固定版本验收 |
+| A14 | 独立应用Worker、持久tick原身份、重启/UNKNOWN/LIVE lease/取消/显式重试及环境投影；Worker49、Windows真实500控制/501状态写入；新增固定Linux生产包62项中实际独立Worker恢复、单账本与原生sandbox | Workflow/BYOC的Linux独立Worker重启与UNKNOWN不重放已通过；当前重启仍停机前drain，combined supervisor活动发送中断/真正多槽回滚继续 |
 | A15 | 服务端专项实际持久化加密v2 stage及新发布后恢复；原文本/模型/价格/回执不变，伪造阶段拒绝；本轮v3显式retryOf | 历史v2与新v3混合独立Worker/新旧Web发布组合仍待实际验收 |
 | A16 | 原媒体token/版本/过期测试；本轮Worker物化真实签名URL，供应商fixture经真实Next媒体路由读取原字节，篡改404 | 时间推进的过期测试与实际公网CDN/存储恢复分别验收，不把本地域名别名当公网可达 |
 | A17 | 本轮真实Next受理→独立Worker落片→结果作为下一Canvas节点source_video→再次落片，父子资产/单账本通过 | 已新增真实浏览器选旧历史→ReactFlow拖线→下一节点提交→独立Worker落片，冻结资产/parent/单账本一致；当前为本地供应商fixture，非真实付费上游 |
 | A18 | 编译、供应商fixture受理、成片真实解码保存、账务分别核对，结果含真实输入字节hash | 真实付费供应商质量/成功率和用户采用仍未验，不能标Production-confirmed |
-| A19 | 已有源码副本回退/扩展字段兼容、真实发布控制回执与版本准备门禁；独立Worker重启；新增dcbb9494固定Linux完整生产镜像构建、Worker49与无DB包HTTP7项通过 | 生产镜像带DB完整链路、新旧Web/Worker双槽、排空/切回/旧资产、目标站蓝绿和实际发布仍未验 |
+| A19 | 已有源码副本回退/扩展字段兼容、发布控制/版本准备门禁；固定Linux生产镜像构建、Worker49/无DB包HTTP7项；新增带隔离DB/独立Worker/原生sandbox/账务62项实际组合通过 | 生产浏览器全交互、新旧Web/Worker双槽、排空/切回/旧资产、目标站蓝绿和实际发布仍未验 |
 
 ## 发布与总目标
 
