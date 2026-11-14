@@ -297,3 +297,26 @@ Workflow/Canvas批次应用编排 -> video准备/可信Resolver/Profile编译 ->
 - 总目标ACTIVE；生产配置迁移0、付费上游0、部署0。47 HOLD和103独立实验线隔离保持；共享checkout不改。
 
 本切片最终候选：制作链22项，连同原单任务38项共60项真实PG/HTTP/媒体Worker闭环；核心137项、发布/预览61项、实际React/Edge18项、Canvas121项、媒体16项、旧冻结来源、账务所有权35项与事务14项集中通过。新增验证包括：超授权零任务/零预占/零POST、过期确认无效、显式持久化确认恢复一次、前序失败阻断下游、原生角色参考只展开一次并冻结。完整TypeScript exit0。生产环境不由这些fixture推定通过。
+
+## Agent / Storyboard 无损编译消费者切片（2026-11-14）
+
+模块与职责：
+- `agent-execution.ts` 将Agent预览和报价接到既有 `prepareVideoExecution`；同一回调保留模型/账务快照。不新增工具能力矩阵、内部HTTP或供应商请求。新绑定的generate/edit/extend都按真实输入编译，旧modes/limits不再否决。编辑/续写仍要求来源视频与编译意图一致，不能静默变成文生。
+- `canvas-video-tools.ts` 先恢复原操作/活动任务，再做新执行预检；Canvas revision和项目/所有权继续检查。Standalone新绑定直接传有序输入给可信Resolver，不制造第二份过度简化的引用身份。旧模型/BYOC分支待后续协议迁移。
+- Agent报价读取编译有效事实；原始参数保持。`creation-settings.ts` 比较/更新参数容器中的用户选择，避免界面已选4K却因顶层缺字段误拦，避免显式修改时新旧字段冲突。图片设置路径保持。
+- `storyboard-edit.ts` 归属纯草稿职责：拆镜保留完整配置；合镜只合并描述和可确定的时长，不改分辨率/画幅/false/高级参数。其他设置冲突明确报告，不丢弃第二镜配置。去除author关联时同步重排引用标记，防止指向错误素材。
+- Storyboard拆合组件退出 `reconcileVideoSettings` / `videoDurations`，复用Profile时长控件和同一服务器编译预览。诊断、空描述、未知/超范围执行参数和目录故障不阻止可保存草稿。既有保存回执、节点/操作编号和显式恢复保留，无写请求自动重试。镜头列表按原始参数容器展示时长。
+
+接口、依赖与状态归属：
+Agent工具/Agent报价 -> video公共准备用例/模型快照 -> 原Resolver/Compiler；没有React/Route反向导入领域。Storyboard组件只编辑草稿/调用公共预览和原节点保存，节点归属、CAS、操作回执及生成事务仍由现有owner负责。预览Hook仅新增可选identity分区（用于无单独email属性的现有scope组件），不将identity当服务端授权。
+
+验证与证据层级：
+- 真实隔离PG、实际Agent工具和参数校验器、生产Route函数、真实本地供应商HTTP、独立媒体Worker/ffmpeg：新绑定在text-only/媒体0/未verified的旧资料下完成生成、编辑和续写；报价有效2K、请求4K；缺来源/冲突意图/未知映射零任务/零POST；节点CAS/归属、原回执先于最新禁用恢复、真实草稿保存。不是实际LLM推理或完整Next浏览器验收。
+- 实际React/无头Edge拆合组件+预览Hook（仅私有网络端口受控）：参数不丢、false保持、时长13不被协议10上限静默改写、目录故障可保存、诊断不挡草稿、设置冲突可见、丢响应后原编号显式恢复。
+- 集中回归涵盖上一切片22项Workflow、原任务38项、核心137、预览61、原UI18、Canvas121、媒体16、账务归属35/事务14、旧冻结来源和Agent创作设置/分镜工具。完整命令/输出/exit及基线/副本回滚见 `E:/Workspace/naumi/output/video-compiler-agent-storyboard-20261114/VERIFICATION.txt`。初始类型错误日志保留，最终结果另记。
+
+未完成：结构化multi-shot/元素/BYOC的真正Profile、全部57个wire profile与2条无profile路径、旧裁决调用清零、完整App/独立应用Worker重启与A01-A19、有授权的外部上游和站点发布仍继续。本切片不冒充全目标结束。生产配置0、付费0、部署0；47 HOLD、103隔离与共享checkout保持。
+
+补充核对：新绑定携带历史工作流来源时，预览也明确报告结构化Profile映射缺口，不忽略workflowTaskId后给出假成功。Agent创作设置脚本本身按无DB/受控网络设计；首次混用PG环境在基线和修改版均触发登录401，移除DATABASE_URL后两边24项通过；保留原始失败，不更改鉴权来让fixture变绿。
+
+本切片最终候选：Agent/无损分镜14项、原Workflow22项、原任务38项，合计74项真实闭环；分镜React/Edge6项、原UI18项、核心137、预览61、Canvas121、媒体16、分镜工具20/结构26、账务归属35/事务14，以及独立无DB创作设置24项通过。基线实际函数另复现：请求4K/应映射2K却按1K报价，edit/extend被旧mode门禁拒绝；只覆盖测试driver，不修改基线产品文件，验证后恢复干净。

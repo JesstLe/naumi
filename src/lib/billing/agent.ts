@@ -1,3 +1,4 @@
+import {withPreparedAgentVideo} from '../video/agent-execution';
 import {assertVideoCreationSettings,type CreationSettings} from "../agent/creation-settings";
 import "server-only";
 import {agentVideoWorkflowIntent} from "../agent/video-workflow-intent";
@@ -44,7 +45,11 @@ export async function agentQuote(name: string, args: Record<string, any>, email:
 } | null> {
     const canvas = cred.canvas;
     const videoTool=["generate_video","extend_video","edit_video"].includes(name);
-    if(videoTool){const nodeId=args.node_id||canvas?.video?.nodeId,current=nodeId?await getVideoNode(email,String(nodeId)):null;if(nodeId&&!current)throw new Error("视频节点不存在");if(current&&canvas?.video?.projectKey&&current.projectKey!==canvas.video.projectKey)throw new Error("视频节点不属于当前项目");const config=current?.config||args.config||{};if(current)assertVideoCreationSettings(config,cred.creationSettings);if(config.comfyWorkflowId)return null;if(current&&Number.isInteger(args.expected_revision)&&current.revision!==args.expected_revision)throw new Error("视频节点已更新，请重新读取后生成");args={...args,...config,quality:"medium"};}
+    if(videoTool){const nodeId=args.node_id||canvas?.video?.nodeId,current=nodeId?await getVideoNode(email,String(nodeId)):null;if(nodeId&&!current)throw new Error("视频节点不存在");if(current&&canvas?.video?.projectKey&&current.projectKey!==canvas.video.projectKey)throw new Error("视频节点不属于当前项目");const config=current?.config||args.config||{};if(current)assertVideoCreationSettings(config,cred.creationSettings);if(config.comfyWorkflowId)return null;if(current&&Number.isInteger(args.expected_revision)&&current.revision!==args.expected_revision)throw new Error("视频节点已更新，请重新读取后生成");const modern=await withPreparedAgentVideo(email,{config,inputs:current?.inputs||args.inputs||[],...(current?{node:{id:current.id,revision:current.revision},projectKey:current.projectKey}:{}),requiredIntent:name==='extend_video'?'extend':name==='edit_video'?'video_edit':undefined},async plan=>{
+      if(!plan)return undefined;
+      const runtime=await getBillingRuntime(),snapshot=currentModelBillingSnapshot()??await runtime.config.current();
+      return {quote:await quoteForActor(email,{feature:'video.generate',quantity:1,modelId:plan.identity.publicModelId,providerId:plan.identity.connectionId,resolution:plan.billingFacts.resolution,ratio:plan.billingFacts.aspectRatio},undefined,snapshot),label:AGENT_FEATURES[name].label,threshold:snapshot.config.thresholds.agentConfirmCredits};
+    });if(modern)return modern;args={...args,...config,quality:"medium"};}
 
     if (canvas && CANVAS_IMAGE_TOOLS.has(name) && name !== "generate_image") args = {...args,quality:canvas.quality,resolution:canvas.resolution,ratio:canvas.ratio,model:canvas.imageModelId,modelId:undefined};
     const entry = canvas && CANVAS_IMAGE_TOOLS.has(name) ? { feature: "canvas.image" as const, label: AGENT_FEATURES[name]?.label || "画布生图" } : AGENT_FEATURES[name];

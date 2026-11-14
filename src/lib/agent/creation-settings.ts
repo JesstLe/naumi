@@ -1,3 +1,5 @@
+import {videoUiValue,setVideoUiValue} from '../video/ui-draft';
+import type {VideoNodeConfig} from '../video/client-settings';
 import { z } from "zod";
 
 const id = z.string().trim().min(1).max(160).refine(value => !/[\r\n]/.test(value));
@@ -28,14 +30,15 @@ export function creationToolArguments(name: string, args: Record<string, unknown
   }
   if (videoConfigTools.has(name) && settings?.video) {
     const config = args.config && typeof args.config === "object" ? args.config as Record<string, unknown> : {};
-    return { ...args, config: { ...config, ...settings.video }, ...(Array.isArray(args.shots) ? { shots: args.shots.map(shot => ({ ...shot, ...(shot.config ? { config: { ...shot.config, ...settings.video } } : {}), ...(settings.video?.durationSeconds ? { durationSeconds: settings.video.durationSeconds } : {}) })) } : {}) };
+    const select=(raw:Record<string,unknown>)=>{let next={...raw} as VideoNodeConfig;for(const [key,value]of Object.entries(settings.video!)){if(value===undefined)continue;next=raw.parameters!==undefined&&key!=='modelId'&&key!=='providerId'?setVideoUiValue(next,key,value):{...next,[key]:value};}return next;};
+    return { ...args, config: select(config), ...(Array.isArray(args.shots) ? { shots: args.shots.map(shot => ({ ...shot, ...(shot.config ? { config: select(shot.config) } : {}), ...(settings.video?.durationSeconds ? { durationSeconds: settings.video.durationSeconds } : {}) })) } : {}) };
   }
   return args;
 }
 
 export function assertVideoCreationSettings(config: Record<string, unknown>, settings?: CreationSettings) {
   for (const [field, value] of Object.entries(settings?.video || {})) {
-    if (value !== undefined && config[field] !== value) throw new Error("当前视频节点与本轮创作设置不同，请读取节点并保存本轮模型和参数后再生成");
+    if (value !== undefined && (field==='modelId'||field==='providerId'?config[field]:videoUiValue(config as VideoNodeConfig,field)) !== value) throw new Error("当前视频节点与本轮创作设置不同，请读取节点并保存本轮模型和参数后再生成");
   }
 }
 
