@@ -31,7 +31,7 @@ export function createCanvasTextTasks(){
         const unique=[...new Map(requests.map(request=>[request.node.id,request])).values()],ids=new Set(unique.map(request=>request.node.id)),started=new Set<string>();
         // Materialize all input slots once before the first concurrent start.
         ports.document.set(nodes=>[...nodes,...unique.filter(request=>!nodes.some(node=>node.id===request.node.id)).map(request=>({...request.node,status:"generating" as const,error:""}))]);
-        const result=await runSelectionBatch(unique.map(request=>({id:request.node.id,request})),{isCurrent:scope.viewCurrent,canRun:()=>true,run:({request})=>{
+        const result=await runSelectionBatch(unique.map(request=>({id:request.node.id,request})),{concurrency:2,isCurrent:scope.viewCurrent,canRun:()=>true,run:({request})=>{
           started.add(request.node.id);return execute(scope,request,{...ports,history:()=>{}});
         }});
         if(scope.documentCurrent()){

@@ -46,7 +46,7 @@ const server=http.createServer(async(req,res)=>{
   if(p==='/api/imagegen'||p==='/api/generate-image'){
    const id=(url.searchParams.get('operationId')||url.searchParams.get('job')||'').replace(/^imagegen-/,''),job=jobs.get(id);
    if(!job)return json({status:'pending',artifacts:[]});
-   if(hold)return json(p==='/api/generate-image'?{status:'pending'}:{status:'running',artifacts:[],operationId:id});
+   if(hold)return json(p==='/api/generate-image'?{status:'pending',operationStatus:'queued'}:{status:'queued',stage:'planning',artifacts:[],operationId:id});
    if(!job.result){
     active--;job.result=job.body.sourceNodeId===failSource?'failed':'succeeded';
     if(job.result==='succeeded'){const art={...root,id:'result-'+id,parentId:job.body.sourceNodeId,title:'批量结果',prompt:job.body.prompt,source:'canvas-gen',ratio:job.body.parameters.ratio,resolution:job.body.parameters.resolution};images.push(art);job.art=art;}save();

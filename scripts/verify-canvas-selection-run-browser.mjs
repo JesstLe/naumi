@@ -9,11 +9,13 @@ const out=process.env.CANVAS_SELECTION_EVIDENCE;if(!out)throw Error('Evidence di
 const browser=await chromium.launch({channel:process.platform==='win32'?'msedge':undefined,headless:true});
 const page=await browser.newPage({viewport:{width:1440,height:1100},reducedMotion:'reduce'}),checks=[],errors=[],networkErrors=[];
 page.on('pageerror',e=>errors.push(e.message));page.on('requestfailed',r=>networkErrors.push({url:r.url(),error:r.failure()?.errorText}));
-const control=body=>fetch(base+'/__fixture/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+const fixtureTexts=[{id:'text-selection-1',projectKey:'tree:selection-root',title:'文字一',content:'第一个节点的文字要求',prompt:'第一个节点的文字要求',status:'completed',canvasX:1030,canvasY:70,width:300,height:160,sourceIds:[],targetIds:[],createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()},{id:'text-selection-2',projectKey:'tree:selection-root',title:'文字二',content:'第二个节点的文字要求',prompt:'第二个节点的文字要求',status:'completed',canvasX:1030,canvasY:360,width:300,height:160,sourceIds:[],targetIds:[],createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()}];
+const control=body=>fetch(base+'/__fixture/control',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({...body,...(body.reset&&!body.texts?{texts:fixtureTexts}:{})})});
 const state=()=>fetch(base+'/__fixture/state').then(r=>r.json());
 const pass=s=>{checks.push(s);console.log('PASS '+s);};
 const node=id=>page.locator(`.react-flow__node[data-id="${id}"]`);
-async function load(){await page.goto(base+'/canvas');await expect(node('selection-root')).toBeVisible();await expect(page.locator('.react-flow__node')).toHaveCount(7);await page.waitForTimeout(500);}
+// Server reset discards fixture jobs; discard only this isolated page's old receipts too.
+async function load(){if(page.url().startsWith(base))await page.evaluate(()=>sessionStorage.clear());await page.goto(base+'/canvas');await expect(node('selection-root')).toBeVisible();await expect(page.locator('.react-flow__node')).toHaveCount(7);await page.waitForTimeout(500);}
 async function boxSelect(ids){
  const boxes=await Promise.all(ids.map(id=>node(id).boundingBox()));assert.ok(boxes.every(Boolean));
  const pane=await page.locator('.react-flow__pane').boundingBox();
@@ -29,17 +31,17 @@ try{
  await page.screenshot({path:path.join(out,'selection-desktop.png')});
  // Two synchronous native clicks simulate the event gap before state rerender.
  await run.evaluate(el=>{el.click();el.click();});
- await expect.poll(async()=>(await state()).requests.filter(r=>r.kind==='image').length).toBe(2);await expect(run).toBeDisabled();await page.waitForTimeout(500);
- assert.equal((await state()).requests.filter(r=>r.kind==='image').length,2);pass('real Shift marquee + pinned action + double-click guard + two active nodes');
+ await expect.poll(async()=>(await state()).requests.filter(r=>r.kind==='image').length).toBe(4);await expect(run).toBeDisabled();await page.waitForTimeout(500);
+ assert.equal((await state()).requests.filter(r=>r.kind==='image').length,4);await expect(page.locator('[data-testid="generation-placeholder"][data-stage="queued"]')).toHaveCount(4);assert.equal(await page.getByRole('progressbar').count(),0);pass('real Shift marquee + pinned action + double-click guard + all four slots queued without percentages');
  await page.screenshot({path:path.join(out,'selection-running.png')});
  await control({hold:false});await expect.poll(async()=>(await state()).requests.filter(r=>r.kind==='image').length).toBe(4);await expect(run).toBeEnabled();
  let snapshot=await state(),calls=snapshot.requests.filter(r=>r.kind==='image');assert.deepEqual(calls.map(c=>c.body.sourceNodeId).sort(),ids);
  for(const c of calls){const i=Number(c.body.sourceNodeId.split('-').at(-1))-1;assert.ok(c.body.prompt.startsWith('node-prompt-'+(i+1)));assert.equal(c.body.parameters.ratio,i%2?'3:4':'1:1');assert.equal(c.body.parameters.resolution,i%2?'2K':'1K');assert.equal(c.body.variants,1);}
- assert.ok(snapshot.peak<=2);await expect(page.locator('.react-flow__node.selected')).toHaveCount(4);pass('four selected nodes only + individual prompt/ratio/resolution + no root run + selection preserved');
+ assert.equal(snapshot.peak,4);await expect(page.locator('.react-flow__node.selected')).toHaveCount(4);pass('four selected nodes only + individual prompt/ratio/resolution + no root run + selection preserved');
  await control({reset:true,hold:false,failSource:'selection-2',settings:{'selection-3':{locked:true,order:0,text:{fontSize:12,fontWeight:'400',color:null,align:'left',lineHeight:1.65}}}});await load();await boxSelect(ids);await run.click();
  await expect.poll(async()=>(await state()).requests.filter(r=>r.kind==='image').length).toBe(3);await expect(run).toBeEnabled();
  snapshot=await state();assert.deepEqual(snapshot.requests.filter(r=>r.kind==='image').map(c=>c.body.sourceNodeId).sort(),['selection-1','selection-2','selection-4']);assert.equal(snapshot.images.filter(a=>a.id.startsWith('result-')).length,2);pass('locked node skipped + one failure does not abort remaining nodes');
- await control({reset:true,hold:false,settings:{},failSource:'',texts:[{id:'text-selection-1',projectKey:'tree:selection-root',title:'文字一',content:'第一个节点的文字要求',prompt:'',status:'completed',canvasX:1030,canvasY:70,width:300,height:160,sourceIds:[],targetIds:[],createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()},{id:'text-selection-2',projectKey:'tree:selection-root',title:'文字二',content:'第二个节点的文字要求',prompt:'',status:'completed',canvasX:1030,canvasY:360,width:300,height:160,sourceIds:[],targetIds:[],createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()}]});await load();await boxSelect(['text-selection-1','text-selection-2']);await run.click();
+ await control({reset:true,hold:false,settings:{},failSource:'',texts:[{id:'text-selection-1',projectKey:'tree:selection-root',title:'文字一',content:'第一个节点的文字要求',prompt:'第一个节点的文字要求',status:'completed',canvasX:1030,canvasY:70,width:300,height:160,sourceIds:[],targetIds:[],createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()},{id:'text-selection-2',projectKey:'tree:selection-root',title:'文字二',content:'第二个节点的文字要求',prompt:'第二个节点的文字要求',status:'completed',canvasX:1030,canvasY:360,width:300,height:160,sourceIds:[],targetIds:[],createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()}]});await load();await boxSelect(['text-selection-1','text-selection-2']);await run.click();
  await expect.poll(async()=>(await state()).requests.filter(r=>r.kind==='text').length).toBe(2);await expect(run).toBeEnabled();snapshot=await state();assert.deepEqual(snapshot.requests.filter(r=>r.kind==='text').map(c=>c.body.prompt).sort(),['第一个节点的文字要求','第二个节点的文字要求'].sort());pass('text selection uses native text requests per node');
  await control({reset:true,hold:false,settings:{},failSource:''});await load();await boxSelect(['selection-1','selection-2']);await node('text-selection-1').click({position:{x:40,y:60},modifiers:['Control']});await expect(page.locator('.react-flow__node.selected')).toHaveCount(3);
  await expect(page.getByTestId('mixed-node-batch-bar')).toBeVisible();await run.click();await expect.poll(async()=>(await state()).requests.length).toBe(3);await expect(run).toBeEnabled();

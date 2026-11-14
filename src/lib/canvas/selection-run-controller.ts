@@ -5,7 +5,7 @@ type Progress={busy:boolean;completed:number;total:number};
 const idle:Progress={busy:false,completed:0,total:0};
 type Run={scope:CanvasDocumentScope;snapshot:Progress};
 type Services={targets:(ids:string[])=>SelectionRunNode[];canRun:(node:SelectionRunNode)=>boolean;run:(node:SelectionRunNode,current:()=>boolean)=>Promise<boolean>};
-/** Selection orchestration only. Uses the existing two-lane helper and existing
+/** Selection orchestration only. Submits all selected nodes through existing
  * image/text/pending task owners; never submits providers or owns receipts. */
 export function createCanvasSelectionRun(){
   const runs=new Map<string,Run>(),listeners=new Set<()=>void>(),notify=()=>listeners.forEach(fn=>fn());

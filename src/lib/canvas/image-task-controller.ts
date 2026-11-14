@@ -6,7 +6,7 @@ import {ImagegenPreparationCancelled} from "../imagegen/http";
 import {completeCanvasImagegen} from "../imagegen/client-recovery";
 import {imageOutputWarningText} from "../imagegen/output-advisory";
 import {canvasGenerationHttpError,classifyGenerationFailure,type GenerationFailure} from "./generation-failure";
-import type {GenerationStage} from "./generation-feedback";
+import {generationStageForReceipt,type GenerationStage} from "./generation-feedback";
 import type {CanvasPoint} from "./stable-placement";
 import {canvasImageTaskHeaders,type CanvasImageTaskScope} from "./image-task-scope";
 import {createCanvasResultAttachment,createCanvasImageVersionAttachment} from "./result-attachment";
@@ -72,7 +72,9 @@ export function createCanvasImageTask(input:Services){
       // original-input recovery and paid result attachment keep this owner alive.
       input.submitted?.();
       refreshPartial=false;
-      input.stage("generating");const deadline=Date.now()+6*60*1000;
+      // A durable receipt proves acceptance, not execution. Stay queued until
+      // the original job's polling projection reports that it has started.
+      input.stage("queued");const deadline=Date.now()+6*60*1000;
       for(;;){
         await new Promise(resolve=>setTimeout(resolve,2500));guard();if(Date.now()>deadline)throw new Error(input.errorText);
         const headers=await canvasImageTaskHeaders(scope);guard();
@@ -89,7 +91,7 @@ export function createCanvasImageTask(input:Services){
           if(!images.length)throw new Error(input.errorText);
           return await attach();
         }
-        input.stage("generating");
+        input.stage(generationStageForReceipt(body));
       }
     }catch(error){
       if(!scope.isCurrent())return {status:"stale"};
