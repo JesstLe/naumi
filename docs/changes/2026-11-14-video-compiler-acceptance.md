@@ -132,3 +132,7 @@
 ## 环境导入协议与连接设置保留（2026-11-15）
 
 [模块记录](2026-11-15-video-environment-bootstrap.md)：确认环境解析器已读取videoProfile/timeout/appUrl，但bootstrap丢失，导致原可审查的显式协议通道退成mapping_required。仅修复导入字段传递，不为env-only虚构recipe。新增实际PG导入/原版本发布/冻结reader56项：41条来源夹具中32明确候选可审查、9条真实待配置保留；路径/授权/幂等/价格/政策/旧版本/凭据不变。数量为夹具，非生产目录；既有注册配置/Flow、迁移79、readiness15、管理19、核心137与完整tsc通过；独立副本/四产物/main以证据VERIFICATION和INTEGRATION为准。线上已发布配置不自动回填，目标站实际绑定/无profile路线、授权上游及完整P4仍开放，总目标ACTIVE、47 HOLD，生产写入/付费/部署0。
+
+## 高级输入真实生产包与节点错误诊断（2026-11-15）
+
+[模块记录](2026-11-15-video-advanced-inputs.md)：现有完整进程驱动新增首尾/双普通图/多模态/音频/镜头元素分组/Canvas/显式retry及native plan4/5十项生成，原始字节、预览摘要、Worker重启后的冻结映射/文字和单账本逐项核对；真实物理超限/权限/身份/结构缺映射反控零业务增量。发现Canvas新建/更新漏接VideoContractError，将正确拒绝错误显示为503，现补齐422/code/fields映射，原校验不变。旧包35高级项＋15底座通过；新增真实POST/PATCH负控后的新包/副本最终数量、四产物回退/main以VERIFICATION和INTEGRATION为准，不把旧包当修复上线。目标站绑定迁移、更多高级Workflow/家族、真实授权上游、浏览器连续性及整站蓝绿仍开放。总目标ACTIVE，47 HOLD、生产写入/付费/部署0。
