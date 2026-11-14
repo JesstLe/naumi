@@ -22,6 +22,17 @@ test('direct read-only reconciliation retains original tick identity',async()=>{
 test('pending local callbacks prevent a false drained snapshot',async()=>{const f=fixture();await f.runtime.init();f.pending=1;f.runtime.state.paused=true;assert.equal(f.runtime.snapshot().tickDrainComplete,false);assert.equal(await f.runtime.shutdown(),false);});
 const env={NAUMI_MEDIA_WORKER:'1',NAUMI_WORKER_RELEASE_CONTROL:'1',VIDEO_WORKER_SECRET:secret,MEDIA_WORKER_SECRET:'media-fixture-secret-01234567890123456789',SOURCE_COMMIT:commit,NAUMI_WORKER_STATE_FILE:'/release-state/worker.json',NAUMI_INSTANCE_ID:instance,NAUMI_WORKER_TARGET_INSTANCE_ID:'web',NAUMI_APP_ORIGIN:'http://web:3000',MEDIA_JOB_DIR:'/scratch',DATABASE_URL:'postgres://fixture/db',SETTINGS_SECRET:'fixture-encryption',S3_SECRET_ACCESS_KEY:'fixture-storage',UNRELATED_SECRET:'must-not-propagate'};
 test('combined direct scanner receives execution ports; native media never receives DB/storage secrets',()=>{const plan=combinedWorkerPlan({...env,NAUMI_WORKER_EXECUTION:'direct'},{platform:'linux',uid:0,pid:1});assert.equal(plan.scanner.env.DATABASE_URL,env.DATABASE_URL);assert.equal(plan.scanner.env.NAUMI_WORKER_TARGET_INSTANCE_ID,instance);assert.equal(plan.scanner.env.NAUMI_RELEASE_RUNTIME,'1');for(const k of ['DATABASE_URL','SETTINGS_SECRET','S3_SECRET_ACCESS_KEY'])assert.equal(k in plan.media.env,false);assert.equal('UNRELATED_SECRET' in plan.scanner.env,false);});
+
+test('combined scanner retains published video media origin without exposing application settings to media',()=>{
+ const mediaEnv={...env,NAUMI_WORKER_EXECUTION:'direct',MEDIA_PRIVATE:'1',MEDIA_REMOTE_ACCESS:'proxy',VIDEO_REFERENCE_PUBLIC_BASE_URL:'https://video-media.fixture.example'};
+ const plan=combinedWorkerPlan(mediaEnv,{platform:'linux',uid:0,pid:1});
+ for(const name of ['MEDIA_PRIVATE','MEDIA_REMOTE_ACCESS','VIDEO_REFERENCE_PUBLIC_BASE_URL'])assert.equal(plan.scanner.env[name],mediaEnv[name]);
+ assert.equal('VIDEO_REFERENCE_PUBLIC_BASE_URL' in plan.media.env,false);
+ assert.equal('SETTINGS_SECRET' in plan.media.env,false);
+ assert.equal('UNRELATED_SECRET' in plan.scanner.env,false);
+ const absent=combinedWorkerPlan({...env,NAUMI_WORKER_EXECUTION:'direct'},{platform:'linux',uid:0,pid:1});
+ assert.equal('VIDEO_REFERENCE_PUBLIC_BASE_URL' in absent.scanner.env,false,'No invented origin when none was configured');
+});
 test('combined direct parent rejects an old HTTP-only scanner acknowledgment',()=>{const plan=combinedWorkerPlan({...env,NAUMI_WORKER_EXECUTION:'direct'},{platform:'linux',uid:0,pid:1});const state={commit,instanceId:instance,durableControl:true,paused:true,revision:0};assert.throws(()=>verifiedScannerState(state,plan),/DIRECT_SCANNER_WORKER_HEALTH_INVALID/);assert.equal(verifiedScannerState({...state,executionMode:'direct',executorRole:'worker',targetInstanceId:instance,backgroundTasks:0},plan).executionMode,'direct');});
 test('combined direct scanner is not force-killed by HTTP-caller grace period',async()=>{
  let end;const closed=new Promise(resolve=>end=resolve),signals=[],plan=combinedWorkerPlan({...env,NAUMI_WORKER_EXECUTION:'direct'},{platform:'linux',uid:0,pid:1});plan.graceMs=1;

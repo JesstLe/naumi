@@ -415,3 +415,7 @@ Canvas创建/连线、Dock/完整设置、Workbench和首页Agent不再按旧能
 ## 服务端新任务切换及组合交付
 
 服务端新受理/新工作流冻结已停止进入旧能力裁决，历史阶段经实际归属/加密冻结内容核验后恢复专用旧路径，真正旧的未冻结行与新版本缺快照行分开。目录/fallback/新 executor 描述退出；新增纯绑定准备报告及真实 health/resume 发布阻断，缺映射不再叫模型不支持。前端切片原服务端缺口已由这一组合切换及显式发布准备条件接续解决，而不是恢复旧 UI 首帧改写。详见 [服务端切换记录](2026-11-14-video-compiler-server-exit.md)。本地1,741实际App检查、最终19服务端检查及集中跨模块回归通过；生产Binding迁移、完整Next/独立应用Worker/授权上游/蓝绿仍未完成，目标ACTIVE。main整合状态以最终Git回执为准，尚无站点发布。
+
+## 真实Next与独立应用Worker验收
+
+真实Next dev/中间件/HTTP/PG、独立生产应用Worker bundle和真实媒体Worker的14项检查通过：原计划型号/凭据/售价冻结、预览零副作用、实际签名媒体字节、结果接续、父子资产/三笔账本、取消/显式重试、LIVE lease、sending与UNKNOWN不重放以及两次重启。实际启动投影暴露并修复了组合scanner漏传`VIDEO_REFERENCE_PUBLIC_BASE_URL`的问题。接口/运行边界见[进程记录](2026-11-14-video-compiler-process.md)，完整A01–A19的局部证据和剩余缺口见[验收账本](2026-11-14-video-compiler-acceptance.md)。浏览器和生产构建/真实供应商/蓝绿分别验收，目标ACTIVE，未发布。
