@@ -1,0 +1,87 @@
+import assert from 'node:assert/strict';
+import {randomUUID} from 'node:crypto';
+import {writeFile} from 'node:fs/promises';
+import path from 'node:path';
+import type {Pool} from 'pg';
+import type {ModelConfig} from '../src/lib/model-config/types';
+import type {CompiledVideoPlan} from '../src/lib/video/execution-contract';
+
+type HttpResult={status:number;value:any};
+/** All application actions go through the actual authenticated Next listener.
+ * DB access observes immutable receipts/facts. Only fixture publications and
+ * Worker lifecycle/supplier completion are controlled out-of-band. No direct
+ * resumeVideoWorkflow/pollAndSettle/compile/Route invocation in this driver. */
+export async function verifyVideoWorkflowProcess(input:{actor:string;pool:Pool;outputDir:string;originalConfig:ModelConfig;
+ http:(url:string,body?:unknown,as?:string)=>Promise<HttpResult>;otherCookie:string;
+ calls:Array<{body:any;key?:string;authorization?:string}>;posts:()=>number;
+ publish:(config:ModelConfig)=>Promise<unknown>;price:(credits:number)=>Promise<void>;
+ resume:()=>Promise<unknown>;drain:()=>Promise<unknown>;restart:()=>Promise<unknown>;holdPolls:(hold:boolean)=>void;
+ due:(id:string)=>Promise<void>;task:(id:string)=>Promise<any>;readPlan:(id:string)=>Promise<CompiledVideoPlan>;
+ until:<T>(name:string,read:()=>Promise<T>,accept:(value:T)=>boolean,ms?:number)=>Promise<T>}){
+ const {actor,pool,http,until}=input,checks:string[]=[],runs:Array<{id:string;kind:string;taskIds:string[]}> = [],before=input.posts();
+ const pass=(name:string)=>{checks.push(name);console.log('WORKFLOW_PROCESS_CHECK='+name+' PASS');};
+ const ledger=async()=>(await pool.query("SELECT count(*)::int n,COALESCE(-sum(delta),0)::int amount FROM app_ledger WHERE kind='consume' AND email=$1",[actor])).rows[0] as {n:number;amount:number};
+ const beforeLedger=await ledger(),params={durationSeconds:1,resolution:'4K'};
+ const node=async(id:string,projectKey?:string,inputs:Array<{id:string;nodeId:string;kind:string;role:string;value?:string}>=[],prompt=id)=>{const r=await http('/api/canvas/video-nodes',{id,projectKey,expectedRevision:0,operationId:randomUUID(),config:{modelId:'video-process',mode:'text',prompt,parameters:params},inputs:inputs.map(item=>({...item,value:item.value??'fixture-untrusted-display-value'}))});assert.equal(r.status,201,JSON.stringify(r.value));return r.value.node;};
+ const view=async(id:string)=>{const r=await http('/api/video/workflows/'+id);assert.equal(r.status,200,JSON.stringify(r.value));return r.value.run;};
+ const states=async(id:string)=>(await pool.query('SELECT node_id,status,task_id,error,result_assets FROM app_video_workflow_run_nodes WHERE run_id=$1 ORDER BY node_id',[id])).rows;
+ const observe=async(id:string,ready:(rows:any[])=>boolean)=>until('workflow stage '+id,()=>states(id),rows=>{const failed=rows.find(row=>row.status==='blocked');if(failed)throw Error('Unexpected blocked stage '+JSON.stringify(rows));return ready(rows);},150000);
+ const complete=async(id:string)=>{await input.resume();const result=await observe(id,rows=>rows.length>0&&rows.every(row=>row.status==='completed'));await input.drain();return result;};
+ const accepted=async(route:string,body:any)=>{const r=await http(route,body);assert.equal(r.status,202,JSON.stringify(r.value));assert(r.value.runId);return r.value;};
+ const replay=async(route:string,body:any,runId:string)=>{const before=input.posts(),r=await accepted(route,body);assert.equal(r.runId,runId);await http('/api/video/workflows/'+runId,{action:'resume'});assert.equal(input.posts(),before);return r;};
+ const simple=(id:string,projectKey:string,prefix:string)=>({id,projectKey,variables:{action:'stable'},nodes:[{id:'a',request:{modelId:'video-process',prompt:prefix+' A {{var action}}',parameters:params},dependsOn:[]},{id:'b',request:{modelId:'video-process',prompt:prefix+' B',intentPreference:'omni_reference',parameters:params},dependsOn:['a'],mediaBindings:[{fromNodeId:'a',kind:'video',role:'source_video'}]}]});
+ const verifyTask=async(id:string,expectedCost=17)=>{const row=await input.task(id),plan=await input.readPlan(id);assert.equal(row.parameters.version,3);assert.equal(plan.requestedParameters.resolution,'4K');assert.equal(plan.effectiveParameters.resolution,'2K');assert.equal((plan.wireTemplate.body as Record<string,unknown>).resolution,'2k');assert.equal(row.cost,expectedCost);assert.equal((await pool.query('SELECT count(*)::int n FROM app_ledger WHERE id=$1',['led-video-'+id])).rows[0].n,1);return {row,plan};};
+ try{
+  // Native Canvas DAG: freeze before either dependent output exists.
+  const source=await node('process-wf-source',undefined,[{id:'source-image',nodeId:'process-input',kind:'image',role:'reference'}],'WORKFLOW_CANVAS source');
+  const project=source.projectKey,textBody={id:'process-wf-text',projectKey:project,title:'Workflow frozen text',content:'WORKFLOW_FROZEN_TEXT',status:'completed',canvasX:0,canvasY:0,width:300,height:176};
+  const text=await http('/api/canvas/text-nodes',textBody);assert.equal(text.status,200,JSON.stringify(text.value));
+  // A second source is created with the actual linked text, avoiding private
+  // DB editing of the node or simulated Canvas persistence.
+  const root=await node('process-wf-root',project,[{id:'source-text',nodeId:'text:'+textBody.id,kind:'text',role:'context'},{id:'source-image',nodeId:'process-input',kind:'image',role:'reference'}],'WORKFLOW_CANVAS source');
+  const target=await node('process-wf-target',project,[{id:'future-video',nodeId:root.id,kind:'video',role:'source_video'}],'WORKFLOW_CANVAS target');
+  const intent={id:randomUUID(),projectKey:project,nodes:[{id:root.id,revision:root.revision},{id:target.id,revision:target.revision}]};
+  const scheduled=await accepted('/api/canvas/video-workflows',intent);assert.deepEqual(scheduled.taskIds,[]);assert.equal(input.posts(),before);
+  const stored=(await pool.query('SELECT * FROM app_video_workflow_runs WHERE id=$1',[intent.id])).rows[0];assert.equal(stored.execution_version,1);
+  const {decryptAtRest}=await import('../src/lib/settings');const frozen=JSON.parse(decryptAtRest(stored.frozen_nodes_enc)!);
+  assert.equal(frozen[target.id].compiled.state,'dependency_pending');assert.equal(frozen[target.id].compiled.staticDraft.inputs.length,0);assert.equal(frozen[target.id].compiled.futureInputs.length,1);
+  assert(!JSON.stringify(frozen[target.id].compiled.futureInputs).includes('mimeType'));assert(!JSON.stringify(frozen).includes('wireTemplate'));pass('actual-canvas-accept-freezes-bindings-and-future-slots-without-task-or-post');
+  assert.equal((await http('/api/video/workflows/'+intent.id,undefined,input.otherCookie)).status,404);
+  const conflicting=await http('/api/canvas/video-workflows',{...intent,nodes:[intent.nodes[0]]});assert.equal(conflicting.status,409);pass('actual-workflow-owner-and-operation-conflict-enforced');
+  const changed=structuredClone(input.originalConfig);changed.upstreamModels[0].model='WORKFLOW_LIVE_MODEL_MUST_NOT_LEAK';(changed.upstreamModels[0].parameterMap.videoExecution!.recipe as any).createPath='/v1/workflow-must-not-run';await input.publish(changed);await input.price(29);
+  assert.equal((await http('/api/canvas/text-nodes',{...textBody,content:'WORKFLOW_NEW_TEXT_MUST_NOT_LEAK',base:text.value.node})).status,200);
+  input.holdPolls(true);await input.resume();let progress=await observe(intent.id,rows=>!!rows.find(row=>row.node_id===root.id)?.task_id);const rootId=progress.find(row=>row.node_id===root.id)!.task_id;
+  await until('workflow source accepted by supplier',()=>input.task(rootId),task=>!!task?.upstream_id);await input.drain();progress=await states(intent.id);assert.equal(progress.find(row=>row.node_id===target.id)?.task_id,null);
+  const sourceCall=input.calls.find(call=>call.body.prompt.includes('WORKFLOW_CANVAS source'));assert(sourceCall);assert.equal(sourceCall.body.model,'future-process-video');assert.equal(sourceCall.body.resolution,'2k');assert.match(sourceCall.body.prompt,/WORKFLOW_FROZEN_TEXT/);assert(!sourceCall.body.prompt.includes('WORKFLOW_NEW_TEXT_MUST_NOT_LEAK'));pass('only-ready-stage-executes-original-wire-model-price-and-frozen-linked-text');
+  await input.restart();input.holdPolls(false);await input.due(rootId);const finished=await complete(intent.id);const targetId=finished.find(row=>row.node_id===target.id)!.task_id;
+  const first=await verifyTask(rootId),second=await verifyTask(targetId);assert.equal(second.plan.intent,'reference');const asset=second.plan.inputManifest.find(item=>item.kind==='video');assert(asset&&asset.kind==='video');assert.equal(asset.asset.artworkId,first.row.artwork_id);assert.equal((await pool.query('SELECT parent_id FROM app_artworks WHERE id=$1',[second.row.artwork_id])).rows[0].parent_id,first.row.artwork_id);
+  assert.equal(input.calls.filter(call=>call.body.prompt.includes('WORKFLOW_CANVAS source')).length,1);assert.equal(input.calls.filter(call=>call.body.prompt.includes('WORKFLOW_CANVAS target')).length,1);pass('independent-worker-restart-resolves-real-output-and-settles-two-frozen-stages-once');
+  await replay('/api/canvas/video-workflows',intent,intent.id);assert.equal((await view(intent.id)).progress,100);runs.push({id:intent.id,kind:'canvas-dag',taskIds:[rootId,targetId]});pass('actual-http-replay-keeps-completed-stage-identities-without-provider-repost');
+  await input.publish(input.originalConfig);await input.price(17);
+  // Standalone Workflow entry: same compiler and future-video semantics.
+  const native=simple(randomUUID(),project,'WORKFLOW_NATIVE');await accepted('/api/video/workflows',native);const nativeDone=await complete(native.id);for(const row of nativeDone)await verifyTask(row.task_id);assert(input.calls.some(call=>call.body.prompt==='WORKFLOW_NATIVE A stable'));await replay('/api/video/workflows',native,native.id);runs.push({id:native.id,kind:'native-dag',taskIds:nativeDone.map(row=>row.task_id)});pass('actual-native-workflow-variables-and-dependent-assets-use-same-compiler');
+  // Batch is the actual public Canvas endpoint, not direct service calls.
+  const batchNode=await node('process-wf-batch',project),batchBody={expectedRevision:batchNode.revision,idempotencyKey:randomUUID(),count:2};
+  const batch=await accepted(`/api/canvas/video-nodes/${batchNode.id}/batch`,batchBody);assert.equal(batch.nodeIds.length,2);const batchDone=await complete(batch.runId);for(const row of batchDone)await verifyTask(row.task_id);await replay(`/api/canvas/video-nodes/${batchNode.id}/batch`,batchBody,batch.runId);runs.push({id:batch.runId,kind:'canvas-batch',taskIds:batchDone.map(row=>row.task_id)});pass('actual-canvas-batch-commits-two-nodes-executes-once-and-replays-original-batch');
+  // Storyboard reuses an explicitly adopted completed take and only generates
+  // the fresh shot, preserving the formal persisted plan/revision context.
+  const shot=await node('process-wf-storyboard-shot',project,[{id:'story-reference',nodeId:first.row.artwork_id,kind:'video',role:'source_video'}],'WORKFLOW_STORYBOARD');
+  const planWrite={id:randomUUID(),projectKey:project,expectedRevision:0,operationId:randomUUID(),document:{title:'Compiler real-process storyboard',assemble:false,shots:[{nodeId:root.id,number:'01',takes:[{taskId:rootId,artworkId:first.row.artwork_id,status:'approved',note:''}],adoptedArtworkId:first.row.artwork_id},{nodeId:shot.id,number:'02',takes:[],adoptedArtworkId:null}]}};
+  const savedPlan=await http('/api/canvas/storyboards',planWrite);assert.equal(savedPlan.status,200,JSON.stringify(savedPlan.value));const plan=savedPlan.value.plan;
+  const currentRoot=(await http('/api/canvas/video-nodes/'+root.id)).value.node,storyIntent={id:randomUUID(),projectKey:project,storyboard:{id:plan.id,revision:plan.revision},nodes:[{id:root.id,revision:currentRoot.revision,reuseCompleted:true},{id:shot.id,revision:shot.revision}]};
+  const storyPosts=input.posts();await accepted('/api/canvas/video-workflows',storyIntent);const storyDone=await complete(storyIntent.id);assert.equal(input.posts(),storyPosts+1);assert.equal(storyDone.find(row=>row.node_id===root.id)?.task_id,null);const storyId=storyDone.find(row=>row.node_id===shot.id)!.task_id;await verifyTask(storyId);const formal=(await view(storyIntent.id)).plan.storyboard;assert.deepEqual(formal,{id:plan.id,revision:plan.revision});runs.push({id:storyIntent.id,kind:'storyboard-adopt-and-generate',taskIds:[storyId]});pass('actual-storyboard-plan-revision-and-adopted-take-reuse-without-parent-regeneration');
+  // Cancellation is accepted while Worker is paused: no stage task is minted.
+  const cancelled=simple(randomUUID(),project,'WORKFLOW_CANCEL');await accepted('/api/video/workflows',cancelled);const cancelBefore=input.posts();assert.equal((await http('/api/video/workflows/'+cancelled.id,{action:'cancel'})).status,200);await input.resume();await until('worker observes cancelled workflow',()=>states(cancelled.id),rows=>rows.every(row=>row.status==='cancelled'));await input.drain();assert.equal(input.posts(),cancelBefore);assert((await states(cancelled.id)).every(row=>row.task_id===null));runs.push({id:cancelled.id,kind:'cancel-before-stage',taskIds:[]});pass('actual-cancelled-workflow-mints-no-task-and-never-sends');
+  const unknown=simple(randomUUID(),project,'UNKNOWN_ACCEPTANCE WORKFLOW');await accepted('/api/video/workflows',unknown);await input.resume();const unknownRows=await until('workflow unknown original receipt',()=>states(unknown.id),rows=>rows.some(row=>row.status==='needs_attention'),150000);await input.drain();const unknownRoot=unknownRows.find(row=>row.node_id==='a')!;assert(unknownRoot.task_id);assert.equal(unknownRows.find(row=>row.node_id==='b')?.task_id,null);
+  const unknownPosts=input.posts();await input.restart();await input.resume();await until('worker recovered unknown workflow',()=>states(unknown.id),rows=>rows.some(row=>row.status==='needs_attention'));await input.drain();assert.equal(input.posts(),unknownPosts);assert.equal(input.calls.filter(call=>call.body.prompt.includes('UNKNOWN_ACCEPTANCE WORKFLOW')).length,1);runs.push({id:unknown.id,kind:'unknown-not-replayed',taskIds:[unknownRoot.task_id]});pass('actual-workflow-unknown-after-restart-neither-reposts-nor-admits-dependent');
+  const rejected=simple(randomUUID(),project,'WORKFLOW_REJECT');await accepted('/api/video/workflows',rejected);await input.resume();const failed=await until('known rejection blocks workflow',()=>states(rejected.id),rows=>rows.every(row=>row.status==='blocked'),150000);await input.drain();assert.equal(failed.find(row=>row.node_id==='b')?.task_id,null);assert.equal(input.calls.filter(call=>call.body.prompt.includes('WORKFLOW_REJECT')).length,1);runs.push({id:rejected.id,kind:'known-rejection',taskIds:failed.map(row=>row.task_id).filter(Boolean)});pass('actual-upstream-known-rejection-blocks-downstream-without-replay');
+  const limited=structuredClone(input.originalConfig);(limited.upstreamModels[0].parameterMap.videoExecution!.recipe as any).operations.find((op:any)=>op.intent==='reference').videos.maxDurationSeconds=0.25;await input.publish(limited);
+  const limit=simple(randomUUID(),project,'WORKFLOW_REAL_DURATION');await accepted('/api/video/workflows',limit);await input.resume();const limitedRows=await until('real completed duration rejects dependent before send',()=>states(limit.id),rows=>rows.some(row=>row.node_id==='a'&&row.status==='completed')&&rows.some(row=>row.node_id==='b'&&row.status==='blocked'),150000);await input.drain();assert.equal(limitedRows.find(row=>row.node_id==='b')?.task_id,null);const limitId=limitedRows.find(row=>row.node_id==='a')!.task_id;await verifyTask(limitId);assert.equal(input.calls.filter(call=>call.body.prompt.includes('WORKFLOW_REAL_DURATION')).length,1);runs.push({id:limit.id,kind:'real-media-duration-bound',taskIds:[limitId]});pass('actual-future-duration-uses-real-decoded-output-and-keeps-protocol-limit');
+  const afterLedger=await ledger(),added={n:afterLedger.n-beforeLedger.n,amount:afterLedger.amount-beforeLedger.amount};assert.deepEqual(added,{n:8,amount:136});assert.equal(input.posts()-before,10);
+  const evidence=(await pool.query("SELECT source_id,status FROM app_creation_records WHERE actor_email=$1 AND source_kind='video-workflow' AND source_id=ANY($2::text[]) ORDER BY source_id",[actor,runs.map(run=>run.id)])).rows;assert.equal(evidence.length,runs.length);assert(evidence.filter(row=>runs.find(run=>run.id===row.source_id)?.taskIds.length===2).every(row=>row.status==='succeeded'));
+  pass('workflow-root-and-stage-receipts-assets-ledger-match-real-worker-outcomes');
+  await writeFile(path.join(input.outputDir,'WORKFLOW_PROCESS_RESULT.json'),JSON.stringify({ok:true,checks,runs,creationEvidence:evidence,ledgerAdded:added,supplierPostsAdded:input.posts()-before,actualNext:true,actualIndependentWorker:true,directWorkflowServiceCalls:0,paidCalls:0,productionWrites:0},null,2));
+  console.log(`VIDEO_COMPILER_WORKFLOW_PROCESS=PASS CHECKS=${checks.length} REAL_NEXT=1 REAL_INDEPENDENT_WORKER=1 DIRECT_WORKFLOW_CALLS=0 RUNS=${runs.length} SUPPLIER_POSTS_ADDED=10 LEDGER_ADDED=136 PAID_CALLS=0 PRODUCTION_WRITES=0`);return added;
+ }catch(error){await writeFile(path.join(input.outputDir,'WORKFLOW_PROCESS_FAILURE.json'),JSON.stringify({checks,runs,error:String(error),supplierPostsAdded:input.posts()-before},null,2));throw error;}
+ finally{input.holdPolls(false);await input.publish(input.originalConfig);await input.price(17);}
+}

@@ -33,6 +33,15 @@ test('combined scanner retains published video media origin without exposing app
  const absent=combinedWorkerPlan({...env,NAUMI_WORKER_EXECUTION:'direct'},{platform:'linux',uid:0,pid:1});
  assert.equal('VIDEO_REFERENCE_PUBLIC_BASE_URL' in absent.scanner.env,false,'No invented origin when none was configured');
 });
+test('combined scanner retains explicit private endpoint policy without weakening default or native media isolation',()=>{
+ for(const value of ['true','false']){
+  const plan=combinedWorkerPlan({...env,NAUMI_WORKER_EXECUTION:'direct',USER_IMAGE_PROVIDER_ALLOW_PRIVATE_NETWORK:value},{platform:'linux',uid:0,pid:1});
+  assert.equal(plan.scanner.env.USER_IMAGE_PROVIDER_ALLOW_PRIVATE_NETWORK,value);
+  assert.equal('USER_IMAGE_PROVIDER_ALLOW_PRIVATE_NETWORK' in plan.media.env,false);
+ }
+ const absent=combinedWorkerPlan({...env,NAUMI_WORKER_EXECUTION:'direct'},{platform:'linux',uid:0,pid:1});
+ assert.equal('USER_IMAGE_PROVIDER_ALLOW_PRIVATE_NETWORK' in absent.scanner.env,false);
+});
 test('combined direct parent rejects an old HTTP-only scanner acknowledgment',()=>{const plan=combinedWorkerPlan({...env,NAUMI_WORKER_EXECUTION:'direct'},{platform:'linux',uid:0,pid:1});const state={commit,instanceId:instance,durableControl:true,paused:true,revision:0};assert.throws(()=>verifiedScannerState(state,plan),/DIRECT_SCANNER_WORKER_HEALTH_INVALID/);assert.equal(verifiedScannerState({...state,executionMode:'direct',executorRole:'worker',targetInstanceId:instance,backgroundTasks:0},plan).executionMode,'direct');});
 test('combined direct scanner is not force-killed by HTTP-caller grace period',async()=>{
  let end;const closed=new Promise(resolve=>end=resolve),signals=[],plan=combinedWorkerPlan({...env,NAUMI_WORKER_EXECUTION:'direct'},{platform:'linux',uid:0,pid:1});plan.graceMs=1;
