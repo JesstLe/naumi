@@ -38,7 +38,7 @@ export function VideoSettingsFields({ config, inputs, models, choices, nodeId, e
     const V = useVideoI18n();
     const [error, setError] = useState(""), [notice, setNotice] = useState(""), [uploading, setUploading] = useState(false);
     const byoc = useVideoByocCatalog(email), workflow = byoc.catalog?.workflows.find(item => item.id === config.comfyWorkflowId);
-    const cap = catalogCapability(selectedVideoCatalogModel(models,config));
+    const model=selectedVideoCatalogModel(models,config),cap = catalogCapability(model),modern=!!model?.execution;
     const preview = (() => { try {
         const expanded = previewCanvasInputs(inputs, config.prompt || "", choices);
         return compileVideoPrompt(expanded.prompt, expanded.inputs, compileVideoCamera(config.camera)).prompt;
@@ -46,16 +46,16 @@ export function VideoSettingsFields({ config, inputs, models, choices, nodeId, e
     catch (cause) {
         return cause instanceof Error ? cause.message : "引用无效";
     } })();
-    function changeConfig(next: VideoNodeConfig) { if (!next.comfyWorkflowId && next.mode !== config.mode) {
+    function changeConfig(next: VideoNodeConfig) { if (!modern&&!selectedVideoCatalogModel(models,next)?.execution&&!next.comfyWorkflowId && next.mode !== config.mode) {
         const ordered = videoModeRoles(inputs, next.mode);
         onInputs(ordered);
         next = { ...next, references: [] };
     } onConfig(next); setError(""); }
-    function changeInputs(next: OrderedInput[],preserveRoles=false) { const ordered = config.comfyWorkflowId||preserveRoles ? next : videoModeRoles(next, config.mode); onInputs(ordered); onConfig({ ...config, prompt: remapVideoPromptReferences(config.prompt || "", inputs, ordered), references: [] }); setError(""); }
+    function changeInputs(next: OrderedInput[],preserveRoles=false) { const ordered = modern||config.comfyWorkflowId||preserveRoles ? next : videoModeRoles(next, config.mode); onInputs(ordered); onConfig({ ...config, prompt: remapVideoPromptReferences(config.prompt || "", inputs, ordered), references: [] }); setError(""); }
     function mention(choice: VideoInputChoice, start: number, end: number) {
         if (readOnly || busy || uploading || !choice.available) return;
         const next = inputs.some(input => input.nodeId === choice.nodeId) ? inputs : [...inputs, { id: `ref-${browserRandomUUID()}`, nodeId: choice.nodeId, kind: choice.kind, role: choice.kind === "text" ? "context" as const : choice.kind === "video" ? "source_video" as const : choice.kind === "audio" ? "source_audio" as const : "reference" as const, value: choice.value }];
-        const ordered = config.comfyWorkflowId ? next : videoModeRoles(next, config.mode), input = ordered.find(item => item.nodeId === choice.nodeId)!;
+        const ordered = modern||config.comfyWorkflowId ? next : videoModeRoles(next, config.mode), input = ordered.find(item => item.nodeId === choice.nodeId)!;
         const inserted = insertVideoPromptReference(config.prompt || "", inputs, ordered, choices, input.id, start, end);
         onInputs(ordered); onConfig({ ...config, prompt: inserted.prompt, references: [] }); return inserted.caret;
     }
@@ -82,7 +82,7 @@ export function VideoSettingsFields({ config, inputs, models, choices, nodeId, e
     else
         onConfig({ prompt: config.prompt, references: config.references }); }}><option value="managed">{V("\u6258\u7BA1\u89C6\u9891\u6A21\u578B")}</option><option value="byoc" disabled={!byoc.catalog?.endpoint || !byoc.catalog.workflows.length}>{V("\u81EA\u5907 ComfyUI \u00B7 0 \u79EF\u5206")}</option></select></VideoField>
           {config.comfyWorkflowId ? <><VideoField label={V("自备视频工作流")}><select aria-label={V("自备视频工作流")} className={videoFieldClass} value={config.comfyWorkflowId} onChange={event => { const selected = byoc.catalog?.workflows.find(item => item.id === event.target.value); if (selected)
-        onConfig({ ...config, modelId: selected.id, comfyWorkflowId: selected.id, comfyInputs: selected.defaultMappings, comfyOverrides: undefined }); }}><option value="" disabled>{V("\u9009\u62E9\u5DE5\u4F5C\u6D41")}</option>{byoc.catalog?.workflows.map(item => <option key={item.id} value={item.id}>{item.name}{item.videoOutput ? "" : V(" · 自定义输出")}</option>)}</select></VideoField><VideoByocSettings workflow={workflow} config={config} onChange={changeConfig}/></> : <VideoSettingsPanel advancedOnly={hideComposerFields} disabled={readOnly || busy || uploading} config={config} models={models} onChange={changeConfig} onNotice={setNotice}/>}
+        onConfig({ ...config, modelId: selected.id, comfyWorkflowId: selected.id, comfyInputs: selected.defaultMappings, comfyOverrides: undefined }); }}><option value="" disabled>{V("\u9009\u62E9\u5DE5\u4F5C\u6D41")}</option>{byoc.catalog?.workflows.map(item => <option key={item.id} value={item.id}>{item.name}{item.videoOutput ? "" : V(" · 自定义输出")}</option>)}</select></VideoField><VideoByocSettings workflow={workflow} config={config} onChange={changeConfig}/></> : <VideoSettingsPanel inputs={inputs} advancedOnly={hideComposerFields} disabled={readOnly || busy || uploading} config={config} models={models} onChange={changeConfig} onNotice={setNotice}/>}
           {byoc.error && <p role="status" className="text-xs text-amber-500">{byoc.error}</p>}<button type="button" className={videoButtonClass} onClick={() => void byoc.refresh()}>{V("\u5237\u65B0\u81EA\u5907\u5DE5\u4F5C\u6D41")}</button>
           {notice && <p role="status" className="text-xs text-amber-500">{notice}</p>}
           {!hideComposerFields&&<VideoField label={V("视频描述")}><VideoPromptEditor prompt={config.prompt || ""} inputs={inputs} choices={choices} nodeId={nodeId} rows={6} className={videoFieldClass} readOnly={readOnly || busy || uploading} onPrompt={prompt => changeConfig({ ...config, prompt })} onMention={mention}/></VideoField>}

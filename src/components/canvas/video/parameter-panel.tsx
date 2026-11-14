@@ -3,15 +3,21 @@
 import { Check } from "lucide-react";
 import type { ResolvedVideoCapability } from "@/lib/video/capability-schema";
 import type { VideoNodeConfig } from "@/lib/video/client-settings";
+import {VideoContractFields} from './contract-fields';
+import type {VideoUiContract} from '@/lib/video/ui-contract';
+import type {OrderedInput} from '@/lib/video/references';
 import { videoParameterChoices } from "@/lib/video/parameter-options";
 import { VideoDurationControl } from "@/components/video/duration-control";
 import { useVideoI18n } from "./i18n";
 
-export function VideoParameterPanel({ config, capability: cap, count, onConfig, onCount, disabled = false }: {
+export function VideoParameterPanel({ config, capability: cap, count, onConfig, onCount, disabled = false,execution,inputs=[] }: {
+  execution?:VideoUiContract;inputs?:readonly OrderedInput[];
   config: VideoNodeConfig; capability: ResolvedVideoCapability; count: number;
   onConfig: (value: VideoNodeConfig) => void; onCount: (value: number) => void; disabled?: boolean;
 }) {
   const V = useVideoI18n();
+  if(execution)return <fieldset disabled={disabled} className='space-y-4' data-testid='video-parameter-panel'><VideoContractFields config={config} inputs={inputs} contract={execution} onChange={onConfig} disabled={disabled}/>
+    <section aria-label={V('生成数量')} className='flex gap-2'>{[1,2,4].map(value=><button type='button' key={value} aria-pressed={count===value} className='canvas-ui-control flex-1 rounded-[9px] border p-2 text-xs' onClick={()=>onCount(value)}>{value} {V('个视频')}</button>)}</section></fieldset>;
   const {aspectRatios:ratios,resolutions} = videoParameterChoices(cap,config.mode,config);
   const option = (selected: boolean) => `canvas-ui-control relative flex min-h-9 min-w-0 items-center justify-center gap-1 rounded-[9px] border px-2 py-2 text-xs font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 ${selected ? "border-[var(--canvas-ui-border-strong)] bg-[var(--canvas-ui-soft-hover)] text-[var(--canvas-ui-text)]" : "border-[var(--canvas-ui-border)] text-[var(--canvas-ui-muted)]"}`;
   return <fieldset disabled={disabled} className="space-y-4" data-testid="video-parameter-panel">

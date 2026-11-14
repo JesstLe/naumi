@@ -109,8 +109,9 @@ export function compileCanvasLink(s:Snapshot,intent:CanvasLinkIntent):CanvasHist
     // A canvas wire is the same explicit attach as the composer's picker. Commit
     // its mode/roles together, even while that composer is closed. Never pick a
     // different model or infer capabilities for an unavailable/own workflow.
-    const model=add&&!video.config.comfyWorkflowId?selectedVideoCatalogModel(s.videoModels||[],video.config):undefined;
-    const attached=model?attachVideoInputs(video.config,inputs,catalogCapability(model)):undefined;
+    const selectedModel=!video.config.comfyWorkflowId?selectedVideoCatalogModel(s.videoModels||[],video.config):undefined;
+    const model=add||selectedModel?.execution?selectedModel:undefined;
+    const attached=model?attachVideoInputs(video.config,inputs,catalogCapability(model),model.execution):undefined;
     return {kind:"video-patch",id:video.id,
       from:{inputs:video.inputs,...(attached?.changed?{config:video.config}:{})},
       to:{inputs:attached?.inputs??videoModeRoles(inputs,video.config.mode),...(attached?.changed?{config:attached.config}:{})}};

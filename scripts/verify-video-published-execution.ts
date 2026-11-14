@@ -128,6 +128,7 @@ async function main(){
     check('route-no-internal-plan-leak',()=>{for(const term of ['wireTemplate','wireModel','connectionId','recipe','storageKey',f.marker])assert(!JSON.stringify(payload).includes(term),term);});
     const untrustedPlan=await POST(request({...previewBody,execution:frozen.execution}));check('route-client-binding-rejected',()=>assert.equal(untrustedPlan.status,422));
     const explicitConflict=await POST(request({...previewBody,draft:{...base,intentPreference:'text'}})),conflict=await explicitConflict.json();check('route-explicit-preference-not-dropped',()=>{assert.equal(explicitConflict.status,422);assert.equal(conflict.diagnostics[0].code,'TEXT_INTENT_HAS_MEDIA');});
+    if(process.argv.includes('--ui'))await (await import('./video-compiler-ui-checks')).verifyVideoCompilerUi({snapshot:next,actor,pool,draft:base,cookie,check});
     await writeFile(path.join(process.env.MEDIA_DIR!,key),Buffer.from('changed bytes'));
     const changedBytes=await resolve({},null);check('real-byte-mutation-rejected',()=>assert.equal(code(changedBytes),'MEDIA_INPUT_CHANGED'));await writeFile(path.join(process.env.MEDIA_DIR!,key),png);
     const {saveFeaturePolicy}=await import('../src/lib/feature-access/repository');

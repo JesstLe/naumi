@@ -11,6 +11,8 @@ import {compileVideoCamera} from "./camera";
 import {videoDurations,videoResolutions,videoAspectRatios} from "./parameter-options";
 export {videoDurations,videoResolutions,videoAspectRatios} from "./parameter-options";
 import {previewCanvasInputs} from "../canvas/input-preview";
+import type {VideoUiContract} from './ui-contract';
+import {videoUiCreationDefaults,videoUiDraft} from './ui-draft';
 
 export type VideoNodeConfig=CanvasVideoNode["config"];
 export type VideoCatalogModel=VideoModelCapability&{isDefault?:boolean};
@@ -39,6 +41,7 @@ export function videoNodeCreationDefaults(catalog:{models:readonly VideoCatalogM
   if(catalog.loading||catalog.error)return undefined;
   const model=catalog.models.find(item=>item.isDefault)||catalog.models[0];
   if(!model?.modelId?.trim()||!model.providerId?.trim())return undefined;
+  if(model.execution)return {model,config:videoUiCreationDefaults(model)};
   const cap=catalogCapability(model),config=reconcileVideoSettings({modelId:model.modelId,providerId:model.providerId,prompt:""},cap).config;
   const duration=config.durationSeconds;
   if(!config.mode||!config.resolution||!config.aspectRatio||duration===undefined||
@@ -90,8 +93,9 @@ export function inputReference(input:OrderedInput):VideoReference|null{
   if(input.kind==="text")return null;
   return {id:input.id,kind:input.kind,role:input.role as VideoReference["role"],artworkId:input.nodeId.replace(/^(image|video|audio):/,""),url:input.value};
 }
-export function validateVideoSettings(config:VideoNodeConfig,inputs:OrderedInput[],cap:ResolvedVideoCapability,choices:readonly VideoInputChoice[]=[]){
+export function validateVideoSettings(config:VideoNodeConfig,inputs:OrderedInput[],cap:ResolvedVideoCapability,choices:readonly VideoInputChoice[]=[],execution?:VideoUiContract){
   try{
+    if(execution&&!config.comfyWorkflowId){if(!config.modelId)throw new Error('请选择视频模型');videoUiDraft(config,inputs);return null;}
     const preview=previewCanvasInputs(inputs,config.prompt||"",choices);
     if(config.comfyWorkflowId){
       videoByocOverridesSchema.parse(config.comfyOverrides||{});
