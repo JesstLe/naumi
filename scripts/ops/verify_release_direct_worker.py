@@ -2,7 +2,8 @@
 """Linux-only, fixture-scoped Docker adapter exercising the REAL release owner.
 
 The fixture has the Docker socket, never the product. No site connections or
-generation requests. Random PG schema, owned network/slots/state only.
+paid upstream. --tasks adds actual HTTP/Worker generation against a local peer.
+Random PG schema, owned network/slots/state only.
 """
 import argparse
 import http.client
@@ -12,6 +13,12 @@ import pathlib
 import socket
 import time
 import uuid
+import threading
+import hashlib
+import urllib.request
+import urllib.parse
+import shutil
+from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 
 import release47_controls as controls
 from release47_host import environment, public_identity, Hold
@@ -45,16 +52,22 @@ def exec_in(container,command,env=None,user=None):
 
 def main():
     p=argparse.ArgumentParser();p.add_argument('--image',required=True);p.add_argument('--root',type=pathlib.Path,required=True)
-    p.add_argument('--evidence',type=pathlib.Path,required=True);args=p.parse_args()
+    p.add_argument('--evidence',type=pathlib.Path,required=True)
+    p.add_argument('--tasks',action='store_true');p.add_argument('--driver-container')
+    args=p.parse_args()
     assert os.name=='posix' and args.root.is_relative_to('/opt/naumi-staging/releases')
     assert args.image.startswith('sha256:') and len(args.image)==71
     args.evidence.mkdir(parents=True,exist_ok=True);args.root.mkdir(parents=True,exist_ok=True)
     suffix=uuid.uuid4().hex[:12];prefix='naumi-release-direct-fixture-'+suffix;schema='release_direct_'+suffix
     network=api('POST','/networks/create',{'Name':prefix,'Driver':'bridge'})['Id']
-    slots=[];checks=[];events=[]
+    slots=[];checks=[];events=[];peer=None;task_proof=None
+    peer_state={'calls':[],'polls':[],'reads':[],'hold':True,'web':None}
     db='naumi-video-compiler-pg-20261114'
     def sql(text):return exec_in(db,['psql','-XqAt','-v','ON_ERROR_STOP=1','-U','postgres','-d','video_compiler_fixture','-c',text]).decode().strip()
-    def check(name,condition=True):assert condition,name;checks.append(name)
+    def check(name,condition=True):
+        assert condition,name
+        checks.append(name)
+        print('RELEASE_CHECK='+name+' PASS',flush=True)
     class Tx:
         folder=args.evidence
         def inspect(self,target):return api('GET','/containers/'+target+'/json')
@@ -108,6 +121,46 @@ def main():
     tx=Tx()
     try:
         sql('CREATE SCHEMA '+schema)
+        if args.tasks:
+            assert args.driver_container and args.driver_container.startswith('naumi-release-task-driver-')
+            fixture_dir=args.root/'fixture';fixture_dir.mkdir();os.chmod(fixture_dir,0o755)
+            shutil.copyfile(args.evidence.parent/'task-fixture.cjs',fixture_dir/'task-fixture.cjs')
+            args.fixture_dir=str(fixture_dir)
+            api('POST','/networks/'+network+'/connect',{'Container':args.driver_container,'EndpointConfig':{'Aliases':['release-peer']}})
+            video=(args.evidence.parent/'fixture-result.mp4').read_bytes()
+            class Peer(BaseHTTPRequestHandler):
+                def log_message(self,*args):pass
+                def send_json(self,value):
+                    content=json.dumps(value).encode();self.send_response(200);self.send_header('content-type','application/json');self.send_header('content-length',str(len(content)));self.end_headers();self.wfile.write(content)
+                def do_POST(self):
+                    assert self.path=='/v1/videos/generations'
+                    if self.headers.get('transfer-encoding','').lower()=='chunked':
+                        chunks=[]
+                        while True:
+                            size=int(self.rfile.readline().split(b';',1)[0],16)
+                            if not size:
+                                while self.rfile.readline().strip():pass
+                                break
+                            chunks.append(self.rfile.read(size));assert self.rfile.read(2)==b'\r\n'
+                        raw=b''.join(chunks)
+                    else:raw=self.rfile.read(int(self.headers['content-length']))
+                    body=json.loads(raw)
+                    entry={'body':body,'key':self.headers.get('Idempotency-Key'),'authorization':self.headers.get('authorization')};peer_state['calls'].append(entry)
+                    for url in body.get('image_urls',[])+body.get('video_urls',[]):
+                        parsed=urllib.parse.urlsplit(url);assert parsed.scheme=='https' and parsed.hostname=='release-media.fixture.test'
+                        with urllib.request.urlopen('http://'+peer_state['web']+':3000'+parsed.path) as response:data=response.read()
+                        peer_state['reads'].append({'sha256':hashlib.sha256(data).hexdigest(),'bytes':len(data)})
+                    if body['prompt']=='RELEASE_UNKNOWN':
+                        self.connection.shutdown(socket.SHUT_RDWR);self.connection.close();return
+                    self.send_json({'data':[{'task_id':'release-'+str(len(peer_state['calls'])),'status':'queued'}]})
+                def do_GET(self):
+                    if self.path.startswith('/v1/tasks/'):
+                        peer_state['polls'].append(self.path)
+                        self.send_json({'data':{'status':'processing','progress':20} if peer_state['hold'] else {'status':'completed','result':{'videos':[{'url':'http://release-peer:18080/result.mp4'}]}}});return
+                    if self.path=='/result.mp4':
+                        self.send_response(200);self.send_header('content-type','video/mp4');self.send_header('content-length',str(len(video)));self.end_headers();self.wfile.write(video);return
+                    self.send_json({'data':[]})
+            peer=ThreadingHTTPServer(('0.0.0.0',18080),Peer);threading.Thread(target=peer.serve_forever,daemon=True).start()
         image=api('GET','/images/'+args.image+'/json');source=environment(image)['SOURCE_COMMIT']
         for combined in [False,True]:
             name=prefix+('-combined' if combined else '-plain');web_name=name+'-web'
@@ -126,6 +179,12 @@ def main():
                 values.update(NAUMI_MEDIA_WORKER='1',MEDIA_WORKER_ORIGIN='http://'+name+':3002',
                     MEDIA_WORKER_SECRET='fixture-media-'+40*'m',MEDIA_JOB_DIR='/scratch')
                 mounts.append({'Type':'bind','Source':str(folder/'scratch'),'Target':'/scratch'})
+            if args.tasks and combined:
+                values.update(NAUMI_VERIFY_ISOLATED_DB='1',MODEL_CONFIG_TRUSTED_ORIGINS='http://release-peer:18080',
+                    NAUMI_ROUTER_MANAGEMENT_URL='http://release-peer:18080',NAUMI_ROUTER_MANAGEMENT_TOKEN='fixture-router-not-called-'+32*'t',
+                    MODEL_CONFIG_ENVELOPE_SECRET='fixture-router-envelope-'+40*'e',VIDEO_REFERENCE_PUBLIC_BASE_URL='https://release-media.fixture.test')
+                mounts.append({'Type':'bind','Source':args.fixture_dir,'Target':'/fixture','ReadOnly':True})
+                peer_state['web']=web_name
             web=api('POST','/containers/create?name='+web_name,{'Image':args.image,'Cmd':['node','server.js'],
                 'Env':[k+'='+v for k,v in values.items()], 'HostConfig':{'Mounts':mounts,'NetworkMode':prefix},
                 'NetworkingConfig':{'EndpointsConfig':{prefix:{}}}})['Id'];slots.append(web);api('POST','/containers/'+web+'/start')
@@ -137,6 +196,8 @@ def main():
                     try:
                         result=read()
                         if accept(result):return result
+                        if isinstance(result,dict) and result.get('status') in ['failed','needs_attention']:
+                            raise AssertionError('FIXTURE_TERMINAL_TASK '+json.dumps(result))
                     except RuntimeError:pass
                     time.sleep(.3)
                 raise RuntimeError('FIXTURE_DEADLINE')
@@ -173,18 +234,88 @@ def main():
             result=worker_handoff.execute(expected,control_folder,lambda argv:tx.run(argv).decode())
             eventually(state,lambda s:s.get('phase')=='QUIESCENT' and s.get('backgroundTasks')==0)
             check(name+'-actual-tick-drain-no-replay')
+            if args.tasks and combined:
+                def fixture(action,**fields):
+                    return json.loads(exec_in(web,['node','/fixture/task-fixture.cjs',json.dumps({'action':action,**fields})],env=['NODE_OPTIONS=','NODE_PATH=/app/node_modules']))
+                seed=fixture('init',origin='http://release-peer:18080')
+                def http(route,body=None):
+                    payload={'route':route,'body':body,'cookie':seed['cookie']}
+                    script="const x=JSON.parse(process.argv[1]);fetch('http://127.0.0.1:3000'+x.route,{method:x.body===null?'GET':'POST',headers:{cookie:x.cookie,'content-type':'application/json'},...(x.body===null?{}:{body:JSON.stringify(x.body)}),signal:AbortSignal.timeout(60000)}).then(async r=>console.log(JSON.stringify({status:r.status,body:await r.json()})))"
+                    return json.loads(exec_in(web,['node','-e',script,json.dumps(payload)]))
+                # Open only this fixture Web through the actual admission owner.
+                app=controls.app_status(tx,public_identity(tx.inspect(web)))
+                controls.control_app(tx,public_identity(tx.inspect(web)),'resume',str(uuid.uuid4()))
+                base={'source':'workbench','modelId':seed['modelId'],'prompt':'RELEASE_ACCEPTED','mode':'text',
+                    'parameters':{'durationSeconds':1,'resolution':'4K'},'references':[{'id':'ref','artworkId':seed['artworkId'],'kind':'image','role':'reference'}],
+                    'idempotencyKey':str(uuid.uuid4())}
+                preview=http('/api/video/compile-preview',{'modelId':seed['modelId'],'draftRevision':1,'draft':{'prompt':base['prompt'],'parameters':base['parameters'],
+                    'inputs':[{'id':'ref','nodeId':seed['artworkId'],'kind':'image','role':'reference'}]}})
+                check(name+'-task-preview-not-old-capability-gated',preview['status']==200 and preview['body']['value']['intent']=='single_image')
+                accepted=http('/api/video/generate',base);assert accepted['status']==200,accepted
+                task_id=accepted['body']['taskId'];row=fixture('task',id=task_id)
+                check(name+'-http-accepts-frozen-v3-zero-supplier-post',row['version']==3 and row['submissionState']=='prepared' and len(peer_state['calls'])==0)
+                check(name+'-preview-digest-equals-accepted-plan',row['planDigest']==preview['body']['value']['planDigest'])
+                replay=http('/api/video/generate',base);check(name+'-exact-operation-replay',replay['body']['taskId']==task_id)
+                fixture('change',origin='http://release-peer:18080')
+                expected.action='resume';expected.operation_id=str(uuid.uuid4());worker_handoff.execute(expected,control_folder,lambda argv:tx.run(argv).decode())
+                eventually(lambda:fixture('task',id=task_id),lambda r:bool(r.get('upstreamId')))
+                expected.action='drain';expected.operation_id=str(uuid.uuid4());worker_handoff.execute(expected,control_folder,lambda argv:tx.run(argv).decode())
+                eventually(state,lambda s:s.get('phase')=='QUIESCENT')
+                check(name+'-frozen-old-model-price-and-one-mapping',len(peer_state['calls'])==1 and peer_state['calls'][0]['body']['model']=='future-release-model'
+                    and peer_state['calls'][0]['body']['resolution']=='2k' and row['quotedCredits']==7)
+                check(name+'-supplier-retrieves-original-input',peer_state['reads'][0]['sha256']==seed['inputSha256'])
+                peer_state['hold']=False
+                api('POST','/containers/'+worker+'/stop?t=60');controls.start_worker(tx,public_identity(tx.inspect(worker)),4096,reviewed_combined_media=True)
+                eventually(state,lambda s:s.get('paused') is True)
+                fixture('due',id=task_id);expected.action='resume';expected.operation_id=str(uuid.uuid4());worker_handoff.execute(expected,control_folder,lambda argv:tx.run(argv).decode())
+                done=eventually(lambda:fixture('task',id=task_id),lambda r:r['status']=='completed')
+                expected.action='drain';expected.operation_id=str(uuid.uuid4());worker_handoff.execute(expected,control_folder,lambda argv:tx.run(argv).decode());eventually(state,lambda s:s.get('phase')=='QUIESCENT')
+                check(name+'-restart-polls-original-no-paid-repost',len(peer_state['calls'])==1 and done['quotedCredits']==7)
+                restored=http('/api/video/tasks/'+task_id);check(name+'-restores-requested-not-wire',restored['body']['snapshot']['config']['parameters']['resolution']=='4K')
+                node_id='release-next-'+uuid.uuid4().hex
+                node=http('/api/canvas/video-nodes',{'id':node_id,'expectedRevision':0,'operationId':str(uuid.uuid4()),'config':{'modelId':seed['modelId'],
+                    'prompt':'RELEASE_DOWNSTREAM','parameters':base['parameters']},'inputs':[{'id':'source','nodeId':done['artworkId'],'kind':'video','role':'source_video','value':'forged.mp4'}]})
+                assert node['status']==201,node
+                second=http('/api/canvas/video-nodes/'+node_id+'/generate',{'expectedRevision':node['body']['node']['revision'],'idempotencyKey':str(uuid.uuid4())});assert second['status']==202,second
+                second_id=second['body']['taskId'];expected.action='resume';expected.operation_id=str(uuid.uuid4());worker_handoff.execute(expected,control_folder,lambda argv:tx.run(argv).decode())
+                second_done=eventually(lambda:fixture('task',id=second_id),lambda r:r['status']=='completed')
+                expected.action='drain';expected.operation_id=str(uuid.uuid4());worker_handoff.execute(expected,control_folder,lambda argv:tx.run(argv).decode());eventually(state,lambda s:s.get('phase')=='QUIESCENT')
+                check(name+'-result-feeds-next-canvas-task',len(peer_state['calls'])==2 and peer_state['calls'][1]['body']['model']=='changed-release-model'
+                    and len(peer_state['calls'][1]['body']['video_urls'])==1 and 'forged.mp4' not in json.dumps(peer_state['calls']))
+                unknown=http('/api/video/generate',{**base,'prompt':'RELEASE_UNKNOWN','references':[],'idempotencyKey':str(uuid.uuid4())});assert unknown['status']==200,unknown
+                unknown_id=unknown['body']['taskId'];expected.action='resume';expected.operation_id=str(uuid.uuid4());worker_handoff.execute(expected,control_folder,lambda argv:tx.run(argv).decode())
+                eventually(lambda:fixture('task',id=unknown_id),lambda r:r['status']=='needs_attention')
+                expected.action='drain';expected.operation_id=str(uuid.uuid4());worker_handoff.execute(expected,control_folder,lambda argv:tx.run(argv).decode());eventually(state,lambda s:s.get('phase')=='QUIESCENT')
+                retry=http('/api/video/tasks/'+unknown_id+'/retry',{'idempotencyKey':str(uuid.uuid4())})
+                check(name+'-unknown-not-retryable-or-charged',retry['status']==409 and len([c for c in peer_state['calls'] if c['body']['prompt']=='RELEASE_UNKNOWN'])==1)
+                ledger=fixture('ledger',ids=[task_id,second_id,unknown_id],artworks=[done['artworkId'],second_done['artworkId']])
+                check(name+'-single-original-and-downstream-ledger',len(ledger['rows'])==2 and sorted(int(x['delta']) for x in ledger['rows'])==[-17,-7])
+                check(name+'-stable-parent-asset',any(a['id']==second_done['artworkId'] and a['parent_id']==done['artworkId'] for a in ledger['artifacts']))
+                for result in [done,second_done]:
+                    probe="const x=JSON.parse(process.argv[1]);fetch('http://127.0.0.1:3000'+x.url,{headers:{cookie:x.cookie}}).then(async r=>{if(!r.ok)throw Error('ASSET_HTTP_'+r.status);console.log(require('node:crypto').createHash('sha256').update(Buffer.from(await r.arrayBuffer())).digest('hex'))})"
+                    result_hash=exec_in(web,['node','-e',probe,json.dumps({'url':result['videoUrl'],'cookie':seed['cookie']})]).decode().strip()
+                    check(name+'-result-bytes-'+result['id'],result_hash==hashlib.sha256(video).hexdigest())
+                task_proof={'first':done,'second':second_done,'unknown':fixture('task',id=unknown_id),'ledger':ledger,'supplier':peer_state,
+                    'resultSha256':hashlib.sha256(video).hexdigest()}
             boot=state()['bootId'];api('POST','/containers/'+worker+'/stop?t=60')
             controls.start_worker(tx,public_identity(tx.inspect(worker)),4096,reviewed_combined_media=combined)
             restarted=eventually(state,lambda s:s.get('paused') is True and s.get('phase')=='QUIESCENT')
             check(name+'-actual-restart-preserves-drain',restarted['bootId']!=boot and restarted['targetInstanceId']==name)
+            if args.tasks and combined:
+                original_unknown=fixture('task',id=unknown_id)
+                expected.action='resume';expected.operation_id=str(uuid.uuid4());worker_handoff.execute(expected,control_folder,lambda argv:tx.run(argv).decode())
+                eventually(state,lambda s:(s.get('lastTick') or {}).get('phase')=='complete' and s.get('activeTicks')==0)
+                expected.action='drain';expected.operation_id=str(uuid.uuid4());worker_handoff.execute(expected,control_folder,lambda argv:tx.run(argv).decode());eventually(state,lambda s:s.get('phase')=='QUIESCENT')
+                check(name+'-unknown-survives-restart-without-repost',fixture('task',id=unknown_id)==original_unknown
+                    and len([c for c in peer_state['calls'] if c['body']['prompt']=='RELEASE_UNKNOWN'])==1)
             for target in [worker,web]:
                 api('POST','/containers/'+target+'/stop?t=60')
                 row=tx.inspect(target);check(name+'-stopped-'+target[:8],row['State']['ExitCode']==0)
                 (args.evidence/(target[:12]+'.log')).write_bytes(api('GET','/containers/'+target+'/logs?stdout=1&stderr=1',raw=True))
-        paid=json.loads(sql('SET search_path TO '+schema+";SELECT json_build_object('tasks',(SELECT count(*) FROM app_video_tasks),'ledger',(SELECT count(*) FROM app_ledger));").splitlines()[-1])
-        check('empty-scans-no-generation-or-billing',paid=={'tasks':0,'ledger':0})
+        paid=json.loads(sql('SET search_path TO '+schema+";SELECT json_build_object('tasks',(SELECT count(*) FROM app_video_tasks),'ledger',(SELECT count(*) FROM app_ledger WHERE id LIKE 'led-video-%'));").splitlines()[-1])
+        check('exact-generation-and-billing-counts',paid==({'tasks':3,'ledger':2} if args.tasks else {'tasks':0,'ledger':0}))
         (args.evidence/'RESULT.json').write_text(json.dumps({'ok':True,'checks':checks,'count':len(checks),'image':args.image,
-            'schema':schema,'events':events,'paidCalls':0,'siteOperations':0},indent=2))
+            'schema':schema,'events':events,'tasks':task_proof,'paidCalls':0,'siteOperations':0},indent=2))
         print('RELEASE_DIRECT_ACTUAL=PASS CHECKS='+str(len(checks))+' REAL_CREATORS=2 REAL_NEXT=2 REAL_WORKERS=2 REAL_PG=1 PAID_CALLS=0 SITE_OPERATIONS=0')
     finally:
         for target in reversed(slots):
@@ -192,7 +323,10 @@ def main():
             if row['State']['Running']:api('POST','/containers/'+target+'/stop?t=60')
             api('DELETE','/containers/'+target)
         sql('DROP SCHEMA IF EXISTS '+schema+' CASCADE')
+        if args.tasks:
+            api('POST','/networks/'+network+'/disconnect',{'Container':args.driver_container})
         api('DELETE','/networks/'+network)
+        if peer:peer.shutdown();peer.server_close()
         print('RELEASE_DIRECT_ACTUAL_CLEANUP=PASS SLOTS='+str(len(slots))+' SCHEMA_DROPPED=1 NETWORK_REMOVED=1')
 
 
