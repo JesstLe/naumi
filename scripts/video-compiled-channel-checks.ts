@@ -1,0 +1,50 @@
+import assert from 'node:assert/strict';
+import {randomUUID} from 'node:crypto';
+import {execFileSync} from 'node:child_process';
+import {readFile,writeFile} from 'node:fs/promises';
+import path from 'node:path';
+import sharp from 'sharp';
+import type {Pool} from 'pg';
+import type {VideoTaskRow} from '../src/lib/video/task-types';
+import type {CreateVideoInput} from '../src/lib/video/submission-types';
+import type {createModelFixture} from './model-config-fixture';
+import {channelFixtures,type ChannelCase} from './video-channel-cases';
+import {channelVideoProtocol} from '../src/lib/video/profiles/channel-contract';
+export type ChannelHttpFixture={enabled:boolean;profile:string;kind:string;received:Array<{phase:string;path:string;body?:Record<string,any>;key?:string}>};
+export async function verifyCompiledChannels(input:{actor:string;pool:Pool;f:Awaited<ReturnType<typeof createModelFixture>>;channels:ChannelHttpFixture;posts:()=>number;task:(id:string)=>Promise<VideoTaskRow>;finish:(id:string)=>Promise<VideoTaskRow>;dispatch:(t:VideoTaskRow)=>Promise<void>;check:(name:string,run:()=>void)=>void;setMode:(mode:'ok'|'reject'|'disconnect')=>void}){
+ const {actor,pool,f,channels,task,finish,dispatch}=input;let cases=0;const check=(n:string,fn:()=>void)=>{input.check('channels-'+n,fn);cases++;};
+ const {withFrozenCreation}=await import('../src/lib/saas/creation-scope'),{createVideoGeneration}=await import('../src/lib/video/creation'),{previewVideoExecution}=await import('../src/lib/video/compile-preview'),{videoSubmissionDraft}=await import('../src/lib/video/submission-draft'),{readTaskCompiledVideoPlan,compiledVideoRetryInput}=await import('../src/lib/video/compiled-task'),{handleVideoCreationError}=await import('../src/lib/video/runtime'),{requestVideoCancellation}=await import('../src/lib/video/cancellation'),{registerMediaAsset}=await import('../src/lib/media-assets'),{validateModelConfig}=await import('../src/lib/model-config/schema');
+ const scoped=<T>(run:()=>Promise<T>)=>withFrozenCreation({actorEmail:actor,scopeKind:'personal',tenantId:null},run),original=await f.repo.current(),media={} as Record<string,string>;
+ for(const kind of ['image','video','audio']){
+  const key='compiler-inputs/'+randomUUID()+(kind==='image'?'.png':kind==='video'?'.mp4':'.wav'),filename=path.join(process.env.MEDIA_DIR!,key);
+  if(kind==='image')await writeFile(filename,await sharp({create:{width:1280,height:720,channels:3,background:'#ddffcc'}}).png().toBuffer());
+  else execFileSync('ffmpeg',kind==='video'?['-v','error','-f','lavfi','-i','color=c=blue:s=1280x720:r=10','-t','3','-c:v','libx264','-pix_fmt','yuv420p',filename]:['-v','error','-f','lavfi','-i','sine=frequency=600:duration=3','-c:a','pcm_s16le',filename],{windowsHide:true});
+  await registerMediaAsset(key,await readFile(filename),kind==='image'?'image/png':kind==='video'?'video/mp4':'audio/wav',false,actor,false);media[kind]=key;
+ }
+ const publish=async(config:typeof f.config)=>{const current=await f.repo.current(),d=await f.repo.draft('fixture-admin'),saved=await f.repo.saveDraft({id:d.id,expectedRevision:d.revision,actor:'fixture-admin',config}),pub=await f.repo.stage({id:randomUUID(),draftId:saved.id,expectedRevision:saved.revision,expectedVersion:current.version,actor:'fixture-admin',reason:'channel fixture'});return f.repo.markApplied(pub.id,pub.digest,saved.id);};
+ const seen=new Set<string>(),fixtures=channelFixtures().filter(f=>{const id=f.profile+JSON.stringify(f.recipe.channel)+JSON.stringify(f.recipe.parameters.generateAudio);if(seen.has(id))return false;seen.add(id);return true;});let positives=0;
+ for(const fixture of fixtures)if((fixture.profile.startsWith('apimart-apib-')||['geek-kling','geek-wan3'].includes(fixture.profile))&&fixture.samples.every(s=>s.intent==='text')){
+  fixture.recipe.operations.push({intent:'single_image',requiresPrompt:true,images:{min:1,max:1},videos:{min:0,max:0},audios:{min:0,max:0}});
+  fixture.samples.push({name:'new-published-image-not-smoke-permission',intent:'single_image',refs:[{id:'new-image',kind:'image',role:'first_frame'}],parameters:{aspectRatio:'16:9'}});
+ }
+ const count=async(table:string)=>Number((await pool.query(`SELECT count(*)::int n FROM ${table}`)).rows[0].n),sent=()=>channels.received.filter(x=>x.phase==='create').at(-1)!;
+ const make=(c:ChannelCase):CreateVideoInput=>({source:'workbench',modelId:'video-fixture',mode:'text',intentPreference:c.intent as CreateVideoInput['intentPreference'],prompt:'Full action',seconds:'',size:'',parameters:{resolution:'4K',...c.parameters},references:c.refs.map(i=>({...i,storageKey:media[i.kind]})),shots:c.structure?.shots});
+ try{for(const fixture of fixtures){const name=fixture.profile+'/'+fixture.model,config=structuredClone(original.config);channels.enabled=true;channels.profile=fixture.profile;channels.kind=fixture.recipe.channel!.kind;
+  config.providers[0].protocol=channelVideoProtocol(fixture.profile)!;config.providers[0].baseUrl=f.origin;config.providers[0].options={videoProfile:fixture.profile as import('../src/lib/video/capability-schema').VideoWireProfile,idempotencyStrategy:'header'};config.upstreamModels[0].model='future-unknown-channel-model';config.upstreamModels[0].parameterMap={videoExecution:{schemaVersion:1,profileId:'native-video',profileVersion:1,recipe:fixture.recipe}};
+  const wrong=structuredClone(config);wrong.providers[0].protocol=config.providers[0].protocol==='apimart'?'openai-videos':'apimart';check(name+'-wrong-query-protocol-rejected',()=>assert.throws(()=>validateModelConfig(wrong,{trustedOrigins:[f.origin]})));await publish(config);
+  let first=true;
+  for(const sample of fixture.samples){const base=make(sample),before=await Promise.all(['app_video_tasks','app_gen_reservations','app_ledger'].map(count)),posts=input.posts(),preview=await scoped(()=>previewVideoExecution(actor,{modelId:'video-fixture',draftRevision:1,draft:videoSubmissionDraft(base)}));assert(preview.ok,name+'/'+sample.name+JSON.stringify(preview));assert.equal(input.posts(),posts);assert.deepEqual(await Promise.all(['app_video_tasks','app_gen_reservations','app_ledger'].map(count)),before);
+   const receipt=await scoped(()=>createVideoGeneration(actor,{...base,idempotencyKey:randomUUID()})),queued=await task(receipt.taskId),plan=readTaskCompiledVideoPlan(actor,queued);check(name+'/'+sample.name+'-preview-no-effects-single-mapping',()=>{assert.equal(plan.digest,preview.value.planDigest);assert.equal(plan.requestedParameters.resolution,'4K');assert.equal(plan.identity.wireModel,'future-unknown-channel-model');assert.equal(plan.intent,sample.intent);assert.equal(plan.schemaVersion,sample.structure?5:4);});
+   if(first){first=false;const newer=structuredClone(config),ex=newer.upstreamModels[0].parameterMap.videoExecution!;assert(ex.profileId==='native-video');ex.recipe.createPath='/changed-after-acceptance';await publish(newer);}
+   await dispatch(queued);check(name+'/'+sample.name+'-actual-frozen-wire-all-original-media',()=>{const wire=sent();assert.equal(wire.body!.model,'future-unknown-channel-model');assert.equal(wire.key,queued.idempotencyKey);assert(!JSON.stringify(wire.body).includes('$videoAsset'));assert(!wire.path.includes('changed-after'));assert.equal(plan.inputManifest.filter(i=>i.kind!=='text').length,sample.refs.length);if(sample.structure)assert.equal(wire.body!.multi_prompt.length,2);});
+   const done=await finish(queued.id);check(name+'/'+sample.name+'-query-real-result-history-billing',()=>{assert.equal(done.status,'completed',done.error);assert(done.artworkId&&done.resultStorageKey);});assert.equal((await pool.query('SELECT count(*)::int n FROM app_ledger WHERE id=$1',[`led-video-${done.id}`])).rows[0].n,1);positives++;await publish(config);
+  }
+  const base=make(fixture.samples[0]),none=await Promise.all(['app_video_tasks','app_gen_reservations'].map(count));await assert.rejects(()=>scoped(()=>createVideoGeneration(actor,{...base,parameters:{...base.parameters,unmapped:1},idempotencyKey:randomUUID()})),{code:'PARAMETER_MAPPING_MISSING'});check(name+'-compile-error-zero-task-or-reservation',()=>{});assert.deepEqual(await Promise.all(['app_video_tasks','app_gen_reservations'].map(count)),none);
+  const badReceipt=await scoped(()=>createVideoGeneration(actor,{...base,idempotencyKey:randomUUID()})),bad=await task(badReceipt.taskId);input.setMode('reject');try{await dispatch(bad);}catch(e){await handleVideoCreationError(actor,bad,e);}finally{input.setMode('ok');}const failed=await task(bad.id);check(name+'-explicit-reject-refund',()=>assert.equal(failed.status,'failed'));assert.equal((await pool.query('SELECT count(*)::int n FROM app_gen_reservations WHERE job_id=$1',[bad.id])).rows[0].n,0);
+  const rr=await scoped(()=>createVideoGeneration(actor,{...compiledVideoRetryInput(actor,failed),idempotencyKey:randomUUID()})),rt=await task(rr.taskId);await dispatch(rt);await finish(rt.id);check(name+'-retry-original-parameters',()=>assert.equal(readTaskCompiledVideoPlan(actor,rt).requestedParameters.resolution,'4K'));
+  const ur=await scoped(()=>createVideoGeneration(actor,{...base,idempotencyKey:randomUUID()})),ut=await task(ur.taskId);input.setMode('disconnect');try{await dispatch(ut);}catch(e){await handleVideoCreationError(actor,ut,e);}finally{input.setMode('ok');}const unknown=await task(ut.id),before=input.posts();await dispatch(unknown).catch(()=>{});check(name+'-unknown-never-reposts',()=>{assert.equal(unknown.errorCode,'creation_unknown');assert.equal(input.posts(),before);});
+  const cr=await scoped(()=>createVideoGeneration(actor,{...base,idempotencyKey:randomUUID()})),ct=await task(cr.taskId);await scoped(()=>requestVideoCancellation(actor,ct.id));const canceled=input.posts();await dispatch(await task(ct.id));check(name+'-cancel-before-transport',()=>assert.equal(input.posts(),canceled));
+ }
+ console.log(`VIDEO_COMPILED_CHANNELS=PASS CASES=${cases} WIRE_PROFILES=13 FIELD_VARIANTS=${fixtures.length} POSITIVE_INPUTS=${positives} REAL_PG=true REAL_HTTP=true PAID_CALLS=0`);
+ }finally{channels.enabled=false;input.setMode('ok');await publish(original.config);}
+}

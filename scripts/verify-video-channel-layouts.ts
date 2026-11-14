@@ -1,0 +1,51 @@
+import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
+import {channelFixtures,type ChannelCase,type ChannelFixture} from './video-channel-cases';
+import {compileVideoRequest,prepareVideoDraftConstraints,readCompiledVideoPlan} from '../src/lib/video/compile';
+import {createNativeVideoProfile,nativeVideoRecipeSchema} from '../src/lib/video/profiles/native-profile';
+import {emptyVideoExecutionPolicy,type ResolvedVideoDraft,type VideoResult} from '../src/lib/video/execution-contract';
+import {materializeJsonVideoPlan} from '../src/lib/video/profiles/json-materialization';
+import {buildVideoCreate} from '../src/lib/video/providers/wire';
+import type {VideoWireContext} from '../src/lib/video/providers/wire-contracts';
+import {CHANNEL_VIDEO_LAYOUTS} from '../src/lib/video/profiles/channel-contract';
+const value=<T>(r:VideoResult<T>):T=>{assert(r.ok,JSON.stringify(r));return r.value;};
+export const channelDraft=(f:ChannelFixture,c:ChannelCase):ResolvedVideoDraft=>({scope:{actorId:'fixture',projectKey:null},prompt:'Full action',legacyMode:'text',intentPreference:c.intent as ResolvedVideoDraft['intentPreference'],structure:c.structure,parameters:{resolution:'4K',...c.parameters},inputs:c.refs.map(i=>({...i,nodeId:i.id,asset:{storageKey:i.id,sha256:createHash('sha256').update(i.id).digest('hex'),bytes:100,mimeType:i.kind==='image'?'image/png':i.kind==='video'?'video/mp4':'audio/wav',...(i.kind==='audio'?{durationSeconds:3}:{width:1280,height:720,...(i.kind==='video'?{durationSeconds:3}:{})})}}))});
+export const channelBinding=(f:ChannelFixture)=>({publicModelId:'public',wireModel:f.model,connectionId:'channel',revision:1,profileId:'native-video',profileVersion:1,recipe:f.recipe});
+async function main(){let cases=0,parity=0;const fixtures=channelFixtures(),profiles=new Set<string>();
+ const check=(name:string,fn:()=>void)=>{fn();cases++;console.log('CASE='+name+' PASS');};
+ for(const f of fixtures){profiles.add(f.profile);assert(nativeVideoRecipeSchema.safeParse(f.recipe).success,JSON.stringify(f));
+  for(const c of f.samples){const draft=channelDraft(f,c),plan=value(compileVideoRequest({profile:createNativeVideoProfile(),binding:channelBinding(f),policy:emptyVideoExecutionPolicy(),draft}));
+   const result=value(await materializeJsonVideoPlan(plan,{url:async(_s,a)=>({ok:true,value:{asset:a,url:'https://owned.example/'+a.storageKey}})}));
+   const reference=(i:ChannelCase['refs'][number])=>({...i,url:'https://owned.example/'+i.id,mimeType:i.kind==='image'?'image/png':i.kind==='video'?'video/mp4':'audio/wav',bytes:100,...(i.kind==='audio'?{durationSeconds:3}:{width:1280,height:720,...(i.kind==='video'?{durationSeconds:3}:{})})});
+   const input={source:'workbench',modelId:f.model,prompt:'Full action',mode:c.intent,durationSeconds:plan.effectiveParameters.durationSeconds,resolution:plan.effectiveParameters.resolution,aspectRatio:plan.effectiveParameters.aspectRatio,...(plan.effectiveParameters.generateAudio!==undefined?{generateAudio:plan.effectiveParameters.generateAudio}:{}),references:c.refs.map(reference),shots:c.structure?.shots};
+   let old;try{old=buildVideoCreate({profile:f.profile,provider:{},request:input} as unknown as VideoWireContext);}catch(e){throw new Error(f.profile+'/'+f.model+'/'+c.name+' OLD_CODEC: '+String(e));}
+   check(f.profile+'/'+f.model+'/'+c.name+'-actual-codec-parity',()=>{assert.equal(result.path,old.path);assert.deepEqual(result.body,JSON.parse(JSON.stringify(old.body)));assert(readCompiledVideoPlan(plan).ok);assert.equal(plan.requestedParameters.resolution,'4K');});parity++;
+   const {scope:_scope,...pending}=draft;const prepared=value(prepareVideoDraftConstraints({profile:createNativeVideoProfile(),binding:channelBinding(f),policy:emptyVideoExecutionPolicy(),draft:{...pending,inputs:pending.inputs.map(i=>({id:i.id,nodeId:i.nodeId,kind:i.kind,role:i.role}))}}));
+   check(f.profile+'/'+f.model+'/'+c.name+'-same-preparation-no-fake-facts',()=>assert.deepEqual(prepared,{intent:plan.intent,effectiveParameters:plan.effectiveParameters,billingFacts:plan.billingFacts}));
+   const unknown=value(compileVideoRequest({profile:createNativeVideoProfile(),binding:{...channelBinding(f),wireModel:'future-model-not-in-old-name-lists'},policy:emptyVideoExecutionPolicy(),draft}));check(f.profile+'/'+f.model+'/'+c.name+'-new-name-same-published-mapping',()=>assert.equal((unknown.wireTemplate.body as any).model,'future-model-not-in-old-name-lists'));
+  }
+ }
+ assert.deepEqual([...profiles].sort(),[...CHANNEL_VIDEO_LAYOUTS].sort());
+ const h3=fixtures.find(f=>f.profile==='geek-h3-v3')!,sample=h3.samples.find(c=>c.intent==='single_image')!,plan=value(compileVideoRequest({profile:createNativeVideoProfile(),binding:channelBinding(h3),policy:emptyVideoExecutionPolicy(),draft:channelDraft(h3,sample)}));
+ const http=await materializeJsonVideoPlan(plan,{url:async(_s,a)=>({ok:true,value:{asset:a,url:'http://owned.example/input'}})});check('h3-https-required-at-real-url-materialization',()=>{assert(!http.ok);assert.equal(http.diagnostics[0].code,'INVALID_MEDIA_ADDRESS');});
+ const compile=(f:ChannelFixture,d:ResolvedVideoDraft)=>compileVideoRequest({profile:createNativeVideoProfile(),binding:channelBinding(f),policy:emptyVideoExecutionPolicy(),draft:d});
+ const code=(r:VideoResult<unknown>)=>r.ok?'OK':r.diagnostics[0].code;
+ const k26=fixtures.find(f=>f.profile==='apib-video-v2'&&f.model==='kling-v2-6')!,ktext=k26.samples.find(c=>c.intent==='text')!;
+ check('actual-kling-standard-audio-conflict-retained',()=>assert.equal(code(compile(k26,{...channelDraft(k26,ktext),parameters:{resolution:'4K',generateAudio:true}})),'AUDIO_PARAMETER_CONFLICT'));
+ const omitted=structuredClone(k26);omitted.recipe.parameters.generateAudio.send='omit';const omitPlan=value(compile(omitted,channelDraft(omitted,ktext)));
+ check('explicit-audio-omit-not-replaced-with-old-default',()=>assert(!Object.hasOwn(omitPlan.wireTemplate.body as object,'audio')));
+ const missing=structuredClone(k26.recipe);delete missing.channel;check('channel-field-recipe-required-not-model-fallback',()=>assert(!nativeVideoRecipeSchema.safeParse(missing).success));
+ const seed20=fixtures.find(f=>f.profile==='apib-video-v3'&&f.model==='seedance-2.0')!,mix20=seed20.samples.find(c=>c.name==='multimodal')!,short=channelDraft(seed20,mix20);const source=short.inputs.find(i=>i.kind==='video')!;assert(source.kind!=='text');source.asset.durationSeconds=1.8;
+ check('seedance-video-total-open-lower-bound',()=>assert.equal(code(compile(seed20,short)),'MEDIA_PROPERTIES_OUT_OF_RANGE'));
+ const seed25=fixtures.find(f=>f.profile==='apib-video-v3'&&f.model==='seedance-2.5')!,small=channelDraft(seed25,seed25.samples.find(c=>c.name==='multimodal')!);const smallVideo=small.inputs.find(i=>i.kind==='video')!;assert(smallVideo.kind!=='text');smallVideo.asset.width=639;smallVideo.asset.height=640;
+ check('seedance-video-true-pixel-count-boundary',()=>assert.equal(code(compile(seed25,small)),'MEDIA_PROPERTIES_OUT_OF_RANGE'));
+ const wan=fixtures.find(f=>f.profile==='apib-video-v3'&&f.model==='wan3.0-video')!,long=channelDraft(wan,wan.samples.find(c=>c.name==='multimodal')!);long.parameters.durationSeconds=28;
+ check('wan-real-source-plus-output-total',()=>assert.equal(code(compile(wan,long)),'MEDIA_PROPERTIES_OUT_OF_RANGE'));
+ const mismatch=channelDraft(h3,h3.samples.find(c=>c.intent==='frames_required')!);assert(mismatch.inputs[1].kind!=='text');mismatch.inputs[1].asset.height=800;
+ check('h3-real-frame-ratio-tolerance',()=>assert.equal(code(compile(h3,mismatch)),'MEDIA_PROPERTIES_OUT_OF_RANGE'));
+ const ordinary=channelDraft(seed20,mix20);ordinary.inputs=ordinary.inputs.filter(i=>i.kind==='image');ordinary.inputs.push({...ordinary.inputs[0],id:'ordinary2',nodeId:'ordinary2'});
+ const ordinaryPlan=value(compile(seed20,{...ordinary,intentPreference:undefined}));check('two-ordinary-images-not-invented-frames',()=>{assert.equal(ordinaryPlan.intent,'reference');assert.equal(code(compile(seed20,{...ordinary,intentPreference:'frames_required'})),'FRAME_INPUT_REQUIRED');});
+ const audioOnly=channelDraft(h3,h3.samples.find(c=>c.name==='multimodal')!);audioOnly.inputs=audioOnly.inputs.filter(i=>i.kind==='audio');check('h3-audio-keeps-real-visual-dependency',()=>assert.equal(code(compile(h3,audioOnly)),'NATIVE_MEDIA_COMBINATION_INVALID'));
+ console.log(`VIDEO_CHANNEL_LAYOUTS=PASS CASES=${cases} WIRE_PROFILES=${profiles.size} MODEL_RECIPES=${fixtures.length} LEGACY_WIRE_PARITY=${parity} NETWORK=0`);
+}
+if(!process.argv.includes('--import-only'))void main().catch(e=>{console.error(e);process.exitCode=1;});

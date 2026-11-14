@@ -32,7 +32,7 @@ export async function materializeJsonVideoPlan(raw:unknown,ports:{
           return {ok:false,diagnostics:[videoDiagnostic('input','FROZEN_MEDIA_CHANGED','inputs','冻结素材的身份或真实属性已变化','重新选择素材并显式创建新任务')]};
         try{
           const address=new URL(result.value.url);
-          if(!['https:','http:'].includes(address.protocol)||address.username||address.password||result.value.url.length>16384)throw Error();
+          if(!['https:','http:'].includes(address.protocol)||address.username||address.password||result.value.url.length>16384||plan.wireTemplate.mediaUrlProtocol==='https'&&address.protocol!=='https:')throw Error();
           url=address.href;
         }catch{return {ok:false,diagnostics:[videoDiagnostic('mapping','INVALID_MEDIA_ADDRESS','inputs','执行器未返回有效的媒体访问地址','检查媒体签名或代理配置')]};}
         cache.set(key,url);

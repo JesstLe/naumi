@@ -1,5 +1,7 @@
 import {JOB_VIDEO_LAYOUTS,isJobVideoLayout,jobVideoProtocol,jobVideoIntents,jobStructurePresentation} from './job-structure';
 import {compileJobVideoLayout,deriveJobVideoIntent,jobDurationSource} from './job-layouts';
+import {CHANNEL_VIDEO_LAYOUTS,isChannelVideoLayout,channelVideoProtocol,channelVideoIntents,channelVideoMappingSchema,channelMappingMatches,channelOperationMatches,channelStructurePresentation} from './channel-contract';
+import {compileChannelVideoLayout} from './channel-layouts';
 import type {VideoUiContract} from '../ui-contract';
 import {NESTED_VIDEO_LAYOUTS,deriveNestedVideoIntent,compileNestedVideoLayout,isNestedVideoLayout,nestedVideoIntents,nestedVideoProtocol} from './nested-layouts';
 import {z} from 'zod';
@@ -14,7 +16,8 @@ const count=z.strictObject({min:z.number().int().nonnegative().default(0),max:z.
 /** Native families own nested layout/physical limits; bindings own published
  * semantic parameters and available operations. No model-name inference. */
 export const nativeVideoRecipeSchema=z.strictObject({
- layout:z.enum(['openai-videos','openai-legacy','gemini','grok2api','cogvideox3','agnes','agnes-v25','ark','minimax','metaso',...NESTED_VIDEO_LAYOUTS,...JOB_VIDEO_LAYOUTS]),
+ layout:z.enum(['openai-videos','openai-legacy','gemini','grok2api','cogvideox3','agnes','agnes-v25','ark','minimax','metaso',...NESTED_VIDEO_LAYOUTS,...JOB_VIDEO_LAYOUTS,...CHANNEL_VIDEO_LAYOUTS]),
+ channel:channelVideoMappingSchema.optional(),
  queryTransport:z.literal('direct').optional(),
  modes:z.record(z.string().min(1),z.string().min(1)).optional(),
  frameSchedules:z.record(z.string().min(1),z.strictObject({frameRate:z.number().int().positive(),numFrames:z.number().int().min(9).max(441).refine(n=>(n-1)%8===0)})).optional(),
@@ -30,7 +33,9 @@ export const nativeVideoRecipeSchema=z.strictObject({
  for(const rules of [v.parameters,...v.operations.map(o=>o.parameters??{})])for(const [name,rule]of Object.entries(rules)){
   if(core.includes(name)&&rule.send!=='omit'&&(rule.send!=='semantic'||rule.wireField!==undefined||rule.wireMapping!==undefined))ctx.addIssue({code:'custom',message:'原生核心参数须使用semantic映射，wire字段归协议编译器'});
  }
- const intents=jobVideoIntents(v.layout)??nestedVideoIntents(v.layout)??(['agnes-v25','ark','minimax','metaso'].includes(v.layout)?['text','single_image','frames_required','first_optional','last_optional','reference','video_edit','extend']:['gemini','cogvideox3','agnes','compshare-hailuo'].includes(v.layout)?['text','single_image','frames_required','reference']:['text','single_image','reference']);
+ if(isChannelVideoLayout(v.layout)?!v.channel||!channelMappingMatches(v.layout,v.channel):v.channel!==undefined)ctx.addIssue({code:'custom',message:'通道布局缺少对应的显式字段配方'});
+ if(v.channel&&v.operations.some(op=>!channelOperationMatches(v.channel!,op.intent)))ctx.addIssue({code:'custom',message:'通道操作缺少对应的实际字段布局'});
+ const intents=channelVideoIntents(v.layout)??jobVideoIntents(v.layout)??nestedVideoIntents(v.layout)??(['agnes-v25','ark','minimax','metaso'].includes(v.layout)?['text','single_image','frames_required','first_optional','last_optional','reference','video_edit','extend']:['gemini','cogvideox3','agnes','compshare-hailuo'].includes(v.layout)?['text','single_image','frames_required','reference']:['text','single_image','reference']);
  if(v.operations.some(o=>!intents.includes(o.intent)))ctx.addIssue({code:'custom',message:'操作缺少此原生协议的真实字段布局'});
  if(v.queryTransport==='direct'&&!['ark','minimax','gemini'].includes(v.layout)&&!isJobVideoLayout(v.layout))ctx.addIssue({code:'custom',message:'此原生布局没有对应的direct查询解码器'});
  if(v.createPath&&v.layout==='gemini'&&!v.createPath.includes('{model}'))ctx.addIssue({code:'custom',message:'Gemini自定义路径须声明模型位置'});
@@ -40,14 +45,14 @@ export type NativeVideoDescription=Omit<NativeVideoRecipe,'operations'>&{operati
 /** Query/decoder selection is part of the same frozen transport contract. */
 export function nativeVideoQueryMatches(layout:NativeVideoRecipe['layout'],profile:string|undefined,protocol:string,queryTransport?:'direct'):boolean{
  if(queryTransport==='direct')return !profile&&(isJobVideoLayout(layout)?protocol===jobVideoProtocol(layout):['ark','minimax','gemini'].includes(layout)&&protocol===layout);
- return layout==='openai-legacy'?!profile&&protocol==='openai-videos':profile===layout&&protocol===(jobVideoProtocol(layout)??nestedVideoProtocol(layout)??(['gemini','ark','minimax','metaso'].includes(layout)?layout:'openai-videos'));
+ return layout==='openai-legacy'?!profile&&protocol==='openai-videos':profile===layout&&protocol===(channelVideoProtocol(layout)??jobVideoProtocol(layout)??nestedVideoProtocol(layout)??(['gemini','ark','minimax','metaso'].includes(layout)?layout:'openai-videos'));
 }
 const fail=(code:string,field:string,reason:string):VideoResult<never>=>({ok:false,diagnostics:[videoDiagnostic('mapping',code,field,reason,'调整输入或修正已发布协议映射')]});
 type Json=VideoProfileOutput['wireTemplate']['body'];
 
 export function createNativeVideoProfile():VideoModelProfile {
  return {profileId:'native-video',version:1,
-  describe(binding){const recipe=nativeVideoRecipeSchema.safeParse(binding.recipe);return recipe.success?{ok:true,value:{profileId:'native-video',profileVersion:1,bindingRevision:binding.revision,description:{...recipe.data,operations:recipe.data.operations.map(op=>({...op,...(jobStructurePresentation(recipe.data.layout,op.intent)?{structure:jobStructurePresentation(recipe.data.layout,op.intent)}:{})}))}}}:fail('NATIVE_PROFILE_MAPPING_MISSING','recipe','原生协议映射无效');},
+  describe(binding){const recipe=nativeVideoRecipeSchema.safeParse(binding.recipe);return recipe.success?{ok:true,value:{profileId:'native-video',profileVersion:1,bindingRevision:binding.revision,description:{...recipe.data,operations:recipe.data.operations.map(op=>({...op,...(recipe.data.channel?.shots?{structure:channelStructurePresentation(recipe.data.channel)}:jobStructurePresentation(recipe.data.layout,op.intent)?{structure:jobStructurePresentation(recipe.data.layout,op.intent)}:{})}))}}}:fail('NATIVE_PROFILE_MAPPING_MISSING','recipe','原生协议映射无效');},
   prepareDraft(draft,contract,binding){const result=mapDraft(draft,contract.description as NativeVideoRecipe,binding.wireModel);if(!result.ok)return result;const {intent,effectiveParameters,billingFacts}=result.value;const sourceId=isJobVideoLayout((contract.description as NativeVideoRecipe).layout)?jobDurationSource(draft,(contract.description as NativeVideoRecipe).layout):undefined;return {ok:true,value:{intent,effectiveParameters,billingFacts,...(sourceId?{durationFromInputId:sourceId}:{})}};},
   compile(draft,contract,binding){
    // Byte size is a real materialization limit, not legacy metadata permission.
@@ -64,10 +69,11 @@ export function createNativeVideoProfile():VideoModelProfile {
 }
 
 function mapDraft(draft:VideoExecutionDraft,recipe:NativeVideoRecipe,model:string,assets?:Record<string,ResolvedVideoAsset>):VideoResult<VideoProfileOutput>{
- if(draft.structure&&!isJobVideoLayout(recipe.layout))return fail('STRUCTURE_NOT_CONSUMED','structure','此原生协议尚未映射镜头或元素分组');
+ if(draft.structure&&!isJobVideoLayout(recipe.layout)&&!isChannelVideoLayout(recipe.layout))return fail('STRUCTURE_NOT_CONSUMED','structure','此原生协议尚未映射镜头或元素分组');
  const intent=deriveJobVideoIntent(draft,recipe.layout)??deriveNestedVideoIntent(draft,recipe.layout)??deriveVideoIntent(draft,recipe.defaults);if(!intent.ok)return intent;
  const operation=recipe.operations.find(o=>o.intent===intent.value);if(!operation)return fail('INPUT_INTENT_NOT_MAPPABLE','intentPreference','此绑定没有该输入意图的协议映射');
  const media=draft.inputs.filter(i=>i.kind!=='text'),images=media.filter(i=>i.kind==='image');
+ if(isChannelVideoLayout(recipe.layout))return compileChannelVideoLayout(draft,recipe,model,intent.value,operation,assets);
  if(isJobVideoLayout(recipe.layout))return compileJobVideoLayout(draft,recipe,model,intent.value,operation,assets);
  if(isNestedVideoLayout(recipe.layout))return compileNestedVideoLayout(draft,recipe,model,intent.value,operation);
  if(isReferenceVideoLayout(recipe.layout))return compileReferenceVideoLayout(draft,recipe,model,intent.value,operation);
