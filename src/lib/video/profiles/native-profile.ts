@@ -1,18 +1,22 @@
+import {JOB_VIDEO_LAYOUTS,isJobVideoLayout,jobVideoProtocol,jobVideoIntents,jobStructurePresentation} from './job-structure';
+import {compileJobVideoLayout,deriveJobVideoIntent,jobDurationSource} from './job-layouts';
+import type {VideoUiContract} from '../ui-contract';
 import {NESTED_VIDEO_LAYOUTS,deriveNestedVideoIntent,compileNestedVideoLayout,isNestedVideoLayout,nestedVideoIntents,nestedVideoProtocol} from './nested-layouts';
 import {z} from 'zod';
 import {videoParameterSchema,mapVideoParameters} from './parameters';
 import {compileReferenceVideoLayout,isReferenceVideoLayout} from './reference-layouts';
 import {deriveVideoIntent} from '../intent';
 import {compileVideoPrompt} from '../prompt';
-import {videoDiagnostic,videoIntentSchema,type VideoModelProfile,type VideoExecutionDraft,type VideoProfileOutput,type VideoResult} from '../execution-contract';
+import {videoDiagnostic,videoIntentSchema,type VideoModelProfile,type VideoExecutionDraft,type VideoProfileOutput,type VideoResult,type ResolvedVideoAsset} from '../execution-contract';
 
 const field=z.string().regex(/^[a-zA-Z][a-zA-Z0-9_]{0,99}$/).refine(v=>!['constructor','prototype','__proto__'].includes(v));
 const count=z.strictObject({min:z.number().int().nonnegative().default(0),max:z.number().int().nonnegative().optional(),maxBytes:z.number().int().positive().optional(),maxDurationSeconds:z.number().positive().optional(),totalDurationSeconds:z.number().positive().optional()}).refine(v=>v.max===undefined||v.max>=v.min);
 /** Native families own nested layout/physical limits; bindings own published
  * semantic parameters and available operations. No model-name inference. */
 export const nativeVideoRecipeSchema=z.strictObject({
- layout:z.enum(['openai-videos','openai-legacy','gemini','grok2api','cogvideox3','agnes','agnes-v25','ark','minimax','metaso',...NESTED_VIDEO_LAYOUTS]),
+ layout:z.enum(['openai-videos','openai-legacy','gemini','grok2api','cogvideox3','agnes','agnes-v25','ark','minimax','metaso',...NESTED_VIDEO_LAYOUTS,...JOB_VIDEO_LAYOUTS]),
  queryTransport:z.literal('direct').optional(),
+ modes:z.record(z.string().min(1),z.string().min(1)).optional(),
  frameSchedules:z.record(z.string().min(1),z.strictObject({frameRate:z.number().int().positive(),numFrames:z.number().int().min(9).max(441).refine(n=>(n-1)%8===0)})).optional(),
  createPath:z.string().regex(/^\/(?!\/)[^?#\s]*$/).optional(),
  // Exact published semantic resolution/ratio -> physical request size.
@@ -26,43 +30,45 @@ export const nativeVideoRecipeSchema=z.strictObject({
  for(const rules of [v.parameters,...v.operations.map(o=>o.parameters??{})])for(const [name,rule]of Object.entries(rules)){
   if(core.includes(name)&&rule.send!=='omit'&&(rule.send!=='semantic'||rule.wireField!==undefined||rule.wireMapping!==undefined))ctx.addIssue({code:'custom',message:'原生核心参数须使用semantic映射，wire字段归协议编译器'});
  }
- const intents=nestedVideoIntents(v.layout)??(['agnes-v25','ark','minimax','metaso'].includes(v.layout)?['text','single_image','frames_required','first_optional','last_optional','reference','video_edit','extend']:['gemini','cogvideox3','agnes','compshare-hailuo'].includes(v.layout)?['text','single_image','frames_required','reference']:['text','single_image','reference']);
+ const intents=jobVideoIntents(v.layout)??nestedVideoIntents(v.layout)??(['agnes-v25','ark','minimax','metaso'].includes(v.layout)?['text','single_image','frames_required','first_optional','last_optional','reference','video_edit','extend']:['gemini','cogvideox3','agnes','compshare-hailuo'].includes(v.layout)?['text','single_image','frames_required','reference']:['text','single_image','reference']);
  if(v.operations.some(o=>!intents.includes(o.intent)))ctx.addIssue({code:'custom',message:'操作缺少此原生协议的真实字段布局'});
- if(v.queryTransport==='direct'&&!['ark','minimax','gemini'].includes(v.layout))ctx.addIssue({code:'custom',message:'此原生布局没有对应的direct查询解码器'});
+ if(v.queryTransport==='direct'&&!['ark','minimax','gemini'].includes(v.layout)&&!isJobVideoLayout(v.layout))ctx.addIssue({code:'custom',message:'此原生布局没有对应的direct查询解码器'});
  if(v.createPath&&v.layout==='gemini'&&!v.createPath.includes('{model}'))ctx.addIssue({code:'custom',message:'Gemini自定义路径须声明模型位置'});
 });
 export type NativeVideoRecipe=z.infer<typeof nativeVideoRecipeSchema>;
+export type NativeVideoDescription=Omit<NativeVideoRecipe,'operations'>&{operations:Array<NativeVideoRecipe['operations'][number]&{structure?:VideoUiContract['operations'][number]['structure']}>};
 /** Query/decoder selection is part of the same frozen transport contract. */
 export function nativeVideoQueryMatches(layout:NativeVideoRecipe['layout'],profile:string|undefined,protocol:string,queryTransport?:'direct'):boolean{
- if(queryTransport==='direct')return !profile&&['ark','minimax','gemini'].includes(layout)&&protocol===layout;
- return layout==='openai-legacy'?!profile&&protocol==='openai-videos':profile===layout&&protocol===(nestedVideoProtocol(layout)??(['gemini','ark','minimax','metaso'].includes(layout)?layout:'openai-videos'));
+ if(queryTransport==='direct')return !profile&&(isJobVideoLayout(layout)?protocol===jobVideoProtocol(layout):['ark','minimax','gemini'].includes(layout)&&protocol===layout);
+ return layout==='openai-legacy'?!profile&&protocol==='openai-videos':profile===layout&&protocol===(jobVideoProtocol(layout)??nestedVideoProtocol(layout)??(['gemini','ark','minimax','metaso'].includes(layout)?layout:'openai-videos'));
 }
 const fail=(code:string,field:string,reason:string):VideoResult<never>=>({ok:false,diagnostics:[videoDiagnostic('mapping',code,field,reason,'调整输入或修正已发布协议映射')]});
 type Json=VideoProfileOutput['wireTemplate']['body'];
 
 export function createNativeVideoProfile():VideoModelProfile {
  return {profileId:'native-video',version:1,
-  describe(binding){const recipe=nativeVideoRecipeSchema.safeParse(binding.recipe);return recipe.success?{ok:true,value:{profileId:'native-video',profileVersion:1,bindingRevision:binding.revision,description:recipe.data}}:fail('NATIVE_PROFILE_MAPPING_MISSING','recipe','原生协议映射无效');},
-  prepareDraft(draft,contract,binding){const result=mapDraft(draft,contract.description as NativeVideoRecipe,binding.wireModel);if(!result.ok)return result;const {intent,effectiveParameters,billingFacts}=result.value;return {ok:true,value:{intent,effectiveParameters,billingFacts}};},
+  describe(binding){const recipe=nativeVideoRecipeSchema.safeParse(binding.recipe);return recipe.success?{ok:true,value:{profileId:'native-video',profileVersion:1,bindingRevision:binding.revision,description:{...recipe.data,operations:recipe.data.operations.map(op=>({...op,...(jobStructurePresentation(recipe.data.layout,op.intent)?{structure:jobStructurePresentation(recipe.data.layout,op.intent)}:{})}))}}}:fail('NATIVE_PROFILE_MAPPING_MISSING','recipe','原生协议映射无效');},
+  prepareDraft(draft,contract,binding){const result=mapDraft(draft,contract.description as NativeVideoRecipe,binding.wireModel);if(!result.ok)return result;const {intent,effectiveParameters,billingFacts}=result.value;const sourceId=isJobVideoLayout((contract.description as NativeVideoRecipe).layout)?jobDurationSource(draft,(contract.description as NativeVideoRecipe).layout):undefined;return {ok:true,value:{intent,effectiveParameters,billingFacts,...(sourceId?{durationFromInputId:sourceId}:{})}};},
   compile(draft,contract,binding){
    // Byte size is a real materialization limit, not legacy metadata permission.
    if(['openai-videos','openai-legacy','gemini','grok2api','cogvideox3','agnes','compshare-hailuo'].includes((contract.description as NativeVideoRecipe).layout)&&draft.inputs.some(i=>i.kind!=='text'&&i.asset.bytes>12*1024*1024))return fail('MEDIA_PROPERTIES_OUT_OF_RANGE','inputs','原生内联图片超过12MiB字节限制');
    const recipe=contract.description as NativeVideoRecipe;
-   const intent=deriveNestedVideoIntent(draft,recipe.layout)??deriveVideoIntent(draft,recipe.defaults);if(!intent.ok)return intent;
+   const intent=deriveJobVideoIntent(draft,recipe.layout)??deriveNestedVideoIntent(draft,recipe.layout)??deriveVideoIntent(draft,recipe.defaults);if(!intent.ok)return intent;
    const operation=recipe.operations.find(o=>o.intent===intent.value);
    for(const kind of ['image','video','audio'] as const){
     const rule=operation?.[({image:'images',video:'videos',audio:'audios'} as const)[kind]],items=draft.inputs.filter(i=>i.kind===kind);
     if(rule&&(items.some(i=>i.kind!=='text'&&(rule.maxBytes!==undefined&&i.asset.bytes>rule.maxBytes||rule.maxDurationSeconds!==undefined&&(i.asset.durationSeconds??0)>rule.maxDurationSeconds))||rule.totalDurationSeconds!==undefined&&items.reduce((n,i)=>n+(i.kind==='text'?0:i.asset.durationSeconds??0),0)>rule.totalDurationSeconds))return fail('MEDIA_PROPERTIES_OUT_OF_RANGE','inputs','素材真实大小或时长超过协议约束');
    }
-   return mapDraft({...draft,inputs:draft.inputs.map(i=>({id:i.id,nodeId:i.nodeId,kind:i.kind,role:i.role,value:i.kind==='text'?i.text:i.asset.storageKey}))},contract.description as NativeVideoRecipe,binding.wireModel);
+   return mapDraft({...draft,inputs:draft.inputs.map(i=>({id:i.id,nodeId:i.nodeId,kind:i.kind,role:i.role,value:i.kind==='text'?i.text:i.asset.storageKey}))},contract.description as NativeVideoRecipe,binding.wireModel,Object.fromEntries(draft.inputs.flatMap(i=>i.kind==='text'?[]:[[i.id,i.asset]])));
   }};
 }
 
-function mapDraft(draft:VideoExecutionDraft,recipe:NativeVideoRecipe,model:string):VideoResult<VideoProfileOutput>{
- if(draft.structure)return fail('STRUCTURE_NOT_CONSUMED','structure','此原生协议尚未映射镜头或元素分组');
- const intent=deriveNestedVideoIntent(draft,recipe.layout)??deriveVideoIntent(draft,recipe.defaults);if(!intent.ok)return intent;
+function mapDraft(draft:VideoExecutionDraft,recipe:NativeVideoRecipe,model:string,assets?:Record<string,ResolvedVideoAsset>):VideoResult<VideoProfileOutput>{
+ if(draft.structure&&!isJobVideoLayout(recipe.layout))return fail('STRUCTURE_NOT_CONSUMED','structure','此原生协议尚未映射镜头或元素分组');
+ const intent=deriveJobVideoIntent(draft,recipe.layout)??deriveNestedVideoIntent(draft,recipe.layout)??deriveVideoIntent(draft,recipe.defaults);if(!intent.ok)return intent;
  const operation=recipe.operations.find(o=>o.intent===intent.value);if(!operation)return fail('INPUT_INTENT_NOT_MAPPABLE','intentPreference','此绑定没有该输入意图的协议映射');
  const media=draft.inputs.filter(i=>i.kind!=='text'),images=media.filter(i=>i.kind==='image');
+ if(isJobVideoLayout(recipe.layout))return compileJobVideoLayout(draft,recipe,model,intent.value,operation,assets);
  if(isNestedVideoLayout(recipe.layout))return compileNestedVideoLayout(draft,recipe,model,intent.value,operation);
  if(isReferenceVideoLayout(recipe.layout))return compileReferenceVideoLayout(draft,recipe,model,intent.value,operation);
  if(media.length!==images.length||images.some(i=>!['reference','first_frame','last_frame'].includes(i.role)))return fail('INPUT_ROLE_NOT_MAPPABLE','inputs','此原生协议仅接受图片参考或首尾帧');

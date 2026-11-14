@@ -1,4 +1,4 @@
-import {nativeVideoRecipeSchema} from './profiles/native-profile';
+import {type NativeVideoDescription} from './profiles/native-profile';
 import 'server-only';
 import {bindPublishedVideoExecution,type FrozenVideoExecution} from './published-execution';
 import {workflowVideoRecipeSchema} from './profiles/workflow-profile';
@@ -18,9 +18,9 @@ export function projectVideoUiContract(frozen:FrozenVideoExecution,identity:{pub
     return {version:1,modelVersion:frozen.modelVersion,modelDigest:frozen.modelDigest,policyRevision:policy.revision,defaults:{},operations:[],workflow:{parameters:Object.fromEntries(Object.entries(recipe.parameters).filter(([,rule])=>rule.send!=='omit').map(([name,rule])=>[name,{type:rule.type,required:rule.required,default:rule.default,values:rule.values,minimum:rule.minimum,maximum:rule.maximum}])),slots:recipe.manifest.inputs.map(({name,type,required})=>({name,type,required}))}};
   }
   if(frozen.profileId==='native-video'){
-    const recipe=nativeVideoRecipeSchema.parse(described.value.description);
+    const recipe=described.value.description as NativeVideoDescription;
     return {version:1,modelVersion:frozen.modelVersion,modelDigest:frozen.modelDigest,policyRevision:policy.revision,defaults:recipe.defaults,
-      operations:recipe.operations.map(operation=>({intent:operation.intent,parameters:projectParameters({...recipe.parameters,...operation.parameters})}))};
+      operations:recipe.operations.map(operation=>({intent:operation.intent,...(operation.structure?{structure:operation.structure}:{}),parameters:projectParameters({...recipe.parameters,...operation.parameters})}))};
   }
   const recipe=jsonVideoRecipeSchema.parse(described.value.description);
   return {version:1,modelVersion:frozen.modelVersion,modelDigest:frozen.modelDigest,policyRevision:policy.revision,defaults:recipe.defaults,

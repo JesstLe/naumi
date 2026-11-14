@@ -13,6 +13,7 @@ import {compileVideoRequest,prepareVideoDraftConstraints} from './compile';
 import {videoDraftSchema,resolvedVideoDraftSchema,videoModelBindingSchema,videoExecutionPolicySchema,videoDraftPreparationSchema,videoDiagnostic,
  type VideoExecutionDraft,type ResolvedVideoDraft,type VideoResult,type CompiledVideoPlan,type VideoModelProfile,type PublishedVideoModelBinding,type VideoExecutionPolicy} from './execution-contract';
 import {prepareVideoExecution} from './prepare-execution';
+import {resolvePreparedVideoFacts} from './draft-facts';
 import type {CreateVideoInput} from './submission-types';
 
 const projectedSchema=videoDraftPreparationSchema;
@@ -57,7 +58,7 @@ export async function freezeWorkflowCompiled(actor:string,projectKey:string,inpu
  // resolved static manifest separately preserves its true owner identities.
  const staticById=new Map(preparation.resolved.inputs.map(item=>[item.id,item]));
  const draft={...preparation.draft,inputs:preparation.draft.inputs.map(item=>{const known=staticById.get(item.id);return {...item,...(known?.kind==='text'?{value:known.text}:{})};})};
- const projected=required(prepareVideoDraftConstraints({draft,binding,policy,profile}));
+ const projected=required(resolvePreparedVideoFacts(required(prepareVideoDraftConstraints({draft,binding,policy,profile})),preparation.resolved.inputs,false));
  const payload=payloadSchema.parse({schemaVersion:1,state:futureInputs.length?'dependency_pending':'prepared',binding,policy,requestDraft,draft,staticDraft:preparation.resolved,futureInputs,projected});
  return {...payload,digest:hash(payload)};
 }
@@ -121,6 +122,9 @@ export async function prepareFrozenWorkflowCompiled(actor:string,input:CreateVid
  let result:VideoResult<CompiledVideoPlan>;
  if(privateBinding){const resolved=await prepareVideoExecutionInputs(actor,input.projectKey!,draft);if(!resolved.ok)return resolved;const checked=validateResolved(resolved.value);if(!checked.ok)return checked;result=compileVideoRequest({...bound,draft:resolved.value});}
  else result=await prepareVideoExecution({actor,projectKey:input.projectKey!,draft,execution:execution!.frozen.video!.execution,identity:{publicModelId:frozen.binding.publicModelId,wireModel:frozen.binding.wireModel,connectionId:frozen.binding.connectionId},validateResolved});
- if(result.ok&&canonicalConfig({intent:result.value.intent,effectiveParameters:result.value.effectiveParameters,billingFacts:result.value.billingFacts})!==canonicalConfig(frozen.projected))return failure('WORKFLOW_SNAPSHOT_MISMATCH','最终执行事实与冻结参数准备不一致');
+ if(result.ok){
+   const expected=resolvePreparedVideoFacts(frozen.projected,result.value.inputManifest,true);if(!expected.ok)return expected;
+   if(canonicalConfig({intent:result.value.intent,effectiveParameters:result.value.effectiveParameters,billingFacts:result.value.billingFacts})!==canonicalConfig(expected.value))return failure('WORKFLOW_SNAPSHOT_MISMATCH','最终执行事实与冻结参数准备不一致');
+ }
  return result;
 }

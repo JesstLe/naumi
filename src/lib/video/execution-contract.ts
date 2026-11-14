@@ -127,7 +127,12 @@ export const videoProfileOutputSchema=z.strictObject({
 export type VideoProfileOutput=z.infer<typeof videoProfileOutputSchema>;
 // Constraint/quote preparation is not a final compiled request. Pending media
 // have declared identities only; facts are checked by the final compiler.
-export const videoDraftPreparationSchema=videoProfileOutputSchema.omit({wireTemplate:true,consumedInputIds:true,consumedStructure:true});
+export const videoDraftPreparationSchema=videoProfileOutputSchema.omit({wireTemplate:true,consumedInputIds:true,consumedStructure:true}).extend({
+  // A real source identity, not a guessed duration or supplier capability.
+  durationFromInputId:id.optional(),
+}).superRefine((value,ctx)=>{
+  if(value.durationFromInputId&&(value.billingFacts.durationSeconds!==-1||value.effectiveParameters.durationSeconds!==-1))ctx.addIssue({code:'custom',message:'待解析来源时长必须保持未知'});
+});
 export type VideoDraftPreparation=z.infer<typeof videoDraftPreparationSchema>;
 export type VideoInputContract={profileId:string;profileVersion:number;bindingRevision:number;description:unknown};
 export interface VideoModelProfile {
@@ -138,7 +143,7 @@ export interface VideoModelProfile {
   compile(draft:ResolvedVideoDraft,contract:VideoInputContract,binding:PublishedVideoModelBinding):VideoResult<VideoProfileOutput>;
 }
 export type CompiledVideoPlan={
-  schemaVersion:1|2|3|4;
+  schemaVersion:1|2|3|4|5;
   identity:Pick<PublishedVideoModelBinding,'publicModelId'|'wireModel'|'connectionId'|'profileId'|'profileVersion'>&{bindingRevision:number;policyRevision:number};
   binding:PublishedVideoModelBinding;
   policy:VideoExecutionPolicy;
@@ -154,7 +159,7 @@ export type CompiledVideoPlan={
   digest:string;
 };
 export const compiledVideoPlanSchema=z.strictObject({
-  schemaVersion:z.union([z.literal(1),z.literal(2),z.literal(3),z.literal(4)]),
+  schemaVersion:z.union([z.literal(1),z.literal(2),z.literal(3),z.literal(4),z.literal(5)]),
   identity:videoModelBindingSchema.omit({recipe:true,revision:true}).extend({bindingRevision:revision,policyRevision:revision}),
   binding:videoModelBindingSchema,policy:videoExecutionPolicySchema,
   scope:videoExecutionScopeSchema,intent:videoExecutionIntentSchema,originalPrompt:z.string().max(65536),
@@ -163,9 +168,9 @@ export const compiledVideoPlanSchema=z.strictObject({
   inputManifest:z.array(resolvedVideoInputSchema).max(256),wireTemplate:videoWireTemplateSchema,
   billingFacts:videoProfileOutputSchema.shape.billingFacts,digest:z.string().regex(/^[a-f0-9]{64}$/),
 }).superRefine((plan,ctx)=>{
-  if((plan.schemaVersion===4)!==(plan.binding.profileId==='native-video'))ctx.addIssue({code:'custom',message:'原生传输计划必须使用对应版本',path:['schemaVersion']});
+  if(([4,5].includes(plan.schemaVersion))!==(plan.binding.profileId==='native-video'))ctx.addIssue({code:'custom',message:'原生传输计划必须使用对应版本',path:['schemaVersion']});
   if((plan.schemaVersion===3)!==(plan.intent==='workflow'))ctx.addIssue({code:'custom',message:'工作流计划必须使用对应版本',path:['schemaVersion']});
-  if((plan.schemaVersion===2)!==Boolean(plan.structure))ctx.addIssue({code:'custom',message:'结构化计划必须使用对应版本',path:['schemaVersion']});
+  if(([2,5].includes(plan.schemaVersion))!==Boolean(plan.structure))ctx.addIssue({code:'custom',message:'结构化计划必须使用对应版本',path:['schemaVersion']});
   for(const key of ['publicModelId','wireModel','connectionId','profileId','profileVersion'] as const)
     if(plan.identity[key]!==plan.binding[key])ctx.addIssue({code:'custom',message:'计划身份与冻结绑定不一致',path:['identity',key]});
   if(plan.identity.bindingRevision!==plan.binding.revision||plan.identity.policyRevision!==plan.policy.revision)

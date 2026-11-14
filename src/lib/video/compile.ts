@@ -106,7 +106,7 @@ export function compileVideoRequest(args:{profile:VideoModelProfile;binding:unkn
     const media=new Set(d.inputs.filter(input=>input.kind!=='text').map(input=>input.id)),mapped=new Set<string>();
     if(!mappedAssets(value.wireTemplate.body,media,mapped)||mapped.size!==media.size)
       return {ok:false,diagnostics:[videoDiagnostic('mapping','INVALID_MEDIA_SLOT','inputs','请求模板未正确绑定全部媒体身份','修正协议模板中的素材槽')]};
-    const payload:Omit<CompiledVideoPlan,'digest'>={schemaVersion:b.profileId==='native-video'?4:value.intent==='workflow'?3:d.structure?2:1,
+    const payload:Omit<CompiledVideoPlan,'digest'>={schemaVersion:b.profileId==='native-video'?(d.structure?5:4):value.intent==='workflow'?3:d.structure?2:1,
       identity:{publicModelId:b.publicModelId,wireModel:b.wireModel,connectionId:b.connectionId,profileId:b.profileId,profileVersion:b.profileVersion,bindingRevision:b.revision,policyRevision:p.revision},
       binding:b,policy:p,
       scope:d.scope,intent:value.intent,originalPrompt:d.prompt,...(d.structure?{structure:d.structure}:{}),requestedParameters:d.parameters,
