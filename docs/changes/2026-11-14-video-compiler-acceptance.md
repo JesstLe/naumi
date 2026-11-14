@@ -100,6 +100,10 @@
 
 ## 发布与总目标
 
+### 发布工具 direct Worker 接入（2026-11-15）
+
+[模块记录](2026-11-15-video-worker-release-mode.md)：修复候选Web已分配worker、但原发布创建器仍生成缺DB/加密配置的HTTP tick caller的问题。沿用原JS配置投影/发布owner，普通与combined direct创建、共享媒体、自己执行身份、启动/恢复核对接通；HTTP历史路径保持。真实创建器→固定Web/Worker→隔离PG的20项空扫描/控制/停启与环境分离验证补充A14/A19，独立副本回退与集成以四产物为准。当前proof包不是新整站生产构建，不替代带任务、付费上游或Nginx蓝绿。总目标ACTIVE、47 HOLD/生产写入0/付费0/部署0。
+
 ### 固定程序格式与回滚检查（2026-11-15）
 
 [模块记录](2026-11-15-video-compiler-release-contract.md)：在既有回滚所有者内增加所有 v3 历史任务与 execution_version=1 工作流的只读格式检查，修复只识别六个旧 profile 而误放行新加密计划的问题。plan 1–5 的格式源与真实编译/读回共享；固定 Worker manifest/export/bundle SHA 联动核对，旧包不凭 smoke/名称取得新格式读取权。原排空后重检与兼容当前执行器恢复保持，不写业务数据或重发。

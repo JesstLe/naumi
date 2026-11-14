@@ -71,6 +71,12 @@ def run(config,apply=False,existing_tx=None):
   video_proof=video_profile_guard.check_live(tx,config,prior=pm['web'])
   if existing_tx or apply:tx.save('video-profile-rollback-check-'+uuid.uuid4().hex+'.json',video_proof)
   video_profile_guard.enforce(video_proof)
+  if config.get('preservedWorkerTick'):
+   prior_worker_env=environment(tx.inspect(pm['worker']['id']));prior_direct=prior_worker_env.get('NAUMI_WORKER_EXECUTION')=='direct'
+   require(prior_worker_env.get('NAUMI_MEDIA_WORKER')!='1','COMBINED_PRIOR_UNKNOWN_REQUIRES_EXACT_RECOVERY_NOT_FRESH_SCANNER')
+   require((environment(tx.inspect(pm['web']['id'])).get('NAUMI_APPLICATION_TASK_EXECUTION')=='worker')==prior_direct,
+           'PRIOR_WEB_WORKER_EXECUTION_ASSIGNMENT_CHANGED')
+   fresh_memory=1024 if prior_direct else 128
   result['videoProfileCompatibility']=video_proof
   if not apply:
    if existing_tx:tx.save('nas-normal-rollback-check.json' if config.get('nasRollbackManifestPath') else 'normal-rollback-check.json',result)
@@ -135,9 +141,9 @@ SELECT json_build_object('jobs',(SELECT count(*) FROM app_image_jobs j WHERE
    # Never resume an unresolved old scanner. A fresh paused Worker uses the
    # exact prior image and respects the retained needs_attention job fences.
    prior_web=public_identity(tx.inspect(pm['web']['id']))
-   fresh=step('create-fresh-prior-worker',lambda _:clone_worker(tx,prior_web,name=config['newWorkerName']+'-rollback',memory_mib=128,cpu=.25,state_dir=config['stateDir']+'/rollback-worker'))
+   fresh=step('create-fresh-prior-worker',lambda _:clone_worker(tx,prior_web,name=config['newWorkerName']+'-rollback',memory_mib=fresh_memory,cpu=1 if prior_direct else .25,state_dir=config['stateDir']+'/rollback-worker'))
    fresh=step('start-fresh-prior-worker',lambda _:start_worker(tx,fresh,available))
-   pm['worker']={**fresh,'role':'worker','staticSha256':static_pin(tx.inspect(fresh['id'])),'memoryMiB':128,'runningAtEnrollment':True}
+   pm['worker']={**fresh,'role':'worker','staticSha256':static_pin(tx.inspect(fresh['id'])),'memoryMiB':fresh_memory,'runningAtEnrollment':True}
    wait(lambda:olda.status(pm['worker']),'FRESH_PRIOR_WORKER_READY')
   olda.readiness(pm['web']);oldweb=public_identity(tx.inspect(pm['web']['id']));step('prior-web-open',lambda op:control_app(tx,oldweb,'resume',op))
   step('gateway-inverse',lambda _:switch_gateway_bundle(tx,inverse,before,after,expected_dump_sha=report['afterDumpSha256'],logical_to_real={n:str(pathlib.Path(n).resolve()) for n in before}))
