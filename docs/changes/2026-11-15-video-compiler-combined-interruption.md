@@ -35,3 +35,27 @@
 修复集中在视频模块的`videoRecoveryAdmission`：只有v2/v3已非prepared、无上游回执的任务作为continuation进入原恢复逻辑。原`videoCreationRetryConfigMatches`仍拒绝这些任务重新POST，只将原任务转待核查；旧release activity和Worker UNKNOWN记录不修改。prepared、legacy、未知未来版本及已回执的原分类全部保持。两个实际恢复入口复用同一函数；13输入×2路径反控覆盖这一精确变化，并注册到既有回归目录。
 
 产品修复必须重新固定镜像；旧d4镜像中的五项部分通过和最终失败不作为修复版完整通过。新固定版本、实际重跑和回滚继续追加。
+
+## 固定修复版本与测试装配核对
+
+产品固定为 `8201d649740e27ef7b56c8f4b92619c8710ee504`，构建版号 `1794683899`，实际镜像 `sha256:e9f8cb532b0ab2d4d15976e220635d9d3e5fee756e8b3d5d06bb9e8bbde06750`。完整 Dockerfile 构建 exit0；574 个 tracked Worker 输入与固定 archive 相符；原生 sandbox 和产品程序未被测试 bundle 替换。
+
+两次测试装配失败单独保留，不算产品已通过：
+
+- 旧 `poll-next` 未指向实际任务；改为原 upstream ID 后，成本核查也会查询相同 `/v1/tasks/:id`，测试挂起的是同步 supplier-scan，真实视频 poll 尚未申请 lease，因此 `activeTicks=1/backgroundTasks=0`。另一个装配错误把产品真实 poll 的 `?language=zh` 也拼进 task ID，成本核查却没有该 query。测试现在按 URL pathname 取 ID，并通过只读原 `app_video_tasks.poll_lock_until` 判定，仅挂起真实已持租约的 processing 视频查询；不改 lease、任务状态、成本配置或产品请求。
+- driver 早先共享 PG 容器 network namespace，使不同 run 的 Web 端口相撞；改用每轮独立 namespace，通过既有 fixture-only PG relay 访问本机隔离数据库；阶段名称同时隔离 scratch/容器/输出。首次重新打包漏将 Playwright 标为 external 的失败也保留，后续构建 exit0 才启动 driver。
+
+`ATTEMPT_SUPPLIER_SCAN_GET.log`、`ATTEMPT_DRIVER_BUNDLE.log` 与旧失败日志留在证据目录。既有 62 项进程回归和 Worker49 已通过；最终驱动仍需完整中断重跑及集中回归，不把前六项部分通过拼成全绿。
+
+## 最终结果（2026-11-15）
+
+- 最终实际 PID1 中断 run `normalized-runtime/run-3f8c7564-2423-45f3-9fe7-ab346ef78655` 完整通过8项＋HTTP准入4项，driver/host均exit0。SIGTERM保持超过13.5秒、原回执先落库再退出；POST与GET各一次真实SIGKILL/exit137。原UNKNOWN实例均拒绝resume/409，退出2的核查债务保持。
+- 两次原210秒租约分别在UTC `19:48:05.777`、`19:51:50.162`自然到期，观测均在到期后、task/lease时钟写入0。接班实例只把未知POST转`needs_attention/creation_unknown`；原release活动行和旧UNKNOWN文件逐字不变。已有回执的GET中断任务最终恢复原成片、原作品身份、原17积分单账本。
+- 三任务账本依次为1笔7、0笔0、1笔17，发送各一次；没有把未知任务伪装成失败退款或重新生成。
+- 解包副本的最终驱动 `copy-regression-runtime/run-2659a8c4-9e1b-4e76-aea1-ad7ffb1a8984` 完整62项exit0：底座15、预算10、Agent6、RunningHub/AutoDL10、Workflow13、ComfyUI8。实际生产Web/独立Worker/native sandbox、18次JSON创建/22下载，13子进程/schema/pools/relay已回收。
+- 完整tsc、核心137、Linux Worker49、13组×2恢复入口26项通过；fixture peer反控覆盖空目标、多个等待者、releaseAll和query-free task ID。新host拒绝重用已有phase，避免回放旧生命周期命令；空driver在容器启动前报错。
+- 测试包源和独立解包编译输入2023项按LF内容相符；5项是原checkout CRLF与archive LF差异，依赖标签亦因工作目录变化，未声称两个driver原始字节相等。产品镜像574项原始输入证明独立保留。
+- 本片四产物及逐条命令、输入、原始输出、退出码、源码哈希和副本回滚保存在本次证据目录；回滚只针对独立源码副本，保留产品镜像/业务DB/media，不重放任务。修复源和ZIP仍保留修改版。
+- 6个本片combined容器均已移除，driver/随机schema/pools/relay退出有回执；其他服务和共享checkout保留。生产写入0、真实付费0、部署0。
+
+本片关闭combined活动中断缺口；不是完整双槽蓝绿或真实上游验收。RFC全目标继续ACTIVE，下一步为混合v2/v3与新旧Web/Worker兼容、实际启用绑定清单及目标站验收；47暂停决定保持。

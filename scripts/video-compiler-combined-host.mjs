@@ -7,25 +7,29 @@ import path from 'node:path';
 
 const evidence=path.resolve(process.argv[2]),image=process.argv[3],phase=process.argv[4]||'modified-runtime';
 assert(image?.startsWith('sha256:'));assert(/^[a-z-]+$/.test(phase));
-await mkdir(evidence,{recursive:true});const scratch=path.join(evidence,'scratch');await mkdir(scratch,{recursive:true});
-const driverName='naumi-combined-interrupt-driver-20261115',prefix='naumi-combined-interrupt-worker-20261115-';
+const previousRuns=await readdir(path.join(evidence,phase)).catch(error=>{if(error.code==='ENOENT')return [];throw error;});
+assert(!previousRuns.some(name=>name.startsWith('run-')),'Existing evidence phase must not replay old lifecycle commands; use a new phase');
+await mkdir(evidence,{recursive:true});const scratch=path.join(evidence,'scratch-'+phase);await mkdir(scratch,{recursive:true});
+const driverName='naumi-combined-interrupt-driver-20261115-'+phase,prefix='naumi-combined-interrupt-worker-20261115-'+phase+'-';
 const docker=(args)=>execFileSync('docker',args,{encoding:'utf8',windowsHide:true,timeout:120000}).trim();
 assert(!docker(['ps','-aq','--filter','name=^/'+driverName+'$']),'Existing owned driver must be settled, not replaced');
-const commands=['run','--rm','--name',driverName,'--network','container:naumi-video-compiler-pg-20261114','--user','0:0','--read-only','--tmpfs','/tmp:rw,nosuid,size=1g','--mount',`type=bind,source=${evidence},target=/evidence`,'--mount',`type=bind,source=${scratch},target=/scratch`,'--env','NAUMI_VERIFY_ISOLATED_DB=1','--env','DATABASE_URL=postgresql://postgres:video_compiler_local_fixture@127.0.0.1:5432/video_compiler_fixture','--env',`VIDEO_PROCESS_EVIDENCE=/evidence/${phase}`,'--env','NODE_PATH=/app/node_modules','--entrypoint','node',image,'/evidence/driver.cjs','--production-package','--projected-worker-env','--combined-interrupt'];
+const bundle=process.env.COMBINED_DRIVER_BUNDLE||'driver.cjs';assert(/^[a-z-]+\.cjs$/.test(bundle));
+assert((await readFile(path.join(evidence,bundle))).length>0,'Build the fixture driver before starting a container');
+const commands=['run','--rm','--name',driverName,'--user','0:0','--read-only','--tmpfs','/tmp:rw,nosuid,size=1g','--mount',`type=bind,source=${evidence},target=/evidence`,'--mount',`type=bind,source=${scratch},target=/scratch`,'--env','NAUMI_VERIFY_ISOLATED_DB=1','--env','DATABASE_URL=postgresql://postgres:video_compiler_local_fixture@127.0.0.1:5432/video_compiler_fixture','--env',`VIDEO_PROCESS_EVIDENCE=/evidence/${phase}`,'--env','NODE_PATH=/app/node_modules','--entrypoint','node',image,'/evidence/fixture-pg-relay.mjs','/evidence/'+bundle,'--production-package','--projected-worker-env','--combined-interrupt'];
 await writeFile(path.join(evidence,'HOST_COMMAND.json'),JSON.stringify(['docker',...commands],null,2));
 const driver=spawn('docker',commands,{windowsHide:true,stdio:['ignore','pipe','pipe']});let finished=false,code,driverLog='',current,sequence=0;const containers=[],handled=new Set();
 driver.stdout.on('data',b=>{process.stdout.write(b);driverLog+=b;});driver.stderr.on('data',b=>{process.stderr.write(b);driverLog+=b;});
 driver.once('exit',exit=>{finished=true;code=exit;});driver.once('error',error=>{finished=true;code=1;driverLog+=String(error);});
 const inspect=name=>JSON.parse(docker(['inspect',name]))[0];
 const archive=async(name)=>{
- const info=inspect(name);await writeFile(path.join(evidence,name+'.log'),docker(['logs',name]));await writeFile(path.join(evidence,name+'.json'),JSON.stringify(info,null,2));return {running:info.State.Running,exitCode:info.State.ExitCode,image:info.Image,containerId:info.Id};
+ const info=inspect(name);await writeFile(path.join(evidence,phase+'-'+name+'.log'),docker(['logs',name]));await writeFile(path.join(evidence,phase+'-'+name+'.json'),JSON.stringify(info,null,2));return {running:info.State.Running,exitCode:info.State.ExitCode,image:info.Image,containerId:info.Id};
 };
 async function act(command,root){
  assert(['start','signal','inspect','wait','cleanup'].includes(command.action));
  if(command.action==='start'){
   if(current){assert(!inspect(current).State.Running,'Previous combined container still active');await archive(current);docker(['rm',current]);}
   const env=command.env;assert.equal(env.SOURCE_COMMIT,docker(['image','inspect',image,'--format','{{range .Config.Env}}{{println .}}{{end}}']).split('\n').find(s=>s.startsWith('SOURCE_COMMIT=')).slice(14));assert(env.NAUMI_WORKER_STATE_FILE.startsWith('/evidence/'));assert.equal(env.MEDIA_JOB_DIR,'/scratch');
-  const envPath=path.join(evidence,'combined-env-'+(++sequence)+'.txt');await writeFile(envPath,Object.entries(env).map(([key,value])=>{assert(/^[A-Z_][A-Z0-9_]*$/.test(key));assert(!/[\r\n]/.test(String(value)));return key+'='+value;}).join('\n'));
+  const envPath=path.join(evidence,phase+'-combined-env-'+(++sequence)+'.txt');await writeFile(envPath,Object.entries(env).map(([key,value])=>{assert(/^[A-Z_][A-Z0-9_]*$/.test(key));assert(!/[\r\n]/.test(String(value)));return key+'='+value;}).join('\n'));
   current=prefix+sequence;containers.push(current);
   const args=['run','--detach','--name',current,'--network','container:'+driverName,'--user','0:0','--read-only','--tmpfs','/tmp:rw,nosuid,size=1g','--tmpfs','/tmp/naumi-media-sandbox:rw,exec,nosuid,nodev,size=1g,mode=755','--mount',`type=bind,source=${evidence},target=/evidence`,'--mount',`type=bind,source=${scratch},target=/scratch`,'--env-file',envPath,'--entrypoint','node',image,'/app/scripts/video-worker-with-media.mjs'];
   const id=docker(args);await writeFile(path.join(root,'START-'+sequence+'.json'),JSON.stringify({args,containerId:id,image},null,2));

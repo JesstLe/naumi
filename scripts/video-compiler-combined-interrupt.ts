@@ -5,14 +5,14 @@ import path from 'node:path';
 import type {Pool} from 'pg';
 
 export function combinedInterruptPeer(){
- const held=new Map<string,{release:()=>void;enteredAt:number}>();
- let target='';
+ const held=new Map<string,Array<{release:()=>void;enteredAt:number}>>();
+ let target:string|undefined;
  return {
   hold(name:string){target=name;},
-  async wait(name:string){if(name!==target)return;await new Promise<void>(resolve=>held.set(name,{release:resolve,enteredAt:Date.now()}));},
+  async wait(name:string){if(target===undefined||name!==target)return;await new Promise<void>(resolve=>{const rows=held.get(name)||[];rows.push({release:resolve,enteredAt:Date.now()});held.set(name,rows);});},
   entered(name:string){return held.get(name);},
-  release(name:string){held.get(name)?.release();held.delete(name);target='';},
-  releaseAll(){for(const row of held.values())row.release();held.clear();target='';},
+  release(name:string){for(const row of held.get(name)||[])row.release();held.delete(name);target=undefined;},
+  releaseAll(){for(const rows of held.values())for(const row of rows)row.release();held.clear();target=undefined;},
  };
 }
 
@@ -30,6 +30,7 @@ export async function verifyCombinedInterrupt(input:{root:string;pool:Pool;actor
  const until=async<T>(name:string,read:()=>Promise<T>,accept:(value:T)=>boolean,ms=90000)=>{const deadline=Date.now()+ms;let value:T|undefined;for(;;){value=await read();if(accept(value))return value;if(Date.now()>deadline)throw Error(name+' '+JSON.stringify(value&&typeof value==='object'?Object.fromEntries(Object.entries(value).filter(([key])=>['id','status','error_code','poll_lock_until','phase','paused'].includes(key))):value));await new Promise(resolve=>setTimeout(resolve,100));}};
  const row=async(id:string)=>(await pool.query('SELECT * FROM app_video_tasks WHERE email=$1 AND id=$2',[actor,id])).rows[0];
  const ledger=async(id:string)=>(await pool.query('SELECT count(*)::int n,COALESCE(-sum(delta),0)::int amount FROM app_ledger WHERE id=$1',['led-video-'+id])).rows[0];
+ const orphan=async(id:string)=>(await pool.query("SELECT id,instance_id,boot_id,state,work_key,admission_key FROM app_release_activities WHERE activity_kind='accepted-work' AND work_scope='video-poll' AND admission_key=$1 AND state IN ('active','unknown') ORDER BY started_at,id",[id])).rows;
  const status=async()=>{try{const r=await fetch('http://127.0.0.1:3001/status',{headers:{'x-video-worker-secret':input.secret},signal:AbortSignal.timeout(1500)});return r.ok?await r.json():null;}catch{return null;}};
  const control=async(action:string,expect=200)=>{const s=await status();assert(s);const r=await fetch('http://127.0.0.1:3001/control',{method:'POST',headers:{'x-video-worker-secret':input.secret,'content-type':'application/json'},body:JSON.stringify({action,bootId:s.bootId,operationId:randomUUID(),expectedRevision:s.revision,...(action==='reconcile'?{tickId:s.lastTick.id}:{})})});const value=await r.json();assert.equal(r.status,expect,JSON.stringify(value));return value;};
  const start=async()=>{
@@ -62,14 +63,14 @@ export async function verifyCombinedInterrupt(input:{root:string;pool:Pool;actor
   const unknown=await start();assert.equal(unknown.phase,'UNKNOWN');assert.equal(unknown.paused,true);assert.equal(unknown.lastTick.id,hardState.lastTick.id);assert.equal(unknown.mediaWorker.draining,true);await control('resume',409);
   await new Promise(resolve=>setTimeout(resolve,5500));assert.equal(posts('COMBINED_HARD_POST'),1);assert.deepEqual(await ledger(hard),{n:0,amount:0});assert.equal((await row(hard)).poll_lock_until.getTime(),hardBefore.poll_lock_until.getTime());pass('sigkill-before-receipt-restores-original-unknown-paused-media-and-no-repost');
   const retry=await input.http('/api/video/tasks/'+hard+'/retry',{idempotencyKey:randomUUID()});assert.equal(retry.status,409);await rpc('signal',{signal:'SIGTERM'});assert.equal((await rpc('wait')).exitCode,2);
-  const retained=await readFile(state);await waitLease(hard);instance='combined-replacement';state=path.join(root,'replacement-state.json');await start();await control('resume');const attention=await until('expired original sending task becomes review',()=>row(hard),r=>r.status==='needs_attention');await control('drain');await until('replacement drained',status,s=>s?.tickDrainComplete===true);
-  assert.equal(attention.error_code,'creation_unknown');assert.equal(posts('COMBINED_HARD_POST'),1);assert.deepEqual(await ledger(hard),{n:0,amount:0});assert.deepEqual(await readFile(stateFile),retained);pass('replacement-honors-natural-210s-lease-and-retains-original-worker-unknown-file');
-  const pollTask=await prepare('COMBINED_HARD_POLL');peer.hold('poll-next');await control('resume');
-  await until('new receipt persisted',()=>row(pollTask),r=>!!r.upstream_id);await until('real GET poll held',async()=>peer.entered('poll-next'),Boolean);
-  const polling=await row(pollTask);assert(polling.upstream_id);const pollingState=await status();assert(pollingState?.backgroundTasks>0);await rpc('signal',{signal:'SIGKILL'});assert.equal((await rpc('wait')).exitCode,137);peer.release('poll-next');
+  const retained=await readFile(state),orphanBefore=await orphan(hard);assert(orphanBefore.length>0);await waitLease(hard);instance='combined-replacement';state=path.join(root,'replacement-state.json');await start();await control('resume');const attention=await until('expired original sending task becomes review',()=>row(hard),r=>r.status==='needs_attention');await control('drain');await until('replacement drained',status,s=>s?.tickDrainComplete===true);
+  assert.equal(attention.error_code,'creation_unknown');assert.equal(posts('COMBINED_HARD_POST'),1);assert.deepEqual(await ledger(hard),{n:0,amount:0});assert.deepEqual(await readFile(stateFile),retained);assert.deepEqual(await orphan(hard),orphanBefore);observations.push({event:'orphan-release-activities-preserved',rows:orphanBefore});pass('replacement-honors-natural-210s-lease-and-retains-original-worker-unknown-file');
+  const pollTask=await prepare('COMBINED_HARD_POLL');await control('resume');
+  const polling=await until('new receipt persisted',()=>row(pollTask),r=>!!r.upstream_id);const pollKey='poll:'+polling.upstream_id;await until('real original GET poll held',async()=>peer.entered(pollKey),Boolean);
+  const pollingState=await until('scanner owns the targeted GET callback',status,s=>s?.activeTicks===1&&s.backgroundTasks>0);const claimedPoll=await row(pollTask);assert(claimedPoll.poll_lock_until);await rpc('signal',{signal:'SIGKILL'});assert.equal((await rpc('wait')).exitCode,137);peer.release(pollKey);
   const pollUnknown=await start();assert.equal(pollUnknown.phase,'UNKNOWN');assert.equal(pollUnknown.lastTick.id,pollingState.lastTick.id);await control('resume',409);await rpc('signal',{signal:'SIGTERM'});assert.equal((await rpc('wait')).exitCode,2);const pollStateFile=state,pollStateBytes=await readFile(state);pass('sigkill-during-real-get-retains-receipt-and-blocks-unverified-worker-resume');
   await waitLease(pollTask);instance='combined-poll-replacement';state=path.join(root,'poll-replacement-state.json');await start();await control('resume');const final=await until('GET-only continuation after natural lease',()=>row(pollTask),r=>r.status==='completed',120000);await control('drain');await until('final combined drain',status,s=>s?.tickDrainComplete===true);
-  assert.equal(final.upstream_id,polling.upstream_id);assert.equal(posts('COMBINED_HARD_POLL'),1);assert.deepEqual(await ledger(pollTask),{n:1,amount:17});assert.deepEqual(await readFile(pollStateFile),pollStateBytes);assert.equal((await row(hard)).status,'needs_attention');pass('replacement-get-only-restores-original-result-asset-and-single17-settlement');
+  assert.equal(final.upstream_id,polling.upstream_id);assert.equal(posts('COMBINED_HARD_POLL'),1);assert.deepEqual(await ledger(pollTask),{n:1,amount:17});assert(final.artwork_id&&final.result_storage_key&&final.video_url);const asset=(await pool.query('SELECT email,status,image_url FROM app_artworks WHERE id=$1',[final.artwork_id])).rows[0];assert.equal(asset.email,actor);assert.equal(asset.status,'completed');assert.equal(asset.image_url,final.video_url);assert.deepEqual(await readFile(pollStateFile),pollStateBytes);assert.equal((await row(hard)).status,'needs_attention');pass('replacement-get-only-restores-original-result-asset-and-single17-settlement');
   await rpc('signal',{signal:'SIGTERM'});assert.equal((await rpc('wait')).exitCode,0);
   await writeFile(path.join(root,'COMBINED_INTERRUPT_RESULT.json'),JSON.stringify({ok:true,checks,actualPid1Supervisor:true,actualSupplierRequests:true,originalId:input.initialTaskId,hardPost:hard,hardPoll:pollTask,ledger:[await ledger(input.initialTaskId),await ledger(hard),await ledger(pollTask)],observations,paidCalls:0,productionWrites:0},null,2));
   console.log('COMBINED_INTERRUPT=PASS CHECKS='+checks+' SIGTERM_ACTIVE=1 SIGKILL_POST=1 SIGKILL_POLL=1 NATURAL_LEASE_EXPIRIES=2 PAID_CALLS=0');
