@@ -8,9 +8,10 @@ import {sameSiteBiMutation} from "@/lib/bi/access";
 import {readBounded} from "@/lib/supplier-cost/io";
 import {getVideoNode,saveVideoNode} from "@/lib/canvas/video-node-service";
 import {ModelConfigError} from "@/lib/model-config/types";
+import {VideoContractError} from "@/lib/video/contract";
 export const runtime="nodejs",dynamic="force-dynamic";
 type Context={params:Promise<{id:string}>};
-function failure(error:unknown){return (error instanceof ModelConfigError||error instanceof TeamError)?NextResponse.json({error:error.message,code:"code" in error?error.code:undefined},{status:error.status}):NextResponse.json({error:"视频节点暂时不可用"},{status:503});}
+function failure(error:unknown){return (error instanceof ModelConfigError||error instanceof TeamError||error instanceof VideoContractError)?NextResponse.json({error:error.message,code:"code" in error?error.code:undefined,...(error instanceof VideoContractError?{fields:error.fields}:{})},{status:error.status}):NextResponse.json({error:"视频节点暂时不可用"},{status:503});}
 async function readNativeNodes(request:Request,context:Context){const email=await authorizedTargetEmail(request,new URL(request.url).searchParams.get("email"),true);if(!email)return NextResponse.json({error:"未登录或无权访问"},{status:401});
   try{const found=await getVideoNode(email,(await context.params).id);const node=found?(await filterCreationProjects(email,[found]))[0]:null;if(!node)return NextResponse.json({error:"视频节点不存在"},{status:404});return NextResponse.json({ok:true,node},{headers:{"cache-control":"private, no-store"}});}catch(error){return failure(error);}}
 export async function PATCH(request:Request,context:Context){return withCreationRoute(request,async()=>{const email=await authenticatedEmail(request);if(!email)return NextResponse.json({error:"请先登录"},{status:401});
