@@ -3,6 +3,12 @@ import { createPlacementSpace } from "./placement-space";
 
 export type GenerationStage = "queued" | "preparing" | "generating" | "saving";
 
+/** Read the original job's admission status, not elapsed time or batch index.
+ * Legacy pending receipts without queue metadata retain their active meaning. */
+export function generationStageForReceipt(receipt:{status?:unknown;operationStatus?:unknown;stage?:unknown}):GenerationStage {
+  return receipt.operationStatus==="queued"||receipt.status==="queued"||receipt.stage==="planning"?"queued":"generating";
+}
+
 /** Preview geometry only; never alters provider request dimensions. */
 export function generationPlaceholderSize(ratio?: string | null) {
   const normalized = normalizeCanvasRatio(ratio);

@@ -21,6 +21,9 @@ export async function runSelectionBatch<T extends { id: string }>(targets: reado
   canRun: (target: T) => boolean;
   run: (target: T) => Promise<boolean>;
   onProgress?: (completed: number, total: number) => void;
+  /** Only specialized callers (e.g. text mining) opt into their own limit.
+   * Selection generation submits every node; backend admission owns capacity. */
+  concurrency?: number;
 }) {
   const queue = [...new Map(targets.map(target => [target.id, target])).values()];
   const total = queue.length, result = { succeeded: 0, failed: 0, skipped: 0 };
@@ -37,7 +40,7 @@ export async function runSelectionBatch<T extends { id: string }>(targets: reado
       if (options.isCurrent()) options.onProgress?.(completed, total);
     }
   };
-  // Submission orchestration only. Actual supplier capacity remains server-owned.
-  await Promise.all([worker(), worker()]);
+  const lanes=options.concurrency===undefined?total:Math.min(total,Math.max(1,Math.floor(options.concurrency)||1));
+  await Promise.all(Array.from({length:lanes},()=>worker()));
   return result;
 }

@@ -9,7 +9,7 @@ import {canvasInheritedImagePrompt,canvasBlankImagePrompt} from './image-creatio
 import {createCanvasImageTask,type CanvasGeneratedImage} from './image-task-controller';
 import {prepareCanvasImageTask,type CanvasImageGenerationOptions,type CanvasImageModelOption} from './image-task-request';
 import type {CanvasImageTaskScope} from './image-task-scope';
-import {generationPlaceholderSize,generationPositionForTask} from './generation-feedback';
+import {generationPlaceholderSize,generationPositionForTask,type GenerationStage} from './generation-feedback';
 import type {GenerationFailure} from './generation-failure';
 import {normalizeCanvasCount} from './generation-parameters';
 import {adaptiveCanvasImageSize} from './image-size';
@@ -66,11 +66,13 @@ export async function runCanvasDerivedImage(input:{source:Artwork;prompt:string;
     })||bound;
   };
   ctx.clearError();
+  let previousStage:GenerationStage='preparing';
   const task=createCanvasImageTask({scope,replacement:opts?.replaceNode?{nodeId:source.id,history:ctx.replacementHistory}:undefined,
     ...(placement?{fanout:{count,bind:synchronizePlacement,point:(id:string)=>placement?.slots.find(slot=>slot.artworkId===id)}}:{}),
     prepare:()=>prepareCanvasImageTask({kind:'derived',scope,operationKey,position,prompt:text,source,options:{...opts,placement},models:input.models,model:input.model,quality:input.quality,referenceInputs:opts?.referenceInputs,retainedAttempt}),
     submit:ctx.submit,submitted:opts?.onSubmitted,position:()=>view.position(taskId,position),...ctx.document,
-    stage:stage=>{if(stage==='generating')synchronizePlacement();for(const id of taskIds)view.update(id,{stage,failure:undefined});},user:ctx.user,notice:ctx.notice,errorText:ctx.errorText,saveErrorText:ctx.saveErrorText,resultGap:ctx.resultGap,
+    stage:stage=>{if(stage==='generating')synchronizePlacement();const started=stage==='generating'&&previousStage!==stage;previousStage=stage;
+      for(const id of taskIds)view.update(id,{stage,failure:undefined,...(started?{startedAt:Date.now()}: {})});},user:ctx.user,notice:ctx.notice,errorText:ctx.errorText,saveErrorText:ctx.saveErrorText,resultGap:ctx.resultGap,
   });
   const activity=view.activity({operationKey,canRetry:scope.isCurrent,clear:()=>taskIds.forEach(id=>view.remove(id)),
     execute:async({retry,retain}):Promise<CanvasGeneratedImage[]>=>{
@@ -110,11 +112,13 @@ export async function runCanvasBlankImage(input:{pend:CanvasPendingNode;prompt:s
   const prompt=input.linked?text||canvasInheritedImagePrompt(inputs[0]?.prompt):canvasBlankImagePrompt(text,texts,inputs);ctx.clearError();
   const size=generationPlaceholderSize(settings.ratio),live=ctx.geometry.position(pend.id,pend),position=generationPositionForTask(live,live,size,[]);
   pending.set(nodes=>nodes.map(node=>node.id===pend.id?{...node,generationFailure:undefined,onGenerationRetry:undefined,generating:true,generationSubmitted:false,generationStage:'preparing',generationStartedAt:Date.now(),...position,generationSize:size,generationCount:normalizeCanvasCount(settings.count)}:node));
+  let previousStage:GenerationStage='preparing';
   const scope=ctx.capture(),task=createCanvasImageTask({scope,
     prepare:()=>prepareCanvasImageTask({kind:'blank',scope,operationKey,position,prompt,...settings,inputs,referenceInputs,textParentId:pend.parentId?.startsWith('text-')&&texts.some(node=>node.id===pend.parentId)?pend.parentId:undefined}),
     submit:ctx.submit,submitted:()=>{pending.set(nodes=>nodes.map(node=>node.id===pend.id?{...node,generationSubmitted:true}:node));input.onSubmitted?.();},position:()=>ctx.geometry.position(pend.id,position),...ctx.document,
     attached:images=>texts.length?ctx.attachTextImages(texts.map(node=>node.id),images):undefined,
-    stage:stage=>pending.set(nodes=>nodes.map(node=>node.id===pend.id?{...node,generating:true,generationStage:stage,generationFailure:undefined}:node)),
+    stage:stage=>{const started=stage==='generating'&&previousStage!==stage;previousStage=stage;
+      pending.set(nodes=>nodes.map(node=>node.id===pend.id?{...node,generating:true,generationStage:stage,generationFailure:undefined,...(started?{generationStartedAt:Date.now()}: {})}:node));},
     user:ctx.user,notice:ctx.notice,errorText:ctx.errorText,saveErrorText:ctx.saveErrorText,resultGap:ctx.resultGap,
   });
   return await view.activity({operationKey,canRetry:scope.isCurrent,

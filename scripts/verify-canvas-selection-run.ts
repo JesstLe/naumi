@@ -36,7 +36,7 @@ async function main() {
     run: async n => { started.push(n.id); inFlight++; peak = Math.max(peak, inFlight); await new Promise(r => setTimeout(r, 5)); inFlight--; if (n.id === "fail") throw Error("fixture failure"); return true; },
     onProgress: done => progress.push(done),
   });
-  assert.deepEqual(result, { succeeded: 2, failed: 1, skipped: 1 }); assert.equal(peak, 2); assert.equal(started.filter(id => id === "a").length, 1); assert.equal(progress.at(-1), 4);
+  assert.deepEqual(result, { succeeded: 2, failed: 1, skipped: 1 }); assert.equal(peak, 3); assert.equal(started.filter(id => id === "a").length, 1); assert.equal(progress.at(-1), 4);
   const stopped: string[] = [];
   const cancel = await runSelectionBatch(nodes, { isCurrent: () => current, canRun: () => true, run: async n => { stopped.push(n.id); current = false; return true; } });
   assert.equal(stopped.length, 1); assert.equal(cancel.skipped, nodes.length - 1);
@@ -53,6 +53,6 @@ async function main() {
   assert.match(source, /primaryAction=\{batchRunButton\(t\("canvas\.batchRunText"\)\)\}/);
   const toolbar = readFileSync("src/components/canvas/batch-selection-toolbar.tsx", "utf8");
   assert.ok(toolbar.indexOf("data-batch-primary") < toolbar.indexOf("data-batch-scroll"));
-  console.log("MODIFIED=PASS SELECTED_ONLY=1 NODE_PARAMETERS=PRESERVED LOCKED_BUSY=SKIPPED DEDUP=PASS CONCURRENCY=2 FAILURE_CONTINUES=PASS CONTEXT_CHANGE_STOPS_QUEUE=PASS PRIMARY_ACTION=PINNED PROVIDER_CALLS=0");
+  console.log("MODIFIED=PASS SELECTED_ONLY=1 NODE_PARAMETERS=PRESERVED LOCKED_BUSY=SKIPPED DEDUP=PASS FRONTEND_CAP=NONE FAILURE_CONTINUES=PASS CONTEXT_CHANGE_STOPS_STARTS=PASS PRIMARY_ACTION=PINNED PROVIDER_CALLS=0");
 }
 main().catch(e => { console.error(e); process.exitCode = 1; });
