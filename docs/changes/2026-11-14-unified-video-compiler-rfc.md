@@ -7,11 +7,11 @@
 [统一RFC](../architecture/2026-11-14-video-compiler-rfc.md)定义Profile.describe/compile、统一compileVideoRequest、CompiledVideoPlan、ModelBinding/ExecutionPolicy/CapabilityEvidence与Resolver接口职责；入口->应用用例->纯Profile规则/既有I/O适配，领域不依赖React/Route/DB。不拆现有计费事务。
 
 ## 实现与迁移状态
-- RFC替代旧v2作为后续实施依据；旧执行文档与两份变更记录标为历史。
+- RFC替代旧v2作为后续实施依据；旧执行文档及三份变更记录标为历史；整合main并行v3 4962cb29，全文保留，冲突裁定归RFC§15。
 - 范围覆盖Canvas/Workbench/Workflow与批次/Agent/Storyboard/BYOC、所有已注册协议族以及无videoProfile的direct/openai路径。
 - 旧capabilities.video不自动转显式政策，保留未知与明确禁用区别；同协议型号允许配置扩展，不由静态型号表二次否决。
 - 补未来依赖阶段编译、短期签名地址物化、版本化计划、历史恢复/显式重试、同源预览与19项验收标准。
-- 基线4b499960；产品源码修改0、线上配置/节点/任务修改0、供应商调用0、发布0。RFC接口均为目标规格，并非本轮实现。
+- 审阅基线4b499960，整合基线4962cb29；产品源码修改0、线上配置/节点/任务修改0、供应商调用0、发布0。RFC接口均为目标规格，并非本轮实现。
 
 ## 验证与证据层级
 完成源码调用清单、文档链接/行号/围栏/决策一致性检查与git diff --check。具体命令结果存任务证据目录E:/Workspace/naumi/output/video-compiler-rfc-20261114。未执行业务构建、迁移或上游E2E；文档合main不等于实现或上线，不增加功能/发布计数。

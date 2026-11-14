@@ -4,7 +4,7 @@
 - 状态：架构决策与实施边界已记录；业务实现、迁移与发布均未开始。本文不是上线验收记录。
 - 审阅基线：origin/main `4b49996077066c2b8e85058bc03df6faa7e3757c`。
 - 范围：Canvas、Workbench、Workflow/批次、Agent、Storyboard、全部视频协议、管理后台与历史任务。
-- 优先关系：本文取代[视频意图解析 v2 执行规格](../superpowers/plans/2026-11-14-video-intent-execution.md)作为后续实施依据。旧文保留供历史追溯，其中静态型号表最高裁决、旧能力直接转收紧、只改画布入口等条款不再执行。
+- 优先关系：本文整合并取代[视频意图解析 v2／并行 v3 提案](../superpowers/plans/2026-11-14-video-intent-execution.md)作为后续实施依据。旧文完整保留供历史追溯，执行冲突以本文§15为准；静态型号表最高裁决、旧描述默认为政策以及仅画布范围不再执行。
 - 非目标：不建设新的调度/计费平台，不改图片/音频领域，不将模块化单体拆成服务，不在本轮发版或发起收费测试。
 
 ## 1. 决策与完成定义
@@ -302,9 +302,26 @@ Profile编译入口统一不等于实现代码同质化。新增profile要提供
 
 复用已有[Canvas提交门禁](../../scripts/verify-canvas-video-submission.cjs)、[Dock门禁](../../scripts/verify-canvas-video-dock.cjs)、[结果连续性门禁](../../scripts/verify-video-dock-continuity.cjs)、[冻结权威门禁](../../scripts/verify-video-frozen-source-authority.ts)、[协议门禁](../../scripts/verify-video-fusion-application-protocols.ts)、[Storyboard工作流门禁](../../scripts/verify-storyboard-workflow-contract.ts)。实现阶段新增计划/政策/迁移/全入口测试，再运行tsc、build与实际应用/DB/Worker验收。旧测试如有既存失败需保留基线，不改产品迎合过时fixture。
 
-## 15. 本轮交付与下一步
+## 15. 并行 v3 整合与差异裁定
 
-本轮只核对源码、编写RFC、标记旧文替代关系并做文档/引用/差异校验；未新增compileVideoRequest、intentPreference或预览端点实现，未迁移节点/配置/历史任务，未发起供应商调用或发布。
+编写期间main从4b499960推进到4962cb29，另一个任务将原计划升级为并行v3。本RFC保留其全文和交付记录，并吸收全入口、Profile接口、政策分离及证据区分；为避免两份规范并行执法，以下明确统一：
+
+| 并行v3表述/未定项 | 当前统一裁定 |
+|---|---|
+| 每型号Profile＋代码/JSON作为输入空间 | Profile按协议族复用，ModelBinding承载型号/字段差异；同协议型号配置可扩展，内置JSON不是额外否决 |
+| policy初始全空、全部旧字段统一标smoke | 不自动迁移能力描述；但已有明确禁用继续保留，其他字段按来源保留原像/迁移清单，不将所有人工字段擅自判为smoke |
+| evidence四级梯 | 四类独立、可并存且限定通道/规格/版本的证据；不能变成隐形许可等级 |
+| 一张普通图总是首帧、视频总是编辑 | 按绑定默认语义；不唯一时请求选择，不能用计数误判用户意图 |
+| retry一律重放冻结body，缺body转人工 | 必须区分原任务恢复与显式新操作重试；当前retry Route本身调用createVideoGeneration创建新任务。按§7.2保留既有retryOf/报价确认语义，旧任务恢复不重编译；不因新规格缺原始body让原有可重试任务全部失效 |
+| 最终body直接冻结 | 冻结语义计划/素材身份与Profile版本；签名URL/upload id在合法执行时物化，不能因过期失效或读取新能力而变语义 |
+| Workflow冻结前最终编译 | 未产出素材只冻结绑定/依赖/上界，依赖完成后按原绑定最终编译，见§7.3 |
+| 按族分批，未轮到维持现状 | 可以渐进交付，但全入口/全协议退出清单全部验收前不得声称架构替换完成 |
+
+上述是文档规范整合，不是业务变更。若后续要改变现行显式重试的费用/路由语义，应单列用户确认与回归，不混进“校验重构”。
+
+## 16. 本轮交付与下一步
+
+本轮只核对源码、编写RFC、整合并行v3并标记替代关系、做文档/引用/差异校验；未新增compileVideoRequest、intentPreference或预览端点实现，未迁移节点/配置/历史任务，未发起供应商调用或发布。
 
 下一步按P0起步，并以P1全入口/P2全协议清单约束范围。实现细化计划从本文拆出，不能重新照旧v2开工。真实付费端到端和站点上线分别登记，不由文档合main自动授权。
 
