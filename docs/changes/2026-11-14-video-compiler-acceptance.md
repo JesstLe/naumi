@@ -40,6 +40,10 @@
 
 完整六路径解包副本 `video-compiler-input-equivalence-20261114/copy-runtime/run-4d5e0317-ea2a-4d9e-807e-561d6811bda2`：96项通过、exit0，31笔517 fixture积分、三浏览器上下文关闭、13子进程退出，供应商真实取回的12份输入字节SHA相符。三条路径的本地行ID不同，未声称planDigest/短期URL逐字相等，也未覆盖全部结构化素材。首次组合暴露Windows状态原子rename EPERM→WORKER_CONTROL_FAULT；仅增加同源同目标有界710ms重试，不重发任务，Worker49项和真实500控制通过；持续失败仍暂停并拒绝resume，六路径回滚恢复基线故障。完整命令/输出/哈希见该证据目录VERIFICATION.txt。
 
+## 固定Linux生产构建与包验收（2026-11-15）
+
+[本轮记录](2026-11-15-video-compiler-production-build.md)：main固定 `dcbb9494`、版号1794674158，完整现有Dockerfile构建退出0，Next standalone及Worker依赖闭包通过。镜像内Worker49项、真实standalone7项/50HTTP/46JS-CSS资源通过；manifest中574个tracked源码输入与git archive逐一核对。运行容器无网络、无数据库、无供应商凭据并已移除。不能把无DB包验收或development96项组合升级为生产镜像的DB/浏览器/生成全链路通过。
+
 ## A01–A19 逐项状态
 
 | ID | 当前证据 | 仍需完成或证据边界 |
@@ -62,7 +66,7 @@
 | A16 | 原媒体token/版本/过期测试；本轮Worker物化真实签名URL，供应商fixture经真实Next媒体路由读取原字节，篡改404 | 时间推进的过期测试与实际公网CDN/存储恢复分别验收，不把本地域名别名当公网可达 |
 | A17 | 本轮真实Next受理→独立Worker落片→结果作为下一Canvas节点source_video→再次落片，父子资产/单账本通过 | 已新增真实浏览器选旧历史→ReactFlow拖线→下一节点提交→独立Worker落片，冻结资产/parent/单账本一致；当前为本地供应商fixture，非真实付费上游 |
 | A18 | 编译、供应商fixture受理、成片真实解码保存、账务分别核对，结果含真实输入字节hash | 真实付费供应商质量/成功率和用户采用仍未验，不能标Production-confirmed |
-| A19 | 已有源码副本回退/扩展字段兼容、真实发布控制回执与版本准备门禁；本轮独立Worker重启 | 固定生产构建、新旧Web/Worker双槽、排空/切回/旧资产、目标站蓝绿和实际发布仍未验 |
+| A19 | 已有源码副本回退/扩展字段兼容、真实发布控制回执与版本准备门禁；独立Worker重启；新增dcbb9494固定Linux完整生产镜像构建、Worker49与无DB包HTTP7项通过 | 生产镜像带DB完整链路、新旧Web/Worker双槽、排空/切回/旧资产、目标站蓝绿和实际发布仍未验 |
 
 ## 发布与总目标
 
