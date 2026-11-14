@@ -10,6 +10,12 @@
 
 证据目录 `E:/Workspace/naumi/output/video-compiler-process-20261114`，最终包日志及退出状态以 `VERIFICATION.txt` 为准。`--browser` 增量是实际 `/video` 页面，不替换组件/HTTP；4项真实Edge/React检查已独立通过，pageerror0、额外生成0，不由上述 API 检查代替。
 
+## 真实画布增量（2026-11-14）
+
+本轮切片见 [画布历史与下游记录](2026-11-14-video-compiler-canvas.md)。`--canvas-browser` 在同一真实Next/PG/独立Worker底座上新增原生ReactFlow拖线和历史选片，HTTP/组件替换0；独立解包副本已完成14项进程＋4项工作台＋10项Canvas，exit0，pageerror0；最终证据 `E:/Workspace/naumi/output/video-compiler-canvas-20261114/copy-runtime/run-8c912f38-f7ab-4d09-b309-b1f7f1deb67b`。
+
+已复现并修复两个产品问题：新解析器隐式采用未完成任务的旧结果；工作台历史发送到画布后，项目任务列表漏掉已完成原任务而使Dock永久等待核查。前者保留显式历史选片正控，后者用Canvas发送关联补齐查询而不改变原冻结projectKey/参数/报价。
+
 ## A01–A19 逐项状态
 
 | ID | 当前证据 | 仍需完成或证据边界 |
@@ -20,9 +26,9 @@
 | A04 | describe/compile 共用 Profile；实际 Next 预览摘要与受理 planDigest 相等，冻结后配置变更不漂移 | 全部入口和所有 Profile 的等价证据仍分层记录，不从一个输入泛化 |
 | A05 | 实际 Next 预览前后 tasks/creations/billing operations/reservations/ledger 数量相等、供应商0；现有 React 测试覆盖陈旧响应/账号和修订 | 陈旧响应的受控 React 测试不冒充所有真实 Web 交互 |
 | A06 | 可信输入/顺序/角色核心测试及 Canvas/上传/Agent App 输入路径 | 连线、上传、提及三种同素材方式的完整真实浏览器等价验收仍待补齐 |
-| A07 | 原 text+image 自动意图、两普通图保留reference、明确偏好报缺素材；实际 Next 的 text+普通图进入 single_image | 全部历史画布和真实浏览器拖线仍待补齐 |
-| A08 | 原 UI/图谱18项、实际 React/Edge10项、Dock连续性受控检查；本轮真实Next工作台历史参数展示/复用/390px/当前报价4项通过 | 完整 Canvas 生成前后、刷新、多选/锁定和模型切换不由 API 返回值代替 |
-| A09 | PG/HTTP 跨用户拒绝、媒体身份/hash/真实解码、结构/角色/数量约束；本轮实际签名输入字节及篡改404 | 完整权限/物理边界以各输入维度检查，不能把“已授权URL”当真实解码 |
+| A07 | 原 text+image 自动意图、两普通图保留reference、明确偏好报缺素材；实际 Next 的 text+普通图进入 single_image | 真实浏览器端口拖线已通过；全部历史输入形态仍逐项保留，不以单条reference概括首尾帧等组合 |
+| A08 | 原 UI/图谱18项、实际 React/Edge10项、Dock连续性受控检查；本轮真实Next工作台历史参数展示/复用/390px/当前报价4项通过 | 本轮真实Canvas已覆盖切模型/保存/重载/生成前后Dock/锁定解锁/两节点多选与右键/390px；更多混合节点和上传/提及等价仍按A06继续 |
+| A09 | PG/HTTP 跨用户拒绝、媒体身份/hash/真实解码、结构/角色/数量约束；本轮实际签名输入字节及篡改404；新增5种当前未完成状态不可隐式使用旧结果、显式历史可用；实际HTTP queued反控 | 完整权限/物理边界以各输入维度检查，不能把“已授权URL”当真实解码 |
 | A10 | Canvas/Workbench/Workflow批次/Agent/Storyboard/BYOC/重试在已合主线 App fixture 中共享编译底座 | 本轮真实 Next 仅直接覆盖 Workbench、Canvas提交和重试；全入口真实页面矩阵仍待验 |
 | A11 | 注册57个 wire Profile 的分族本地序列化、上传/JSON/multipart/DAG；direct/native openai-legacy 等已有明确 recipe | 注册覆盖≠所有在用配置已迁移；env-only 不自动转托管/猜字段，需明确迁移 |
 | A12 | 真实PG Workflow22项：future slots、真实前序时长、静态hash、冻结报价确认、批次/不重放 | 全工作流/Storyboard在独立应用Worker和真实Next的组合验收仍需补齐 |
@@ -30,7 +36,7 @@
 | A14 | 本轮独立应用Worker、持久tick原身份、原任务重启/UNKNOWN/LIVE lease/取消/显式重试，生产环境投影实际运行；Worker runtime34项 | 当前进程测试为Windows、停机前已drain；Linux进程内活动发送中断/真正多槽回滚仍需新固定版本验收 |
 | A15 | 服务端专项实际持久化加密v2 stage及新发布后恢复；原文本/模型/价格/回执不变，伪造阶段拒绝；本轮v3显式retryOf | 历史v2与新v3混合独立Worker/新旧Web发布组合仍待实际验收 |
 | A16 | 原媒体token/版本/过期测试；本轮Worker物化真实签名URL，供应商fixture经真实Next媒体路由读取原字节，篡改404 | 时间推进的过期测试与实际公网CDN/存储恢复分别验收，不把本地域名别名当公网可达 |
-| A17 | 本轮真实Next受理→独立Worker落片→结果作为下一Canvas节点source_video→再次落片，父子资产/单账本通过 | 浏览器选择历史结果、拖线下一节点的完整交互仍待验，不由服务端创建输入替代 |
+| A17 | 本轮真实Next受理→独立Worker落片→结果作为下一Canvas节点source_video→再次落片，父子资产/单账本通过 | 已新增真实浏览器选旧历史→ReactFlow拖线→下一节点提交→独立Worker落片，冻结资产/parent/单账本一致；当前为本地供应商fixture，非真实付费上游 |
 | A18 | 编译、供应商fixture受理、成片真实解码保存、账务分别核对，结果含真实输入字节hash | 真实付费供应商质量/成功率和用户采用仍未验，不能标Production-confirmed |
 | A19 | 已有源码副本回退/扩展字段兼容、真实发布控制回执与版本准备门禁；本轮独立Worker重启 | 固定生产构建、新旧Web/Worker双槽、排空/切回/旧资产、目标站蓝绿和实际发布仍未验 |
 
