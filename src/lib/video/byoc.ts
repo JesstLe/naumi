@@ -21,6 +21,7 @@ import {submitQueuedVideoTask,handleVideoCreationError} from "./runtime";
 import {withByocVideoTask} from "./byoc-context";
 export {withByocVideoTask} from "./byoc-context";
 import {applicationTasksRunHere} from "../application/task-execution";
+import {withNewVideoAdmission} from './admission';
 const num=z.number().finite().min(0).max(Number.MAX_SAFE_INTEGER),name=z.string().min(1).max(160);
 export const byocVideoInputSchema=z.strictObject({workflowId:name,workflowRevision:z.number().int().nonnegative().optional(),idempotencyKey:z.string().min(1).max(100),mediaType:z.literal("video").optional(),artworkId:name.optional(),imageUrl:z.string().max(16384).optional(),
   source:z.enum(["canvas","workbench","agent","workflow"]).optional(),orderedInputs:z.array(orderedInputSchema).max(256).optional(),
@@ -45,6 +46,7 @@ export async function retryByocVideoTask(actor:string,old:VideoTaskRow,idempoten
   if(old.parameters.version===3){const {retryCompiledByocVideo}=await import('./byoc-submission');return retryCompiledByocVideo(actor,old,idempotencyKey);}
   const digest=createHash("sha256").update(canonicalConfig({retryOf:old.id,idempotencyKey})).digest("hex"),existing=await getVideoTaskByIdempotencyKey(actor,idempotencyKey);
   if(existing){if(existing.parameters.creationInputDigest!==digest)throw new ModelConfigError("OPERATION_CONFLICT","操作编号已用于另一任务",409);return {taskId:existing.id,cost:0};}
+  return withNewVideoAdmission(actor,async()=>{
   const request=structuredClone(old.parameters.request) as VideoGenerationRequest;request.idempotencyKey=idempotencyKey;
   const node=request.canvasNodeId?await getVideoNode(actor,request.canvasNodeId):null;
   request.canvasNodeId=node?.id;request.nodeRevision=node?.revision;
@@ -61,5 +63,6 @@ export async function retryByocVideoTask(actor:string,old:VideoTaskRow,idempoten
       idempotencyKey,providerSnapshot:old.providerSnapshot,...(node?{onReserved:async(client,task)=>associateVideoTaskTx(client,actor,node.id,node.revision,task.id)}:{})});
     if(created.created)try{await submitQueuedVideoTask(actor,created.task,undefined,undefined,false);}catch(error){await handleVideoCreationError(actor,created.task,error);}
     return {taskId:created.task.id,cost:0};
+  });
   });
 }

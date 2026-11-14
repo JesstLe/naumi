@@ -11,6 +11,7 @@ import {ModelConfigError} from "../model-config/types";
 import {getVideoTaskByIdempotencyKey} from "./task-repository";
 import {submitQueuedVideoTask,handleVideoCreationError} from "./runtime";
 import type {CreateVideoInput} from "./submission-types";
+import {withNewVideoAdmission} from './admission';
 
 /** One managed selection boundary for standalone and owned Canvas entries. */
 export async function withVideoCreationModel<T>(requestedModelId:string|undefined,run:()=>Promise<T>):Promise<T>{
@@ -51,10 +52,10 @@ export async function createVideoGeneration(
       return { taskId: existing.id, cost: existing.cost };
     }
   }
-  return withVideoCreationModel(input.modelId||undefined,()=>createVideoGenerationUnlocked(email, {
+  return withNewVideoAdmission(email,()=>withVideoCreationModel(input.modelId||undefined,()=>createVideoGenerationUnlocked(email, {
     ...input,
     idempotencyKey: key || crypto.randomUUID(),
-  }));
+  })));
 }
 
 const videoInputDigest=videoCreationInputDigest;

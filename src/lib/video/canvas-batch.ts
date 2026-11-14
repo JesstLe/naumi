@@ -19,6 +19,7 @@ import {authorizeWorkflowInputs,scheduleVideoWorkflow,getVideoWorkflow} from "./
 
 import {freezeVideoWorkflow,type FrozenWorkflowStage} from "./workflow-freeze";
 import type {VideoWorkflowPlan} from "./workflow-schema";
+import {withNewVideoAdmission} from './admission';
 
 export const canvasVideoBatchSchema = z.strictObject({
   nodeId: videoNodeIdSchema, expectedRevision: z.number().int().nonnegative(), idempotencyKey: z.uuid(),
@@ -38,6 +39,12 @@ export async function readCanvasVideoBatch(actor: string, nodeId: string, id: st
 
 /** Freeze once, save every output node and receipt atomically, then use the existing durable scheduler. */
 export async function submitCanvasVideoBatch(actorRaw: string, raw: unknown) {
+  const input=canvasVideoBatchSchema.parse(raw),actor=actorRaw.toLowerCase();await ensureBatchSchema();
+  // Replay recognition only: the locked path still owns authorization/writes.
+  const existing=(await getPool().query('SELECT 1 FROM app_canvas_video_batches WHERE id=$1',[input.idempotencyKey])).rowCount;
+  return existing?submitCanvasVideoBatchUnlocked(actor,input):withNewVideoAdmission(actor,()=>submitCanvasVideoBatchUnlocked(actor,input));
+}
+async function submitCanvasVideoBatchUnlocked(actorRaw:string,raw:unknown){
   const input = canvasVideoBatchSchema.parse(raw), actor = actorRaw.toLowerCase();
   await ensureBatchSchema();
   const pool = getPool(), client = await pool.connect(), lock = `canvas-video-batch:${actor}:${input.nodeId}`;
