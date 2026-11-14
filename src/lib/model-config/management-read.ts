@@ -15,6 +15,8 @@ import { managedModelPriceViews } from "./management-pricing";
 import type { ModelSnapshot } from "./types";
 import type { ManagementAdministration } from "./management-input";
 import {onboardingView} from './onboarding';
+import {proposedVideoExecution} from './video-execution-migration';
+import {ModelConfigError} from './types';
 /** Read model of the model-management page: rows, supplier defaults, pricing and health. */
 export function managementRows(snapshot: ModelSnapshot) {
   return managedModelRows(snapshot, Object.entries(FEATURE_BINDINGS).map(([feature, binding]) => ({ ...publicModelCatalog(snapshot, MODEL_BINDINGS[binding!].modality, feature as keyof typeof FEATURE_BINDINGS), feature })));
@@ -39,7 +41,9 @@ export async function readManagementView(admin: ManagementAdministration, snapsh
           let pending=videoDefaults.get(id);
           if(!pending){pending=freezeManagedVideoCapability(snapshot,upstream,provider);videoDefaults.set(id,pending);}
           const frozen=await pending;
-          return {upstreamId:id,model:upstream.model,provider:provider.name,definition:upstream.capabilities.video,profile:upstream.parameterMap.videoProfile,
+          let candidate;try{if(!upstream.parameterMap.videoExecution)candidate=proposedVideoExecution(upstream,provider);}catch(error){if(!(error instanceof ModelConfigError))throw error;}
+          return {upstreamId:id,model:upstream.model,provider:provider.name,definition:upstream.capabilities.video,profile:upstream.parameterMap.videoProfile,execution:upstream.parameterMap.videoExecution,
+            ...(candidate?{executionCandidate:candidate.execution,candidateProfile:candidate.profile}:{}),
             effective:frozen.definition,sources:frozen.sources,sourceRevision:frozen.sourceRevision};
         }))};
         for(const row of modelRows)for(const route of row.resolutionConfig?.routes||[]){const d=resolutionDefaults.get(route.upstreamId);route.metadataDefaults=d||null;if(d)route.nativeValues=d.nativeValues;if(route.editable&&!route.configured&&d?.available){route.mode=d.mode;route.field=d.field;route.ratioField=d.ratioField;route.fieldKnown=true;route.values={...d.values};route.metadataRef={id:d.id,revision:d.revision};}}

@@ -20,6 +20,7 @@ const creditPricing=z.discriminatedUnion("mode",[z.strictObject({mode:z.literal(
 export const managementInput = z.discriminatedUnion("action", [
   z.strictObject({action:z.literal('create-models'),...common,...onboardingFields}),
   z.strictObject({action:z.literal("video-capability-upgrade"),...common,reviewDigest:z.string().regex(/^[a-f0-9]{64}$/),publicIds:z.array(identifier).min(1).max(100)}),
+  z.strictObject({action:z.literal('video-execution-migration'),...common,reviewDigest:z.string().regex(/^[a-f0-9]{64}$/),publicIds:z.array(identifier).min(1).max(100)}),
   z.strictObject({action:z.literal("video-parameters"),...common,rowId:identifier,routes:videoParametersSchema}),
   z.strictObject({action:z.literal("imagegen-parameters"),...common,rowId:identifier,routes:z.array(imagegenRoutePolicySchema).max(100).nullable()}),
   z.strictObject({action:z.literal("channels"),...common,rowId:identifier,policy:channelPolicySchema.nullable()}),
