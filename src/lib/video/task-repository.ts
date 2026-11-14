@@ -114,7 +114,7 @@ export async function getVideoTaskByIdempotencyKey(
 /** 任务列表(工作台/恢复用):按创建时间倒序。 */
 export async function listVideoTasks(
   email: string,
-  opts: { status?: string; source?: string; sourceIds?: string[]; projectKey?: string; nodeId?: string; limit?: number;cursor?:{createdAt:string;id:string};pendingOnly?:boolean } = {}
+  opts: { status?: string; source?: string; sourceIds?: string[]; projectKey?: string; nodeId?: string; limit?: number;cursor?:{createdAt:string;id:string};pendingOnly?:boolean;attachedTaskIds?:string[] } = {}
 ): Promise<VideoTaskRow[]> {
   await ensureSchema();
   const limit = Math.min(Math.max(Math.trunc(opts.limit ?? 30), 1), 501);
@@ -132,8 +132,10 @@ export async function listVideoTasks(
     params.push(Array.from(new Set(opts.sourceIds.filter(Boolean))).slice(0, 500));
     where += ` AND source_id = ANY($${params.length}::text[])`;
   }
+  let attachedParameter:number|undefined;
+  if((opts.projectKey||opts.nodeId)&&opts.attachedTaskIds?.length){params.push(opts.attachedTaskIds);attachedParameter=params.length;}
   for (const [field, value] of [["projectKey", opts.projectKey], ["nodeId", opts.nodeId]]) {
-    if (value) { params.push(value); where += ` AND parameters->>'${field}' = $${params.length}`; }
+    if (value) { params.push(value); where += ` AND (parameters->>'${field}' = $${params.length}${attachedParameter?` OR id = ANY($${attachedParameter}::text[])`:''})`; }
   }
   if(opts.pendingOnly)where += " AND status IN ('queued','processing','needs_attention')";
   if(opts.cursor){params.push(opts.cursor.createdAt,opts.cursor.id);where += ` AND (created_at,id)<($${params.length-1}::timestamptz,$${params.length}::text)`;}

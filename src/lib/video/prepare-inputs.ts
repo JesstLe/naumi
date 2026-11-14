@@ -3,6 +3,7 @@ import {resolveVideoDraft,parseVideoExecutionDraft} from './input-resolver';
 import {videoDiagnostic,type ResolvedVideoDraft,type ResolvedVideoAsset,type VideoExecutionDraft,type VideoResult} from './execution-contract';
 import {resolveCanvasNodeInputs} from '../canvas/node-inputs';
 import {getVideoNode} from '../canvas/video-node-repository';
+import {getVideoTask} from './task-repository';
 import {getOwnedCanvasTextNode} from '../canvas/text-node-repository';
 import {canvasTextContent} from '../canvas/text-content';
 import {authorizeVideoProject} from '../canvas/project-access';
@@ -75,6 +76,12 @@ async function prepareVideoInputBatch(actorRaw:string,projectKey:string|null,raw
           const node=await getVideoNode(actor,id);
           if(!node)return failure('VIDEO_INPUT_UNAVAILABLE','引用媒体不存在或无权访问',input.id);
           await assertCreationProjectInput(actor,node.projectKey);
+          // A node's previous output must not silently satisfy its current
+          // unfinished operation. Explicitly selected history remains usable.
+          if(!node.displayResultId&&node.lastTaskId){
+            const task=await getVideoTask(actor,node.lastTaskId);
+            if(task&&task.status!=='completed')return failure('DEPENDENCY_PENDING','前序视频尚未完成，请等待或明确选择历史结果',input.id);
+          }
           const resultId=node.displayResultId||node.lastResultId;
           if(!resultId)return failure('DEPENDENCY_PENDING','前序视频尚无已完成结果',input.id);
           artwork=(await listArtworksByIds(actor,[resultId]))[0];

@@ -4,6 +4,7 @@ import type {VideoTaskRow} from "./task-types";
 import {getBillingRuntime,meteringFor} from "../billing/runtime";
 import {quote} from "../billing/quote";
 import {listVideoTasks} from "./task-repository";
+import {attachedVideoTaskIds} from '../canvas/video-task-attachments';
 import {resolveOpenAiVideosConfig} from "./providers/openai-videos";
 
 export type PublicVideoTaskView = Pick<
@@ -75,5 +76,9 @@ export async function listVideoTaskViews(
   email: string,
   opts: { status?: string; source?: string; sourceIds?: string[]; projectKey?: string; nodeId?: string; limit?: number;cursor?:{createdAt:string;id:string};pendingOnly?:boolean } = {}
 ): Promise<VideoTaskRow[]> {
-  return listVideoTasks(email, opts);
+  // A sent historical receipt keeps its original frozen project/node fields.
+  // Query its explicit Canvas attachment instead of treating an absent list
+  // entry as an unknown current task and permanently disabling its composer.
+  const attachedTaskIds=opts.projectKey?await attachedVideoTaskIds(email,opts.projectKey,opts.nodeId):[];
+  return listVideoTasks(email, {...opts,attachedTaskIds});
 }

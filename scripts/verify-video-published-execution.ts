@@ -89,6 +89,46 @@ async function main(){
     const resolve=async(patch:Partial<VideoExecutionDraft>,projectKey:string|null=project)=>prepareVideoExecutionInputs(actor,projectKey,{...structuredClone(base),...patch});
     const selected=value(await resolve({inputs:[{...base.inputs[0],nodeId:'native-video'}]}));
     check('selected-history-not-current-task',()=>{assert(selected.inputs[0].kind==='image');assert.equal(selected.inputs[0].asset.artworkId,'image-owned');});
+    // A previous result is not the output of the currently pending operation.
+    // Only an explicit history selection may bind that result while it runs.
+    const {createVideoTask}=await import('../src/lib/video/task-repository');
+    await createVideoTask({id:'dependency-current',email:actor,upstreamId:'fixture-existing-receipt',model:'fixture',prompt:'pending dependency',size:'',seconds:'1',cost:0,requestBody:''});
+    await pool.query("UPDATE app_canvas_video_nodes SET last_result_id='image-owned',display_result_id=NULL,last_task_id='dependency-current' WHERE id='native-video'");
+    for(const status of ['queued','processing','needs_attention','failed','cancelled']){
+      await pool.query('UPDATE app_video_tasks SET status=$1 WHERE id=$2',[status,'dependency-current']);
+      const implicit=await resolve({inputs:[{...base.inputs[0],nodeId:'native-video'}]});
+      check('implicit-old-result-not-'+status+'-output',()=>assert.equal(code(implicit),'DEPENDENCY_PENDING'));
+      await pool.query("UPDATE app_canvas_video_nodes SET display_result_id='image-owned' WHERE id='native-video'");
+      const explicit=value(await resolve({inputs:[{...base.inputs[0],nodeId:'native-video'}]}));
+      check('explicit-history-usable-during-'+status,()=>{assert(explicit.inputs[0].kind==='image');assert.equal(explicit.inputs[0].asset.artworkId,'image-owned');});
+      await pool.query("UPDATE app_canvas_video_nodes SET display_result_id=NULL WHERE id='native-video'");
+    }
+    await pool.query("UPDATE app_video_tasks SET status='completed' WHERE id='dependency-current'");
+    const currentResult=value(await resolve({inputs:[{...base.inputs[0],nodeId:'native-video'}]}));
+    check('completed-current-result-usable',()=>{assert(currentResult.inputs[0].kind==='image');assert.equal(currentResult.inputs[0].asset.artworkId,'image-owned');});
+    await pool.query("INSERT INTO app_canvas_video_task_sends(email,task_id,project_key,result) VALUES($1,'dependency-current',$2,$3)",[actor,project,JSON.stringify({nodeId:'native-video'})]);
+    const {listVideoTaskViews}=await import('../src/lib/video/queries');
+    const originalTaskParameters=(await pool.query("SELECT parameters FROM app_video_tasks WHERE id='dependency-current'")).rows[0].parameters;
+    assert((await listVideoTaskViews(actor,{projectKey:project})).some(task=>task.id==='dependency-current'),'sent completed task must resolve in target project without rewriting frozen projectKey');
+    assert((await listVideoTaskViews(actor,{projectKey:project,nodeId:'native-video'})).some(task=>task.id==='dependency-current'));
+    check('sent-history-in-target-project',()=>{});
+    assert.equal((await listVideoTaskViews(actor,{projectKey:'tree:not-sent'})).length,0);
+    assert.equal((await listVideoTaskViews(other,{projectKey:project})).length,0);
+    assert.equal((await listVideoTaskViews(actor,{projectKey:project,status:'queued'})).length,0);
+    assert.equal((await listVideoTaskViews(actor,{projectKey:project,nodeId:'not-this-node'})).length,0);
+    assert.equal((await listVideoTaskViews(actor,{projectKey:project,source:'workbench'})).length,0);
+    assert.equal((await listVideoTaskViews(actor,{projectKey:project,cursor:{createdAt:'2000-01-01T00:00:00Z',id:'before-all'}})).length,0);
+    await pool.query("UPDATE app_video_tasks SET parameters=jsonb_build_object('projectKey',$1::text,'nodeId','native-video') WHERE id='dependency-current'",[project]);
+    assert.equal((await listVideoTaskViews(actor,{projectKey:project})).filter(task=>task.id==='dependency-current').length,1);
+    await pool.query("UPDATE app_video_tasks SET parameters=$1::jsonb WHERE id='dependency-current'",[originalTaskParameters]);
+    check('sent-history-cursor-source-and-original-project-no-duplicates',()=>{});
+    await pool.query("UPDATE app_canvas_video_nodes SET deleted_at=now() WHERE id='native-video'");
+    assert.equal((await listVideoTaskViews(actor,{projectKey:project})).length,0);
+    await pool.query("UPDATE app_canvas_video_nodes SET deleted_at=NULL WHERE id='native-video'");
+    check('sent-history-filters-owner-node-status-and-deletion',()=>{});
+    assert.deepEqual((await pool.query("SELECT parameters FROM app_video_tasks WHERE id='dependency-current'")).rows[0].parameters,originalTaskParameters);
+    await pool.query("DELETE FROM app_canvas_video_task_sends WHERE task_id='dependency-current'");
+    await pool.query("DELETE FROM app_video_tasks WHERE id='dependency-current'");
     const linked=value(await resolve({inputs:[{id:'text',nodeId:'text:text-owned',kind:'text',role:'context',value:'forged text'}]}));
     check('linked-text-reread-not-client',()=>{assert(linked.inputs[0].kind==='text');assert.equal(linked.inputs[0].text,'actual linked content');});
     for(const [name,patch,expected]of [
