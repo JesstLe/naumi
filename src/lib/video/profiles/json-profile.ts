@@ -3,7 +3,7 @@ import {deriveVideoIntent} from '../intent';
 import {compileVideoPrompt} from '../prompt';
 import {
   videoIntentSchema,videoInputRoleSchema,videoDiagnostic,
-  type VideoModelProfile,type PublishedVideoModelBinding,type ResolvedVideoDraft,type ResolvedVideoInput,
+  type VideoModelProfile,type PublishedVideoModelBinding,type ResolvedVideoDraft,type ResolvedVideoInput,type VideoExecutionDraft,
   type VideoResult,type VideoProfileOutput,type VideoInputContract,
 } from '../execution-contract';
 
@@ -51,6 +51,7 @@ export function createJsonVideoProfile(profileId:string,version:number):VideoMod
       if(!recipe.success)return fail('mapping','PROFILE_MAPPING_MISSING','binding.recipe','视频协议映射不完整或无效','配置该通道的请求字段与输入映射');
       return {ok:true,value:{profileId,profileVersion:version,bindingRevision:binding.revision,description:recipe.data}};
     },
+    prepareDraft(draft,_contract,binding){return prepareJsonVideoDraft(draft,binding);},
     compile(draft,contract,binding){
       const recipe=contract.description as Recipe;
       const intent=deriveVideoIntent(draft,recipe.defaults);if(!intent.ok)return intent;
@@ -61,8 +62,29 @@ export function createJsonVideoProfile(profileId:string,version:number):VideoMod
   };
 }
 function compileJson(draft:ResolvedVideoDraft,binding:PublishedVideoModelBinding,recipe:Recipe,operation:Operation):VideoResult<VideoProfileOutput> {
-  const media=draft.inputs.filter((input):input is MediaInput=>input.kind!=='text');
-  const role=(input:MediaInput)=>operation.intent==='single_image'&&input.kind==='image'&&input.role==='reference'?'first_frame':input.role;
+  for(const kind of ['image','video','audio'] as const){
+    const items=draft.inputs.filter((input):input is MediaInput=>input.kind===kind),rule=operation[({image:'images',video:'videos',audio:'audios'} as const)[kind]];
+    if(rule&&items.some(input=>rule.maxBytes!==undefined&&input.asset.bytes>rule.maxBytes||rule.maxDurationSeconds!==undefined&&(input.asset.durationSeconds??0)>rule.maxDurationSeconds))
+      return fail('constraint','MEDIA_PROPERTIES_OUT_OF_RANGE','inputs','素材大小或时长超过协议限制','调整素材规格');
+    if(rule?.totalDurationSeconds!==undefined&&items.reduce((sum,input)=>sum+(input.asset.durationSeconds??0),0)>rule.totalDurationSeconds)
+      return fail('constraint','MEDIA_TOTAL_DURATION_OUT_OF_RANGE','inputs','参考素材总时长超过协议限制','缩短参考素材');
+  }
+  return mapJsonDraft({...draft,inputs:draft.inputs.map(input=>({id:input.id,nodeId:input.nodeId,kind:input.kind,role:input.role,value:input.kind==='text'?input.text:input.asset.storageKey}))},binding,recipe,operation);
+}
+
+/** Structural/parameter preparation is shared with final compilation, but has
+ * no resolved media claims or CompiledVideoPlan. Workflow uses only its quote
+ * facts until real dependencies exist; no fake MIME, bytes, hash or duration. */
+function prepareJsonVideoDraft(draft:VideoExecutionDraft,binding:PublishedVideoModelBinding):VideoResult<Pick<VideoProfileOutput,'intent'|'effectiveParameters'|'billingFacts'>>{
+  const parsed=jsonVideoRecipeSchema.safeParse(binding.recipe);if(!parsed.success)return fail('mapping','PROFILE_MAPPING_MISSING','binding.recipe','视频协议映射不完整或无效','配置协议映射');
+  const recipe=parsed.data,intent=deriveVideoIntent(draft,recipe.defaults);if(!intent.ok)return intent;
+  const operation=recipe.operations.find(value=>value.intent===intent.value);if(!operation)return fail('mapping','INPUT_INTENT_NOT_MAPPABLE','intentPreference','此执行绑定没有该操作的请求映射','配置对应操作');
+  const result=mapJsonDraft(draft,binding,recipe,operation);if(!result.ok)return result;
+  return {ok:true,value:{intent:result.value.intent,effectiveParameters:result.value.effectiveParameters,billingFacts:result.value.billingFacts}};
+}
+function mapJsonDraft(draft:VideoExecutionDraft,binding:PublishedVideoModelBinding,recipe:Recipe,operation:Operation):VideoResult<VideoProfileOutput> {
+  const media=draft.inputs.filter(input=>input.kind!=='text');
+  const role=(input:VideoExecutionDraft['inputs'][number])=>operation.intent==='single_image'&&input.kind==='image'&&input.role==='reference'?'first_frame':input.role;
   if(operation.intent==='text'&&media.length)return fail('input','TEXT_INTENT_HAS_MEDIA','inputs','文生操作中存在媒体输入','选择与媒体用途一致的生成意图');
   if(operation.intent==='frames_required'&&(media.filter(input=>input.kind==='image'&&input.role==='first_frame').length!==1||media.filter(input=>input.kind==='image'&&input.role==='last_frame').length!==1))
     return fail('input','FRAME_INPUT_REQUIRED','inputs','首尾帧操作需要明确的一张首帧和一张尾帧','为两张图片明确指定首帧和尾帧');
@@ -70,13 +92,10 @@ function compileJson(draft:ResolvedVideoDraft,binding:PublishedVideoModelBinding
     const items=media.filter(input=>input.kind===kind),rule=operation[({image:'images',video:'videos',audio:'audios'} as const)[kind]];
     if(items.length&&!operation.media.some(mapping=>mapping.kind===kind))return fail('mapping','INPUT_KIND_NOT_MAPPABLE','inputs','此操作没有该媒体类型的请求映射','配置媒体输入映射或选择其他操作',items[0].id);
     if(rule&&(items.length<rule.min||rule.max!==undefined&&items.length>rule.max))return fail('constraint','MEDIA_COUNT_OUT_OF_RANGE','inputs','媒体数量不符合此协议操作的约束','调整媒体数量');
-    if(rule&&items.some(input=>rule.maxBytes!==undefined&&input.asset.bytes>rule.maxBytes||rule.maxDurationSeconds!==undefined&&(input.asset.durationSeconds??0)>rule.maxDurationSeconds))
-      return fail('constraint','MEDIA_PROPERTIES_OUT_OF_RANGE','inputs','素材大小或时长超过协议限制','调整素材规格');
-    if(rule?.totalDurationSeconds!==undefined&&items.reduce((sum,input)=>sum+(input.asset.durationSeconds??0),0)>rule.totalDurationSeconds)
-      return fail('constraint','MEDIA_TOTAL_DURATION_OUT_OF_RANGE','inputs','参考素材总时长超过协议限制','缩短参考素材');
+
   }
   let prompt:string;
-  try{prompt=compileVideoPrompt(draft.prompt,draft.inputs.map(input=>({id:input.id,nodeId:input.nodeId,kind:input.kind,role:input.role,value:input.kind==='text'?input.text:input.asset.storageKey}))).prompt;}
+  try{prompt=compileVideoPrompt(draft.prompt,draft.inputs.map(input=>({...input,value:input.kind==='text'?input.value??'':input.nodeId}))).prompt;}
   catch{return fail('input','PROMPT_REFERENCE_INVALID','prompt','提示词引用与当前素材不一致','重新插入引用或移除失效标记');}
   if(operation.requiresPrompt&&!prompt.trim())return fail('input','PROMPT_REQUIRED','prompt','此操作需要视频描述','填写视频描述');
   if(operation.maxPromptChars!==undefined&&prompt.length>operation.maxPromptChars)return fail('constraint','PROMPT_TOO_LONG','prompt','视频描述超过协议限制','缩短描述，不会自动截断');

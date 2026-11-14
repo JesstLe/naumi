@@ -1,7 +1,8 @@
+import {parseVideoExecutionDraft} from './input-resolver';
 import {createHash} from 'node:crypto';
 import {
-  videoModelBindingSchema,videoExecutionPolicySchema,resolvedVideoDraftSchema,videoProfileOutputSchema,compiledVideoPlanSchema,videoDiagnostic,
-  type VideoModelProfile,type CompiledVideoPlan,type VideoResult,
+  videoModelBindingSchema,videoExecutionPolicySchema,resolvedVideoDraftSchema,videoProfileOutputSchema,compiledVideoPlanSchema,videoDiagnostic,videoDraftPreparationSchema,
+  type VideoModelProfile,type CompiledVideoPlan,type VideoResult,type VideoExecutionPolicy,type VideoExecutionDraft,type VideoExecutionIntent,type VideoDraftPreparation,
 } from './execution-contract';
 
 // Leaf value operation; no model-config/server import or db/billing cycle.
@@ -36,6 +37,39 @@ function freeze<T>(value:T):T {
   if(value&&typeof value==='object'){Object.values(value).forEach(freeze);Object.freeze(value);}return value;
 }
 
+/** Explicit policy checks shared by pending Workflow preparation and final
+ * compilation. Legacy capabilities never enter this function. */
+export function checkVideoExecutionPolicy(policy:VideoExecutionPolicy,inputs:VideoExecutionDraft['inputs'],intent?:VideoExecutionIntent):VideoResult<true>{
+  if(policy.restrictions.disabled)return {ok:false,diagnostics:[videoDiagnostic('policy','EXECUTION_POLICY_DISABLED','policy','管理员已明确关闭此执行','联系管理员检查执行政策')]};
+  for(const kind of ['image','video','audio'] as const){
+    const maximum=policy.restrictions.mediaMaximum?.[kind];
+    if(maximum!==undefined&&inputs.filter(input=>input.kind===kind).length>maximum)
+      return {ok:false,diagnostics:[videoDiagnostic('policy','POLICY_MEDIA_LIMIT','inputs','素材数量超过管理员明确设置的限制','调整素材数量或联系管理员')]};
+  }
+  if(intent&&policy.restrictions.deniedIntents?.includes(intent))return {ok:false,diagnostics:[videoDiagnostic('policy','EXECUTION_POLICY_DISABLED','intentPreference','管理员已明确关闭此操作','选择其他操作或联系管理员')]};
+  return {ok:true,value:true};
+}
+
+/** Pending-stage preparation: same Profile and explicit policy, no media facts
+ * invented and no final CompiledVideoPlan. Execution later compiles exactly
+ * once from real resolved assets and the original requested parameters. */
+export function prepareVideoDraftConstraints(args:{profile:VideoModelProfile;binding:unknown;policy:unknown;draft:unknown}):VideoResult<VideoDraftPreparation>{
+  const binding=videoModelBindingSchema.safeParse(args.binding),policy=videoExecutionPolicySchema.safeParse(args.policy),draft=parseVideoExecutionDraft(args.draft);
+  if(!binding.success||!policy.success)return {ok:false,diagnostics:[videoDiagnostic('mapping','INVALID_VIDEO_BINDING','binding','制作链绑定或政策无效','读取冻结执行配置')]};
+  if(!draft.ok)return draft;
+  const b=freeze(binding.data),p=freeze(policy.data),d=freeze(draft.value),profile=args.profile;
+  if(profile.profileId!==b.profileId||profile.version!==b.profileVersion)return {ok:false,diagnostics:[videoDiagnostic('mapping','PROFILE_VERSION_MISMATCH','binding','制作链协议版本不一致','读取绑定指定版本')]};
+  const permitted=checkVideoExecutionPolicy(p,d.inputs);if(!permitted.ok)return permitted;
+  if(!profile.prepareDraft)return {ok:false,diagnostics:[videoDiagnostic('mapping','PROFILE_PREPARATION_NOT_CONFIGURED','profile','此协议尚未实现依赖槽与报价准备','完成对应Profile的工作流映射')]};
+  try{
+    const described=profile.describe(b);if(!described.ok)return described;
+    if(described.value.profileId!==b.profileId||described.value.profileVersion!==b.profileVersion||described.value.bindingRevision!==b.revision)return {ok:false,diagnostics:[videoDiagnostic('internal','PROFILE_CONTRACT_MISMATCH','binding','协议描述与执行绑定不一致','检查协议实现')]};
+    const result=profile.prepareDraft(d,freeze(described.value),b);if(!result.ok)return result;
+    const value=videoDraftPreparationSchema.safeParse(result.value);if(!value.success)return {ok:false,diagnostics:[videoDiagnostic('internal','INVALID_PROFILE_OUTPUT','profile','协议参数准备结果无效','检查协议实现')]};
+    const allowed=checkVideoExecutionPolicy(p,d.inputs,value.data.intent);return allowed.ok?{ok:true,value:freeze(value.data)}:allowed;
+  }catch{return {ok:false,diagnostics:[videoDiagnostic('internal','PROFILE_PREPARATION_FAILED','profile','制作链参数准备未完成','核对协议映射')]};}
+}
+
 /** Pure compile facade. Both preview and submit use this function. No latest
  * capability resolution, task writes, billing or provider I/O is reachable. */
 export function compileVideoRequest(args:{profile:VideoModelProfile;binding:unknown;policy:unknown;draft:unknown}):VideoResult<CompiledVideoPlan> {
@@ -44,12 +78,7 @@ export function compileVideoRequest(args:{profile:VideoModelProfile;binding:unkn
   const b=freeze(binding.data),p=freeze(policy.data),d=freeze(draft.data),profile=args.profile;
   if(profile.profileId!==b.profileId||profile.version!==b.profileVersion)
     return {ok:false,diagnostics:[videoDiagnostic('mapping','PROFILE_VERSION_MISMATCH','binding','执行绑定与编译器版本不一致','读取绑定指定的协议版本')]};
-  if(p.restrictions.disabled)return {ok:false,diagnostics:[videoDiagnostic('policy','EXECUTION_POLICY_DISABLED','policy','管理员已明确关闭此执行','联系管理员检查执行政策')]};
-  for(const kind of ['image','video','audio'] as const){
-    const maximum=p.restrictions.mediaMaximum?.[kind];
-    if(maximum!==undefined&&d.inputs.filter(input=>input.kind===kind).length>maximum)
-      return {ok:false,diagnostics:[videoDiagnostic('policy','POLICY_MEDIA_LIMIT','inputs','素材数量超过管理员明确设置的限制','调整素材数量或联系管理员')]};
-  }
+  const permitted=checkVideoExecutionPolicy(p,d.inputs);if(!permitted.ok)return permitted;
   // Resolver is an application trust boundary. Reject malformed reconstructed
   // manifests too; never accept an HTTP "already compiled/resolved" claim.
   if(new Set(d.inputs.map(input=>input.id)).size!==d.inputs.length)
@@ -63,7 +92,7 @@ export function compileVideoRequest(args:{profile:VideoModelProfile;binding:unkn
     const output=videoProfileOutputSchema.safeParse(compiled.value);
     if(!output.success)return {ok:false,diagnostics:[videoDiagnostic('internal','INVALID_PROFILE_OUTPUT','profile','协议编译结果结构无效','检查协议实现')]};
     const value=output.data;
-    if(p.restrictions.deniedIntents?.includes(value.intent))return {ok:false,diagnostics:[videoDiagnostic('policy','EXECUTION_POLICY_DISABLED','intentPreference','管理员已明确关闭此操作','选择其他操作或联系管理员')]};
+    const intentAllowed=checkVideoExecutionPolicy(p,d.inputs,value.intent);if(!intentAllowed.ok)return intentAllowed;
     const consumed=new Set(value.consumedInputIds),provided=new Set(d.inputs.map(input=>input.id));
     if(consumed.size!==value.consumedInputIds.length||consumed.size!==provided.size||[...consumed].some(id=>!provided.has(id)))
       return {ok:false,diagnostics:[videoDiagnostic('mapping','INPUT_NOT_CONSUMED','inputs','协议没有完整映射当前素材','检查协议输入映射，不会自动丢弃素材')]};

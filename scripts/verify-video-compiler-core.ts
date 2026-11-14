@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {compileVideoRequest,readCompiledVideoPlan} from '../src/lib/video/compile';
+import {compileVideoRequest,readCompiledVideoPlan,prepareVideoDraftConstraints} from '../src/lib/video/compile';
 import {resolveVideoDraft,type VideoInputResolverPorts} from '../src/lib/video/input-resolver';
 import {materializeJsonVideoPlan} from '../src/lib/video/profiles/json-materialization';
 import {deriveVideoIntent} from '../src/lib/video/intent';
@@ -31,7 +31,7 @@ function draft():ResolvedVideoDraft{return {scope:{actorId:'actor',projectKey:'p
 function asset(kind:'image'|'video'|'audio'='image'):ResolvedVideoAsset{return {artworkId:kind+'-art',storageKey:'owned/'+kind+'.bin',sha256:'a'.repeat(64),bytes:1000,mimeType:kind==='image'?'image/png':kind==='video'?'video/mp4':'audio/wav',...(kind==='image'?{width:1024,height:1024}:{durationSeconds:4})};}
 function media(id='image1',kind:'image'|'video'|'audio'='image',role:any='reference'):any{return {id,nodeId:id,kind,role,asset:asset(kind)};}
 function compiled(d=draft(),b=binding(),p=emptyVideoExecutionPolicy(),selected=profile){return compileVideoRequest({profile:selected,binding:b,policy:p,draft:d});}
-function success(result:VideoResult<CompiledVideoPlan>):CompiledVideoPlan {assert.equal(result.ok,true,JSON.stringify(result));if(!result.ok)throw Error('failed');return result.value;}
+function success<T>(result:VideoResult<T>):T {assert.equal(result.ok,true,JSON.stringify(result));if(!result.ok)throw Error('failed');return result.value;}
 function failure(result:VideoResult<unknown>,code:string){assert.equal(result.ok,false);if(!result.ok)assert.equal(result.diagnostics[0].code,code);}
 function policy(r:VideoExecutionPolicy['restrictions']):VideoExecutionPolicy{return {kind:'video.execution-policy',revision:2,restrictions:r,audit:{actor:'admin',reason:'explicit action',changedAt:'2026-11-14T00:00:00.000Z'}};}
 async function main(){
@@ -136,6 +136,10 @@ async function main(){
  await test('MISSING_LIMITS_DO_NOT_MEAN_ZERO',()=>{const d=draft();d.inputs=[media()];const b=binding();delete (b.recipe as any).operations[1].images;assert.ok(compiled(d,b).ok);});
  await test('MISSING_PROMPT_REQUIREMENT_NOT_ASSUMED',()=>{const d=draft();d.prompt='';d.inputs=[media()];assert.ok(compiled(d).ok);});
  await test('NEW_EXPLICIT_TEXT_IS_NOT_LEGACY_DEFAULT',()=>{const d=draft();d.intentPreference='text';d.inputs=[media()];failure(compiled(d),'TEXT_INTENT_HAS_MEDIA');});
+ await test('PENDING_PREPARATION_NEVER_FINAL_COMPILES_OR_INVENTS_FACTS',()=>{let finalCalls=0;const p={...profile,compile:(...args:Parameters<VideoModelProfile['compile']>)=>{finalCalls++;return profile.compile(...args);}};const raw={prompt:'参考{{ref 1}}',parameters:{durationSeconds:4,resolution:'4K'},inputs:[{id:'future',nodeId:'future-node',kind:'video' as const,role:'source_video' as const}]};const prepared=success(prepareVideoDraftConstraints({profile:p,binding:binding(),policy:emptyVideoExecutionPolicy(),draft:raw}));assert.equal(finalCalls,0);assert.equal(prepared.billingFacts.resolution,'2K');assert.equal(prepared.intent,'reference');assert(!JSON.stringify(prepared).includes('wireTemplate'));assert(!JSON.stringify(prepared).includes('sha256'));const resolved=draft();resolved.parameters=raw.parameters;resolved.inputs=[media('future','video','source_video')];success(compileVideoRequest({profile:p,binding:binding(),policy:emptyVideoExecutionPolicy(),draft:resolved}));assert.equal(finalCalls,1);});
+ await test('PENDING_PREPARATION_EXPLICIT_POLICY',()=>{const p=emptyVideoExecutionPolicy();p.revision=1;p.audit={actor:'admin',reason:'fixture',changedAt:'2026-11-14T00:00:00.000Z'};p.restrictions.mediaMaximum={video:0};failure(prepareVideoDraftConstraints({profile,binding:binding(),policy:p,draft:{prompt:'fixture',parameters:{},inputs:[{id:'future',nodeId:'future',kind:'video',role:'source_video'}]}}),'POLICY_MEDIA_LIMIT');});
+ await test('PENDING_PREPARATION_MISSING_PROFILE_OPERATION',()=>{const p={...profile,prepareDraft:undefined};failure(prepareVideoDraftConstraints({profile:p,binding:binding(),policy:emptyVideoExecutionPolicy(),draft:{prompt:'fixture',parameters:{},inputs:[]}}),'PROFILE_PREPARATION_NOT_CONFIGURED');});
+ await test('PENDING_PREPARATION_ROLE_AND_COUNT_SHARED_WITH_FINAL',()=>{const b=binding();(b.recipe as any).operations[4].videos.max=0;failure(prepareVideoDraftConstraints({profile,binding:b,policy:emptyVideoExecutionPolicy(),draft:{prompt:'fixture',parameters:{},inputs:[{id:'future',nodeId:'future',kind:'video',role:'source_video'}]}}),'MEDIA_COUNT_OUT_OF_RANGE');});
  // Deterministic metamorphic coverage: independent key ordering, new models,
  // input order and reference cardinality, with no network or paid execution.
  for(let i=0;i<40;i++)await test('DETERMINISTIC_BINDING_'+i,()=>{const b=binding();b.wireModel='fixture-model-'+i;b.revision=i;const d=draft();d.parameters.durationSeconds=i%15+1;if(i%3)d.inputs=[media('r'+i)];const a=success(compiled(d,b)),c=success(compiled(clone(d),clone(b)));assert.equal(a.digest,c.digest);assert.ok(readCompiledVideoPlan(JSON.parse(JSON.stringify(a))).ok);});

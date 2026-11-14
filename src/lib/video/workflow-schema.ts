@@ -1,6 +1,7 @@
 import {z} from "zod";
 import {reviewOriginSchema} from "../storyboard/review";
 import {videoReferenceSchema,orderedInputSchema} from "./references";
+import {videoPreferenceSchema} from './execution-contract';
 import {VIDEO_MODES} from "./capability-schema";
 import {videoInputSchema} from "./contract";
 import {videoByocOverridesSchema} from "./byoc-settings";
@@ -13,7 +14,7 @@ export const videoWorkflowManifestSchema=z.strictObject({version:z.literal(1),ki
     path:safePath,index:z.number().int().min(0).max(127).optional(),required:z.boolean().optional(),defaultValue:z.json().optional()})).max(256),
   outputNodeIds:z.array(id).max(256).optional()});
 export type VideoWorkflowManifest=z.infer<typeof videoWorkflowManifestSchema>;
-export const workflowVideoRequestSchema=videoInputSchema.omit({durationSeconds:true,resolution:true,references:true}).extend({prompt:z.string().max(16384),negativePrompt:z.string().max(8192).optional(),mode:z.enum(VIDEO_MODES).optional(),
+export const workflowVideoRequestSchema=videoInputSchema.omit({durationSeconds:true,resolution:true,references:true}).extend({intentPreference:videoPreferenceSchema.optional(),parameters:z.record(z.string().min(1).max(100),z.json()).optional(),prompt:z.string().max(16384),negativePrompt:z.string().max(8192).optional(),mode:z.enum(VIDEO_MODES).optional(),
   workflowManifest:videoWorkflowManifestSchema.optional(),workflowTaskId:id.optional(),comfyWorkflowId:id.optional(),comfyInputs:videoWorkflowManifestSchema.shape.inputs.optional(),comfyOverrides:videoByocOverridesSchema.optional(),camera:videoCameraSchema.optional(),
   providerId:id.optional(),modelId:id.optional(),durationSeconds:z.number().int().min(-1).max(3600).optional(),seconds:z.string().max(10).optional(),size:z.string().max(100).optional(),resolution:z.string().max(100).optional(),
   aspectRatio:z.string().max(20).optional(),generateAudio:z.boolean().optional(),watermark:z.boolean().optional(),references:z.array(videoReferenceSchema).max(128).optional(),

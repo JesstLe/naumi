@@ -113,11 +113,16 @@ export const videoProfileOutputSchema=z.strictObject({
   billingFacts:z.strictObject({durationSeconds:z.number().finite().refine(n=>n===-1||n>0),resolution:id,aspectRatio:id.optional()}),
 });
 export type VideoProfileOutput=z.infer<typeof videoProfileOutputSchema>;
+// Constraint/quote preparation is not a final compiled request. Pending media
+// have declared identities only; facts are checked by the final compiler.
+export const videoDraftPreparationSchema=videoProfileOutputSchema.omit({wireTemplate:true,consumedInputIds:true});
+export type VideoDraftPreparation=z.infer<typeof videoDraftPreparationSchema>;
 export type VideoInputContract={profileId:string;profileVersion:number;bindingRevision:number;description:unknown};
 export interface VideoModelProfile {
   readonly profileId:string;
   readonly version:number;
   describe(binding:PublishedVideoModelBinding):VideoResult<VideoInputContract>;
+  prepareDraft?(draft:VideoExecutionDraft,contract:VideoInputContract,binding:PublishedVideoModelBinding):VideoResult<VideoDraftPreparation>;
   compile(draft:ResolvedVideoDraft,contract:VideoInputContract,binding:PublishedVideoModelBinding):VideoResult<VideoProfileOutput>;
 }
 export type CompiledVideoPlan={

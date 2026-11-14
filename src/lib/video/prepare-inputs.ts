@@ -14,6 +14,7 @@ import {assertCreationProjectInput,assertCreationMediaInput,bindActualCreationPr
 import {assertCreationObjectRefs,assertCreationInputsTx,creationTransaction} from '../saas/creation-writer';
 import {currentCreationContext,withFrozenCreation} from '../saas/creation-scope';
 import {ModelConfigError} from '../model-config/types';
+import {frozenWorkflowText} from './workflow-text-context';
 import {TeamError} from '../teams/errors';
 
 const failure=(code:string,reason:string,inputId?:string):VideoResult<never>=>({ok:false,diagnostics:[videoDiagnostic(code==='DEPENDENCY_PENDING'?'dependency':'input',code,'inputs',reason,'核对当前项目与已完成素材',inputId)]});
@@ -31,11 +32,17 @@ async function ownedAssetFacts(actor:string,key:string,input:VideoExecutionDraft
  * composite-node expansion and decoded/hash-bound media facts. No model
  * catalogue, policy inference, signing, task creation or supplier I/O. */
 export async function prepareVideoExecutionInputs(actorRaw:string,projectKey:string|null,raw:unknown):Promise<VideoResult<ResolvedVideoDraft>> {
+  const result=await prepareVideoInputBatch(actorRaw,projectKey,raw,[]);return result.ok?{ok:true,value:result.value.resolved}:result;
+}
+/** Trusted Workflow assembly only. Pending IDs are dependency slots, never
+ * "resolved" media. Expand/authorize existing inputs using the same owner. */
+export const prepareDeferredVideoInputs=(actor:string,project:string,raw:unknown,pendingIds:string[])=>prepareVideoInputBatch(actor,project,raw,pendingIds);
+async function prepareVideoInputBatch(actorRaw:string,projectKey:string|null,raw:unknown,pendingIds:string[]):Promise<VideoResult<{draft:VideoExecutionDraft;resolved:ResolvedVideoDraft}>> {
   const actor=actorRaw.trim().toLowerCase(),context=currentCreationContext();
   if(!actor||context&&context.actorEmail!==actor)return failure('VIDEO_SCOPE_MISMATCH','当前用户与执行作用域不一致');
   // Non-HTTP consumers still get personal workspace enforcement, never a
   // missing-context bypass of tenant media/project checks.
-  if(!context)return withFrozenCreation({actorEmail:actor,scopeKind:'personal',tenantId:null},()=>prepareVideoExecutionInputs(actor,projectKey,raw));
+  if(!context)return withFrozenCreation({actorEmail:actor,scopeKind:'personal',tenantId:null},()=>prepareVideoInputBatch(actor,projectKey,raw,pendingIds));
   const parsed=parseVideoExecutionDraft(raw);if(!parsed.ok)return parsed;
   try{
     if(projectKey){await authorizeVideoProject(actor,projectKey);await bindActualCreationProject(actor,projectKey,{receipt:true});}
@@ -43,7 +50,9 @@ export async function prepareVideoExecutionInputs(actorRaw:string,projectKey:str
     // same owners as existing Canvas submission, preserving prompts/ordering.
     const expanded=await resolveCanvasNodeInputs(actor,parsed.value.inputs.map(input=>({...input,value:input.value??''})),parsed.value.prompt);
     const trustedTextIds=new Set(expanded.inputs.filter(input=>/^(character|scene):/.test(input.nodeId)).map(input=>input.id));
-    return await resolveVideoDraft({...parsed.value,prompt:expanded.prompt,inputs:expanded.inputs},{
+    const pending=new Set(pendingIds);
+    if(pending.size!==pendingIds.length||pendingIds.some(id=>!expanded.inputs.some(input=>input.id===id&&input.kind!=='text')))return failure('INVALID_WORKFLOW_DEPENDENCY','制作链依赖槽无效');
+    const resolved=await resolveVideoDraft({...parsed.value,prompt:expanded.prompt,inputs:expanded.inputs.filter(input=>!pending.has(input.id))},{
       scope:{actorId:actor,projectKey,workspaceId:context?.scopeKind==='tenant'?`tenant:${context.tenantId}`:'personal'},
       text:async input=>{
         if(trustedTextIds.has(input.id))return {ok:true,value:input.value??''};
@@ -51,6 +60,7 @@ export async function prepareVideoExecutionInputs(actorRaw:string,projectKey:str
         if(!node)return failure('TEXT_REFERENCE_UNAVAILABLE','引用文字不存在或无权访问',input.id);
         await assertCreationProjectInput(actor,node.projectKey);
         await assertCreationObjectRefs(actor,[node.id]);
+        const frozen=frozenWorkflowText(actor,input.nodeId);if(frozen!==undefined)return {ok:true,value:frozen};
         if(['generating','queued','processing'].includes(node.status))return failure('DEPENDENCY_PENDING','前序文字尚未完成',input.id);
         return {ok:true,value:canvasTextContent(node)};
       },
@@ -78,6 +88,7 @@ export async function prepareVideoExecutionInputs(actorRaw:string,projectKey:str
         return ownedAssetFacts(actor,key,input,artwork.id);
       },
     });
+    return resolved.ok?{ok:true,value:{draft:{...parsed.value,prompt:expanded.prompt,inputs:expanded.inputs},resolved:resolved.value}}:resolved;
   }catch(error){
     if(error instanceof ModelConfigError)return failure(error.code,error.message);
     if(error instanceof TeamError)return failure('VIDEO_SCOPE_MISMATCH',error.message);
