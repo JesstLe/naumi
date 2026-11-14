@@ -7,11 +7,11 @@ import type {CanvasVideoNode} from "@/lib/canvas/video-node-schema";
 import type {VideoPrivateFetch} from "./use-video-nodes";
 
 type Draft={id:string;revision:number;document:StoryboardDocument;pending?:StoryboardWrite};
-export function useStoryboardPlan({scope,projectKey,nodes,initialNodeIds,request}:{scope:string;projectKey:string;nodes:CanvasVideoNode[];initialNodeIds:string[];request:VideoPrivateFetch}){
+export function useStoryboardPlan({scope,projectKey,nodes,initialNodeIds,initialPlanId,request}:{scope:string;projectKey:string;nodes:CanvasVideoNode[];initialNodeIds:string[];initialPlanId?:string;request:VideoPrivateFetch}){
   const workspace=currentWorkspace(),key=`naumi:storyboard-plan:v1:${JSON.stringify([scope,workspace,projectKey])}`;
   const [plans,setPlans]=useState<StoryboardPlan[]>([]),[draft,setDraft]=useState<Draft|null>(null),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState("");
   const current=useRef<Draft|null>(null),saved=useRef(""),alive=useRef(false),operation=useRef<Promise<StoryboardPlan>|null>(null);
-  const ports=useRef({request,nodes,initialNodeIds});ports.current={request,nodes,initialNodeIds};
+  const ports=useRef({request,nodes,initialNodeIds,initialPlanId});ports.current={request,nodes,initialNodeIds,initialPlanId};
   const cache=useCallback((value:Draft)=>{localStorage.setItem(key,JSON.stringify(value));},[key]);
   const update=useCallback((document:StoryboardDocument)=>{const old=current.current;if(!old)return;const next={...old,document};cache(next);current.current=next;setDraft(next);setError("");},[cache]);
   useEffect(()=>{
@@ -19,11 +19,11 @@ export function useStoryboardPlan({scope,projectKey,nodes,initialNodeIds,request
     void(async()=>{try{
       const response=await ports.current.request(`/api/canvas/storyboards?projectKey=${encodeURIComponent(projectKey)}`,{cache:"no-store",signal:controller.signal,headers:{"x-naumi-workspace":workspace,"x-naumi-project-context":projectKey}}),body=await response.json();
       if(!response.ok)throw new Error(body.error||"方案读取失败");if(controller.signal.aborted)return;
-      const loaded=body.plans as StoryboardPlan[];setPlans(loaded);
+      const loaded=body.plans as StoryboardPlan[];if(ports.current.initialPlanId&&!loaded.some(plan=>plan.id===ports.current.initialPlanId))throw new Error("制作方案已移除，请重新读取制作记录");setPlans(loaded);
       let restored:Draft|null=null;try{const raw=JSON.parse(localStorage.getItem(key)||"null");if(raw?.id&&Number.isSafeInteger(raw.revision)&&raw.revision>=0)restored={id:raw.id,revision:raw.revision,document:storyboardDocumentSchema.parse(raw.document),...(raw.pending?{pending:storyboardWriteSchema.parse(raw.pending)}:{})};}catch{}
-      const relevant=(plan:{document:StoryboardDocument})=>!ports.current.initialNodeIds.length||ports.current.initialNodeIds.some(id=>plan.document.shots.some(shot=>shot.nodeId===id));
+      const relevant=(plan:{id:string;document:StoryboardDocument})=>ports.current.initialPlanId?plan.id===ports.current.initialPlanId:!ports.current.initialNodeIds.length||ports.current.initialNodeIds.some(id=>plan.document.shots.some(shot=>shot.nodeId===id));
       // A pending write must be resolved even if opened from a different shot.
-      if(restored&&!restored.pending&&!relevant(restored)&&!loaded.some(plan=>plan.id===restored!.id&&plan.lineage))restored=null;
+      if(restored&&!restored.pending&&!relevant(restored)&&(!!ports.current.initialPlanId||!loaded.some(plan=>plan.id===restored!.id&&plan.lineage)))restored=null;
       const server=restored?loaded.find(plan=>plan.id===restored!.id):loaded.find(relevant);
       const same=server&&restored&&storyboardDocumentSignature(server.document)===storyboardDocumentSignature(restored.document);
       const value:Draft=restored&&(!server||restored.pending||!same)?restored:server?{id:server.id,revision:server.revision,document:server.document}:{id:browserRandomUUID(),revision:0,document:newStoryboardDocument(ports.current.nodes,ports.current.initialNodeIds)};
@@ -31,7 +31,7 @@ export function useStoryboardPlan({scope,projectKey,nodes,initialNodeIds,request
       if(server&&restored&&!same&&!restored.pending&&server.revision!==restored.revision)setError("方案已在另一处修改，本地草稿已保留。请载入最新方案后继续。");
     }catch(cause){if(!controller.signal.aborted)setError(cause instanceof Error?cause.message:"方案读取失败");}finally{if(!controller.signal.aborted)setLoading(false);}})();
     return()=>{alive.current=false;controller.abort();};
-  },[key,projectKey,workspace,cache]);
+  },[key,projectKey,workspace,cache,initialPlanId]);
   const save=useCallback(():Promise<StoryboardPlan>=>{
     if(operation.current)return operation.current;
     const value=current.current;if(!value)return Promise.reject(new Error("方案尚未读取"));

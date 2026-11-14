@@ -1,11 +1,11 @@
-import type {StoryboardContext,ReviewOrigin} from "../storyboard/review";
+import {storyboardContextSchema,type StoryboardContext,type ReviewOrigin} from "../storyboard/review";
 import type {CanvasVideoNode} from "../canvas/video-node-schema";
 
 export type StoryboardSelection={id:string;reuseCompleted:boolean};
 export type StoryboardIntent={id:string;projectKey:string;storyboard?:StoryboardContext;nodes:Array<{id:string;revision:number;reuseCompleted?:boolean}>;assembly?:{nodeIds:string[]}};
 export type StoryboardRun={runId:string;projectKey:string;progress:number;cancellationRequestedAt?:string|null;
   nodes:Array<{id:string;status:string;taskId?:string|null;error?:string|null;quote?:{version?:number;credits?:number;authorizedCredits?:number;authorization?:unknown}|null}>;
-  plan:{reviewOrigin?:ReviewOrigin;nodes:Array<{id:string;canvasNodeId?:string;request:{prompt?:string;durationSeconds?:number}}>};
+  plan:{storyboard?:{id:string;revision:number};reviewOrigin?:ReviewOrigin;nodes:Array<{id:string;canvasNodeId?:string;request:{prompt?:string;durationSeconds?:number}}>};
   assembly?:{status:string;attempt:number;jobId?:string|null;error?:string|null;outputs?:Array<{artworkId?:string;url:string;mimeType?:string;name?:string}>}|null};
 
 /** This text delegates creative splitting to the existing Agent. The source is
@@ -21,17 +21,21 @@ export function storyboardPlanningRequest(source:{id:string;projectKey:string;st
 export function storyboardSelections(nodes:readonly CanvasVideoNode[]):StoryboardSelection[]{
   return [...nodes].filter(node=>!node.deletedAt).sort((a,b)=>a.createdAt.localeCompare(b.createdAt)||a.id.localeCompare(b.id)).map(node=>({id:node.id,reuseCompleted:!!(node.displayResultId||node.lastResultId)}));
 }
-export function storyboardIntent(id:string,projectKey:string,nodes:readonly CanvasVideoNode[],selection:readonly StoryboardSelection[],assemble:boolean):StoryboardIntent{
+export function storyboardIntent(id:string,projectKey:string,nodes:readonly CanvasVideoNode[],selection:readonly StoryboardSelection[],assemble:boolean,context?:StoryboardContext):StoryboardIntent{
+  const storyboard=context?storyboardContextSchema.parse(context):undefined;
   if(!selection.length)throw new Error("请选择镜头");
   if(new Set(selection.map(item=>item.id)).size!==selection.length)throw new Error("镜头不能重复");
   const selected=selection.map(item=>{
     const node=nodes.find(node=>node.id===item.id&&node.projectKey===projectKey&&!node.deletedAt);
     if(!node)throw new Error("镜头已改变，请刷新后重试");
-    if(item.reuseCompleted&&!node.displayResultId&&!node.lastResultId)throw new Error("镜头还没有可复用结果");
+    // A formal plan (including an independent fork) owns its adopted take.
+    // The server validates that exact saved relation and its media provenance;
+    // copied nodes intentionally have no fabricated lastTaskId/lastResultId.
+    if(item.reuseCompleted&&!storyboard&&!node.displayResultId&&!node.lastResultId)throw new Error("镜头还没有可复用结果");
     return {id:node.id,revision:node.revision,...(item.reuseCompleted?{reuseCompleted:true}:{})};
   });
   if(assemble&&selected.length<2)throw new Error("合成至少需要两个镜头");
-  return {id,projectKey,nodes:selected,...(assemble?{assembly:{nodeIds:selected.map(node=>node.id)}}:{})};
+  return {id,projectKey,nodes:selected,...(storyboard?{storyboard}:{}),...(assemble?{assembly:{nodeIds:selected.map(node=>node.id)}}:{})};
 }
 export function storyboardRunActive(run:StoryboardRun){
   return !run.cancellationRequestedAt&&(run.nodes.some(node=>["pending","processing"].includes(node.status))||!!run.assembly&&["waiting","queued","processing"].includes(run.assembly.status));

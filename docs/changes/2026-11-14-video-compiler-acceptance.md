@@ -48,6 +48,10 @@
 
 [本轮记录](2026-11-15-video-compiler-production-process.md)：扩展同一实际进程驱动的`--production-package`，不修改或替换产品实现。固定dcbb9494/1794674158镜像内standalone Web、独立Worker及原生C launcher/chroot/seccomp媒体处理，随机隔离PG schema、本地供应商，首轮61项和最终解包副本62项均退出0。最终包括底座15、预算10、Agent6、RunningHub/AutoDL10、Workflow13、ComfyUI8，19笔313 fixture积分、18次JSON创建、22次结果下载；13子进程退出、schema及pool清理。实际UID/版本/包哈希、媒体无数据库配置的spawn参数和sandbox health已核对；基线14、默认dev14、tsc、核心137及三项生产运行反控通过。完整精确回执在`video-compiler-production-process-20261115/VERIFICATION.txt`。这不是生产浏览器、combined supervisor活动中断、新旧双槽或真实付费上游证明。
 
+## Storyboard实际操作与两处产品修复（2026-11-15）
+
+[本轮记录](2026-11-15-video-compiler-storyboard.md)：正式方案复用不再错误要求clean fork节点有伪造lastResult，仍由原服务端验证采用归属；制作记录返回编辑显式带方案ID，拆合镜后不另建原节点空方案。最终独立副本串联61项既有进程与10项实际Edge分镜操作，共71项退出0，22笔364 fixture积分、13子进程退出/随机schema及pool清理。UI覆盖拆合、17积分确认按钮、审片批注、采用、clean fork、陈旧方案409、成片和单镜返工。当前为development Next/实际独立Worker/本地供应商；新增UI修复需新的固定生产构建。旧受控UI基线与修改版同样超时，实际副本初始画布account读取失败仍开放，后续暖路由完整通过不抹去首次失败。
+
 ## A01–A19 逐项状态
 
 | ID | 当前证据 | 仍需完成或证据边界 |
@@ -61,9 +65,9 @@
 | A07 | 原 text+image 自动意图、两普通图保留reference、明确偏好报缺素材；实际 Next 的 text+普通图进入 single_image | 真实浏览器端口拖线已通过；全部历史输入形态仍逐项保留，不以单条reference概括首尾帧等组合 |
 | A08 | 原 UI/图谱18项、实际 React/Edge10项、Dock连续性受控检查；本轮真实Next工作台历史参数展示/复用/390px/当前报价4项通过 | 本轮真实Canvas已覆盖切模型/保存/重载/生成前后Dock/锁定解锁/两节点多选与右键/390px；三媒体上传/提及/拖线等价和混合重排本轮通过；更多结构化节点组合继续 |
 | A09 | PG/HTTP 跨用户拒绝、媒体身份/hash/真实解码、结构/角色/数量约束；本轮实际签名输入字节及篡改404；新增5种当前未完成状态不可隐式使用旧结果、显式历史可用；实际HTTP queued反控 | 新增三媒体跨用户实际预览422且零任务/账务/供应商增量、移除提及后生成禁用；完整物理边界仍逐维验收，不能把已授权URL当真实解码 |
-| A10 | Canvas/Workbench/Workflow批次/Agent/Storyboard/BYOC/重试共享编译底座；真实Agent入口新增图生/编辑/续写/原编号恢复/预检错误/会话持久化6项 | 真实Next/独立Worker已有Canvas DAG、原生Workflow、批次、正式Storyboard采用/生成、ComfyUI BYOC/重试，新增RunningHub/AutoDL；完整Storyboard操作和全入口页面矩阵继续，不从Agent工作台入口泛化全部Canvas Agent操作 |
+| A10 | Canvas/Workbench/Workflow批次/Agent/Storyboard/BYOC/重试共享编译底座；Agent6项；新增实际分镜编辑/拆合/批注/采用/独立分叉/成片/单镜返工与确认按钮10项 | 高级音频/模型辅助审片、原稿Agent分镜质量及生产浏览器完整入口矩阵继续，不从基本10项泛化所有高级操作；初始account读取问题开放 |
 | A11 | 注册57个 wire Profile 的分族序列化、上传/JSON/multipart/DAG；ComfyUI、RunningHub、AutoDL新增真实Next/独立Worker上传或签名素材、冻结与结果回执 | 注册覆盖≠所有在用配置已迁移；全部生产启用配置和env-only仍需明确审计/迁移，不能从本地显式recipe推断线上已配置 |
-| A12 | 真实PG Workflow22项：future slots、真实前序时长、静态hash、冻结报价确认、批次/不重放 | 已新增真实Next+独立Worker的8run/13项：冻结型号/路径/文本/原价、前序真实产物/时长、重启/回执、批次、Storyboard采用旧片、取消/UNKNOWN/拒绝；新增真实HTTP待确认报价、拒绝陈旧确认、并发确认/Worker恢复、旧无提案记录恢复、取消待确认阶段；欠授权历史检查点显式seed，未冒称新准入自然涨价或真实成本加成供应商验收 |
+| A12 | 真实PG Workflow22项：future slots、真实前序时长、静态hash、冻结报价确认、批次/不重放；新增实际分镜按钮按17而非历史1确认，两个镜头最终各执行一次 | 独立Worker的8run/13项及HTTP预算反控继承；欠授权历史检查点显式seed，未冒称新准入自然涨价或真实成本加成供应商验收 |
 | A13 | 本轮实际 requested4K→effective2K→wire2k 恰好一次，历史恢复4K；冻结原价7、后续新任务17，账本三笔41 | 更多映射组合由各Profile固定输入测试；不把wire值回填用户选择 |
 | A14 | 独立应用Worker、持久tick原身份、重启/UNKNOWN/LIVE lease/取消/显式重试及环境投影；Worker49、Windows真实500控制/501状态写入；新增固定Linux生产包62项中实际独立Worker恢复、单账本与原生sandbox | Workflow/BYOC的Linux独立Worker重启与UNKNOWN不重放已通过；当前重启仍停机前drain，combined supervisor活动发送中断/真正多槽回滚继续 |
 | A15 | 服务端专项实际持久化加密v2 stage及新发布后恢复；原文本/模型/价格/回执不变，伪造阶段拒绝；本轮v3显式retryOf | 历史v2与新v3混合独立Worker/新旧Web发布组合仍待实际验收 |
