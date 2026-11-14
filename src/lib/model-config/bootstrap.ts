@@ -6,7 +6,6 @@ import type { createCredentialStore } from "./credentials";
 import { validateModelConfig, type ValidationOptions } from "./schema";
 import { ModelConfigError, type ModelConfig, type ModelProvider, type UpstreamModel } from "./types";
 import { legacyAgentVision } from "./legacy-vision";
-import { configuredVideoCapability } from "../video/capabilities";
 
 type LegacyImage = { baseUrl: string; apiKey: string; models: string[]; defaultModel: string; cutoutModel?: string; qualitySupported: boolean; editModels?: string[] };
 type LegacyText = { baseUrl: string; apiKey: string; defaultModel: string; agentModel: string; models: string[]; aliases: Record<string,string>; visibleModels: string[]; visionModels?: string[]; agent?: { baseUrl: string; apiKey: string }; vision?: { model: string; baseUrl: string; apiKey: string }; ocr?: { model: string; baseUrl: string; apiKey: string }; agentVisionModel?: string };
@@ -103,7 +102,6 @@ export async function bootstrapModelConfig(input: ValidationOptions & { credenti
     await addProvider(id, v.label, v.protocol, v.baseUrl, v.apiKey, { createPath, pollPath, contentPath, rawAuthorization, workflowId, idempotencyStrategy, idempotencyBodyField });
     for (const wire of Array.from(new Set([v.defaultModel, ...v.models]))) {
       const caps = unverifiedCapabilities();
-      caps.maxReferenceImages = configuredVideoCapability(v.protocol, v.id, wire).maxReferenceImages;
       const external = addModel(id, wire, "video", wire, true, caps);
       if (wire === v.defaultModel && !config.bindings["video.generate"]) config.bindings["video.generate"] = external;
     }

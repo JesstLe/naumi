@@ -3,19 +3,16 @@ import type {VideoModelCapability} from "./capabilities";
 import type {ResolvedVideoCapability,VideoMode} from "./capability-schema";
 import type {OrderedInput} from "./references";
 import type {VideoReference} from "./types";
-import {normalizeVideoInput} from "./contract";
 import {compileVideoPrompt} from "./prompt";
 import {videoByocOverridesSchema} from "./byoc-settings";
 import {videoWorkflowManifestSchema} from "./workflow-schema";
 import {compileVideoCamera} from "./camera";
-import {videoDurations,videoResolutions,videoAspectRatios} from "./parameter-options";
-export {videoDurations,videoResolutions,videoAspectRatios} from "./parameter-options";
 import {previewCanvasInputs} from "../canvas/input-preview";
 import type {VideoUiContract} from './ui-contract';
 import {videoUiCreationDefaults,videoUiDraft} from './ui-draft';
 
 export type VideoNodeConfig=CanvasVideoNode["config"];
-export type VideoCatalogModel=VideoModelCapability&{isDefault?:boolean};
+export type VideoCatalogModel=Partial<VideoModelCapability>&{modelId:string;providerId:string;label:string;isDefault?:boolean};
 import type {VideoInputChoice} from "./input-choice";
 export type {VideoInputChoice} from "./input-choice";
 export function resolveVideoTextInputs(inputs:readonly OrderedInput[],choices:readonly VideoInputChoice[]):OrderedInput[]{
@@ -41,61 +38,14 @@ export function videoNodeCreationDefaults(catalog:{models:readonly VideoCatalogM
   if(catalog.loading||catalog.error)return undefined;
   const model=catalog.models.find(item=>item.isDefault)||catalog.models[0];
   if(!model?.modelId?.trim()||!model.providerId?.trim())return undefined;
-  if(model.execution)return {model,config:videoUiCreationDefaults(model)};
-  const cap=catalogCapability(model),config=reconcileVideoSettings({modelId:model.modelId,providerId:model.providerId,prompt:""},cap).config;
-  const duration=config.durationSeconds;
-  if(!config.mode||!config.resolution||!config.aspectRatio||duration===undefined||
-    (duration===-1?cap.supportsAutoDuration!==true:!Number.isInteger(duration)||duration<=0||duration>3600))return undefined;
-  return {model,config};
-}
-export function videoModeRoles(inputs:readonly OrderedInput[],mode?:VideoMode):OrderedInput[]{
-  const count=inputs.filter(input=>input.kind==="image").length;let image=0;
-  return inputs.map(input=>{
-    if(input.kind==="text")return {...input};
-    if(input.kind!=="image")return {...input};
-    image++;
-    const frames=mode&&["single_image","frames_required","first_optional","last_optional"].includes(mode);
-    return {...input,role:frames?(mode==="first_optional"&&count===1?"last_frame":image===1?"first_frame":"last_frame"):["first_frame","last_frame"].includes(input.role)?"reference":input.role};
-  });
-}
-/** Called only after an explicit model/duration change; the returned notices are shown before submission. */
-export function reconcileVideoSettings(config:VideoNodeConfig,cap:ResolvedVideoCapability):{config:VideoNodeConfig;changes:string[]}{
-  const next={...config,providerOptions:{...config.providerOptions}},changes:string[]=[];
-  const modes=cap.modes||[];
-  if(next.mode&&!modes.includes(next.mode)||!next.mode){const value=modes[0];if(next.mode!==value)changes.push("生成模式");next.mode=value;}
-  const durations=videoDurations(cap,next.mode);
-  if(next.durationSeconds===undefined||!durations.includes(next.durationSeconds)){
-    // A user can choose a resolution before a duration on a partial draft.
-    // Honour that explicit choice when selecting a legal duration, rather than
-    // immediately resetting the just-clicked resolution to an unrelated default.
-    const compatible=next.resolution?durations.filter(duration=>videoResolutions(cap,duration,next.mode).includes(next.resolution!)):durations;
-    const choices=compatible.length?compatible:durations;
-    const value=cap.defaultDurationSeconds!=null&&choices.includes(cap.defaultDurationSeconds)?cap.defaultDurationSeconds:choices[0];
-    if(next.durationSeconds!==value)changes.push("时长");next.durationSeconds=value;
-  }
-  const resolutions=videoResolutions(cap,next.durationSeconds,next.mode);
-  if(!next.resolution||!resolutions.includes(next.resolution)){
-    const value=cap.defaultResolution&&resolutions.includes(cap.defaultResolution)?cap.defaultResolution:resolutions[0];
-    if(next.resolution!==value)changes.push("分辨率");next.resolution=value;
-  }
-  const ratios=videoAspectRatios(cap,next.mode,next.resolution);
-  if(next.aspectRatio&&!ratios.includes(next.aspectRatio)||!next.aspectRatio){const value=cap.defaultAspectRatio&&ratios.includes(cap.defaultAspectRatio)?cap.defaultAspectRatio:ratios[0];if(next.aspectRatio!==value)changes.push("画幅");next.aspectRatio=value;}
-  for(const [field,allowed] of [["negativePrompt",cap.supportsNegativePrompt===true],["watermark",cap.supportsWatermark===true],["shots",cap.supportsMultiShot===true],["elements",cap.supportsElements===true],["camera",cap.supportsCamera===true],["width",cap.supportsExactSize===true],["height",cap.supportsExactSize===true]] as const){
-    if(!allowed&&next[field]!==undefined){delete next[field];changes.push({negativePrompt:"负面提示词",watermark:"水印",shots:"分镜",elements:"元素",camera:"摄影设置",width:"宽度",height:"高度"}[field]);}
-  }
-  if(cap.audio==="required")next.generateAudio=true;
-  else if(cap.audio==="disabled")next.generateAudio=false;
-  else if(cap.audio==null)delete next.generateAudio;
-  for(const key of Object.keys(next.providerOptions||{}))if(!cap.providerOptions?.[key]||cap.providerOptions[key].send==="omit"){delete next.providerOptions![key];changes.push(`参数 ${key}`);}
-  return {config:next,changes};
+  return {model,config:videoUiCreationDefaults(model)};
 }
 export function inputReference(input:OrderedInput):VideoReference|null{
   if(input.kind==="text")return null;
   return {id:input.id,kind:input.kind,role:input.role as VideoReference["role"],artworkId:input.nodeId.replace(/^(image|video|audio):/,""),url:input.value};
 }
-export function validateVideoSettings(config:VideoNodeConfig,inputs:OrderedInput[],cap:ResolvedVideoCapability,choices:readonly VideoInputChoice[]=[],execution?:VideoUiContract){
+export function validateVideoSettings(config:VideoNodeConfig,inputs:OrderedInput[],_cap:ResolvedVideoCapability,choices:readonly VideoInputChoice[]=[],_execution?:VideoUiContract){
   try{
-    if(execution&&!config.comfyWorkflowId){if(!config.modelId)throw new Error('请选择视频模型');videoUiDraft(config,inputs);return null;}
     const preview=previewCanvasInputs(inputs,config.prompt||"",choices);
     if(config.comfyWorkflowId){
       videoByocOverridesSchema.parse(config.comfyOverrides||{});
@@ -106,9 +56,10 @@ export function validateVideoSettings(config:VideoNodeConfig,inputs:OrderedInput
     }
     if(!config.modelId)throw new Error("请选择视频模型");
     if(inputs.some(input=>{const choice=choices.find(item=>item.nodeId===input.nodeId);return choice&& !choice.available;}))throw new Error("前序素材尚未完成");
-    if(config.camera&&cap.supportsCamera!==true)throw new Error("摄影设置能力未配置或已禁用");
-    const references=preview.inputs.length?preview.inputs.flatMap(input=>{const ref=inputReference(input);return ref?[ref]:[];}):config.references||[];
-    normalizeVideoInput({...config,prompt:preview.prompt,references,orderedInputs:preview.inputs.length?preview.inputs:undefined},cap);
+    // Client checks structure/dependency availability only. The shared server
+    // preview owns all binding/intent/parameter/protocol decisions, including
+    // an accurately reported missing mapping. Never inspect descriptive limits.
+    videoUiDraft(config,preview.inputs);
     compileVideoPrompt(preview.prompt,preview.inputs,compileVideoCamera(config.camera));
     return null;
   }catch(error){return error instanceof Error?error.message:"视频参数无效";}

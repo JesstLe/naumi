@@ -44,7 +44,11 @@ export function selectVideoUiModel(config:VideoNodeConfig,model:VideoCatalogMode
 }
 export function videoUiCreationDefaults(model:VideoCatalogModel):VideoNodeConfig{
   let config:VideoNodeConfig={modelId:model.modelId,providerId:model.providerId,prompt:''};
-  const params=videoUiParameters(config,[],model.execution!);
+  // An unmigrated channel retains only its explicit published defaults. These
+  // initialize a NEW draft; no list/limit/capability veto or reconciliation runs.
+  if(!model.execution){const cap=model.definition;
+    return {...config,...(cap?.defaultDurationSeconds!=null?{durationSeconds:cap.defaultDurationSeconds}:{}),...(cap?.defaultResolution?{resolution:cap.defaultResolution}:{}),...(cap?.defaultAspectRatio?{aspectRatio:cap.defaultAspectRatio}:{})};}
+  const params=videoUiParameters(config,[],model.execution);
   for(const [key,parameter]of Object.entries(params))if(parameter.default!==undefined)config=setVideoUiValue(config,key,parameter.default);
   return config;
 }
@@ -58,4 +62,12 @@ export function videoByocDraft(config:VideoNodeConfig,inputs:readonly OrderedInp
 export function videoUiDraft(config:VideoNodeConfig,inputs:readonly OrderedInput[]){
   return videoSubmissionDraftValue({...config,source:'workbench',prompt:config.prompt||'',seconds:String(config.durationSeconds??''),size:config.resolution||'',
     references:inputs.length?undefined:config.references,orderedInputs:inputs.length?[...inputs]:undefined});
+}
+
+/** Temporary ingress shape for a genuinely unmigrated channel. This preserves
+ * its existing server API without reviving UI capability enforcement. Once all
+ * bindings are migrated the server compatibility lane and this shape retire. */
+export function selectVideoUiIntent(config:VideoNodeConfig,model:VideoCatalogModel,intent:import('./mode-selection').VideoCreationIntent|'auto'):VideoNodeConfig{
+ const next=selectVideoUiModel(config,model);
+ return model.execution?{...next,intentPreference:intent==='auto'?undefined:intent,mode:undefined}:{...next,intentPreference:undefined,mode:intent==='auto'?undefined:intent==='image_reference'||intent==='omni_reference'?'reference':intent};
 }

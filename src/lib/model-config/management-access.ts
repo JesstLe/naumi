@@ -1,4 +1,5 @@
 import { pruneAppliedOperationDrafts } from "./draft-retention";
+import {videoExecutionReadiness} from './video-execution-readiness';
 import {reviewVideoExecutionMigration} from './video-execution-migration';
 import "server-only";
 import { createHash } from "node:crypto";
@@ -36,6 +37,7 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
       const snapshot = await admin.repo.current();
       if(request.method==="GET" && new URL(request.url).searchParams.get("view")==="video-capability-upgrade")
         return biJson({error:'旧能力升级操作已退出，请刷新后迁移执行绑定',code:'VIDEO_CAPABILITY_UPGRADE_RETIRED'},410);
+      if(request.method==='GET'&&new URL(request.url).searchParams.get('view')==='video-execution-readiness')return biJson(videoExecutionReadiness(snapshot));
       if(request.method==='GET'&&new URL(request.url).searchParams.get('view')==='video-execution-migration')return biJson(reviewVideoExecutionMigration(snapshot.config,snapshot.version));
       if(request.method==="GET" && new URL(request.url).searchParams.has("rowId")){
         const params=new URL(request.url).searchParams,rowId=identifier.parse(params.get("rowId")),feature=z.enum(FEATURE_IDS).parse(params.get("feature"));

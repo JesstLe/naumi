@@ -28,7 +28,7 @@ export function upstreamSupportsFeature(capabilities: UpstreamModel["capabilitie
   // Admission is based on an actual published request mapping, not on a
   // legacy generate/verified flag. Explicit model/provider enablement and
   // execution policy remain checked by their owners.
-  if(binding==='video.generate'&&videoExecution)return true;
+  if(binding==='video.generate')return true; // binding errors are compiler diagnostics; do not hide the model
   // Canvas admits both plain generation and reference editing. The concrete
   // request still resolves its own binding and compatible supplier subset.
   const capability=MODEL_BINDINGS[binding].capability;

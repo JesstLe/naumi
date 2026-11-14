@@ -1,6 +1,7 @@
+// Historical capability-era fixture only; current product UI gate exit is verified by verify-video-ui-gate-exit.ts.
 import assert from "node:assert/strict";
-import {attachVideoInputs, availableVideoIntents, currentVideoIntent, selectVideoIntent, supportsVideoIntent, videoIntentMode, videoIntentModels, VIDEO_CREATION_INTENTS} from "../src/lib/video/mode-selection";
-import {validateVideoSettings, type VideoCatalogModel, type VideoNodeConfig} from "../src/lib/video/client-settings";
+import {attachVideoInputs, availableVideoIntents, currentVideoIntent, selectVideoIntent, supportsVideoIntent, videoIntentMode, videoIntentModels, VIDEO_CREATION_INTENTS} from "../src/lib/video/legacy-mode-selection";
+import {validateVideoSettings, type VideoCatalogModel, type VideoNodeConfig} from "../src/lib/video/legacy-client-settings";
 import type {ResolvedVideoCapability} from "../src/lib/video/capability-schema";
 import type {OrderedInput} from "../src/lib/video/references";
 

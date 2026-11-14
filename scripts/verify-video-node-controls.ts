@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { generateCanvasVideoBatch, videoBatchQuote, hasCanvasVideoBatch } from "../src/lib/video/canvas-batch-client";
 import { validateVideoOptimizedPrompt } from "../src/lib/video/prompt-assist";
-import { reconcileVideoSettings, validateVideoSettings, videoDurations, videoResolutions } from "../src/lib/video/client-settings";
+import { reconcileVideoSettings, validateVideoSettings, videoDurations, videoResolutions } from "../src/lib/video/legacy-client-settings";
 import type { CanvasVideoNode } from "../src/lib/canvas/video-node-schema";
 import type { PublicQuote } from "../src/lib/billing/client";
 

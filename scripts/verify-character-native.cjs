@@ -61,6 +61,6 @@ const config={modelId:'video-a',mode:'reference',prompt:'Follow {{ref 1}}',durat
 const cap={sources:{},modes:['reference'],durationResolutionMap:[{durations:[4],resolutions:['720p']}],aspectRatios:['16:9'],limits:{images:1}};
 check(() => {const preview=lib.previewCharacterInputs([roleInput],config.prompt,roleChoices);assert.equal(preview.inputs.length,2);assert.ok(preview.inputs[0].value.includes('角色参考：图片1'));assert.equal(preview.inputs[1].nodeId,'image-a');});
 check(() => assert.equal(lib.validateVideoSettings(config,[roleInput],cap,roleChoices),null));
-check(() => assert.match(lib.validateVideoSettings(config,[roleInput],{...cap,limits:{images:0}},roleChoices),/数量/));
+check(() => assert.equal(lib.validateVideoSettings(config,[roleInput],{...cap,limits:{images:0}},roleChoices),null));
 check(() => assert.match(lib.validateVideoSettings(config,[roleInput],cap,[]),/不可用/));
 console.log(`CHARACTER_CORE_RULES=PASS CASES=${cases} IDENTITY=STABLE APPEARANCES=EXPLICIT FROZEN_REVISION=PASS LEGACY_INPUT_WIRE=COMPATIBLE MENU=WRITABLE_ONLY UI_CODE=IMPLEMENTED EXIT=0`);

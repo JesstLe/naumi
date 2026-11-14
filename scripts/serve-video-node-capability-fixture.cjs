@@ -9,7 +9,7 @@ async function main(){
 import {createRoot} from 'react-dom/client';
 import {VideoCompactComposer} from '@/components/canvas/video/compact-composer';
 import {VideoParameterPanel} from '@/components/canvas/video/parameter-panel';
-import {reconcileVideoSettings,catalogCapability} from '@/lib/video/client-settings';
+import {reconcileVideoSettings,catalogCapability} from '@/lib/video/legacy-client-settings';
 import {resolveVideoCapability} from '@/lib/video/contract';
 import {DOCUMENTED_VIDEO_FAMILIES} from '@/lib/model-config/video-family-capabilities';
 const selected=['video-apib-seedance-2-0','video-apib-kling-v2-6','video-apib-wan2-5-preview','video-geeknow-h3'];

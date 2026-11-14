@@ -43,7 +43,7 @@ export async function submitLegacyByocComfyVideo(actorRaw:string,raw:unknown,wor
   if(input.projectKey&&node&&input.projectKey!==node.projectKey)throw new ModelConfigError("VIDEO_NODE_PROJECT_CONFLICT","视频节点项目不一致",409);
   if(projectKey)await authorizeVideoProject(actor,projectKey);
   const orderedInputs=input.orderedInputs||[];
-  const {requireOwnedVideoText}=await import("./submission");
+  const {requireOwnedVideoText}=await import("./owned-text");
   for(const item of orderedInputs)if(item.kind==="text"&&!item.nodeId.startsWith("inline:"))item.value=await requireOwnedVideoText(actor,item.nodeId);
   const prompt=compileVideoPrompt(input.prompt||"",orderedInputs).prompt;
   const recipe=await prepareByocRecipe(actor,{...input,prompt,references}),{config,manifest}=recipe,providerId=config.id;

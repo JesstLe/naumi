@@ -79,9 +79,12 @@ async function main() {
     f.config.providers.at(-1)!.credentialRef = (await f.credentials.importPlain({ providerId: "video-provider", plain: "fixture-video-original", actor: "fixture" })).id;
     f.config.publicModels.push({ id: "video-a", label: "视频测试", modality: "video", enabled: true, visible: true, target: { type: "upstream", id: "video-u1" } });
     f.config.bindings["video.generate"] = "video-a";
+    // New acceptance uses an explicit executable mapping. Adapter-level legacy
+    // transport tests below intentionally retain their historical requests.
+    f.config.upstreamModels.at(-1)!.parameterMap.videoExecution={schemaVersion:1,profileId:'native-video',profileVersion:1,recipe:{layout:'ark',queryTransport:'direct',defaults:{},parameters:{durationSeconds:{type:'integer',default:4,send:'semantic'},resolution:{type:'string',default:'1280x720',send:'semantic'}},operations:[{intent:'text'}]}};
     f.config.providers.push({ ...structuredClone(f.config.providers.at(-1)!), id: "video-openai", protocol: "openai-videos", options: { createPath: "/custom-create", pollPath: "/custom-poll/{id}", contentPath: "/custom-content/{id}", idempotencyStrategy: "body", idempotencyBodyField: "fixture_operation" } });
     f.config.providers.at(-1)!.credentialRef = (await f.credentials.importPlain({ providerId: "video-openai", plain: "fixture-video-openai", actor: "fixture" })).id;
-    f.config.upstreamModels.push({ ...structuredClone(f.config.upstreamModels.at(-1)!), id: "video-openai-u1", providerId: "video-openai" });
+    f.config.upstreamModels.push({ ...structuredClone(f.config.upstreamModels.at(-1)!), id: "video-openai-u1", providerId: "video-openai", parameterMap:{} });
     f.config.publicModels.push({ id: "video-openai-a", label: "视频协议测试", modality: "video", enabled: true, visible: true, target: { type: "upstream", id: "video-openai-u1" } });
     const first = await f.repo.current();
     const staleActor="fixture-unpublished-admin",staleDraft=await f.repo.draft(staleActor);

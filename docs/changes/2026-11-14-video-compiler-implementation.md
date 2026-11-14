@@ -407,3 +407,11 @@ OpenAI Videos、Gemini及无Profile OpenAI接入native-video Profile/计划schem
 ## 全应用验收暴露的媒体原子提交故障
 
 媒体状态存储现对同一原子rename提交做有界原生竞争重试，不触发引擎/供应商重跑。真实Windowsdeny-delete复现、独立HTTP Worker重启/原回执、持续故障保留及Linux原生40检查详见 [媒体原子提交记录](2026-11-14-video-media-state-atomic.md)。此模块不代替全局能力门禁清零或完整应用/发布验收，总目标继续ACTIVE。
+
+## 前端/图谱旧能力裁决退出
+
+Canvas创建/连线、Dock/完整设置、Workbench和首页Agent不再按旧能力改角色/改参数/隐藏选择。九根实际源码与tree-shaken运行bundle旧UI裁决清零；新绑定走合同，未迁移通道保留原请求形状而非批量停用。职责、测试与服务端仍待退出的明确边界见 [前端退出记录](2026-11-14-video-compiler-ui-exit.md)。全局P3和总目标仍ACTIVE。本前端切片实际补验发现未迁移通道与旧服务端自动模式的兼容缺口，当前独立分支未合main/未发布，需与服务端切换一起闭环。
+
+## 服务端新任务切换及组合交付
+
+服务端新受理/新工作流冻结已停止进入旧能力裁决，历史阶段经实际归属/加密冻结内容核验后恢复专用旧路径，真正旧的未冻结行与新版本缺快照行分开。目录/fallback/新 executor 描述退出；新增纯绑定准备报告及真实 health/resume 发布阻断，缺映射不再叫模型不支持。前端切片原服务端缺口已由这一组合切换及显式发布准备条件接续解决，而不是恢复旧 UI 首帧改写。详见 [服务端切换记录](2026-11-14-video-compiler-server-exit.md)。本地1,741实际App检查、最终19服务端检查及集中跨模块回归通过；生产Binding迁移、完整Next/独立应用Worker/授权上游/蓝绿仍未完成，目标ACTIVE。main整合状态以最终Git回执为准，尚无站点发布。

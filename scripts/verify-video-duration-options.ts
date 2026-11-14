@@ -1,6 +1,7 @@
+// Historical capability-era fixture only; current product UI gate exit is verified by verify-video-ui-gate-exit.ts.
 import assert from "node:assert/strict";
 import { videoDurationOptions, videoDurations } from "../src/lib/video/parameter-options";
-import { reconcileVideoSettings } from "../src/lib/video/client-settings";
+import { reconcileVideoSettings } from "../src/lib/video/legacy-client-settings";
 import { freezeCreationSettings, creationToolArguments } from "../src/lib/agent/creation-settings";
 import type { ResolvedVideoCapability } from "../src/lib/video/capability-schema";
 

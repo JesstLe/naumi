@@ -6,7 +6,7 @@ import {publicModelCatalog} from "../src/lib/model-config/runtime";
 import {ModelConfigError,type ModelConfig,type UpstreamModel} from "../src/lib/model-config/types";
 import {normalizeVideoInput,resolveVideoCapability,VideoContractError} from "../src/lib/video/contract";
 import {documentedVideoFamily} from "../src/lib/model-config/video-family-capabilities";
-import {reconcileVideoSettings,type VideoNodeConfig} from "../src/lib/video/client-settings";
+import {reconcileVideoSettings,type VideoNodeConfig} from "../src/lib/video/legacy-client-settings";
 import {buildVideoCreate,type VideoWireContext} from "../src/lib/video/providers/wire";
 import type {VideoGenerationRequest,VideoReference} from "../src/lib/video/types";
 import type {VideoMode,VideoWireProfile} from "../src/lib/video/capability-schema";

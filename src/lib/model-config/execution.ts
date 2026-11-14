@@ -177,7 +177,9 @@ export function createModelExecutor(deps: Dependencies) {
         if(config.upstreamModels.filter(u=>ids.includes(u.id)).some(u=>missingImagegenCapabilities(input.facts!.imagegenRequirements!,configuredImageCapabilities(u,publishedImagegenCapabilities(u.capabilities))).length))throw new ModelConfigError("MODEL_INCOMPATIBLE","外部路由无法保证所有回退候选满足必要图像参数",400);
       }
       const projection = routed ? await deps.runtime.prepareExecution({ snapshot: input.snapshot, billing: input.billing }) : undefined;
-      const video = purpose.modality === "video" && upstream && provider ? await freezeManagedVideoCapability(input.snapshot,upstream,provider) : undefined;
+      const video:FrozenVideoCapability|undefined=purpose.modality==='video'&&upstream&&provider
+        ?upstream.parameterMap.videoExecution?await freezeManagedVideoCapability(input.snapshot,upstream,provider):{definition:{},sources:{}}
+        :undefined;
       let imageParameterPlans=input.imageParameterPlans;
       const planVersion=purpose.modality==='image'&&!routed&&!preset&&(input.facts||input.imageParameterPlans)&&input.imageParameterPlanVersion!==0?1:undefined;
       if(planVersion&&input.facts&&!imageParameterPlans){
