@@ -403,3 +403,7 @@ OpenAI Videos、Gemini及无Profile OpenAI接入native-video Profile/计划schem
 ## 显式执行绑定迁移与管理员升级退出
 
 32条明确通道候选、配置版本/CAS审查、绑定字段回退、实际执行JSON编辑和旧管理操作新请求410已实现；历史staged/unknown原身份可恢复。旧能力记录/价格/人工映射保持，旧modes/zero limits不变政策。接口、验证和开放媒体故障详见 [绑定迁移](2026-11-14-video-compiler-binding.md)。这是管理员入口旧升级职责退出，不是全局新任务门禁清零；生产迁移/发布仍0，总目标ACTIVE。
+
+## 全应用验收暴露的媒体原子提交故障
+
+媒体状态存储现对同一原子rename提交做有界原生竞争重试，不触发引擎/供应商重跑。真实Windowsdeny-delete复现、独立HTTP Worker重启/原回执、持续故障保留及Linux原生40检查详见 [媒体原子提交记录](2026-11-14-video-media-state-atomic.md)。此模块不代替全局能力门禁清零或完整应用/发布验收，总目标继续ACTIVE。

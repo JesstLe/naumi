@@ -2,13 +2,15 @@ import {mkdir,writeFile,readFile,lstat,readdir,rm,rename,open} from 'node:fs/pro
 import {constants as fsConstants} from 'node:fs';
 import {randomUUID} from 'node:crypto';
 import path from 'node:path';
+import {setTimeout as delay} from 'node:timers/promises';
 import {mediaJobDirectory} from '../../src/modules/media/contract.mjs';
 
 const terminal=status=>['completed','failed','cancelled'].includes(status);
 
 /** Durable snapshots and retirement receipts belong to the media worker, not
  * the engine or HTTP router. Paths/wire shapes stay compatible with existing
- * scratch and peer workers. No retries, task execution or paid I/O live here. */
+ * scratch and peer workers. Only bounded native commit retries live here;
+ * task execution and paid I/O never do. */
 export function createMediaStateStore(root){
   const retiredRoot=path.join(root,'.retired');
   const report=(operation,id,step,error)=>{
@@ -19,7 +21,19 @@ export function createMediaStateStore(root){
     const temporary=`${file}.${randomUUID()}.tmp`;let step='write',failure;
     try{
       await writeFile(temporary,JSON.stringify(value),{mode:0o600});
-      step='rename';await rename(temporary,file);
+      step='rename';
+      // Windows readers/antivirus can temporarily deny replacement even though
+      // the unique snapshot is fully written. Retry ONLY the same atomic commit,
+      // never unlink the last good state, rewrite it in place, or rerun a job.
+      const waits=[10,25,50,100,200];
+      for(let attempt=0;;attempt++){
+        try{await rename(temporary,file);break;}
+        catch(error){
+          const busy=error?.code==='EBUSY'||process.platform==='win32'&&['EPERM','EACCES'].includes(error?.code);
+          if(!busy||attempt===waits.length)throw error;
+          await delay(waits[attempt]);
+        }
+      }
     }catch(error){failure=error;report(operation,id,step,error);throw error;}
     finally{
       try{await rm(temporary,{force:true});}
