@@ -18,6 +18,9 @@ type Preview=Pick<CompiledVideoPlan,'intent'|'requestedParameters'|'effectivePar
  * submission; no quotation, reservation, capacity claim, business idempotency
  * or provider create. Internal binding/recipe/storage/credentials stay server-side. */
 export async function previewVideoExecution(actor:string,raw:unknown):Promise<VideoResult<Preview>> {
+  if(raw&&typeof raw==='object'&&'byoc' in raw){
+    await assertCurrentCreationFeature('/api/video/generate');const {previewByocVideo}=await import('./byoc-preview');return previewByocVideo(actor,(raw as {byoc:unknown}).byoc);
+  }
   const parsed=videoCompilePreviewSchema.safeParse(raw);
   if(!parsed.success)return {ok:false,diagnostics:[videoDiagnostic('input','INVALID_VIDEO_PREVIEW','draft','视频预览请求无效','检查草稿与修订编号')]};
   await assertCurrentCreationFeature('/api/video/generate');

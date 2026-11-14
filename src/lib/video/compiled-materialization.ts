@@ -9,6 +9,11 @@ import {VideoContractError} from './contract';
 import type {VideoTaskRow} from './task-types';
 import type {VideoWireTemplate} from './execution-contract';
 import {currentModelExecution} from '../model-config/context';
+import {materializeWorkflowVideoPlan} from './profiles/workflow-materialization';
+import {uploadCompiledWorkflowAsset} from './providers/compiled-workflow-upload';
+import {getVideoProviderConfig} from './providers/config';
+import {currentPrivateVideoContext} from './providers/private-context';
+import {readByocVideoSnapshot} from './byoc-snapshot';
 import {TeamError} from '../teams/errors';
 
 /** Signing is execution-only. Revalidate the same immutable assets/ACLs and
@@ -24,7 +29,10 @@ export async function materializeCompiledVideoTask(actor:string,task:VideoTaskRo
 async function materializeOwnedCompiledTask(actor:string,task:VideoTaskRow):Promise<VideoWireTemplate>{
   const plan=readTaskCompiledVideoPlan(actor,task),context=currentCreationContext()!;
   const execution=currentModelExecution('video');
-  if(!execution||execution.frozen.modelVersion!==plan.binding.revision||execution.connection.providerId!==plan.identity.connectionId||execution.connection.wireModel!==plan.identity.wireModel)
+  if(task.parameters.byocSnapshot){
+    const snapshot=readByocVideoSnapshot(actor,task),privateContext=currentPrivateVideoContext();
+    if(!privateContext||privateContext.config.id!==snapshot.providerId||privateContext.config.baseUrl!==snapshot.baseUrl)throw new VideoContractError('COMPILED_EXECUTION_CONTEXT_MISMATCH','未恢复原工作流执行上下文');
+  }else if(!execution||execution.frozen.modelVersion!==plan.binding.revision||execution.connection.providerId!==plan.identity.connectionId||execution.connection.wireModel!==plan.identity.wireModel)
     throw new VideoContractError('COMPILED_EXECUTION_CONTEXT_MISMATCH','执行器没有恢复原视频通道快照');
   if(plan.scope.workspaceId!==(context.scopeKind==='tenant'?`tenant:${context.tenantId}`:'personal'))throw new VideoContractError('VIDEO_SCOPE_MISMATCH','任务执行作用域与冻结计划不一致');
   const request=compiledVideoRequest(plan,task.source as 'canvas'|'workbench'|'agent'|'workflow',task.idempotencyKey||task.id,task.sourceId);
@@ -33,6 +41,20 @@ async function materializeOwnedCompiledTask(actor:string,task:VideoTaskRow):Prom
   await creationTransaction(tx=>assertCreationInputsTx(tx,actor,artIds));
   await assertCreationObjectRefs(actor,artIds);
   for(const ref of allReferences)await assertCreationMediaInput(actor,`/media/${ref.storageKey}`);
+  if(plan.wireTemplate.encoding==='workflow'){
+    const config=getVideoProviderConfig(task.providerId);if(!config)throw new VideoContractError('VIDEO_COMPILED_TRANSPORT_UNAVAILABLE','工作流传输缺失');
+    // Authorize/verify owned bytes without creating signed URLs or uploads first.
+    const owned=await materializeVideoReferences(actor,request,{multipart:true});
+    const result=await materializeWorkflowVideoPlan(plan,{context:name=>({ok:true,value:name==='operationId'?task.idempotencyKey||task.id:config.apiKey}),asset:async(_scope,asset,delivery)=>{
+      const ref=owned.references.find(ref=>ref.storageKey===asset.storageKey&&ref.sha256===asset.sha256);
+      if(!ref)return {ok:false,diagnostics:[{category:'input',code:'FROZEN_MEDIA_CHANGED',field:'inputs',reason:'工作流素材身份不一致',actionable:'核对原素材'}]};
+      let value:string;
+      if(delivery.delivery==='upload')value=await uploadCompiledWorkflowAsset(config,asset,delivery);
+      else{const signed=await materializeVideoReferences(actor,{...request,references:[ref]});value=signed.references[0].url!;}
+      return {ok:true,value:{asset:{storageKey:ref.storageKey!,sha256:ref.sha256!,bytes:ref.bytes!,mimeType:ref.mimeType!,...(ref.artworkId?{artworkId:ref.artworkId}:{}),...(ref.width?{width:ref.width}:{}),...(ref.height?{height:ref.height}:{}),...(ref.durationSeconds?{durationSeconds:ref.durationSeconds}:{})},value}};
+    }});
+    if(!result.ok)throw new VideoContractError(result.diagnostics[0].code,result.diagnostics[0].reason,['inputs']);return result.value;
+  }
   const materialized=await materializeVideoReferences(actor,request);
   const result=await materializeJsonVideoPlan(plan,{url:async(_scope,asset)=>{
     const ref=[...materialized.references,...(materialized.elements??[]).flatMap(element=>element.references)].find(ref=>ref.storageKey===asset.storageKey&&ref.sha256===asset.sha256);

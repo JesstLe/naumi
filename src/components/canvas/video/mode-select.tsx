@@ -19,6 +19,7 @@ export function VideoModeSelect({value, model, models, disabled, className, onSe
   const [pending, setPending] = useState<VideoCreationIntent | null>(null);
   const cap = catalogCapability(model), candidates = pending ? videoIntentModels(models, pending) : [];
   useEffect(() => { setPending(null); }, [model?.providerId, model?.modelId, disabled]);
+  if(model?.execution?.workflow)return null;
   if(model?.execution)return <div ref={container} className='min-w-0' data-testid='video-mode-control'><SelectMenu label={V('视频生成模式')} size='sm' value={value} disabled={disabled} className={className} popoverClassName='canvas-ui-light'
     onChange={selected=>onSelect(selected as VideoCreationIntent|'auto',model)} options={[
       {value:'auto',label:V('自动'),buttonLabel:V('自动')},

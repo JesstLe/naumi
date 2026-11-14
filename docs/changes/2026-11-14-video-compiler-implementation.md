@@ -351,3 +351,31 @@ Agent工具/Agent报价 -> video公共准备用例/模型快照 -> 原Resolver/C
 - 本次生产配置写入0、付费上游0、部署0；47 HOLD、103模型映射独立实验分支和共享checkout保持。普通main整合与实际上线分开记录。
 
 补充的延迟输入验收实际发现并修复了一个顺序缺口：没有orderedInputs的结构化Workflow在freeze时把future槽追加到镜头文字/元素后，而最终submission先放普通references再展平结构，导致同一输入被错误判成顺序变化。现在freeze把普通future槽插入结构成员之前，保留各自内部顺序；完整草稿/静态元素仍冻结。新增“已有完成源视频 → 真实future video + 冻结镜头/元素”的实际PG/Worker路径，原始失败与修正结果分别保留。不是放宽身份核对或按集合忽略顺序。
+
+## BYOC / DAG 可执行 Profile 与上传切片（2026-11-14）
+
+模块与职责：
+- `workflow-profile.ts` 实现与普通JSON不同的 `workflow-video` Profile：描述保存的DAG和输入槽、纯参数编译、冻结媒体槽、ComfyUI/RunningHub/AutoDL各自wire布局。不读取modes/limits/verified，不使用型号名单；`workflow` 是执行意图，不写入旧config.mode。工作流计划使用schemaVersion=3，普通1和结构2继续读取。
+- `parameters.ts` 提取已存在的请求值→有效值→wire值规则供JSON和DAG共用；false/0/omit/semantic与映射边界保持。没有套用JSON create的假媒体或fake mode。
+- `workflow-materialization.ts` 只展开原计划媒体/operation/credential槽；应用端复核原访问权与媒体版本，执行端按已冻结recipe上传或签名。`compiled-workflow-upload.ts` 使用真实受控原字节与SHA256内容寻址文件名，避免同一引用id的不同文件覆盖仍在队列的旧素材。临时地址、上传名称和密钥不进入冻结模板。
+- PublishedVideoExecution成为真实discriminated union；model-config校验workflow runtime与原查询/结果协议一致。UI从同一describe投影workflow槽位和参数，不虚构普通视频模式或泄露模板/路径/密钥。托管三类工作流仍沿原模型快照、报价、任务/预占/creation事务和结果结算。
+- BYOC新提交接到同一Resolver/Compiler和v3任务；显式0积分例外仍归BYOC，不伪造托管模型/报价。byoc snapshot加密冻结执行绑定，任务reader比较原作用域/身份/绑定/政策/digest；恢复不依赖当前端点激活状态或当前工作流版本。取消、sending/UNKNOWN、幂等和显式重试保留。新BYOC取消后不上传/生成；重试沿原配方和原素材版本，不重抽种子或重读修改后的模板。
+- `byoc-legacy-submission.ts` 是已经受理但尚无compiledVersion的历史Workflow阶段专用兼容，只有恢复该旧stage的受控上下文可达。新任务不选择它；旧v2任务、旧重试和冻结模板保持原语义。不能把从旧stage恢复的新子任务冒充新版重新解释。
+- Workflow新BYOC阶段冻结原绑定、文本、静态真实输入和未来槽，不再用/media/pending或先调用旧create codec。真实上游产物到位后才最终编译。Canvas、工作台、Agent的BYOC生成入口走同一编译应用；Agent不再同时发送伪造URL的简化引用和原生输入。
+- BYOC预览复用同一编译器，读取本人保存的文档/输入但不访问object_info、不上传、不导入凭据、不创建任务/预占。显式种子/无随机种子的模板预览与正式计划摘要一致；库工作流未显式设置的随机种子保持旧行为，仅正式受理时抽样冻结，预览digest只代表被检查的模板，不是对未来随机值的授权。UI-format若离线缺少widget定义返回映射诊断，不伪称模型不支持。
+- 未配置端点仍可保存、展示、选择工作流；只在运行/执行预览准确报告BYOC_ENDPOINT_REQUIRED。目录不再排除UI-format文档，尚未离线编译的文档仍列出真实节点并可编辑。切换执行入口保留已有草稿参数，不清空配置。
+
+公共接口、依赖与事务归属：
+入口/现有UI→video公共preview/submit→可信媒体/文本Resolver→纯Workflow Profile→原任务/creation/计费事务→执行物化/原供应商适配器→原资产图。BYOC endpoint、文档归其现有owner；媒体授权归媒体/creation；凭据只由受保护凭据库恢复。纯Profile不导入React、Route、DB、网络。冻结快照利用已有加密JSON，不新增表、不拆原事务。
+
+验证与证据层级：
+- 纯Workflow Profile覆盖三类实际既有codec请求等价、DAG循环/悬空边/槽位覆盖、保留字段、媒体完整消费、上传名称/字节绑定、参数单次映射、显式false/0/omit以及只读公共投影。
+- 真实隔离PG、Route/Agent/Canvas/Workflow应用函数、本地multipart上传HTTP、供应商create/poll、独立媒体Worker/ffmpeg验证：BYOC0积分、托管三协议单次账务、无端点保存/运行诊断、预览零网络/零凭据写入、原回执先于最新端点判断、修改模板不改变原任务、取消/UNKNOWN不重提、旧stage/v2兼容、新stage最终编译、原生Agent输入、未来真实成片绑定。
+- 实际React/无头Edge：通用预览Hook的BYOC分区、工作流切换旧响应隔离、无端点可选/可编辑、原参数不重置；之前普通/结构/分镜UI回归继续集中验证。不是完整Next服务或独立应用Worker进程重启验收。
+- 初始driver错误（缺真实项目、managed fixture错误/v1基址、NodeInfo形状类型和浏览器option hidden/auth bootstrap）保留；原生Agent重复引用入口问题已在产品代码修复。fixture失败不能掩盖为通过。Windows媒体状态写入重试日志保留，provider create不重复。
+- 完整基线、修改、打包副本、复制回滚、命令/输入/literal输出/exit/原始哈希以 `E:/Workspace/naumi/output/video-compiler-byoc-20261114/VERIFICATION.txt` 为准。
+
+未完成与下一步：
+全部57个wire profile与2条无profile路径的原子绑定迁移/条件规则仍需逐项核实；通用Workflow能力及三协议本地调用不是生产目录已迁移证据。旧新任务能力门禁/整对象升级/fallback的调用退出、全部A01-A19、完整Next/App/独立应用Worker/restart/浏览器、真实上游和发布验收仍在总目标中。UI-format新custom-node需endpoint定义、跨租户/并发边界和随机种子预览语义保持后续全应用验收项。main整合不代表上线；本轮生产配置0、付费0、部署0，47HOLD及103隔离线保持。
+
+本切片集中结果：Workflow Profile纯域30项；BYOC/三类托管工作流新增26项，连同原任务/Agent/结构/Workflow共114项实际PG/HTTP/媒体Worker链路；实际React/Edge预览20项、结构/无端点编辑8项、Storyboard6项；原核心137、结构核心32、发布预览61、Canvas121、媒体16、旧冻结来源8案例/16入口与账务事务14项通过。完整tsc及修改包副本的再次验证见最终证据。新增工作流运行时与旧1/2计划区分为计划schemaVersion3，不与task.parameters.version3混为同一字段。未把预览在未显式种子时的模板digest写成未来随机种子已确定。

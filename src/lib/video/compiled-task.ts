@@ -1,4 +1,5 @@
 import 'server-only';
+import {readByocVideoSnapshot} from './byoc-snapshot';
 import {compiledVideoStructure} from './compiled-structure';
 import {encryptAtRest,decryptAtRest} from '../settings';
 import {readCompiledVideoPlan} from './compile';
@@ -19,7 +20,7 @@ export function compiledVideoRequest(plan:CompiledVideoPlan,source:VideoGenerati
   // Transport never uses these projections to recompile the v3 create body.
   // They retain existing UI/receipt/poll/lineage/retry consumers.
   return {source,sourceId,projectKey:plan.scope.projectKey??undefined,providerId:plan.identity.connectionId,modelId:plan.identity.wireModel,prompt:plan.originalPrompt,
-    mode:plan.intent,durationSeconds:plan.billingFacts.durationSeconds,resolution:plan.billingFacts.resolution,aspectRatio:plan.billingFacts.aspectRatio,
+    ...(plan.intent==='workflow'?{}:{mode:plan.intent}),durationSeconds:plan.billingFacts.durationSeconds,resolution:plan.billingFacts.resolution,aspectRatio:plan.billingFacts.aspectRatio,
     references:grouped.references,...(grouped.shots?{shots:grouped.shots}:{}),...(grouped.elements?{elements:grouped.elements}:{}),idempotencyKey,orderedInputs:grouped.inputs.map(input=>({id:input.id,nodeId:input.nodeId,kind:input.kind,role:input.role,value:input.kind==='text'?input.text:`/media/${input.asset.storageKey}`})),
     ...Object.fromEntries(['negativePrompt','width','height','generateAudio','watermark','providerOptions'].filter(key=>Object.hasOwn(plan.effectiveParameters,key)).map(key=>[key,plan.effectiveParameters[key]]))};
 }
@@ -33,6 +34,11 @@ export function readTaskCompiledVideoPlan(actor:string,task:VideoTaskRow):Compil
   const p=read.value;
   if(p.scope.actorId!==actor.toLowerCase()||p.digest!==task.parameters.compiledPlanDigest||p.identity.connectionId!==task.providerId||p.identity.wireModel!==task.model
     ||p.identity.publicModelId!==task.parameters.publicModelId||p.scope.projectKey!==(task.parameters.projectKey??null)||String(p.billingFacts.durationSeconds)!==task.seconds)return invalid();
+  if(task.parameters.byocSnapshot){
+    const byoc=readByocVideoSnapshot(actor,task);
+    if(p.binding.profileId!=='workflow-video'||!byoc.executionBinding||canonicalConfig(byoc.executionBinding)!==canonicalConfig(p.binding)||canonicalConfig(p.policy)!==canonicalConfig({kind:'video.execution-policy',revision:0,restrictions:{}})||p.identity.policyRevision!==0)return invalid();
+    return p;
+  }
   const frozen=(task.parameters.modelExecutions as import('../model-config/context').ExecutionBundle|undefined)?.video;
   if(!frozen||frozen.publicModelId!==p.identity.publicModelId||frozen.modelVersion!==p.binding.revision||frozen.video?.execution?.modelVersion!==p.binding.revision||frozen.video.execution.modelDigest!==frozen.modelDigest)return invalid();
   const mapped=frozenVideoExecutionSchema.safeParse(frozen.video.execution);if(!mapped.success)return invalid();

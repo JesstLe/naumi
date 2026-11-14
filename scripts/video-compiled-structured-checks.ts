@@ -27,6 +27,7 @@ export async function verifyCompiledStructured(input:{actor:string;pool:Pool;f:A
  const direct=async<T>(run:()=>Promise<T>)=>{process.env.NAUMI_WORKER_EXECUTION='direct';try{return await run();}finally{delete process.env.NAUMI_WORKER_EXECUTION;}};
  try{
   const changed=structuredClone(original.config),recipe=changed.upstreamModels[0].parameterMap.videoExecution!.recipe;
+  assert('operations' in recipe);
   const structure={shots:{wireField:'multi_prompt',promptField:'prompt',durationField:'duration',indexField:'index',max:6,minDurationSeconds:0.25,durationStep:0.25,constants:{multi_shot:true,shot_type:'customize'}},elements:{wireField:'element_list',nameField:'name',descriptionField:'description',max:3,media:[{kinds:['image' as const],wireField:'element_input_urls',min:1,max:4}]}};
   for(const operation of recipe.operations)Object.assign(operation,structure);
   recipe.operations.find(o=>o.intent==='reference')!.images={min:0,max:4};
@@ -53,7 +54,7 @@ export async function verifyCompiledStructured(input:{actor:string;pool:Pool;f:A
   verify('published-binding-preview-and-final-same-plan',()=>{assert.equal(plan.digest,preview.value.planDigest);assert.equal(plan.intent,'reference');assert.equal(plan.billingFacts.resolution,'2K');assert.equal(queued.parameters.version,3);});
   assert.equal(queued.videoReferences.length,1);
   verify('nested-input-lineage-persisted',()=>assert.equal(plan.structure!.elements![0].name,'Person'));
-  const drift=structuredClone(changed);drift.upstreamModels[0].parameterMap.videoExecution!.recipe.operations[2].elements!.wireField='new_element_list';await publish(drift);
+  const drift=structuredClone(changed);(drift.upstreamModels[0].parameterMap.videoExecution!.recipe as import('zod').infer<typeof import('../src/lib/video/profiles/json-profile').jsonVideoRecipeSchema>).operations[2].elements!.wireField='new_element_list';await publish(drift);
   await pool.query("UPDATE app_canvas_text_nodes SET content='Edited after acceptance' WHERE id='structured-text'");
   await dispatch(queued);const body=input.received.at(-1)!.body;
   verify('worker-frozen-structure-text-and-published-recipe',()=>{assert.equal(input.posts(),before+1);assert.equal(body.multi_prompt[0].prompt,'Owned shot content');assert.equal(body.multi_prompt[1].prompt,'Second shot');assert.equal(body.multi_prompt[0].index,1);assert.equal(body.element_list[0].name,'Person');assert(body.element_list[0].element_input_urls[0].startsWith('https://'));assert(!('new_element_list' in body));assert(!('image_urls' in body));});

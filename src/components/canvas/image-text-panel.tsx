@@ -8,10 +8,12 @@ import {cdnUrl} from "@/lib/cdn";
 import {cn} from "@/lib/utils";
 import type {Artwork} from "@/lib/mock-data";
 import type {CanvasImageTextState,CanvasOcrSegment} from "@/lib/canvas/image-text-editor";
-export type CanvasImageTextPanelProps={state:CanvasImageTextState;artwork?:Artwork;lightCanvas:boolean;onClose:()=>void;onFocus:(id:string)=>void;onEdit:(id:string,text:string)=>void;onApply:(segment:CanvasOcrSegment)=>Promise<void>};
+export type CanvasImageTextPanelProps={state:CanvasImageTextState;artwork?:Artwork;lightCanvas:boolean;onClose:()=>void;onFocus:(id:string)=>void;onEdit:(id:string,text:string)=>void;onApply:(segment:CanvasOcrSegment)=>Promise<unknown>;onApplyAll:()=>Promise<unknown>};
 /** Original online-text UI; no task/HTTP/billing state is owned by this view. */
-export function CanvasImageTextPanel({state,artwork,lightCanvas,onClose,onFocus,onEdit,onApply}:CanvasImageTextPanelProps){
- const {artworkId:ocrArtworkId,segments:ocrSegments,status:ocrStatus,engine:ocrEngine,error:ocrError,applyingId:ocrApplyingId,progress:ocrProgress,imageSize:ocrImageSize,focusedId:ocrFocusedId}=state;
+export function CanvasImageTextPanel({state,artwork,lightCanvas,onClose,onFocus,onEdit,onApply,onApplyAll}:CanvasImageTextPanelProps){
+ const {artworkId:ocrArtworkId,segments:ocrSegments,status:ocrStatus,engine:ocrEngine,error:ocrError,applyingId:ocrApplyingId,progress:ocrProgress,imageSize:ocrImageSize,focusedId:ocrFocusedId,batch:ocrBatch}=state;
+ const batchPending=ocrSegments.filter(segment=>segment.editedText.trim()&&segment.editedText.trim()!==segment.text).length;
+ const batchLocked=ocrStatus==="applying"||!!ocrBatch;
  if(!ocrArtworkId)return null;
  return (
             <aside
@@ -37,26 +39,28 @@ export function CanvasImageTextPanel({state,artwork,lightCanvas,onClose,onFocus,
                 </button>
               </div>
 
-              {(ocrStatus === "scanning" || ocrStatus === "applying") && (
+              {(ocrStatus === "scanning" || ocrStatus === "applying" || !!ocrBatch) && (
                 <div className="border-b border-[var(--canvas-ui-border)] bg-[var(--canvas-ui-soft)] px-4 py-3">
                   <div className="flex items-center justify-between text-[12px] font-semibold canvas-ui-muted">
                     <span className="flex items-center gap-2">
                       <Loader2 className="h-3.5 w-3.5 animate-spin text-[#248da1]" />
-                      {ocrStatus === "scanning" ? "正在扫描整张图片并提取文字" : "正在匹配原图字体并生成结果"}
+                      {ocrBatch
+                        ? `正在批量提交改字任务（${ocrBatch.done}/${ocrBatch.total}）`
+                        : ocrStatus === "scanning" ? "正在扫描整张图片并提取文字" : "正在匹配原图字体并生成结果"}
                     </span>
-                    <span>{Math.round(ocrProgress)}%</span>
+                    <span>{ocrBatch ? Math.round((ocrBatch.done / ocrBatch.total) * 100) : Math.round(ocrProgress)}%</span>
                   </div>
                   <div className="mt-2 h-1.5 overflow-hidden bg-[#dfe6ec]">
                     <div
                       className="h-full bg-[#248da1] transition-all"
-                      style={{ width: `${Math.max(4, Math.min(100, ocrProgress))}%` }}
+                      style={{ width: `${Math.max(4, Math.min(100, ocrBatch ? (ocrBatch.done / ocrBatch.total) * 100 : ocrProgress))}%` }}
                     />
                   </div>
                 </div>
               )}
 
               <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-                <div className="mb-3"><label className="mb-2 block text-xs">文字识别模型<TextModelSelect feature="canvas.ocr" compact dark={!lightCanvas} /></label><FeatureModelSelect feature="canvas.text-edit" disabled={ocrStatus === "applying"} /><ImageQualityControl compact feature="canvas.text-edit" resolution={artwork?.resolution || "1K"} disabled={ocrStatus === "applying"} /></div>
+                <div className="mb-3"><label className="mb-2 block text-xs">文字识别模型<TextModelSelect feature="canvas.ocr" compact dark={!lightCanvas} /></label><FeatureModelSelect feature="canvas.text-edit" disabled={batchLocked} /><ImageQualityControl compact feature="canvas.text-edit" resolution={artwork?.resolution || "1K"} disabled={batchLocked} /></div>
                 {ocrError && (
                   <div className="mb-3 border border-[#f0c8c3] bg-[#fff5f3] px-3 py-2 text-[12px] font-medium text-[#b44f43]">
                     {ocrError}
@@ -155,7 +159,7 @@ export function CanvasImageTextPanel({state,artwork,lightCanvas,onClose,onFocus,
                       <textarea
                         aria-label={`修改文字 ${index + 1}`}
                         value={segment.editedText}
-                        disabled={ocrStatus === "applying"}
+                        disabled={batchLocked}
                         onChange={(event) => onEdit(segment.id,event.target.value)}
                         rows={2}
                         maxLength={300}
@@ -165,7 +169,7 @@ export function CanvasImageTextPanel({state,artwork,lightCanvas,onClose,onFocus,
                         <button
                           type="button"
                           aria-label={`应用文字 ${index + 1}`}
-                          disabled={ocrStatus === "applying" || !segment.editedText.trim() || segment.editedText.trim() === segment.text}
+                          disabled={batchLocked || !segment.editedText.trim() || segment.editedText.trim() === segment.text}
                           onClick={() => void onApply(segment)}
                           className="canvas-ui-primary flex h-8 items-center gap-1.5 rounded-lg px-3 text-[12px] font-semibold text-white hover:bg-[#182129] disabled:cursor-not-allowed disabled:opacity-35"
                         >
@@ -177,8 +181,23 @@ export function CanvasImageTextPanel({state,artwork,lightCanvas,onClose,onFocus,
                   ))}
                 </div>
               </div>
-              <div className="border-t border-[var(--canvas-ui-border)] bg-[var(--canvas-ui-soft)] px-4 py-2 text-[10px] canvas-ui-muted">
-                {ocrEngine ? `识别引擎：${ocrEngine === "paddleocr" ? "PaddleOCR" : "视觉模型兜底"}` : "优先使用 PaddleOCR 扫描整图"}
+              <div className="border-t border-[var(--canvas-ui-border)] bg-[var(--canvas-ui-soft)]">
+                <div className="px-4 pt-2.5">
+                  <button
+                    type="button"
+                    aria-label="批量应用全部修改"
+                    data-testid="ocr-batch-apply"
+                    disabled={batchLocked || batchPending === 0}
+                    onClick={() => void onApplyAll()}
+                    className="canvas-ui-primary flex h-9 w-full items-center justify-center gap-1.5 rounded-lg px-3 text-[12px] font-semibold text-white hover:bg-[#182129] disabled:cursor-not-allowed disabled:opacity-35"
+                  >
+                    {ocrBatch ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+                    {ocrBatch ? `批量应用中 ${ocrBatch.done}/${ocrBatch.total}` : `批量应用${batchPending ? `（${batchPending}）` : ""}`}
+                  </button>
+                </div>
+                <div className="px-4 py-2 text-[10px] canvas-ui-muted">
+                  {ocrEngine ? `识别引擎：${ocrEngine === "paddleocr" ? "PaddleOCR" : "视觉模型兜底"}` : "优先使用 PaddleOCR 扫描整图"}
+                </div>
               </div>
             </aside>
  );

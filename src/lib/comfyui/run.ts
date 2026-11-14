@@ -41,6 +41,10 @@ export async function executeComfyRun(email:string,body:ComfyRunInput|null,reque
   if(!workflowId)return reply({error:"请选择工作流",accepted:false},{status:400});
   let creationRecord:string|undefined;
   try {
+    if(body?.mediaType==='video'){
+      const result=await submitByocComfyVideo(email,{...body,source:body?.source||(request.canvas?'canvas':'workflow'),idempotencyKey:body?.idempotencyKey||request.operationId||crypto.randomUUID()});
+      return reply({ok:true,...result,images:[],videos:[]},{status:202});
+    }
     const endpoint = await getActiveComfyEndpoint(email);
     if (!endpoint) {
       return reply({ error: "还没有可用的 ComfyUI 端点，请先在「工作流」面板添加",accepted:false }, { status: 400 });
