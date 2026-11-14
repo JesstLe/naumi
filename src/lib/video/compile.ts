@@ -1,4 +1,4 @@
-import {parseVideoExecutionDraft} from './input-resolver';
+import {parseVideoExecutionDraft,validateVideoStructure} from './input-resolver';
 import {createHash} from 'node:crypto';
 import {
   videoModelBindingSchema,videoExecutionPolicySchema,resolvedVideoDraftSchema,videoProfileOutputSchema,compiledVideoPlanSchema,videoDiagnostic,videoDraftPreparationSchema,
@@ -29,6 +29,8 @@ export function readCompiledVideoPlan(raw:unknown):VideoResult<CompiledVideoPlan
   const parsed=compiledVideoPlanSchema.safeParse(raw);
   if(!parsed.success)return {ok:false,diagnostics:[videoDiagnostic('internal','INVALID_COMPILED_PLAN','plan','冻结视频计划结构或版本无效','使用对应版本的任务读取器')]};
   const {digest,...payload}=parsed.data;
+  const structure=validateVideoStructure({structure:payload.structure,inputs:payload.inputManifest.map(input=>({id:input.id,nodeId:input.nodeId,kind:input.kind,role:input.role}))});
+  if(!structure.ok)return structure;
   if(createHash('sha256').update(canonical(payload)).digest('hex')!==digest)
     return {ok:false,diagnostics:[videoDiagnostic('internal','COMPILED_PLAN_DIGEST_MISMATCH','plan','冻结视频计划摘要不一致','核对任务存储，不会重新解释或重发')]};
   return {ok:true,value:freeze({...payload,digest})};
@@ -88,10 +90,15 @@ export function compileVideoRequest(args:{profile:VideoModelProfile;binding:unkn
     const contract=freeze(described.value);
     if(contract.profileId!==b.profileId||contract.profileVersion!==b.profileVersion||contract.bindingRevision!==b.revision)
       return {ok:false,diagnostics:[videoDiagnostic('internal','PROFILE_CONTRACT_MISMATCH','binding','协议描述与执行绑定不一致','检查协议实现')]};
+    const structural=validateVideoStructure(d);if(!structural.ok)return structural;
     const compiled=profile.compile(d,contract,b);if(!compiled.ok)return compiled;
     const output=videoProfileOutputSchema.safeParse(compiled.value);
     if(!output.success)return {ok:false,diagnostics:[videoDiagnostic('internal','INVALID_PROFILE_OUTPUT','profile','协议编译结果结构无效','检查协议实现')]};
     const value=output.data;
+    for(const key of ['shots','elements'] as const){
+      const expected=d.structure?.[key]?.map(item=>item.id)??[],actual=value.consumedStructure?.[key]??[];
+      if(expected.length!==actual.length||expected.some((id,index)=>id!==actual[index]))return {ok:false,diagnostics:[videoDiagnostic('mapping','STRUCTURE_NOT_CONSUMED',key,'协议未完整映射结构化输入及其顺序','配置镜头或元素映射，不会自动丢弃结构')]};
+    }
     const intentAllowed=checkVideoExecutionPolicy(p,d.inputs,value.intent);if(!intentAllowed.ok)return intentAllowed;
     const consumed=new Set(value.consumedInputIds),provided=new Set(d.inputs.map(input=>input.id));
     if(consumed.size!==value.consumedInputIds.length||consumed.size!==provided.size||[...consumed].some(id=>!provided.has(id)))
@@ -99,10 +106,10 @@ export function compileVideoRequest(args:{profile:VideoModelProfile;binding:unkn
     const media=new Set(d.inputs.filter(input=>input.kind!=='text').map(input=>input.id)),mapped=new Set<string>();
     if(!mappedAssets(value.wireTemplate.body,media,mapped)||mapped.size!==media.size)
       return {ok:false,diagnostics:[videoDiagnostic('mapping','INVALID_MEDIA_SLOT','inputs','请求模板未正确绑定全部媒体身份','修正协议模板中的素材槽')]};
-    const payload:Omit<CompiledVideoPlan,'digest'>={schemaVersion:1,
+    const payload:Omit<CompiledVideoPlan,'digest'>={schemaVersion:d.structure?2:1,
       identity:{publicModelId:b.publicModelId,wireModel:b.wireModel,connectionId:b.connectionId,profileId:b.profileId,profileVersion:b.profileVersion,bindingRevision:b.revision,policyRevision:p.revision},
       binding:b,policy:p,
-      scope:d.scope,intent:value.intent,originalPrompt:d.prompt,requestedParameters:d.parameters,
+      scope:d.scope,intent:value.intent,originalPrompt:d.prompt,...(d.structure?{structure:d.structure}:{}),requestedParameters:d.parameters,
       effectiveParameters:value.effectiveParameters,inputManifest:d.inputs,wireTemplate:value.wireTemplate,billingFacts:value.billingFacts};
     const digest=createHash('sha256').update(canonical(payload)).digest('hex');
     return {ok:true,value:freeze({...payload,digest})};

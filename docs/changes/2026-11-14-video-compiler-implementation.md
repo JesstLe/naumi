@@ -320,3 +320,34 @@ Agent工具/Agent报价 -> video公共准备用例/模型快照 -> 原Resolver/C
 补充核对：新绑定携带历史工作流来源时，预览也明确报告结构化Profile映射缺口，不忽略workflowTaskId后给出假成功。Agent创作设置脚本本身按无DB/受控网络设计；首次混用PG环境在基线和修改版均触发登录401，移除DATABASE_URL后两边24项通过；保留原始失败，不更改鉴权来让fixture变绿。
 
 本切片最终候选：Agent/无损分镜14项、原Workflow22项、原任务38项，合计74项真实闭环；分镜React/Edge6项、原UI18项、核心137、预览61、Canvas121、媒体16、分镜工具20/结构26、账务归属35/事务14，以及独立无DB创作设置24项通过。基线实际函数另复现：请求4K/应映射2K却按1K报价，edit/extend被旧mode门禁拒绝；只覆盖测试driver，不修改基线产品文件，验证后恢复干净。
+
+## 结构化 JSON 镜头 / 元素完整切片（2026-11-14）
+
+模块与职责：
+- 草稿增加可选 `structure`：有序镜头（稳定id、描述、时长、可选文字输入身份）和元素（稳定id、名称、描述、有序素材输入id）。嵌套素材使用原引用id进入同一Resolver，不接受声明的URL/MIME/字节数；重复id、角色/类型冲突、缺失/重复成员在I/O前诊断。
+- `profiles/structured-json.ts` 独立负责镜头和元素的真实JSON字段、开关、顺序、数量、单镜头最小值/步长、描述长度和时长总和；`json-profile.ts` 仍负责普通参数/媒体及单次映射。字段由已发布recipe提供，无型号白名单。支持APIMart顶层结构及KIE的input包装、数字/字符串时长；两个既有codec的实际wire正控相等，不代表所有KIE/Omni分支已迁移。
+- `send=semantic` 明确区分“有效事实参与计费/UI，但不发送上游字段”与既有 `send=omit`。例如Kling的有效分辨率存在，但wire只发mode，不能为了凑计费事实多发resolution。现有value/omit语义保持。
+- `compileVideoRequest` 要求镜头/元素id及顺序完整消费；仅消费flat media不能冒充结构已映射。结构计划使用schemaVersion=2；普通计划仍写1，reader保留旧1且拒绝结构/版本不一致。digest覆盖全部分组、原始参数、真实文字与媒体。
+- 镜头关联文字由既有owner解析，编译只用实际内容，不把镜头文字附加到全局prompt。元素所有素材都经过授权/解码/hash，执行物化递归替换嵌套槽；权限和字节绑定并未删除。
+- `compiled-structure.ts` 只负责从flat可信manifest投影回镜头/元素给回执、历史与重试；不是第二个compiler。v3提交仍沿原原子任务/预占/creation/节点/工作流事务，元素素材加入原资产血缘和creation输入。Worker执行冻结wire，不走legacy create。
+- Workflow冻结/比较包含structure，关联文字保持原内容。延迟输入的静态manifest只保存已有输入事实，完整结构在完整草稿中核对；最终真实依赖就绪后才编译。未声称已实现“未来产物动态加入元素组”的专门绑定UI/协议。
+- Profile.describe投影结构编辑信息，不公开wire字段、路径或密钥。现代Canvas/Workbench设置共用现有ShotEditor/ElementEditor，旧能力false/缺数量不再隐藏已配置结构；已有不兼容分组保留。只读保持，legacy编辑行为保持；诊断和真实约束仍来自服务器编译。
+- 发现并修复v3历史快照仍读取effective顶层值的缺口：`publicVideoTaskSnapshot` 从已校验冻结计划取原始parameters和镜头/元素分组，不把2K/2k当作原4K输入。损坏v3不落回旧reader。旧v1/v2任务读取分支不变。
+
+公共接口、依赖方向、数据/状态/事务归属：
+入口/现有UI -> videoSubmissionDraft -> 同一Input Resolver -> Profile编译 -> 原任务/计费事务 -> 原供应商/媒体物化。镜头文字归text owner，元素归资产owner，结构化草稿/计划归video，模型recipe和显式政策归model-config。纯Profile不导入React、Route、DB或网络；未新增内部HTTP/DI/事件总线。
+
+验证命令、结果与证据层级：
+- 基线86f1682a实际输入复现 `STRUCTURED_INGRESS=REJECTED CODE=STRUCTURED_INPUT_MAPPING_REQUIRED`；修改版同输入保留1镜头/1元素/1真实解析入口。基线完整旧链路74项、核心137项通过。
+- `verify-video-structured-core.ts`：32项，含完整结构消费、身份/顺序、关联文字、参数边界、嵌套签名/版本变化、显式政策、APIMart/KIE实际codec wire等价。
+- `verify-video-compiled-task.ts --structured --agent --workflow`：88项真实隔离PG/应用Route函数/本地供应商HTTP/独立媒体Worker/ffmpeg；新增结构14项，原Agent14、Workflow22和任务38项。结构预览和受理摘要一致、幂等原回执、关联文本/素材越权零副作用、发布与文字变化不改原任务、结果/血缘/账务、历史快照、显式重试、Canvas与Workflow均验证。
+- `verify-video-structured-ui.cjs`：7项真实React/无头Edge，验证真实全设置组件；仅网络受控。原编译UI18、无损Storyboard UI6、Canvas121、媒体16、旧冻结来源8案例/16入口、事务14和完整tsc集中验证。
+- 完整原始命令、输入、literal结果、exit、哈希和复制回滚见 `E:/Workspace/naumi/output/video-compiler-structured-20261114/VERIFICATION.txt`。初次浏览器driver缺AuthProvider/选择器多匹配、旧冻结检查缺隔离DB环境的失败保留，分别补齐driver/provider/环境；未修改产品鉴权。Windows媒体状态写入重试原日志保留；原结果重试未增加供应商POST，不代表Linux沙箱验收。
+
+未完成与下一步：
+- 本切片为可配置JSON结构Profile及其真实消费者，不是57个wire profile和2条无profile路径的整体迁移。各分支条件映射、原供应商文档/实际回执、published bindings审查仍逐项实施，不能只凭通用recipe可表达就算已迁移。
+- BYOC ComfyUI/RunningHub/AutoDL仍需真正DAG/槽位/上传Profile及历史reader。此次只审查现状，不把JSON请求包装成工作流Profile；未取消workflows执行入口的准确端点依赖。
+- 旧能力裁决/升级/fallback的新任务调用退出，完整Next/App/独立应用Worker进程重启、RFC A01-A19以及外部供应商/站点验收仍继续；目标ACTIVE。
+- 本次生产配置写入0、付费上游0、部署0；47 HOLD、103模型映射独立实验分支和共享checkout保持。普通main整合与实际上线分开记录。
+
+补充的延迟输入验收实际发现并修复了一个顺序缺口：没有orderedInputs的结构化Workflow在freeze时把future槽追加到镜头文字/元素后，而最终submission先放普通references再展平结构，导致同一输入被错误判成顺序变化。现在freeze把普通future槽插入结构成员之前，保留各自内部顺序；完整草稿/静态元素仍冻结。新增“已有完成源视频 → 真实future video + 冻结镜头/元素”的实际PG/Worker路径，原始失败与修正结果分别保留。不是放宽身份核对或按集合忽略顺序。

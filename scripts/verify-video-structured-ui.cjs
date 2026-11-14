@@ -1,0 +1,35 @@
+// Actual full settings component; only catalog/assets network is controlled.
+require('tsx/cjs');
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+const {build}=require('esbuild'),{chromium}=require('@playwright/test');
+const root=process.cwd(),out=path.resolve(process.env.VIDEO_STRUCTURED_UI_OUT||'E:/Workspace/naumi/output/video-compiler-structured-20261114/browser');fs.mkdirSync(out,{recursive:true});
+const entry=`import React,{useState} from 'react';import {createRoot} from 'react-dom/client';import {AuthProvider} from '@/lib/auth-context';import {VideoSettingsFields} from '@/components/canvas/video/settings-fields';
+const structure={shots:{max:6,minDurationSeconds:0.5,durationStep:0.5},elements:{max:3,media:[{kinds:['image','audio'],min:1,max:4}]}};
+const contract={version:1,modelVersion:1,modelDigest:'a'.repeat(64),policyRevision:0,defaults:{},operations:[{intent:'text',parameters:{}},{intent:'reference',structure,parameters:{}}]};
+const choices=[{id:'image-choice',nodeId:'owned-image',kind:'image',title:'图片素材',value:'/media/owned.png',available:true},{id:'audio-choice',nodeId:'owned-audio',kind:'audio',title:'声音素材',value:'/media/owned.wav',available:true},{id:'text-choice',nodeId:'text:owned',kind:'text',title:'镜头文字',value:'actual text',available:true}];
+function App(){const [config,setConfig]=useState({modelId:'one',prompt:'Keep',mode:'text',parameters:{durationSeconds:4,resolution:'4K'}}),[readOnly,setReadOnly]=useState(false),[inputs,setInputs]=useState([]),[model,setModel]=useState('one');
+window.fixture={config,inputs};
+const models=[{modelId:model,providerId:'managed-video',label:'Fixture',definition:{sources:{},modes:['text'],supportsMultiShot:false,supportsElements:false},execution:{...contract,operations:contract.operations.map(op=>model==='other'?{...op,structure:undefined}:op)}}];
+return <main><button onClick={()=>{setModel('other');setConfig(c=>({...c,modelId:'other'}))}}>切换无映射模型</button><button onClick={()=>setReadOnly(v=>!v)}>锁定</button><VideoSettingsFields config={config} inputs={inputs} models={models} choices={choices} readOnly={readOnly} onConfig={setConfig} onInputs={setInputs}/></main>}
+createRoot(document.getElementById('root')).render(<AuthProvider><App/></AuthProvider>);`;
+async function main(){
+ const file=path.join(out,'entry.tsx');fs.writeFileSync(file,entry);
+ await build({entryPoints:[file],bundle:true,platform:'browser',format:'iife',jsx:'automatic',outfile:path.join(out,'app.js'),loader:{'.css':'local-css'},tsconfig:path.join(root,'tsconfig.json'),alias:{react:path.dirname(require.resolve('react/package.json')),'react-dom':path.dirname(require.resolve('react-dom/package.json'))},define:{'process.env.NODE_ENV':'"development"'},banner:{js:'var process={env:{},browser:true};'}});
+ const html='<!doctype html><html><head><meta charset="utf-8"><style>body{background:#f8fafc;color:#1e293b;font-family:Arial}main{max-width:1000px;margin:20px auto}button,input,select,textarea{margin:6px;padding:7px}fieldset{border:0}textarea{display:block}</style></head><body><div id="root"></div><script>'+fs.readFileSync(path.join(out,'app.js'),'utf8').replace(/<\/script/gi,'<\\/script')+'</script></body></html>';
+ fs.writeFileSync(path.join(out,'index.html'),html);const browser=await chromium.launch({channel:'msedge',headless:true}),context=await browser.newContext({viewport:{width:1200,height:900}}),page=await context.newPage(),checks=[],errors=[],network=[];
+ page.on('pageerror',e=>errors.push(e.message));await context.route('**/*',route=>{const url=route.request().url();if(url==='http://structured.fixture/')return route.fulfill({contentType:'text/html',body:html});network.push(url);if(url.endsWith('/api/config'))return route.fulfill({json:{db:false}});if(url.includes('/api/auth/session'))return route.fulfill({json:{user:null}});if(url.includes('comfyui'))return route.fulfill({json:{endpoint:null,workflows:[]}});return route.abort();});
+ const click=name=>page.getByRole('button',{name,exact:true}).click(),state=()=>page.evaluate(()=>window.fixture),pass=name=>{checks.push(name);console.log('STRUCTURED_UI_CHECK='+name);};
+ try{
+  await page.goto('http://structured.fixture/');await page.waitForSelector('[data-testid="video-shot-editor"]');
+  await click('添加镜头');await page.getByRole('textbox',{name:'镜头1描述',exact:true}).fill('First movement');await page.getByRole('spinbutton',{name:'镜头1时长',exact:true}).fill('1.5');
+  assert.equal((await state()).config.shots[0].durationSeconds,1.5);assert.equal((await state()).config.parameters.resolution,'4K');pass('profile-shot-editor-visible-despite-false-old-capability');
+  await page.getByRole('combobox',{name:'镜头1文字来源',exact:true}).selectOption('text:owned');assert.equal((await state()).config.shots[0].textNodeId,'text:owned');await page.getByRole('textbox',{name:'镜头1描述',exact:true}).fill('Explicit replacement');assert.equal((await state()).config.shots[0].textNodeId,undefined);pass('linked-shot-text-explicit-edit-clears-only-association');
+  await click('添加元素');await page.getByRole('textbox',{name:'元素1名称',exact:true}).fill('Person');await page.getByRole('combobox',{name:'元素1添加素材',exact:true}).selectOption('image-choice');await page.getByRole('combobox',{name:'元素1添加素材',exact:true}).selectOption('audio-choice');assert.deepEqual((await state()).config.elements[0].references.map(r=>[r.kind,r.role]),[['image','element'],['audio','element']]);pass('unbounded-editor-missing-old-limit-does-not-disable-media');
+  await click('添加镜头');const before=await state();await page.getByRole('button',{name:'上移',exact:true}).last().click();assert.equal((await state()).config.shots[1].prompt,before.config.shots[0].prompt);pass('shot-reorder-retains-complete-identity-and-draft');
+  const preserved=(await state()).config;await click('切换无映射模型');assert.equal(await page.locator('[data-testid="video-shot-editor"]').count(),1);assert.equal(await page.locator('[data-testid="video-element-editor"]').count(),1);assert.deepEqual((await state()).config.shots,preserved.shots);assert.deepEqual((await state()).config.elements,preserved.elements);pass('incompatible-model-keeps-groups-visible-and-editable');
+  await click('锁定');assert.equal(await page.getByRole('button',{name:'添加元素',exact:true}).isDisabled(),true);assert.equal(await page.getByRole('button',{name:'添加镜头',exact:true}).isDisabled(),true);pass('read-only-lock-covers-structured-controls');
+  assert.deepEqual(errors,[]);assert(!network.some(u=>/generate|compile-preview/.test(u)));pass('no-react-errors-or-generation-effects');
+  fs.writeFileSync(path.join(out,'RESULT.json'),JSON.stringify({checks,errors,network,actualReact:true,actualEdge:true,actualNextServer:false,paidCalls:0},null,2));console.log('VIDEO_STRUCTURED_UI=PASS CASES='+checks.length+' REAL_REACT=true REAL_HEADLESS_EDGE=true PAID_CALLS=0');
+ }catch(error){fs.writeFileSync(path.join(out,'FAILURE.json'),JSON.stringify({error:String(error),errors,state:await state()},null,2));throw error;}finally{await context.close();await browser.close();}
+}
+main().catch(error=>{console.error(error);process.exitCode=1;});

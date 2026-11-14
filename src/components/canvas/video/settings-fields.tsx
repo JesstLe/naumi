@@ -1,4 +1,5 @@
 "use client";
+import {videoUiStructure,videoUiValue} from '@/lib/video/ui-draft';
 import {previewCanvasInputs} from "@/lib/canvas/input-preview";
 import {useVideoI18n} from "./i18n";
 import { useState } from "react";
@@ -39,6 +40,10 @@ export function VideoSettingsFields({ config, inputs, models, choices, nodeId, e
     const [error, setError] = useState(""), [notice, setNotice] = useState(""), [uploading, setUploading] = useState(false);
     const byoc = useVideoByocCatalog(email), workflow = byoc.catalog?.workflows.find(item => item.id === config.comfyWorkflowId);
     const model=selectedVideoCatalogModel(models,config),cap = catalogCapability(model),modern=!!model?.execution;
+    const structure=model?.execution?videoUiStructure(config,inputs,model.execution):undefined;
+    const shotRule=structure?.shots,elementRule=structure?.elements;
+    const showShots=modern?!!shotRule||!!config.shots?.length:cap.supportsMultiShot===true;
+    const showElements=modern?!!elementRule||!!config.elements?.length:cap.supportsElements===true;
     const preview = (() => { try {
         const expanded = previewCanvasInputs(inputs, config.prompt || "", choices);
         return compileVideoPrompt(expanded.prompt, expanded.inputs, compileVideoCamera(config.camera)).prompt;
@@ -88,8 +93,8 @@ export function VideoSettingsFields({ config, inputs, models, choices, nodeId, e
           {!hideComposerFields&&<VideoField label={V("视频描述")}><VideoPromptEditor prompt={config.prompt || ""} inputs={inputs} choices={choices} nodeId={nodeId} rows={6} className={videoFieldClass} readOnly={readOnly || busy || uploading} onPrompt={prompt => changeConfig({ ...config, prompt })} onMention={mention}/></VideoField>}
           <details className="text-xs"><summary className="cursor-pointer opacity-70">{V("\u7F16\u8BD1\u9884\u89C8")}</summary><pre data-testid="video-compiled-prompt" className="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap break-words rounded-lg bg-current/5 p-3 font-sans text-[11px]">{preview}</pre></details>
         </div><div className="space-y-4"><VideoSection title={V("引用素材")}>{onImport && <label className={`${videoButtonClass} inline-flex cursor-pointer`}><span>{V("\u4E0A\u4F20\u56FE\u7247 / \u89C6\u9891 / \u97F3\u9891")}</span><input aria-label={V("上传视频参考素材")} type="file" multiple accept="image/png,image/jpeg,image/webp,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/webm" className="sr-only" disabled={busy || readOnly} onChange={event => { const files = Array.from(event.target.files || []); event.target.value = ""; void importFiles(files); }}/></label>}{canLoadMoreAssets && onLoadMoreAssets && <button type="button" className={videoButtonClass} disabled={busy || readOnly} onClick={() => void onLoadMoreAssets().catch(cause => setError(cause instanceof Error ? cause.message : "素材历史加载失败"))}>{V("\u52A0\u8F7D\u66F4\u591A\u5386\u53F2\u7D20\u6750")}</button>}<ReferenceList inputs={inputs} choices={choices.filter(choice => choice.nodeId !== nodeId)} onChange={changeInputs}/></VideoSection>
-          {cap.supportsMultiShot === true && <VideoSection title={V("分镜")}><ShotEditor shots={config.shots || []} duration={config.durationSeconds} maxShots={cap.maxShots} minShotDurationSeconds={cap.minShotDurationSeconds} shotDurationStep={cap.shotDurationStep} maxShotPromptChars={cap.maxShotPromptChars} choices={choices} onChange={shots => changeConfig({ ...config, shots: shots.length ? shots : undefined })}/></VideoSection>}
-          {cap.supportsElements === true && <VideoSection title={V("元素")}><ElementEditor elements={config.elements || []} choices={choices.filter(choice => choice.nodeId !== nodeId)} maxElements={cap.maxElements} maxReferences={cap.maxElementReferences} onChange={elements => changeConfig({ ...config, elements: elements.length ? elements : undefined })}/></VideoSection>}
+          {showShots && <VideoSection title={V("分镜")}><ShotEditor allowUnbounded={modern} shots={config.shots || []} duration={modern?videoUiValue(config,'durationSeconds') as number|undefined:config.durationSeconds} maxShots={modern?shotRule?.max:cap.maxShots} minShotDurationSeconds={modern?shotRule?.minDurationSeconds:cap.minShotDurationSeconds} shotDurationStep={modern?shotRule?.durationStep:cap.shotDurationStep} maxShotPromptChars={modern?shotRule?.maxPromptChars:cap.maxShotPromptChars} choices={choices} onChange={shots => changeConfig({ ...config, shots: shots.length ? shots : undefined })}/></VideoSection>}
+          {showElements && <VideoSection title={V("元素")}><ElementEditor allowUnbounded={modern} elements={config.elements || []} choices={choices.filter(choice => choice.nodeId !== nodeId)} maxElements={modern?elementRule?.max:cap.maxElements} maxReferences={modern?undefined:cap.maxElementReferences} onChange={elements => changeConfig({ ...config, elements: elements.length ? elements : undefined })}/></VideoSection>}
           {cap.supportsCamera === true && <VideoSection title={V("摄影")}><CameraSettings camera={config.camera} onChange={camera => changeConfig({ ...config, camera })}/></VideoSection>}
         </div></div>
     {error && <p role="alert" className="text-xs text-red-500">{error}</p>}

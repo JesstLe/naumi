@@ -1,4 +1,5 @@
 import 'server-only';
+import {compiledVideoStructure} from './compiled-structure';
 import {encryptAtRest,decryptAtRest} from '../settings';
 import {readCompiledVideoPlan} from './compile';
 import {VideoContractError} from './contract';
@@ -14,11 +15,12 @@ export function encryptedVideoPlan(plan:CompiledVideoPlan){return encryptAtRest(
 export function compiledVideoRequest(plan:CompiledVideoPlan,source:VideoGenerationRequest['source'],idempotencyKey:string,sourceId?:string):VideoGenerationRequest {
   const references:VideoReference[]=plan.inputManifest.flatMap(input=>input.kind==='text'?[]:[{id:input.id,kind:input.kind,role:input.role,
     ...input.asset,url:`/media/${input.asset.storageKey}`}]);
+  const grouped=compiledVideoStructure(plan,references);
   // Transport never uses these projections to recompile the v3 create body.
   // They retain existing UI/receipt/poll/lineage/retry consumers.
   return {source,sourceId,projectKey:plan.scope.projectKey??undefined,providerId:plan.identity.connectionId,modelId:plan.identity.wireModel,prompt:plan.originalPrompt,
     mode:plan.intent,durationSeconds:plan.billingFacts.durationSeconds,resolution:plan.billingFacts.resolution,aspectRatio:plan.billingFacts.aspectRatio,
-    references,idempotencyKey,orderedInputs:plan.inputManifest.map(input=>({id:input.id,nodeId:input.nodeId,kind:input.kind,role:input.role,value:input.kind==='text'?input.text:`/media/${input.asset.storageKey}`})),
+    references:grouped.references,...(grouped.shots?{shots:grouped.shots}:{}),...(grouped.elements?{elements:grouped.elements}:{}),idempotencyKey,orderedInputs:grouped.inputs.map(input=>({id:input.id,nodeId:input.nodeId,kind:input.kind,role:input.role,value:input.kind==='text'?input.text:`/media/${input.asset.storageKey}`})),
     ...Object.fromEntries(['negativePrompt','width','height','generateAudio','watermark','providerOptions'].filter(key=>Object.hasOwn(plan.effectiveParameters,key)).map(key=>[key,plan.effectiveParameters[key]]))};
 }
 /** Only trusted persisted rows reach this reader. Digest is integrity, not
@@ -45,5 +47,5 @@ export function compiledVideoRetryInput(actor:string,task:VideoTaskRow):CreateVi
   const plan=readTaskCompiledVideoPlan(actor,task),request=compiledVideoRequest(plan,task.source as VideoGenerationRequest['source'],'new-operation',task.sourceId);
   return {source:request.source,sourceId:request.sourceId,projectKey:request.projectKey,modelId:plan.identity.publicModelId,prompt:plan.originalPrompt,seconds:'',size:'',
     parameters:structuredClone(plan.requestedParameters),intentPreference:task.parameters.intentPreference as CreateVideoInput['intentPreference'],mode:task.parameters.legacyMode as CreateVideoInput['mode'],
-    references:request.references,orderedInputs:request.orderedInputs?.map(input=>input.kind==='text'?{...input,nodeId:`inline:retry-${createHash('sha256').update(`${task.id}:${input.id}`).digest('hex')}`}:input),retryOf:task.id};
+    references:request.references,shots:request.shots,elements:request.elements,orderedInputs:request.orderedInputs?.map(input=>input.kind==='text'?{...input,nodeId:`inline:retry-${createHash('sha256').update(`${task.id}:${input.id}`).digest('hex')}`}:input),retryOf:task.id};
 }
