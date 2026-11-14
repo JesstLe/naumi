@@ -43,7 +43,7 @@ async function materializeOwnedCompiledTask(actor:string,task:VideoTaskRow):Prom
   await creationTransaction(tx=>assertCreationInputsTx(tx,actor,artIds));
   await assertCreationObjectRefs(actor,artIds);
   for(const ref of allReferences)await assertCreationMediaInput(actor,`/media/${ref.storageKey}`);
-  if(plan.binding.profileId==='native-video'){
+  if(plan.binding.profileId==='native-video'&&plan.wireTemplate.encoding!=='json'){
     // Revalidate current access/facts without signing, uploading or fetching an
     // external URL. The frozen materializer checks the actual original bytes.
     const owned=await materializeVideoReferences(actor,request,{multipart:true});

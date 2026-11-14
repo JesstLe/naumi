@@ -232,6 +232,16 @@ export function createDirectVideoAdapter(providerId: string): VideoProviderAdapt
   const submit=supplierCostFetch(transport,scope?{...scope.connection,costScope:scope,phase:'video-generation'}:{providerId:cfg.id,baseUrl:cfg.baseUrl,apiKey:cfg.apiKey,wireModel:cfg.defaultModel,protocol:cfg.protocol,phase:'video-generation'});
   return {
     id: providerId,
+    async createCompiled(wire,key){
+      if(wire.encoding!=='json'||!wire.body||typeof wire.body!=='object'||Array.isArray(wire.body))throw new PermanentVideoCreateError('direct冻结执行需要JSON字段对象',422);
+      const field=cfg.idempotencyStrategy==='body'?cfg.idempotencyBodyField:undefined;
+      if(cfg.idempotencyStrategy==='body'&&!field)throw new PermanentVideoCreateError('视频body幂等字段缺失',422);
+      if(field&&Object.hasOwn(wire.body,field))throw new PermanentVideoCreateError('幂等字段与冻结请求字段冲突',422);
+      const response=await submit(base(cfg,wire.path),{method:'POST',headers:{...headers(cfg,true),...(cfg.idempotencyStrategy==='header'?{'Idempotency-Key':key,'X-Idempotency-Key':key}:{})},body:JSON.stringify({...wire.body,...(field?{[field]:key}:{})}),signal:AbortSignal.timeout(cfg.timeoutMs??120000)});
+      if(response.status>=400&&response.status<500&&response.status!==429){const rejected=await response.json().catch(()=>null);throw new PermanentVideoCreateError(firstString(path(rejected,'error.message'),path(rejected,'message'),path(rejected,'msg'),`视频任务创建失败(${response.status})`),response.status);}
+      const payload=await jsonResponse(response,'视频任务创建失败'),upstreamTaskId=idFrom(payload);if(!upstreamTaskId)throw new Error('视频服务未返回任务ID');
+      return {upstreamTaskId,status:status(path(payload,'status')||path(payload,'data.status')||path(payload,'task.status')),rawResponse:payload};
+    },
     async create(input) {
       const requestPayload = requestBody(cfg, input);
       if (cfg.idempotencyStrategy === "body") {
