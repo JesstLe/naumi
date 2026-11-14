@@ -9,7 +9,7 @@ import {createVideoFixture} from "./video-fusion/harness";
 import {prepareVideoAssets} from "./video-fusion/assets.mjs";
 import {MULTIMODAL_VIDEO_FAMILIES} from "../src/lib/model-config/video-family-multimodal";
 import {resolveVideoCapability} from "../src/lib/video/contract";
-import {reconcileVideoSettings} from "../src/lib/video/client-settings";
+import {reconcileVideoSettings} from "../src/lib/video/legacy-client-settings";
 import type {VideoMode} from "../src/lib/video/capability-schema";
 
 // Complete local application pipeline. Nothing contacts a production supplier.

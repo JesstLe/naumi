@@ -8,7 +8,7 @@ import {videoBatchQuote} from "@/lib/video/canvas-batch-client";
 import {VideoCompactComposer} from "./compact-composer";
 import type { CanvasVideoNode } from "@/lib/canvas/video-node-schema";
 import type { OrderedInput } from "@/lib/video/references";
-import { catalogCapability, selectedVideoCatalogModel, resolveVideoTextInputs, validateVideoSettings, type VideoCatalogModel, type VideoNodeConfig, type VideoInputChoice } from "@/lib/video/client-settings";
+import {selectedVideoCatalogModel, resolveVideoTextInputs, validateVideoSettings, type VideoCatalogModel, type VideoNodeConfig, type VideoInputChoice } from "@/lib/video/client-settings";
 import { useBillingEstimate, type PublicQuote } from "@/lib/billing/client";
 import { VideoSettingsFields } from "./settings-fields";
 import { VideoField, videoFieldClass, videoButtonClass, assertVideoFieldsValid } from "./form-controls";
@@ -77,14 +77,14 @@ export function VideoSettingsDialog({ node, models, choices, light, email, readO
       else if(incoming===baseline.current||incoming===local){revision.current=node.revision;baseline.current=incoming;}
     },[dock,node.revision,node.title,node.config,node.inputs]); // Local edits intentionally do not trigger this effect.
     closeRef.current = onClose;
-    const model=selectedVideoCatalogModel(models,config),cap = catalogCapability(model);
+    const model=selectedVideoCatalogModel(models,config);
     const resolvedInputs = resolveVideoTextInputs(inputs,choices);
     const compilePreview=useVideoCompilePreview({email,model,config,inputs:resolvedInputs,node:{id:node.id,revision:node.revision},enabled:!readOnly&&!active});
     const estimate = useBillingEstimate({ feature: "video.generate", quantity: 1, canvas: true, modelId: config.modelId, providerId: config.providerId,
       resolution:model?.execution?compilePreview.value?.billingFacts.resolution:config.resolution,ratio:model?.execution?compilePreview.value?.billingFacts.aspectRatio:config.aspectRatio }, !readOnly && !config.comfyWorkflowId&&(!model?.execution||compilePreview.status==='ready'));
     const totalQuote = videoBatchQuote(estimate.quote,count);
     const totalCost = totalQuote?.mode === "api-cost-plus" ? totalQuote.authorizedCredits ?? totalQuote.reserveCredits : totalQuote?.credits;
-    const invalid = validateVideoSettings(config, resolvedInputs, cap, choices,model?.execution)||compilePreview.error;
+    const invalid = validateVideoSettings(config, resolvedInputs, {sources:{}}, choices,model?.execution)||compilePreview.error;
     useEffect(() => {
         if(dock)return;
         const previous = document.activeElement as HTMLElement | null;

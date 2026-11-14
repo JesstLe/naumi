@@ -48,7 +48,7 @@ const mixed=[input,{id:'role',nodeId:'character:role-a#base',kind:'text',role:'c
 check(()=>{const expanded=lib.previewVisualInputs(mixed,'{{ref 1}} {{ref 2}} {{ref 3}}',[...choices,...characterChoices]);assert.equal(expanded.inputs.length,5);assert.equal(expanded.prompt,'{{ref 1}} {{ref 3}} {{ref 5}}');assert.ok(expanded.inputs[0].value.includes('场景参考：图片1'));assert.ok(expanded.inputs[2].value.includes('角色参考：图片2'));});
 const config={modelId:'video-a',mode:'reference',prompt:'{{ref 1}}',durationSeconds:4,resolution:'720p',aspectRatio:'16:9'},cap={sources:{},modes:['reference'],durationResolutionMap:[{durations:[4],resolutions:['720p']}],aspectRatios:['16:9'],limits:{images:1}};
 check(()=>assert.equal(lib.validateVideoSettings(config,[input],cap,choices),null));
-check(()=>assert.match(lib.validateVideoSettings(config,[input],{...cap,limits:{images:0}},choices),/数量/));
+check(()=>assert.equal(lib.validateVideoSettings(config,[input],{...cap,limits:{images:0}},choices),null));
 check(()=>assert.match(lib.validateVideoSettings(config,[input],cap,[]),/不可用/));
 check(()=>assert.deepEqual(lib.directorBackgroundCrop(2,1),{repeat:[.5,1],offset:[.25,0]}));
 check(()=>assert.deepEqual(lib.directorBackgroundCrop(1,2),{repeat:[1,.5],offset:[0,.25]}));

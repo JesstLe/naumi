@@ -7,7 +7,7 @@ import {createModelFixture} from './model-config-fixture';
 import {freezeManagedVideoCapability} from '../src/lib/video/frozen-capability';
 import {publicModelCatalog} from '../src/lib/model-config/runtime';
 import {legacyVideoView} from '../src/lib/video/model-definition';
-import {videoDurations,videoAspectRatios} from '../src/lib/video/client-settings';
+import {videoDurations,videoAspectRatios} from '../src/lib/video/legacy-client-settings';
 import {resolveVideoCapability} from '../src/lib/video/contract';
 import {videoProfileProtocol,type VideoModelDefinition,type VideoWireProfile} from '../src/lib/video/capability-schema';
 import type {ModelConfig,ModelSnapshot} from '../src/lib/model-config/types';

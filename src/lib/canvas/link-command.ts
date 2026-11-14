@@ -15,8 +15,7 @@ import type {CanvasDirectorNode} from "./director-node-schema";
 import type {CanvasVideoNode} from "./video-node-schema";
 import type {CanvasPendingNode} from "./scene-types";
 import {browserRandomUUID} from "../browser-crypto";
-import {catalogCapability,selectedVideoCatalogModel,videoModeRoles,type VideoInputChoice,type VideoCatalogModel} from "../video/client-settings";
-import {attachVideoInputs} from "../video/mode-selection";
+import {type VideoInputChoice,type VideoCatalogModel} from "../video/client-settings";
 import {explicitCanvasParent} from "./input-references";
 import {canvasParentCycle} from "./parent-link";
 import {textPatchOf,type CanvasTextNode,type CanvasHistoryAction} from "./history-model";
@@ -106,15 +105,9 @@ export function compileCanvasLink(s:Snapshot,intent:CanvasLinkIntent):CanvasHist
     const inputs=add?[...video.inputs,{id:`ref-${browserRandomUUID()}`,nodeId:choice!.nodeId,kind:choice!.kind,
       role:choice!.kind==="text"?"context" as const:choice!.kind==="video"?"source_video" as const:choice!.kind==="audio"?"source_audio" as const:"reference" as const,value:choice!.value}]
       :video.inputs.filter(input=>removed?input.id!==removed.id:!matches(input.nodeId));
-    // A canvas wire is the same explicit attach as the composer's picker. Commit
-    // its mode/roles together, even while that composer is closed. Never pick a
-    // different model or infer capabilities for an unavailable/own workflow.
-    const selectedModel=!video.config.comfyWorkflowId?selectedVideoCatalogModel(s.videoModels||[],video.config):undefined;
-    const model=add||selectedModel?.execution?selectedModel:undefined;
-    const attached=model?attachVideoInputs(video.config,inputs,catalogCapability(model),model.execution):undefined;
-    return {kind:"video-patch",id:video.id,
-      from:{inputs:video.inputs,...(attached?.changed?{config:video.config}:{})},
-      to:{inputs:attached?.inputs??videoModeRoles(inputs,video.config.mode),...(attached?.changed?{config:attached.config}:{})}};
+    // Graph edits preserve roles/order/configuration regardless of model or
+    // catalogue availability. Compiler preview interprets the resulting draft.
+    return {kind:'video-patch',id:video.id,from:{inputs:video.inputs},to:{inputs}};
   }
   const pending=s.pending.find(node=>node.id===target);
   if(pending){

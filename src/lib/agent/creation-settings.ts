@@ -4,7 +4,10 @@ import { z } from "zod";
 
 const id = z.string().trim().min(1).max(160).refine(value => !/[\r\n]/.test(value));
 const image = z.object({ modelId: id.optional(), ratio: z.string().regex(/^(auto|\d{1,4}:\d{1,4})$/).optional(), resolution: z.enum(["1K", "2K", "4K", "5K"]).optional(), quality: z.enum(["low", "medium", "high", "xhigh", "max", "auto"]).optional() }).strict();
-const video = z.object({ modelId: id.optional(), providerId: id.optional(), aspectRatio: z.string().regex(/^\d{1,4}:\d{1,4}$/).optional(), resolution: z.string().regex(/^[\w-]{1,30}$/).optional(), durationSeconds: z.number().int().min(1).max(3600).optional() }).strict();
+// A turn freezes user-facing draft values, not a second video model validator.
+// Adaptive ratios, automatic/fractional durations and provider-specific labels
+// are interpreted exactly once by the published compiler recipe.
+const video = z.object({ modelId:id.optional(),providerId:id.optional(),aspectRatio:id.optional(),resolution:z.string().trim().min(1).max(100).refine(value=>!/[\r\n]/.test(value)).optional(),durationSeconds:z.number().finite().optional() }).strict();
 export const creationSettingsSchema = z.object({ image: image.optional(), video: video.optional() }).strict();
 export type CreationSettings = z.infer<typeof creationSettingsSchema>;
 
@@ -30,8 +33,8 @@ export function creationToolArguments(name: string, args: Record<string, unknown
   }
   if (videoConfigTools.has(name) && settings?.video) {
     const config = args.config && typeof args.config === "object" ? args.config as Record<string, unknown> : {};
-    const select=(raw:Record<string,unknown>)=>{let next={...raw} as VideoNodeConfig;for(const [key,value]of Object.entries(settings.video!)){if(value===undefined)continue;next=raw.parameters!==undefined&&key!=='modelId'&&key!=='providerId'?setVideoUiValue(next,key,value):{...next,[key]:value};}return next;};
-    return { ...args, config: select(config), ...(Array.isArray(args.shots) ? { shots: args.shots.map(shot => ({ ...shot, ...(shot.config ? { config: select(shot.config) } : {}), ...(settings.video?.durationSeconds ? { durationSeconds: settings.video.durationSeconds } : {}) })) } : {}) };
+    const select=(raw:Record<string,unknown>)=>{let next={...raw} as VideoNodeConfig;for(const [key,value]of Object.entries(settings.video!)){if(value===undefined)continue;const parameter=raw.parameters!==undefined||key==='durationSeconds'&&value!==-1&&(!Number.isInteger(value)||Number(value)<=0||Number(value)>3600);next=parameter&&key!=='modelId'&&key!=='providerId'?setVideoUiValue(next,key,value):{...next,[key]:value};}return next;};
+    return { ...args, config: select(config), ...(Array.isArray(args.shots) ? { shots: args.shots.map(shot => ({ ...shot, ...(shot.config ? { config: select(shot.config) } : {}), ...(settings.video?.durationSeconds!==undefined ? { durationSeconds: settings.video.durationSeconds } : {}) })) } : {}) };
   }
   return args;
 }

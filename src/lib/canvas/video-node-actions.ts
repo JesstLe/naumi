@@ -1,5 +1,5 @@
 import {browserRandomUUID} from '../browser-crypto';
-import {catalogCapability,videoNodeCreationDefaults,videoModeRoles} from '../video/client-settings';
+import {videoNodeCreationDefaults} from '../video/client-settings';
 import type {VideoInputChoice} from '../video/input-choice';
 import type {CanvasDocumentScope} from './document-scope';
 import type {CanvasVideoNode,VideoNodeWrite} from './video-node-schema';
@@ -26,9 +26,7 @@ export function createCanvasVideoNodeActions(){
           const id=`vnode-${browserRandomUUID()}`,location=ports.location(input.at,id),catalog=ports.catalog(),creation=videoNodeCreationDefaults(catalog);
           if(!creation){if(catalog.loading)ports.notice(ports.english?'Loading video models…':'视频模型加载中…');else await catalog.refresh();return;}
           const {model}=creation,choices=input.choices,config={...creation.config,prompt:input.blank?'':input.prompt};
-          const images=choices.filter(choice=>choice.kind==='image').length,proposed=choices.length===0?'text':choices.length===1&&images===1?'single_image':'reference';
-          if(catalogCapability(model).modes?.includes(proposed))config.mode=proposed;
-          const inputs=videoModeRoles(choices.map(choice=>({id:`ref-${browserRandomUUID()}`,nodeId:choice.nodeId,kind:choice.kind,role:choice.kind==='text'?'context' as const:choice.kind==='video'?'source_video' as const:choice.kind==='audio'?'source_audio' as const:'reference' as const,value:choice.value})),config.mode);
+          const inputs=choices.map(choice=>({id:`ref-${browserRandomUUID()}`,nodeId:choice.nodeId,kind:choice.kind,role:choice.kind==='text'?'context' as const:choice.kind==='video'?'source_video' as const:choice.kind==='audio'?'source_audio' as const:'reference' as const,value:choice.value}));
           const ratio=config.aspectRatio?.match(/^([1-9]\d*):([1-9]\d*)$/),aspect=ratio?Number(ratio[1])/Number(ratio[2]):16/9;
           scope.assertView();const node=await ports.store.save(id,{...location,title:'视频',width:384,height:Math.max(160,Math.min(680,Math.round(384/aspect))),config,inputs});
           if(scope.documentCurrent())ports.history({kind:'video-add',records:[node]});if(scope.viewCurrent())ports.created(node);return node;

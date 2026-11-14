@@ -11,7 +11,7 @@ import {validateModelConfig} from "../../src/lib/model-config/schema";
 import {compileRouterProjection} from "../../src/lib/model-config/projection";
 import {publicModelCatalog} from "../../src/lib/model-config/runtime";
 import {resolveVideoCapability,normalizeVideoInput} from "../../src/lib/video/contract";
-import {reconcileVideoSettings} from "../../src/lib/video/client-settings";
+import {reconcileVideoSettings} from "../../src/lib/video/legacy-client-settings";
 import {buildVideoCreate} from "../../src/lib/video/providers/wire";
 import type {ModelConfig,ModelSnapshot} from "../../src/lib/model-config/types";
 
@@ -65,6 +65,9 @@ async function verifyFrozenCapabilities(a:Awaited<ReturnType<typeof getModelAdmi
 }
 async function main(){
   const mode=process.argv[2],root=resolve(process.argv[3]||"");assert.ok(["PLAN","APPLY","VERIFY","ROLLBACK"].includes(mode));
+  // New capability-template publications have retired. Existing operation
+  // receipts retain their recovery/verification and selective rollback paths.
+  if(mode==='PLAN'||mode==='APPLY'&&!existsSync(join(root,'APPLY_REQUEST.json')))throw Object.assign(new Error('请使用视频执行绑定审查迁移'),{code:'VIDEO_CAPABILITY_UPGRADE_RETIRED'});
   mkdirSync(root,{recursive:true,mode:0o700});
   const spec=load(join(root,"SPEC.json")),proof=load(join(root,"LOCK_PROOF.json"));
   assert.equal(spec.target,"47.105.59.142");assert.match(spec.operationId,/^[0-9a-f-]{36}$/);

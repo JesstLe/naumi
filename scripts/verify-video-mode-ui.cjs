@@ -9,7 +9,7 @@ const variant=baseline?'baseline':'modified',dir=path.join(out,variant);fs.mkdir
 const oldCommit='2b990949421214802ae900e34f2baf6869f78443',repoRoot=process.env.VIDEO_MODE_REPO_ROOT||'E:/Workspace/naumi-canvas-video-modes-20261102';
 const entry=`import React,{useState} from 'react';import {createRoot} from 'react-dom/client';
 import {VideoCompactComposer} from '@/components/canvas/video/compact-composer';
-import {catalogCapability,reconcileVideoSettings,validateVideoSettings} from '@/lib/video/client-settings';
+import {catalogCapability,reconcileVideoSettings,validateVideoSettings} from '@/lib/video/legacy-client-settings';
 const cap=(modes,limits)=>({sources:{},modes,limits,durationResolutionMap:[{durations:[5,10],resolutions:['720p']}],aspectRatios:['16:9','9:16'],requiresPrompt:true});
 const models=[{providerId:'fixture',modelId:'text',label:'文生模型',definition:cap(['text'],{images:0,videos:0,audios:0})},
 {providerId:'fixture',modelId:'image',label:'图像参考模型',definition:cap(['text','single_image','frames_required','reference'],{images:4,videos:0,audios:0})},
@@ -31,6 +31,8 @@ feedback={invalid&&<p role="alert" className="px-4 pb-2 text-xs text-amber-700">
 createRoot(document.getElementById('app')).render(<App/>);`;
 
 async function main(){
+ if(!baseline){require('./verify-video-ui-gate-exit.cjs');return;}
+
  const file=path.join(dir,'entry.tsx');fs.writeFileSync(file,entry);
  const plugins=baseline?[{name:'baseline-composer',setup(b){b.onLoad({filter:/compact-composer\.tsx$/},args=>({contents:cp.execFileSync('git',['show',oldCommit+':src/components/canvas/video/compact-composer.tsx'],{cwd:repoRoot,encoding:'utf8'}),loader:'tsx',resolveDir:path.dirname(args.path)}));}}]:[];
  // Evidence lives outside the test checkout: pin the renderer used by both the

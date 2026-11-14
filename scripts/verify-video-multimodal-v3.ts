@@ -11,8 +11,8 @@ import {normalizeVideoInput,VideoContractError} from "../src/lib/video/contract"
 import {videoDefinitionSchema,videoProfileProtocol,type VideoMode} from "../src/lib/video/capability-schema";
 import {buildVideoCreate,buildVideoPoll,type VideoWireContext} from "../src/lib/video/providers/wire";
 import type {VideoReference,VideoGenerationRequest,VideoTaskSnapshot} from "../src/lib/video/types";
-import {attachVideoInputs,selectVideoIntent} from "../src/lib/video/mode-selection";
-import type {VideoCatalogModel,VideoNodeConfig} from "../src/lib/video/client-settings";
+import {attachVideoInputs,selectVideoIntent} from "../src/lib/video/legacy-mode-selection";
+import type {VideoCatalogModel,VideoNodeConfig} from "../src/lib/video/legacy-client-settings";
 import type {OrderedInput} from "../src/lib/video/references";
 
 type Entry=typeof MULTIMODAL_VIDEO_FAMILIES[number];

@@ -11,14 +11,14 @@ const labels:Record<string,string>={durationSeconds:'视频时长',resolution:'�
 const primary=new Set(['durationSeconds','resolution','aspectRatio','generateAudio']);
 /** Controls are a projection of the executable contract. Editing one field
  * never reconciles/deletes its siblings or assigns media roles. */
-export function VideoContractFields({config,inputs=[],contract,onChange,disabled=false,advancedOnly=false,only}:{config:VideoNodeConfig;inputs?:readonly OrderedInput[];contract:VideoUiContract;onChange:(config:VideoNodeConfig)=>void;disabled?:boolean;advancedOnly?:boolean;only?:readonly string[]}){
-  const V=useVideoI18n(),parameters={...videoUiParameters(config,inputs,contract)};
+export function VideoContractFields({config,inputs=[],contract,onChange,disabled=false,advancedOnly=false,only}:{config:VideoNodeConfig;inputs?:readonly OrderedInput[];contract?:VideoUiContract;onChange:(config:VideoNodeConfig)=>void;disabled?:boolean;advancedOnly?:boolean;only?:readonly string[]}){
+  const V=useVideoI18n(),parameters:Record<string,VideoUiParameter>=contract?{...videoUiParameters(config,inputs,contract)}:{durationSeconds:{type:'number'},resolution:{type:'string'},aspectRatio:{type:'string'},generateAudio:{type:'boolean'},negativePrompt:{type:'string'},watermark:{type:'boolean'},width:{type:'number'},height:{type:'number'},providerOptions:{type:'json'}};
   // Keep previously selected/unmapped values editable after changing a model.
   // The server preview, not this renderer, reports any mapping gap.
   try{for(const [key,value]of Object.entries(videoUiDraft(config,inputs).parameters))if(!parameters[key])parameters[key]={type:typeof value==='boolean'?'boolean':typeof value==='number'?'number':typeof value==='string'?'string':'json'};}catch{/* Structural error belongs to compile preview. */}
   return <fieldset disabled={disabled} className='grid grid-cols-2 gap-3' data-testid='video-contract-fields'>
     {Object.entries(parameters).filter(([key])=>(!advancedOnly||!primary.has(key))&&(!only||only.includes(key))).map(([key,parameter])=>{
-      const label=V(labels[key]||key),value=videoUiValue(config,key),change=(next:unknown)=>onChange(setVideoUiValue(config,key,next));
+      const label=V(labels[key]||key),value=videoUiValue(config,key),change=(next:unknown)=>{if(contract)onChange(setVideoUiValue(config,key,next));else if(Object.hasOwn(config.parameters??{},key))onChange({...config,parameters:{...config.parameters,[key]:next as never}});else onChange({...config,[key]:next});};
       const values=parameter.values??(parameter.type==='boolean'?[true,false]:undefined),selected=values?.findIndex(item=>item===value);
       const text=value===undefined?'':typeof value==='string'?value:JSON.stringify(value);
       return <VideoField key={key} label={label}>{values?<select aria-label={label} className={videoFieldClass} value={value===undefined?'':selected!==undefined&&selected>=0?String(selected):'current'} onChange={event=>change(event.target.value===''?undefined:values[Number(event.target.value)])}>

@@ -15,7 +15,7 @@ import {createVideoFixture} from "./video-fusion/harness";
 import {prepareVideoAssets} from "./video-fusion/assets.mjs";
 import {STORYBOARD_VIDEO_FAMILIES} from "../src/lib/model-config/video-family-storyboard";
 import {resolveVideoCapability} from "../src/lib/video/contract";
-import {reconcileVideoSettings} from "../src/lib/video/client-settings";
+import {reconcileVideoSettings} from "../src/lib/video/legacy-client-settings";
 import {createCanvasVideoTools} from "../src/lib/agent/canvas-video-tools";
 import {validateToolArguments} from "../src/lib/agent/harness";
 import {assertInternalAgentPath} from "../src/lib/agent/harness-network";

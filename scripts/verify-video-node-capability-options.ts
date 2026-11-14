@@ -1,3 +1,4 @@
+// Historical capability-era fixture only; current product UI gate exit is verified by verify-video-ui-gate-exit.ts.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -6,7 +7,7 @@ import documented from "../src/lib/model-config/video-family-capabilities.json";
 import legacy from "../src/lib/model-config/video-family-presets.json";
 import {normalizeVideoInput,resolveVideoCapability,VideoContractError} from "../src/lib/video/contract";
 import {videoDefinitionSchema,videoProfileProtocol,type VideoModelDefinition,type ResolvedVideoCapability,type VideoMode,type VideoWireProfile} from "../src/lib/video/capability-schema";
-import {reconcileVideoSettings,validateVideoSettings,videoAspectRatios,videoDurations,videoResolutions,videoModeRoles,type VideoNodeConfig} from "../src/lib/video/client-settings";
+import {reconcileVideoSettings,validateVideoSettings,videoAspectRatios,videoDurations,videoResolutions,videoModeRoles,type VideoNodeConfig} from "../src/lib/video/legacy-client-settings";
 import {videoParameterScope} from "../src/lib/video/parameter-options";
 import {buildVideoCreate,buildVideoPoll,type VideoWireContext} from "../src/lib/video/providers/wire";
 import type {VideoGenerationRequest,VideoReference} from "../src/lib/video/types";
@@ -300,7 +301,7 @@ test("offline and every active mode reached wire",()=>{
   eq(httpCalls,0,"zero HTTP requests");
   for(const item of items)for(const mode of unique(item.definition.modes!))ok(coverage.some(row=>row.provider===item.providerId&&row.model===item.model&&row.mode===mode),`${item.providerId}/${item.model}/${mode} reached normalize and exact codec assertion`);
 });
-const fingerprints=Object.fromEntries(["src/lib/model-config/video-family-capabilities.json","src/lib/video/contract.ts","src/lib/video/parameter-options.ts","src/lib/video/client-settings.ts","src/lib/video/providers/protocols/apib-documented.ts","src/lib/video/providers/protocols/geek-documented.ts","src/lib/video/providers/protocols/geek-h3-documented.ts", "scripts/verify-video-node-capability-options.ts"].map(file=>[file,createHash("sha256").update(fs.readFileSync(file)).digest("hex")]));
+const fingerprints=Object.fromEntries(["src/lib/model-config/video-family-capabilities.json","src/lib/video/contract.ts","src/lib/video/parameter-options.ts","src/lib/video/legacy-client-settings.ts","src/lib/video/providers/protocols/apib-documented.ts","src/lib/video/providers/protocols/geek-documented.ts","src/lib/video/providers/protocols/geek-h3-documented.ts", "scripts/verify-video-node-capability-options.ts"].map(file=>[file,createHash("sha256").update(fs.readFileSync(file)).digest("hex")]));
 const summary=`VIDEO_NODE_CAPABILITY_OPTIONS=${failures.length?"FAIL":"PASS"} models=${items.length} modes=${items.reduce((n,item)=>n+unique(item.definition.modes!).length,0)} wire_cases=${coverage.length} cases=${cases} passed=${passed} failed=${failures.length} assertions=${assertions} http_calls=${httpCalls} paid_calls=0 legacy_profiles=7 legacy_skus=33`;
 fs.mkdirSync(output,{recursive:true});fs.writeFileSync(path.join(output,"ui-options-results.json"),JSON.stringify({summary,status:failures.length?"FAIL":"PASS",evidence:"offline real client-settings + normalization + codec; no GUI or real supplier acceptance",fingerprints,coverage,failures},null,2)+"\n");
 console.log(summary);

@@ -7,10 +7,10 @@ import type { FeatureCatalog } from "@/lib/model-config/feature-catalog";
 import { compactImageModelOptions } from "@/lib/image-model-routing";
 import { imageModelParameterOptions, imageCombinationSupported } from "@/lib/imagegen/parameter-options";
 import { ModelIcon } from "@/components/ui/model-icon";
-import { VideoDurationControl } from "@/components/video/duration-control";
-import { catalogCapability, type VideoCatalogModel } from "@/lib/video/client-settings";
+import { type VideoCatalogModel } from "@/lib/video/client-settings";
 import { useVideoCatalogModels } from "@/lib/video/catalog-cache";
-import { videoParameterChoices } from "@/lib/video/parameter-options";
+import {VideoContractFields} from '@/components/canvas/video/contract-fields';
+import {videoUiValue} from '@/lib/video/ui-draft';
 import type { CreationSettings } from "@/lib/agent/creation-settings";
 import styles from "./creation-settings.module.css";
 
@@ -40,17 +40,7 @@ export function CreationSettingsPanel({ value, onChange, onClose, nextTurn = fal
   const image = catalog?.images.find(item => item.id === value.image?.modelId);
   const imageParameters = image ? imageModelParameterOptions(image) : { ratios: [], resolutions: [], combinations: undefined };
   const video = catalog?.videos.find(item => item.modelId === value.video?.modelId && item.providerId === value.video?.providerId);
-  const capability = catalogCapability(video), mode = capability.modes?.[0];
-  const videoParameters = videoParameterChoices(capability, mode, value.video);
   const patchImage = (patch: Partial<NonNullable<CreationSettings["image"]>>) => onChange({ ...value, image: { ...value.image, ...patch } });
-  const patchVideo = (patch: Partial<NonNullable<CreationSettings["video"]>>) => {
-    const next = { ...value.video, ...patch };
-    const available = videoParameterChoices(capability, mode, next);
-    if (next.resolution && !available.resolutions.includes(next.resolution)) next.resolution = undefined;
-    const ratios = videoParameterChoices(capability, mode, next).aspectRatios;
-    if (next.aspectRatio && !ratios.includes(next.aspectRatio)) next.aspectRatio = undefined;
-    onChange({ ...value, video: next });
-  };
   function choices(label: string, selected: string | number | undefined, options: (string | number)[], change: (value: string | number | undefined) => void, labels?: Record<string, string>, disabled?: (option: string | number) => boolean) {
     return <fieldset className={styles.field}><legend>{label}</legend><div className={label === "比例" ? styles.ratios : styles.choices}>
       {[undefined, ...options.filter(option => option !== "auto")].map(option => <button type="button" key={option ?? "auto"} aria-label={`${label} ${labels?.[String(option)] || option || "智能"}`} aria-pressed={selected === option || !selected && option === undefined} disabled={option !== undefined && disabled?.(option)} onClick={() => change(option)}>
@@ -64,7 +54,7 @@ export function CreationSettingsPanel({ value, onChange, onClose, nextTurn = fal
     {!catalog ? <div className={styles.state} role="status">{imageStore.error || videoStore.error ? <><span>{imageStore.error || videoStore.error}</span><button type="button" onClick={retry}><RefreshCw size={15} />重试</button></> : <Loader2 className="animate-spin" />}</div> : <div className={styles.body}>
       <div className={styles.models} aria-label={tab === "image" ? "图片模型" : "视频模型"}>
         <button type="button" aria-pressed={!value[tab]?.modelId} onClick={() => onChange({ ...value, [tab]: {} })}><Box size={16} /><span>模型 · 智能</span>{!value[tab]?.modelId && <Check size={16} />}</button>
-        {tab === "image" ? catalog.images.map(model => <button type="button" key={model.id} aria-pressed={model.id === value.image?.modelId} onClick={() => onChange({ ...value, image: { modelId: model.id } })}><ModelIcon modelId={model.id} modelName={model.label} size={17}/><span className={styles.modelLabel}>{model.label}</span>{model.id === value.image?.modelId && <Check size={16} />}</button>) : catalog.videos.map(model => <button type="button" key={`${model.providerId}:${model.modelId}`} aria-pressed={model === video} onClick={() => onChange({ ...value, video: { modelId: model.modelId, providerId: model.providerId } })}><ModelIcon modelId={model.modelId} modelName={model.label} size={17}/><span className={styles.modelLabel}>{model.label}</span>{model === video && <Check size={16} />}</button>)}
+        {tab === "image" ? catalog.images.map(model => <button type="button" key={model.id} aria-pressed={model.id === value.image?.modelId} onClick={() => onChange({ ...value, image: { modelId: model.id } })}><ModelIcon modelId={model.id} modelName={model.label} size={17}/><span className={styles.modelLabel}>{model.label}</span>{model.id === value.image?.modelId && <Check size={16} />}</button>) : catalog.videos.map(model => <button type="button" key={`${model.providerId}:${model.modelId}`} aria-pressed={model === video} onClick={() => onChange({ ...value, video: { ...value.video, modelId: model.modelId, providerId: model.providerId } })}><ModelIcon modelId={model.modelId} modelName={model.label} size={17}/><span className={styles.modelLabel}>{model.label}</span>{model === video && <Check size={16} />}</button>)}
         {!(tab === "image" ? catalog.images : catalog.videos).length && <p role="status">{(tab === "image" ? catalog.imageError : catalog.videoError) || "暂无已配置模型"}</p>}
         {(tab === "image" ? catalog.imageError : catalog.videoError) && <button type="button" onClick={retry}><RefreshCw size={14}/>重新加载</button>}
       </div>
@@ -73,9 +63,8 @@ export function CreationSettingsPanel({ value, onChange, onClose, nextTurn = fal
         {choices("清晰度", value.image?.resolution, imageParameters.resolutions, option => patchImage({ resolution: option as NonNullable<CreationSettings["image"]>["resolution"] }), undefined, option => !imageCombinationSupported(imageParameters, value.image?.ratio, String(option)))}
         {!!image?.qualities?.length && choices("质量", value.image?.quality, image.qualities, option => patchImage({ quality: option as NonNullable<CreationSettings["image"]>["quality"] }), { low: "基础", medium: "标准", high: "高质量", xhigh: "超高", max: "最高", ...image.qualityLabels })}
       </> : <>
-        {choices("比例", value.video?.aspectRatio, videoParameters.aspectRatios, option => patchVideo({ aspectRatio: option as string | undefined }))}
-        {choices("清晰度", value.video?.resolution, videoParameters.resolutions, option => patchVideo({ resolution: option as string | undefined }))}
-        <VideoDurationControl capability={capability} mode={mode} value={value.video?.durationSeconds} onChange={durationSeconds => patchVideo({ durationSeconds })} onSmart={() => patchVideo({ durationSeconds: undefined })}/>
+        <VideoContractFields config={{...value.video,prompt:''}} contract={video?.execution} only={['aspectRatio','resolution','durationSeconds']} onChange={config=>onChange({...value,video:{...value.video,aspectRatio:videoUiValue(config,'aspectRatio') as string|undefined,resolution:videoUiValue(config,'resolution') as string|undefined,durationSeconds:videoUiValue(config,'durationSeconds') as number|undefined}})}/>
+
       </>}</div>
     </div>}
   </section>;

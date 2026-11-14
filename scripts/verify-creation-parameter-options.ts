@@ -3,7 +3,7 @@ import { imageParameterOptions, imageModelParameterOptions, imageCombinationSupp
 import { canvasModelParameters, canvasCombinationSupported } from "../src/lib/canvas/generation-parameters";
 import { freezeCreationSettings, creationToolArguments } from "../src/lib/agent/creation-settings";
 import { videoParameterChoices, videoResolutions } from "../src/lib/video/parameter-options";
-import { reconcileVideoSettings } from "../src/lib/video/client-settings";
+import { reconcileVideoSettings } from "../src/lib/video/legacy-client-settings";
 import type { ResolvedVideoCapability } from "../src/lib/video/capability-schema";
 
 let checks=0;
