@@ -34,6 +34,6 @@ export async function managedBillingSelection(selection:{textModel?:string|null;
   const upstream=snapshot.config.upstreamModels.find(u=>u.id===model.target.id);
   const provider=snapshot.config.providers.find(p=>p.id===upstream?.providerId);
   // Billing identity must not reject a supplier family based on its primary target.
-  if(!upstream||!provider||!model.supplierRouting&&(!upstream.enabled||!provider.enabled||!upstreamSupportsFeature(upstream.capabilities,binding,feature)))throw new ModelConfigError("MODEL_INCOMPATIBLE","所选模型不支持当前操作",400);
+  if(!upstream||!provider||!model.supplierRouting&&(!upstream.enabled||!provider.enabled||!upstreamSupportsFeature(upstream.capabilities,binding,feature,upstream.parameterMap.videoExecution)))throw new ModelConfigError("MODEL_INCOMPATIBLE","所选模型不支持当前操作",400);
   return {modelId:model.id,providerId:["apimart-images","fal-images"].includes(provider.protocol)?"managed-router":provider.id};
 }

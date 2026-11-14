@@ -10,6 +10,7 @@ import {getVideoProvider} from "./providers/adapter";
 import type {VideoTaskSnapshot} from "./types";
 import {UnsupportedVideoCancellationError} from "./types";
 import {creationEvidenceTx,recordSourceOutcomeTx} from '../saas/creation-writer';
+import {hasVersionedVideoSubmission} from './submission-state';
 
 async function cancelLocked(client:PoolClient,actor:string,id:string,task:Record<string,any>,reason:string){
   if(["completed","failed","cancelled"].includes(task.status))return;
@@ -32,7 +33,7 @@ export async function requestVideoCancellation(actorRaw:string,id:string){
       await client.query("UPDATE app_video_tasks SET next_poll_at=CASE WHEN cancellation_requested_at IS NULL THEN now() ELSE next_poll_at END,cancellation_requested_at=COALESCE(cancellation_requested_at,clock_timestamp()),updated_at=now() WHERE email=$1 AND id=$2",[actor,id]);
       if(task.parameters?.creationScope)await creationEvidenceTx(client,()=>recordSourceOutcomeTx(client,'video',id,actor,'cancel_requested',{eventKey:'cancel-requested',summary:'已申请取消，等待上游确认'}));
       // This durable marker is set immediately before the supplier request, under this same row lock.
-      if(task.status==="queued"&&!task.upstream_id&&task.parameters?.version===2&&task.parameters.submissionState==="prepared")
+      if(task.status==="queued"&&!task.upstream_id&&hasVersionedVideoSubmission(task.parameters)&&task.parameters.submissionState==="prepared")
         await cancelLocked(client,actor,id,task,"已取消未提交的视频任务");
     }
     await client.query("COMMIT");const current=await getVideoTask(actor,id);
@@ -45,9 +46,9 @@ export async function beginVideoTaskSubmission(actor:string,id:string):Promise<"
     await client.query("BEGIN");const task=(await client.query("SELECT * FROM app_video_tasks WHERE email=$1 AND id=$2 FOR UPDATE",[actor,id])).rows[0];
     if(!task)throw new ModelConfigError("VIDEO_TASK_UNAVAILABLE","视频任务不存在",404);
     if(task.status==="cancelled"){await client.query("COMMIT");return "cancelled";}
-    if(task.status!=="queued"||task.upstream_id||task.parameters?.version===2&&task.parameters.submissionState!=="prepared"){await client.query("COMMIT");return "already_started";}
+    if(task.status!=="queued"||task.upstream_id||hasVersionedVideoSubmission(task.parameters)&&task.parameters.submissionState!=="prepared"){await client.query("COMMIT");return "already_started";}
     if(task.cancellation_requested_at){
-      if(task.parameters?.version===2)await cancelLocked(client,actor,id,task,"已取消未提交的视频任务");
+      if(hasVersionedVideoSubmission(task.parameters))await cancelLocked(client,actor,id,task,"已取消未提交的视频任务");
       else await client.query("UPDATE app_video_tasks SET status='needs_attention',error_code='creation_unknown',error='停止请求已保留，需核对旧任务是否已提交',poll_lock_until=NULL WHERE email=$1 AND id=$2",[actor,id]);
       await client.query("COMMIT");return "cancelled";
     }

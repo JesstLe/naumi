@@ -19,6 +19,8 @@ export function parseVideoExecutionDraft(raw:unknown):VideoResult<VideoExecution
   for(const input of draft.inputs){
     if(ids.has(input.id))return {ok:false,diagnostics:[videoDiagnostic('input','DUPLICATE_INPUT','inputs','引用身份重复','为每项引用使用唯一身份',input.id)]};
     ids.add(input.id);
+    if(input.storageKey&&(input.kind==='text'||!input.nodeId.startsWith('upload:')))
+      return {ok:false,diagnostics:[videoDiagnostic('input','INPUT_IDENTITY_MISMATCH','inputs','上传素材身份与引用不一致','重新选择受控上传素材',input.id)]};
     if(input.kind==='text'?!['context','author'].includes(input.role)
       :['context','author'].includes(input.role)||['first_frame','last_frame'].includes(input.role)&&input.kind!=='image'
         ||input.role==='source_video'&&input.kind!=='video'||input.role==='source_audio'&&input.kind!=='audio')

@@ -12,7 +12,7 @@
 
 - video拥有Draft/Intent/Profile/Compile/CompiledPlan；model-config拥有发布Binding/Policy与来源审计；媒体模块拥有资产访问、内容哈希与真实probe；任务/计费继续拥有幂等、预占、租约、结算、UNKNOWN；Canvas拥有节点与选片关系。
 - 入口->应用用例->Resolver/Profile纯规则->既有I/O适配单向依赖。不拆计费事务，不新增内部HTTP自调用，不为每个函数机械增加层级。
-- 目标公开接口VideoModelProfile、compileVideoRequest、CompiledVideoPlan已在P0核心实现；现有生成入口/路由尚未接入，不预支全链路状态。
+- VideoModelProfile、compileVideoRequest、CompiledVideoPlan已实现；新版JSON发布绑定已接入正式提交、Canvas单节点、Worker与重试。未配置execution的历史入口仍沿旧链；全协议/全入口状态以下方最新切片为准。
 
 ## P0首轮实查结论
 
@@ -27,8 +27,8 @@
 | 阶段 | 状态 | 完成条件 |
 |---|---|---|
 | 实施基线/清单 | 已建立 | 入口、逐profile、19项验收与历史边界有持久记录；不代表功能通过 |
-| P0核心 | 进行中：核心、发布Binding冻结、真实Resolver、公共预览已实现；正式提交/持久计划待接入 | 新合同/Resolver/Profile/Plan及Policy/Evidence分离有实际代码与集中测试 |
-| P1全入口 | 公共compile-preview已接入；生成入口与UI均待迁移 | Canvas、Workbench、Workflow/批次、Agent、Storyboard、BYOC、恢复/重试同底座 |
+| P0核心 | JSON发布绑定已完成prepare/compile/受理/冻结计划/Worker/资产账务闭环；其余Profile与后台政策管理待继续 | 新合同/Resolver/Profile/Plan及Policy/Evidence分离有实际代码与集中测试 |
+| P1全入口 | 公共与节点预览、通用生成后端、Canvas单次、Worker恢复与显式重试已接入新版JSON分支；UI及其余入口待迁移 | Canvas、Workbench、Workflow/批次、Agent、Storyboard、BYOC、恢复/重试同底座 |
 | P2全协议 | 待实施 | 每个注册profile＋非wire路径有迁移/fixture，旧冻结任务不漂移 |
 | P3清场 | 待实施 | 新任务旧裁决/fallback/整对象升级职责退出；调用与配置迁移证据 |
 | P4集中验收 | 待实施 | 下表全部分层验证，真实上游/发布无授权时保持未验，不以fixture代替 |
@@ -199,3 +199,46 @@ P0核心已加入版本化合同、空默认/有审计的显式政策、独立�
 ### 下一步
 
 将正式提交编译结果存入版本化任务，Worker只消费冻结模板并重新物化同身份媒体；保留原来的报价、幂等预占、beginSubmission、UNKNOWN与回执事务。随后按完整入口和协议清单迁移，不在UI继续叠旧能力裁决，也不把本预览当执行授权。
+
+## 正式受理、冻结任务与Worker切片（2026-11-14）
+
+基线：`a4f1e4197e0a95e7570d700c14ae175f496d97ec`；分支 `codex/video-compiled-task-20261114`。本节覆盖上一切片“正式提交和Worker待接入”的状态，但不代表P1全入口、P2全部协议、P3清场或P4全验收已完成。
+
+### 模块、公开接口与依赖
+
+- `withVideoCreationModel` 是Standalone/Canvas共用的模型冻结边界，模型选择在原操作回执查询之后执行。`/api/video/generate`退出通用模型预选择，保留模型请求头的既有优先级，避免已受理回执因最新模型禁用被提前挡住。
+- `videoSubmissionDraft` 仅将现有提交形状翻译成统一Draft：保留请求值、输入身份、显式意图与旧mode；不查询能力或决定支持范围。新增参数/意图字段与节点strict schema同步。受控上传以稳定storageKey进入同一可信Resolver，不用临时URL作冻结事实。
+- `createCompiledVideo` 只在已发布`videoExecution`分支运行；直接调用prepare/compile一次，按编译结果报价，并使用现有`createVideoTaskWithReservation`事务原子受理。没有调用旧normalize、旧create codec或上游上传。节点revision、项目、回执、工作流关联、报价/预占与creation记录仍在原事务所有者中；关联失败全部回滚。
+- 任务`parameters.version=3`保存加密CompiledPlan及明文摘要，Binding/Policy/Profile/素材版本/语义参数随原模型账务bundle冻结。随机加密字节不参与业务指纹，计划摘要仍参与，防止并发相同操作因随机IV冲突。
+- `compiled-task.ts`负责可信任务行的版本读取/完整性与任务身份核对、旧消费者投影和显式重试输入；坏v3计划不会降级成legacy请求。v2 reader和BYOC v2继续兼容。
+- `materializeCompiledVideoTask`核对原执行作用域与原通道、同一媒体版本/归属，并调用既有媒体授权/签名能力。执行副本只替换URL槽，不读最新modes、节点选片或参数重新编译。
+- `VideoProviderAdapter.createCompiled`复用既有凭据、受控传输、费用观测和回执解码；JSON模板不再经过`buildVideoCreate`。poll/fetch/cancel仍走冻结的原transport profile。
+- `submission-state.ts`统一已知v2/v3 pre-dispatch检查点；`beginVideoTaskSubmission`仍以行锁写sending后才POST。并发恢复只发一次；未知受理保持needs_attention及预占，不换模型/通道重发。
+- Canvas新版分支不先做legacy组合展开/文字编译；统一Resolver展开一次。节点预览`POST /api/canvas/video-nodes/[id]/compile-preview`读取归属和revision，支持未保存Draft，同公共预览/提交共用编译用例；返回draftRevision，UI的防抖/陈旧响应治理仍待下一切片。
+- 显式retryOf创建新操作，用原requestedParameters而非effective/wire参数作为新编译输入；原任务、媒体和账务回执不改写。UNKNOWN仍禁止作为新操作自动重试。
+
+依赖保持Route/Canvas应用入口 -> video受理/Resolver/compiler/计划适配 -> 原任务/媒体/账务所有者；不另开扣费事务，不新增内部HTTP自调用，不引入第二供应商注册平台。
+
+### 实际集中证据
+
+`scripts/verify-video-compiled-task.ts`：37项，真实隔离PostgreSQL、真实本地供应商HTTP、独立原生媒体Worker进程、实际ffmpeg完整解码。实际调用生产生成Route函数、Canvas节点服务、节点预览Route函数、retry Route函数、Worker提交/轮询/落盘/账务所有者；未mock业务模块。媒体Worker为显式fixture模式，非生产Linux sandbox；Worker是实际应用Worker用例，不把它写成已验收独立App Worker进程/Next浏览器或付费上游。
+
+- 旧capabilities只有text/images0且generate/verified=false：新版单图受理、存储和账务完成。
+- 预览/正式受理计划摘要相同；请求4K -> 有效2K -> wire2k一次映射；受理后发布新path/新价格，原任务仍用原path/原7积分。
+- 并发3次受理同回执；并发Worker只1次POST；prepared取消零POST并退款；发送断连转creation_unknown保持预占；后续恢复不重发。
+- 媒体真实字节变更、工作空间撤权在POST前失败；错误编译不留任务/预占；节点关联事务失败不留task/bill/creation或revision增量。
+- 实际成片落盘、sha匹配、父子资产和单笔账本完成；选已完成历史结果（源节点已有另一个任务）->下游节点再提交->再次成片、节点回执、父子资产和账务全部完成。
+- 新任务仍服从显式禁用；已受理HTTP回执在最新型号禁用后仍返回原任务。显式retry route验证保留原请求值，不双重映射；旧v2读取保持。
+- 媒体签名刷新生成不同地址但计划摘要/素材版本不变、额外POST=0。一次Windows fixture原子快照写入出现`MEDIA_STATE_WRITE_FAILED`；按既有结果处理恢复重试，不重发生成。未将该观测当作供应商不支持，也未在本切片修改媒体Worker状态存储。
+
+同时集中复测核心133项、发布输入43项、Canvas121项、媒体16项、旧冻结来源权威回归、账务所有权35项和事务生命周期14项；完整命令/输出/exit与baseline/copy-rollback以 `E:/Workspace/naumi/output/video-compiled-task-20261114/VERIFICATION.txt` 为准。账务所有权首次缺少fixture SETTINGS_SECRET失败，提供独立本地fixture密钥后通过，原始失败记录保留。
+
+### 仍未完成
+
+- 全部57个wire profile的请求Profile种子与生产绑定迁移、2条无profile旧路径；本切片只证明可配置JSON编译族与APIB查询/回执transport的实例，不把它泛化成57项已迁移。
+- 分镜、元素、工作流结构化输入尚需专用Profile；新版普通JSON入口会准确报告mapping缺口，不静默丢弃。不得现在批量把这些现有配置切入新分支。
+- Canvas连线/参数Dock/Workbench UI、Agent与Storyboard、Workflow未来依赖/批次、BYOC和全新旧槽兼容均待继续。UI仍有旧能力预检，因此不宣称用户端所有误拦已消失。
+- 真实Next监听/浏览器、独立App Worker进程/重启及有授权的上游和站点发布仍未验收。A01–A19保留分层待验状态。
+- 本轮生产数据/配置迁移0、付费上游0、部署0；47暂停及103实验分支隔离不变。
+
+下一步：让前端消费同一合同投影/编译预览，移除连线与参数Dock的独立能力裁决；迁移Workflow未来依赖与结构化Profile，再逐协议/全部入口完成退出清单。下一轮从已合并main继续，不以本JSON闭环代替全目标。

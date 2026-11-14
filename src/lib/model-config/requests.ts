@@ -70,6 +70,10 @@ export async function withModelRequest<T>(request: Request, run: () => Promise<T
   // and can change its quote or reject a valid plan before the domain runs.
   // BI/creation/continuation authorization still wraps the owning HTTP route.
   if(domainPath === "/api/imagegen") return run();
+  // Video owns model selection after its original-operation replay lookup.
+  // Generic preselection would reject accepted receipts against a newer model
+  // catalogue before the video domain can restore/return their frozen context.
+  if(domainPath === '/api/video/generate')return run();
   // The owned node or previous task supplies its model after domain authorization.
   if(/^\/api\/canvas\/video-nodes\/[^/]+\/(?:generate|batch)$/.test(domainPath)||/^\/api\/video\/tasks\/[^/]+\/retry$/.test(domainPath))return run();
   const [managed, parsed] = await Promise.all([modelConfigurationEnabled(), requestFacts(request)]);

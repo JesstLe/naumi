@@ -7,9 +7,11 @@ import {videoWorkflowManifestSchema} from "../video/workflow-schema";
 import {videoCameraSchema} from "../video/camera";
 import {videoByocOverridesSchema} from "../video/byoc-settings";
 import {videoNodeIdSchema} from "./video-node-id";
+import {videoPreferenceSchema,videoDraftSchema} from '../video/execution-contract';
 export {videoNodeIdSchema} from "./video-node-id";
 
 export const videoNodeConfigSchema=videoInputSchema.omit({orderedInputs:true}).partial().extend({
+  intentPreference:videoPreferenceSchema.optional(),parameters:videoDraftSchema.shape.parameters.optional(),
   batchCount:z.union([z.literal(1),z.literal(2),z.literal(4)]).optional(),
   modelId:videoNodeIdSchema.optional(),providerId:videoNodeIdSchema.optional(),comfyWorkflowId:videoNodeIdSchema.optional(),workflowTaskId:videoNodeIdSchema.optional(),
   comfyInputs:videoWorkflowManifestSchema.shape.inputs.optional(),

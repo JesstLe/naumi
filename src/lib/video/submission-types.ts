@@ -1,6 +1,8 @@
 import type {VideoGenerationRequest,VideoReference,VideoTaskSource} from "./types";
 
 export type CreateVideoInput = {
+  intentPreference?:import('./execution-contract').VideoExecutionDraft['intentPreference'];
+  parameters?:import('./execution-contract').VideoExecutionDraft['parameters'];
   billingConfirmation?:{version?:number;credits?:number};
   source: VideoTaskSource;
   sourceId?: string;
