@@ -22,6 +22,12 @@
 
 新发现并修复应用Worker白名单漏传显式私网端点策略，基线Web受理而Worker任务queued、上传和prompt0、tick UNKNOWN；仅恢复已配置变量传播，不默认允许私网，不传给native媒体子进程。
 
+## Agent / RunningHub / AutoDL 真实进程增量
+
+[本轮模块记录](2026-11-14-video-compiler-agent-process.md)补齐真实 `/api/agent`→运行时/Harness/报价→签名内部HTTP→独立Worker，以及RunningHub/AutoDL的真实上传或签名素材、冻结工作流、回执后重启、取消/显式重试和UNKNOWN不重发。Agent 6项、两远程协议10项，既有产品校验和协议未改动。
+
+源工作树首次组合中Agent6项已通过；远程协议定向运行 `remote-targeted-runtime/run-3d74b54e-bb93-4ace-be9e-36e5a0c6fe2d` 完成14项底座＋10项增量，exit0。独立解包最终组合 `copy-runtime/run-14eb3aee-d67b-4625-96c1-c479aa90c66a` 已完整通过65项，exit0，账本20笔330 fixture积分、12子进程退出、随机schema移除；全命令和六路径回滚记录在 `E:/Workspace/naumi/output/video-compiler-agent-process-20261114/VERIFICATION.txt`；旧驱动缺draftRevision/错误Authorization断言的失败日志保留，不算产品缺陷或通过证据。
+
 ## A01–A19 逐项状态
 
 | ID | 当前证据 | 仍需完成或证据边界 |
@@ -35,8 +41,8 @@
 | A07 | 原 text+image 自动意图、两普通图保留reference、明确偏好报缺素材；实际 Next 的 text+普通图进入 single_image | 真实浏览器端口拖线已通过；全部历史输入形态仍逐项保留，不以单条reference概括首尾帧等组合 |
 | A08 | 原 UI/图谱18项、实际 React/Edge10项、Dock连续性受控检查；本轮真实Next工作台历史参数展示/复用/390px/当前报价4项通过 | 本轮真实Canvas已覆盖切模型/保存/重载/生成前后Dock/锁定解锁/两节点多选与右键/390px；更多混合节点和上传/提及等价仍按A06继续 |
 | A09 | PG/HTTP 跨用户拒绝、媒体身份/hash/真实解码、结构/角色/数量约束；本轮实际签名输入字节及篡改404；新增5种当前未完成状态不可隐式使用旧结果、显式历史可用；实际HTTP queued反控 | 完整权限/物理边界以各输入维度检查，不能把“已授权URL”当真实解码 |
-| A10 | Canvas/Workbench/Workflow批次/Agent/Storyboard/BYOC/重试在已合主线 App fixture 中共享编译底座 | 真实Next/独立Worker已新增Canvas DAG、原生Workflow、批次、正式Storyboard采用/生成、ComfyUI BYOC/重试；Agent实际入口、完整Storyboard操作、RunningHub/AutoDL独立进程和全入口页面矩阵继续 |
-| A11 | 注册57个 wire Profile 的分族本地序列化、上传/JSON/multipart/DAG；direct/native openai-legacy 等已有明确 recipe | ComfyUI真实输入槽DAG/上传/独立Worker已追加验证；注册覆盖≠所有在用配置已迁移，env-only仍需明确迁移，RunningHub/AutoDL独立进程仍待补 |
+| A10 | Canvas/Workbench/Workflow批次/Agent/Storyboard/BYOC/重试共享编译底座；真实Agent入口新增图生/编辑/续写/原编号恢复/预检错误/会话持久化6项 | 真实Next/独立Worker已有Canvas DAG、原生Workflow、批次、正式Storyboard采用/生成、ComfyUI BYOC/重试，新增RunningHub/AutoDL；完整Storyboard操作和全入口页面矩阵继续，不从Agent工作台入口泛化全部Canvas Agent操作 |
+| A11 | 注册57个 wire Profile 的分族序列化、上传/JSON/multipart/DAG；ComfyUI、RunningHub、AutoDL新增真实Next/独立Worker上传或签名素材、冻结与结果回执 | 注册覆盖≠所有在用配置已迁移；全部生产启用配置和env-only仍需明确审计/迁移，不能从本地显式recipe推断线上已配置 |
 | A12 | 真实PG Workflow22项：future slots、真实前序时长、静态hash、冻结报价确认、批次/不重放 | 已新增真实Next+独立Worker的8run/13项：冻结型号/路径/文本/原价、前序真实产物/时长、重启/回执、批次、Storyboard采用旧片、取消/UNKNOWN/拒绝；超报价持久确认目前仍为原App fixture证据，真实HTTP确认待补 |
 | A13 | 本轮实际 requested4K→effective2K→wire2k 恰好一次，历史恢复4K；冻结原价7、后续新任务17，账本三笔41 | 更多映射组合由各Profile固定输入测试；不把wire值回填用户选择 |
 | A14 | 本轮独立应用Worker、持久tick原身份、原任务重启/UNKNOWN/LIVE lease/取消/显式重试，生产环境投影实际运行；Worker runtime34项 | 新增Workflow/BYOC的独立Worker重启与UNKNOWN不重放；当前进程为Windows、停机前drain，Linux活动发送中断/真正多槽回滚仍需新固定版本验收 |

@@ -9,10 +9,10 @@ import {chromium,expect} from '@playwright/test';
 export async function verifyVideoProcessBrowser(input:{origin:string;cookie:string;taskId:string;outputDir:string;posts:()=>number}){
  const check=expect.configure({timeout:30000});
  const browser=await chromium.launch({channel:'msedge',headless:true}),context=await browser.newContext({viewport:{width:1440,height:1000}}),page=await context.newPage();
- const errors:string[]=[],consoleErrors:string[]=[],requestFailures:Array<{url:string;failure:unknown}>=[],requests:Array<{path:string;status:number}>=[],resources:Array<{url:string;status:number}>=[];let checks=0;
+ const errorDetails:Array<{message:string;stack?:string}>=[];const errors:string[]=[],consoleErrors:string[]=[],requestFailures:Array<{url:string;failure:unknown}>=[],requests:Array<{path:string;status:number}>=[],resources:Array<{url:string;status:number}>=[];let checks=0;
  page.on('response',response=>resources.push({url:response.url(),status:response.status()}));await page.addInitScript('window.__videoProcessScriptRan=true');
  page.on('console',message=>{if(message.type()==='error')consoleErrors.push(message.text());});page.on('requestfailed',request=>requestFailures.push({url:request.url(),failure:request.failure()}));
- page.on('pageerror',error=>errors.push(error.message));page.on('response',response=>{if(response.url().startsWith(input.origin+'/api/'))requests.push({path:new URL(response.url()).pathname,status:response.status()});});
+ page.on('pageerror',error=>{errors.push(error.message);errorDetails.push({message:error.message,stack:error.stack});});page.on('response',response=>{if(response.url().startsWith(input.origin+'/api/'))requests.push({path:new URL(response.url()).pathname,status:response.status()});});
  page.setDefaultTimeout(90000);const [name,...value]=input.cookie.split('=');await context.addCookies([{name,value:value.join('='),url:input.origin}]);
  const pass=(name:string)=>{checks++;console.log('PROCESS_BROWSER_CHECK='+name+' PASS');};const before=input.posts();
  try{
@@ -30,6 +30,6 @@ export async function verifyVideoProcessBrowser(input:{origin:string;cookie:stri
   assert.equal(input.posts(),before);assert.deepEqual(errors,[]);assert(!requests.some(r=>r.path==='/api/video/generate'));assert(requests.some(r=>r.path==='/api/video/compile-preview'&&r.status===200));
   await writeFile(path.join(input.outputDir,'BROWSER_RESULT.json'),JSON.stringify({ok:true,checks,actualNext:true,actualReact:true,actualEdge:true,pageErrors:errors,requests,supplierPostsAdded:input.posts()-before,history:frozen},null,2));
   console.log(`VIDEO_COMPILER_PROCESS_BROWSER=PASS CHECKS=${checks} REAL_NEXT=1 REAL_REACT=1 REAL_EDGE=1 HTTP_MOCKS=0 PAGE_ERRORS=0 SUPPLIER_POSTS_ADDED=0`);
- }catch(error){await writeFile(path.join(input.outputDir,'BROWSER_FAILURE.json'),JSON.stringify({errors,consoleErrors,requestFailures,requests,resources,url:page.url(),body:await page.locator('body').innerText(),runtime:await page.evaluate(()=>({ran:(window as any).__videoProcessScriptRan,ready:document.readyState,scripts:[...document.scripts].map(s=>({src:s.src,type:s.type,async:s.async,text:s.text.slice(0,200)})),performance:performance.getEntriesByType('resource').map(r=>({name:r.name,duration:r.duration}))}))},null,2));throw error;}
+ }catch(error){await writeFile(path.join(input.outputDir,'BROWSER_FAILURE.json'),JSON.stringify({errors,errorDetails,consoleErrors,requestFailures,requests,resources,url:page.url(),body:await page.locator('body').innerText(),runtime:await page.evaluate(()=>({ran:(window as any).__videoProcessScriptRan,ready:document.readyState,scripts:[...document.scripts].map(s=>({src:s.src,type:s.type,async:s.async,text:s.text.slice(0,200)})),performance:performance.getEntriesByType('resource').map(r=>({name:r.name,duration:r.duration}))}))},null,2));throw error;}
  finally{await context.close();await browser.close();console.log('BROWSER_CLEANUP=PASS CONTEXT_CLOSED=1 BROWSER_CLOSED=1');}
 }
