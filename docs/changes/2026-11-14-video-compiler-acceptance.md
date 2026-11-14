@@ -84,11 +84,19 @@
 | A12 | 真实PG Workflow22项：future slots、真实前序时长、静态hash、冻结报价确认、批次/不重放；新增实际分镜按钮按17而非历史1确认，两个镜头最终各执行一次 | 独立Worker的8run/13项及HTTP预算反控继承；欠授权历史检查点显式seed，未冒称新准入自然涨价或真实成本加成供应商验收 |
 | A13 | 本轮实际 requested4K→effective2K→wire2k 恰好一次，历史恢复4K；冻结原价7、后续新任务17，账本三笔41 | 更多映射组合由各Profile固定输入测试；不把wire值回填用户选择 |
 | A14 | 独立应用Worker、持久tick原身份、重启/UNKNOWN/LIVE lease/取消/显式重试及环境投影；Worker49、Windows真实500控制/501状态写入；新增固定Linux生产包62项中实际独立Worker恢复、单账本与原生sandbox | Workflow/BYOC的Linux独立Worker重启与UNKNOWN不重放已通过；本轮固定生产包combined真实PID1在途SIGTERM/SIGKILL、两次自然lease和UNKNOWN原像保持已通过；混合版本和真正多槽回滚继续 |
-| A15 | 服务端专项实际持久化加密v2 stage及新发布后恢复；原文本/模型/价格/回执不变，伪造阶段拒绝；本轮v3显式retryOf | 历史v2与新v3混合独立Worker/新旧Web发布组合仍待实际验收 |
+| A15 | 服务端专项实际持久化加密v2 stage及新发布后恢复；原文本/模型/价格/回执不变，伪造阶段拒绝；v3显式retryOf；新增4c真实HTTP v2 writer/旧Worker、f075新Worker接续v2、d4 reader接续v3、切回f075的9项实际混合运行 | 本地三不可变版本/真实PG/原生sandbox通过；d4缺本轮准入保护，只证明reader兼容，不认证完整回滚候选；目标站仍独立验收 |
 | A16 | 原媒体token/版本/过期测试；本轮Worker物化真实签名URL，供应商fixture经真实Next媒体路由读取原字节，篡改404 | 时间推进的过期测试与实际公网CDN/存储恢复分别验收，不把本地域名别名当公网可达 |
 | A17 | 本轮真实Next受理→独立Worker落片→结果作为下一Canvas节点source_video→再次落片，父子资产/单账本通过 | 已新增真实浏览器选旧历史→ReactFlow拖线→下一节点提交→独立Worker落片，冻结资产/parent/单账本一致；当前为本地供应商fixture，非真实付费上游 |
 | A18 | 编译、供应商fixture受理、成片真实解码保存、账务分别核对，结果含真实输入字节hash | 真实付费供应商质量/成功率和用户采用仍未验，不能标Production-confirmed |
 | A19 | 已有源码副本回退/扩展字段兼容、发布控制/版本准备门禁；固定Linux生产镜像构建、Worker49/无DB包HTTP7项；新增带隔离DB/独立Worker/原生sandbox/账务62项实际组合通过 | 本轮生产工作台/Canvas恢复/完整Storyboard16项通过；生产三媒体及更多结构化组合、新旧Web/Worker双槽、排空/切回/旧资产、目标站蓝绿和实际发布仍未验 |
+
+### 真实混合运行与视频新操作准入（2026-11-15）
+
+[模块记录](2026-11-15-video-compiler-mixed-runtime.md)：9项真实v2/v3三版本混合运行补齐A15的本地证据，同时发现draining Web仍受理新任务。视频模块统一接入既有release owner，不触及能力矩阵；managed/BYOC/Workflow/batch及显式重试共用新操作准入，原操作查询先重放，active同账号父操作允许续接，UNKNOWN不重写。
+
+固定f075生产镜像完整构建/576 tracked Worker输入通过；最终独立解包62项原回归＋8项实际HTTP排空＝70项exit0，另有准入PG12、核心137/Worker49/tsc及14路径副本回滚。基线实际drain仍200且增加1任务；修改版503/VIDEO_RELEASE_DRAINING且零业务增量；预览/历史读取与原操作重放保持。混合运行6POST/4账本48 fixture积分/两个UNKNOWN零收费，四份结果原字节与原资产身份保持。
+
+本片仅证明实际固定包的本地进程/合同切换，不证明Nginx完整蓝绿。旧d4 reader兼容不等于具备本轮新准入保护，4c旧writer在新绑定前停止；真正的回滚候选、旧静态资源、站点发布和真实上游继续待验。付费/生产写入/部署0，总目标ACTIVE。
 
 ## 发布与总目标
 
