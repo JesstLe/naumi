@@ -1,0 +1,131 @@
+import {z} from 'zod';
+import {deriveVideoIntent} from '../intent';
+import {compileVideoPrompt} from '../prompt';
+import {
+  videoIntentSchema,videoInputRoleSchema,videoDiagnostic,
+  type VideoModelProfile,type PublishedVideoModelBinding,type ResolvedVideoDraft,type ResolvedVideoInput,
+  type VideoResult,type VideoProfileOutput,type VideoInputContract,
+} from '../execution-contract';
+
+const field=z.string().regex(/^[a-zA-Z][a-zA-Z0-9_]{0,99}$/).refine(name=>!['__proto__','prototype','constructor'].includes(name));
+const primitive=z.union([z.string(),z.number().finite(),z.boolean(),z.null()]);
+const parameter=z.strictObject({type:z.enum(['string','number','integer','boolean','json']),wireField:field.optional(),
+  required:z.boolean().optional(),default:z.json().optional(),values:z.array(primitive).optional(),
+  minimum:z.number().finite().optional(),maximum:z.number().finite().optional(),
+  // User-facing choice -> effective semantic value, then protocol spelling.
+  // Keep these two boundaries distinct; do not feed wire values back as input.
+  mapping:z.record(z.string(),primitive).optional(),wireMapping:z.record(z.string(),primitive).optional(),send:z.enum(['value','omit']).optional(),
+});
+const range=z.strictObject({min:z.number().int().nonnegative().default(0),max:z.number().int().nonnegative().optional(),
+  maxBytes:z.number().int().positive().optional(),maxDurationSeconds:z.number().finite().positive().optional(),totalDurationSeconds:z.number().finite().positive().optional(),
+}).refine(v=>v.max===undefined||v.max>=v.min);
+const mediaMapping=z.strictObject({kind:z.enum(['image','video','audio']),roles:z.array(videoInputRoleSchema).optional(),
+  wireField:field,shape:z.enum(['urls','roles','single']),roleMap:z.record(z.string(),z.string().min(1)).optional(),
+  order:z.array(videoInputRoleSchema).optional(),
+});
+export const jsonVideoRecipeSchema=z.strictObject({
+  createPath:z.string().regex(/^\/(?!\/)[^?#\s]*$/),modelField:field,promptField:field,
+  defaults:z.strictObject({ordinaryImage:z.enum(['single_image','reference']).optional(),sourceVideo:z.enum(['video_edit','reference']).optional()}).default({}),
+  parameters:z.record(field,parameter),
+  operations:z.array(z.strictObject({intent:videoIntentSchema,requiresPrompt:z.boolean().optional(),
+    maxPromptChars:z.number().int().positive().optional(),images:range.optional(),videos:range.optional(),audios:range.optional(),
+    parameters:z.record(field,parameter).optional(),media:z.array(mediaMapping).default([]),
+    parameterCombinations:z.array(z.record(field,z.array(primitive).min(1))).min(1).optional(),
+  })).min(1),
+}).superRefine((recipe,ctx)=>{
+  if(new Set(recipe.operations.map(operation=>operation.intent)).size!==recipe.operations.length)ctx.addIssue({code:'custom',message:'协议操作重复'});
+});
+type Recipe=z.infer<typeof jsonVideoRecipeSchema>;
+type Operation=Recipe['operations'][number];
+type Json=z.infer<ReturnType<typeof z.json>>;
+type MediaInput=Extract<ResolvedVideoInput,{asset:unknown}>;
+const fail=(category:Parameters<typeof videoDiagnostic>[0],code:string,field:string,reason:string,actionable:string,inputId?:string):VideoResult<never>=>({ok:false,diagnostics:[videoDiagnostic(category,code,field,reason,actionable,inputId)]});
+
+/** Parameter-driven JSON protocol family. An unpublished/unknown model name
+ * does not trigger a separate allowlist: the exact published binding supplies
+ * the recipe. Other protocol families implement the same Profile interface. */
+export function createJsonVideoProfile(profileId:string,version:number):VideoModelProfile {
+  return {profileId,version,
+    describe(binding:PublishedVideoModelBinding):VideoResult<VideoInputContract>{
+      const recipe=jsonVideoRecipeSchema.safeParse(binding.recipe);
+      if(!recipe.success)return fail('mapping','PROFILE_MAPPING_MISSING','binding.recipe','视频协议映射不完整或无效','配置该通道的请求字段与输入映射');
+      return {ok:true,value:{profileId,profileVersion:version,bindingRevision:binding.revision,description:recipe.data}};
+    },
+    compile(draft,contract,binding){
+      const recipe=contract.description as Recipe;
+      const intent=deriveVideoIntent(draft,recipe.defaults);if(!intent.ok)return intent;
+      const operation=recipe.operations.find(value=>value.intent===intent.value);
+      if(!operation)return fail('mapping','INPUT_INTENT_NOT_MAPPABLE','intentPreference','此执行绑定没有该操作的请求映射','配置对应操作或选择其他执行绑定');
+      return compileJson(draft,binding,recipe,operation);
+    },
+  };
+}
+function compileJson(draft:ResolvedVideoDraft,binding:PublishedVideoModelBinding,recipe:Recipe,operation:Operation):VideoResult<VideoProfileOutput> {
+  const media=draft.inputs.filter((input):input is MediaInput=>input.kind!=='text');
+  const role=(input:MediaInput)=>operation.intent==='single_image'&&input.kind==='image'&&input.role==='reference'?'first_frame':input.role;
+  if(operation.intent==='text'&&media.length)return fail('input','TEXT_INTENT_HAS_MEDIA','inputs','文生操作中存在媒体输入','选择与媒体用途一致的生成意图');
+  if(operation.intent==='frames_required'&&(media.filter(input=>input.kind==='image'&&input.role==='first_frame').length!==1||media.filter(input=>input.kind==='image'&&input.role==='last_frame').length!==1))
+    return fail('input','FRAME_INPUT_REQUIRED','inputs','首尾帧操作需要明确的一张首帧和一张尾帧','为两张图片明确指定首帧和尾帧');
+  for(const kind of ['image','video','audio'] as const){
+    const items=media.filter(input=>input.kind===kind),rule=operation[({image:'images',video:'videos',audio:'audios'} as const)[kind]];
+    if(items.length&&!operation.media.some(mapping=>mapping.kind===kind))return fail('mapping','INPUT_KIND_NOT_MAPPABLE','inputs','此操作没有该媒体类型的请求映射','配置媒体输入映射或选择其他操作',items[0].id);
+    if(rule&&(items.length<rule.min||rule.max!==undefined&&items.length>rule.max))return fail('constraint','MEDIA_COUNT_OUT_OF_RANGE','inputs','媒体数量不符合此协议操作的约束','调整媒体数量');
+    if(rule&&items.some(input=>rule.maxBytes!==undefined&&input.asset.bytes>rule.maxBytes||rule.maxDurationSeconds!==undefined&&(input.asset.durationSeconds??0)>rule.maxDurationSeconds))
+      return fail('constraint','MEDIA_PROPERTIES_OUT_OF_RANGE','inputs','素材大小或时长超过协议限制','调整素材规格');
+    if(rule?.totalDurationSeconds!==undefined&&items.reduce((sum,input)=>sum+(input.asset.durationSeconds??0),0)>rule.totalDurationSeconds)
+      return fail('constraint','MEDIA_TOTAL_DURATION_OUT_OF_RANGE','inputs','参考素材总时长超过协议限制','缩短参考素材');
+  }
+  let prompt:string;
+  try{prompt=compileVideoPrompt(draft.prompt,draft.inputs.map(input=>({id:input.id,nodeId:input.nodeId,kind:input.kind,role:input.role,value:input.kind==='text'?input.text:input.asset.storageKey}))).prompt;}
+  catch{return fail('input','PROMPT_REFERENCE_INVALID','prompt','提示词引用与当前素材不一致','重新插入引用或移除失效标记');}
+  if(operation.requiresPrompt&&!prompt.trim())return fail('input','PROMPT_REQUIRED','prompt','此操作需要视频描述','填写视频描述');
+  if(operation.maxPromptChars!==undefined&&prompt.length>operation.maxPromptChars)return fail('constraint','PROMPT_TOO_LONG','prompt','视频描述超过协议限制','缩短描述，不会自动截断');
+  const body:Record<string,Json>={},effective:Record<string,Json>={};
+  const put=(name:string,value:Json):boolean=>{if(Object.hasOwn(body,name))return false;body[name]=value;return true;};
+  if(!put(recipe.modelField,binding.wireModel)||!put(recipe.promptField,prompt))return fail('mapping','WIRE_FIELD_COLLISION','binding.recipe','模型和提示词字段冲突','修正协议字段映射');
+  const parameters={...recipe.parameters,...operation.parameters};
+  for(const name of Object.keys(draft.parameters))if(!Object.hasOwn(parameters,name))return fail('mapping','PARAMETER_MAPPING_MISSING',name,'此参数没有对应的请求映射','配置字段映射或明确移除此参数');
+  for(const [name,rule] of Object.entries(parameters)){
+    if(rule.send==='omit')continue;
+    const supplied=Object.hasOwn(draft.parameters,name),value=supplied?draft.parameters[name]:rule.default;
+    if(value===undefined){if(rule.required)return fail('input','PARAMETER_REQUIRED',name,'缺少此操作需要的参数','填写参数');continue;}
+    const typed=rule.type==='json'||rule.type==='integer'?rule.type==='json'||typeof value==='number'&&Number.isInteger(value):typeof value===rule.type;
+    if(!typed||rule.values&&!rule.values.some(item=>item===value)||typeof value==='number'&&(rule.minimum!==undefined&&value<rule.minimum||rule.maximum!==undefined&&value>rule.maximum))
+      return fail('constraint','PARAMETER_VALUE_INVALID',name,'参数类型或数值不符合协议约束','选择协议允许的参数值');
+    const semantic=rule.mapping?Object.hasOwn(rule.mapping,String(value))?rule.mapping[String(value)]:undefined:value;
+    if(semantic===undefined)return fail('mapping','PARAMETER_VALUE_NOT_MAPPABLE',name,'此参数值没有有效参数映射','补齐映射或选择其他参数值');
+    effective[name]=semantic;
+    const mapped=rule.wireMapping?Object.hasOwn(rule.wireMapping,String(semantic))?rule.wireMapping[String(semantic)]:undefined:semantic;
+    if(mapped===undefined)return fail('mapping','PARAMETER_VALUE_NOT_MAPPABLE',name,'有效参数值没有上游字段映射','补齐协议字段映射');
+    if(!rule.wireField)return fail('mapping','PARAMETER_MAPPING_MISSING',name,'参数缺少上游字段','配置字段映射');
+    if(!put(rule.wireField,mapped))return fail('mapping','WIRE_FIELD_COLLISION',name,'多个参数映射到同一上游字段','修正协议字段映射');
+  }
+  const consumed=draft.inputs.filter(input=>input.kind==='text').map(input=>input.id);
+  if(operation.parameterCombinations&&!operation.parameterCombinations.some(combination=>Object.entries(combination).every(([key,values])=>values.some(value=>value===effective[key]))))
+    return fail('constraint','PARAMETER_COMBINATION_INVALID','parameters','时长、分辨率或其他参数不属于协议允许的组合','选择符合当前操作的参数组合');
+  for(const mapping of operation.media){
+    const inputs=media.filter(input=>input.kind===mapping.kind&&(!mapping.roles||mapping.roles.includes(role(input))));
+    if(!inputs.length)continue;
+    if(inputs.some(input=>consumed.includes(input.id)))return fail('mapping','DUPLICATE_MEDIA_MAPPING','inputs','同一素材被多个映射重复消费','修正素材用途映射');
+    if(mapping.shape==='single'&&inputs.length!==1)return fail('constraint','SINGLE_MEDIA_REQUIRED','inputs','此协议字段只接受一个素材','调整素材数量');
+    if(mapping.shape==='roles'&&mapping.roleMap&&inputs.some(input=>!Object.hasOwn(mapping.roleMap!,role(input))))
+      return fail('mapping','INPUT_ROLE_NOT_MAPPABLE','inputs','素材用途缺少上游角色映射','补齐角色映射，不会猜测上游字段');
+    if(operation.intent==='frames_required'&&mapping.shape==='urls'&&inputs.length>1&&!mapping.order)
+      return fail('mapping','FRAME_ORDER_MAPPING_MISSING','inputs','首尾帧数组未声明上游角色顺序','配置首帧和尾帧的数组顺序');
+    if(mapping.order){
+      if(inputs.some(input=>!mapping.order!.includes(role(input))))return fail('mapping','INPUT_ROLE_NOT_MAPPABLE','inputs','素材用途没有声明数组位置','补齐角色顺序映射');
+      inputs.sort((a,b)=>mapping.order!.indexOf(role(a))-mapping.order!.indexOf(role(b)));
+    }
+    const slots=inputs.map(input=>({$videoAsset:input.id}));
+    const value=mapping.shape==='single'?slots[0]:mapping.shape==='urls'?slots:inputs.map((input,index)=>({url:slots[index],role:mapping.roleMap?.[role(input)]??role(input)}));
+    if(!put(mapping.wireField,value))return fail('mapping','WIRE_FIELD_COLLISION','inputs','素材字段与其他请求字段冲突','修正协议字段映射');
+    consumed.push(...inputs.map(input=>input.id));
+  }
+  if(media.some(input=>!consumed.includes(input.id)))return fail('mapping','INPUT_ROLE_NOT_MAPPABLE','inputs','此素材用途没有对应的协议字段','配置该用途或调整素材角色');
+  const duration=effective.durationSeconds,resolution=effective.resolution,aspectRatio=effective.aspectRatio;
+  if(typeof duration!=='number'||!(duration===-1||duration>0)||typeof resolution!=='string'||!resolution.trim()||aspectRatio!==undefined&&typeof aspectRatio!=='string')
+    return fail('mapping','BILLING_FACTS_MISSING','parameters','协议未生成完整计费事实','配置有效时长、分辨率与画幅参数');
+  return {ok:true,value:{intent:operation.intent,effectiveParameters:effective,consumedInputIds:consumed,
+    wireTemplate:{method:'POST',path:recipe.createPath,encoding:'json',body},
+    billingFacts:{durationSeconds:duration,resolution,...(typeof aspectRatio==='string'?{aspectRatio}:{})}}};
+}

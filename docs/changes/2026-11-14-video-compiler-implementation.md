@@ -12,7 +12,7 @@
 
 - video拥有Draft/Intent/Profile/Compile/CompiledPlan；model-config拥有发布Binding/Policy与来源审计；媒体模块拥有资产访问、内容哈希与真实probe；任务/计费继续拥有幂等、预占、租约、结算、UNKNOWN；Canvas拥有节点与选片关系。
 - 入口->应用用例->Resolver/Profile纯规则->既有I/O适配单向依赖。不拆计费事务，不新增内部HTTP自调用，不为每个函数机械增加层级。
-- 目标公开接口为RFC的VideoModelProfile、compileVideoRequest、CompiledVideoPlan；当前尚未实现/接入，不预支状态。
+- 目标公开接口VideoModelProfile、compileVideoRequest、CompiledVideoPlan已在P0核心实现；现有生成入口/路由尚未接入，不预支全链路状态。
 
 ## P0首轮实查结论
 
@@ -27,7 +27,7 @@
 | 阶段 | 状态 | 完成条件 |
 |---|---|---|
 | 实施基线/清单 | 已建立 | 入口、逐profile、19项验收与历史边界有持久记录；不代表功能通过 |
-| P0核心 | 进行中：现有数据边界调查完成 | 新合同/Resolver/Profile/Plan及Policy/Evidence分离有实际代码与集中测试 |
+| P0核心 | 进行中：合同/编译/JSON Profile/计划读取与地址物化已实现并局部验证 | 新合同/Resolver/Profile/Plan及Policy/Evidence分离有实际代码与集中测试 |
 | P1全入口 | 待实施 | Canvas、Workbench、Workflow/批次、Agent、Storyboard、BYOC、恢复/重试同底座 |
 | P2全协议 | 待实施 | 每个注册profile＋非wire路径有迁移/fixture，旧冻结任务不漂移 |
 | P3清场 | 待实施 | 新任务旧裁决/fallback/整对象升级职责退出；调用与配置迁移证据 |
@@ -141,9 +141,31 @@
 
 - 完整业务切片后集中跑受影响类型/单元/HTTP/DB/Worker/浏览器检查；不每个小helper跑全量构建。
 - 保留baseline/modified/copy-rollback原始命令、输入、结果、退出码、hash与真实产物。物理/安全/计费边界失败同样覆盖，禁止把known baseline失败抹去。
-- 当前只有实施清单内容核验；P0–P4业务检查、付费供应商、正式发布均未执行，不增加发布计数。
+- P0核心133项测试与全量TypeScript检查通过；测试使用纯编译/真实JSON Profile及Resolver/URL物化fixture ports，不冒称应用Route、真实DB/Worker或上游生成已经验收。现有入口尚未切换。付费供应商和正式发布均未执行，不增加发布计数。
 - 证据目录：E:/Workspace/naumi/output/video-compiler-p0-20261114；IMPLEMENTATION_STATUS.json与本表同步更新。
 
 ## 下一实际动作
 
-实现P0的版本化执行数据契约与显式政策/来源分离，再接入可信输入Resolver和按协议族的编译接口；不把旧capabilities.video自动转Policy，也不新建以verified或静态型号表执法的门禁。随后按完整入口/协议切片迁移，目标保持ACTIVE直到全部验收。
+P0核心已加入版本化合同、空默认/有审计的显式政策、独立证据schema、输入Resolver端口、确定性意图、JSON协议族Profile、不可变摘要计划与只读reader、JSON临时URL物化。下一步接入现有授权/真实媒体Resolver与发布Binding/Policy存储，补齐Profile绑定种子及计划持久化；不把旧capabilities.video自动转Policy，也不新建以verified或静态型号表执法的门禁。随后按完整入口/协议切片迁移，目标保持ACTIVE直到全部验收。
+
+## P0核心切片：本轮实现
+
+- `execution-contract.ts`：新合同不读旧capabilities；Binding/Policy/Evidence各自schema。限制必须带明确修订/操作来源，不提供旧能力自动转Policy的入口。
+- `input-resolver.ts`：先做结构/角色/重复身份检查，再调用应用层拥有的素材/文字授权端口，使用真实hash/MIME/字节/时长；不信用户URL、保留输入顺序和scope。当前真实DB适配组装仍待接入。
+- `intent.ts`：旧text+媒体走自动；单图用途依合同默认，不按两图猜首尾；显式结构性偏好保留。
+- `profiles/json-profile.ts`：原生构造请求模板，按绑定而非型号名单映射；数量/字节/总时长/参数组合/角色/数组顺序检查集中于Profile；用户值->有效值->wire拼写分开，映射恰好一次。
+- `compile.ts`：纯编译门面，绑定版本与政策校验、输入完整消费/真实媒体槽校验、冻结Binding/Policy/规格/作用域，生成SHA256摘要；reader只读原计划，不查询最新配置。
+- `profiles/json-materialization.ts`：临时授权URL在执行副本生成，同一asset去重签名；核对冻结sha/bytes/MIME/时长/尺寸，禁止换素材；不改计划、不重编译、不泄露内部异常。
+- 保留legacy task reader/codec原状；JSON以外multipart/DAG的计划物化、全部协议和旧任务reader接线仍待后续阶段。
+- 验证脚本：`node node_modules/tsx/dist/cli.mjs scripts/verify-video-compiler-core.ts`，输出 `VIDEO_COMPILER_CORE=PASS CASES=133 PRODUCTION_WRITES=0 PAID_CALLS=0`，exit0；`tsc --noEmit --pretty false`无输出，exit0。
+- 尚未完成：真实Resolver授权组装、ModelConfig发布字段/后台政策、Canvas/Workbench/Workflow/Agent等全入口、所有实际型号种子与57协议、旧裁决退出、应用/DB/Worker/真实供应商/站点验收。当前不将任何入口标为迁移完成。
+
+### 核心审查补充
+
+- 缺少图片/音频数量声明时不当作0：只要真实字段映射存在，未声明上限不产生虚构数量否决。要求提示词也必须由协议显式声明，不凭默认布尔值封禁图像输入。
+- 旧mode=text+媒体按自动处理；新intentPreference=text明确选择仍应报告输入冲突，不能将真实用户选择一概当旧默认。
+- 补充参数组合约束、帧数组显式角色顺序、Workspace与无项目Workbench作用域、模板素材槽完整性与同一素材版本一致性。
+- 既有回归：VIDEO_CLIENT_SETTINGS通过；CANVAS_VIDEO_SUBMISSION 30场景/121检查通过；VIDEO_MULTIMODAL_MATERIALIZATION 16检查、真实媒体解码通过；均无供应商调用。
+- 本切片未切换任何生产调用方：新入口不会让现有前置拦截自动消失。全P0/全目标仍未完成，不把133项核心检查写成A01–A19端到端通过。
+
+本切片作为新增核心模块检查点交付，不自动启用生产入口。后续P0真实授权/模型配置适配从包含该检查点的最新main新开工作树；本次临时工作树在检查点整合且干净后清理。
