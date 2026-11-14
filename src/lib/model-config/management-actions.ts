@@ -8,7 +8,7 @@ import { readImagegenDefaults } from "../supplier-models/imagegen-access";
 import { readResolutionDefaults } from "../supplier-models/resolution-access";
 import { applyDisplayResolutions } from "./resolution-options";
 import { applyVideoParameters } from "./video-policy";
-import { applyReviewedVideoCapabilityUpgrade } from "./video-capability-review";
+import {applyReviewedVideoExecutionMigration} from './video-execution-migration';
 import { applyChannelPolicy } from "./channel-policy";
 import { readQualityDefaults } from "../supplier-models/quality-access";
 import { refreshProviderCatalog } from "./catalog-store";
@@ -37,8 +37,10 @@ export async function applyManagementConfigAction({ admin, snapshot, body, fetch
             catalogs.push(await refreshProviderCatalog(admin.pool,provider,admin.credentials,admin.trustedOrigins,deps.fetcher));
           }
           config=planModelOnboarding(snapshot,billing,body,catalogs).config;
+        } else if(body.action==='video-execution-migration') {
+          config=applyReviewedVideoExecutionMigration(config,snapshot.version,body.reviewDigest,body.publicIds).config;
         } else if(body.action === "video-capability-upgrade") {
-          config=applyReviewedVideoCapabilityUpgrade(config,snapshot.version,body.reviewDigest,body.publicIds).config;
+          throw new ModelConfigError('VIDEO_CAPABILITY_UPGRADE_RETIRED','旧能力升级操作已退出，请刷新后迁移执行绑定',410);
         } else if(body.action === "scope-compat") {
           // Deployment rollback expands the system grant before an older image
           // reads this config. Preserve ordinary tool scope and every price.

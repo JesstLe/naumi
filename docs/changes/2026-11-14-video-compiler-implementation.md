@@ -399,3 +399,7 @@ OpenAI Videos、Gemini及无Profile OpenAI接入native-video Profile/计划schem
 ## APIB / Geek 通道协议切片
 
 剩余 13 个注册协议的真实字段布局接入 native Profile，以显式通道配方代替型号白名单、expectedMode 和旧 normalize 执行裁决，保留真实素材与组合约束、查询和历史任务。详见 [通道协议迁移](2026-11-14-video-compiler-channels.md)。注册协议局部覆盖不代替生产 Binding 迁移、旧调用退出及全应用验收；总目标继续 ACTIVE。
+
+## 显式执行绑定迁移与管理员升级退出
+
+32条明确通道候选、配置版本/CAS审查、绑定字段回退、实际执行JSON编辑和旧管理操作新请求410已实现；历史staged/unknown原身份可恢复。旧能力记录/价格/人工映射保持，旧modes/zero limits不变政策。接口、验证和开放媒体故障详见 [绑定迁移](2026-11-14-video-compiler-binding.md)。这是管理员入口旧升级职责退出，不是全局新任务门禁清零；生产迁移/发布仍0，总目标ACTIVE。

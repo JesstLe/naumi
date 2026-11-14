@@ -1,0 +1,3996 @@
+{
+  "schemaVersion": 1,
+  "source": "explicit field contracts from video-family capabilities/multimodal/storyboard; reviewed through 198 codec comparisons on 2026-11-14",
+  "items": [
+    {
+      "providerId": "apib-video",
+      "model": "seedance-1-0-pro-fast",
+      "profile": "apib-video-v2",
+      "previousProfiles": [
+        "apib-video-v2",
+        "apimart-apib-seedance"
+      ],
+      "execution": {
+        "schemaVersion": 1,
+        "profileId": "native-video",
+        "profileVersion": 1,
+        "recipe": {
+          "layout": "apib-video-v2",
+          "channel": {
+            "kind": "apib-flat",
+            "resolutionCase": "lower",
+            "resolutionField": "resolution",
+            "frameImages": "roles",
+            "referenceImages": "urls",
+            "ratio": {
+              "field": "aspect_ratio",
+              "frames": "value"
+            }
+          },
+          "defaults": {
+            "ordinaryImage": "single_image",
+            "sourceVideo": "reference"
+          },
+          "parameters": {
+            "durationSeconds": {
+              "type": "integer",
+              "default": 2,
+              "send": "semantic"
+            },
+            "resolution": {
+              "type": "string",
+              "default": "480p",
+              "send": "semantic"
+            },
+            "aspectRatio": {
+              "type": "string",
+              "default": "16:9",
+              "send": "semantic"
+            }
+          },
+          "operations": [
+            {
+              "intent": "text",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 1
+              },
+              "videos": {
+                "min": 0,
+                "max": 0
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "single_image",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 1
+              },
+              "videos": {
+                "min": 0,
+                "max": 0
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "providerId": "apib-video",
+      "model": "seedance-1-0-pro-quality",
+      "profile": "apib-video-v2",
+      "previousProfiles": [
+        "apib-video-v2",
+        "apimart-apib-seedance"
+      ],
+      "execution": {
+        "schemaVersion": 1,
+        "profileId": "native-video",
+        "profileVersion": 1,
+        "recipe": {
+          "layout": "apib-video-v2",
+          "channel": {
+            "kind": "apib-flat",
+            "resolutionCase": "lower",
+            "resolutionField": "resolution",
+            "frameImages": "roles",
+            "referenceImages": "urls",
+            "ratio": {
+              "field": "aspect_ratio",
+              "frames": "value"
+            }
+          },
+          "defaults": {
+            "ordinaryImage": "single_image",
+            "sourceVideo": "reference"
+          },
+          "parameters": {
+            "durationSeconds": {
+              "type": "integer",
+              "default": 2,
+              "send": "semantic"
+            },
+            "resolution": {
+              "type": "string",
+              "default": "480p",
+              "send": "semantic"
+            },
+            "aspectRatio": {
+              "type": "string",
+              "default": "16:9",
+              "send": "semantic"
+            }
+          },
+          "operations": [
+            {
+              "intent": "text",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 2
+              },
+              "videos": {
+                "min": 0,
+                "max": 0
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "single_image",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 2
+              },
+              "videos": {
+                "min": 0,
+                "max": 0
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "frames_required",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 2
+              },
+              "videos": {
+                "min": 0,
+                "max": 0
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "providerId": "apib-video",
+      "model": "seedance-1-5-pro",
+      "profile": "apib-video-v2",
+      "previousProfiles": [
+        "apib-video-v2",
+        "apimart-apib-seedance"
+      ],
+      "execution": {
+        "schemaVersion": 1,
+        "profileId": "native-video",
+        "profileVersion": 1,
+        "recipe": {
+          "layout": "apib-video-v2",
+          "channel": {
+            "kind": "apib-flat",
+            "resolutionCase": "lower",
+            "resolutionField": "resolution",
+            "frameImages": "urls",
+            "referenceImages": "urls",
+            "ratio": {
+              "field": "aspect_ratio",
+              "frames": "value"
+            },
+            "audio": {}
+          },
+          "defaults": {
+            "ordinaryImage": "single_image",
+            "sourceVideo": "reference"
+          },
+          "parameters": {
+            "durationSeconds": {
+              "type": "integer",
+              "default": 4,
+              "send": "semantic"
+            },
+            "resolution": {
+              "type": "string",
+              "default": "480p",
+              "send": "semantic"
+            },
+            "aspectRatio": {
+              "type": "string",
+              "default": "16:9",
+              "send": "semantic"
+            },
+            "generateAudio": {
+              "type": "boolean",
+              "default": false,
+              "wireField": "audio"
+            }
+          },
+          "operations": [
+            {
+              "intent": "text",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 2
+              },
+              "videos": {
+                "min": 0,
+                "max": 0
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "single_image",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 2
+              },
+              "videos": {
+                "min": 0,
+                "max": 0
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "frames_required",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 2
+              },
+              "videos": {
+                "min": 0,
+                "max": 0
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "providerId": "apib-video",
+      "model": "seedance-2.0",
+      "profile": "apib-video-v3",
+      "previousProfiles": [
+        "apib-video-v2",
+        "apib-video-v3",
+        "apimart-apib-seedance"
+      ],
+      "execution": {
+        "schemaVersion": 1,
+        "profileId": "native-video",
+        "profileVersion": 1,
+        "recipe": {
+          "layout": "apib-video-v3",
+          "channel": {
+            "kind": "apib-seedance20",
+            "resolutionCase": "lower"
+          },
+          "defaults": {
+            "ordinaryImage": "single_image",
+            "sourceVideo": "reference"
+          },
+          "parameters": {
+            "durationSeconds": {
+              "type": "integer",
+              "default": 4,
+              "send": "semantic"
+            },
+            "resolution": {
+              "type": "string",
+              "default": "480p",
+              "send": "semantic"
+            },
+            "aspectRatio": {
+              "type": "string",
+              "default": "16:9",
+              "send": "semantic"
+            }
+          },
+          "operations": [
+            {
+              "intent": "text",
+              "requiresPrompt": true,
+              "maxPromptChars": 4000,
+              "images": {
+                "min": 0,
+                "max": 9
+              },
+              "videos": {
+                "min": 0,
+                "max": 3
+              },
+              "audios": {
+                "min": 0,
+                "max": 3,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "single_image",
+              "requiresPrompt": true,
+              "maxPromptChars": 4000,
+              "images": {
+                "min": 0,
+                "max": 9
+              },
+              "videos": {
+                "min": 0,
+                "max": 3
+              },
+              "audios": {
+                "min": 0,
+                "max": 3,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "frames_required",
+              "requiresPrompt": true,
+              "maxPromptChars": 4000,
+              "images": {
+                "min": 0,
+                "max": 9
+              },
+              "videos": {
+                "min": 0,
+                "max": 3
+              },
+              "audios": {
+                "min": 0,
+                "max": 3,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "reference",
+              "requiresPrompt": true,
+              "maxPromptChars": 4000,
+              "images": {
+                "min": 0,
+                "max": 9
+              },
+              "videos": {
+                "min": 0,
+                "max": 3
+              },
+              "audios": {
+                "min": 0,
+                "max": 3,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "providerId": "apib-video",
+      "model": "seedance-2.0-fast",
+      "profile": "apib-video-v3",
+      "previousProfiles": [
+        "apib-video-v2",
+        "apib-video-v3",
+        "apimart-apib-seedance"
+      ],
+      "execution": {
+        "schemaVersion": 1,
+        "profileId": "native-video",
+        "profileVersion": 1,
+        "recipe": {
+          "layout": "apib-video-v3",
+          "channel": {
+            "kind": "apib-seedance20",
+            "resolutionCase": "lower"
+          },
+          "defaults": {
+            "ordinaryImage": "single_image",
+            "sourceVideo": "reference"
+          },
+          "parameters": {
+            "durationSeconds": {
+              "type": "integer",
+              "default": 4,
+              "send": "semantic"
+            },
+            "resolution": {
+              "type": "string",
+              "default": "480p",
+              "send": "semantic"
+            },
+            "aspectRatio": {
+              "type": "string",
+              "default": "16:9",
+              "send": "semantic"
+            }
+          },
+          "operations": [
+            {
+              "intent": "text",
+              "requiresPrompt": true,
+              "maxPromptChars": 4000,
+              "images": {
+                "min": 0,
+                "max": 9
+              },
+              "videos": {
+                "min": 0,
+                "max": 3
+              },
+              "audios": {
+                "min": 0,
+                "max": 3,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "single_image",
+              "requiresPrompt": true,
+              "maxPromptChars": 4000,
+              "images": {
+                "min": 0,
+                "max": 9
+              },
+              "videos": {
+                "min": 0,
+                "max": 3
+              },
+              "audios": {
+                "min": 0,
+                "max": 3,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "frames_required",
+              "requiresPrompt": true,
+              "maxPromptChars": 4000,
+              "images": {
+                "min": 0,
+                "max": 9
+              },
+              "videos": {
+                "min": 0,
+                "max": 3
+              },
+              "audios": {
+                "min": 0,
+                "max": 3,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "reference",
+              "requiresPrompt": true,
+              "maxPromptChars": 4000,
+              "images": {
+                "min": 0,
+                "max": 9
+              },
+              "videos": {
+                "min": 0,
+                "max": 3
+              },
+              "audios": {
+                "min": 0,
+                "max": 3,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "providerId": "apib-video",
+      "model": "seedance-2.0-mini",
+      "profile": "apib-video-v3",
+      "previousProfiles": [
+        "apib-video-v2",
+        "apib-video-v3",
+        "apimart-apib-seedance"
+      ],
+      "execution": {
+        "schemaVersion": 1,
+        "profileId": "native-video",
+        "profileVersion": 1,
+        "recipe": {
+          "layout": "apib-video-v3",
+          "channel": {
+            "kind": "apib-seedance20",
+            "resolutionCase": "lower"
+          },
+          "defaults": {
+            "ordinaryImage": "single_image",
+            "sourceVideo": "reference"
+          },
+          "parameters": {
+            "durationSeconds": {
+              "type": "integer",
+              "default": 4,
+              "send": "semantic"
+            },
+            "resolution": {
+              "type": "string",
+              "default": "480p",
+              "send": "semantic"
+            },
+            "aspectRatio": {
+              "type": "string",
+              "default": "16:9",
+              "send": "semantic"
+            }
+          },
+          "operations": [
+            {
+              "intent": "text",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 9
+              },
+              "videos": {
+                "min": 0,
+                "max": 3
+              },
+              "audios": {
+                "min": 0,
+                "max": 3,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "single_image",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 9
+              },
+              "videos": {
+                "min": 0,
+                "max": 3
+              },
+              "audios": {
+                "min": 0,
+                "max": 3,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "frames_required",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 9
+              },
+              "videos": {
+                "min": 0,
+                "max": 3
+              },
+              "audios": {
+                "min": 0,
+                "max": 3,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "reference",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 9
+              },
+              "videos": {
+                "min": 0,
+                "max": 3
+              },
+              "audios": {
+                "min": 0,
+                "max": 3,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "providerId": "apib-video",
+      "model": "seedance-2.5",
+      "profile": "apib-video-v3",
+      "previousProfiles": [
+        "apib-video-v2",
+        "apib-video-v3",
+        "apimart-apib-seedance"
+      ],
+      "execution": {
+        "schemaVersion": 1,
+        "profileId": "native-video",
+        "profileVersion": 1,
+        "recipe": {
+          "layout": "apib-video-v3",
+          "channel": {
+            "kind": "apib-seedance25",
+            "resolutionCase": "lower"
+          },
+          "defaults": {
+            "ordinaryImage": "single_image",
+            "sourceVideo": "reference"
+          },
+          "parameters": {
+            "durationSeconds": {
+              "type": "integer",
+              "default": 4,
+              "send": "semantic"
+            },
+            "resolution": {
+              "type": "string",
+              "default": "480p",
+              "send": "semantic"
+            },
+            "aspectRatio": {
+              "type": "string",
+              "default": "16:9",
+              "send": "semantic"
+            }
+          },
+          "operations": [
+            {
+              "intent": "text",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 30,
+                "maxBytes": 31457280
+              },
+              "videos": {
+                "min": 0,
+                "max": 10,
+                "maxBytes": 209715200,
+                "maxDurationSeconds": 30,
+                "totalDurationSeconds": 30
+              },
+              "audios": {
+                "min": 0,
+                "max": 10,
+                "maxBytes": 15728640,
+                "maxDurationSeconds": 30,
+                "totalDurationSeconds": 30
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "single_image",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 30,
+                "maxBytes": 31457280
+              },
+              "videos": {
+                "min": 0,
+                "max": 10,
+                "maxBytes": 209715200,
+                "maxDurationSeconds": 30,
+                "totalDurationSeconds": 30
+              },
+              "audios": {
+                "min": 0,
+                "max": 10,
+                "maxBytes": 15728640,
+                "maxDurationSeconds": 30,
+                "totalDurationSeconds": 30
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "frames_required",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 30,
+                "maxBytes": 31457280
+              },
+              "videos": {
+                "min": 0,
+                "max": 10,
+                "maxBytes": 209715200,
+                "maxDurationSeconds": 30,
+                "totalDurationSeconds": 30
+              },
+              "audios": {
+                "min": 0,
+                "max": 10,
+                "maxBytes": 15728640,
+                "maxDurationSeconds": 30,
+                "totalDurationSeconds": 30
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "reference",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 30,
+                "maxBytes": 31457280
+              },
+              "videos": {
+                "min": 0,
+                "max": 10,
+                "maxBytes": 209715200,
+                "maxDurationSeconds": 30,
+                "totalDurationSeconds": 30
+              },
+              "audios": {
+                "min": 0,
+                "max": 10,
+                "maxBytes": 15728640,
+                "maxDurationSeconds": 30,
+                "totalDurationSeconds": 30
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "providerId": "apib-video",
+      "model": "kling-3.0-turbo",
+      "profile": "apib-video-v2",
+      "previousProfiles": [
+        "apib-video-v2",
+        "apimart-apib-kling"
+      ],
+      "execution": {
+        "schemaVersion": 1,
+        "profileId": "native-video",
+        "profileVersion": 1,
+        "recipe": {
+          "layout": "apib-video-v2",
+          "channel": {
+            "kind": "apib-flat",
+            "resolutionCase": "lower",
+            "resolutionField": "resolution",
+            "frameImages": "first-only",
+            "referenceImages": "urls",
+            "ratio": {
+              "field": "aspect_ratio",
+              "frames": "omit"
+            }
+          },
+          "defaults": {
+            "ordinaryImage": "single_image",
+            "sourceVideo": "reference"
+          },
+          "parameters": {
+            "durationSeconds": {
+              "type": "integer",
+              "default": 3,
+              "send": "semantic"
+            },
+            "resolution": {
+              "type": "string",
+              "default": "720p",
+              "send": "semantic"
+            },
+            "aspectRatio": {
+              "type": "string",
+              "default": "16:9",
+              "send": "semantic"
+            }
+          },
+          "operations": [
+            {
+              "intent": "text",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 1
+              },
+              "videos": {
+                "min": 0,
+                "max": 0
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "single_image",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 1
+              },
+              "videos": {
+                "min": 0,
+                "max": 0
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "providerId": "apib-video",
+      "model": "kling-v2-6",
+      "profile": "apib-video-v2",
+      "previousProfiles": [
+        "apib-video-v2",
+        "apimart-apib-kling"
+      ],
+      "execution": {
+        "schemaVersion": 1,
+        "profileId": "native-video",
+        "profileVersion": 1,
+        "recipe": {
+          "layout": "apib-video-v2",
+          "channel": {
+            "kind": "apib-flat",
+            "resolutionCase": "lower",
+            "resolutionField": "mode",
+            "frameImages": "urls",
+            "referenceImages": "urls",
+            "ratio": {
+              "field": "aspect_ratio",
+              "frames": "omit"
+            },
+            "audio": {
+              "deniedModes": [
+                "std"
+              ],
+              "denyLastFrame": true
+            }
+          },
+          "defaults": {
+            "ordinaryImage": "single_image",
+            "sourceVideo": "reference"
+          },
+          "parameters": {
+            "durationSeconds": {
+              "type": "integer",
+              "default": 5,
+              "send": "semantic"
+            },
+            "resolution": {
+              "type": "string",
+              "default": "720p",
+              "send": "semantic"
+            },
+            "aspectRatio": {
+              "type": "string",
+              "default": "16:9",
+              "send": "semantic"
+            },
+            "generateAudio": {
+              "type": "boolean",
+              "default": false,
+              "wireField": "audio"
+            }
+          },
+          "modes": {
+            "720p": "std",
+            "1080p": "pro"
+          },
+          "operations": [
+            {
+              "intent": "text",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 2
+              },
+              "videos": {
+                "min": 0,
+                "max": 0
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "single_image",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 2
+              },
+              "videos": {
+                "min": 0,
+                "max": 0
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "frames_required",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 2
+              },
+              "videos": {
+                "min": 0,
+                "max": 0
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "resolution": {
+                  "type": "string",
+                  "default": "1080p",
+                  "send": "semantic"
+                },
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "providerId": "apib-video",
+      "model": "kling-v3",
+      "profile": "apib-storyboard-v4",
+      "previousProfiles": [
+        "apib-storyboard-v4",
+        "apib-video-v2",
+        "apimart-apib-kling"
+      ],
+      "execution": {
+        "schemaVersion": 1,
+        "profileId": "native-video",
+        "profileVersion": 1,
+        "recipe": {
+          "layout": "apib-storyboard-v4",
+          "channel": {
+            "kind": "apib-flat",
+            "resolutionCase": "lower",
+            "resolutionField": "mode",
+            "frameImages": "urls",
+            "referenceImages": "urls",
+            "ratio": {
+              "field": "aspect_ratio",
+              "frames": "omit"
+            },
+            "audio": {},
+            "shots": {
+              "wireField": "multi_prompt",
+              "promptField": "prompt",
+              "durationField": "duration",
+              "indexField": "index",
+              "max": 6,
+              "minDurationSeconds": 1,
+              "maxPromptChars": 512,
+              "constants": {
+                "multi_shot": true,
+                "shot_type": "customize"
+              }
+            }
+          },
+          "defaults": {
+            "ordinaryImage": "single_image",
+            "sourceVideo": "reference"
+          },
+          "parameters": {
+            "durationSeconds": {
+              "type": "integer",
+              "default": 3,
+              "send": "semantic"
+            },
+            "resolution": {
+              "type": "string",
+              "default": "720p",
+              "send": "semantic"
+            },
+            "aspectRatio": {
+              "type": "string",
+              "default": "16:9",
+              "send": "semantic"
+            },
+            "generateAudio": {
+              "type": "boolean",
+              "default": false,
+              "wireField": "audio"
+            }
+          },
+          "modes": {
+            "720p": "std",
+            "1080p": "pro",
+            "4k": "4k"
+          },
+          "operations": [
+            {
+              "intent": "text",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 2
+              },
+              "videos": {
+                "min": 0,
+                "max": 0
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "single_image",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 2
+              },
+              "videos": {
+                "min": 0,
+                "max": 0
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "frames_required",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 2
+              },
+              "videos": {
+                "min": 0,
+                "max": 0
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "providerId": "apib-video",
+      "model": "kling-v3-omni",
+      "profile": "apib-storyboard-v4",
+      "previousProfiles": [
+        "apib-storyboard-v4",
+        "apib-video-v2",
+        "apib-video-v3",
+        "apimart-apib-kling"
+      ],
+      "execution": {
+        "schemaVersion": 1,
+        "profileId": "native-video",
+        "profileVersion": 1,
+        "recipe": {
+          "layout": "apib-storyboard-v4",
+          "channel": {
+            "kind": "apib-kling-feature",
+            "resolutionCase": "upper",
+            "resolutionField": "mode",
+            "audio": {},
+            "shots": {
+              "wireField": "multi_prompt",
+              "promptField": "prompt",
+              "durationField": "duration",
+              "indexField": "index",
+              "max": 6,
+              "minDurationSeconds": 1,
+              "durationStep": 1,
+              "constants": {
+                "multi_shot": true,
+                "shot_type": "customize"
+              }
+            }
+          },
+          "defaults": {
+            "ordinaryImage": "single_image",
+            "sourceVideo": "reference"
+          },
+          "parameters": {
+            "durationSeconds": {
+              "type": "integer",
+              "default": 3,
+              "send": "semantic"
+            },
+            "resolution": {
+              "type": "string",
+              "default": "720p",
+              "send": "semantic"
+            },
+            "aspectRatio": {
+              "type": "string",
+              "default": "16:9",
+              "send": "semantic"
+            },
+            "generateAudio": {
+              "type": "boolean",
+              "default": false,
+              "wireField": "audio"
+            }
+          },
+          "modes": {
+            "720p": "std",
+            "1080p": "pro",
+            "4k": "4k"
+          },
+          "operations": [
+            {
+              "intent": "text",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 2
+              },
+              "videos": {
+                "min": 0,
+                "max": 1,
+                "maxBytes": 209715200
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "single_image",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 2
+              },
+              "videos": {
+                "min": 0,
+                "max": 1,
+                "maxBytes": 209715200
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "frames_required",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 2
+              },
+              "videos": {
+                "min": 0,
+                "max": 1,
+                "maxBytes": 209715200
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "reference",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 2
+              },
+              "videos": {
+                "min": 0,
+                "max": 1,
+                "maxBytes": 209715200
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "providerId": "apib-video",
+      "model": "kling-v4",
+      "profile": "apib-video-v2",
+      "previousProfiles": [
+        "apib-video-v2",
+        "apimart-apib-kling"
+      ],
+      "execution": {
+        "schemaVersion": 1,
+        "profileId": "native-video",
+        "profileVersion": 1,
+        "recipe": {
+          "layout": "apib-video-v2",
+          "channel": {
+            "kind": "apib-flat",
+            "resolutionCase": "lower",
+            "resolutionField": "resolution",
+            "frameImages": "urls",
+            "referenceImages": "roles",
+            "ratio": {
+              "field": "aspect_ratio",
+              "frames": "omit",
+              "mapping": {
+                "adaptive": "auto",
+                "16:9": "16:9",
+                "9:16": "9:16",
+                "1:1": "1:1",
+                "21:9": "21:9"
+              }
+            }
+          },
+          "defaults": {
+            "ordinaryImage": "single_image",
+            "sourceVideo": "reference"
+          },
+          "parameters": {
+            "durationSeconds": {
+              "type": "integer",
+              "default": 3,
+              "send": "semantic"
+            },
+            "resolution": {
+              "type": "string",
+              "default": "720p",
+              "send": "semantic"
+            },
+            "aspectRatio": {
+              "type": "string",
+              "default": "16:9",
+              "send": "semantic"
+            }
+          },
+          "operations": [
+            {
+              "intent": "text",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 10
+              },
+              "videos": {
+                "min": 0,
+                "max": 0,
+                "totalDurationSeconds": 30
+              },
+              "audios": {
+                "min": 0,
+                "max": 0,
+                "maxDurationSeconds": 30
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "single_image",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 10
+              },
+              "videos": {
+                "min": 0,
+                "max": 0,
+                "totalDurationSeconds": 30
+              },
+              "audios": {
+                "min": 0,
+                "max": 0,
+                "maxDurationSeconds": 30
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "frames_required",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 10
+              },
+              "videos": {
+                "min": 0,
+                "max": 0,
+                "totalDurationSeconds": 30
+              },
+              "audios": {
+                "min": 0,
+                "max": 0,
+                "maxDurationSeconds": 30
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "reference",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 10
+              },
+              "videos": {
+                "min": 0,
+                "max": 0,
+                "totalDurationSeconds": 30
+              },
+              "audios": {
+                "min": 0,
+                "max": 0,
+                "maxDurationSeconds": 30
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "providerId": "apib-video",
+      "model": "kling-video-o1",
+      "profile": "apib-video-v2",
+      "previousProfiles": [
+        "apib-video-v2",
+        "apimart-apib-kling"
+      ],
+      "execution": {
+        "schemaVersion": 1,
+        "profileId": "native-video",
+        "profileVersion": 1,
+        "recipe": {
+          "layout": "apib-video-v2",
+          "channel": {
+            "kind": "apib-flat",
+            "resolutionCase": "lower",
+            "resolutionField": "mode",
+            "frameImages": "urls",
+            "referenceImages": "urls",
+            "ratio": {
+              "field": "aspect_ratio",
+              "frames": "omit"
+            }
+          },
+          "defaults": {
+            "ordinaryImage": "single_image",
+            "sourceVideo": "reference"
+          },
+          "parameters": {
+            "durationSeconds": {
+              "type": "integer",
+              "default": 5,
+              "send": "semantic"
+            },
+            "resolution": {
+              "type": "string",
+              "default": "720p",
+              "send": "semantic"
+            },
+            "aspectRatio": {
+              "type": "string",
+              "default": "16:9",
+              "send": "semantic"
+            }
+          },
+          "modes": {
+            "720p": "std",
+            "1080p": "pro"
+          },
+          "operations": [
+            {
+              "intent": "text",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 2
+              },
+              "videos": {
+                "min": 0,
+                "max": 0
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "single_image",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 2
+              },
+              "videos": {
+                "min": 0,
+                "max": 0
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "frames_required",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 2
+              },
+              "videos": {
+                "min": 0,
+                "max": 0
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "providerId": "apib-video",
+      "model": "wan2.5-preview",
+      "profile": "apib-video-v2",
+      "previousProfiles": [
+        "apib-video-v2",
+        "apimart-apib-wan"
+      ],
+      "execution": {
+        "schemaVersion": 1,
+        "profileId": "native-video",
+        "profileVersion": 1,
+        "recipe": {
+          "layout": "apib-video-v2",
+          "channel": {
+            "kind": "apib-flat",
+            "resolutionCase": "lower",
+            "resolutionField": "resolution",
+            "frameImages": "urls",
+            "referenceImages": "urls",
+            "ratio": {
+              "field": "size",
+              "frames": "omit"
+            },
+            "audio": {}
+          },
+          "defaults": {
+            "ordinaryImage": "single_image",
+            "sourceVideo": "reference"
+          },
+          "parameters": {
+            "durationSeconds": {
+              "type": "integer",
+              "default": 5,
+              "send": "semantic"
+            },
+            "resolution": {
+              "type": "string",
+              "default": "480p",
+              "send": "semantic"
+            },
+            "aspectRatio": {
+              "type": "string",
+              "default": "16:9",
+              "send": "semantic"
+            },
+            "generateAudio": {
+              "type": "boolean",
+              "default": true,
+              "wireField": "audio"
+            }
+          },
+          "operations": [
+            {
+              "intent": "text",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 1
+              },
+              "videos": {
+                "min": 0,
+                "max": 0
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "single_image",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 1
+              },
+              "videos": {
+                "min": 0,
+                "max": 0
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "providerId": "apib-video",
+      "model": "wan2.6",
+      "profile": "apib-video-v2",
+      "previousProfiles": [
+        "apib-video-v2",
+        "apimart-apib-wan"
+      ],
+      "execution": {
+        "schemaVersion": 1,
+        "profileId": "native-video",
+        "profileVersion": 1,
+        "recipe": {
+          "layout": "apib-video-v2",
+          "channel": {
+            "kind": "apib-flat",
+            "resolutionCase": "lower",
+            "resolutionField": "resolution",
+            "frameImages": "urls",
+            "referenceImages": "urls",
+            "ratio": {
+              "field": "aspect_ratio",
+              "frames": "omit"
+            }
+          },
+          "defaults": {
+            "ordinaryImage": "single_image",
+            "sourceVideo": "reference"
+          },
+          "parameters": {
+            "durationSeconds": {
+              "type": "integer",
+              "default": 5,
+              "send": "semantic"
+            },
+            "resolution": {
+              "type": "string",
+              "default": "720p",
+              "send": "semantic"
+            },
+            "aspectRatio": {
+              "type": "string",
+              "default": "16:9",
+              "send": "semantic"
+            }
+          },
+          "operations": [
+            {
+              "intent": "text",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 1
+              },
+              "videos": {
+                "min": 0,
+                "max": 0
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "single_image",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 1
+              },
+              "videos": {
+                "min": 0,
+                "max": 0
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "providerId": "apib-video",
+      "model": "wan2.6-i2v-flash",
+      "profile": "apib-video-v2",
+      "previousProfiles": [
+        "apib-video-v2",
+        "apimart-apib-wan"
+      ],
+      "execution": {
+        "schemaVersion": 1,
+        "profileId": "native-video",
+        "profileVersion": 1,
+        "recipe": {
+          "layout": "apib-video-v2",
+          "channel": {
+            "kind": "apib-flat",
+            "resolutionCase": "lower",
+            "resolutionField": "resolution",
+            "frameImages": "urls",
+            "referenceImages": "urls",
+            "ratio": {
+              "field": "aspect_ratio",
+              "frames": "omit"
+            },
+            "audio": {}
+          },
+          "defaults": {
+            "ordinaryImage": "single_image",
+            "sourceVideo": "reference"
+          },
+          "parameters": {
+            "durationSeconds": {
+              "type": "integer",
+              "default": 2,
+              "send": "semantic"
+            },
+            "resolution": {
+              "type": "string",
+              "default": "720p",
+              "send": "semantic"
+            },
+            "aspectRatio": {
+              "type": "string",
+              "default": "adaptive",
+              "send": "semantic"
+            },
+            "generateAudio": {
+              "type": "boolean",
+              "default": false,
+              "wireField": "audio"
+            }
+          },
+          "operations": [
+            {
+              "intent": "single_image",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 1
+              },
+              "videos": {
+                "min": 0,
+                "max": 0
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "providerId": "apib-video",
+      "model": "wan2.7-r2v",
+      "profile": "apib-video-v2",
+      "previousProfiles": [
+        "apib-video-v2",
+        "apimart-apib-wan"
+      ],
+      "execution": {
+        "schemaVersion": 1,
+        "profileId": "native-video",
+        "profileVersion": 1,
+        "recipe": {
+          "layout": "apib-video-v2",
+          "channel": {
+            "kind": "apib-flat",
+            "resolutionCase": "upper",
+            "resolutionField": "resolution",
+            "frameImages": "roles",
+            "referenceImages": "roles",
+            "ratio": {
+              "field": "size",
+              "frames": "omit"
+            }
+          },
+          "defaults": {
+            "ordinaryImage": "single_image",
+            "sourceVideo": "reference"
+          },
+          "parameters": {
+            "durationSeconds": {
+              "type": "integer",
+              "default": 2,
+              "send": "semantic"
+            },
+            "resolution": {
+              "type": "string",
+              "default": "720P",
+              "send": "semantic"
+            },
+            "aspectRatio": {
+              "type": "string",
+              "default": "16:9",
+              "send": "semantic"
+            }
+          },
+          "operations": [
+            {
+              "intent": "reference",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 5
+              },
+              "videos": {
+                "min": 0,
+                "max": 0,
+                "maxDurationSeconds": 30
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "single_image",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 5
+              },
+              "videos": {
+                "min": 0,
+                "max": 0,
+                "maxDurationSeconds": 30
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "providerId": "apib-video",
+      "model": "wan3.0-video",
+      "profile": "apib-video-v3",
+      "previousProfiles": [
+        "apib-video-v2",
+        "apib-video-v3",
+        "apimart-apib-wan"
+      ],
+      "execution": {
+        "schemaVersion": 1,
+        "profileId": "native-video",
+        "profileVersion": 1,
+        "recipe": {
+          "layout": "apib-video-v3",
+          "channel": {
+            "kind": "apib-wan3",
+            "resolutionCase": "upper"
+          },
+          "defaults": {
+            "ordinaryImage": "single_image",
+            "sourceVideo": "reference"
+          },
+          "parameters": {
+            "durationSeconds": {
+              "type": "integer",
+              "default": 2,
+              "send": "semantic"
+            },
+            "resolution": {
+              "type": "string",
+              "default": "480P",
+              "send": "semantic"
+            },
+            "aspectRatio": {
+              "type": "string",
+              "default": "16:9",
+              "send": "semantic"
+            }
+          },
+          "operations": [
+            {
+              "intent": "text",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 10,
+                "maxBytes": 20971520
+              },
+              "videos": {
+                "min": 0,
+                "max": 5,
+                "maxBytes": 104857600,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "audios": {
+                "min": 0,
+                "max": 5,
+                "maxBytes": 15728640,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "single_image",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 10,
+                "maxBytes": 20971520
+              },
+              "videos": {
+                "min": 0,
+                "max": 5,
+                "maxBytes": 104857600,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "audios": {
+                "min": 0,
+                "max": 5,
+                "maxBytes": 15728640,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "frames_required",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 10,
+                "maxBytes": 20971520
+              },
+              "videos": {
+                "min": 0,
+                "max": 5,
+                "maxBytes": 104857600,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "audios": {
+                "min": 0,
+                "max": 5,
+                "maxBytes": 15728640,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "reference",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 10,
+                "maxBytes": 20971520
+              },
+              "videos": {
+                "min": 0,
+                "max": 5,
+                "maxBytes": 104857600,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "audios": {
+                "min": 0,
+                "max": 5,
+                "maxBytes": 15728640,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "providerId": "apib-video",
+      "model": "wan3.0-video-prime",
+      "profile": "apib-video-v3",
+      "previousProfiles": [
+        "apib-video-v2",
+        "apib-video-v3",
+        "apimart-apib-wan"
+      ],
+      "execution": {
+        "schemaVersion": 1,
+        "profileId": "native-video",
+        "profileVersion": 1,
+        "recipe": {
+          "layout": "apib-video-v3",
+          "channel": {
+            "kind": "apib-wan3",
+            "resolutionCase": "upper"
+          },
+          "defaults": {
+            "ordinaryImage": "single_image",
+            "sourceVideo": "reference"
+          },
+          "parameters": {
+            "durationSeconds": {
+              "type": "integer",
+              "default": 2,
+              "send": "semantic"
+            },
+            "resolution": {
+              "type": "string",
+              "default": "480P",
+              "send": "semantic"
+            },
+            "aspectRatio": {
+              "type": "string",
+              "default": "16:9",
+              "send": "semantic"
+            }
+          },
+          "operations": [
+            {
+              "intent": "text",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 10,
+                "maxBytes": 20971520
+              },
+              "videos": {
+                "min": 0,
+                "max": 5,
+                "maxBytes": 104857600,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "audios": {
+                "min": 0,
+                "max": 5,
+                "maxBytes": 15728640,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "single_image",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 10,
+                "maxBytes": 20971520
+              },
+              "videos": {
+                "min": 0,
+                "max": 5,
+                "maxBytes": 104857600,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "audios": {
+                "min": 0,
+                "max": 5,
+                "maxBytes": 15728640,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "frames_required",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 10,
+                "maxBytes": 20971520
+              },
+              "videos": {
+                "min": 0,
+                "max": 5,
+                "maxBytes": 104857600,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "audios": {
+                "min": 0,
+                "max": 5,
+                "maxBytes": 15728640,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "reference",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 10,
+                "maxBytes": 20971520
+              },
+              "videos": {
+                "min": 0,
+                "max": 5,
+                "maxBytes": 104857600,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "audios": {
+                "min": 0,
+                "max": 5,
+                "maxBytes": 15728640,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "providerId": "apib-video",
+      "model": "MiniMax-H3",
+      "profile": "apib-video-v3",
+      "previousProfiles": [
+        "apib-video-v2",
+        "apib-video-v3",
+        "apimart-apib-h3"
+      ],
+      "execution": {
+        "schemaVersion": 1,
+        "profileId": "native-video",
+        "profileVersion": 1,
+        "recipe": {
+          "layout": "apib-video-v3",
+          "channel": {
+            "kind": "apib-h3",
+            "resolutionCase": "upper"
+          },
+          "defaults": {
+            "ordinaryImage": "single_image",
+            "sourceVideo": "reference"
+          },
+          "parameters": {
+            "durationSeconds": {
+              "type": "integer",
+              "default": 4,
+              "send": "semantic"
+            },
+            "resolution": {
+              "type": "string",
+              "default": "768P",
+              "send": "semantic"
+            },
+            "aspectRatio": {
+              "type": "string",
+              "default": "16:9",
+              "send": "semantic"
+            }
+          },
+          "operations": [
+            {
+              "intent": "text",
+              "requiresPrompt": true,
+              "maxPromptChars": 7000,
+              "images": {
+                "min": 0,
+                "max": 9,
+                "maxBytes": 31457280
+              },
+              "videos": {
+                "min": 0,
+                "max": 3,
+                "maxBytes": 52428800,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "audios": {
+                "min": 0,
+                "max": 3,
+                "maxBytes": 15728640,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "single_image",
+              "requiresPrompt": true,
+              "maxPromptChars": 7000,
+              "images": {
+                "min": 0,
+                "max": 9,
+                "maxBytes": 31457280
+              },
+              "videos": {
+                "min": 0,
+                "max": 3,
+                "maxBytes": 52428800,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "audios": {
+                "min": 0,
+                "max": 3,
+                "maxBytes": 15728640,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "frames_required",
+              "requiresPrompt": true,
+              "maxPromptChars": 7000,
+              "images": {
+                "min": 0,
+                "max": 9,
+                "maxBytes": 31457280
+              },
+              "videos": {
+                "min": 0,
+                "max": 3,
+                "maxBytes": 52428800,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "audios": {
+                "min": 0,
+                "max": 3,
+                "maxBytes": 15728640,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "first_optional",
+              "requiresPrompt": true,
+              "maxPromptChars": 7000,
+              "images": {
+                "min": 0,
+                "max": 9,
+                "maxBytes": 31457280
+              },
+              "videos": {
+                "min": 0,
+                "max": 3,
+                "maxBytes": 52428800,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "audios": {
+                "min": 0,
+                "max": 3,
+                "maxBytes": 15728640,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "reference",
+              "requiresPrompt": true,
+              "maxPromptChars": 7000,
+              "images": {
+                "min": 0,
+                "max": 9,
+                "maxBytes": 31457280
+              },
+              "videos": {
+                "min": 0,
+                "max": 3,
+                "maxBytes": 52428800,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "audios": {
+                "min": 0,
+                "max": 3,
+                "maxBytes": 15728640,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "providerId": "apib-video",
+      "model": "MiniMax-H3-Max",
+      "profile": "apib-video-v3",
+      "previousProfiles": [
+        "apib-video-v2",
+        "apib-video-v3",
+        "apimart-apib-h3"
+      ],
+      "execution": {
+        "schemaVersion": 1,
+        "profileId": "native-video",
+        "profileVersion": 1,
+        "recipe": {
+          "layout": "apib-video-v3",
+          "channel": {
+            "kind": "apib-h3",
+            "resolutionCase": "upper"
+          },
+          "defaults": {
+            "ordinaryImage": "single_image",
+            "sourceVideo": "reference"
+          },
+          "parameters": {
+            "durationSeconds": {
+              "type": "integer",
+              "default": 5,
+              "send": "semantic"
+            },
+            "resolution": {
+              "type": "string",
+              "default": "480P",
+              "send": "semantic"
+            },
+            "aspectRatio": {
+              "type": "string",
+              "default": "16:9",
+              "send": "semantic"
+            }
+          },
+          "operations": [
+            {
+              "intent": "text",
+              "requiresPrompt": true,
+              "maxPromptChars": 7000,
+              "images": {
+                "min": 0,
+                "max": 9,
+                "maxBytes": 31457280
+              },
+              "videos": {
+                "min": 0,
+                "max": 3,
+                "maxBytes": 52428800,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "audios": {
+                "min": 0,
+                "max": 3,
+                "maxBytes": 15728640,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "single_image",
+              "requiresPrompt": true,
+              "maxPromptChars": 7000,
+              "images": {
+                "min": 0,
+                "max": 9,
+                "maxBytes": 31457280
+              },
+              "videos": {
+                "min": 0,
+                "max": 3,
+                "maxBytes": 52428800,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "audios": {
+                "min": 0,
+                "max": 3,
+                "maxBytes": 15728640,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "frames_required",
+              "requiresPrompt": true,
+              "maxPromptChars": 7000,
+              "images": {
+                "min": 0,
+                "max": 9,
+                "maxBytes": 31457280
+              },
+              "videos": {
+                "min": 0,
+                "max": 3,
+                "maxBytes": 52428800,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "audios": {
+                "min": 0,
+                "max": 3,
+                "maxBytes": 15728640,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "first_optional",
+              "requiresPrompt": true,
+              "maxPromptChars": 7000,
+              "images": {
+                "min": 0,
+                "max": 9,
+                "maxBytes": 31457280
+              },
+              "videos": {
+                "min": 0,
+                "max": 3,
+                "maxBytes": 52428800,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "audios": {
+                "min": 0,
+                "max": 3,
+                "maxBytes": 15728640,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "reference",
+              "requiresPrompt": true,
+              "maxPromptChars": 7000,
+              "images": {
+                "min": 0,
+                "max": 9,
+                "maxBytes": 31457280
+              },
+              "videos": {
+                "min": 0,
+                "max": 3,
+                "maxBytes": 52428800,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "audios": {
+                "min": 0,
+                "max": 3,
+                "maxBytes": 15728640,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "providerId": "geeknow-video",
+      "model": "kling-1.6-720p",
+      "profile": "geek-video-v2",
+      "previousProfiles": [
+        "geek-kling",
+        "geek-video-v2"
+      ],
+      "execution": {
+        "schemaVersion": 1,
+        "profileId": "native-video",
+        "profileVersion": 1,
+        "recipe": {
+          "layout": "geek-video-v2",
+          "channel": {
+            "kind": "geek-kling",
+            "resolutionCase": "upper",
+            "audio": {}
+          },
+          "defaults": {
+            "ordinaryImage": "single_image",
+            "sourceVideo": "reference"
+          },
+          "parameters": {
+            "durationSeconds": {
+              "type": "integer",
+              "default": 5,
+              "send": "semantic"
+            },
+            "resolution": {
+              "type": "string",
+              "default": "720P",
+              "send": "semantic"
+            },
+            "aspectRatio": {
+              "type": "string",
+              "default": "16:9",
+              "send": "semantic"
+            },
+            "generateAudio": {
+              "type": "boolean",
+              "default": false,
+              "wireField": "audio"
+            }
+          },
+          "operations": [
+            {
+              "intent": "text",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 1
+              },
+              "videos": {
+                "min": 0,
+                "max": 0
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "single_image",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 1
+              },
+              "videos": {
+                "min": 0,
+                "max": 0
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "providerId": "geeknow-video",
+      "model": "kling-2.0-720p",
+      "profile": "geek-video-v2",
+      "previousProfiles": [
+        "geek-kling",
+        "geek-video-v2"
+      ],
+      "execution": {
+        "schemaVersion": 1,
+        "profileId": "native-video",
+        "profileVersion": 1,
+        "recipe": {
+          "layout": "geek-video-v2",
+          "channel": {
+            "kind": "geek-kling",
+            "resolutionCase": "upper",
+            "audio": {}
+          },
+          "defaults": {
+            "ordinaryImage": "single_image",
+            "sourceVideo": "reference"
+          },
+          "parameters": {
+            "durationSeconds": {
+              "type": "integer",
+              "default": 5,
+              "send": "semantic"
+            },
+            "resolution": {
+              "type": "string",
+              "default": "720P",
+              "send": "semantic"
+            },
+            "aspectRatio": {
+              "type": "string",
+              "default": "16:9",
+              "send": "semantic"
+            },
+            "generateAudio": {
+              "type": "boolean",
+              "default": false,
+              "wireField": "audio"
+            }
+          },
+          "operations": [
+            {
+              "intent": "text",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 1
+              },
+              "videos": {
+                "min": 0,
+                "max": 0
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "single_image",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 1
+              },
+              "videos": {
+                "min": 0,
+                "max": 0
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "providerId": "geeknow-video",
+      "model": "kling-2.1-720p",
+      "profile": "geek-video-v2",
+      "previousProfiles": [
+        "geek-kling",
+        "geek-video-v2"
+      ],
+      "execution": {
+        "schemaVersion": 1,
+        "profileId": "native-video",
+        "profileVersion": 1,
+        "recipe": {
+          "layout": "geek-video-v2",
+          "channel": {
+            "kind": "geek-kling",
+            "resolutionCase": "upper",
+            "audio": {}
+          },
+          "defaults": {
+            "ordinaryImage": "single_image",
+            "sourceVideo": "reference"
+          },
+          "parameters": {
+            "durationSeconds": {
+              "type": "integer",
+              "default": 5,
+              "send": "semantic"
+            },
+            "resolution": {
+              "type": "string",
+              "default": "720P",
+              "send": "semantic"
+            },
+            "aspectRatio": {
+              "type": "string",
+              "default": "16:9",
+              "send": "semantic"
+            },
+            "generateAudio": {
+              "type": "boolean",
+              "default": false,
+              "wireField": "audio"
+            }
+          },
+          "operations": [
+            {
+              "intent": "text",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 1
+              },
+              "videos": {
+                "min": 0,
+                "max": 0
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "single_image",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 1
+              },
+              "videos": {
+                "min": 0,
+                "max": 0
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "providerId": "geeknow-video",
+      "model": "kling-2.5-720p",
+      "profile": "geek-video-v2",
+      "previousProfiles": [
+        "geek-kling",
+        "geek-video-v2"
+      ],
+      "execution": {
+        "schemaVersion": 1,
+        "profileId": "native-video",
+        "profileVersion": 1,
+        "recipe": {
+          "layout": "geek-video-v2",
+          "channel": {
+            "kind": "geek-kling",
+            "resolutionCase": "upper",
+            "audio": {}
+          },
+          "defaults": {
+            "ordinaryImage": "single_image",
+            "sourceVideo": "reference"
+          },
+          "parameters": {
+            "durationSeconds": {
+              "type": "integer",
+              "default": 5,
+              "send": "semantic"
+            },
+            "resolution": {
+              "type": "string",
+              "default": "720P",
+              "send": "semantic"
+            },
+            "aspectRatio": {
+              "type": "string",
+              "default": "16:9",
+              "send": "semantic"
+            },
+            "generateAudio": {
+              "type": "boolean",
+              "default": false,
+              "wireField": "audio"
+            }
+          },
+          "operations": [
+            {
+              "intent": "text",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 1
+              },
+              "videos": {
+                "min": 0,
+                "max": 0
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "single_image",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 1
+              },
+              "videos": {
+                "min": 0,
+                "max": 0
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "providerId": "geeknow-video",
+      "model": "kling-2.6-mute-720p",
+      "profile": "geek-video-v2",
+      "previousProfiles": [
+        "geek-kling",
+        "geek-video-v2"
+      ],
+      "execution": {
+        "schemaVersion": 1,
+        "profileId": "native-video",
+        "profileVersion": 1,
+        "recipe": {
+          "layout": "geek-video-v2",
+          "channel": {
+            "kind": "geek-kling",
+            "resolutionCase": "upper",
+            "audio": {}
+          },
+          "defaults": {
+            "ordinaryImage": "single_image",
+            "sourceVideo": "reference"
+          },
+          "parameters": {
+            "durationSeconds": {
+              "type": "integer",
+              "default": 5,
+              "send": "semantic"
+            },
+            "resolution": {
+              "type": "string",
+              "default": "720P",
+              "send": "semantic"
+            },
+            "aspectRatio": {
+              "type": "string",
+              "default": "16:9",
+              "send": "semantic"
+            },
+            "generateAudio": {
+              "type": "boolean",
+              "default": false,
+              "wireField": "audio"
+            }
+          },
+          "operations": [
+            {
+              "intent": "text",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 1
+              },
+              "videos": {
+                "min": 0,
+                "max": 0
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "single_image",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 1
+              },
+              "videos": {
+                "min": 0,
+                "max": 0
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "providerId": "geeknow-video",
+      "model": "kling-3.0-720p-mute",
+      "profile": "geek-video-v2",
+      "previousProfiles": [
+        "geek-kling",
+        "geek-video-v2"
+      ],
+      "execution": {
+        "schemaVersion": 1,
+        "profileId": "native-video",
+        "profileVersion": 1,
+        "recipe": {
+          "layout": "geek-video-v2",
+          "channel": {
+            "kind": "geek-kling",
+            "resolutionCase": "upper",
+            "audio": {}
+          },
+          "defaults": {
+            "ordinaryImage": "single_image",
+            "sourceVideo": "reference"
+          },
+          "parameters": {
+            "durationSeconds": {
+              "type": "integer",
+              "default": 5,
+              "send": "semantic"
+            },
+            "resolution": {
+              "type": "string",
+              "default": "720P",
+              "send": "semantic"
+            },
+            "aspectRatio": {
+              "type": "string",
+              "default": "16:9",
+              "send": "semantic"
+            },
+            "generateAudio": {
+              "type": "boolean",
+              "default": false,
+              "wireField": "audio"
+            }
+          },
+          "operations": [
+            {
+              "intent": "text",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 1
+              },
+              "videos": {
+                "min": 0,
+                "max": 0
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "single_image",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 1
+              },
+              "videos": {
+                "min": 0,
+                "max": 0
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "providerId": "geeknow-video",
+      "model": "kling-3.0-omni-720p-noref-mute",
+      "profile": "geek-video-v2",
+      "previousProfiles": [
+        "geek-kling",
+        "geek-video-v2"
+      ],
+      "execution": {
+        "schemaVersion": 1,
+        "profileId": "native-video",
+        "profileVersion": 1,
+        "recipe": {
+          "layout": "geek-video-v2",
+          "channel": {
+            "kind": "geek-kling",
+            "resolutionCase": "upper",
+            "audio": {}
+          },
+          "defaults": {
+            "ordinaryImage": "single_image",
+            "sourceVideo": "reference"
+          },
+          "parameters": {
+            "durationSeconds": {
+              "type": "integer",
+              "default": 5,
+              "send": "semantic"
+            },
+            "resolution": {
+              "type": "string",
+              "default": "720P",
+              "send": "semantic"
+            },
+            "aspectRatio": {
+              "type": "string",
+              "default": "16:9",
+              "send": "semantic"
+            },
+            "generateAudio": {
+              "type": "boolean",
+              "default": false,
+              "wireField": "audio"
+            }
+          },
+          "operations": [
+            {
+              "intent": "text",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 0
+              },
+              "videos": {
+                "min": 0,
+                "max": 0
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "providerId": "geeknow-video",
+      "model": "kling-3.0-omni-720p-ref-mute",
+      "profile": "geek-video-v2",
+      "previousProfiles": [
+        "geek-kling",
+        "geek-video-v2"
+      ],
+      "execution": {
+        "schemaVersion": 1,
+        "profileId": "native-video",
+        "profileVersion": 1,
+        "recipe": {
+          "layout": "geek-video-v2",
+          "channel": {
+            "kind": "geek-kling",
+            "resolutionCase": "upper",
+            "audio": {}
+          },
+          "defaults": {
+            "ordinaryImage": "single_image",
+            "sourceVideo": "reference"
+          },
+          "parameters": {
+            "durationSeconds": {
+              "type": "integer",
+              "default": 5,
+              "send": "semantic"
+            },
+            "resolution": {
+              "type": "string",
+              "default": "720P",
+              "send": "semantic"
+            },
+            "aspectRatio": {
+              "type": "string",
+              "default": "16:9",
+              "send": "semantic"
+            },
+            "generateAudio": {
+              "type": "boolean",
+              "default": false,
+              "wireField": "audio"
+            }
+          },
+          "operations": [
+            {
+              "intent": "reference",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 1
+              },
+              "videos": {
+                "min": 0,
+                "max": 0
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "providerId": "geeknow-video",
+      "model": "kling-o1-720p",
+      "profile": "geek-video-v2",
+      "previousProfiles": [
+        "geek-kling",
+        "geek-video-v2"
+      ],
+      "execution": {
+        "schemaVersion": 1,
+        "profileId": "native-video",
+        "profileVersion": 1,
+        "recipe": {
+          "layout": "geek-video-v2",
+          "channel": {
+            "kind": "geek-kling",
+            "resolutionCase": "upper",
+            "audio": {}
+          },
+          "defaults": {
+            "ordinaryImage": "single_image",
+            "sourceVideo": "reference"
+          },
+          "parameters": {
+            "durationSeconds": {
+              "type": "integer",
+              "default": 5,
+              "send": "semantic"
+            },
+            "resolution": {
+              "type": "string",
+              "default": "720P",
+              "send": "semantic"
+            },
+            "aspectRatio": {
+              "type": "string",
+              "default": "16:9",
+              "send": "semantic"
+            },
+            "generateAudio": {
+              "type": "boolean",
+              "default": false,
+              "wireField": "audio"
+            }
+          },
+          "operations": [
+            {
+              "intent": "text",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 1
+              },
+              "videos": {
+                "min": 0,
+                "max": 0
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "single_image",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 1
+              },
+              "videos": {
+                "min": 0,
+                "max": 0
+              },
+              "audios": {
+                "min": 0,
+                "max": 0
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "providerId": "geeknow-video",
+      "model": "wan3.0-video",
+      "profile": "geek-wan3-v3",
+      "previousProfiles": [
+        "geek-video-v2",
+        "geek-wan3",
+        "geek-wan3-v3"
+      ],
+      "execution": {
+        "schemaVersion": 1,
+        "profileId": "native-video",
+        "profileVersion": 1,
+        "recipe": {
+          "layout": "geek-wan3-v3",
+          "channel": {
+            "kind": "geek-wan",
+            "resolutionCase": "upper"
+          },
+          "defaults": {
+            "ordinaryImage": "single_image",
+            "sourceVideo": "reference"
+          },
+          "parameters": {
+            "durationSeconds": {
+              "type": "integer",
+              "default": 2,
+              "send": "semantic"
+            },
+            "resolution": {
+              "type": "string",
+              "default": "480P",
+              "send": "semantic"
+            },
+            "aspectRatio": {
+              "type": "string",
+              "default": "16:9",
+              "send": "semantic"
+            }
+          },
+          "operations": [
+            {
+              "intent": "text",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 10
+              },
+              "videos": {
+                "min": 0,
+                "max": 5
+              },
+              "audios": {
+                "min": 0,
+                "max": 5
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "16:9",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "single_image",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 10
+              },
+              "videos": {
+                "min": 0,
+                "max": 5
+              },
+              "audios": {
+                "min": 0,
+                "max": 5
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "frames_required",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 10
+              },
+              "videos": {
+                "min": 0,
+                "max": 5
+              },
+              "audios": {
+                "min": 0,
+                "max": 5
+              },
+              "parameters": {
+                "aspectRatio": {
+                  "type": "string",
+                  "default": "adaptive",
+                  "send": "semantic"
+                }
+              }
+            },
+            {
+              "intent": "reference",
+              "requiresPrompt": true,
+              "images": {
+                "min": 0,
+                "max": 10
+              },
+              "videos": {
+                "min": 0,
+                "max": 5
+              },
+              "audios": {
+                "min": 0,
+                "max": 5
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "providerId": "geeknow-video-h3",
+      "model": "MiniMax-H3",
+      "profile": "geek-h3-v3",
+      "previousProfiles": [
+        "geek-h3-v2",
+        "geek-h3-v3",
+        "minimax"
+      ],
+      "execution": {
+        "schemaVersion": 1,
+        "profileId": "native-video",
+        "profileVersion": 1,
+        "recipe": {
+          "layout": "geek-h3-v3",
+          "channel": {
+            "kind": "geek-h3-multimodal",
+            "resolutionCase": "preserve"
+          },
+          "defaults": {
+            "ordinaryImage": "single_image",
+            "sourceVideo": "reference"
+          },
+          "parameters": {
+            "durationSeconds": {
+              "type": "integer",
+              "default": 1,
+              "send": "semantic"
+            },
+            "resolution": {
+              "type": "string",
+              "default": "768P",
+              "send": "semantic"
+            },
+            "aspectRatio": {
+              "type": "string",
+              "default": "16:9",
+              "send": "semantic"
+            }
+          },
+          "operations": [
+            {
+              "intent": "text",
+              "requiresPrompt": true,
+              "maxPromptChars": 7000,
+              "images": {
+                "min": 0,
+                "max": 9,
+                "maxBytes": 31457280
+              },
+              "videos": {
+                "min": 0,
+                "max": 3,
+                "maxBytes": 52428800,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "audios": {
+                "min": 0,
+                "max": 3,
+                "maxBytes": 15728640,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              }
+            },
+            {
+              "intent": "single_image",
+              "requiresPrompt": true,
+              "maxPromptChars": 7000,
+              "images": {
+                "min": 0,
+                "max": 9,
+                "maxBytes": 31457280
+              },
+              "videos": {
+                "min": 0,
+                "max": 3,
+                "maxBytes": 52428800,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "audios": {
+                "min": 0,
+                "max": 3,
+                "maxBytes": 15728640,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              }
+            },
+            {
+              "intent": "frames_required",
+              "requiresPrompt": true,
+              "maxPromptChars": 7000,
+              "images": {
+                "min": 0,
+                "max": 9,
+                "maxBytes": 31457280
+              },
+              "videos": {
+                "min": 0,
+                "max": 3,
+                "maxBytes": 52428800,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "audios": {
+                "min": 0,
+                "max": 3,
+                "maxBytes": 15728640,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              }
+            },
+            {
+              "intent": "first_optional",
+              "requiresPrompt": true,
+              "maxPromptChars": 7000,
+              "images": {
+                "min": 0,
+                "max": 9,
+                "maxBytes": 31457280
+              },
+              "videos": {
+                "min": 0,
+                "max": 3,
+                "maxBytes": 52428800,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "audios": {
+                "min": 0,
+                "max": 3,
+                "maxBytes": 15728640,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              }
+            },
+            {
+              "intent": "reference",
+              "requiresPrompt": true,
+              "maxPromptChars": 7000,
+              "images": {
+                "min": 0,
+                "max": 9,
+                "maxBytes": 31457280
+              },
+              "videos": {
+                "min": 0,
+                "max": 3,
+                "maxBytes": 52428800,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              },
+              "audios": {
+                "min": 0,
+                "max": 3,
+                "maxBytes": 15728640,
+                "maxDurationSeconds": 15,
+                "totalDurationSeconds": 15
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

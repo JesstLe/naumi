@@ -1,20 +1,22 @@
 "use client";
-import {useState} from "react";
-import type {ManagedModelRow} from "@/lib/model-config/management";
-import {VideoCapabilityEditor} from "../model-config/video-capability-editor";
-import {videoParametersSchema,type VideoParameters} from "@/lib/model-config/video-policy";
-import styles from "./model-management.module.css";
-import {Dialog} from "./dialog";
+import {useState} from 'react';
+import type {ManagedModelRow} from '@/lib/model-config/management';
+import {publishedVideoExecutionSchema} from '@/lib/video/published-execution';
+import {VIDEO_WIRE_PROFILES,type VideoWireProfile} from '@/lib/video/capability-schema';
+import type {VideoParameters} from '@/lib/model-config/video-policy';
+import styles from './model-management.module.css';
+import {Dialog} from './dialog';
 
-
+/** Execution fields have one writer; legacy descriptions stay read-only here. */
 export function VideoParametersDialog({row,locked,error,onClose,onSave}:{row:ManagedModelRow;locked:boolean;error:string;onClose:()=>void;onSave:(routes:VideoParameters)=>void}){
-  const [routes,setRoutes]=useState<VideoParameters>(()=>row.videoConfig!.routes.map(route=>({upstreamId:route.upstreamId,definition:route.definition,profile:route.profile})));
-  const valid=videoParametersSchema.safeParse(routes).success;
-  const sourceLabels:Record<string,string>={admin:"管理员",vendor:"供应商",adapter:"协议声明",unknown:"未知"};
-  return <Dialog title="视频能力" locked={locked} onClose={onClose}><form onSubmit={event=>{event.preventDefault();if(valid)onSave(routes);}}><fieldset className={styles.dialogBody} disabled={locked}>
-    {routes.map((route,index)=>{const published=row.videoConfig!.routes[index];return <section key={route.upstreamId}><h3>{published.provider} · {published.model}</h3>
-      <details><summary>已发布能力与来源</summary><dl>{Object.entries(published.sources||{}).map(([field,source])=><div key={field}><dt>{field}</dt><dd>{sourceLabels[source]||source}</dd></div>)}</dl>
-        {published.sourceRevision&&<a href={published.sourceRevision.sourceUrl} target="_blank" rel="noreferrer">供应商资料 r{published.sourceRevision.revision}</a>}<pre className="overflow-auto text-xs">{JSON.stringify(published.effective,null,2)}</pre></details>
-      <VideoCapabilityEditor value={route.definition} profile={route.profile} onChange={(definition,profile)=>setRoutes(current=>current.map((item,i)=>i===index?{...item,definition,profile}:item))}/></section>;})}
-    {error&&<p role="alert" className={styles.error}>{error}</p>}</fieldset><footer className={styles.dialogFooter}><button type="button" className={styles.secondary} disabled={locked} onClick={onClose}>取消</button><button type="submit" className={styles.primary} disabled={locked||!valid}>保存并生效</button></footer></form></Dialog>;
+ const [drafts,setDrafts]=useState(()=>row.videoConfig!.routes.map(route=>({upstreamId:route.upstreamId,profile:route.profile??route.candidateProfile,json:route.execution||route.executionCandidate?JSON.stringify(route.execution??route.executionCandidate,null,2):''})));
+ const parsed=drafts.map(draft=>{try{return publishedVideoExecutionSchema.safeParse(JSON.parse(draft.json));}catch{return {success:false as const};}}),valid=parsed.every(p=>p.success);
+ return <Dialog title='视频执行配置' locked={locked} onClose={onClose}><form onSubmit={e=>{e.preventDefault();if(!valid)return;onSave(drafts.map((draft,index)=>({upstreamId:draft.upstreamId,executionOnly:true,profile:draft.profile??null,execution:parsed[index].success?parsed[index].data:undefined})));}}><fieldset className={styles.dialogBody} disabled={locked}>
+  {drafts.map((draft,index)=>{const route=row.videoConfig!.routes[index];return <section key={draft.upstreamId}><h3>{route.provider} · {route.model}</h3>
+   <label className={styles.field}>查询协议<select aria-label={route.model+' 查询协议'} value={draft.profile??''} onChange={e=>setDrafts(all=>all.map((d,i)=>i===index?{...d,profile:e.target.value as VideoWireProfile||undefined}:d))}><option value=''>继承上游</option>{VIDEO_WIRE_PROFILES.map(profile=><option key={profile} value={profile}>{profile}</option>)}</select></label>
+   <label className={styles.field}>执行映射<textarea aria-label={route.model+' 执行映射'} spellCheck={false} rows={16} className='w-full rounded-lg border border-slate-200 bg-white p-3 font-mono text-xs text-slate-900' value={draft.json} onChange={e=>setDrafts(all=>all.map((d,i)=>i===index?{...d,json:e.target.value}:d))}/></label>
+   {!parsed[index].success&&draft.json&&<p role='alert' className={styles.error}>执行映射格式无效</p>}
+  </section>;})}
+  {error&&<p role='alert' className={styles.error}>{error}</p>}
+ </fieldset><footer className={styles.dialogFooter}><button type='button' className={styles.secondary} disabled={locked} onClick={onClose}>取消</button><button type='submit' className={styles.primary} disabled={locked||!valid}>保存并生效</button></footer></form></Dialog>;
 }

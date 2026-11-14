@@ -1,5 +1,5 @@
 import { pruneAppliedOperationDrafts } from "./draft-retention";
-import { reviewVideoCapabilityUpgrade } from "./video-capability-review";
+import {reviewVideoExecutionMigration} from './video-execution-migration';
 import "server-only";
 import { createHash } from "node:crypto";
 import { z } from "zod";
@@ -35,7 +35,8 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
       const admin = await deps.administration();
       const snapshot = await admin.repo.current();
       if(request.method==="GET" && new URL(request.url).searchParams.get("view")==="video-capability-upgrade")
-        return biJson(reviewVideoCapabilityUpgrade(snapshot.config,snapshot.version));
+        return biJson({error:'旧能力升级操作已退出，请刷新后迁移执行绑定',code:'VIDEO_CAPABILITY_UPGRADE_RETIRED'},410);
+      if(request.method==='GET'&&new URL(request.url).searchParams.get('view')==='video-execution-migration')return biJson(reviewVideoExecutionMigration(snapshot.config,snapshot.version));
       if(request.method==="GET" && new URL(request.url).searchParams.has("rowId")){
         const params=new URL(request.url).searchParams,rowId=identifier.parse(params.get("rowId")),feature=z.enum(FEATURE_IDS).parse(params.get("feature"));
         const row=rows(snapshot).find(r=>r.id===rowId);if(!row || !row.features.some(f=>f.id===feature))throw new ModelConfigError("MODEL_UNAVAILABLE","该模型未应用到此工具",400);
@@ -43,7 +44,7 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
       }
       if (request.method === "GET") return biJson(await readManagementView(admin, snapshot, deps.managed));
       const body = input.parse(JSON.parse(await readBounded(new Response(request.body), 96000)));
-      if(["video-capability-upgrade","create-models"].includes(body.action)&&!await deps.managed())
+      if(["video-capability-upgrade","video-execution-migration","create-models"].includes(body.action)&&!await deps.managed())
         throw new ModelConfigError("CONFIG_UNAVAILABLE","请先启用统一模型配置",409);
       if (body.action === "credential") {
         if (!!body.ciphertext === !!body.keyPlain || !/^mvp-[0-9a-f-]{36}$/i.test(body.providerId)) throw new ModelConfigError("INVALID_CREDENTIAL", "凭据参数无效");
@@ -80,6 +81,9 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
           const actor=`${auth.actor.slice(0,150)}#mvp:${body.id}:${createHash("sha256").update(canonicalConfig(body)).digest("hex").slice(0,20)}`;
           await assertReceiptOwner(receipt,actor);return await publicationResponse(receipt);
         }
+        // New deprecated operations must not create an operation draft. A
+        // previously staged/ambiguous publication still owns its old receipt.
+        if(body.action==='video-capability-upgrade'&&!receipt)throw new ModelConfigError('VIDEO_CAPABILITY_UPGRADE_RETIRED','旧能力升级操作已退出，请刷新后迁移执行绑定',410);
       }
       // Model publication already has one global pending version/CAS owner.
       // Serialize only this management mutation orchestration per actual pool;
@@ -124,7 +128,7 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
         draft = await admin.repo.saveDraft({ id: draft.id, expectedRevision: draft.revision, config, actor });
       }
       staged = true;
-      publication = await admin.runtime.publish({ id: body.id, draftId: draft.id, expectedRevision: draft.revision, expectedVersion: body.expectedVersion, actor, reason: `MVP ${body.action === "create-models" ? `新增公开模型 ${body.entries.map(e=>e.publicId).join(",").slice(0,400)}` : body.action === "video-capability-upgrade" ? "更新已核对的视频能力" : body.action === "image-mapping" ? `图片参数映射 ${body.rowId}` : body.action === "video-parameters" ? `视频能力 ${body.rowId}` : body.action === "imagegen-parameters" ? `图像高级参数 ${body.rowId}` : body.action === "scope-compat" ? "回滚兼容：展开画布系统范围" : body.action === "order" ? "模型展示排序" : body.action === "channels" ? `供应通道 ${body.rowId}` : body.action === "resolutions" ? `分辨率选项 ${body.rowId}` : body.action === "parameters" ? `参数映射 ${body.rowId}` : body.action === "scope" ? `工具范围 ${body.rowId}` : body.action === "switch" ? `切换 ${body.rowId} → ${body.upstreamId}` : body.action === "identity" ? `公开身份 ${body.rowId} → ${body.publicId}` : body.action === "rename" ? `改名 ${body.rowId} → ${body.label}` : body.action === "connect" ? `接入来源 ${body.name}` : `添加模型 ${body.model}`}` });
+      publication = await admin.runtime.publish({ id: body.id, draftId: draft.id, expectedRevision: draft.revision, expectedVersion: body.expectedVersion, actor, reason: `MVP ${body.action === "create-models" ? `新增公开模型 ${body.entries.map(e=>e.publicId).join(",").slice(0,400)}` : body.action === "video-execution-migration" ? "迁移视频执行绑定" : body.action === "video-capability-upgrade" ? "更新已核对的视频能力" : body.action === "image-mapping" ? `图片参数映射 ${body.rowId}` : body.action === "video-parameters" ? `视频能力 ${body.rowId}` : body.action === "imagegen-parameters" ? `图像高级参数 ${body.rowId}` : body.action === "scope-compat" ? "回滚兼容：展开画布系统范围" : body.action === "order" ? "模型展示排序" : body.action === "channels" ? `供应通道 ${body.rowId}` : body.action === "resolutions" ? `分辨率选项 ${body.rowId}` : body.action === "parameters" ? `参数映射 ${body.rowId}` : body.action === "scope" ? `工具范围 ${body.rowId}` : body.action === "switch" ? `切换 ${body.rowId} → ${body.upstreamId}` : body.action === "identity" ? `公开身份 ${body.rowId} → ${body.publicId}` : body.action === "rename" ? `改名 ${body.rowId} → ${body.label}` : body.action === "connect" ? `接入来源 ${body.name}` : `添加模型 ${body.model}`}` });
       }
       if(!publication)throw new ModelConfigError("PUBLICATION_UNAVAILABLE","发布记录不存在",404);
       // Bounded, best-effort retention: each applied operation clears older applied operation drafts.
