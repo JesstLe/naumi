@@ -1,0 +1,40 @@
+import assert from 'node:assert/strict';
+import {createHash,randomUUID} from 'node:crypto';
+import {workflowBindingId,validateWorkflowElementBindings,withDeferredWorkflowElements,attachWorkflowElementReference,workflowExecutionVersion,workflowElementExecutionVersion} from '../src/lib/video/workflow-element-bindings';
+import {videoRuntimeFormats} from '../src/lib/video/runtime-formats';
+import {videoWorkflowPlanSchema,workflowVideoRequestSchema} from '../src/lib/video/workflow-schema';
+import {videoSubmissionSchema} from '../src/lib/video/submission-schema';
+import {videoNodeConfigSchema} from '../src/lib/canvas/video-node-schema';
+import {videoSubmissionDraftValue} from '../src/lib/video/submission-draft-value';
+import type {VideoWorkflowPlan} from '../src/lib/video/workflow-schema';
+import type {CreateVideoInput} from '../src/lib/video/submission-types';
+
+let cases=0;const check=(name:string,run:()=>void)=>{run();cases++;console.log('ELEMENT_BINDING_CHECK='+name+' PASS');};
+const group={id:'character',name:'Character',references:[]};
+const node:VideoWorkflowPlan['nodes'][number]={id:'b',dependsOn:['a'],request:{modelId:'future-model',prompt:'scene',elements:[group]},mediaBindings:[{fromNodeId:'a',inputId:'future',elementId:'character',kind:'video',role:'element'}]};
+const fail=(run:()=>unknown)=>assert.throws(run,{code:'INVALID_VIDEO_WORKFLOW'});
+check('explicit-empty-workflow-group-with-target-is-valid',()=>{const before=structuredClone(node);assert(workflowVideoRequestSchema.safeParse(node.request).success);validateWorkflowElementBindings('run',node);assert.deepEqual(node,before);});
+check('new-persisted-shape-version-and-runtime-reader-descriptor-agree',()=>{assert.equal(workflowExecutionVersion({nodes:[node]}),2);assert(videoRuntimeFormats.workflowExecutionVersions.includes(workflowElementExecutionVersion));assert.equal(workflowExecutionVersion({nodes:[{id:'a',dependsOn:[],request:{prompt:'old'}}]}),1);});
+check('ordinary-submit-and-node-still-require-concrete-element-members',()=>{assert(!videoSubmissionSchema.safeParse(node.request).success);assert(!videoNodeConfigSchema.safeParse(node.request).success);});
+check('plan-schema-keeps-explicit-target-and-old-absent-target',()=>{const parsed=videoWorkflowPlanSchema.parse({id:randomUUID(),projectKey:'tree:fixture',nodes:[{id:'a',dependsOn:[],request:{prompt:'a'}},node]});assert.equal(parsed.nodes[1].mediaBindings![0].elementId,'character');const old=structuredClone(parsed);delete old.nodes[1].mediaBindings![0].elementId;assert(!Object.hasOwn(videoWorkflowPlanSchema.parse(old).nodes[1].mediaBindings![0],'elementId'));});
+for(const variant of ['missing-target','wrong-role','duplicated-slot','ambiguous-group','no-target-for-empty-group','unidentified-empty-group','ordinary-and-nested-slot','overwrites-static-id','byoc-cannot-guess-group-slot'] as const)check(variant,()=>{
+ const changed=structuredClone(node),binding=changed.mediaBindings![0];
+ if(variant==='missing-target')binding.elementId='missing';
+ if(variant==='wrong-role')binding.role='source_video';
+ if(variant==='duplicated-slot')changed.mediaBindings!.push({...binding});
+ if(variant==='ambiguous-group')changed.request.elements!.push({...group});
+ if(variant==='no-target-for-empty-group')delete binding.elementId;
+ if(variant==='unidentified-empty-group'){delete changed.request.elements![0].id;delete binding.elementId;binding.role='source_video';}
+ if(variant==='ordinary-and-nested-slot')changed.request.orderedInputs=[{id:'future',nodeId:'a',kind:'video',role:'element',value:'display-only'}];
+ if(variant==='overwrites-static-id')changed.request.references=[{id:'future',kind:'image',role:'reference',artworkId:'owned'}];
+ if(variant==='byoc-cannot-guess-group-slot')changed.request.comfyWorkflowId='comfy';
+ fail(()=>validateWorkflowElementBindings('run',changed));
+});
+check('legacy-flat-identity-namespace-is-byte-for-byte-stable',()=>{const run=randomUUID(),binding={fromNodeId:'a',kind:'video' as const,role:'source_video' as const};assert.equal(workflowBindingId(run,binding),'wf-'+createHash('sha256').update(`${run}:a:0:source_video`).digest('hex').slice(0,40));assert.equal(workflowBindingId(run,{...binding,inputId:'manual'}),'manual');});
+check('legacy-flat-path-is-no-op-not-normalization',()=>{const request:CreateVideoInput={source:'workflow',prompt:'old',seconds:'',size:'',references:[{id:'static',kind:'image',role:'reference',artworkId:'owned'}]};assert.equal(withDeferredWorkflowElements(request,[{id:'pending',nodeId:'a',kind:'video',role:'source_video'}]),request);});
+const request:CreateVideoInput={...node.request,source:'workflow',seconds:'',size:''};
+check('pending-draft-adds-only-identity-in-exact-target-without-mutation',()=>{const before=structuredClone(request),prepared=withDeferredWorkflowElements(request,[{id:'future',nodeId:'a',kind:'video',role:'element',elementId:'character'}]);assert.deepEqual(request,before);const draft=videoSubmissionDraftValue(prepared);assert.equal(draft.inputs[0].nodeId,'a');assert.deepEqual(draft.structure!.elements![0].inputIds,['future']);assert(!JSON.stringify(draft).match(/mimeType|sha256|durationSeconds|bytes/));});
+check('runtime-reference-goes-only-into-declared-group',()=>{const changed=structuredClone(request);const reference={id:'future',kind:'video' as const,role:'element' as const,artworkId:'real-completed',sha256:'a'.repeat(64)};assert(attachWorkflowElementReference(changed,node.mediaBindings![0],reference));assert.deepEqual(changed.elements![0].references,[reference]);assert.equal(changed.references,undefined);fail(()=>attachWorkflowElementReference(changed,node.mediaBindings![0],reference));});
+check('runtime-rejects-wrong-kind-and-missing-group',()=>{fail(()=>attachWorkflowElementReference(structuredClone(request),node.mediaBindings![0],{id:'future',kind:'image',role:'element',artworkId:'owned'}));fail(()=>attachWorkflowElementReference({elements:[]},node.mediaBindings![0],{id:'future',kind:'video',role:'element',artworkId:'owned'}));});
+check('multiple-targets-preserve-static-member-order',()=>{const value={...structuredClone(request),elements:[{id:'character',name:'Character',references:[{id:'image',kind:'image' as const,role:'element' as const,artworkId:'owned-image'}]},{id:'voice',name:'Voice',references:[]}]};const prepared=withDeferredWorkflowElements(value,[{id:'future-video',nodeId:'a',kind:'video',role:'element',elementId:'character'},{id:'future-audio',nodeId:'c',kind:'audio',role:'element',elementId:'voice'}]);const draft=videoSubmissionDraftValue(prepared);assert.deepEqual(draft.structure!.elements!.map(e=>e.inputIds),[['image','future-video'],['future-audio']]);assert.deepEqual(draft.inputs.map(i=>i.id),['image','future-video','future-audio']);});
+console.log('WORKFLOW_ELEMENT_BINDINGS=PASS CASES='+cases+' IO=0 NETWORK=0 PRODUCTION_WRITES=0 PAID_CALLS=0');

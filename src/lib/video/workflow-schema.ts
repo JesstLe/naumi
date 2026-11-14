@@ -14,7 +14,11 @@ export const videoWorkflowManifestSchema=z.strictObject({version:z.literal(1),ki
     path:safePath,index:z.number().int().min(0).max(127).optional(),required:z.boolean().optional(),defaultValue:z.json().optional()})).max(256),
   outputNodeIds:z.array(id).max(256).optional()});
 export type VideoWorkflowManifest=z.infer<typeof videoWorkflowManifestSchema>;
-export const workflowVideoRequestSchema=videoInputSchema.omit({durationSeconds:true,resolution:true,references:true}).extend({intentPreference:videoPreferenceSchema.optional(),parameters:z.record(z.string().min(1).max(100),z.json()).optional(),prompt:z.string().max(16384),negativePrompt:z.string().max(8192).optional(),mode:z.enum(VIDEO_MODES).optional(),
+// A workflow element may await an explicitly targeted dependency. The owning
+// plan validator requires at least one static or declared future member; ordinary
+// submit/node schemas continue to require concrete references immediately.
+const workflowElement=videoInputSchema.shape.elements.unwrap().element.extend({references:z.array(videoReferenceSchema).max(128)});
+export const workflowVideoRequestSchema=videoInputSchema.omit({durationSeconds:true,resolution:true,references:true}).extend({elements:z.array(workflowElement).max(100).optional(),intentPreference:videoPreferenceSchema.optional(),parameters:z.record(z.string().min(1).max(100),z.json()).optional(),prompt:z.string().max(16384),negativePrompt:z.string().max(8192).optional(),mode:z.enum(VIDEO_MODES).optional(),
   workflowManifest:videoWorkflowManifestSchema.optional(),workflowTaskId:id.optional(),comfyWorkflowId:id.optional(),comfyInputs:videoWorkflowManifestSchema.shape.inputs.optional(),comfyOverrides:videoByocOverridesSchema.optional(),camera:videoCameraSchema.optional(),
   providerId:id.optional(),modelId:id.optional(),durationSeconds:z.number().finite().optional(),seconds:z.string().max(10).optional(),size:z.string().max(100).optional(),resolution:z.string().max(100).optional(),
   aspectRatio:z.string().max(20).optional(),generateAudio:z.boolean().optional(),watermark:z.boolean().optional(),references:z.array(videoReferenceSchema).max(128).optional(),
@@ -26,7 +30,7 @@ export const videoWorkflowPlanSchema=z.strictObject({id:z.uuid(),projectKey:z.st
   reviewOrigin:reviewOriginSchema.optional(),
   variables:z.record(id,z.union([z.string().max(16384),z.number().finite(),z.boolean()])).optional(),
   nodes:z.array(z.strictObject({id,existingArtworkId:id.optional(),canvasNodeId:id.optional(),canvasNodeRevision:z.number().int().nonnegative().optional(),canvasContentDigest:z.string().regex(/^[a-f0-9]{64}$/).optional(),canvasLastTaskId:id.nullable().optional(),request:workflowVideoRequestSchema,dependsOn:z.array(id).max(100),
-    mediaBindings:z.array(z.strictObject({fromNodeId:id,inputId:id.optional(),outputIndex:z.number().int().min(0).max(127).optional(),kind:z.enum(["image","video","audio"]),
+    mediaBindings:z.array(z.strictObject({fromNodeId:id,inputId:id.optional(),elementId:id.optional(),outputIndex:z.number().int().min(0).max(127).optional(),kind:z.enum(["image","video","audio"]),
       role:z.enum(["first_frame","last_frame","reference","element","source_video","source_audio"])})).max(128).optional()})).min(1).max(100)});
 export type VideoWorkflowPlan=z.infer<typeof videoWorkflowPlanSchema>;
 export type WorkflowVideoRequest=z.infer<typeof workflowVideoRequestSchema>;
