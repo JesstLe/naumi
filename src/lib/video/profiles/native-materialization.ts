@@ -30,7 +30,7 @@ export async function materializeNativeVideoPlan(raw:unknown,ports:{bytes:(scope
  }
  try{
   if(plan.wireTemplate.encoding==='inline-json'){
-   if(!['gemini','grok2api','cogvideox3','agnes'].includes(recipe.data.layout))return fail('WRONG_MATERIALIZER','该布局没有图片内联协议');const got=await inline(plan.wireTemplate.body);return got.ok?{ok:true,value:{method:'POST',path:plan.wireTemplate.path,encoding:'json',body:got.value}}:got;}
+   if(!['gemini','grok2api','cogvideox3','agnes','compshare-hailuo'].includes(recipe.data.layout))return fail('WRONG_MATERIALIZER','该布局没有图片内联协议');const got=await inline(plan.wireTemplate.body);return got.ok?{ok:true,value:{method:'POST',path:plan.wireTemplate.path,encoding:'json',body:got.value}}:got;}
   const body=plan.wireTemplate.body;
   if(!body||typeof body!=='object'||Array.isArray(body))return fail('INVALID_WIRE_BODY','原生请求体不是字段对象');
   if(plan.wireTemplate.encoding==='json'){
