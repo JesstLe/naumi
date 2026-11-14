@@ -28,6 +28,12 @@
 
 源工作树首次组合中Agent6项已通过；远程协议定向运行 `remote-targeted-runtime/run-3d74b54e-bb93-4ace-be9e-36e5a0c6fe2d` 完成14项底座＋10项增量，exit0。独立解包最终组合 `copy-runtime/run-14eb3aee-d67b-4625-96c1-c479aa90c66a` 已完整通过65项，exit0，账本20笔330 fixture积分、12子进程退出、随机schema移除；全命令和六路径回滚记录在 `E:/Workspace/naumi/output/video-compiler-agent-process-20261114/VERIFICATION.txt`；旧驱动缺draftRevision/错误Authorization断言的失败日志保留，不算产品缺陷或通过证据。
 
+## 冻结预算 HTTP 确认修复
+
+[模块记录](2026-11-14-video-compiler-budget-process.md)：真实HTTP受理后设置显式历史欠授权检查点（授权1、实际17；不伪造状态/任务/确认），独立Worker准确停下，但基线GET仍暴露旧金额，按旧金额确认200后持续needs_confirmation。修复通过独立 `confirmation_quote` 持久化所需报价，原加密冻结预算与公开原预算不变；版本陈旧/金额不足/非整数确认409且不改状态。旧无提案记录仍能经既有路径恢复。
+
+源工作树预算7项＋底座14＋Workflow13通过，独立副本扩展预算10项已通过，其中成本加成cap匹配为纯规则检查，其余为实际HTTP/Worker；独立解包最终75项组合exit0，测试账本21笔347积分、预算新增1笔17，13子进程退出；十路径回滚重现旧行为、原App138通过。完整命令与回滚回执见 `E:/Workspace/naumi/output/video-compiler-budget-process-20261114/VERIFICATION.txt`。真实付费成本加成供应商或新准入自然涨价不由此fixture证明。
+
 ## A01–A19 逐项状态
 
 | ID | 当前证据 | 仍需完成或证据边界 |
@@ -43,7 +49,7 @@
 | A09 | PG/HTTP 跨用户拒绝、媒体身份/hash/真实解码、结构/角色/数量约束；本轮实际签名输入字节及篡改404；新增5种当前未完成状态不可隐式使用旧结果、显式历史可用；实际HTTP queued反控 | 完整权限/物理边界以各输入维度检查，不能把“已授权URL”当真实解码 |
 | A10 | Canvas/Workbench/Workflow批次/Agent/Storyboard/BYOC/重试共享编译底座；真实Agent入口新增图生/编辑/续写/原编号恢复/预检错误/会话持久化6项 | 真实Next/独立Worker已有Canvas DAG、原生Workflow、批次、正式Storyboard采用/生成、ComfyUI BYOC/重试，新增RunningHub/AutoDL；完整Storyboard操作和全入口页面矩阵继续，不从Agent工作台入口泛化全部Canvas Agent操作 |
 | A11 | 注册57个 wire Profile 的分族序列化、上传/JSON/multipart/DAG；ComfyUI、RunningHub、AutoDL新增真实Next/独立Worker上传或签名素材、冻结与结果回执 | 注册覆盖≠所有在用配置已迁移；全部生产启用配置和env-only仍需明确审计/迁移，不能从本地显式recipe推断线上已配置 |
-| A12 | 真实PG Workflow22项：future slots、真实前序时长、静态hash、冻结报价确认、批次/不重放 | 已新增真实Next+独立Worker的8run/13项：冻结型号/路径/文本/原价、前序真实产物/时长、重启/回执、批次、Storyboard采用旧片、取消/UNKNOWN/拒绝；超报价持久确认目前仍为原App fixture证据，真实HTTP确认待补 |
+| A12 | 真实PG Workflow22项：future slots、真实前序时长、静态hash、冻结报价确认、批次/不重放 | 已新增真实Next+独立Worker的8run/13项：冻结型号/路径/文本/原价、前序真实产物/时长、重启/回执、批次、Storyboard采用旧片、取消/UNKNOWN/拒绝；新增真实HTTP待确认报价、拒绝陈旧确认、并发确认/Worker恢复、旧无提案记录恢复、取消待确认阶段；欠授权历史检查点显式seed，未冒称新准入自然涨价或真实成本加成供应商验收 |
 | A13 | 本轮实际 requested4K→effective2K→wire2k 恰好一次，历史恢复4K；冻结原价7、后续新任务17，账本三笔41 | 更多映射组合由各Profile固定输入测试；不把wire值回填用户选择 |
 | A14 | 本轮独立应用Worker、持久tick原身份、原任务重启/UNKNOWN/LIVE lease/取消/显式重试，生产环境投影实际运行；Worker runtime34项 | 新增Workflow/BYOC的独立Worker重启与UNKNOWN不重放；当前进程为Windows、停机前drain，Linux活动发送中断/真正多槽回滚仍需新固定版本验收 |
 | A15 | 服务端专项实际持久化加密v2 stage及新发布后恢复；原文本/模型/价格/回执不变，伪造阶段拒绝；本轮v3显式retryOf | 历史v2与新v3混合独立Worker/新旧Web发布组合仍待实际验收 |

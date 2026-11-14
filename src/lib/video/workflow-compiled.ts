@@ -4,7 +4,8 @@ import {createHash} from 'node:crypto';
 import {z} from 'zod';
 import {canonicalConfig} from '../model-config/snapshot-value';
 import {currentModelExecution} from '../model-config/context';
-import {BillingError,type BillingQuote} from '../billing/types';
+import {type BillingQuote} from '../billing/types';
+import {WorkflowBudgetChanged} from './workflow-budget';
 import {VideoContractError} from './contract';
 import {videoSubmissionDraft} from './submission-draft';
 import {bindPublishedVideoExecution} from './published-execution';
@@ -81,7 +82,7 @@ export function assertFrozenWorkflowQuote(quote:BillingQuote){
  const {budget,confirmation}=context;
  if(quote.configVersion===budget.version&&quote.authorizedCredits<=budget.authorizedCredits)return;
  if(confirmation?.version===quote.configVersion&&Number.isSafeInteger(confirmation.credits)&&confirmation.credits>=quote.authorizedCredits)return;
- throw new BillingError('PRICE_CHANGED','此阶段报价超出制作链原授权，请确认后继续',409);
+ throw new WorkflowBudgetChanged(quote);
 }
 
 /** Called only inside the authenticated frozen-stage scope. HTTP cannot send
