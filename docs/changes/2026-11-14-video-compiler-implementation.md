@@ -391,3 +391,7 @@ OpenAI Videos、Gemini及无Profile OpenAI接入native-video Profile/计划schem
 ## TokenDance / TFRouter / CompShare 嵌套协议切片
 
 19个实际布局接入统一native-video编译；保留家族嵌套结构、查询与结果协议，修正旧分支丢第二图、按索引误分首尾帧、口型显式文字被丢弃，完整素材消费由公共compiler强制核验。详细职责、差异、证据及未完成项见 [嵌套协议迁移](2026-11-14-video-compiler-nested.md)。全目标继续ACTIVE，不将本地协议证明写成生产绑定已切换。
+
+## KIE / APIMart job 协议切片
+
+13 个实际 job 布局及相应无 profile direct 路径接入 native Profile，结构化请求使用计划 5，普通计划 4 与旧任务保持。源视频真实时长以显式依赖跨 Workflow 准备/执行阶段传递，不以用户请求时长或能力元数据充当事实。接口、已迁移内容、集中验证和开放问题见 [job 协议迁移](2026-11-14-video-compiler-jobs.md)。总目标继续 ACTIVE，生产绑定未自动迁移、未发布。
