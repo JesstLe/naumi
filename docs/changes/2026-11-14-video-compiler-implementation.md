@@ -387,3 +387,7 @@ OpenAI Videos、Gemini及无Profile OpenAI接入native-video Profile/计划schem
 ## 参考协议族与direct增量
 
 7种参考布局和Ark/MiniMax/Gemini无Profile direct执行组合接到冻结编译链；Agnes精确帧数/时长、MiniMax帧模式实际画幅、内联图片与URL物化及真实默认query差异均保留。详细接口、证据与全范围未完成项见 [参考协议族迁移](2026-11-14-video-compiler-families.md)。本地协议证明不代表生产绑定已切换，目标继续ACTIVE。
+
+## TokenDance / TFRouter / CompShare 嵌套协议切片
+
+19个实际布局接入统一native-video编译；保留家族嵌套结构、查询与结果协议，修正旧分支丢第二图、按索引误分首尾帧、口型显式文字被丢弃，完整素材消费由公共compiler强制核验。详细职责、差异、证据及未完成项见 [嵌套协议迁移](2026-11-14-video-compiler-nested.md)。全目标继续ACTIVE，不将本地协议证明写成生产绑定已切换。
