@@ -22,7 +22,7 @@ export function publicModelCatalog(snapshot: ModelSnapshot, modality: Modality, 
   const processorAvailable = !!configuredProcessor && publicUpstreamIds(config, configuredProcessor).some(id => {
     const upstream = config.upstreamModels.find(u => u.id === id);
     const binding = feature ? FEATURE_BINDINGS[feature] : undefined;
-    return upstream?.enabled && binding && upstreamSupportsFeature(upstream.capabilities,binding,feature) && config.providers.some(p => p.id === upstream.providerId && p.enabled && !!p.credentialRef);
+    return upstream?.enabled && binding && upstreamSupportsFeature(upstream.capabilities,binding,feature,upstream.parameterMap.videoExecution) && config.providers.some(p => p.id === upstream.providerId && p.enabled && !!p.credentialRef);
   });
   const models = config.publicModels.filter(m => m.enabled && m.visible && m.modality === modality && modelAllowedForFeature(m,feature) && (!compatible || compatible.includes(m.id)) && (!configuredIds || configuredIds.includes(m.id))).sort((a,b) => configuredIds ? configuredIds.indexOf(a.id)-configuredIds.indexOf(b.id) : 0).map(m => {
     const ids = publicUpstreamIds(config,m);

@@ -27,8 +27,8 @@
 | 阶段 | 状态 | 完成条件 |
 |---|---|---|
 | 实施基线/清单 | 已建立 | 入口、逐profile、19项验收与历史边界有持久记录；不代表功能通过 |
-| P0核心 | 进行中：合同/编译/JSON Profile/计划读取与地址物化已实现并局部验证 | 新合同/Resolver/Profile/Plan及Policy/Evidence分离有实际代码与集中测试 |
-| P1全入口 | 待实施 | Canvas、Workbench、Workflow/批次、Agent、Storyboard、BYOC、恢复/重试同底座 |
+| P0核心 | 进行中：核心、发布Binding冻结、真实Resolver、公共预览已实现；正式提交/持久计划待接入 | 新合同/Resolver/Profile/Plan及Policy/Evidence分离有实际代码与集中测试 |
+| P1全入口 | 公共compile-preview已接入；生成入口与UI均待迁移 | Canvas、Workbench、Workflow/批次、Agent、Storyboard、BYOC、恢复/重试同底座 |
 | P2全协议 | 待实施 | 每个注册profile＋非wire路径有迁移/fixture，旧冻结任务不漂移 |
 | P3清场 | 待实施 | 新任务旧裁决/fallback/整对象升级职责退出；调用与配置迁移证据 |
 | P4集中验收 | 待实施 | 下表全部分层验证，真实上游/发布无授权时保持未验，不以fixture代替 |
@@ -169,3 +169,33 @@ P0核心已加入版本化合同、空默认/有审计的显式政策、独立�
 - 本切片未切换任何生产调用方：新入口不会让现有前置拦截自动消失。全P0/全目标仍未完成，不把133项核心检查写成A01–A19端到端通过。
 
 本切片作为新增核心模块检查点交付，不自动启用生产入口。后续P0真实授权/模型配置适配从包含该检查点的最新main新开工作树；本次临时工作树在检查点整合且干净后清理。
+
+## P0发布绑定与可信输入切片（2026-11-14）
+
+基线：`ecaf80f631f88354c7f522174b4a416c5e5bd371`；独立分支 `codex/video-compiler-integration-20261114`，工作树 `E:/Workspace/naumi-video-compiler-integration-20261114`。本节覆盖前面核心检查点的“Resolver与发布字段待接入”状态，其他待验项保持。
+
+### 模块与职责
+
+- `parameterMap.videoExecution` 是版本化执行映射；JSON族recipe、显式政策随既有模型发布事务写入不可变配置，冻结modelVersion/modelDigest。既有`videoProfile`只保留查询/回执传输身份，新配置要求协议匹配。
+- `published-execution.ts` 将发布数据绑定为ModelBinding/Profile/Policy；不把旧`capabilities.video`、verified、generate、images=0迁移为ExecutionPolicy。只有明确、有操作来源的政策会限制执行。
+- `frozen-capability.ts` 新分支冻结recipe/policy；旧分支不变。恢复时同时核对模型修订、摘要与原始冻结映射；历史无execution记录沿原reader读取。
+- `prepare-inputs.ts` 复用真实节点/作品/text repository、组合素材展开、项目/工作空间归属与`verifiedOwnedMedia`完整解码/cache；读取实际选中历史结果，不因原节点新任务运行丢掉完成结果。客户端URL、文本和媒体元数据不作事实源。无HTTP上下文也进入个人工作空间规则；登记sha/字节与真实字节不一致仍拒绝。
+- `parseVideoExecutionDraft` 在任何组合素材/媒体I/O前集中检查类型、重复身份和角色；不复制结构规则。`prepareVideoExecution` 是preview与后续submit共用prepare/compile应用接口。
+- `compile-preview.ts`/`POST /api/video/compile-preview` 使用真实发布配置选择与executor、受控解析、统一编译；返回draftRevision、计划摘要、配置修订、intent和有效/计费参数，不返回wire模板、存储身份或凭据。原生登录、同源、工作空间与现行功能权限检查保留；预览不创建任务/创作记录/账务预占/项目绑定/业务幂等或供应商请求。
+- 依赖为Route -> video应用用例 -> model-config发布读取/Canvas与媒体授权接口 -> 纯Resolver/compiler。模型配置和task/billing原事务归属不变。
+
+### 迁移状态
+
+- 新增公共预览入口1个；**现有生成入口迁移仍为0**。Canvas专用预览、前端防抖与陈旧响应保护仍待实现。
+- 本切片没有在实际站点发布新的videoExecution配置或切换供应商路由。新版配置的正式生成接入、冻结CompiledPlan持久化与Worker消费是下一完整切片；本切片不是“前置误拦全部修好”。
+- 全57 profile/2条无profile路径、Workflow未来依赖、BYOC、Agent、Storyboard、结果资产/账务链及A01–A19完整验收仍待继续。无新增生产数据写入、发布或付费调用。
+
+### 集中验证与证据层级
+
+- `scripts/verify-video-published-execution.ts` 使用真实隔离PostgreSQL、sharp完整PNG解码、实际配置draft/stage/apply/byVersion/freeze/executor、实际Route函数与原生签名会话；不mock业务模块，不宣称已运行Next监听器/浏览器/真实供应商。
+- 覆盖旧描述冲突、禁用/政策、版本/recipe篡改、单次参数映射、实际媒体/文本、选片、待完成、重复/角色、跨用户/跨企业、匿名/跨站/撤权、伪造绑定与零受理副作用。原始集中结果和baseline/modified/copy-rollback在 `E:/Workspace/naumi/output/video-compiler-integration-20261114/VERIFICATION.txt`。
+- 同时复测核心133项、既有客户端设置、画布提交121项、真实媒体物化与旧冻结来源权威回归；具体exit与literal输出以证据文件为准。没有以局部PASS更新A01–A19为全链路通过。
+
+### 下一步
+
+将正式提交编译结果存入版本化任务，Worker只消费冻结模板并重新物化同身份媒体；保留原来的报价、幂等预占、beginSubmission、UNKNOWN与回执事务。随后按完整入口和协议清单迁移，不在UI继续叠旧能力裁决，也不把本预览当执行授权。

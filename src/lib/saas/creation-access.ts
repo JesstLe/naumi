@@ -91,6 +91,14 @@ export async function bindCreationMedia(email:string,reference:string) {
  if(scope.actorEmail!==email.toLowerCase())throw new TeamError('素材操作者不一致',403);
  await ensureCreationSchema();
  await getPool().query("INSERT INTO app_creation_contexts(actor_email,context_kind,context_id,scope_kind,tenant_id) VALUES($1,'media',$2,$3,$4) ON CONFLICT DO NOTHING",[scope.actorEmail,reference,scope.scopeKind,scope.tenantId]);
+ await assertCreationMediaInput(email,reference);
+}
+/** Read-only counterpart for preview and trusted input resolution. A media
+ * identity is not always an artwork ID (uploads bind their /media/key). */
+export async function assertCreationMediaInput(email:string,reference:string) {
+ const scope=currentCreationContext();if(!dbEnabled||!scope)return;
+ if(scope.actorEmail!==email.toLowerCase())throw new TeamError('素材操作者不一致',403);
+ await ensureCreationSchema();
  const old=(await getPool().query("SELECT scope_kind,tenant_id FROM app_creation_contexts WHERE actor_email=$1 AND context_kind='media' AND context_id=$2",[scope.actorEmail,reference])).rows[0];
  if(old?.scope_kind==='tenant'&&old.tenant_id!==scope.tenantId)throw new TeamError('不能引用其他企业的素材',403);
 }

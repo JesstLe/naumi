@@ -55,6 +55,13 @@ export function createModelExecutor(deps: Dependencies) {
     if (snapshot.digest !== frozen.modelDigest || !publicModel || (plan ? frozen.target.type !== "upstream" || frozen.target.id !== plan.initialId : publicModel.target.type !== frozen.target.type || publicModel.target.id !== frozen.target.id) || !purpose || purpose.modality !== frozen.modality) throw new ModelConfigError("EXECUTION_MISMATCH", "任务与原模型版本不一致", 503);
     const upstream = frozen.target.type === "upstream" ? snapshot.config.upstreamModels.find(u => u.id === frozen.target.id)! : undefined;
     const provider = upstream ? snapshot.config.providers.find(p => p.id === upstream.providerId)! : undefined;
+    // New bindings are tied to the immutable publication, including the query
+    // transport. Historical tasks without execution retain their old reader.
+    if(frozen.video?.execution){
+      if(!upstream||!provider||frozen.video.execution.modelVersion!==snapshot.version||frozen.video.execution.modelDigest!==snapshot.digest
+        ||canonicalConfig(frozen.video)!==canonicalConfig(await freezeManagedVideoCapability(snapshot,upstream,provider)))
+        throw new ModelConfigError('EXECUTION_MISMATCH','冻结视频执行映射与发布版本不一致',503);
+    }
     const preset = selectedImagePreset(snapshot.config,frozen.feature,frozen.publicModelId,frozen.binding);
     const routed = !preset && (frozen.target.type === "pool" || provider && ["apimart-images", "fal-images"].includes(provider.protocol) && !applicationAPIMartImages(provider.protocol,upstream?.parameterMap));
     if (provider?.credentialRef !== frozen.credentialRef || routed !== !!frozen.routerDigest) throw new ModelConfigError("EXECUTION_MISMATCH", "任务凭据或路由版本不一致", 503);
@@ -139,7 +146,7 @@ export function createModelExecutor(deps: Dependencies) {
       const target = plan ? { type: "upstream" as const, id: plan.initialId } : model.target;
       const upstream = target.type === "upstream" ? config.upstreamModels.find(u => u.id === target.id)! : undefined;
       const provider = upstream ? config.providers.find(p => p.id === upstream.providerId)! : undefined;
-      if (upstream && !model.supplierRouting && (!upstreamSupportsFeature(upstream.capabilities,input.binding as ModelBinding) || input.feature==="canvas.assistant"&&!!input.facts?.references&&!upstream.capabilities.vision)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型不支持当前操作", 400);
+      if (upstream && !model.supplierRouting && (!upstreamSupportsFeature(upstream.capabilities,input.binding as ModelBinding,undefined,upstream.parameterMap.videoExecution) || input.feature==="canvas.assistant"&&!!input.facts?.references&&!upstream.capabilities.vision)) throw new ModelConfigError("MODEL_INCOMPATIBLE", "所选模型不支持当前操作", 400);
       if (purpose.modality === "image" && input.facts) {
         const result = simulateModel(input.snapshot, input.billing, model.id, input.facts, deps);
         const admitted=imageUpstreamIds;

@@ -24,7 +24,11 @@ export function featureDefaultModel(config: ModelConfig, feature?: string, bindi
     (feature && config.business?.[feature as keyof NonNullable<ModelConfig["business"]>]?.defaultModelId) || (binding && config.bindings[binding]) || undefined;
 }
 
-export function upstreamSupportsFeature(capabilities: UpstreamModel["capabilities"], binding: ModelBinding, feature?: string) {
+export function upstreamSupportsFeature(capabilities: UpstreamModel["capabilities"], binding: ModelBinding, feature?: string,videoExecution?:UpstreamModel['parameterMap']['videoExecution']) {
+  // Admission is based on an actual published request mapping, not on a
+  // legacy generate/verified flag. Explicit model/provider enablement and
+  // execution policy remain checked by their owners.
+  if(binding==='video.generate'&&videoExecution)return true;
   // Canvas admits both plain generation and reference editing. The concrete
   // request still resolves its own binding and compatible supplier subset.
   const capability=MODEL_BINDINGS[binding].capability;
@@ -37,7 +41,7 @@ export function compatiblePublicModels(config: ModelConfig, binding: ModelBindin
   return config.publicModels.filter(m => m.enabled && m.visible && m.modality === purpose.modality &&
     publicUpstreamIds(config,m).some(id => {
       const u = config.upstreamModels.find(u => u.id === id);
-      return u?.enabled && upstreamSupportsFeature(u.capabilities, binding, feature) && config.providers.some(p => p.id === u.providerId && p.enabled);
+      return u?.enabled && upstreamSupportsFeature(u.capabilities, binding, feature,u.parameterMap.videoExecution) && config.providers.some(p => p.id === u.providerId && p.enabled);
     }));
 }
 

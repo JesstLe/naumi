@@ -75,6 +75,14 @@ export async function getCanvasTextNode(emailRaw:string,id:string,projectKey:str
   return row?mapCanvasTextNode(row):null;
 }
 
+/** Owned cross-project reference reads still need an application-level
+ * workspace check. Keep the text table access in the text repository. */
+export async function getOwnedCanvasTextNode(emailRaw:string,id:string):Promise<CanvasTextNodeRecord|null>{
+  await ensureSchema();
+  const row=(await getPool().query('SELECT * FROM app_canvas_text_nodes WHERE email=$1 AND id=$2',[emailRaw.toLowerCase(),id])).rows[0];
+  return row?mapCanvasTextNode(row):null;
+}
+
 export async function upsertCanvasTextNode(
   emailRaw: string,
   node: CanvasTextNodeRecord,
