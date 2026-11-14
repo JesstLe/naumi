@@ -7,7 +7,7 @@ import type {VideoReference} from './types';
 /** Compatibility is an ingress translation, not another capability decision.
  * All values remain user-facing; Profile performs semantic/wire mapping once. */
 export function videoSubmissionDraftValue(input:CreateVideoInput,keyFromUrl:(url:string)=>string|null=relativeMediaKey):VideoExecutionDraft {
-  if(input.shots?.length||input.elements?.length||input.workflowManifest||input.workflowTaskId)
+  if(input.workflowManifest||input.workflowTaskId)
     throw new VideoContractError('STRUCTURED_INPUT_MAPPING_REQUIRED','此结构化输入需要对应的分镜、元素或工作流Profile映射',['inputs']);
   const references=[...(input.references||[])];
   if(input.artworkId)references.unshift({id:input.artworkId,artworkId:input.artworkId,kind:'image',role:'first_frame'});
@@ -31,6 +31,20 @@ export function videoSubmissionDraftValue(input:CreateVideoInput,keyFromUrl:(url
     used.add(ref.id);return media(ref);
   }):references.map(ref=>{used.add(ref.id);return media(ref);});
   if(references.some(ref=>!used.has(ref.id)))throw new VideoContractError('UNCONSUMED_INPUT','引用媒体未包含在完整输入序列中',['inputs']);
+  // Nested references become explicit resolver identities, not trusted URLs or
+  // duplicate flat references. Group membership survives compile/freeze/retry.
+  const structure:NonNullable<VideoExecutionDraft['structure']>={};
+  if(input.shots?.length)structure.shots=input.shots.map((shot,index)=>{
+    const promptInputId=shot.textNodeId?`structured:shot:${index}`:undefined;
+    if(promptInputId)inputs.push({id:promptInputId,nodeId:shot.textNodeId!,kind:'text',role:'context',value:shot.prompt});
+    return {id:shot.id||`shot-${index}`,prompt:shot.prompt,durationSeconds:shot.durationSeconds,...(promptInputId?{promptInputId}:{})};
+  });
+  if(input.elements?.length)structure.elements=input.elements.map((element,index)=>({id:element.id||`element-${index}`,name:element.name,...(element.description!==undefined?{description:element.description}:{}),
+    inputIds:element.references.map(reference=>{
+      if(reference.role!=='element')throw new VideoContractError('INPUT_ROLE_MISMATCH','元素分组的素材需要明确的元素用途',['elements']);
+      const id=reference.id;
+      inputs.push({...media(reference),id});return id;
+    })}));
   const parameters={...input.parameters};
   const assign=(name:string,value:unknown)=>{
     if(value===undefined)return;
@@ -42,7 +56,7 @@ export function videoSubmissionDraftValue(input:CreateVideoInput,keyFromUrl:(url
   for(const name of ['negativePrompt','aspectRatio','width','height','generateAudio','watermark'] as const)assign(name,input[name]);
   if(input.providerOptions&&Object.keys(input.providerOptions).length)assign('providerOptions',input.providerOptions);
   if(input.camera&&Object.values(input.camera).some(Boolean))assign('camera',input.camera);
-  const parsed=parseVideoExecutionDraft({prompt:input.prompt,parameters,inputs,...(input.intentPreference?{intentPreference:input.intentPreference}:{}),...(input.mode?{legacyMode:input.mode}:{})});
+  const parsed=parseVideoExecutionDraft({prompt:input.prompt,parameters,inputs,...(Object.keys(structure).length?{structure}:{}),...(input.intentPreference?{intentPreference:input.intentPreference}:{}),...(input.mode?{legacyMode:input.mode}:{})});
   if(!parsed.ok)throw new VideoContractError(parsed.diagnostics[0].code,parsed.diagnostics[0].reason,['inputs']);
   return parsed.value;
 }

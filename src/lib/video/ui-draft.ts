@@ -6,10 +6,17 @@ import {videoSubmissionDraftValue} from './submission-draft-value';
 
 const common=new Set(['durationSeconds','resolution','aspectRatio','negativePrompt','width','height','generateAudio','watermark','providerOptions','camera']);
 export function videoUiPreference(config:VideoNodeConfig,inputs:readonly OrderedInput[]){
-  return readVideoIntentPreference({intentPreference:config.intentPreference,legacyMode:config.mode,inputs});
+  return readVideoIntentPreference({intentPreference:config.intentPreference,legacyMode:config.mode,inputs:[...inputs,...(config.elements??[]).flatMap(element=>element.references)]});
 }
 export function videoUiIntent(config:VideoNodeConfig,inputs:readonly OrderedInput[],contract:VideoUiContract){
-  return deriveVideoIntent({intentPreference:config.intentPreference,legacyMode:config.mode,inputs},contract.defaults);
+  return deriveVideoIntent({intentPreference:config.intentPreference,legacyMode:config.mode,inputs:[...inputs,...(config.elements??[]).flatMap(element=>element.references.map(ref=>({id:ref.id,kind:ref.kind,role:ref.role})))]},contract.defaults);
+}
+/** Editor availability is a presentation of executable recipes, never an
+ * execution verdict. Preserve editors for existing incompatible groups too. */
+export function videoUiStructure(config:VideoNodeConfig,inputs:readonly OrderedInput[],contract:VideoUiContract){
+  const intent=videoUiIntent(config,inputs,contract),active=intent.ok?contract.operations.find(operation=>operation.intent===intent.value)?.structure:undefined;
+  return {shots:active?.shots??contract.operations.find(operation=>operation.structure?.shots)?.structure?.shots,
+    elements:active?.elements??contract.operations.find(operation=>operation.structure?.elements)?.structure?.elements};
 }
 export function videoUiParameters(config:VideoNodeConfig,inputs:readonly OrderedInput[],contract:VideoUiContract):Record<string,VideoUiParameter>{
   const intent=videoUiIntent(config,inputs,contract);

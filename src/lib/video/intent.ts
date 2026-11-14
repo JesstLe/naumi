@@ -16,6 +16,7 @@ export function deriveVideoIntent(draft:Pick<ResolvedVideoDraft,'intentPreferenc
     return {ok:true,value:intent};
   }
   if(!media.length)return {ok:true,value:'text'};
+  if(media.some(input=>input.role==='element'))return {ok:true,value:'reference'};
   const images=media.filter(input=>input.kind==='image');
   if(images.length===media.length){
     if(images.length===2&&images.filter(input=>input.role==='first_frame').length===1&&images.filter(input=>input.role==='last_frame').length===1)

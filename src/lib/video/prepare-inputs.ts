@@ -52,7 +52,7 @@ async function prepareVideoInputBatch(actorRaw:string,projectKey:string|null,raw
     const trustedTextIds=new Set(expanded.inputs.filter(input=>/^(character|scene):/.test(input.nodeId)).map(input=>input.id));
     const pending=new Set(pendingIds);
     if(pending.size!==pendingIds.length||pendingIds.some(id=>!expanded.inputs.some(input=>input.id===id&&input.kind!=='text')))return failure('INVALID_WORKFLOW_DEPENDENCY','制作链依赖槽无效');
-    const resolved=await resolveVideoDraft({...parsed.value,prompt:expanded.prompt,inputs:expanded.inputs.filter(input=>!pending.has(input.id))},{
+    const resolved=await resolveVideoDraft({...parsed.value,prompt:expanded.prompt,...(pending.size?{structure:undefined}:{}),inputs:expanded.inputs.filter(input=>!pending.has(input.id))},{
       scope:{actorId:actor,projectKey,workspaceId:context?.scopeKind==='tenant'?`tenant:${context.tenantId}`:'personal'},
       text:async input=>{
         if(trustedTextIds.has(input.id))return {ok:true,value:input.value??''};

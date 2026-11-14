@@ -11,7 +11,10 @@ export function projectVideoUiContract(frozen:FrozenVideoExecution,identity:{pub
   if(!described.ok)throw new ModelConfigError(described.diagnostics[0].code,described.diagnostics[0].reason,422);
   const recipe=jsonVideoRecipeSchema.parse(described.value.description);
   return {version:1,modelVersion:frozen.modelVersion,modelDigest:frozen.modelDigest,policyRevision:policy.revision,defaults:recipe.defaults,
-    operations:recipe.operations.map(operation=>({intent:operation.intent,parameters:Object.fromEntries(Object.entries({...recipe.parameters,...operation.parameters}).flatMap(([name,rule])=>{
+    operations:recipe.operations.map(operation=>({intent:operation.intent,...(operation.shots||operation.elements?{structure:{
+      ...(operation.shots?{shots:{min:operation.shots.min,max:operation.shots.max,maxPromptChars:operation.shots.maxPromptChars,minDurationSeconds:operation.shots.minDurationSeconds,durationStep:operation.shots.durationStep}}:{}),
+      ...(operation.elements?{elements:{min:operation.elements.min,max:operation.elements.max,media:operation.elements.media.map(({kinds,min,max})=>({kinds,min,max}))}}:{})
+    }}:{}),parameters:Object.fromEntries(Object.entries({...recipe.parameters,...operation.parameters}).flatMap(([name,rule])=>{
       if(rule.send==='omit')return [];
       const values=rule.values??(rule.mapping?Object.keys(rule.mapping).flatMap<string|number|boolean>(value=>{
         if(rule.type==='integer'||rule.type==='number'){const number=Number(value);return value.trim()&&Number.isFinite(number)&&(rule.type!=='integer'||Number.isInteger(number))?[number]:[];}

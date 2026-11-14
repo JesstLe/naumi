@@ -42,7 +42,14 @@ export async function freezeWorkflowCompiled(actor:string,projectKey:string,inpu
    const existing=requestDraft.inputs.find(item=>item.id===future.id);
    if(existing&&(existing.kind!==future.kind||existing.role!==future.role||existing.nodeId!==future.nodeId))throw new VideoContractError('INPUT_IDENTITY_MISMATCH','依赖槽与输入身份不一致');
    if(input.references?.some(ref=>ref.id===future.id))throw new VideoContractError('DUPLICATE_INPUT','依赖槽不能覆盖已有素材');
-   if(existing)requestDraft.inputs[requestDraft.inputs.indexOf(existing)]={...future};else requestDraft.inputs.push({...future});
+   if(existing)requestDraft.inputs[requestDraft.inputs.indexOf(existing)]={...future};else{
+     // Submission flattens grouped inputs after ordinary references. Future
+     // media belong to that ordinary sequence, not after synthetic shot text
+     // or element members; otherwise final ingress order disagrees with freeze.
+     const structuredIds=new Set([...(requestDraft.structure?.shots??[]).flatMap(shot=>shot.promptInputId?[shot.promptInputId]:[]),...(requestDraft.structure?.elements??[]).flatMap(element=>element.inputIds)]);
+     const index=requestDraft.inputs.findIndex(item=>structuredIds.has(item.id));
+     requestDraft.inputs.splice(index<0?requestDraft.inputs.length:index,0,{...future});
+   }
  }
  const preparation=required(await prepareDeferredVideoInputs(actor,projectKey,requestDraft,[...pendingIds]));
  // Existing text is frozen, not re-read later as a different prompt. The
@@ -85,7 +92,7 @@ export async function prepareFrozenWorkflowCompiled(actor:string,input:CreateVid
  const bound=bindPublishedVideoExecution(execution.frozen.video.execution,{publicModelId:execution.frozen.publicModelId,wireModel:execution.connection.wireModel,connectionId:execution.connection.providerId});
  if(canonicalConfig(bound.binding)!==canonicalConfig(frozen.binding)||canonicalConfig(bound.policy)!==canonicalConfig(frozen.policy)||actor.toLowerCase()!==frozen.staticDraft.scope.actorId||input.projectKey!==frozen.staticDraft.scope.projectKey)return failure('WORKFLOW_SNAPSHOT_MISMATCH','制作链执行作用域或绑定已改变');
  const actual=videoSubmissionDraft(input),futureIds=new Set(frozen.futureInputs.map(item=>item.id));
- const settings=(draft:VideoExecutionDraft)=>({prompt:draft.prompt,parameters:draft.parameters,intentPreference:draft.intentPreference,legacyMode:draft.legacyMode});
+ const settings=(draft:VideoExecutionDraft)=>({prompt:draft.prompt,parameters:draft.parameters,structure:draft.structure,intentPreference:draft.intentPreference,legacyMode:draft.legacyMode});
  if(canonicalConfig(settings(actual))!==canonicalConfig(settings(frozen.requestDraft)))return failure('WORKFLOW_DRAFT_CHANGED','制作链原始参数或描述已改变');
  const expected=frozen.requestDraft.inputs;
  if(actual.inputs.length!==expected.length||actual.inputs.some((item,index)=>{

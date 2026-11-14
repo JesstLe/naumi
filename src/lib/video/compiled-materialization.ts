@@ -28,13 +28,14 @@ async function materializeOwnedCompiledTask(actor:string,task:VideoTaskRow):Prom
     throw new VideoContractError('COMPILED_EXECUTION_CONTEXT_MISMATCH','执行器没有恢复原视频通道快照');
   if(plan.scope.workspaceId!==(context.scopeKind==='tenant'?`tenant:${context.tenantId}`:'personal'))throw new VideoContractError('VIDEO_SCOPE_MISMATCH','任务执行作用域与冻结计划不一致');
   const request=compiledVideoRequest(plan,task.source as 'canvas'|'workbench'|'agent'|'workflow',task.idempotencyKey||task.id,task.sourceId);
-  const artIds=request.references.flatMap(ref=>ref.artworkId?[ref.artworkId]:[]);
+  const allReferences=[...request.references,...(request.elements??[]).flatMap(element=>element.references)];
+  const artIds=allReferences.flatMap(ref=>ref.artworkId?[ref.artworkId]:[]);
   await creationTransaction(tx=>assertCreationInputsTx(tx,actor,artIds));
   await assertCreationObjectRefs(actor,artIds);
-  for(const ref of request.references)await assertCreationMediaInput(actor,`/media/${ref.storageKey}`);
+  for(const ref of allReferences)await assertCreationMediaInput(actor,`/media/${ref.storageKey}`);
   const materialized=await materializeVideoReferences(actor,request);
   const result=await materializeJsonVideoPlan(plan,{url:async(_scope,asset)=>{
-    const ref=materialized.references.find(ref=>ref.storageKey===asset.storageKey&&ref.sha256===asset.sha256);
+    const ref=[...materialized.references,...(materialized.elements??[]).flatMap(element=>element.references)].find(ref=>ref.storageKey===asset.storageKey&&ref.sha256===asset.sha256);
     if(!ref?.url)return {ok:false,diagnostics:[{category:'input',code:'FROZEN_MEDIA_CHANGED',field:'inputs',reason:'冻结媒体身份不一致',actionable:'核对原任务素材'}]};
     return {ok:true,value:{url:ref.url,asset:{storageKey:ref.storageKey!,sha256:ref.sha256!,bytes:ref.bytes!,mimeType:ref.mimeType!,
       ...(ref.artworkId?{artworkId:ref.artworkId}:{}),...(ref.width?{width:ref.width}:{}),...(ref.height?{height:ref.height}:{}),...(ref.durationSeconds?{durationSeconds:ref.durationSeconds}:{})}}};

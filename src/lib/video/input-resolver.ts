@@ -26,7 +26,28 @@ export function parseVideoExecutionDraft(raw:unknown):VideoResult<VideoExecution
         ||input.role==='source_video'&&input.kind!=='video'||input.role==='source_audio'&&input.kind!=='audio')
       return {ok:false,diagnostics:[videoDiagnostic('input','INPUT_ROLE_MISMATCH','inputs','素材角色与类型不一致','选择与素材类型一致的用途',input.id)]};
   }
+  const structure=validateVideoStructure(draft);if(!structure.ok)return structure;
   return {ok:true,value:draft};
+}
+/** Shared structural integrity for ingress and reconstructed frozen plans. */
+export function validateVideoStructure(draft:Pick<VideoExecutionDraft,'structure'|'inputs'>):VideoResult<true>{
+  const inputs=new Map(draft.inputs.map(input=>[input.id,input])),used=new Set<string>();
+  for(const kind of ['shots','elements'] as const){
+    const entries=draft.structure?.[kind]??[];
+    if(new Set(entries.map(entry=>entry.id)).size!==entries.length)return {ok:false,diagnostics:[videoDiagnostic('input','DUPLICATE_STRUCTURE_ID',kind,'结构化项目身份重复','使用唯一镜头或元素身份')]};
+  }
+  for(const shot of draft.structure?.shots??[]){
+    if(!shot.promptInputId)continue;const input=inputs.get(shot.promptInputId);
+    if(!input||input.kind!=='text'||used.has(input.id))return {ok:false,diagnostics:[videoDiagnostic('input','SHOT_TEXT_IDENTITY_INVALID','shots','镜头文字引用不存在、重复或类型不符','重新选择镜头文字')]};
+    used.add(input.id);
+  }
+  for(const element of draft.structure?.elements??[])for(const id of element.inputIds){
+    const input=inputs.get(id);
+    if(!input||input.kind==='text'||input.role!=='element'||used.has(id))return {ok:false,diagnostics:[videoDiagnostic('input','ELEMENT_INPUT_IDENTITY_INVALID','elements','元素素材引用不存在、重复或用途不符','重新选择元素素材')]};
+    used.add(id);
+  }
+  if(draft.structure?.elements&&draft.inputs.some(input=>input.role==='element'&&!used.has(input.id)))return {ok:false,diagnostics:[videoDiagnostic('input','UNGROUPED_ELEMENT_INPUT','elements','元素素材没有对应分组','为元素素材指定分组')]};
+  return {ok:true,value:true};
 }
 export async function resolveVideoDraft(raw:unknown,ports:VideoInputResolverPorts):Promise<VideoResult<ResolvedVideoDraft>> {
   const scope=videoExecutionScopeSchema.safeParse(ports.scope);

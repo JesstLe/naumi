@@ -55,8 +55,14 @@ export const videoCapabilityEvidenceSchema=z.strictObject({
 });
 export type VideoCapabilityEvidence=z.infer<typeof videoCapabilityEvidenceSchema>;
 
+export const videoStructureSchema=z.strictObject({
+  shots:z.array(z.strictObject({id,prompt:z.string().max(65536),durationSeconds:z.number().finite().positive().max(3600),promptInputId:id.optional()})).max(100).optional(),
+  elements:z.array(z.strictObject({id,name:z.string().trim().min(1).max(100),description:z.string().max(2000).optional(),inputIds:z.array(id).min(1).max(128)})).max(100).optional(),
+});
+export type VideoDraftStructure=z.infer<typeof videoStructureSchema>;
 export const videoDraftSchema=z.strictObject({
   prompt:z.string().max(65536),
+  structure:videoStructureSchema.optional(),
   parameters:z.record(z.string().min(1).max(100),z.json()),
   intentPreference:videoPreferenceSchema.optional(),
   // Compatibility read only. A missing explicit preference + legacy text/media
@@ -110,12 +116,13 @@ export type VideoWireTemplate=z.infer<typeof videoWireTemplateSchema>;
 export const videoProfileOutputSchema=z.strictObject({
   intent:videoIntentSchema,effectiveParameters:z.record(z.string(),z.json()),
   wireTemplate:videoWireTemplateSchema,consumedInputIds:z.array(id),
+  consumedStructure:z.strictObject({shots:z.array(id),elements:z.array(id)}).optional(),
   billingFacts:z.strictObject({durationSeconds:z.number().finite().refine(n=>n===-1||n>0),resolution:id,aspectRatio:id.optional()}),
 });
 export type VideoProfileOutput=z.infer<typeof videoProfileOutputSchema>;
 // Constraint/quote preparation is not a final compiled request. Pending media
 // have declared identities only; facts are checked by the final compiler.
-export const videoDraftPreparationSchema=videoProfileOutputSchema.omit({wireTemplate:true,consumedInputIds:true});
+export const videoDraftPreparationSchema=videoProfileOutputSchema.omit({wireTemplate:true,consumedInputIds:true,consumedStructure:true});
 export type VideoDraftPreparation=z.infer<typeof videoDraftPreparationSchema>;
 export type VideoInputContract={profileId:string;profileVersion:number;bindingRevision:number;description:unknown};
 export interface VideoModelProfile {
@@ -126,13 +133,14 @@ export interface VideoModelProfile {
   compile(draft:ResolvedVideoDraft,contract:VideoInputContract,binding:PublishedVideoModelBinding):VideoResult<VideoProfileOutput>;
 }
 export type CompiledVideoPlan={
-  schemaVersion:1;
+  schemaVersion:1|2;
   identity:Pick<PublishedVideoModelBinding,'publicModelId'|'wireModel'|'connectionId'|'profileId'|'profileVersion'>&{bindingRevision:number;policyRevision:number};
   binding:PublishedVideoModelBinding;
   policy:VideoExecutionPolicy;
   scope:ResolvedVideoDraft['scope'];
   intent:VideoExecutionIntent;
   originalPrompt:string;
+  structure?:VideoDraftStructure;
   requestedParameters:ResolvedVideoDraft['parameters'];
   effectiveParameters:VideoProfileOutput['effectiveParameters'];
   inputManifest:ResolvedVideoInput[];
@@ -141,18 +149,20 @@ export type CompiledVideoPlan={
   digest:string;
 };
 export const compiledVideoPlanSchema=z.strictObject({
-  schemaVersion:z.literal(1),
+  schemaVersion:z.union([z.literal(1),z.literal(2)]),
   identity:videoModelBindingSchema.omit({recipe:true,revision:true}).extend({bindingRevision:revision,policyRevision:revision}),
   binding:videoModelBindingSchema,policy:videoExecutionPolicySchema,
   scope:videoExecutionScopeSchema,intent:videoIntentSchema,originalPrompt:z.string().max(65536),
+  structure:videoStructureSchema.optional(),
   requestedParameters:z.record(z.string(),z.json()),effectiveParameters:z.record(z.string(),z.json()),
   inputManifest:z.array(resolvedVideoInputSchema).max(256),wireTemplate:videoWireTemplateSchema,
   billingFacts:videoProfileOutputSchema.shape.billingFacts,digest:z.string().regex(/^[a-f0-9]{64}$/),
 }).superRefine((plan,ctx)=>{
+  if((plan.schemaVersion===2)!==Boolean(plan.structure))ctx.addIssue({code:'custom',message:'结构化计划必须使用对应版本',path:['schemaVersion']});
   for(const key of ['publicModelId','wireModel','connectionId','profileId','profileVersion'] as const)
     if(plan.identity[key]!==plan.binding[key])ctx.addIssue({code:'custom',message:'计划身份与冻结绑定不一致',path:['identity',key]});
   if(plan.identity.bindingRevision!==plan.binding.revision||plan.identity.policyRevision!==plan.policy.revision)
     ctx.addIssue({code:'custom',message:'计划修订与冻结绑定或政策不一致',path:['identity']});
-  const draft=resolvedVideoDraftSchema.safeParse({scope:plan.scope,prompt:plan.originalPrompt,parameters:plan.requestedParameters,inputs:plan.inputManifest});
+  const draft=resolvedVideoDraftSchema.safeParse({scope:plan.scope,prompt:plan.originalPrompt,parameters:plan.requestedParameters,structure:plan.structure,inputs:plan.inputManifest});
   if(!draft.success)ctx.addIssue({code:'custom',message:'冻结计划包含无效的输入事实',path:['inputManifest']});
 });
