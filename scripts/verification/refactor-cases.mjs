@@ -95,6 +95,7 @@ export const refactorCases=[
  node('canvas-scene-reconciliation','canvas','scripts/verify-canvas-scene.cjs','CANVAS_SCENE=PASS'),
  ts('canvas-text-editing-pg','canvas','scripts/verify-canvas-text-editing-pg.ts','CANVAS_TEXT_EDITING_PG=PASS'),
  node('canvas-project-navigation','canvas','scripts/verify-canvas-project-navigation.cjs','CANVAS_PROJECT_NAVIGATION=PASS'),
+ {...node('canvas-project-recovery','canvas','scripts/verify-canvas-project-recovery.cjs','PROJECT_RECOVERY=PASS'),clientReact:true},
  node('canvas-selection-owner','canvas','scripts/verify-canvas-selection-owner.cjs','CANVAS_SELECTION_OWNER=PASS'),
  {...node('canvas-selection-projection','canvas','scripts/verify-canvas-selection-projection.cjs','CANVAS_SELECTION_PROJECTION=PASS'),clientReact:true},
  node('canvas-arrange','canvas','scripts/verify-canvas-arrange.cjs','CANVAS_ARRANGE=PASS'),
