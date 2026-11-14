@@ -27,6 +27,7 @@ import type {VideoGenerationRequest,VideoReference} from "./types";
 import {existingWorkflowResult} from "./workflow-reuse";
 import {advanceWorkflowAssembly,publicWorkflowAssembly,resetWorkflowAssembly} from "./workflow-assembly";
 import {mediaBillingQuote} from "./media-billing";
+import {withNewVideoAdmission} from './admission';
 
 export type VideoWorkflowNodeStatus="pending"|"processing"|"completed"|"blocked"|"needs_confirmation"|"needs_attention"|"cancelled";
 
@@ -83,6 +84,7 @@ export async function scheduleVideoWorkflow(actor:string,raw:unknown,canvasInten
   actor=actor.toLowerCase();const plan=validateVideoWorkflow(raw);if((plan.reviewOrigin||plan.storyboard)&&!canvasIntent)throw new ModelConfigError("STORYBOARD_REVIEW_CONTEXT_REQUIRED","审片返工须从正式方案提交",422);await ensureWorkflowSchema();const inputDigest=createHash("sha256").update(canonicalConfig(plan)).digest("hex"),known=(await getPool().query("SELECT email,input_digest,creation_scope FROM app_video_workflow_runs WHERE id=$1",[plan.id])).rows[0];
   if(known?.input_digest){assertWorkflowCreationScope(known.creation_scope,actor);if(known.email!==actor||known.input_digest!==inputDigest)throw new ModelConfigError("WORKFLOW_OPERATION_CONFLICT","工作流编号已用于另一请求",409);const resumed=await resumeVideoWorkflow(plan.id,actor);return {runId:plan.id,taskIds:resumed.nodes.map(node=>node.taskId).filter((id):id is string=>!!id)};}
   if(known&&known.email!==actor)throw new ModelConfigError("WORKFLOW_OPERATION_CONFLICT","工作流编号已用于另一请求",409);
+  return withNewVideoAdmission(actor,async()=>{
   await authorizeProject(actor,plan.projectKey);await bindWorkflowCreationProject(actor,plan.projectKey);await validateWorkflowCreationInputs(actor,plan);await authorizeWorkflowInputs(actor,plan,preparedFrozen);const frozen=known?null:preparedFrozen||await freezeVideoWorkflow(actor,plan),frozenEnc=frozen?encryptAtRest(JSON.stringify(frozen)):null,publicFrozen=frozen?Object.fromEntries(Object.entries(frozen).map(([id,stage])=>[id,stage.quote])):{};
   const reused=new Map<string,import("./result-assets").SavedVideoResultAsset>();
   for(const node of plan.nodes)if(node.existingArtworkId)reused.set(node.id,await existingWorkflowResult(actor,node.existingArtworkId));
@@ -102,6 +104,7 @@ export async function scheduleVideoWorkflow(actor:string,raw:unknown,canvasInten
     await tx.query("COMMIT");
   }catch(error){await tx.query("ROLLBACK");throw error;}finally{tx.release();}
   const result=await resumeVideoWorkflow(plan.id,actor);return {runId:plan.id,taskIds:result.nodes.map(node=>node.taskId).filter((id):id is string=>!!id)};
+  });
 }
 type StoredNode={node_id:string;status:VideoWorkflowNodeStatus;task_id:string|null;error:string|null;confirmation_quote?:WorkflowStageQuote|null;result_assets?:import("./result-assets").SavedVideoResultAsset[]};
 export async function getVideoWorkflow(actor:string,runId:string){

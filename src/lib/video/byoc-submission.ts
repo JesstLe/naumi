@@ -26,6 +26,7 @@ import {associateWorkflowTaskTx} from './workflow-links';
 import type {CompiledVideoPlan,VideoResult} from './execution-contract';
 import type {VideoTaskRow} from './task-types';
 import {prepareFrozenWorkflowCompiled} from './workflow-compiled';
+import {withNewVideoAdmission} from './admission';
 const requireResult=<T>(result:VideoResult<T>):T=>{if(!result.ok){const d=result.diagnostics[0];throw new VideoContractError(d.code,d.reason,[d.field]);}return result.value;};
 type Input=z.infer<typeof byocVideoInputSchema>;
 function assertSameWorkspace(actor:string,task:VideoTaskRow){
@@ -39,6 +40,7 @@ export async function submitCompiledByocVideo(actor:string,input:Input,workflowL
  if(currentCreationContext()!.actorEmail!==actor)throw new ModelConfigError('VIDEO_SCOPE_MISMATCH','当前用户与执行作用域不一致',403);
  const digest=createHash('sha256').update(canonicalConfig(input)).digest('hex'),old=await getVideoTaskByIdempotencyKey(actor,input.idempotencyKey);
  if(old){assertSameWorkspace(actor,old);if(old.parameters.creationInputDigest!==digest)throw new ModelConfigError('OPERATION_CONFLICT','操作编号已用于另一任务',409);return {taskId:old.id,cost:old.cost};}
+ return withNewVideoAdmission(actor,async()=>{
  await assertCurrentCreationFeature('/api/comfyui/run');
  const node=input.nodeId?await getVideoNode(actor,input.nodeId):null;
  if(input.nodeId&&(!node||node.revision!==input.expectedRevision))throw new ModelConfigError('VIDEO_NODE_REVISION_CONFLICT','视频节点不存在或已更新',409);
@@ -54,6 +56,7 @@ export async function submitCompiledByocVideo(actor:string,input:Input,workflowL
  const plan=frozen?requireResult(frozen):requireResult(compileVideoRequest({...bound,draft:requireResult(await prepareVideoExecutionInputs(actor,project??null,draft))}));
  if(node)await ensureVideoNodeSchema();
  return accept(actor,{plan,idempotencyKey:input.idempotencyKey,digest,byocSnapshot:bound.snapshot,settings:prepared.settings,providerSnapshot:publicProviderSnapshot(prepared.config),source:request.source,sourceId:request.sourceId,node,project,workflowLink,originalPrompt:input.prompt??''});
+ });
 }
 async function accept(actor:string,input:{plan:CompiledVideoPlan;idempotencyKey:string;digest:string;byocSnapshot:unknown;settings:unknown;providerSnapshot:unknown;source:import('./types').VideoTaskSource;sourceId?:string;node:Awaited<ReturnType<typeof getVideoNode>>;project?:string;workflowLink?:{runId:string;nodeId:string};retryOf?:string;originalPrompt:string}){
  const {plan,node}=input,request=compiledVideoRequest(plan,input.source,input.idempotencyKey,input.sourceId),id=`vid-${randomUUID()}`;
@@ -71,9 +74,11 @@ export async function retryCompiledByocVideo(actor:string,old:VideoTaskRow,idemp
  if(!['failed','cancelled'].includes(old.status))throw new ModelConfigError('VIDEO_RETRY_NOT_ALLOWED','原任务仍需核对或尚未结束',409);
  const digest=createHash('sha256').update(canonicalConfig({retryOf:old.id,idempotencyKey})).digest('hex'),existing=await getVideoTaskByIdempotencyKey(actor,idempotencyKey);
  if(existing){assertSameWorkspace(actor,existing);if(existing.parameters.creationInputDigest!==digest)throw new ModelConfigError('OPERATION_CONFLICT','操作编号已用于另一任务',409);return {taskId:existing.id,cost:existing.cost};}
+ return withNewVideoAdmission(actor,async()=>{
  await assertCurrentCreationFeature('/api/comfyui/run');
  const plan=readTaskCompiledVideoPlan(actor,old),raw=compiledVideoRetryInput(actor,old),resolved=requireResult(await prepareVideoExecutionInputs(actor,plan.scope.projectKey,videoSubmissionDraft(raw)));
  if(canonicalConfig(resolved.scope)!==canonicalConfig(plan.scope)||canonicalConfig(resolved.inputs.map(i=>i.kind==='text'?{id:i.id,text:i.text}:{id:i.id,kind:i.kind,role:i.role,asset:i.asset}))!==canonicalConfig(plan.inputManifest.map(i=>i.kind==='text'?{id:i.id,text:i.text}:{id:i.id,kind:i.kind,role:i.role,asset:i.asset})))throw new VideoContractError('FROZEN_MEDIA_CHANGED','原工作流素材或文字版本已变化');
  const node=typeof old.parameters.nodeId==='string'?await getVideoNode(actor,old.parameters.nodeId):null;
  return accept(actor,{plan,idempotencyKey,digest,byocSnapshot:old.parameters.byocSnapshot,settings:old.parameters.byocSettings,providerSnapshot:old.providerSnapshot,source:old.source as never,sourceId:old.sourceId,node,project:plan.scope.projectKey??undefined,retryOf:old.id,originalPrompt:String(old.parameters.originalPrompt??plan.originalPrompt)});
+ });
 }
