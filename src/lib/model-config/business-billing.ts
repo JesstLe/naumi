@@ -60,6 +60,9 @@ function originalBusinessBillingSnapshot(snapshot: ConfigSnapshot, models: Model
     tariff.settlement = { ...tariff.settlement, qualityBasis:"requested", successBasis:"successful-units", failureBps:0, reserveBps:10000 };
     return {version:snapshot.version,config};
   }
+  return configuredBusinessPricing(snapshot,models,facts);
+}
+function configuredBusinessPricing(snapshot:ConfigSnapshot,models:ModelSnapshot,facts:BillingFacts):ConfigSnapshot{
   const option = selectedBusinessOption(models.config, facts.feature, facts.modelId);
   if (!option?.pricing) return snapshot;
   const config = structuredClone(snapshot.config), tariff = config.features[facts.feature];
@@ -79,6 +82,19 @@ export async function freezeBusinessQuote(request: Request, snapshot: ConfigSnap
 export function freezeBusinessQuoteForModel(snapshot:ConfigSnapshot,models:ModelSnapshot|null,facts:BillingFacts,create:(s:ConfigSnapshot,f:BillingFacts)=>BillingQuote,options:{allowResolutionFallback?:boolean;effectiveResolution?:string;effectiveRatio?:string;deferImageFrame?:boolean;accepted?:boolean}={}){
   if(facts.byok||!models)return create(snapshot,facts);
   snapshot=billingForModelIdentities(snapshot,models.config);
+  if(facts.feature==='video.generate'){
+    const model=models.config.publicModels.find(item=>item.id===facts.modelId),scope=currentModelExecution('video');
+    const upstream=models.config.upstreamModels.find(item=>item.id===(scope&&scope.frozen.publicModelId===facts.modelId&&scope.frozen.target.type==='upstream'?scope.frozen.target.id:model?.target.id));
+    if(upstream?.parameterMap.videoExecution){
+      // Compiler facts are video facts, not image display tiers. Keep the same
+      // explicit tariff/credit rules without another image capability fallback.
+      const q=create(applyCreditOverride(snapshot,configuredBusinessPricing(snapshot,models,facts),facts),facts);
+      q.modelVersion=models.version;q.legacyCompatible=false;
+      if(!model?.supplierRouting&&!selectedBusinessOption(models.config,facts.feature,facts.modelId)?.routing?.enabled&&upstream.procurement)q.procurement=structuredClone(upstream.procurement);
+      else if(models.config.business?.[facts.feature])q.costRates={};
+      return q;
+    }
+  }
   const scope = currentModelExecution("image");
   const originalFacts = facts;
   // Display has no reference pixels. Frozen/accepted execution never uses this path.

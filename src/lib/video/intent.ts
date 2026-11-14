@@ -1,11 +1,14 @@
 import {videoDiagnostic,type ResolvedVideoDraft,type VideoExecutionIntent,type VideoResult} from './execution-contract';
 
 export type VideoIntentDefaults={ordinaryImage?:'single_image'|'reference';sourceVideo?:'video_edit'|'reference'};
+export function readVideoIntentPreference(draft:Pick<ResolvedVideoDraft,'intentPreference'|'legacyMode'>&{inputs:ReadonlyArray<Pick<ResolvedVideoDraft['inputs'][number],'kind'>>}){
+  return draft.intentPreference??(draft.legacyMode==='text'&&draft.inputs.some(input=>input.kind!=='text')?undefined:draft.legacyMode);
+}
 /** Input-derived intent, independent of legacy modes/limits/test evidence.
  * Protocol-specific defaults are explicit published contract values. */
-export function deriveVideoIntent(draft:ResolvedVideoDraft,defaults:VideoIntentDefaults={}):VideoResult<VideoExecutionIntent> {
+export function deriveVideoIntent(draft:Pick<ResolvedVideoDraft,'intentPreference'|'legacyMode'>&{inputs:ReadonlyArray<Pick<ResolvedVideoDraft['inputs'][number],'id'|'kind'|'role'>>},defaults:VideoIntentDefaults={}):VideoResult<VideoExecutionIntent> {
   const media=draft.inputs.filter(input=>input.kind!=='text');
-  const preference=draft.intentPreference??(draft.legacyMode==='text'&&media.length?undefined:draft.legacyMode);
+  const preference=readVideoIntentPreference(draft);
   if(preference){
     const intent=preference==='image_reference'||preference==='omni_reference'?'reference':preference;
     if(preference==='image_reference'&&media.some(input=>input.kind!=='image'))

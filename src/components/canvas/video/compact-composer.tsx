@@ -18,6 +18,8 @@ import {VideoPromptOptimizer} from "./prompt-optimizer";
 import {videoButtonClass} from "./form-controls";
 import {VideoPromptEditor,type VideoPromptEditorHandle} from "./prompt-editor";
 import {VideoModeSelect} from "./mode-select";
+import {selectVideoUiModel,videoUiValue,videoUiPreference} from '@/lib/video/ui-draft';
+import {VideoContractFields} from './contract-fields';
 
 /** Reference-first composer; capabilities remain backed by the published catalog. */
 export function VideoCompactComposer({config,inputs,models,choices,nodeId,light,blocked,onConfig,onInputs,onImport,onImportBusyChange,onAdvanced,actions,feedback,advancedOpen=false,onCloseAdvanced,advancedContent,count,onCount,onOptimize,onStoryboard}:{
@@ -29,15 +31,20 @@ export function VideoCompactComposer({config,inputs,models,choices,nodeId,light,
  const V=useVideoI18n(),[picker,setPicker]=useState(false),[parameters,setParameters]=useState(false),[durationOpen,setDurationOpen]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
  const addRef=useRef<HTMLButtonElement>(null),parameterRef=useRef<HTMLButtonElement>(null),durationRef=useRef<HTMLButtonElement>(null),advancedRef=useRef<HTMLButtonElement>(null),editor=useRef<VideoPromptEditorHandle>(null),file=useRef<HTMLInputElement>(null);
  const importing=useRef(false),model=selectedVideoCatalogModel(models,config),cap=catalogCapability(model);
+ const duration=model?.execution?videoUiValue(config,'durationSeconds'):config.durationSeconds;
+ const resolution=model?.execution?videoUiValue(config,'resolution'):config.resolution,ratio=model?.execution?videoUiValue(config,'aspectRatio'):config.aspectRatio;
+ const audio=model?.execution?videoUiValue(config,'generateAudio'):config.generateAudio;
  const [referenceIntent,setReferenceIntent]=useState<{scope:string;value:"image_reference"|"omni_reference"}>();
  const referenceScope=JSON.stringify([nodeId,config.providerId,config.modelId]);
- const modeIntent=currentVideoIntent(config.mode,cap,inputs,referenceIntent?.scope===referenceScope?referenceIntent.value:undefined);
+ const preference=videoUiPreference(config,inputs);
+ const modeIntent=model?.execution?!preference?'auto':preference==='reference'?'omni_reference':preference:currentVideoIntent(config.mode,cap,inputs,referenceIntent?.scope===referenceScope?referenceIntent.value:undefined);
  const numbered=numberVideoInputs(inputs).all,names=videoReferenceNames(inputs,choices);
+ const draftRoles=(value:OrderedInput[])=>model?.execution?value:videoModeRoles(value,config.mode);
  function prepareInputs(next:OrderedInput[],preserveRoles=false){
   const attached=!preserveRoles&&next.some(input=>input.kind!=='text'&&!inputs.some(previous=>previous.id===input.id));
-  const result=attached&&!config.comfyWorkflowId?attachVideoInputs(config,next,cap):{config,inputs:preserveRoles?next:videoModeRoles(next,config.mode),changed:false};
+  const result=attached&&!config.comfyWorkflowId?attachVideoInputs(config,next,cap,model?.execution):{config,inputs:preserveRoles||model?.execution?next:videoModeRoles(next,config.mode),changed:false};
   if(result.changed){setReferenceIntent(undefined);setNotice(`${V('已调整')}：${V(VIDEO_CREATION_LABELS[currentVideoIntent(result.config.mode,cap,result.inputs)])}`);}
-  else if(attached&&config.mode==='text')setNotice(V('素材已保留，请选择支持这些素材的视频模式'));
+  else if(attached&&config.mode==='text'&&!model?.execution)setNotice(V('素材已保留，请选择支持这些素材的视频模式'));
   return result;
  }
  function changeInputs(next:OrderedInput[],preserveRoles=false){const prepared=prepareInputs(next,preserveRoles);setError('');onInputs(prepared.inputs);onConfig({...prepared.config,prompt:remapVideoPromptReferences(config.prompt||'',inputs,prepared.inputs),references:[]});}
@@ -47,23 +54,24 @@ export function VideoCompactComposer({config,inputs,models,choices,nodeId,light,
  useEffect(()=>{
   const previous=observedInputs.current;observedInputs.current={nodeId,ids:new Set(inputs.map(input=>input.id))};
   if(blocked||config.comfyWorkflowId||previous.nodeId!==nodeId||!inputs.some(input=>input.kind!=='text'&&!previous.ids.has(input.id)))return;
-  const next=attachVideoInputs(config,inputs,cap);
+  const next=attachVideoInputs(config,inputs,cap,model?.execution);
   if(next.changed){onInputs(next.inputs);onConfig({...next.config,references:[]});setReferenceIntent(undefined);setNotice(`${V('已调整')}：${V(VIDEO_CREATION_LABELS[currentVideoIntent(next.config.mode,cap,next.inputs)])}`);}
  },[inputs,nodeId,blocked,config,cap,onInputs,onConfig,V]);
- function chooseMode(intent:VideoCreationIntent,chosen:VideoCatalogModel){
+ function chooseMode(intent:VideoCreationIntent|'auto',chosen:VideoCatalogModel){
   if(blocked||config.comfyWorkflowId)return;
+  if(intent==='auto'){onConfig({...selectVideoUiModel(config,chosen),intentPreference:undefined,mode:undefined});setNotice('');setError('');return;}
   try{const result=selectVideoIntent(config,inputs,chosen,intent);onInputs(result.inputs);onConfig(result.config);setReferenceIntent(intent==='image_reference'||intent==='omni_reference'?{scope:JSON.stringify([nodeId,chosen.providerId,chosen.modelId]),value:intent}:undefined);setError('');setNotice(result.changes.length?`${V('已调整')}：${result.changes.map(V).join('、')}`:'');}
   catch(cause){setError(cause instanceof Error?V(cause.message):V('视频模式切换失败'));}
  }
- function reconcile(next:VideoNodeConfig){const result=reconcileVideoSettings(next,catalogCapability(selectedVideoCatalogModel(models,next)));if(result.config.mode!==config.mode)onInputs(videoModeRoles(inputs,result.config.mode));onConfig(result.config);setNotice(result.changes.length?`${V('已调整')}：${result.changes.map(V).join('、')}`:'');}
+ function reconcile(next:VideoNodeConfig){if(model?.execution||selectedVideoCatalogModel(models,next)?.execution){onConfig(next);setNotice('');return;}const result=reconcileVideoSettings(next,catalogCapability(selectedVideoCatalogModel(models,next)));if(result.config.mode!==config.mode)onInputs(videoModeRoles(inputs,result.config.mode));onConfig(result.config);setNotice(result.changes.length?`${V('已调整')}：${result.changes.map(V).join('、')}`:'');}
  function add(choice:VideoInputChoice){
   if(blocked||!choice.available)return;
-  let next=inputs;if(!next.some(input=>input.nodeId===choice.nodeId))next=videoModeRoles([...next,{id:`ref-${browserRandomUUID()}`,nodeId:choice.nodeId,kind:choice.kind,role:choice.kind==='text'?'context':choice.kind==='video'?'source_video':choice.kind==='audio'?'source_audio':'reference',value:choice.value}],config.mode);
+  let next=inputs;if(!next.some(input=>input.nodeId===choice.nodeId))next=draftRoles([...next,{id:`ref-${browserRandomUUID()}`,nodeId:choice.nodeId,kind:choice.kind,role:choice.kind==='text'?'context':choice.kind==='video'?'source_video':choice.kind==='audio'?'source_audio':'reference',value:choice.value}]);
   changeInputs(next);setPicker(false);
  }
  function mention(choice:VideoInputChoice,start:number,end:number){
   if(blocked||!choice.available)return;
-  const next=inputs.some(input=>input.nodeId===choice.nodeId)?inputs:videoModeRoles([...inputs,{id:`ref-${browserRandomUUID()}`,nodeId:choice.nodeId,kind:choice.kind,role:choice.kind==='text'?'context':choice.kind==='video'?'source_video':choice.kind==='audio'?'source_audio':'reference',value:choice.value}],config.mode);
+  const next=inputs.some(input=>input.nodeId===choice.nodeId)?inputs:draftRoles([...inputs,{id:`ref-${browserRandomUUID()}`,nodeId:choice.nodeId,kind:choice.kind,role:choice.kind==='text'?'context':choice.kind==='video'?'source_video':choice.kind==='audio'?'source_audio':'reference',value:choice.value}]);
   const prepared=prepareInputs(next),input=prepared.inputs.find(item=>item.nodeId===choice.nodeId)!,inserted=insertVideoPromptReference(config.prompt||'',inputs,prepared.inputs,choices,input.id,start,end);
   onInputs(prepared.inputs);onConfig({...prepared.config,prompt:inserted.prompt,references:[]});return inserted.caret;
  }
@@ -100,10 +108,10 @@ export function VideoCompactComposer({config,inputs,models,choices,nodeId,light,
    <CanvasModelSelect label={V('视频模型')} value={model?`${model.providerId}/${model.modelId}`:''}
     placeholder={config.comfyWorkflowId?V('自备视频工作流'):V('未选择模型')} disabled={blocked||!!config.comfyWorkflowId}
     options={models.map(m=>({value:`${m.providerId}/${m.modelId}`,modelId:m.modelId,label:m.label}))}
-    onChange={value=>{const chosen=models.find(m=>`${m.providerId}/${m.modelId}`===value);if(chosen)reconcile({...config,workflowTaskId:undefined,providerId:chosen.providerId,modelId:chosen.modelId});}} />
+    onChange={value=>{const chosen=models.find(m=>`${m.providerId}/${m.modelId}`===value);if(chosen){if(model?.execution||chosen.execution)onConfig(selectVideoUiModel(config,chosen));else reconcile({...config,workflowTaskId:undefined,providerId:chosen.providerId,modelId:chosen.modelId});}}} />
    <VideoModeSelect key={nodeId} className={chip} disabled={blocked||!!config.comfyWorkflowId} value={modeIntent} model={model} models={models} onSelect={chooseMode}/>
-   <button ref={durationRef} type="button" className={chip} aria-label={V('视频时长')} aria-haspopup="dialog" aria-expanded={durationOpen} disabled={blocked||!!config.comfyWorkflowId} onClick={()=>setDurationOpen(!durationOpen)}><Clock3 size={13}/><span>{config.durationSeconds===-1?V('自动'):config.durationSeconds!==undefined?`${config.durationSeconds}s`:V('视频时长')}</span><ChevronDown size={12}/></button>
-   <button ref={parameterRef} type="button" className={chip} aria-label={V('视频生成参数')} aria-expanded={parameters} disabled={blocked} onClick={()=>setParameters(true)}><RectangleHorizontal size={13}/><span className="truncate">{[config.aspectRatio==='adaptive'?V('自动'):config.aspectRatio,config.resolution?.toUpperCase(),config.durationSeconds===-1?V('自动'):config.durationSeconds?`${config.durationSeconds}s`:undefined,`${count} ${V('个视频')}`].filter(Boolean).join(' · ')}</span>{cap.audio&&<span title={V(config.generateAudio===undefined&&cap.audio==='optional'?'声音跟随模型':config.generateAudio===true||cap.audio==='required'?'开启':'关闭声音')}>{config.generateAudio===false||cap.audio==='disabled'?<VolumeX size={13}/>:<Volume2 size={13}/>}</span>}<ChevronDown size={12}/></button>
+   <button ref={durationRef} type="button" className={chip} aria-label={V('视频时长')} aria-haspopup="dialog" aria-expanded={durationOpen} disabled={blocked||!!config.comfyWorkflowId} onClick={()=>setDurationOpen(!durationOpen)}><Clock3 size={13}/><span>{duration===-1?V('自动'):duration!==undefined?`${String(duration)}s`:V('视频时长')}</span><ChevronDown size={12}/></button>
+   <button ref={parameterRef} type="button" className={chip} aria-label={V('视频生成参数')} aria-expanded={parameters} disabled={blocked} onClick={()=>setParameters(true)}><RectangleHorizontal size={13}/><span className="truncate">{[ratio==='adaptive'?V('自动'):typeof ratio==='string'?ratio:undefined,typeof resolution==='string'?resolution.toUpperCase():undefined,duration===-1?V('自动'):duration?`${String(duration)}s`:undefined,`${count} ${V('个视频')}`].filter(Boolean).join(' · ')}</span>{(cap.audio||model?.execution?.operations.some(op=>op.parameters.generateAudio))&&<span title={V(audio===undefined?'声音跟随模型':audio===true?'开启':'关闭声音')}>{audio===false||cap.audio==='disabled'?<VolumeX size={13}/>:<Volume2 size={13}/>}</span>}<ChevronDown size={12}/></button>
    <VideoPromptOptimizer prompt={config.prompt||''} disabled={blocked} light={light} onOptimize={onOptimize} onApply={prompt=>onConfig({...config,prompt})}/>
    <button type="button" className={chip} aria-label={V('引用素材')} title={V('引用素材')} disabled={blocked} onClick={()=>editor.current?.openMentions()}><AtSign size={15}/></button>
    {onStoryboard&&<button type="button" className={chip} aria-label={V('分镜制作')} title={V('分镜制作')} disabled={blocked} onClick={onStoryboard}><Clapperboard size={15}/><span>{V('分镜')}</span></button>}
@@ -113,7 +121,7 @@ export function VideoCompactComposer({config,inputs,models,choices,nodeId,light,
   <input ref={file} type="file" multiple accept="image/png,image/jpeg,image/webp,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/wav,audio/mp4,audio/webm" className="sr-only" aria-label={V('上传视频参考素材')} disabled={blocked} onChange={event=>{const files=Array.from(event.target.files||[]);event.target.value='';void upload(files);}}/>
   {durationOpen&&<CanvasActionPanel anchorRef={durationRef} label={V('视频时长')} light={light} width={288} onClose={()=>setDurationOpen(false)}>
     <div className="mb-1 flex justify-end"><button type="button" aria-label={V('关闭')} className="canvas-ui-action rounded-md p-1" onClick={()=>setDurationOpen(false)}><X size={14}/></button></div>
-    <VideoDurationControl capability={cap} mode={config.mode} value={config.durationSeconds} onChange={durationSeconds=>reconcile({...config,durationSeconds})} disabled={blocked||!!config.comfyWorkflowId} translate={V}/>
+    {model?.execution?<VideoContractFields config={config} inputs={inputs} contract={model.execution} only={['durationSeconds']} onChange={onConfig} disabled={blocked}/>:<VideoDurationControl capability={cap} mode={config.mode} value={config.durationSeconds} onChange={durationSeconds=>reconcile({...config,durationSeconds})} disabled={blocked||!!config.comfyWorkflowId} translate={V}/>}
   </CanvasActionPanel>}
   {picker&&<CanvasActionPanel anchorRef={addRef} label={V('添加引用')} light={light} width={320} onClose={()=>setPicker(false)}>
     {onImport&&<button type="button" className={`${videoButtonClass} mb-2 flex w-full items-center gap-2`} disabled={blocked} onClick={()=>file.current?.click()}><Upload size={15}/>{V('上传图片 / 视频 / 音频')}</button>}
@@ -122,7 +130,7 @@ export function VideoCompactComposer({config,inputs,models,choices,nodeId,light,
   </CanvasActionPanel>}
   {advancedOpen&&<CanvasActionPanel anchorRef={advancedRef} label={V('更多视频参数')} light width={640} onClose={()=>onCloseAdvanced?.()}><div className="mb-3 flex items-center justify-between text-xs font-semibold"><span>{V('更多视频参数')}</span><button type="button" aria-label={V('关闭设置')} className="canvas-ui-action rounded-md p-1" onClick={onCloseAdvanced}><X size={14}/></button></div>{advancedContent}</CanvasActionPanel>}
   {parameters&&<CanvasActionPanel anchorRef={parameterRef} label={V('视频生成参数')} light={light} width={348} onClose={()=>setParameters(false)}><div className="mb-3 flex items-center justify-between text-xs font-semibold"><span>{V('视频生成参数')}</span><button type="button" aria-label={V('关闭')} className="canvas-ui-action rounded-md p-1" onClick={()=>setParameters(false)}><X size={14}/></button></div>
-    <VideoParameterPanel config={config} capability={config.comfyWorkflowId?{sources:{}}:cap} count={count} onConfig={reconcile} onCount={onCount} disabled={blocked}/>
+    <VideoParameterPanel execution={model?.execution} inputs={inputs} config={config} capability={config.comfyWorkflowId?{sources:{}}:cap} count={count} onConfig={reconcile} onCount={onCount} disabled={blocked}/>
   </CanvasActionPanel>}
  </div>;
 }

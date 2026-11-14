@@ -9,6 +9,7 @@ import { configuredVideoProviders } from "@/lib/video/providers/config";
 // ---------------------------------------------------------------------------
 
 export type VideoModelCapability = {
+  execution?:import('./ui-contract').VideoUiContract;
   definition?: import("./capability-schema").ResolvedVideoCapability;
   providerId: string;
   modelId: string;

@@ -12,13 +12,19 @@ import {useVideoI18n} from "./i18n";
 /** A mode may be discoverable across the catalog, but a model change is always
  * an explicit click. Opening/cancelling the picker never mutates the draft. */
 export function VideoModeSelect({value, model, models, disabled, className, onSelect}: {
-  value: VideoCreationIntent; model?: VideoCatalogModel; models: VideoCatalogModel[];
-  disabled: boolean; className: string; onSelect: (intent: VideoCreationIntent, model: VideoCatalogModel) => void;
+  value: VideoCreationIntent|'auto'; model?: VideoCatalogModel; models: VideoCatalogModel[];
+  disabled: boolean; className: string; onSelect: (intent: VideoCreationIntent|'auto', model: VideoCatalogModel) => void;
 }) {
   const V = useVideoI18n(), container = useRef<HTMLDivElement>(null), anchor = useRef<HTMLButtonElement>(null);
   const [pending, setPending] = useState<VideoCreationIntent | null>(null);
   const cap = catalogCapability(model), candidates = pending ? videoIntentModels(models, pending) : [];
   useEffect(() => { setPending(null); }, [model?.providerId, model?.modelId, disabled]);
+  if(model?.execution)return <div ref={container} className='min-w-0' data-testid='video-mode-control'><SelectMenu label={V('视频生成模式')} size='sm' value={value} disabled={disabled} className={className} popoverClassName='canvas-ui-light'
+    onChange={selected=>onSelect(selected as VideoCreationIntent|'auto',model)} options={[
+      {value:'auto',label:V('自动'),buttonLabel:V('自动')},
+      ...model.execution.operations.map(operation=>{const intent=operation.intent==='reference'?'omni_reference':operation.intent;return {value:intent,label:V(VIDEO_CREATION_LABELS[intent]),buttonLabel:V(VIDEO_CREATION_LABELS[intent])};}),
+      ...(!['auto',...model.execution.operations.map(op=>op.intent==='reference'?'omni_reference':op.intent)].includes(value)?[{value,label:V(VIDEO_CREATION_LABELS[value as VideoCreationIntent]||value),buttonLabel:V(VIDEO_CREATION_LABELS[value as VideoCreationIntent]||value)}]:[]),
+    ]}/></div>;
   function choose(intent: VideoCreationIntent) {
     if (disabled) return;
     if (model && supportsVideoIntent(cap, intent)) { onSelect(intent, model); return; }

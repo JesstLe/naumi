@@ -9,10 +9,11 @@ import {readPublishedModelSnapshot} from "@/lib/model-config/published";
 import {publicModelCatalog} from "@/lib/model-config/public-catalog";
 import { freezeManagedVideoCapability } from "@/lib/video/frozen-capability";
 import { legacyVideoView } from "@/lib/video/model-definition";
+import {projectVideoUiContract} from '@/lib/video/ui-projection';
 
 // ---------------------------------------------------------------------------
 // 视频能力目录(§6):供应商、模型、能力声明与价格展示。
-// UI 表单由本目录驱动;服务端创建时按同一份声明二次校验。
+// 新执行绑定投影公开 Profile 控件;旧能力声明仅供尚未迁移的链路使用。
 // ---------------------------------------------------------------------------
 
 export const runtime = "nodejs";
@@ -28,7 +29,9 @@ export async function GET() {
       const u = snapshot.config.upstreamModels.find(u => u.id === m.target.id)!;
       const p = snapshot.config.providers.find(p => p.id === u.providerId)!;
       const frozen=await freezeManagedVideoCapability(snapshot,u,p);
-      return { ...legacyVideoView({...frozen.definition,sources:frozen.sources},{modelId:m.id,providerId:"managed-video",label:m.label}), isDefault: (catalog.defaultModelId || snapshot.config.bindings["video.generate"]) === m.id };
+      return { ...legacyVideoView({...frozen.definition,sources:frozen.sources},{modelId:m.id,providerId:"managed-video",label:m.label}),
+        ...(frozen.execution?{execution:projectVideoUiContract(frozen.execution,{publicModelId:m.id,wireModel:u.model,connectionId:p.id})}:{}),
+        isDefault: (catalog.defaultModelId || snapshot.config.bindings["video.generate"]) === m.id };
     }));
     const defaultModel = models.find(m => m.isDefault)?.modelId || models[0]?.modelId || "";
     const providers = models.length ? [{ id: "managed-video", label: "视频模型", defaultModel, models, configured: true }] : [];

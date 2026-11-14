@@ -1,6 +1,7 @@
 import type { ResolvedVideoCapability, VideoMode } from "./capability-schema";
 import { catalogCapability, reconcileVideoSettings, videoModeRoles, type VideoCatalogModel, type VideoNodeConfig } from "./client-settings";
 import type { OrderedInput } from "./references";
+import type {VideoUiContract} from './ui-contract';
 
 /** Reference labels are composer intentions, not new wire modes. */
 export type VideoCreationIntent = Exclude<VideoMode, "reference"> | "image_reference" | "omni_reference";
@@ -64,7 +65,8 @@ function selectionRoles(inputs: readonly OrderedInput[], mode: VideoMode | undef
 
 /** An explicit attach can leave text mode without changing the user's model.
  * Multiple generic images do not imply first/last frame semantics. */
-export function attachVideoInputs(config: VideoNodeConfig, inputs: readonly OrderedInput[], cap: ResolvedVideoCapability) {
+export function attachVideoInputs(config: VideoNodeConfig, inputs: readonly OrderedInput[], cap: ResolvedVideoCapability,execution?:VideoUiContract) {
+  if(execution)return {config:{...config},inputs:inputs.map(input=>({...input})),changed:false};
   let mode = config.mode;
   const media = inputs.filter(input => input.kind !== "text");
   const singleFits = media.filter(input => input.kind === "image").length === 1 && !media.some(input => input.kind === "video")
@@ -81,6 +83,7 @@ export function attachVideoInputs(config: VideoNodeConfig, inputs: readonly Orde
 /** Explicit model/mode selection keeps every source and the complete prompt.
  * Missing/extra inputs remain visible and are rejected by the existing validator. */
 export function selectVideoIntent(config: VideoNodeConfig, inputs: readonly OrderedInput[], model: VideoCatalogModel, intent: VideoCreationIntent) {
+  if(model.execution)return {config:{...config,modelId:model.modelId,providerId:model.providerId,intentPreference:intent},inputs:inputs.map(input=>({...input})),changes:[]};
   const cap = catalogCapability(model);
   if (!supportsVideoIntent(cap, intent)) throw new Error("此模型未开放所选视频模式");
   if (intent === "image_reference" && inputs.some(input => input.kind === "video" || input.kind === "audio")) {
