@@ -25,6 +25,19 @@ export function workerOrigin(value) {
   return parsed.origin;
 }
 
+/** Windows can temporarily deny atomic replacement while a scanner holds the
+ * destination. Retry only the same already-synced temporary file; never delete
+ * the durable state, retry a task, or relax fail-closed persistence semantics. */
+export async function renameWorkerState(source,target,{platform=process.platform,rename=fs.rename,wait=ms=>new Promise(resolve=>setTimeout(resolve,ms))}={}) {
+  for(let attempt=0;;attempt++) {
+    try {await rename(source,target);return;}
+    catch(error) {
+      if(platform!=='win32'||!['EPERM','EACCES','EBUSY'].includes(error.code)||attempt>=7)throw error;
+      await wait(Math.min(10*2**attempt,200));
+    }
+  }
+}
+
 export function fileStateStore(filename) {
   assert(path.isAbsolute(filename),'ABSOLUTE_WORKER_STATE_REQUIRED',400);
   const directory=path.dirname(filename);
@@ -53,7 +66,7 @@ export function fileStateStore(filename) {
       try {
         handle=await fs.open(temporary,'wx',0o600);
         await handle.writeFile(JSON.stringify(value)+'\n');await handle.sync();await handle.close();handle=null;
-        await fs.rename(temporary,filename);
+        await renameWorkerState(temporary,filename);
         if(process.platform!=='win32') {const d=await fs.open(directory,'r');try{await d.sync();}finally{await d.close();}}
       } finally {await handle?.close();await fs.rm(temporary,{force:true});}
     },
