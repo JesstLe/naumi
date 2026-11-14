@@ -19,6 +19,7 @@ export function videoUiStructure(config:VideoNodeConfig,inputs:readonly OrderedI
     elements:active?.elements??contract.operations.find(operation=>operation.structure?.elements)?.structure?.elements};
 }
 export function videoUiParameters(config:VideoNodeConfig,inputs:readonly OrderedInput[],contract:VideoUiContract):Record<string,VideoUiParameter>{
+  if(contract.workflow)return contract.workflow.parameters;
   const intent=videoUiIntent(config,inputs,contract);
   if(intent.ok){const operation=contract.operations.find(op=>op.intent===intent.value);if(operation)return operation.parameters;}
   // Ambiguous drafts still render shared controls. This is presentation only;
@@ -49,6 +50,11 @@ export function videoUiCreationDefaults(model:VideoCatalogModel):VideoNodeConfig
 }
 /** Exactly the same ingress translation as submission; no client compile or
  * capability matrix. Media/text metadata are still re-read by the server. */
+export function videoByocDraft(config:VideoNodeConfig,inputs:readonly OrderedInput[]){
+  return {workflowId:config.comfyWorkflowId!,prompt:config.prompt??'',parameters:config.parameters,
+    durationSeconds:config.durationSeconds,resolution:config.resolution,aspectRatio:config.aspectRatio,negativePrompt:config.negativePrompt,generateAudio:config.generateAudio,watermark:config.watermark,
+    references:inputs.length?undefined:config.references,orderedInputs:inputs.length?[...inputs]:undefined,inputMappings:config.comfyInputs,...config.comfyOverrides};
+}
 export function videoUiDraft(config:VideoNodeConfig,inputs:readonly OrderedInput[]){
   return videoSubmissionDraftValue({...config,source:'workbench',prompt:config.prompt||'',seconds:String(config.durationSeconds??''),size:config.resolution||'',
     references:inputs.length?undefined:config.references,orderedInputs:inputs.length?[...inputs]:undefined});

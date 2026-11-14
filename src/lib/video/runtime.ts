@@ -181,6 +181,7 @@ export async function submitQueuedVideoTask(
   const adapter = getVideoProvider(task.providerId || VIDEO_PROVIDER_ID);
   if (!adapter) throw new Error(`视频适配器 ${task.providerId} 未注册`);
   if(task.parameters.version===3){
+    if((await getVideoTask(email,task.id))?.status==='cancelled')return;
     if(!adapter.createCompiled)throw new VideoContractError('VIDEO_COMPILED_TRANSPORT_UNAVAILABLE','冻结视频传输尚未配置');
     const wire=await materializeCompiledVideoTask(email,task);
     const submission=await beginVideoTaskSubmission(email,task.id);

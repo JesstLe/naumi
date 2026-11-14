@@ -1,3 +1,4 @@
+import {videoParameterSchema,mapVideoParameters} from './parameters';
 import {shotsMapping,elementsMapping,mapStructuredJson} from './structured-json';
 import {z} from 'zod';
 import {validateVideoStructure} from '../input-resolver';
@@ -11,13 +12,6 @@ import {
 
 const field=z.string().regex(/^[a-zA-Z][a-zA-Z0-9_]{0,99}$/).refine(name=>!['__proto__','prototype','constructor'].includes(name));
 const primitive=z.union([z.string(),z.number().finite(),z.boolean(),z.null()]);
-const parameter=z.strictObject({type:z.enum(['string','number','integer','boolean','json']),wireField:field.optional(),
-  required:z.boolean().optional(),default:z.json().optional(),values:z.array(primitive).optional(),
-  minimum:z.number().finite().optional(),maximum:z.number().finite().optional(),
-  // User-facing choice -> effective semantic value, then protocol spelling.
-  // Keep these two boundaries distinct; do not feed wire values back as input.
-  mapping:z.record(z.string(),primitive).optional(),wireMapping:z.record(z.string(),primitive).optional(),send:z.enum(['value','omit','semantic']).optional(),
-});
 const range=z.strictObject({min:z.number().int().nonnegative().default(0),max:z.number().int().nonnegative().optional(),
   maxBytes:z.number().int().positive().optional(),maxDurationSeconds:z.number().finite().positive().optional(),totalDurationSeconds:z.number().finite().positive().optional(),
 }).refine(v=>v.max===undefined||v.max>=v.min);
@@ -28,11 +22,11 @@ const mediaMapping=z.strictObject({kind:z.enum(['image','video','audio']),roles:
 export const jsonVideoRecipeSchema=z.strictObject({
   createPath:z.string().regex(/^\/(?!\/)[^?#\s]*$/),modelField:field,promptField:field,bodyField:field.optional(),
   defaults:z.strictObject({ordinaryImage:z.enum(['single_image','reference']).optional(),sourceVideo:z.enum(['video_edit','reference']).optional()}).default({}),
-  parameters:z.record(field,parameter),
+  parameters:z.record(field,videoParameterSchema),
   operations:z.array(z.strictObject({intent:videoIntentSchema,requiresPrompt:z.boolean().optional(),
     maxPromptChars:z.number().int().positive().optional(),images:range.optional(),videos:range.optional(),audios:range.optional(),
     shots:shotsMapping.optional(),elements:elementsMapping.optional(),
-    parameters:z.record(field,parameter).optional(),media:z.array(mediaMapping).default([]),
+    parameters:z.record(field,videoParameterSchema).optional(),media:z.array(mediaMapping).default([]),
     parameterCombinations:z.array(z.record(field,z.array(primitive).min(1))).min(1).optional(),
   })).min(1),
 }).superRefine((recipe,ctx)=>{
@@ -112,22 +106,11 @@ function mapJsonDraft(draft:VideoExecutionDraft,binding:PublishedVideoModelBindi
   const put=(name:string,value:Json):boolean=>{if(Object.hasOwn(body,name))return false;body[name]=value;return true;};
   if(!put(recipe.modelField,binding.wireModel)||!put(recipe.promptField,prompt))return fail('mapping','WIRE_FIELD_COLLISION','binding.recipe','模型和提示词字段冲突','修正协议字段映射');
   const parameters={...recipe.parameters,...operation.parameters};
-  for(const name of Object.keys(draft.parameters))if(!Object.hasOwn(parameters,name))return fail('mapping','PARAMETER_MAPPING_MISSING',name,'此参数没有对应的请求映射','配置字段映射或明确移除此参数');
-  for(const [name,rule] of Object.entries(parameters)){
-    if(rule.send==='omit')continue;
-    const supplied=Object.hasOwn(draft.parameters,name),value=supplied?draft.parameters[name]:rule.default;
-    if(value===undefined){if(rule.required)return fail('input','PARAMETER_REQUIRED',name,'缺少此操作需要的参数','填写参数');continue;}
-    const typed=rule.type==='json'||rule.type==='integer'?rule.type==='json'||typeof value==='number'&&Number.isInteger(value):typeof value===rule.type;
-    if(!typed||rule.values&&!rule.values.some(item=>item===value)||typeof value==='number'&&(rule.minimum!==undefined&&value<rule.minimum||rule.maximum!==undefined&&value>rule.maximum))
-      return fail('constraint','PARAMETER_VALUE_INVALID',name,'参数类型或数值不符合协议约束','选择协议允许的参数值');
-    const semantic=rule.mapping?Object.hasOwn(rule.mapping,String(value))?rule.mapping[String(value)]:undefined:value;
-    if(semantic===undefined)return fail('mapping','PARAMETER_VALUE_NOT_MAPPABLE',name,'此参数值没有有效参数映射','补齐映射或选择其他参数值');
-    effective[name]=semantic;
-    if(rule.send==='semantic')continue;
-    const mapped=rule.wireMapping?Object.hasOwn(rule.wireMapping,String(semantic))?rule.wireMapping[String(semantic)]:undefined:semantic;
-    if(mapped===undefined)return fail('mapping','PARAMETER_VALUE_NOT_MAPPABLE',name,'有效参数值没有上游字段映射','补齐协议字段映射');
-    if(!rule.wireField)return fail('mapping','PARAMETER_MAPPING_MISSING',name,'参数缺少上游字段','配置字段映射');
-    if(!put(rule.wireField,mapped))return fail('mapping','WIRE_FIELD_COLLISION',name,'多个参数映射到同一上游字段','修正协议字段映射');
+  const mapped=mapVideoParameters(draft.parameters,parameters);if(!mapped.ok)return mapped;
+  Object.assign(effective,mapped.value.effective);
+  for(const [name,value] of Object.entries(mapped.value.wire)){
+    const rule=parameters[name];if(!rule.wireField)return fail('mapping','PARAMETER_MAPPING_MISSING',name,'参数缺少上游字段','配置字段映射');
+    if(!put(rule.wireField,value))return fail('mapping','WIRE_FIELD_COLLISION',name,'多个参数映射到同一上游字段','修正协议字段映射');
   }
   const consumed=ordinaryInputs.filter(input=>input.kind==='text').map(input=>input.id);
   if(operation.parameterCombinations&&!operation.parameterCombinations.some(combination=>Object.entries(combination).every(([key,values])=>values.some(value=>value===effective[key]))))

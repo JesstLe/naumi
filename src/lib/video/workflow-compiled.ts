@@ -8,10 +8,10 @@ import {BillingError,type BillingQuote} from '../billing/types';
 import {VideoContractError} from './contract';
 import {videoSubmissionDraft} from './submission-draft';
 import {bindPublishedVideoExecution} from './published-execution';
-import {prepareDeferredVideoInputs} from './prepare-inputs';
-import {prepareVideoDraftConstraints} from './compile';
+import {prepareVideoExecutionInputs,prepareDeferredVideoInputs} from './prepare-inputs';
+import {compileVideoRequest,prepareVideoDraftConstraints} from './compile';
 import {videoDraftSchema,resolvedVideoDraftSchema,videoModelBindingSchema,videoExecutionPolicySchema,videoDraftPreparationSchema,videoDiagnostic,
- type VideoExecutionDraft,type ResolvedVideoDraft,type VideoResult,type CompiledVideoPlan} from './execution-contract';
+ type VideoExecutionDraft,type ResolvedVideoDraft,type VideoResult,type CompiledVideoPlan,type VideoModelProfile,type PublishedVideoModelBinding,type VideoExecutionPolicy} from './execution-contract';
 import {prepareVideoExecution} from './prepare-execution';
 import type {CreateVideoInput} from './submission-types';
 
@@ -32,10 +32,11 @@ function required<T>(result:VideoResult<T>):T{if(!result.ok)throw new VideoContr
 /** This is not a compiled plan: dependency slots have no asset facts, and the
  * shared Profile mapper only establishes draft constraints/quote facts here.
  * Each stage performs its single final compilation after dependencies resolve. */
-export async function freezeWorkflowCompiled(actor:string,projectKey:string,input:CreateVideoInput,futureInputs:VideoExecutionDraft['inputs']):Promise<FrozenWorkflowCompiled>{
+type PrivateBinding={binding:PublishedVideoModelBinding;policy:VideoExecutionPolicy;profile:VideoModelProfile};
+export async function freezeWorkflowCompiled(actor:string,projectKey:string,input:CreateVideoInput,futureInputs:VideoExecutionDraft['inputs'],privateBinding?:PrivateBinding):Promise<FrozenWorkflowCompiled>{
  const execution=currentModelExecution('video');
- if(!execution?.frozen.video?.execution)throw new VideoContractError('VIDEO_EXECUTION_NOT_CONFIGURED','制作链缺少新版执行绑定');
- const {binding,policy,profile}=bindPublishedVideoExecution(execution.frozen.video.execution,{publicModelId:execution.frozen.publicModelId,wireModel:execution.connection.wireModel,connectionId:execution.connection.providerId});
+ if(!privateBinding&&!execution?.frozen.video?.execution)throw new VideoContractError('VIDEO_EXECUTION_NOT_CONFIGURED','制作链缺少新版执行绑定');
+ const {binding,policy,profile}=privateBinding??bindPublishedVideoExecution(execution!.frozen.video!.execution!,{publicModelId:execution!.frozen.publicModelId,wireModel:execution!.connection.wireModel,connectionId:execution!.connection.providerId});
  const requestDraft=videoSubmissionDraft(input),pendingIds=new Set(futureInputs.map(item=>item.id));
  if(pendingIds.size!==futureInputs.length)throw new VideoContractError('DUPLICATE_INPUT','制作链依赖槽重复');
  for(const future of futureInputs){
@@ -85,11 +86,11 @@ export function assertFrozenWorkflowQuote(quote:BillingQuote){
 /** Called only inside the authenticated frozen-stage scope. HTTP cannot send
  * a plan or install this context. Known assets stay pinned; only declared
  * future slots bind newly completed owned outputs. No latest catalogue read. */
-export async function prepareFrozenWorkflowCompiled(actor:string,input:CreateVideoInput):Promise<VideoResult<CompiledVideoPlan>|undefined>{
+export async function prepareFrozenWorkflowCompiled(actor:string,input:CreateVideoInput,privateBinding?:PrivateBinding):Promise<VideoResult<CompiledVideoPlan>|undefined>{
  const context=pendingContext.getStore();if(!context)return undefined;const {frozen}=context;
  if(!input.workflowRunId||!input.workflowNodeId)return failure('WORKFLOW_SNAPSHOT_MISMATCH','冻结制作链只可提交所属阶段');
- const execution=currentModelExecution('video');if(!execution?.frozen.video?.execution)return failure('WORKFLOW_SNAPSHOT_MISMATCH','制作链没有恢复原执行绑定');
- const bound=bindPublishedVideoExecution(execution.frozen.video.execution,{publicModelId:execution.frozen.publicModelId,wireModel:execution.connection.wireModel,connectionId:execution.connection.providerId});
+ const execution=currentModelExecution('video');if(!privateBinding&&!execution?.frozen.video?.execution)return failure('WORKFLOW_SNAPSHOT_MISMATCH','制作链没有恢复原执行绑定');
+ const bound=privateBinding??bindPublishedVideoExecution(execution!.frozen.video!.execution!,{publicModelId:execution!.frozen.publicModelId,wireModel:execution!.connection.wireModel,connectionId:execution!.connection.providerId});
  if(canonicalConfig(bound.binding)!==canonicalConfig(frozen.binding)||canonicalConfig(bound.policy)!==canonicalConfig(frozen.policy)||actor.toLowerCase()!==frozen.staticDraft.scope.actorId||input.projectKey!==frozen.staticDraft.scope.projectKey)return failure('WORKFLOW_SNAPSHOT_MISMATCH','制作链执行作用域或绑定已改变');
  const actual=videoSubmissionDraft(input),futureIds=new Set(frozen.futureInputs.map(item=>item.id));
  const settings=(draft:VideoExecutionDraft)=>({prompt:draft.prompt,parameters:draft.parameters,structure:draft.structure,intentPreference:draft.intentPreference,legacyMode:draft.legacyMode});
@@ -117,7 +118,9 @@ export async function prepareFrozenWorkflowCompiled(actor:string,input:CreateVid
    }
    return {ok:true,value:true};
  };
- const result=await prepareVideoExecution({actor,projectKey:input.projectKey!,draft,execution:execution.frozen.video.execution,identity:{publicModelId:frozen.binding.publicModelId,wireModel:frozen.binding.wireModel,connectionId:frozen.binding.connectionId},validateResolved});
+ let result:VideoResult<CompiledVideoPlan>;
+ if(privateBinding){const resolved=await prepareVideoExecutionInputs(actor,input.projectKey!,draft);if(!resolved.ok)return resolved;const checked=validateResolved(resolved.value);if(!checked.ok)return checked;result=compileVideoRequest({...bound,draft:resolved.value});}
+ else result=await prepareVideoExecution({actor,projectKey:input.projectKey!,draft,execution:execution!.frozen.video!.execution,identity:{publicModelId:frozen.binding.publicModelId,wireModel:frozen.binding.wireModel,connectionId:frozen.binding.connectionId},validateResolved});
  if(result.ok&&canonicalConfig({intent:result.value.intent,effectiveParameters:result.value.effectiveParameters,billingFacts:result.value.billingFacts})!==canonicalConfig(frozen.projected))return failure('WORKFLOW_SNAPSHOT_MISMATCH','最终执行事实与冻结参数准备不一致');
  return result;
 }

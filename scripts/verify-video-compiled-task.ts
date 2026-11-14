@@ -16,9 +16,25 @@ async function main(){
   const root=path.resolve(process.env.MEDIA_DIR!,'../compiled-task-'+randomUUID());await mkdir(root,{recursive:true});process.env.MEDIA_DIR=path.join(root,'media');process.env.MEDIA_JOB_DIR=path.join(root,'jobs');
   process.env.MEDIA_PRIVATE='1';process.env.MEDIA_REMOTE_ACCESS='proxy';process.env.VIDEO_REFERENCE_PUBLIC_BASE_URL='https://fixture-media.example';process.env.NAUMI_VIDEO_WORKER='0';process.env.NAUMI_APPLICATION_TASK_EXECUTION='worker';
   let mode:'ok'|'disconnect'|'reject'='ok',posts=0,polls=0,downloads=0,cases=0;
+  const byoc={posts:0,uploads:0,objects:0,mode:'ok',received:[] as any[],uploadHashes:[] as string[]};
   const received:Array<{path:string;body:Record<string,any>;key:string|undefined}>=[];
   const mp4file=path.join(root,'output.mp4');execFileSync('ffmpeg',['-v','error','-f','lavfi','-i','color=c=blue:s=64x64:r=10','-t','1','-c:v','libx264','-pix_fmt','yuv420p',mp4file],{windowsHide:true});const mp4=await readFile(mp4file);
   const f=await createModelFixture(async(req,res)=>{
+    if(req.url==='/object_info'){byoc.objects++;res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({LoadImage:{},CLIPTextEncode:{},SaveVideo:{},KSampler:{}}));return;}
+    if(req.url==='/upload/image'||req.url==='/task/openapi/upload'){
+      const chunks:Buffer[]=[];for await(const chunk of req)chunks.push(Buffer.from(chunk));
+      const form=await new Response(Buffer.concat(chunks),{headers:{'content-type':String(req.headers['content-type'])}}).formData();const file=form.get(req.url==='/upload/image'?'image':'file') as File;assert(file&&file.size>0);byoc.uploadHashes.push(createHash('sha256').update(Buffer.from(await file.arrayBuffer())).digest('hex'));byoc.uploads++;
+      res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify(req.url==='/upload/image'?{name:byoc.mode==='bad-upload'?'../bad.png':file.name,subfolder:'uploads'}:{code:0,data:{fileName:'uploads/'+file.name}}));return;
+    }
+    if(req.url==='/prompt'||req.url==='/task/openapi/create'||req.method==='POST'&&req.url?.startsWith('/api/v1/comfyui/comfyui_workflow/')){
+      const chunks:Buffer[]=[];for await(const chunk of req)chunks.push(Buffer.from(chunk));const body=JSON.parse(Buffer.concat(chunks).toString());byoc.posts++;byoc.received.push({path:req.url,body});
+      if(byoc.mode==='disconnect'){req.socket.destroy();return;}
+      res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify(req.url==='/prompt'?{prompt_id:'comfy-'+byoc.posts}:req.url==='/task/openapi/create'?{code:0,data:{taskId:'rh-'+byoc.posts}}:{code:'success',data:{task_id:'auto-'+byoc.posts,status:'queued'}}));return;
+    }
+    if(req.url?.startsWith('/history/')){const id=req.url.slice('/history/'.length);res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({[id]:{status:{completed:true},outputs:{save:{videos:[{filename:'out.mp4',type:'output',subfolder:''}]}}}}));return;}
+    if(req.url==='/task/openapi/outputs'){for await(const _ of req){}res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({code:0,data:[{fileType:'mp4',fileUrl:f.origin+'/result.mp4'}]}));return;}
+    if(req.url?.startsWith('/api/v1/comfyui/comfyui_workflow/result/')){res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({code:'success',data:{status:'completed',results:[{type:'video',url:f.origin+'/result.mp4'}]}}));return;}
+    if(req.url?.startsWith('/view?')){res.writeHead(200,{'content-type':'video/mp4'});res.end(mp4);return;}
     if(req.method==='POST'){
       const chunks:Buffer[]=[];for await(const chunk of req)chunks.push(Buffer.from(chunk));const body=JSON.parse(Buffer.concat(chunks).toString());posts++;received.push({path:req.url!,body,key:req.headers['idempotency-key'] as string|undefined});
       if(mode==='disconnect'){req.socket.destroy();return;}
@@ -83,7 +99,7 @@ async function main(){
     const reservations=()=>pool!.query('SELECT count(*)::int AS n FROM app_gen_reservations');const reservationCount=(await reservations()).rows[0].n;check('reservation-created-once',()=>assert.equal(reservationCount,1));
     // Publish a different latest binding and tariff after acceptance. Dispatch
     // and settlement must continue the old immutable operation.
-    const draft=await f.repo.draft('fixture-admin'),changed=structuredClone(draft.config);changed.upstreamModels[0].parameterMap.videoExecution!.recipe.createPath='/v1/changed-new-operation';
+    const draft=await f.repo.draft('fixture-admin'),changed=structuredClone(draft.config);(changed.upstreamModels[0].parameterMap.videoExecution!.recipe as import('zod').infer<typeof import('../src/lib/video/profiles/json-profile').jsonVideoRecipeSchema>).createPath='/v1/changed-new-operation';
     const saved=await f.repo.saveDraft({id:draft.id,expectedRevision:draft.revision,actor:'fixture-admin',config:changed}),publication=await f.repo.stage({id:randomUUID(),draftId:saved.id,expectedRevision:saved.revision,expectedVersion:modelSnapshot.version,actor:'fixture-admin',reason:'fixture next binding'});await f.repo.markApplied(publication.id,publication.digest,saved.id);
     const newTariff=structuredClone(bill.config);newTariff.features['video.generate'].pricing={mode:'fixed',credits:9};await billingRuntime.config.publish({id:randomUUID(),actor:'fixture-admin',reason:'fixture new tariff',expectedVersion:bill.version,config:newTariff});
     await dispatch(queued);const processing=await task(queued.id);
@@ -163,6 +179,7 @@ async function main(){
     const routeResponse=await generate(httpRequest('/api/video/generate',routeBody)),routeResult=await routeResponse.json();check('actual-generate-route-auth-to-compiled-task',()=>assert.equal(routeResponse.status,200,JSON.stringify(routeResult)));assert.equal((await task(routeResult.taskId)).parameters.version,3);
     const retryResponse=await retryRoute(httpRequest('/api/video/tasks/'+changedTask.id+'/retry',{idempotencyKey:randomUUID()}),{params:Promise.resolve({id:changedTask.id})}),retried=await retryResponse.json();check('actual-explicit-retry-route-no-double-mapping',()=>assert.equal(retryResponse.status,202,JSON.stringify(retried)));assert.equal(readTaskCompiledVideoPlan(actor,await task(retried.taskId)).requestedParameters.resolution,'4K');
     const unknownResponse=await retryRoute(httpRequest('/api/video/tasks/'+unknown.id+'/retry',{idempotencyKey:randomUUID()}),{params:Promise.resolve({id:unknown.id})});check('unknown-task-not-new-operation-retryable',()=>assert.equal(unknownResponse.status,409));
+    if(process.argv.includes('--byoc'))await (await import('./video-compiled-byoc-checks')).verifyCompiledByoc({actor,pool,f,byoc,task,finish,dispatch,check,key});
     if(process.argv.includes('--structured'))await (await import('./video-compiled-structured-checks')).verifyCompiledStructured({actor,pool,f,posts:()=>posts,received,task,finish,dispatch,check});
     if(process.argv.includes('--agent')||process.argv.includes('--agent-baseline'))await (await import('./video-compiled-agent-checks')).verifyCompiledAgent({actor,pool,f,posts:()=>posts,task,finish,dispatch,completedId:completed.id,check});
     if(process.argv.includes('--workflow'))await (await import('./video-compiled-workflow-checks')).verifyCompiledWorkflow({actor,pool,f,posts:()=>posts,received,task,finish,check,setMode:value=>{mode=value;}});

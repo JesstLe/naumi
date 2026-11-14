@@ -14,7 +14,8 @@ import {compileVideoPrompt} from "./prompt";
 import {compileVideoCamera} from "./camera";
 import {requireOwnedVideoText} from "./submission";
 import {ModelConfigError} from "../model-config/types";
-import {prepareByocRecipe,runFrozenByocRecipe,type FrozenByocRecipe} from "./byoc-recipe";
+import {bindByocWorkflowRecipe,byocVideoSubmissionInput} from './byoc-execution-binding';
+import {prepareByocRecipe,runFrozenByocRecipe,runLegacyByocStage,type FrozenByocRecipe} from "./byoc-recipe";
 import {buildVideoCreate} from "./providers/wire";
 import {runLegacyModelExecution} from "../model-config/context";
 import {createHash} from "node:crypto";
@@ -30,7 +31,7 @@ export async function withFrozenWorkflowStage<T>(actor:string,stage:FrozenWorkfl
 }
 async function restoreWorkflowStage<T>(actor:string,stage:FrozenWorkflowStage,run:()=>Promise<T>,confirmation?:{version:number;credits:number}){
   const action=()=>runFrozenWorkflowTexts(actor,stage.texts,()=>stage.compiled?runFrozenWorkflowCompiled(stage.compiled,stage.quote,confirmation,run):run());
-  if(stage.byoc)return runLegacyModelExecution(()=>runFrozenByocRecipe(stage.byoc!,action));
+  if(stage.byoc)return runLegacyModelExecution(()=>runFrozenByocRecipe(stage.byoc!,()=>stage.compiled?action():runLegacyByocStage(action)));
   if(stage.bundle)return withFrozenExecutionBundle(stage.bundle,action);
   if(!stage.legacy)throw new ModelConfigError("WORKFLOW_SNAPSHOT_UNAVAILABLE","制作链冻结配置不可用",503);
   const billing=await(await getBillingRuntime()).config.byVersion(stage.billingVersion);
@@ -54,11 +55,14 @@ export async function freezeVideoWorkflow(actor:string,plan:VideoWorkflowPlan){
     };
     const legacyPendingInputs=()=>{for(const binding of node.mediaBindings||[]){const id=workflowBindingId(plan.id,binding),ref:VideoReference={id,kind:binding.kind,role:binding.role,url:"/media/pending"};candidateReferences.push(ref);if(candidateOrdered){const entry={id,nodeId:binding.fromNodeId,kind:binding.kind,role:binding.role,value:ref.url!},index=candidateOrdered.findIndex(input=>input.id===id);if(index>=0)candidateOrdered[index]=entry;else candidateOrdered.push(entry);}}};
     if(request.comfyWorkflowId){
-      await legacyTexts();legacyPendingInputs();
-      const recipe=await prepareByocRecipe(actor,{workflowId:request.comfyWorkflowId,prompt:compileVideoPrompt(request.prompt,candidateOrdered||[]).prompt,references:candidateReferences,inputMappings:request.comfyInputs,...request.comfyOverrides});
-      buildVideoCreate({provider:recipe.config,profile:"comfyui",request:{...request,source:"workflow",providerId:recipe.config.id,modelId:recipe.workflowId,durationSeconds:request.durationSeconds??-1,references:candidateReferences.map(ref=>({...ref,submissionName:ref.id})),idempotencyKey:plan.id,workflowManifest:recipe.manifest}});
-      result[node.id]={byoc:recipe,billingVersion:billing.version,texts:values,quote:{version:billing.version,credits:0,authorizedCredits:0}};continue;
+      const futureInputs=(node.mediaBindings||[]).map(binding=>{const id=workflowBindingId(plan.id,binding);return {id,nodeId:request.orderedInputs?.find(item=>item.id===id)?.nodeId||binding.fromNodeId,kind:binding.kind,role:binding.role};});
+      const recipe=await prepareByocRecipe(actor,{workflowId:request.comfyWorkflowId,references:[...candidateReferences,...futureInputs.map(item=>({id:item.id,kind:item.kind,role:item.role}))],inputMappings:request.comfyInputs,...request.comfyOverrides});
+      const bound=bindByocWorkflowRecipe(recipe,request.comfyOverrides??{}),byocInput=byocVideoSubmissionInput({...request,workflowId:request.comfyWorkflowId,source:'workflow',projectKey:plan.projectKey,idempotencyKey:plan.id});
+      const compiled=await freezeWorkflowCompiled(actor,plan.projectKey,byocInput,futureInputs,bound);
+      for(const item of compiled.staticDraft.inputs)if(item.kind==='text')values[item.nodeId.replace(/^text:/,'')]=item.text;
+      result[node.id]={byoc:recipe,compiledVersion:1,compiled,billingVersion:billing.version,texts:values,quote:{version:billing.version,credits:0,authorizedCredits:0}};continue;
     }
+
     let stage:FrozenWorkflowStage;
     if(executor&&snapshot){const video=await executor.resolve({feature:"video.generate",binding:"video.generate",requestedModelId:request.modelId,snapshot,billing});stage={bundle:{modelVersion:snapshot.version,billingVersion:billing.version,primary:"video",video},billingVersion:billing.version,texts:values,quote:{version:billing.version,credits:0,authorizedCredits:0,modelVersion:snapshot.version}};}
     else{const provider=getVideoProviderConfig(request.providerId||configuredVideoProviders()[0]?.id||"openai-videos");if(!provider)throw new ModelConfigError("VIDEO_PROVIDER_UNAVAILABLE","视频供应商尚未配置",422);stage={legacy:structuredClone(provider),billingVersion:billing.version,texts:values,quote:{version:billing.version,credits:0,authorizedCredits:0}};request.modelId=request.modelId||provider.defaultModel;request.providerId=provider.id;}

@@ -10,7 +10,7 @@ export type ComfyRunResult={
   message?:string;
 };
 export type ComfyRunInput=Partial<ComfyRunPayload>&{
-  artworkId?:string;imageUrl?:string;prompt?:string;seed?:number;numericDefaults?:Record<string,number>;
+  parameters?:Record<string,import('zod').z.infer<ReturnType<typeof import('zod').z.json>>>;artworkId?:string;imageUrl?:string;prompt?:string;seed?:number;numericDefaults?:Record<string,number>;
   source?:"canvas"|"workbench"|"agent"|"workflow";mediaType?:"video";idempotencyKey?:string;
   nodeId?:string;expectedRevision?:number;projectKey?:string;durationSeconds?:number;references?:unknown[];inputMappings?:unknown[];
 };

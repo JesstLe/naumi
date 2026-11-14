@@ -38,6 +38,11 @@ async function submitOwnedVideoNode(actor:string,node:CanvasVideoNode,input:{nod
       prompt:config.prompt||'',seconds:String(config.durationSeconds??''),size:config.resolution||'',orderedInputs:node.inputs.length?node.inputs:undefined,references:node.inputs.length?undefined:config.references,
       idempotencyKey:input.idempotencyKey,billingConfirmation:input.billingConfirmation});
   }
+  if(node.config.comfyWorkflowId){
+    const {submitByocComfyVideo}=await import('./byoc');const config=node.config;
+    return submitByocComfyVideo(actor,{workflowId:config.comfyWorkflowId,nodeId:node.id,expectedRevision:input.expectedRevision,projectKey:node.projectKey,idempotencyKey:input.idempotencyKey,prompt:config.prompt??'',references:node.inputs.length?undefined:config.references,orderedInputs:node.inputs.length?node.inputs:undefined,inputMappings:config.comfyInputs,...config.comfyOverrides,
+    parameters:config.parameters,negativePrompt:config.negativePrompt,resolution:config.resolution,aspectRatio:config.aspectRatio,generateAudio:config.generateAudio,watermark:config.watermark,...(config.durationSeconds&&config.durationSeconds>0?{durationSeconds:config.durationSeconds}:{})});
+  }
   const resolved=await resolveCanvasNodeInputs(actor,node.inputs,node.config.prompt||"");
   await authorizeNodeInputs(actor,{id:node.id,expectedRevision:node.revision,operationId:input.idempotencyKey,config:node.config,inputs:resolved.inputs});
   const {comfyWorkflowId,comfyInputs,comfyOverrides,workflowTaskId,camera,batchCount:_batchCount,...config}={...node.config,prompt:resolved.prompt};
@@ -64,10 +69,6 @@ async function submitOwnedVideoNode(actor:string,node:CanvasVideoNode,input:{nod
     references.push({id:source.id,kind:source.kind,role:source.role as VideoReference["role"],artworkId,url});
     orderedInputs.push({...source,value:url});
   }
-  if(comfyWorkflowId){const {submitByocComfyVideo}=await import("./byoc");return submitByocComfyVideo(actor,{workflowId:comfyWorkflowId,nodeId:node.id,expectedRevision:input.expectedRevision,projectKey:node.projectKey,
-    idempotencyKey:input.idempotencyKey,prompt:config.prompt||"",references:resolved.inputs.length?references:config.references,orderedInputs:resolved.inputs.length?orderedInputs:undefined,inputMappings:comfyInputs,...comfyOverrides,
-    negativePrompt:config.negativePrompt,resolution:config.resolution,aspectRatio:config.aspectRatio,generateAudio:config.generateAudio,watermark:config.watermark,
-    ...(config.durationSeconds&&config.durationSeconds>0?{durationSeconds:config.durationSeconds}:{})});}
   return createVideoGeneration(actor,{...config,workflowManifest,camera,source:"canvas",sourceId:node.id,nodeId:node.id,nodeRevision:input.expectedRevision,projectKey:node.projectKey,
     prompt:config.prompt||"",seconds:String(config.durationSeconds??""),size:config.resolution||"",references:resolved.inputs.length?references:config.references,
     orderedInputs:resolved.inputs.length?orderedInputs:undefined,idempotencyKey:input.idempotencyKey,billingConfirmation:input.billingConfirmation});
