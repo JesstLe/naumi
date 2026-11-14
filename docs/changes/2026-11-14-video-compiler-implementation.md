@@ -395,3 +395,7 @@ OpenAI Videos、Gemini及无Profile OpenAI接入native-video Profile/计划schem
 ## KIE / APIMart job 协议切片
 
 13 个实际 job 布局及相应无 profile direct 路径接入 native Profile，结构化请求使用计划 5，普通计划 4 与旧任务保持。源视频真实时长以显式依赖跨 Workflow 准备/执行阶段传递，不以用户请求时长或能力元数据充当事实。接口、已迁移内容、集中验证和开放问题见 [job 协议迁移](2026-11-14-video-compiler-jobs.md)。总目标继续 ACTIVE，生产绑定未自动迁移、未发布。
+
+## APIB / Geek 通道协议切片
+
+剩余 13 个注册协议的真实字段布局接入 native Profile，以显式通道配方代替型号白名单、expectedMode 和旧 normalize 执行裁决，保留真实素材与组合约束、查询和历史任务。详见 [通道协议迁移](2026-11-14-video-compiler-channels.md)。注册协议局部覆盖不代替生产 Binding 迁移、旧调用退出及全应用验收；总目标继续 ACTIVE。

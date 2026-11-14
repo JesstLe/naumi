@@ -111,7 +111,7 @@ export type ResolvedVideoInput=ResolvedVideoDraft['inputs'][number];
 
 export const videoWireTemplateSchema=z.strictObject({
   method:z.literal('POST'),path:z.string().regex(/^\/(?!\/)[^?#\s]*$/).max(1000),
-  encoding:z.enum(['json','multipart','workflow','inline-json']),body:z.json(),
+  encoding:z.enum(['json','multipart','workflow','inline-json']),body:z.json(),mediaUrlProtocol:z.literal('https').optional(),
 });
 export type VideoWireTemplate=z.infer<typeof videoWireTemplateSchema>;
 /** Execution-only payload. FormData/bytes never enter a frozen JSON plan. */
