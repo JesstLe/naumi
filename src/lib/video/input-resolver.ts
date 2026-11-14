@@ -11,9 +11,7 @@ export type VideoInputResolverPorts={
   media:(input:VideoExecutionDraft['inputs'][number])=>Promise<VideoResult<ResolvedVideoAsset>>;
   text:(input:VideoExecutionDraft['inputs'][number])=>Promise<VideoResult<string>>;
 };
-export async function resolveVideoDraft(raw:unknown,ports:VideoInputResolverPorts):Promise<VideoResult<ResolvedVideoDraft>> {
-  const scope=videoExecutionScopeSchema.safeParse(ports.scope);
-  if(!scope.success)return {ok:false,diagnostics:[videoDiagnostic('input','INVALID_VIDEO_SCOPE','scope','视频执行作用域无效','重新读取用户和项目')]};
+export function parseVideoExecutionDraft(raw:unknown):VideoResult<VideoExecutionDraft> {
   const parsed=videoDraftSchema.safeParse(raw);
   if(!parsed.success)return {ok:false,diagnostics:[videoDiagnostic('input','INVALID_VIDEO_DRAFT','draft','视频草稿结构无效','检查参数类型与输入结构')]};
   const draft=parsed.data,ids=new Set<string>();
@@ -26,7 +24,13 @@ export async function resolveVideoDraft(raw:unknown,ports:VideoInputResolverPort
         ||input.role==='source_video'&&input.kind!=='video'||input.role==='source_audio'&&input.kind!=='audio')
       return {ok:false,diagnostics:[videoDiagnostic('input','INPUT_ROLE_MISMATCH','inputs','素材角色与类型不一致','选择与素材类型一致的用途',input.id)]};
   }
-  const inputs:ResolvedVideoInput[]=[];
+  return {ok:true,value:draft};
+}
+export async function resolveVideoDraft(raw:unknown,ports:VideoInputResolverPorts):Promise<VideoResult<ResolvedVideoDraft>> {
+  const scope=videoExecutionScopeSchema.safeParse(ports.scope);
+  if(!scope.success)return {ok:false,diagnostics:[videoDiagnostic('input','INVALID_VIDEO_SCOPE','scope','视频执行作用域无效','重新读取用户和项目')]};
+  const parsed=parseVideoExecutionDraft(raw);if(!parsed.ok)return parsed;
+  const draft=parsed.value,inputs:ResolvedVideoInput[]=[];
   for(const input of draft.inputs){
     if(input.kind==='text'){
       const text=input.nodeId.startsWith('inline:')?{ok:true as const,value:input.value??''}:await ports.text({...input});

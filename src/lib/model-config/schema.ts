@@ -21,6 +21,7 @@ import {PARAMETER_CONTRACTS,conventionalContract} from "./parameter-contract";
 import {videoDefinitionSchema,videoWireProfileSchema,videoProfileProtocol} from "../video/capability-schema";
 import {audioDefinitionSchema} from "../audio/model-capabilities";
 import {videoWorkflowManifestSchema} from "../video/workflow-schema";
+import {publishedVideoExecutionSchema} from '../video/published-execution';
 
 const id = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/);
 const name = z.string().trim().min(1).max(100);
@@ -44,7 +45,7 @@ const videoOptions = z.strictObject({
 const providerSchema = z.strictObject({ id, name, protocol: z.enum(MODEL_PROTOCOLS), baseUrl: z.string().max(1024), credentialRef: z.uuid().optional(), enabled: z.boolean(), timeoutMs: z.number().int().min(1000).max(900000), maxConcurrent: z.number().int().min(1).max(256), options: videoOptions.optional() });
 const capabilities = z.strictObject({ audio:audioDefinitionSchema.optional(), transcribe:z.boolean().optional(), imagegen:imagegenCapabilitySetSchema.optional(), verified: z.boolean(), generate: z.boolean(), edit: z.boolean(), vision: z.boolean(), transparent: z.boolean(), preserveIdentity: z.boolean(), textAccuracy: z.boolean(), qualityRank: z.number().int().min(1).max(5), qualities: z.array(quality).max(6), nativeResolutions: z.array(resolution).max(3), maxReferenceImages: z.number().int().min(0).max(128), expectedLatencyMs: z.number().int().min(0).max(900000), video: videoDefinitionSchema.optional() });
 const mappedValue = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/);
-const parameterMap = z.strictObject({ parameterContract:z.enum(PARAMETER_CONTRACTS).optional(), apimartImages:apimartImagesSchema.optional(), imagegen:imagegenWireMapSchema.optional(), resolutionPolicy:resolutionPolicySchema.optional(), qualityPolicy: qualityPolicySchema.optional(), quality: z.partialRecord(quality, mappedValue).optional(), resolution: z.partialRecord(resolution, mappedValue).optional(), version: mappedValue.optional(), videoProfile: videoWireProfileSchema.optional(), videoWorkflow:videoWorkflowManifestSchema.optional() });
+const parameterMap = z.strictObject({ parameterContract:z.enum(PARAMETER_CONTRACTS).optional(), apimartImages:apimartImagesSchema.optional(), imagegen:imagegenWireMapSchema.optional(), resolutionPolicy:resolutionPolicySchema.optional(), qualityPolicy: qualityPolicySchema.optional(), quality: z.partialRecord(quality, mappedValue).optional(), resolution: z.partialRecord(resolution, mappedValue).optional(), version: mappedValue.optional(), videoProfile: videoWireProfileSchema.optional(), videoWorkflow:videoWorkflowManifestSchema.optional(),videoExecution:publishedVideoExecutionSchema.optional() });
 const upstream = z.strictObject({ id, providerId: id, model: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$/), label: name, modality, enabled: z.boolean(), capabilities, parameterMap, costRef: z.string().min(1).max(200).optional(), procurement: procurementSchema.optional() });
 const rule = z.strictObject({ id, priority: z.number().int().min(0).max(100000), when: z.strictObject({ task: z.array(z.enum(["draft", "product", "detail", "layout"])).min(1).max(4).optional(), quality: z.array(quality).min(1).max(6).optional(), resolution: z.array(resolution).min(1).max(3).optional(), needsEdit: z.boolean().optional(), needsText: z.boolean().optional(), preserveIdentity: z.boolean().optional(), nativeResolution: z.boolean().optional() }), require: z.strictObject({ preserveIdentity: z.boolean().optional(), textAccuracy: z.boolean().optional(), minQualityRank: z.number().int().min(1).max(5).optional(), nativeResolution: z.boolean().optional(), edit: z.boolean().optional() }) });
 export const modelConfigSchema = z.strictObject({ schemaVersion: z.literal(1), providers: z.array(providerSchema).max(100), upstreamModels: z.array(upstream).max(600), publicModels: z.array(z.strictObject({ id, previousIds: z.array(id).min(1).max(100).optional(), label: name, modality, enabled: z.boolean(), visible: z.boolean(), supplierRouting:channelPolicySchema.optional(), displayResolutions: z.array(resolution).min(1).max(3).refine(v => new Set(v).size === v.length, "分辨率不能重复").optional(), toolScope: z.strictObject({systems:z.array(z.literal("canvas")).max(1).optional(),features:z.array(z.enum(FEATURE_IDS)).max(FEATURE_IDS.length),defaultFor:z.array(z.enum(FEATURE_IDS)).max(FEATURE_IDS.length)}).optional(), target: z.discriminatedUnion("type", [z.strictObject({ type: z.literal("upstream"), id }), z.strictObject({ type: z.literal("pool"), id })]) })).max(200), pools: z.array(z.strictObject({ id, modality: z.literal("image"), strategy: z.enum(["priority", "lowest-cost", "latency"]), candidates: z.array(id).min(1).max(50), rules: z.array(rule).max(1000) })).max(100), bindings: z.record(z.string(), id), business: businessFeaturesSchema.optional(), fixedMonthlyCosts: fixedMonthlyCostsSchema.optional(), defaultImagePreset: imagePresetSchema.optional() });
@@ -96,7 +97,7 @@ export function validateModelConfig(input: unknown, options: ValidationOptions =
   for(const upstream of config.upstreamModels){
     if(upstream.modality!=="video"&&upstream.capabilities.maxReferenceImages>32)fail("图片参考上限不能超过32",[`upstreamModels.${upstream.id}.capabilities.maxReferenceImages`]);
     const images=upstream.capabilities.video?.limits?.images;
-    if(upstream.modality==="video"&&typeof images==="number"&&images!==upstream.capabilities.maxReferenceImages)
+    if(upstream.modality==="video"&&!upstream.parameterMap.videoExecution&&typeof images==="number"&&images!==upstream.capabilities.maxReferenceImages)
       throw new ModelConfigError("INVALID_CONFIG","视频参考图上限与通用参考图配置不一致",400,[`upstreamModels.${upstream.id}.capabilities.video.limits.images`]);
   }
   if (config.pools.reduce((n, p) => n + p.rules.length, 0) > 1000) fail("规则超过数量限制");
@@ -123,6 +124,7 @@ export function validateModelConfig(input: unknown, options: ValidationOptions =
       if(c.edit || c.vision || c.transparent || c.preserveIdentity || c.textAccuracy || c.maxReferenceImages || c.qualities.length || c.nativeResolutions.length || c.video || c.imagegen || Object.keys(m.parameterMap).length)fail("音频模型不能继承图片或视频能力与参数映射");
     }
     const profile=m.parameterMap.videoProfile??p.options?.videoProfile;
+    if(m.parameterMap.videoExecution&&(m.modality!=='video'||!profile))fail('视频执行映射只适用于具有查询协议的视频通道',[`upstreamModels.${m.id}.parameterMap.videoExecution`]);
     if(profile&&(m.modality!=="video"||videoProfileProtocol(profile)!==p.protocol))fail("视频wire profile与供应商协议不一致",[`upstreamModels.${m.id}.parameterMap.videoProfile`]);
     if(m.parameterMap.apimartImages && (p.protocol!=="apimart-images" || !m.parameterMap.qualityPolicy || !m.parameterMap.resolutionPolicy || config.defaultImagePreset?.enabled && config.defaultImagePreset.upstreamId===m.id))fail("异步图片契约需要APIMart图片协议及显式质量和尺寸策略，不能覆盖成本预设");
     if(m.parameterMap.apimartImages?.automaticRatio?.enabled&&!m.parameterMap.resolutionPolicy?.ratioField)fail("自适应画幅需要明确的比例发送字段");
@@ -149,7 +151,7 @@ export function validateModelConfig(input: unknown, options: ValidationOptions =
   for (const [binding, model] of Object.entries(config.bindings)) {
     const purpose = MODEL_BINDINGS[binding as keyof typeof MODEL_BINDINGS]; const m = publics.get(model);
     if (!purpose || !m || !m.enabled || m.modality !== purpose.modality) fail("用途绑定无效或模型模态错误", [`bindings.${binding}`]);
-    if (!candidates(m)?.some(u => u!.enabled && providers.get(u!.providerId)!.enabled && upstreamSupportsFeature(u!.capabilities,binding as ModelBinding))) fail("默认用途模型不满足能力要求", [`bindings.${binding}`]);
+    if (!candidates(m)?.some(u => u!.enabled && providers.get(u!.providerId)!.enabled && upstreamSupportsFeature(u!.capabilities,binding as ModelBinding,undefined,u!.parameterMap.videoExecution))) fail("默认用途模型不满足能力要求", [`bindings.${binding}`]);
   }
   for (const [kind, binding] of [["image", "image.generate"], ["text", "agent.text"], ["video", "video.generate"]] as const) {
     if (config.publicModels.some(m => m.enabled && m.modality === kind) && !config.bindings[binding]) fail("缺少有效默认用途模型", [`bindings.${binding}`]);
