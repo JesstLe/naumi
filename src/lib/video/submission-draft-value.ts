@@ -7,7 +7,7 @@ import type {VideoReference} from './types';
 /** Compatibility is an ingress translation, not another capability decision.
  * All values remain user-facing; Profile performs semantic/wire mapping once. */
 export function videoSubmissionDraftValue(input:CreateVideoInput,keyFromUrl:(url:string)=>string|null=relativeMediaKey):VideoExecutionDraft {
-  if(input.shots?.length||input.elements?.length||input.workflowManifest)
+  if(input.shots?.length||input.elements?.length||input.workflowManifest||input.workflowTaskId)
     throw new VideoContractError('STRUCTURED_INPUT_MAPPING_REQUIRED','此结构化输入需要对应的分镜、元素或工作流Profile映射',['inputs']);
   const references=[...(input.references||[])];
   if(input.artworkId)references.unshift({id:input.artworkId,artworkId:input.artworkId,kind:'image',role:'first_frame'});

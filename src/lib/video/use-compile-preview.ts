@@ -16,14 +16,14 @@ type State={key:string;status:'pending'|'ready'|'invalid'|'unavailable';value?:V
 /** Revision and account/workspace are part of the request identity. Render-time
  * key invalidation prevents even a fetch ignoring AbortSignal from publishing
  * stale results. This hook never mutates drafts or persistent support status. */
-export function useVideoCompilePreview(input:{email?:string;model?:VideoCatalogModel;config:VideoNodeConfig;inputs:readonly OrderedInput[];
+export function useVideoCompilePreview(input:{email?:string;identity?:string;model?:VideoCatalogModel;config:VideoNodeConfig;inputs:readonly OrderedInput[];
   node?:{id:string;revision:number};enabled?:boolean;request?:PrivateFetch}){
   const scope=useFeatureCatalogScope(),[retry,setRetry]=useState(0),[state,setState]=useState<State>({key:'',status:'pending'}),latest=useRef({key:'',revision:0});
   let draft:ReturnType<typeof videoUiDraft>|undefined,localError='';
-  const enabled=input.enabled!==false&&!!input.email&&!!input.model?.execution&&!input.config.comfyWorkflowId;
+  const enabled=input.enabled!==false&&!!(input.email||input.identity)&&!!input.model?.execution&&!input.config.comfyWorkflowId;
   if(enabled)try{draft=videoUiDraft(input.config,input.inputs);}catch(error){localError=error instanceof Error?error.message:'视频草稿无效';}
   const endpoint=input.node?`/api/canvas/video-nodes/${encodeURIComponent(input.node.id)}/compile-preview`:'/api/video/compile-preview';
-  const key=JSON.stringify([enabled,input.email,scope,endpoint,input.node?.revision,input.model?.modelId,input.model?.execution?.modelVersion,input.model?.execution?.modelDigest,draft,localError,retry]);
+  const key=JSON.stringify([enabled,input.email,input.identity,scope,endpoint,input.node?.revision,input.model?.modelId,input.model?.execution?.modelVersion,input.model?.execution?.modelDigest,draft,localError,retry]);
   if(latest.current.key!==key)latest.current={key,revision:latest.current.revision+1};
   const revision=latest.current.revision,request=input.request??authenticatedPreviewFetch,serialized=JSON.stringify(draft);
   useEffect(()=>{
