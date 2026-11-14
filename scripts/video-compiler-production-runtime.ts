@@ -19,7 +19,12 @@ export function videoProductionRuntime(){
  assert.equal(manifest.node,'24');assert.equal(Object.keys(manifest.source).filter(file=>file.startsWith('src/app/')).length,0);
  assert.equal(process.getuid?.(),0,'The native media sandbox needs its existing root launcher');
  for(const flag of ['--browser','--canvas-browser','--input-equivalence'])assert(!process.argv.includes(flag),'Browser verification uses its own runtime; no implicit browser substitution');
- return {root,commit,buildId,workerSha256:manifest.sha256};
+ const browserPort=process.env.VIDEO_PROCESS_BROWSER_PORT?Number(process.env.VIDEO_PROCESS_BROWSER_PORT):undefined;
+ if(browserPort!==undefined){
+  assert(Number.isInteger(browserPort)&&browserPort>=1024&&browserPort<=65535,'Invalid isolated browser port');
+  assert(process.argv.includes('--storyboard-session'),'External browser port requires the owned session bridge');
+ }
+ return {root,commit,buildId,workerSha256:manifest.sha256,browserPort};
 }
 export type VideoProductionRuntime=ReturnType<typeof videoProductionRuntime>;
 

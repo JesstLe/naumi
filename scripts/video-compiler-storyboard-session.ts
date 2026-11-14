@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
-import {mkdir,readdir,readFile,writeFile} from 'node:fs/promises';
+import {mkdir,readdir,readFile,writeFile,rename} from 'node:fs/promises';
 import path from 'node:path';
 import type {Pool} from 'pg';
 
@@ -8,13 +8,18 @@ import type {Pool} from 'pg';
  * No browser/React injection, replacement responses or direct workflow calls.
  * Setup, observation and an explicitly labelled historical budget seed only. */
 export async function videoStoryboardSession(input:{actor:string;pool:Pool;origin:string;cookie:string;root:string;posts:()=>number;
+ historyTaskId?:string;runtime?:{mode:string;commit:string};
  http:(url:string,body?:unknown)=>Promise<{status:number;value:any}>;resume:()=>Promise<unknown>;drain:()=>Promise<unknown>}){
  const {actor,pool,http,root}=input;const commands=path.join(root,'commands');await mkdir(commands,{recursive:true});
+ // Cross-OS bind mounts expose a newly created file before writeFile finishes.
+ // Readers must only observe a complete receipt, never an empty JSON prefix.
+ const publish=async(file:string,value:unknown)=>{const temp=file+'.'+randomUUID()+'.tmp';await writeFile(temp,JSON.stringify(value,null,2));await rename(temp,file);};
  const first=await http('/api/canvas/video-nodes',{id:'storyboard-browser-a',title:'镜头甲',expectedRevision:0,operationId:randomUUID(),x:0,y:0,config:{modelId:'video-process',mode:'text',prompt:'Storyboard shot A original',parameters:{durationSeconds:1,resolution:'4K'}},inputs:[]});assert.equal(first.status,201,JSON.stringify(first.value));
  const project=first.value.node.projectKey;
  const second=await http('/api/canvas/video-nodes',{id:'storyboard-browser-b',title:'镜头乙',projectKey:project,expectedRevision:0,operationId:randomUUID(),x:500,y:0,config:{modelId:'video-process',mode:'text',prompt:'Storyboard shot B original',parameters:{durationSeconds:1,resolution:'4K'}},inputs:[]});assert.equal(second.status,201,JSON.stringify(second.value));
- // Next dev warmup is serial, real authenticated HTTP, never mocked.
- for(const route of ['/api/account','/api/projects','/api/canvas/text-nodes','/api/canvas/video-nodes','/api/canvas/director-nodes','/api/canvas/comfy-nodes','/api/canvas/character-nodes','/api/canvas/scene-nodes','/api/canvas/audio-nodes','/api/canvas/timeline-nodes','/api/canvas/workflow-import','/api/canvas/image-tasks','/api/video/media-jobs']){const r=await http(route);assert.equal(r.status,200,route);}
+ // Dev compilation warmup is not production cold-start evidence. Production
+ // leaves these Canvas routes untouched until the real browser requests them.
+ if(!process.argv.includes('--production-package'))for(const route of ['/api/account','/api/projects','/api/canvas/text-nodes','/api/canvas/video-nodes','/api/canvas/director-nodes','/api/canvas/comfy-nodes','/api/canvas/character-nodes','/api/canvas/scene-nodes','/api/canvas/audio-nodes','/api/canvas/timeline-nodes','/api/canvas/workflow-import','/api/canvas/image-tasks','/api/video/media-jobs']){const r=await http(route);assert.equal(r.status,200,route);}
  const baselineLedger=(await pool.query("SELECT count(*)::int n,COALESCE(-sum(delta),0)::int amount FROM app_ledger WHERE email=$1 AND kind='consume'",[actor])).rows[0],posts=input.posts(),receipts:any[]=[];
  const snapshot=async()=>{
   const plans=await http('/api/canvas/storyboards?projectKey='+encodeURIComponent(project));assert.equal(plans.status,200);
@@ -24,7 +29,7 @@ export async function videoStoryboardSession(input:{actor:string;pool:Pool;origi
   const ledger=(await pool.query("SELECT count(*)::int n,COALESCE(-sum(delta),0)::int amount FROM app_ledger WHERE email=$1 AND kind='consume'",[actor])).rows[0];
   return {projectKey:project,plans:plans.value.plans,nodes,runs,tasks,postsAdded:input.posts()-posts,ledgerAdded:{n:ledger.n-baselineLedger.n,amount:ledger.amount-baselineLedger.amount}};
  };
- await writeFile(path.join(root,'STORYBOARD_SESSION.json'),JSON.stringify({origin:input.origin,cookie:input.cookie,projectKey:project,nodeIds:[first.value.node.id,second.value.node.id],url:input.origin+'/canvas?project='+encodeURIComponent(project)+'&node='+first.value.node.id,commands},null,2));
+ await publish(path.join(root,'STORYBOARD_SESSION.json'),{origin:input.origin,cookie:input.cookie,historyTaskId:input.historyTaskId,runtime:input.runtime,projectKey:project,nodeIds:[first.value.node.id,second.value.node.id],url:input.origin+'/canvas?project='+encodeURIComponent(project)+'&node='+first.value.node.id,commands});
  console.log('STORYBOARD_SESSION_READY='+root);
  const handled=new Set<string>();let finished=false,aborted=false;
  while(!finished){for(const name of (await readdir(commands)).filter(n=>/^cmd-[a-f0-9-]+\.json$/.test(n)&&!handled.has(n)).sort()){
@@ -50,9 +55,9 @@ export async function videoStoryboardSession(input:{actor:string;pool:Pool;origi
     assert(command.name);console.log('STORYBOARD_SESSION_CHECK='+command.name+' PASS');
    }else if(command.action==='finish'){value=await snapshot();assert(value.tasks.length>=2&&value.tasks.every((t:any)=>t.status==='completed'));assert(value.runs.some((r:any)=>r.assembly_state?.status==='completed'));finished=true;}
    else throw Error('Unknown fixture command');
-   receipts.push({command,ok:true,value});await writeFile(path.join(commands,name.replace('cmd-','result-')),JSON.stringify({ok:true,value},null,2));
-  }catch(error){receipts.push({command,ok:false,error:String(error)});await writeFile(path.join(commands,name.replace('cmd-','result-')),JSON.stringify({ok:false,error:String(error)},null,2));}
-  await writeFile(path.join(root,'STORYBOARD_SESSION_RECEIPTS.json'),JSON.stringify(receipts,null,2));
+   receipts.push({command,ok:true,value});await publish(path.join(commands,name.replace('cmd-','result-')),{ok:true,value});
+  }catch(error){receipts.push({command,ok:false,error:String(error)});await publish(path.join(commands,name.replace('cmd-','result-')),{ok:false,error:String(error)});}
+  await publish(path.join(root,'STORYBOARD_SESSION_RECEIPTS.json'),receipts);
  }if(!finished)await new Promise(resolve=>setTimeout(resolve,200));}
  if(aborted)throw Error('STORYBOARD_SESSION_ABORTED_BY_DRIVER');
  console.log('STORYBOARD_SESSION=PASS CHECKS='+receipts.filter(r=>r.command.action==='check'&&r.ok).length);return (await snapshot()).ledgerAdded;

@@ -2,6 +2,9 @@ const fs=require('node:fs/promises'),path=require('node:path'),assert=require('n
 const {chromium,expect}=require('@playwright/test');
 async function main(){
  const sessionFile=path.resolve(process.argv[2]),s=JSON.parse(await fs.readFile(sessionFile,'utf8')),root=path.dirname(sessionFile),checks=[],requests=[],resources=[],errors=[];
+ // Receipts share the session directory, also when the producing runtime is
+ // Linux and this actual Edge driver runs on the Windows host.
+ s.commands=path.join(root,'commands');
  const browser=await chromium.launch({channel:'msedge',headless:true}),context=await browser.newContext({viewport:{width:1600,height:1100},locale:'zh-CN'}),page=await context.newPage();page.setDefaultTimeout(60000);const check=expect.configure({timeout:60000});
  const [name,...value]=s.cookie.split('=');await context.addCookies([{name,value:value.join('='),url:s.origin},{name:'naumi_locale',value:'zh',url:s.origin}]);
  page.on('pageerror',e=>errors.push(e.message));page.on('requestfailed',r=>resources.push({url:r.url(),failure:r.failure()}));page.on('response',r=>{if(r.url().includes('/_next/'))resources.push({url:r.url(),status:r.status()})});page.on('response',async r=>{if(r.url().startsWith(s.origin+'/api/')&&r.request().method()==='POST'){let result;try{result=await r.json();}catch{}requests.push({url:r.url(),status:r.status(),body:r.request().postDataJSON(),result});}});

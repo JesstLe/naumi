@@ -52,6 +52,12 @@
 
 [本轮记录](2026-11-15-video-compiler-storyboard.md)：正式方案复用不再错误要求clean fork节点有伪造lastResult，仍由原服务端验证采用归属；制作记录返回编辑显式带方案ID，拆合镜后不另建原节点空方案。最终独立副本串联61项既有进程与10项实际Edge分镜操作，共71项退出0，22笔364 fixture积分、13子进程退出/随机schema及pool清理。UI覆盖拆合、17积分确认按钮、审片批注、采用、clean fork、陈旧方案409、成片和单镜返工。当前为development Next/实际独立Worker/本地供应商；新增UI修复需新的固定生产构建。旧受控UI基线与修改版同样超时，实际副本初始画布account读取失败仍开放，后续暖路由完整通过不抹去首次失败。
 
+## 新固定生产镜像与真实浏览器（2026-11-15）
+
+[本轮记录](2026-11-15-video-compiler-production-browser.md)：产品固定d4b6a58b/1794680841，完整生产构建exit0，574个tracked Worker输入匹配git archive，LinuxWorker49/核心137/tsc通过。最终解包副本实际production Web/独立Worker/native sandbox组合62项，与同一进程上实际Edge工作台4/Canvas读取恢复2/完整Storyboard10串成78项，两个命令均exit0；22笔364 fixture积分、21JSON创建25下载、13子进程/schema/pools/relay清理。前三种环境反控均在DB初始化前退出1，原入口回滚15项仍通过。
+
+完整分镜包括实际17确认/采用clean fork/成片/单镜返工；工作台和Canvas只读操作的供应商/任务/账务无增量由桥接DB另核。首次生产Canvas不做dev API预热、页面错误0；不因此关掉development脚本解析根因。最终测试驱动修复跨OS半写receipt和30行历史分页假设，产品业务源码未改。实际付费/部署0，47 HOLD、总目标ACTIVE。
+
 ## A01–A19 逐项状态
 
 | ID | 当前证据 | 仍需完成或证据边界 |
@@ -74,7 +80,7 @@
 | A16 | 原媒体token/版本/过期测试；本轮Worker物化真实签名URL，供应商fixture经真实Next媒体路由读取原字节，篡改404 | 时间推进的过期测试与实际公网CDN/存储恢复分别验收，不把本地域名别名当公网可达 |
 | A17 | 本轮真实Next受理→独立Worker落片→结果作为下一Canvas节点source_video→再次落片，父子资产/单账本通过 | 已新增真实浏览器选旧历史→ReactFlow拖线→下一节点提交→独立Worker落片，冻结资产/parent/单账本一致；当前为本地供应商fixture，非真实付费上游 |
 | A18 | 编译、供应商fixture受理、成片真实解码保存、账务分别核对，结果含真实输入字节hash | 真实付费供应商质量/成功率和用户采用仍未验，不能标Production-confirmed |
-| A19 | 已有源码副本回退/扩展字段兼容、发布控制/版本准备门禁；固定Linux生产镜像构建、Worker49/无DB包HTTP7项；新增带隔离DB/独立Worker/原生sandbox/账务62项实际组合通过 | 生产浏览器全交互、新旧Web/Worker双槽、排空/切回/旧资产、目标站蓝绿和实际发布仍未验 |
+| A19 | 已有源码副本回退/扩展字段兼容、发布控制/版本准备门禁；固定Linux生产镜像构建、Worker49/无DB包HTTP7项；新增带隔离DB/独立Worker/原生sandbox/账务62项实际组合通过 | 本轮生产工作台/Canvas恢复/完整Storyboard16项通过；生产三媒体及更多结构化组合、新旧Web/Worker双槽、排空/切回/旧资产、目标站蓝绿和实际发布仍未验 |
 
 ## 发布与总目标
 

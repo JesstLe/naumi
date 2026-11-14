@@ -4,8 +4,8 @@ import path from 'node:path';
 import {chromium,expect} from '@playwright/test';
 
 /** Actual Next page, cookies, React, middleware, APIs, DB and frozen history.
- * No page-route mocks or substituted components. This is not a production
- * build or a real supplier quality test. It must never submit a paid action. */
+ * No page-route mocks or substituted components. Runtime/build provenance is
+ * supplied by its caller; this is never a real supplier quality test. */
 export async function verifyVideoProcessBrowser(input:{origin:string;cookie:string;taskId:string;outputDir:string;posts:()=>number}){
  const check=expect.configure({timeout:30000});
  const browser=await chromium.launch({channel:'msedge',headless:true}),context=await browser.newContext({viewport:{width:1440,height:1000}}),page=await context.newPage();
@@ -15,11 +15,26 @@ export async function verifyVideoProcessBrowser(input:{origin:string;cookie:stri
  page.on('pageerror',error=>{errors.push(error.message);errorDetails.push({message:error.message,stack:error.stack});});page.on('response',response=>{if(response.url().startsWith(input.origin+'/api/'))requests.push({path:new URL(response.url()).pathname,status:response.status()});});
  page.setDefaultTimeout(90000);const [name,...value]=input.cookie.split('=');await context.addCookies([{name,value:value.join('='),url:input.origin}]);
  const pass=(name:string)=>{checks++;console.log('PROCESS_BROWSER_CHECK='+name+' PASS');};const before=input.posts();
+ const revealHistoryTask=async(surface:import('@playwright/test').Page|import('@playwright/test').Locator)=>{
+  const target=surface.locator(`[data-task-id="${input.taskId}"]`);
+  // Combined fixtures have more than the real 30-row page size. Use the actual
+  // history pagination controls, rather than assuming the oldest task is page1.
+  const more=surface.getByRole('button',{name:/^加载更多(?:任务)?$/});
+  await check.poll(async()=>await target.isVisible()||await more.isVisible()).toBe(true);
+  for(let pageNumber=0;!await target.isVisible();pageNumber++){
+   assert(pageNumber<10,'Historical fixture task absent after ten pages');
+   await check(more).toBeVisible();const before=await surface.locator('[data-task-id]').count();
+   const [response]=await Promise.all([page.waitForResponse(r=>new URL(r.url()).pathname==='/api/video/tasks'&&new URL(r.url()).searchParams.has('cursor')),more.click()]);
+   assert.equal(response.status(),200);
+   await check.poll(()=>surface.locator('[data-task-id]').count()).toBeGreaterThan(before);
+  }
+  await check(target).toBeVisible();return target;
+ };
  try{
   await page.goto(input.origin+'/video',{waitUntil:'domcontentloaded',timeout:180000});await check(page.getByTestId('video-workbench')).toBeVisible();
-  await check(page.locator(`[data-task-id="${input.taskId}"]`)).toBeVisible();pass('actual-next-video-workbench-hydrates-with-real-session-and-history');
+  await revealHistoryTask(page);pass('actual-next-video-workbench-hydrates-with-real-session-and-history');
   await page.getByRole('button',{name:'完整历史',exact:true}).click();const dialog=page.getByTestId('video-history-picker');await check(dialog).toBeVisible();
-  await dialog.locator(`[data-task-id="${input.taskId}"]`).click();const parameters=dialog.getByTestId('video-history-parameters');await check(parameters).toContainText('4K');
+  await(await revealHistoryTask(dialog)).click();const parameters=dialog.getByTestId('video-history-parameters');await check(parameters).toContainText('4K');
   const frozen=JSON.parse((await parameters.textContent())!);assert.equal(frozen.config.parameters.resolution,'4K');assert.equal(frozen.config.parameters.durationSeconds,1);assert.equal(frozen.inputs[0].role,'reference');pass('actual-react-history-displays-requested-not-wire-parameters');
   await dialog.getByRole('button',{name:'复用原参数',exact:true}).click();await check(dialog).not.toBeVisible();
   const fields=page.getByTestId('video-contract-fields');await check(fields.getByLabel('视频分辨率',{exact:true})).toHaveValue('0');
