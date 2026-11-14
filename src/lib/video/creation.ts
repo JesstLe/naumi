@@ -12,6 +12,14 @@ import {getVideoTaskByIdempotencyKey} from "./task-repository";
 import {submitQueuedVideoTask,handleVideoCreationError} from "./runtime";
 import type {CreateVideoInput} from "./submission-types";
 
+/** One managed selection boundary for standalone and owned Canvas entries. */
+export async function withVideoCreationModel<T>(requestedModelId:string|undefined,run:()=>Promise<T>):Promise<T>{
+  if(currentModelExecution('video')||!await modelConfigurationEnabled())return run();
+  const services=getModelExecutionServices(),[snapshot,billing]=await Promise.all([services.models.current(),services.billing.current()]);
+  const executor=await getModelExecutor(),video=await executor.resolve({feature:'video.generate',binding:'video.generate',requestedModelId,snapshot,billing});
+  return executor.runBundle({modelVersion:snapshot.version,billingVersion:billing.version,primary:'video',video},billing,run);
+}
+
 export async function createVideoGeneration(
   email: string,
   input: CreateVideoInput
@@ -36,17 +44,10 @@ export async function createVideoGeneration(
       return { taskId: existing.id, cost: existing.cost };
     }
   }
-  if (!currentModelExecution("video") && await modelConfigurationEnabled()) {
-    const services = getModelExecutionServices();
-    const [snapshot, billing] = await Promise.all([services.models.current(), services.billing.current()]);
-    const executor = await getModelExecutor();
-    const video = await executor.resolve({ feature:"video.generate", binding: "video.generate", requestedModelId: input.modelId || undefined, snapshot, billing });
-    return executor.runBundle({ modelVersion: snapshot.version, billingVersion: billing.version, primary: "video", video }, billing, () => createVideoGeneration(email, input));
-  }
-  return createVideoGenerationUnlocked(email, {
+  return withVideoCreationModel(input.modelId||undefined,()=>createVideoGenerationUnlocked(email, {
     ...input,
     idempotencyKey: key || crypto.randomUUID(),
-  });
+  }));
 }
 
 const videoInputDigest=videoCreationInputDigest;

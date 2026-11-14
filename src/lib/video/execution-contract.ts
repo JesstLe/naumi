@@ -62,7 +62,7 @@ export const videoDraftSchema=z.strictObject({
   // Compatibility read only. A missing explicit preference + legacy text/media
   // is automatic; structured legacy modes preserve their original semantics.
   legacyMode:videoIntentSchema.optional(),
-  inputs:z.array(z.strictObject({id,nodeId:id,kind:z.enum(['text','image','video','audio']),role:videoInputRoleSchema,value:z.string().max(65536).optional()})).max(256),
+  inputs:z.array(z.strictObject({id,nodeId:id,kind:z.enum(['text','image','video','audio']),role:videoInputRoleSchema,value:z.string().max(65536).optional(),storageKey:z.string().min(1).max(1000).optional()})).max(256),
 });
 export type VideoExecutionDraft=z.infer<typeof videoDraftSchema>;
 // Standalone Workbench drafts may not yet belong to a canvas project. The

@@ -1,6 +1,6 @@
 import 'server-only';
 import {resolveVideoDraft,parseVideoExecutionDraft} from './input-resolver';
-import {videoDiagnostic,type ResolvedVideoDraft,type VideoResult} from './execution-contract';
+import {videoDiagnostic,type ResolvedVideoDraft,type ResolvedVideoAsset,type VideoExecutionDraft,type VideoResult} from './execution-contract';
 import {resolveCanvasNodeInputs} from '../canvas/node-inputs';
 import {getVideoNode} from '../canvas/video-node-repository';
 import {getOwnedCanvasTextNode} from '../canvas/text-node-repository';
@@ -17,6 +17,14 @@ import {ModelConfigError} from '../model-config/types';
 import {TeamError} from '../teams/errors';
 
 const failure=(code:string,reason:string,inputId?:string):VideoResult<never>=>({ok:false,diagnostics:[videoDiagnostic(code==='DEPENDENCY_PENDING'?'dependency':'input',code,'inputs',reason,'核对当前项目与已完成素材',inputId)]});
+async function ownedAssetFacts(actor:string,key:string,input:VideoExecutionDraft['inputs'][number],artworkId?:string):Promise<VideoResult<ResolvedVideoAsset>>{
+  await assertCreationMediaInput(actor,`/media/${key}`);
+  const registered=await getMediaAsset(key);if(!registered)return failure('VIDEO_INPUT_UNAVAILABLE','引用媒体尚未登记',input.id);
+  const owned=await verifiedOwnedMedia(actor,key,artworkId??null,registered.sha256);
+  if(owned.bytes!==Number(registered.bytes))return failure('MEDIA_INPUT_CHANGED','引用媒体字节与登记版本不一致',input.id);
+  return {ok:true,value:{...(artworkId?{artworkId}:{}),storageKey:owned.key,sha256:owned.sha256,bytes:owned.bytes,mimeType:owned.mimeType,
+    ...(owned.probe.width?{width:owned.probe.width}:{}),...(owned.probe.height?{height:owned.probe.height}:{}),...(input.kind!=='image'?{durationSeconds:owned.probe.durationSeconds}:{})}};
+}
 
 /** Authenticated application assembly. The actor/project come from ingress,
  * never from draft fields. Reuses actual repositories, ownership rules,
@@ -47,6 +55,10 @@ export async function prepareVideoExecutionInputs(actorRaw:string,projectKey:str
         return {ok:true,value:canvasTextContent(node)};
       },
       media:async input=>{
+        if(input.nodeId.startsWith('upload:')){
+          if(!input.storageKey)return failure('VIDEO_INPUT_UNAVAILABLE','上传素材缺少稳定身份',input.id);
+          return ownedAssetFacts(actor,input.storageKey,input);
+        }
         const id=input.nodeId.replace(/^(image|video|audio):/,''),direct=(await listArtworksByIds(actor,[id]))[0];
         let artwork=direct;
         if(!artwork){
@@ -63,14 +75,7 @@ export async function prepareVideoExecutionInputs(actorRaw:string,projectKey:str
         const url=input.kind==='image'?artwork.image:artwork.videoUrl||artwork.image;
         const key=storageKeyFromManagedUrl(url);
         if(!key)return failure('VIDEO_INPUT_UNAVAILABLE','引用媒体尚未进入可验证媒体库',input.id);
-        await assertCreationMediaInput(actor,`/media/${key}`);
-        const registered=await getMediaAsset(key);
-        if(!registered)return failure('VIDEO_INPUT_UNAVAILABLE','引用媒体尚未登记',input.id);
-        const owned=await verifiedOwnedMedia(actor,key,artwork.id,registered.sha256);
-        if(owned.bytes!==Number(registered.bytes))return failure('MEDIA_INPUT_CHANGED','引用媒体字节与登记版本不一致',input.id);
-        return {ok:true,value:{artworkId:artwork.id,storageKey:owned.key,sha256:owned.sha256,bytes:owned.bytes,mimeType:owned.mimeType,
-          ...(owned.probe.width?{width:owned.probe.width}:{}),...(owned.probe.height?{height:owned.probe.height}:{}),
-          ...(input.kind!=='image'?{durationSeconds:owned.probe.durationSeconds}:{})}};
+        return ownedAssetFacts(actor,key,input,artwork.id);
       },
     });
   }catch(error){

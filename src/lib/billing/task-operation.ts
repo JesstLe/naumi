@@ -6,7 +6,7 @@ const service = createBillingService();
 export function taskOperation(id: string, email: string, quote: BillingQuote, ledgerId: string, reason: string) { return { id, email, quote, ledgerId, reason, fingerprint: id }; }
 export async function reserveTaskBillingTx(tx: Tx, id: string, email: string, quote: BillingQuote, ledgerId: string) { return service.reserveTx(tx, taskOperation(id, email, quote, ledgerId, "任务预占")); }
 export async function settleTaskBillingTx(tx: Tx, id: string, email: string, quote: BillingQuote, ledgerId: string, result: BillingResult) { return service.settleTx(tx, taskOperation(id, email, quote, ledgerId, result.state === "failed" ? "任务失败" : "任务完成"), result); }
-function userParameters(value: unknown) { return Object.fromEntries(Object.entries((value ?? {}) as Record<string, unknown>).filter(([key]) => !["providerSnapshot", "qualityAudit", "billingResolution", "paidOperationVersion", "upstreamStarted", "upstreamResult", "workflowManifestEnc", "resultAssetManifest", "resultAssets", "resultArtworkIds", "resultMetadataWarnings"].includes(key))); }
+function userParameters(value: unknown) { const p=(value??{}) as Record<string,unknown>;return Object.fromEntries(Object.entries(p).filter(([key]) => !(p.version===3&&key==='compiledPlanEnc')&&!["providerSnapshot", "qualityAudit", "billingResolution", "paidOperationVersion", "upstreamStarted", "upstreamResult", "workflowManifestEnc", "resultAssetManifest", "resultAssets", "resultArtworkIds", "resultMetadataWarnings"].includes(key))); }
 export function videoRequestFingerprint(input: {
     email: string;
     model: string;

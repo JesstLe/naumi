@@ -13,6 +13,7 @@ import {requestFromQueuedTask} from "@/lib/video/runtime";
 import {VideoContractError} from "@/lib/video/contract";
 import {BillingError} from "@/lib/billing/types";
 import {ModelConfigError} from "@/lib/model-config/types";
+import {compiledVideoRetryInput} from '@/lib/video/compiled-task';
 export const runtime="nodejs",dynamic="force-dynamic",maxDuration=120;
 const schema=z.strictObject({idempotencyKey:z.string().min(1).max(100),billingVersion:z.number().int().positive().optional(),billingCredits:z.number().finite().nonnegative().optional()});
 export async function POST(request:Request,context:{params:Promise<{id:string}>}){return withBiRequest(request,async()=>{
@@ -29,11 +30,11 @@ export async function POST(request:Request,context:{params:Promise<{id:string}>}
     const old=requestFromQueuedTask(task),{canvasNodeId,nodeRevision:_revision,...intent}=old;
     const node=canvasNodeId?await getVideoNode(email,canvasNodeId):null;
     const execution=(task.parameters.modelExecutions as import("@/lib/model-config/context").ExecutionBundle|undefined)?.video;
-    const frozenIntent={...intent,orderedInputs:intent.orderedInputs?.map(input=>input.kind==="text"?{...input,nodeId:`inline:retry-${createHash("sha256").update(`${task.id}:${input.id}`).digest("hex")}`}:input),shots:intent.shots?.map(shot=>({...shot,textNodeId:undefined}))};
+    const frozenIntent=task.parameters.version===3?compiledVideoRetryInput(email,task):{...intent,orderedInputs:intent.orderedInputs?.map(input=>input.kind==="text"?{...input,nodeId:`inline:retry-${createHash("sha256").update(`${task.id}:${input.id}`).digest("hex")}`}:input),shots:intent.shots?.map(shot=>({...shot,textNodeId:undefined}))};
     const result=await createVideoGeneration(email,{...frozenIntent,modelId:execution?.publicModelId||String(task.parameters.publicModelId||task.model),
       prompt:typeof task.parameters.originalPrompt==="string"?task.parameters.originalPrompt:task.prompt,camera:task.parameters.camera as never,
       ...(node?{nodeId:node.id,nodeRevision:node.revision}:{}),retryOf:task.id,
-      seconds:String(old.durationSeconds),size:old.resolution||"",idempotencyKey:parsed.data.idempotencyKey,billingConfirmation:requestQuoteConfirmation(request,parsed.data)});
+      seconds:task.parameters.version===3?'':String(old.durationSeconds),size:task.parameters.version===3?'':old.resolution||"",idempotencyKey:parsed.data.idempotencyKey,billingConfirmation:requestQuoteConfirmation(request,parsed.data)});
     return NextResponse.json({ok:true,...result},{status:202});
   }catch(error){if(error instanceof BillingError||error instanceof ModelConfigError)return billingErrorResponse(error);
     if(error instanceof VideoContractError)return NextResponse.json({error:error.message,code:error.code,fields:error.fields},{status:422});

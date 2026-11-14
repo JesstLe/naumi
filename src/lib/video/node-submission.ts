@@ -7,7 +7,9 @@ import {listArtworksByIds} from "@/lib/artworks/repository";
 import {getVideoNode} from "../canvas/video-node-repository";
 import {ModelConfigError} from "../model-config/types";
 import {BillingError} from "../billing/types";
-import {createVideoGeneration} from "./creation";
+import {createVideoGeneration,withVideoCreationModel} from "./creation";
+import {currentModelExecution} from '../model-config/context';
+import type {CanvasVideoNode} from '../canvas/video-node-schema';
 import {readOwnedVideoWorkflow} from "./workflow-source";
 import {requireOwnedVideoText} from "./submission";
 import type {VideoReference} from "./types";
@@ -24,7 +26,18 @@ export async function submitCanvasVideo(actorRaw:string,input:{nodeId:string;exp
   const node=await getVideoNode(actor,input.nodeId);
   if(!node)throw new ModelConfigError("VIDEO_NODE_UNAVAILABLE","视频节点不存在",404);
   if(node.revision!==input.expectedRevision)throw new ModelConfigError("VIDEO_NODE_REVISION_CONFLICT","视频节点已更新，请重新读取后生成",409);
+  return node.config.comfyWorkflowId?submitOwnedVideoNode(actor,node,input):withVideoCreationModel(node.config.modelId,()=>submitOwnedVideoNode(actor,node,input));
+}
+async function submitOwnedVideoNode(actor:string,node:CanvasVideoNode,input:{nodeId:string;expectedRevision:number;idempotencyKey:string;billingConfirmation?:{version?:number;credits?:number}}){
   await bindActualCreationProject(actor,node.projectKey);
+  if(currentModelExecution('video')?.frozen.video?.execution&&!node.config.comfyWorkflowId){
+    const {batchCount:_batch,comfyWorkflowId:_comfy,comfyInputs:_inputs,comfyOverrides:_overrides,...config}=node.config;
+    // New resolver owns expansion/selection. Do not run the legacy expansion,
+    // text compiler and reference normalizer before it a second time.
+    return createVideoGeneration(actor,{...config,source:'canvas',sourceId:node.id,nodeId:node.id,nodeRevision:node.revision,projectKey:node.projectKey,
+      prompt:config.prompt||'',seconds:String(config.durationSeconds??''),size:config.resolution||'',orderedInputs:node.inputs.length?node.inputs:undefined,references:node.inputs.length?undefined:config.references,
+      idempotencyKey:input.idempotencyKey,billingConfirmation:input.billingConfirmation});
+  }
   const resolved=await resolveCanvasNodeInputs(actor,node.inputs,node.config.prompt||"");
   await authorizeNodeInputs(actor,{id:node.id,expectedRevision:node.revision,operationId:input.idempotencyKey,config:node.config,inputs:resolved.inputs});
   const {comfyWorkflowId,comfyInputs,comfyOverrides,workflowTaskId,camera,batchCount:_batchCount,...config}={...node.config,prompt:resolved.prompt};

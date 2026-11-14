@@ -32,6 +32,7 @@ import type {VideoGenerationRequest} from "./types";
 import type {CreateVideoInput} from "./submission-types";
 import {associateWorkflowTaskTx} from "./workflow-links";
 import {frozenWorkflowText} from "./workflow-text-context";
+import {createCompiledVideo} from './compiled-submission';
 
 export async function requireOwnedVideoText(email:string,id:string){
   const frozen=frozenWorkflowText(email,id);if(frozen!==undefined)return frozen;
@@ -43,6 +44,8 @@ export async function requireOwnedVideoText(email:string,id:string){
 export function videoCreationInputDigest(input:CreateVideoInput){const {billingConfirmation:_confirmation,idempotencyKey:_key,...intent}=input;return createHash("sha256").update(canonicalConfig(intent)).digest("hex");}
 export async function createValidatedVideo(email:string,input:CreateVideoInput,hooks:{submit:(email:string,task:VideoTaskRow,request:VideoGenerationRequest)=>Promise<void>;creationError:(email:string,task:VideoTaskRow,error:unknown)=>Promise<void>}):Promise<{taskId:string;cost:number}>{
   const execution=currentModelExecution("video");
+  if(execution?.frozen.video?.execution)return createCompiledVideo(email,input,execution,hooks,videoCreationInputDigest(input));
+  if(input.intentPreference!==undefined||input.parameters!==undefined)throw new VideoContractError('VIDEO_EXECUTION_NOT_CONFIGURED','此通道尚未配置新版执行映射',['binding']);
   const providerId=execution?.connection.providerId||input.providerId||configuredVideoProviders()[0]?.id||"openai-videos";
   const providerConfig=getVideoProviderConfig(providerId);
   if(!providerConfig)throw new ModelConfigError("VIDEO_PROVIDER_UNAVAILABLE","视频供应商尚未配置",422);

@@ -54,6 +54,10 @@ export function createWireVideoAdapter(config:VideoProviderRuntimeConfig):VideoP
     return payload;
   };
   const adapter:VideoProviderAdapter={id:config.id,
+    async createCompiled(wire,key){
+      if(wire.encoding!=='json')throw new Error('冻结计划需要对应的媒体上传传输');
+      return decodeVideoCreated(profile,await send({...wire,encoding:'json'},true,key));
+    },
     async create(input){const prepared=await uploadWorkflowReferences(context(input),transport);const value=await send(buildVideoCreate(context(prepared)),true,input.idempotencyKey);return decodeVideoCreated(profile,value);},
     async poll(task){
       const decoded=decodeVideoPolled(profile,await send(buildVideoPoll(restored(task),task.upstreamTaskId)),task.upstreamTaskId);

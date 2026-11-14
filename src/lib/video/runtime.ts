@@ -25,6 +25,9 @@ import {PermanentVideoCreateError,TransientPollError,type VideoGenerationRequest
 import {getVideoProvider} from "./providers/adapter";
 import {getVideoProviderConfig,publicProviderSnapshot} from "./providers/config";
 import type {VideoTaskRow} from "./task-types";
+import {compiledVideoRequest,readTaskCompiledVideoPlan} from './compiled-task';
+import {hasVersionedVideoSubmission} from './submission-state';
+import {materializeCompiledVideoTask} from './compiled-materialization';
 
 export const VIDEO_PROVIDER_ID = "openai-videos";
 
@@ -88,6 +91,10 @@ async function createWithLocalImage(
 
 export function requestFromQueuedTask(task: VideoTaskRow): VideoGenerationRequest {
   const parameters = task.parameters ?? {};
+  if(parameters.version===3){
+    const plan=readTaskCompiledVideoPlan(String((parameters.creationScope as {actorEmail?:string}|undefined)?.actorEmail||''),task);
+    return {...compiledVideoRequest(plan,task.source as VideoTaskSource,task.idempotencyKey||task.id,task.sourceId),canvasNodeId:typeof parameters.nodeId==='string'?parameters.nodeId:undefined,nodeRevision:typeof parameters.nodeRevision==='number'?parameters.nodeRevision:undefined};
+  }
   if(parameters.version===2&&parameters.request){
     const request=structuredClone(parameters.request) as VideoGenerationRequest;
     if(typeof parameters.workflowManifestEnc==="string"){
@@ -116,7 +123,7 @@ export function requestFromQueuedTask(task: VideoTaskRow): VideoGenerationReques
 }
 
 function videoCreationRetryConfigMatches(task: VideoTaskRow): boolean {
-  if(task.parameters?.version===2)return task.parameters.submissionState==="prepared";
+  if(hasVersionedVideoSubmission(task.parameters))return task.parameters.submissionState==="prepared";
   // A declared idempotency header is not proof that a paid POST was deduplicated.
   // Versioned tasks without an accepted upstream ID require reconciliation before resubmission.
   if (task.parameters?.modelExecutions) return false;
@@ -173,6 +180,19 @@ export async function submitQueuedVideoTask(
   if (isRecoveryRetry && !videoCreationRetryConfigMatches(task)) throw new IdempotencyConfigDriftError();
   const adapter = getVideoProvider(task.providerId || VIDEO_PROVIDER_ID);
   if (!adapter) throw new Error(`视频适配器 ${task.providerId} 未注册`);
+  if(task.parameters.version===3){
+    if(!adapter.createCompiled)throw new VideoContractError('VIDEO_COMPILED_TRANSPORT_UNAVAILABLE','冻结视频传输尚未配置');
+    const wire=await materializeCompiledVideoTask(email,task);
+    const submission=await beginVideoTaskSubmission(email,task.id);
+    if(submission==='cancelled')return;
+    if(submission!=='started')throw new IdempotencyConfigDriftError();
+    const {withBiModelContext}=await import('@/lib/bi/context');
+    const created=await withBiModelContext(email,'video.generate',task.id,()=>adapter.createCompiled!(wire,task.idempotencyKey||task.id));
+    await markVideoTaskCreated({email,id:task.id,upstreamId:created.upstreamTaskId,responseBody:JSON.stringify(sanitizeVideoProviderPayload(created.rawResponse??{}))});
+    const {videoSupplierReceipt}=await import('@/lib/supplier-cost/video');
+    await videoSupplierReceipt(task.id,created.upstreamTaskId,created.status,created.rawResponse).catch(()=>{});
+    return;
+  }
   const persistedRequest = preparedRequest ?? requestFromQueuedTask(task);
   if(task.parameters.byocSnapshot){const context=currentPrivateVideoContext();if(!context)throw new Error("自备视频执行配置缺失");persistedRequest.workflowManifest=context.manifest;}
   const cfg=getVideoProviderConfig(task.providerId);
