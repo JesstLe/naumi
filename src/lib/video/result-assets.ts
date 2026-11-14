@@ -108,7 +108,9 @@ export async function collectVideoResultAssets(task:OwnedVideoTask,snapshot:Vide
 }
 export function resultMetadataWarnings(task:OwnedVideoTask,outputs:SavedVideoResultAsset[]){
   const warnings:Array<{artworkId:string;code:string;expected:unknown;actual:unknown}>=[];
-  const request=task.parameters.request&&typeof task.parameters.request==="object"?task.parameters.request as Record<string,unknown>:task.parameters;
+  const request=task.parameters.version===3&&task.parameters.effectiveParameters&&typeof task.parameters.effectiveParameters==='object'
+    ?task.parameters.effectiveParameters as Record<string,unknown>
+    :task.parameters.request&&typeof task.parameters.request==="object"?task.parameters.request as Record<string,unknown>:task.parameters;
   for(const output of outputs){if(output.kind!=="video"||!output.probe)continue;const p=output.probe,expected=Number(request.durationSeconds??task.parameters.durationSeconds??task.seconds);
     if(expected>0&&Math.abs(p.durationSeconds-expected)>Math.max(0.12,expected*0.03))warnings.push({artworkId:output.artworkId,code:"duration_mismatch",expected,actual:p.durationSeconds});
     for(const field of ["width","height"] as const){const requested=Number(request[field]);if(requested>0&&requested!==p[field])warnings.push({artworkId:output.artworkId,code:`${field}_mismatch`,expected:requested,actual:p[field]});}

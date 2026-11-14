@@ -43,7 +43,7 @@ async function main(){
     await until(async()=>{if(mediaWorker!.exitCode!==null)throw new Error('media worker exited '+mediaLog);return fetch(process.env.MEDIA_WORKER_ORIGIN+'/health',{headers:{authorization:'Bearer '+process.env.MEDIA_WORKER_SECRET}}).then(r=>r.ok).catch(()=>false);});
     f.config.providers[0]={...f.config.providers[0],protocol:'apimart',options:{videoProfile:'apib-video-v2',idempotencyStrategy:'header'}};
     f.config.upstreamModels[0]={...f.config.upstreamModels[0],modality:'video',model:'arbitrary-new-wire-video',capabilities:{...f.config.upstreamModels[0].capabilities,verified:false,generate:false,edit:false,maxReferenceImages:0,video:{modes:['text'],limits:{images:0}}},parameterMap:{videoExecution:{schemaVersion:1,profileId:'json-video',profileVersion:1,recipe:{
-      createPath:'/v1/videos/generations',modelField:'model',promptField:'prompt',defaults:{ordinaryImage:'single_image',sourceVideo:'reference'},parameters:{durationSeconds:{type:'integer',default:1,wireField:'duration'},resolution:{type:'string',default:'4K',mapping:{'4K':'2K'},wireMapping:{'2K':'2k'},wireField:'resolution'}},
+      createPath:'/v1/videos/generations',modelField:'model',promptField:'prompt',defaults:{ordinaryImage:'single_image',sourceVideo:'reference'},parameters:{durationSeconds:{type:'integer',default:1,wireField:'duration'},resolution:{type:'string',default:'4K',mapping:{'4K':'2K'},wireMapping:{'2K':'2k'},wireField:'resolution'},width:{type:'integer',default:32,wireField:'width'},generateAudio:{type:'boolean',default:true,wireField:'audio'}},
       operations:[{intent:'text',media:[]},{intent:'single_image',images:{min:1,max:1},media:[{kind:'image',wireField:'image_urls',shape:'urls'}]},{intent:'reference',media:[{kind:'video',wireField:'video_urls',shape:'urls'}]}],
     }}}};
     f.config.publicModels[0]={...f.config.publicModels[0],id:'video-fixture',modality:'video',toolScope:{features:['video.generate'],defaultFor:['video.generate']}};f.config.bindings={'video.generate':'video-fixture'};
@@ -97,6 +97,10 @@ async function main(){
     // media-worker process and native ffmpeg decode (fixture sandbox mode).
     const completed=await finish(queued.id);
     check('real-result-storage-lineage-ledger',()=>{assert.equal(completed.status,'completed',completed.error);assert(polls>=1);assert(downloads>=1);assert.equal(completed.parameters.resultAssets instanceof Array,true);});
+    check('v3-result-observations-use-frozen-effective-facts',()=>{
+      const warnings=completed.parameters.resultMetadataWarnings as Array<{code:string;expected:unknown;actual:unknown}>;
+      assert(warnings.some(w=>w.code==='width_mismatch'&&w.expected===32&&w.actual===64));assert(warnings.some(w=>w.code==='missing_audio'&&w.expected===true));
+    });
     const output=(completed.parameters.resultAssets as any[])[0];assert.equal(createHash('sha256').update(await readFile(path.join(process.env.MEDIA_DIR!,output.storageKey))).digest('hex'),output.sha256);
     assert.equal((await pool.query('SELECT count(*)::int AS n FROM app_ledger WHERE id=$1',[`led-video-${queued.id}`])).rows[0].n,1);assert.equal((await pool.query('SELECT count(*)::int AS n FROM app_gen_reservations WHERE job_id=$1',[queued.id])).rows[0].n,0);
     const artwork=(await pool.query('SELECT parent_id FROM app_artworks WHERE id=$1',[completed.artworkId])).rows[0];assert.equal(artwork.parent_id,'input-art');
