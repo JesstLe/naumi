@@ -128,3 +128,7 @@
 [模块记录](2026-11-15-video-compiler-nginx-acceptance.md)：旧完整包7ce2f729/1794692423与新完整包526148e8/1794693854，复用既有静态资源并集、网关完整CAS/语法/原子替换/reload、Worker控制和固定格式回滚守卫。在本地真实Nginx/Next/独立原生Worker/PG中最终源55项通过：旧Worker受理后新Worker续查原回执、全部645旧资源在旧→新→旧SHA相同、两次切流各60HTTP全200、陈旧CAS/错误语法负控、UNKNOWN不重放、账务资产不回退、回旧包仍可接受新任务；最终4任务/3笔video账本/41 fixture积分，7槽/schema/网络清理。独立副本、四产物与main集成以证据VERIFICATION/INTEGRATION为准。
 
 两个固定包之间产品运行源码相同，不泛化为任意跨版本兼容；调用真实组件所有者不等于整站lifecycle/controller CLI已验收，资源HTTP不等于浏览器水合/RSC零刷新。新完整包构建/Worker49/包7项50HTTP46资源/核心137/tsc与现有发布回归通过。真实目标站、全部启用绑定/环境路线、授权上游和浏览器连续性仍开放。总目标ACTIVE、47 HOLD、生产写入/付费/部署0。
+
+## 环境导入协议与连接设置保留（2026-11-15）
+
+[模块记录](2026-11-15-video-environment-bootstrap.md)：确认环境解析器已读取videoProfile/timeout/appUrl，但bootstrap丢失，导致原可审查的显式协议通道退成mapping_required。仅修复导入字段传递，不为env-only虚构recipe。新增实际PG导入/原版本发布/冻结reader56项：41条来源夹具中32明确候选可审查、9条真实待配置保留；路径/授权/幂等/价格/政策/旧版本/凭据不变。数量为夹具，非生产目录；既有注册配置/Flow、迁移79、readiness15、管理19、核心137与完整tsc通过；独立副本/四产物/main以证据VERIFICATION和INTEGRATION为准。线上已发布配置不自动回填，目标站实际绑定/无profile路线、授权上游及完整P4仍开放，总目标ACTIVE、47 HOLD，生产写入/付费/部署0。

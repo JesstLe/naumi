@@ -17,9 +17,9 @@ const unverifiedCapabilities = (): UpstreamModel["capabilities"] => ({ verified:
 /** Called under the repository's bootstrap transaction/lock. It never generates or changes billing. */
 export async function bootstrapModelConfig(input: ValidationOptions & { credentials: ReturnType<typeof createCredentialStore>; sources: LegacyModelSources; tx?: PoolClient }): Promise<ModelConfig> {
   const config: ModelConfig = { schemaVersion: 1, providers: [], upstreamModels: [], publicModels: [], pools: [], bindings: {} };
-  const addProvider = async (id: string, name: string, protocol: ModelProvider["protocol"], baseUrl: string, apiKey: string, options?: ModelProvider["options"]) => {
+  const addProvider = async (id: string, name: string, protocol: ModelProvider["protocol"], baseUrl: string, apiKey: string, options?: ModelProvider["options"], timeoutMs?: number) => {
     const ref = await input.credentials.importPlain({ providerId: id, plain: apiKey, actor: "system" }, input.tx);
-    config.providers.push({ id, name, protocol, baseUrl: baseUrl || "https://api.openai.com/v1", credentialRef: ref.id, enabled: true, timeoutMs: protocol === "openai-images" || protocol === "new-api-flow" ? 280000 : protocol === "openai-chat" ? 90000 : 120000, maxConcurrent: 4, ...(options ? { options } : {}) });
+    config.providers.push({ id, name, protocol, baseUrl: baseUrl || "https://api.openai.com/v1", credentialRef: ref.id, enabled: true, timeoutMs: timeoutMs ?? (protocol === "openai-images" || protocol === "new-api-flow" ? 280000 : protocol === "openai-chat" ? 90000 : 120000), maxConcurrent: 4, ...(options ? { options } : {}) });
   };
   const addModel = (providerId: string, wire: string, modality: UpstreamModel["modality"], alias = wire, visible = true, capabilities = unverifiedCapabilities()) => {
     const id = `${providerId}:${shortHash(wire)}`;
@@ -98,8 +98,11 @@ export async function bootstrapModelConfig(input: ValidationOptions & { credenti
   }
   for (const v of input.sources.video) {
     const id = `video:${v.id}`;
-    const { createPath, pollPath, contentPath, rawAuthorization, workflowId, idempotencyStrategy, idempotencyBodyField } = v;
-    await addProvider(id, v.label, v.protocol, v.baseUrl, v.apiKey, { createPath, pollPath, contentPath, rawAuthorization, workflowId, idempotencyStrategy, idempotencyBodyField });
+    // Carry explicit connection settings across the existing import boundary.
+    // A query profile is not a capability claim or an executable recipe: losing
+    // it prevents the reviewed binding migration from identifying its transport.
+    const { createPath, pollPath, contentPath, rawAuthorization, workflowId, idempotencyStrategy, idempotencyBodyField, videoProfile, appUrl } = v;
+    await addProvider(id, v.label, v.protocol, v.baseUrl, v.apiKey, { createPath, pollPath, contentPath, rawAuthorization, workflowId, idempotencyStrategy, idempotencyBodyField, videoProfile, appUrl }, v.timeoutMs);
     for (const wire of Array.from(new Set([v.defaultModel, ...v.models]))) {
       const caps = unverifiedCapabilities();
       const external = addModel(id, wire, "video", wire, true, caps);
