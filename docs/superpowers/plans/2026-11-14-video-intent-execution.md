@@ -1,344 +1,212 @@
-# 视频意图解析执行文档（2026-11-14）
+# 视频意图解析执行文档 v2 —— 编译即能力（2026-11-14）
 
 状态：待实施的可执行规格。本轮只交付文档；不改线上配置、不提交生成任务、不迁移历史数据。
 
-前置结论（已在前序排查确认，本文不重复论证，仅引用）：
+**v2 版本说明**：v1（同日早间版本）的定位是"把多道闸门读同一份数据、和谐一致"，经验证这不满足"一击毙命"的要求——闸门数量一个没少，47 仍需先补齐能力配置发布才可用。v2 替换为击毙版决策：**能力声明作为执行闸门这一类别整体删除，编译器成为唯一判断点**。v1 中仍然成立的部分（模式不落盘、纯函数推导、两张普通图片≠首尾帧、旧节点兼容）原样保留并被本决策强化；v1 中"契约层能力对照保留""47 需要能力配置发布"两点被反转。文末附 v1→v2 对照表。
 
-- 47 排查报告：`output/video-node-preflight47-audit-20261113/REPORT.md`（v154：21 个启用模型中 18 个 modes 仅 text、limits 全 0；8 个旧节点 mode=text 带媒体输入；Seedance 2.5 能力已列模式但旧 codec 以"视频模式不属于已核验组合"拒绝；整对象相等的能力升级器挡住字段级修复）。
-- 架构决策（2026-11-13 已确认）：撤掉平行的"能力闸门"，收敛为一条请求编译链——**模型能否执行某种输入，由实际负责构造供应商请求的适配器决定**；意图解析是纯函数、只做一次、不调用大模型；用户显式选择保留，默认值不再冒充显式事实。
+前置事实（不再论证，仅引用）：
 
-本文回答"解析意图怎么做"：给出字段设计、完整决策表、解析代码、请求示例、逐文件改造清单与验收标准，可直接按此开发。
+- 47 排查报告 `output/video-node-preflight47-audit-20261113/REPORT.md`：v154 下 21 个启用模型中 18 个 modes 仅 text、limits 全 0；8 个旧节点 mode=text 带媒体；Seedance 2.5 能力已列模式但被旧 codec 以"视频模式不属于已核验组合"拒绝；整对象模板相等升级器挡住字段级修复。
+- 回执来源的逐型号契约已入库：`src/lib/model-config/video-family-capabilities.json`（32 条，含 47 全部在用型号），由 `apib-documented.ts:1` 直接读取执行——**"以编译为准"的资料基础已经存在**，v2 不是新建体系，是删掉挡在它前面的东西。
+
+代码基线：origin/main `9430289a`。本文所有 file:line 均按该基线核对。
 
 ---
 
-## 1. 现状链路与病灶定位（基线 ecb05900）
+## 1. 决策
+
+> **一个请求能不能执行，只由一个地方说了算：实际构造供应商请求的编译器（wire codec 及其逐型号输入空间）。**
+> **"能力声明"（modes / limits / 帧标志 / 时长分辨率矩阵）作为执行闸门，这一类别整体删除；它降级为展示元数据与管理端收紧项。**
+> **"模式"不再是持久状态、不再是校验维度；它是编译产出的一个标签，外加用户可给的一个偏好。**
+
+三条铁律：
+
+1. **不支持的唯一来源是物理事实**——编译器/协议映射不接受这份输入（"此协议单请求最多 1 张首帧图"）。"资料里没写""没验证过""管理员没填"都不构成"不支持"，都不得拦截。
+2. **一份能力事实只存一份、只在一处使用**——逐型号输入空间只存 `video-family-capabilities.json`（回执来源，随代码版本化），编译时使用；管理端只能**收紧**（限制数量上限、关闭某模式），**永远不能发明能力**（不能把编译器不支持的东西填成支持）。
+3. **同一个编译器，两种调用**——提交时真编译（产生任务），设置面板预览时干跑（dry-run，不产生任务、不计费）。UI 不再复制任何判断逻辑，只展示编译器说过的话。
+
+## 2. 为什么这是毙命级
+
+47 事故的完整因果链：
 
 ```text
-画布连线/上传/提及
-  └─ link-command.ts:113 → attachVideoInputs (mode-selection.ts:67)     ① 连线时把模式写进 config.mode
-草稿编辑
-  └─ compact-composer.tsx:34 currentVideoIntent → VideoModeSelect        ② 前端意图徽章（展示层）
-  └─ validateVideoSettings (client-settings.ts:93) → normalizeVideoInput ③ 前端预检（契约同款，禁用生成按钮）
-提交
-  └─ api/canvas/video-nodes/[id]/generate → submitCanvasVideo (node-submission.ts:16)
-       └─ 归属/前序完成检查（VIDEO_DEPENDENCY_PENDING / VIDEO_INPUT_UNAVAILABLE）
-       └─ createVideoGeneration (creation.ts:39) → 冻结能力（executor.resolve + runBundle）
-            └─ createValidatedVideo (submission.ts:53) → capability = 冻结或 resolveVideoCapability
-                 └─ normalizeVideoInput (contract.ts:56)                 ④ 服务端契约（唯一权威校验）
-                      └─ buildVideoCreate (submission.ts:88) 按 providerConfig.videoProfile 选 codec
-                           └─ apib-verified.ts:56-58 expectedMode 单值校验  ⑤ 旧核验分支二次否决
+冒烟测试只验证了文生
+  → 测试值被写成能力配置（modes=["text"], limits 全 0）
+  → 前端读它拦一次 → 契约层读它再拦一次 → 旧协议分支又拦第三次
 ```
 
-四个病灶（与报告 P1 一一对应）：
+三层拦截读的是**同一份错误数据**。v1 方案让三层"读同一份并且把数据改对"——数据仍会错（发布漏填、模板冲突、升级器误判），错了仍全线误拦。v2 让"能力数据错误"**丧失拦截能力**：配置里 modes 填错、limits 漏填，都拦不住一个编译器编得出来的请求。
 
-| # | 位置 | 病灶 |
-|---|---|---|
-| ① | `client-settings.ts:62` `reconcileVideoSettings`：`!next.mode → next.mode = modes[0]` | **把"未选择"写成 modes[0]（smoke 配置下即 text）**，默认值变成永久显式事实；`attachVideoInputs` 也会写 mode。旧节点 mode=text 的来源就在这两处 |
-| ② | 前端 `supportsVideoIntent` + ③ 预检 | 与服务端契约重复的能力否决：前端按 limits/帧标志先行拒绝，配置滞后时误拦（"文生视频不能带媒体参考"） |
-| ④ | `contract.ts:50` `inferredMode` | 服务端推导只看角色、不看能力，且因前端总写 mode 几乎不触发；auto 与 explicit 无法区分 |
-| ⑤ | `apib-verified.ts` | 新任务仍被路由到旧核验 codec，`expectedMode` 单值 + 单参考素材限制（:71/:73）再次拒绝 |
+对 47 的直接后果：**"补齐 21 个模型能力配置并发布"这个任务消失**。发布只剩一件事——把 profile 路由从 legacy `apimart-apib-*` 切到 `apib-video-v2/v3`（配置里现成字段），图生/参考立即按编译器契约执行。
 
-## 2. 核心设计
+## 3. 删除清单
 
-### 2.1 字段语义：`config.mode` 三态
+| # | 位置 | 现状职责 | v2 处置 |
+|---|---|---|---|
+| D1 | 前端预检 `validateVideoSettings`（`client-settings.ts:93`，调 normalizeVideoInput 后禁用生成按钮） | 第二套能力否决 | **删除执法**。按钮禁用只保留非能力原因：素材未完成（`choices.available`，本就独立于能力矩阵）、未选模型。能力相关的界面反馈改走 dry-run 编译结果 |
+| D2 | `supportsVideoIntent`（`mode-selection.ts:19`） | 前端能力矩阵判断 | 降级为徽章渲染数据（哪个 chip 亮、是否提示换模型），无否决权。数据源改为编译器输入空间的展示投影 |
+| D3 | 契约层能力对照段（`contract.ts:80-158` 中按 `cap.modes`/`cap.limits`/帧标志/时长分辨率矩阵比对的全部分支：`UNKNOWN_VIDEO_CAPABILITY`、`MODE_INPUT_MISMATCH` 族、`UNSUPPORTED_DURATION/RESOLUTION/ASPECT_RATIO`、`REFERENCE_LIMIT_EXCEEDED` 族等） | 第三套能力否决 | **逐分支处置**：结构类（id 去重 :97、角色类型一致 :115-118）保留于瘦身层；与能力数据比对类（:80、:100-133、:135-142 等全部走 cap 的分支）迁入编译器 space-fit，数据源换 json 契约；依赖 cap 数值的事实类（提示词长度上限 :83）同样改由 json 条目供给。"文生视频不能带媒体参考"这一错误从产品中消失——没有持久"文生"状态，该矛盾不再产生 |
+| D4 | 能力配置的执行角色（`model-definition.ts:16-20` `resolveVideoCapability({manual, vendor, adapter})` admin 优先） | 管理端布尔值拥有最高执行解释权 | **优先级翻转**：adapter（json 契约）为基准；manual/vendor 只能收紧（对数值取 min、对模式做减集）。展示元数据（label、默认值）不受限 |
+| D5 | 旧核验 codec 新任务路由（`apib-verified.ts` 的 `expectedMode` 单值校验 :56-58、单参考限制 :71/:73） | 第四套否决，47 拒绝现场 | 不改代码；新任务不再路由（发布只切 profile）。已冻结历史任务照旧回放，语义零漂移 |
+| D6 | `capabilities.ts:119-140` `fallbackCapability`（给未收录模型编造一套宽松能力） | 未知＝编造 | **删除**。未知型号报"型号没有对应的公开参数契约"（`apib-documented.ts` 现有行为），不造数 |
+| D7 | 整对象模板相等升级器（`video-family-capability-upgrade.ts`） | 改一个字段导致整套不能升级 | **删除**。输入空间随代码版本化后，"升级配置能力"这个概念本身消失；管理端草稿只剩收紧项与路由/价格/凭据，无模板匹配问题 |
 
-`CanvasVideoNode.config.mode?: VideoMode`（`video-node-schema.ts:12` 已是 optional，**schema 不需要改**）：
+## 4. 保留清单（物理校验，与能力无关）
 
-| 值 | 语义 | 谁写入 |
-|---|---|---|
-| `undefined` | **自动**：按实际输入推导，UI 显示派生意图＋"自动"标记 | 无人写入；初始即未定义 |
-| 合法 `VideoMode` | **显式**：用户点过模式徽章（`selectVideoIntent`） | 仅用户操作写入 |
-| `"text"` 且带媒体 | **陈旧默认**（历史 reconcile/attach 写入的假显式）。text＋媒体在任何能力下都不可提交（`contract.ts:100`），因此这不是一种合法的显式状态，恢复规则见 §5 | 旧代码写入；恢复时清除 |
+以下检查有独立事实来源，全部保留，且大多已在正确位置：
 
-不新增持久化字段（不加 `modeSource` 到节点草稿——未定义即自动，语义自足）。任务侧新增一个**只读审计字段** `modeSource: "auto" | "explicit"`：由契约层在归一化时产出，随现有任务参数（与 mode 同层）持久化，供结果侧展示与审计；不参与任何执行判断。
+- 身份、项目与素材归属、素材真实存在与完成状态（`node-submission.ts:44-48`，`VIDEO_DEPENDENCY_PENDING`/`VIDEO_INPUT_UNAVAILABLE`）；
+- 素材物理属性：真实格式/字节数/时长是否超出**编译器声明**的输入空间（数据源从 cap.limits 换为 json 契约，检查本身保留）；
+- 输入结构有效性：字段类型、文本长度上限、素材 id 去重、角色与素材类型一致（`references.ts` superRefine 已有）、URL 合法性；
+- 供应商协议硬约束：一次请求最多几张图、分辨率→wire 模式映射是否存在（`apib-documented.ts` 现有的逐型号物理检查，全部保留）；
+- 计费：报价、幂等受理、预占、防重放、租约（报价事实从编译产出读取，顺序不变）；
+- 冻结语义：已受理任务按冻结上下文执行，不受后续发布影响。
 
-### 2.2 解析的唯一归属：新模块 `src/lib/video/intent.ts`
+## 5. 新链路：五步，一处判断
 
-- **纯函数**，只 import `capability-schema` 与 `references` 的类型，零 I/O、零 LLM、零 fetch——客户端（mode-selection/client-settings）与服务端（contract）都能 import，不存在循环依赖（client-settings 目前 import contract，反向不可行）。
-- 决策表、媒体签名、陈旧默认清除三个函数一次定义，两端共用，**杜绝前端/服务端各自理解一次输入**。
+```text
+素材＋参数＋用户显式偏好（intentPreference，可选）
+ → ① 身份、归属、素材完成度                    【保留，非能力】
+ → ② 编译：按逐型号输入空间分类意图 → 构造上游请求体
+      └ 唯一能力判断点；产出 = 请求体 + 意图标签 + 计费事实
+ → ③ 冻结编译产出 → 报价（读编译事实）→ 幂等受理
+ → ④ 排队执行冻结请求体（不再读最新配置重新解释任务）
+ → ⑤ 结果落原节点 → 可作下一节点素材
+```
 
-### 2.3 显式优先、推导兜底、能力缺口点名
-
-- 显式模式**原样保留**，交给契约层做媒体适配校验（`MODE_INPUT_MISMATCH` 族），解析层不静默改用户选择。
-- 自动推导按输入签名选**当前能力可表达**的意图（允许降级，如 single_image→reference），只影响"用哪种方式编译这批素材"，不换模型、不丢素材、不猜提示词。
-- 数量上限（`limits.images/videos/audios`）为执行硬约束：`null`/缺省视为未声明，推导时算"不可表达"，报**点名缺失能力**的错误（推动配置发布，而不是放行后在上游炸）。帧角色标志（`supportsFirstFrame` 等）沿用现有约定：仅 `=== false` 视为禁用，`null` 不拦（与 `supportsVideoIntent` 现行为一致）。
-
-## 3. 完整决策表
-
-媒体签名 `sig = mediaSignature(inputs)`：`{images, videos, audios, firstFrame, lastFrame, sourceVideo}`（firstFrame/lastFrame 只统计**用户显式指定**的帧角色；sourceVideo 指角色为 `source_video` 的视频）。
-
-`supports(mode)` = `cap.modes.includes(mode)` 且该模式的媒体适配通过（数量上限按上节规则）。
-
-### 3.1 自动推导（config.mode 未定义）
-
-| # | 输入签名 | 派生结果（wire mode / 展示意图） | 角色处理 | 说明 |
-|---|---|---|---|---|
-| A1 | 无媒体 | `text` / 文生视频 | — | |
-| B1 | 1 图，普通角色 | `single_image`；不支持则降 `reference`/图片参考 | 保持 reference；编译时首图按现有 `contract.ts:111` 记 `first_frame` | 最常见图生路径 |
-| B2 | 1 图，显式 `first_frame` | `single_image` | `first_frame` | 与 B1 同结果，角色已由用户指定 |
-| B3 | 2 图，first+last 均显式 | `frames_required` / 首尾帧 | `first_frame`+`last_frame` | 唯一能产生帧模式的输入签名 |
-| B4 | 2 图，均为普通角色 | `reference` / 图片参考 | 保持 `reference` | **两张普通图片不得冒充首尾帧** |
-| B5 | 1 显式 first + 1 普通图 | `reference` / 图片参考 | 保持原角色 | 半指定不升级为帧模式 |
-| B6 | ≥3 图（任意角色，未满 B3） | `reference` / 图片参考 | 保持原角色 | |
-| C1 | 含视频，`source_video` 角色且无图片 | `video_edit`（cap 允许时），否则 `reference`/全能参考 | 保留 `source_video` | |
-| C2 | 含视频（其他组合，含图/音混合） | `reference` / 全能参考 | source_video 角色保留 | |
-| D1 | 仅音频 | `reference` / 全能参考（尊重用户 preference 修饰） | `source_audio` | |
-| E1 | 任意签名 + 能力无任一可表达模式 | **错误 `VIDEO_INTENT_UNREPRESENTABLE`**，消息点名：媒体签名＋缺失能力（如"该模型未声明参考输入能力（limits.videos 未配置），无法承接 1 个视频参考"） | — | 这是配置发布问题浮出，不是用户错误 |
-
-### 3.2 显式模式（config.mode 已定义）
-
-| # | 输入 | 行为 |
-|---|---|---|
-| F1 | 显式 X，媒体与 X 适配 | `X / explicit`，角色按 `videoModeRoles` 归一 |
-| F2 | 显式 X，媒体不适配（如 text＋图、single_image＋视频） | **不改模式**，契约层按现有错误码拒绝（`MODE_INPUT_MISMATCH` 等），前端如实展示 |
-| F3 | 显式 text 且带媒体 | 即"陈旧默认"（§2.1）：**在连线/保存/提交时清除为未定义**并按 §3.1 重新派生，UI 提示"已按当前素材恢复生成模式"。理由：text＋媒体永不合法，不存在被覆盖的合法显式状态 |
-
-### 3.3 显式与自动的转换规则
-
-- 用户点模式徽章 → `selectVideoIntent` 写入 `config.mode`（唯一显式来源，不变）。
-- 换模型后显式模式不被新模型支持：`reconcileVideoSettings` **清除为未定义**（回到自动）并记 `changes`（"生成模式"），**不再写入 `modes[0]`**——这是病灶①的根除点。
-- 自动状态下增删素材：派生结果随输入实时变化，UI 徽章跟随，无任何持久化写入。
-
-## 4. 解析代码（可直接落库）
-
-### 4.1 `src/lib/video/intent.ts`（新文件，全部内容）
+### 5.1 编译器契约（唯一判断点的形状）
 
 ```ts
-import type { VideoMode } from "./capability-schema";
-import type { VideoCreationIntent } from "./mode-selection"; // 仅 type import，避免运行时环
-// 若要彻底零依赖，可将 VideoCreationIntent 的定义搬入本文件再由 mode-selection re-export（推荐，见 §6 清单）。
+// src/lib/video/compile.ts（新聚合入口；实现主体已在 apib-documented.ts 等 codec 中）
+export type CompileInput = ValidatedVideoInput;            // 结构校验后的输入（§4 前半：类型/长度/去重/角色一致）
+export type InputSpace = VideoModelDefinition;             // 已含管理端收紧的逐型号输入空间（§7：json 基准 + 收紧，构建时完成）
 
-export type IntentMediaInput = { kind: "image" | "video" | "audio"; role: string };
-
-export type MediaSignature = {
-  images: number; videos: number; audios: number;
-  firstFrame: boolean; lastFrame: boolean; sourceVideo: boolean;
-};
-
-export type DerivationCap = {
-  modes?: readonly VideoMode[] | null;
-  limits?: { images?: number | null; videos?: number | null; audios?: number | null } | null;
-  supportsFirstFrame?: boolean | null; supportsLastFrame?: boolean | null; supportsFrameAudio?: boolean | null;
-};
-
-export type DerivedIntent =
-  | { ok: true; mode: VideoMode; display: VideoCreationIntent; source: "auto" | "explicit" }
-  | { ok: false; code: "VIDEO_INTENT_UNREPRESENTABLE"; reason: string };
-
-export function mediaSignature(media: readonly IntentMediaInput[]): MediaSignature {
-  const images = media.filter(m => m.kind === "image").length;
-  return {
-    images,
-    videos: media.filter(m => m.kind === "video").length,
-    audios: media.filter(m => m.kind === "audio").length,
-    firstFrame: images > 0 && media.some(m => m.kind === "image" && m.role === "first_frame"),
-    lastFrame: images > 0 && media.some(m => m.kind === "image" && m.role === "last_frame"),
-    sourceVideo: media.some(m => m.kind === "video" && m.role === "source_video"),
-  };
-}
-
-const limit = (v: number | null | undefined) => (v == null ? 0 : v); // 未声明 = 0：数量上限是执行硬约束
-
-function supports(sig: MediaSignature, cap: DerivationCap, mode: VideoMode): boolean {
-  if (!cap.modes?.includes(mode)) return false;
-  if (mode === "text") return !sig.images && !sig.videos && !sig.audios;
-  if (mode === "single_image")
-    return sig.images === 1 && !sig.videos
-      && (!sig.audios || cap.supportsFrameAudio === true)
-      && limit(cap.limits?.images) >= 1 && cap.supportsFirstFrame !== false;
-  if (mode === "frames_required")
-    return sig.firstFrame && sig.lastFrame && sig.images === 2 && !sig.videos
-      && (!sig.audios || cap.supportsFrameAudio === true)
-      && limit(cap.limits?.images) >= 2
-      && cap.supportsFirstFrame !== false && cap.supportsLastFrame !== false;
-  if (mode === "video_edit")
-    return !!sig.videos && !sig.images && limit(cap.limits?.videos) >= 1;
-  if (mode === "reference")
-    return sig.images <= limit(cap.limits?.images) && sig.videos <= limit(cap.limits?.videos)
-      && sig.audios <= limit(cap.limits?.audios) && (sig.images + sig.videos + sig.audios > 0);
-  return false; // extend/motion_control/lip_sync 等扩展模式仅由显式选择进入，不做自动推导
-}
-
-export function deriveVideoIntent(
-  media: readonly IntentMediaInput[], cap: DerivationCap,
-  explicitMode?: VideoMode, preference?: "image_reference" | "omni_reference",
-): DerivedIntent {
-  const sig = mediaSignature(media);
-  if (explicitMode) {
-    // 显式选择原样保留；媒体适配由契约层校验（MODE_INPUT_MISMATCH 族），解析层不改用户选择。
-    const reference = explicitMode === "reference" && !sig.videos && !sig.audios;
-    return { ok: true, mode: explicitMode, display: reference ? (preference ?? "image_reference") : explicitMode as VideoCreationIntent, source: "explicit" };
-  }
-  if (!sig.images && !sig.videos && !sig.audios) return { ok: true, mode: "text", display: "text", source: "auto" };
-  const fits = (mode: VideoMode) => supports(sig, cap, mode);
-  if (sig.videos) {
-    if (sig.sourceVideo && !sig.images && fits("video_edit")) return { ok: true, mode: "video_edit", display: "video_edit", source: "auto" };
-    if (fits("reference")) return { ok: true, mode: "reference", display: "omni_reference", source: "auto" };
-  } else if (sig.audios) {
-    if (fits("reference")) return { ok: true, mode: "reference", display: "omni_reference", source: "auto" };
-  } else {
-    if (sig.firstFrame && sig.lastFrame && sig.images === 2 && fits("frames_required"))
-      return { ok: true, mode: "frames_required", display: "frames_required", source: "auto" };
-    if (sig.images === 1) {
-      if (fits("single_image")) return { ok: true, mode: "single_image", display: "single_image", source: "auto" };
-      if (fits("reference")) return { ok: true, mode: "reference", display: "image_reference", source: "auto" };
-    } else if (fits("reference")) {
-      return { ok: true, mode: "reference", display: "image_reference", source: "auto" };
-    }
-  }
-  const wanted = [sig.videos && "视频", sig.audios && "音频", sig.images && `${sig.images} 张图片`].filter(Boolean).join("＋");
-  return { ok: false, code: "VIDEO_INTENT_UNREPRESENTABLE",
-    reason: `当前模型能力无法承接本次输入（${wanted || "无媒体"}）：modes=${cap.modes?.join("/") || "未声明"}，limits.images=${cap.limits?.images ?? "未声明"}，limits.videos=${cap.limits?.videos ?? "未声明"}，limits.audios=${cap.limits?.audios ?? "未声明"}；请在模型配置中发布对应能力，或更换模型` };
-}
-
-/** 陈旧默认恢复：text＋媒体永不合法，清除为自动推导。连线、保存、提交三处共用。 */
-export function staleDefaultMode(config: { mode?: VideoMode }, media: readonly IntentMediaInput[]): boolean {
-  return config.mode === "text" && media.some(m => m.kind !== "text");
-}
+export function compileVideoRequest(input: CompileInput, space: InputSpace,
+  preference?: VideoCreationIntent):
+  | { ok: true; body: VideoWireRequest; intent: VideoCreationIntent /* 意图标签 */;
+      facts: { durationSeconds: number; resolution: string; aspectRatio?: string } /* 计费事实 */ }
+  | { ok: false; error: VideoContractError }               // 全部为物理原因，文案点名可行动的缺口
 ```
 
-要点：
+- `intent` 分类器＝v1 的 `deriveVideoIntent` 纯函数（决策表见 §6），**re-home 为编译器内部步骤**，同时以同源模块供 UI 展示投影复用。纯规则、零 LLM、零 I/O，同输入同能力必同输出。
+- 校验分两层、各只跑一遍：**结构校验**（字段类型、文本长度、id 去重、角色与素材类型一致——瘦身后的 `normalizeVideoInput`，先于编译）与 **space-fit 校验**（素材计数/字节/时长/时长分辨率组合是否落在输入空间内——编译器内部，数据源为 json 契约）。管理端收紧在 `InputSpace` 构建处生效（§7），编译函数本身不再接收收紧参数。
+- 编译**只跑一次**：现状 `submission.ts:74/:80` 先 normalize 两次、`apib-documented.ts:13` 在 codec 内**第三次** normalize——v2 收敛为：结构校验一次＋编译（含 space-fit）一次（预览与提交共用同一函数）。
 
-- 推导**只读** `modes`、三类数量上限、三个帧标志；时长/分辨率/画幅完全不在解析职责内（它们归 `reconcileVideoSettings` 按有效模式收敛，逻辑不变）。
-- `extend/motion_control/lip_sync/video_edit`（无 source_video 签名时）**不自动推导**——这些模式的语义（对哪段视频续写/哪张图做运动控制）无法从输入签名安全得出，必须显式选择。
-- 函数确定性：同输入同能力必同输出。这是"提交/报价两遍归一化结果一致"不变式的基础（§7 验收 V6）。
+### 5.2 双调用：提交与 dry-run 预览
 
-### 4.2 契约层接入：`contract.ts` `normalizeVideoInput`
+- 提交：`POST /api/canvas/video-nodes/[id]/generate`（现有），内部走 ②-⑤。
+- 预览（新增）：`POST /api/canvas/video-nodes/[id]/compile-preview`，同一编译函数干跑——不落任务、不计费、不占幂等键，返回 `{intent, facts, error?}`。设置面板防抖调用，替代被删的前端预检。**同一函数两种调用，不存在第二套判断。**
 
-```ts
-// 替换 contract.ts:50-55 的 inferredMode 与 :79 的取值逻辑
-const media = (refs: {kind:string;role:string}[]) => refs;   // parsedRefs.data 本身即 IntentMediaInput
-const explicit = typeof raw.mode === "string" ? (aliases[raw.mode] || raw.mode) as VideoMode : undefined;
-const derived = deriveVideoIntent(parsedRefs.data, derivationCap(cap), explicit);
-if (!derived.ok) reject(derived.code, derived.reason, "mode");
-const mode = derived.mode;                       // auto/explicit 在此定案
-// …原 :80 起的能力/媒体适配校验全部保留（它们针对显式与编译事实，是真正的契约）…
-// 返回值新增 modeSource: derived.source
-return { ...input, mode, modeSource: derived.source, references: refs, providerOptions, omittedProviderOptions };
-```
+## 6. 意图：决策表与字段语义
 
-- `inferredMode` 删除（逻辑被吸收；别名表 `aliases` 保留）。
-- `:100` 的 `text＋refs → MODE_INPUT_MISMATCH` 自动路径下不可达（推导不会产出 text＋媒体），显式路径仍然生效——行为只收紧不放松。
-- `NormalizedVideoInput` 增加可选 `modeSource?: "auto" | "explicit"`；`createValidatedVideo` 将其随任务参数持久化（与 mode 同层）。
+### 6.1 字段语义（比 v1 更彻底）
 
-### 4.3 草稿层接入：`client-settings.ts`
-
-```ts
-// reconcileVideoSettings 增加可选第三参 media?: IntentMediaInput[]（所有现有调用方手边都有 inputs）
-// 病灶①修复：不再写 modes[0]
-if (next.mode && !modes.includes(next.mode)) { changes.push("生成模式"); delete next.mode; }
-const effective = next.mode ?? (media ? deriveVideoIntent(media, cap).mode ?? undefined : undefined);
-// 时长/分辨率/画幅按 effective 收敛（videoDurations/videoResolutions 传 effective，其余逻辑不变）
-```
-
-`videoNodeCreationDefaults`、`attachVideoInputs`、`selectVideoIntent`、换模型路径全部改为传 `media` 调用。
-
-### 4.4 连线与提交流
-
-- `attachVideoInputs`（mode-selection.ts:67）**不再写 `config.mode`**：仅附加输入、按 `mediaFits` 拒绝明显超限、对 `staleDefaultMode` 命中的草稿清除陈旧 text 并返回提示文案。原"连线即改模式"的行为由派生展示取代（用户看到的徽章即单图/参考，但 config 保持未定义）。
-- `submitCanvasVideo`（node-submission.ts）在 `resolveCanvasNodeInputs` 之后、`createVideoGeneration` 之前套用同一条规则：`if (staleDefaultMode(config, resolved.media)) config = {...config, mode: undefined}`——服务端兜底，旧节点不保存也能直接生成成功。
-- 节点写路径（`api/canvas/video-nodes/[id]/route.ts` → service）：保存时同样套用 `staleDefaultMode`，使旧草稿在用户明确编辑/保存时落盘为自动态；**不写任何批量迁移脚本，不动 `deletedAt` 节点与 `app_video_tasks` 历史**。
-
-### 4.5 前端展示层
-
-- `compact-composer.tsx:34`：`currentVideoIntent` 改为委托 `deriveVideoIntent`（含 reference→image_reference/omni_reference 的展示拆分与 preference 透传）；`config.mode` 未定义时徽章旁标"自动"。
-- `mode-select.tsx`：`supportsVideoIntent` **仅用于徽章可用性/换模型箭头**（affordance），不再构成提交否决；提交前的唯一判断是 `validateVideoSettings` 里的 `normalizeVideoInput`（契约同款，本就是单一事实）。
-- 陈旧默认恢复与换模型清除模式时，用 composer 现有 notice 通道提示"已按当前素材恢复生成模式/生成模式已回到自动"。
-
-### 4.6 旧核验 codec 的处置（依赖配置发布切片）
-
-`apib-verified.ts` 的 `expectedMode` 限制**不改代码**：它继续服务已冻结历史任务的恢复（语义不得漂移）。新任务停止进入该分支的方式是发布层动作——配置发布切片把 21 个型号的 `videoProfile` 切到已文档化的 `apib-video-v2/v3`（`buildVideoCreate` 按 `providerConfig.videoProfile` 选 codec，`wire.ts` 无需改动）。本切片在 `apib-verified.ts:9` 的 profiles 注释处补一行"legacy: 仅服务已冻结任务，新发布不得指向"。若需硬护栏，可在 `video-family-capability-upgrade` 的发布预检里拒绝把 legacy profile 发布给新版本（属配置切片范围）。
-
-## 5. 旧节点兼容（对应报告 P1-3）
-
-| 场景 | 行为 |
+| 字段 | v2 语义 |
 |---|---|
-| 打开旧草稿（text＋媒体）不操作 | 不改写；徽章按 F3 规则在**展示层**即按自动派生显示（读时派生，不落盘） |
-| 编辑并保存 | `staleDefaultMode` 清除 mode 落盘，revision 正常 +1，notice 提示 |
-| 直接点生成（未保存） | 提交流服务端兜底清除并派生，一次成功 |
-| 同步生成参数被冻结的历史任务 | 完全不动（冻结快照不含派生逻辑变更；`modeSource` 只对新任务写入） |
-| 两张普通图片的旧节点 | 恢复为图片参考（B4），**绝不**解释成首尾帧 |
-| 旧节点的模型 | 不自动更换；能力不足时按 E1 点名报错，引导配置发布或用户显式换模型 |
+| `config.mode` | **UI 偏好，永不执法**。`undefined`＝自动（默认）；有值＝用户上次点过的模式 chip，仅为重开面板时恢复显示与作为 `intentPreference` 传入编译器。reconcile/attach **永远不写**（v1 病灶①的写入口直接删除，而非"清除陈旧值"） |
+| 任务参数 `intent` + `modeSource` | **编译产出标签**，随冻结上下文持久化，供结果侧展示与审计；不参与任何后续判断 |
+| `app_video_tasks` 历史行 | 完全不动；冻结任务按原 provider_snapshot 回放（legacy codec 保留于此用途） |
 
-## 6. 逐文件改造清单
+### 6.2 决策表（分类器规则，不变项自 v1 原样保留）
 
-| 文件 | 改动 | 风险 |
+媒体签名 `sig`：图片/视频/音频计数 + 是否存在**用户显式指定**的 `first_frame`/`last_frame` 角色 + `source_video`。
+
+| # | 输入签名 | 意图（编译标签） | 说明 |
+|---|---|---|---|
+| A1 | 无媒体 | 文生 | |
+| B1 | 1 图，普通角色 | 单图 | 编译时该图记 `first_frame`（wire 语义） |
+| B2 | 2 图，first+last 均显式 | 首尾帧 | 唯一产生帧模式的签名 |
+| B3 | 2 图，均普通角色 | 图片参考 | **绝不冒充首尾帧** |
+| B4 | 1 显式帧角色 + 普通图，或 ≥3 图 | 图片参考 | 半指定/多图不升级 |
+| C1 | 含 `source_video` 且无图片 | 视频编辑 | |
+| C2 | 含视频/音频（其他组合） | 全能参考 | |
+| D1 | 仅音频 | 全能参考 | |
+| E1 | 签名在输入空间中无任何可编译模式 | 编译错误，点名缺口 | 如"该型号契约未声明参考输入（limits.videos 未配置），无法承接 1 个视频参考；请更换模型或补充契约"。是**契约缺口**信号，不是用户错误 |
+| F1 | 任意 + 用户显式偏好 X | X（若物理可编译） | 显式偏好被尊重 |
+| F2 | 显式偏好 X（帧类/编辑类等结构性偏好）但素材物理不满足 | 编译错误，明说缺什么 | 不静默降级、不换模型、不丢素材 |
+| F3 | 偏好为 `text` 且带媒体（历史字段值的唯一遗留形态） | 视同未给偏好，按自动分类 | text＋媒体本就不可编译；旧节点无需恢复规则即自然归位 |
+
+结构性显式偏好（帧类/编辑类）与素材矛盾时**报错不降级**（F2）；`text` 偏好带媒体视同未给偏好（F3）；自动路径允许在输入空间内降级（B1 单图→图片参考）。`extend/motion_control/lip_sync` 无显式偏好不自动推导（其语义无法从输入签名安全得出）。
+
+## 7. 输入空间的唯一来源与优先级翻转
+
+```text
+基准：video-family-capabilities.json 逐型号条目（回执来源，随代码版本化、测试覆盖）
+  ↓ 管理端收紧（只能更严）：数量上限取 min；模式做减集；不得新增模式/上限
+  ↓ 展示投影（只读）：目录页 chip 可用性、默认时长/分辨率提示
+```
+
+- `model-definition.ts:16-20` 的 `resolveVideoCapability` 改为上述方向（现 admin 优先、可发明能力）。
+- 管理端"能力编辑"界面语义变为**收紧编辑器**：只能关、只能降上限；界面明示"完整能力由已核验契约定义"。
+- 新型号接入流程＝给 json 增加一条回执条目 + 对应 codec 分支，随代码评审与门禁上线；不再依赖管理员先填对布尔值。
+
+## 8. UI 变化
+
+- 模式 chip：可用性来自展示投影（D2），选中写入 `config.mode`（偏好）。
+- 生成按钮禁用条件只剩：素材未完成 / 未选模型 / 未登录；能力问题由 dry-run 预览的内联错误呈现。
+- 换模型：显式偏好不被新模型支持时**清空偏好回自动**（提示一句），不再写 `modes[0]`。
+- 旧节点（mode=text＋媒体）：字段降级为偏好后，text 偏好与带媒体输入在编译时按自动分类处理——**矛盾状态自然消失**，无需恢复规则、无需迁移脚本。历史任务不受影响。
+
+## 9. 逐文件改造清单
+
+| 文件 | 改动 |
+|---|---|
+| `src/lib/video/intent.ts` | **新增**（自 v1 保留）：`mediaSignature`/`deriveVideoIntent`/意图标签类型；纯函数 |
+| `src/lib/video/compile.ts` | **新增**：编译聚合入口（§5.1 签名）；内部＝intent 分类 + codec 构建 + 物理校验 |
+| `src/app/api/canvas/video-nodes/[id]/compile-preview/route.ts` | **新增**：dry-run 端点（登录+同源+归属校验，无计费无任务） |
+| `src/lib/video/contract.ts` | 删能力对照段（D3）；`normalizeVideoInput` 瘦身为物理校验＋调用 compile；`mode` 从输入字段变为产出字段 |
+| `src/lib/video/submission.ts` | 三次校验收敛为一次 compile；任务参数持久化 `intent`+`modeSource` |
+| `src/lib/video/client-settings.ts` | 删 `validateVideoSettings` 执法（D1）；`reconcileVideoSettings` 删 mode 写入（仅保留时长/分辨率/画幅按有效意图收敛）；`videoNodeCreationDefaults` 用 dry-run 结果校验 |
+| `src/lib/video/mode-selection.ts` | `attachVideoInputs` 不再写 mode（仅附加素材）；`supportsVideoIntent` 降级展示（D2）；`selectVideoIntent` 写偏好 |
+| `src/lib/video/model-definition.ts` | 优先级翻转（D4）：adapter 基准 + manual/vendor 收紧 |
+| `src/lib/video/capabilities.ts` | 删 `fallbackCapability`（D6）；`documentedVideoCapability` 保留为 json 的旧格式投影 |
+| `src/lib/video/providers/protocols/apib-documented.ts` | 成为编译主体；删除内部第二次 `normalizeVideoInput`（:13，由 compile 入口统一） |
+| `src/lib/video/providers/protocols/apib-verified.ts` | 注释标记 legacy：仅冻结回放；发布预检拒绝新版本指向（随 P2） |
+| `src/lib/model-config/video-family-capability-upgrade.ts` | 删除（D7），调用方改为直接读 json 契约 |
+| `src/components/canvas/video/compact-composer.tsx`、`mode-select.tsx` | chip/自动标记/dry-run 错误内联展示；按钮禁用条件收窄 |
+| `scripts/verify-video-intent-compile.ts` | **新增**门禁（§10） |
+
+不在本切片（另行任务）：非 video 模态的同构收敛（image 已有类似演进）、结果侧展示、47 实际发布执行。
+
+## 10. 验收标准
+
+| # | 验收项 | 证据 |
 |---|---|---|
-| `src/lib/video/intent.ts` | **新增**：`mediaSignature` / `deriveVideoIntent` / `staleDefaultMode` / `VIDEO_INTENT_UNREPRESENTABLE`；`VideoCreationIntent` 类型定义迁入此处，`mode-selection.ts` re-export | 纯新增 |
-| `src/lib/video/contract.ts` | 删 `inferredMode`；`normalizeVideoInput` 接 `deriveVideoIntent`；`NormalizedVideoInput.modeSource`；E1 错误透传（422） | 行为变更核心；靠 V1-V7 门禁兜住 |
-| `src/lib/video/client-settings.ts` | `reconcileVideoSettings` 不写 modes[0]、加 `media` 参数；`videoNodeCreationDefaults` 用派生模式校验 | 时长/分辨率收敛逻辑不动 |
-| `src/lib/video/mode-selection.ts` | `attachVideoInputs` 不写 mode＋陈旧清除；`currentVideoIntent` 委托派生；`selectVideoIntent` 不变；re-export intent 类型 | UI 行为变化＝徽章随输入联动 |
-| `src/lib/canvas/link-command.ts` | 透传（attach 返回值用法微调） | 低 |
-| `src/lib/video/node-submission.ts` | 提交前 `staleDefaultMode` 兜底清除 | 旧节点直通 |
-| `src/app/api/canvas/video-nodes/[id]/route.ts`（写路径 service） | 保存时 `staleDefaultMode` 清除 | 落盘迁移的唯一入口 |
-| `src/lib/video/submission.ts` | 任务参数持久化 `modeSource` | 只增字段 |
-| `src/components/canvas/video/compact-composer.tsx` | 徽章委托派生＋"自动"标记＋恢复/清除 notice | 展示层 |
-| `src/components/canvas/video/mode-select.tsx` | `supportsVideoIntent` 降级为 affordance | 展示层 |
-| `src/lib/video/providers/protocols/apib-verified.ts` | 仅注释标记 legacy（不改逻辑） | 无 |
-| `scripts/verify-video-intent-parse.ts` | **新增**门禁（§7） | 纯新增 |
+| V1 | 决策表 A1-F3 逐 case：合成输入×json 真实条目，断言意图标签与请求体关键字段 | 新门禁 `scripts/verify-video-intent-compile.ts`（纯函数+真实 json，无 DB） |
+| V2 | 物理校验保留项不回归：超字节/超时长/重复 id/角色类型不符/未完成素材仍被拒（错误码不变） | 同门禁 |
+| V3 | **删除回归 pin**：`UNKNOWN_VIDEO_CAPABILITY`、`MODE_INPUT_MISMATCH`、`UNSUPPORTED_DURATION/RESOLUTION` 在新链路不再出现（门禁内文本搜索断言）；`FRAME_INPUT_MISMATCH`/`FRAME_ROLE_MISMATCH` 语义 relocated 为编译错误（可更名），断言其不再按能力矩阵判断 | 同门禁 |
+| V4 | 同输入不同顺序/来源（连线/上传/提及）→ 编译产出逐字段相等 | 同门禁 |
+| V5 | dry-run ≡ 提交：同一输入两种调用的 intent/facts/错误完全一致；dry-run 不产生任务、不计费、不占幂等键 | 门禁 + fixture |
+| V6 | 管理端收紧有效、放宽无效：收紧在 InputSpace 构建处使 limits 变小/模式减集并生效；试图放大 limits 或新增 modes 对编译零影响 | 门禁（D4 断言） |
+| V7 | 冻结回放不变：legacy codec 对既有冻结任务样例输入构建的请求体逐字节不变 | 门禁内新增 legacy 请求体快照断言 |
+| V8 | 既有门禁不回归：`verify-canvas-video-submission.cjs`、`verify-canvas-video-dock.cjs`、`verify-video-dock-continuity.cjs`、tsc、build | 命令输出 |
+| V9 | 47 端到端（依赖 P2 发布后）：图生输入→保存刷新→提交→回执→结果落节点→接下一节点，用 47 实际发布配置验收 | 发布轮次验收记录（本切片不宣称） |
 
-不在本切片（依赖/后续）：`video-family-capability-upgrade.ts` 逐字段升级（配置切片）、`capabilities.ts` 非托管兜底目录收敛、47 配置发布 v2/v3 profile、结果侧展示 modeSource。
+## 11. 实施顺序
 
-## 7. 请求示例
+1. **P0 编译器统一**（本切片核心）：`intent.ts`＋`compile.ts`＋contract 瘦身＋submission 单次校验＋V1-V7 门禁。落地即消除全部能力误拦（配置错误不再有否决权）。
+2. **P1 UI**：dry-run 端点＋chip/自动标记＋按钮条件收窄＋偏好语义。
+3. **P2 47 发布**：仅切 profile 路由（legacy→v2/v3）＋发布预检拒绝 legacy 指向；不含能力补齐（该任务已消失）。
+4. **P3 清场**：删 `video-family-capability-upgrade.ts`、`fallbackCapability`、旧能力编辑入口改收紧编辑器。
 
-### 7.1 自动单图（B1）
+P0/P1 与 P2 解耦可先行；47 恢复图生只需 P0+P1+P2，不再依赖任何能力数据发布。
 
-节点（保存态，mode 未定义——新节点天然如此）：
+## 12. 风险与代价（如实）
 
-```json
-{ "config": { "modelId": "video-apib-seedance-2-0-fast", "durationSeconds": 5, "resolution": "720p", "aspectRatio": "16:9", "prompt": "产品旋转展示" } }
-```
+- 编译错误文案成为唯一用户可见错误来源，需按 §6-E1 标准逐条重写（一次性工作，集中在 json 条目对应 codec 分支）；
+- json 契约的完备性责任转移到代码评审与门禁（V1 直接跑真实 json，缺失即红）；
+- 管理端能力编辑界面需改语义（收紧编辑器），有少量后台改造；
+- 多供应商族（geek/tokendance/compshare 等）按同一模式逐族收敛，工作量大但机械，可按 v2/v3 已有 codec 分批。
 
-连线 1 张图片后提交（POST `/api/canvas/video-nodes/{id}/generate`，body 仅 `expectedRevision/idempotencyKey`），服务端冻结后的归一化请求：
+## 13. v1 → v2 对照
 
-```json
-{ "mode": "single_image", "modeSource": "auto", "durationSeconds": 5, "resolution": "720p",
-  "references": [{ "kind": "image", "role": "first_frame", "artworkId": "art_…" }] }
-```
-
-（前提：配置切片已为该型号发布 `limits.images ≥ 1` 与 `single_image`；当前 v154 未发布时报 E1 点名错误——这是本切片的**预期诚实行为**，不是回归。）
-
-### 7.2 两张普通图片 ≠ 首尾帧（B4）
-
-输入 2 张 role=reference 的图片 → `mode: "reference"`、`modeSource: "auto"`、展示"图片参考"，两张图全部随请求编译；**不**产出 `frames_required`，不丢第二张图。
-
-### 7.3 显式首尾帧（F1）
-
-用户点"首尾帧"徽章 → `config.mode="frames_required"` 落盘（唯一显式写入）；素材不足时契约层按现有 `FRAME_INPUT_MISMATCH` 拒绝并提示补图——不静默降级。
-
-### 7.4 旧节点恢复（F3）
-
-线上旧节点 `{ "mode": "text", inputs: [1 image] }`：打开 → 编辑 → 保存 → 落盘为无 mode（自动），notice"已按当前素材恢复生成模式"；直接生成同样成功；任务参数带 `modeSource: "auto"`。
-
-### 7.5 能力缺口点名（E1）
-
-Seedance 2.0 Fast 当前 v154 能力（modes=["text"], limits 全 0）＋ 1 图输入 → 422：
-
-```json
-{ "error": "当前模型能力无法承接本次输入（1 张图片）：modes=text，limits.images=未声明…请在模型配置中发布对应能力，或更换模型",
-  "code": "VIDEO_INTENT_UNREPRESENTABLE", "fields": ["mode"] }
-```
-
-对比现状的"文生视频不能带媒体参考"——从用户操作错误变成可行动的配置缺口提示。
-
-## 8. 验收标准
-
-| # | 验收项 | 证据形式 |
+| 主题 | v1（已替代） | v2 |
 |---|---|---|
-| V1 | 决策表 A1,B1,B2,B3,B4,B5,B6,C1,C2,D1,E1,F1,F2,F3 逐一通过（合成能力＋合成输入，纯函数级） | 新门禁 `scripts/verify-video-intent-parse.ts`（tsx 直跑，无 DB），逐 case 断言 mode/display/source/角色 |
-| V2 | 契约集成：`normalizeVideoInput` 在 B1/B4/F3/E1 输入下产出与 V1 一致的 mode＋modeSource；显式 text＋图仍报 `MODE_INPUT_MISMATCH` | 同门禁（用合成 cap 走真实 contract 模块） |
-| V3 | 无二次否决：`intent.ts` 及其依赖闭包内 grep 无 fetch/openai/anthropic/LLM import；`mode-select.tsx` 不再含提交期校验 | 门禁内置 grep 断言 |
-| V4 | 同输入等价：同一媒体集合以不同顺序/来源（连线、上传、提及）构造，归一化请求逐字段相等 | 门禁（打乱输入顺序断言） |
-| V5 | 陈旧恢复：text＋媒体草稿经保存路径清除 mode；经提交路径不清除草稿也能成功；历史任务行不受影响（不触库的等价单测＋现有 `verify-canvas-video-submission.cjs` fixture 扩展一个 legacy case） | fixture 门禁 |
-| V6 | 幂等一致：`videoInputDigest` 对 auto 任务两次归一化摘要一致（推导确定性） | 门禁 |
-| V7 | 既有门禁不回归：`verify-canvas-video-submission.cjs`、`verify-canvas-video-dock.cjs`、`verify-video-dock-continuity.cjs`、tsc、build | 命令输出 |
-| V8 | 线上整链路（依赖配置切片后）：图片输入→保存刷新→提交→回执→结果落原节点→接下一节点，47 实际发布配置验收 | 发布轮次的验收记录（本切片不宣称） |
-
-## 9. 实施顺序与切片边界
-
-1. **P0（本规格可直接开工）**：`intent.ts` ＋ contract/client-settings/mode-selection/node-submission/写路径 ＋ V1-V7 门禁。落地后系统行为：自动推导正确、显式保留、陈旧恢复、缺口点名——在 v154 现状下即消除误拦与假显式，E1 错误是诚实信号。
-2. **P1**：composer/mode-select 展示层（自动标记、notice）。
-3. **P2（配置发布切片，另行任务）**：逐字段能力升级计划（修复整对象相等问题）→ 发布 21 型号 v2/v3 profile 与完整能力。完成后 B1 类请求真正出片，apib-verified 自然退出新任务路径。
-4. **P3**：结果侧/任务列表展示 modeSource；非托管兜底目录收敛。
-
-P0+P1 不依赖 P2，可先行合入；两切片在 §8 V8 处会合验收。本文件按仓库规则随实施进展更新状态行与偏差记录。
+| 核心思路 | 让前端/契约/配置读同一份能力数据并保持一致 | 能力数据丧失执行权；编译器唯一判断 |
+| 契约层能力对照（contract.ts:80-158） | "全部保留" | **删除**（D3），物理校验保留 |
+| config.mode | 三态（含陈旧默认恢复规则） | 偏好字段，永不执法；陈旧矛盾自然消失 |
+| 意图 | 解析产物，喂给契约校验 | 编译产出的标签＋输入偏好 |
+| 47 恢复图生 | 需先发布 21 型号完整能力 | 只切 profile 路由 |
+| 能力升级器 | 另行任务修复 | 概念删除（D7） |
+| 前端预检 | 保留（契约同款） | 删除执法，dry-run 同编译器替代 |
+| 保留不变 | 纯函数推导、决策表、两张普通图≠首尾帧、显式优先、历史冻结不动、无 LLM | 同左，且更彻底 |
