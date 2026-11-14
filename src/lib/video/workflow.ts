@@ -14,7 +14,8 @@ import {listArtworksByIds} from "@/lib/artworks/repository";
 import {acquireVideoCoordinationLock} from "./coordination-pool";
 import {ModelConfigError} from "../model-config/types";
 import {BillingError} from "../billing/types";
-import {createVideoGeneration} from "./creation";
+import {createVideoGeneration,withVideoCreationModel} from "./creation";
+import {currentModelExecution} from "../model-config/context";
 import {type CreateVideoInput} from "./submission-types";
 import {authorizeVideoReferences} from "./reference-materialization";
 import {videoWorkflowPlanSchema,workflowVideoRequestSchema,type VideoWorkflowPlan,type WorkflowVideoRequest} from "./workflow-schema";
@@ -60,20 +61,27 @@ export function validateVideoWorkflow(raw:unknown):VideoWorkflowPlan{
 }
 function operationId(runId:string,nodeId:string){return `video-wf-${createHash("sha256").update(`${runId}\0${nodeId}`).digest("hex")}`;}
 async function authorizeProject(actor:string,key:string){const {authorizeVideoProject}=await import("../canvas/project-access");await authorizeVideoProject(actor,key);}
-export async function authorizeWorkflowInputs(actor:string,plan:VideoWorkflowPlan){
+export async function authorizeWorkflowInputs(actor:string,plan:VideoWorkflowPlan,prepared?:Record<string,FrozenWorkflowStage>){
   for(const node of plan.nodes){
     if(node.canvasNodeId){const current=await getVideoNode(actor,node.canvasNodeId);if(!current||current.projectKey!==plan.projectKey||current.revision!==node.canvasNodeRevision)throw new ModelConfigError("VIDEO_NODE_REVISION_CONFLICT","制作链节点不存在或已更新",409);node.canvasContentDigest=createHash("sha256").update(canonicalConfig({config:current.config,inputs:current.inputs})).digest("hex");node.canvasLastTaskId=current.lastTaskId;}
     if(node.existingArtworkId){await existingWorkflowResult(actor,node.existingArtworkId);continue;}
     const input=node.request,request:VideoGenerationRequest={...input,source:"workflow",providerId:input.providerId||"managed-video",modelId:input.modelId||"",prompt:input.prompt,
       durationSeconds:input.durationSeconds??(input.seconds?Number(input.seconds):-1),resolution:input.resolution||input.size,references:input.references||[],idempotencyKey:operationId(plan.id,node.id)};
-    const owned=await authorizeVideoReferences(actor,request);node.request={...input,references:owned.references,...(input.elements?{elements:owned.elements}:{})};
+    if(prepared?.[node.id]?.compiledVersion===1)continue;
+    if(input.comfyWorkflowId){const owned=await authorizeVideoReferences(actor,request);node.request={...input,references:owned.references};continue;}
+    await withVideoCreationModel(input.modelId,async()=>{
+      // New bindings use the trusted Resolver while freezing. Legacy reference
+      // materialization is not an additional authority over the new draft.
+      if(currentModelExecution('video')?.frozen.video?.execution)return;
+      const owned=await authorizeVideoReferences(actor,request);node.request={...input,references:owned.references,...(input.elements?{elements:owned.elements}:{})};
+    });
   }
 }
 export async function scheduleVideoWorkflow(actor:string,raw:unknown,canvasIntent?:unknown,preparedFrozen?:Record<string,FrozenWorkflowStage>,signal?:AbortSignal,frozenAssemblyQuote?:import("../billing/types").BillingQuote):Promise<{runId:string;taskIds:string[]}>{
   actor=actor.toLowerCase();const plan=validateVideoWorkflow(raw);if((plan.reviewOrigin||plan.storyboard)&&!canvasIntent)throw new ModelConfigError("STORYBOARD_REVIEW_CONTEXT_REQUIRED","审片返工须从正式方案提交",422);await ensureWorkflowSchema();const inputDigest=createHash("sha256").update(canonicalConfig(plan)).digest("hex"),known=(await getPool().query("SELECT email,input_digest,creation_scope FROM app_video_workflow_runs WHERE id=$1",[plan.id])).rows[0];
   if(known?.input_digest){assertWorkflowCreationScope(known.creation_scope,actor);if(known.email!==actor||known.input_digest!==inputDigest)throw new ModelConfigError("WORKFLOW_OPERATION_CONFLICT","工作流编号已用于另一请求",409);const resumed=await resumeVideoWorkflow(plan.id,actor);return {runId:plan.id,taskIds:resumed.nodes.map(node=>node.taskId).filter((id):id is string=>!!id)};}
   if(known&&known.email!==actor)throw new ModelConfigError("WORKFLOW_OPERATION_CONFLICT","工作流编号已用于另一请求",409);
-  await authorizeProject(actor,plan.projectKey);await bindWorkflowCreationProject(actor,plan.projectKey);await validateWorkflowCreationInputs(actor,plan);await authorizeWorkflowInputs(actor,plan);const frozen=known?null:preparedFrozen||await freezeVideoWorkflow(actor,plan),frozenEnc=frozen?encryptAtRest(JSON.stringify(frozen)):null,publicFrozen=frozen?Object.fromEntries(Object.entries(frozen).map(([id,stage])=>[id,stage.quote])):{};
+  await authorizeProject(actor,plan.projectKey);await bindWorkflowCreationProject(actor,plan.projectKey);await validateWorkflowCreationInputs(actor,plan);await authorizeWorkflowInputs(actor,plan,preparedFrozen);const frozen=known?null:preparedFrozen||await freezeVideoWorkflow(actor,plan),frozenEnc=frozen?encryptAtRest(JSON.stringify(frozen)):null,publicFrozen=frozen?Object.fromEntries(Object.entries(frozen).map(([id,stage])=>[id,stage.quote])):{};
   const reused=new Map<string,import("./result-assets").SavedVideoResultAsset>();
   for(const node of plan.nodes)if(node.existingArtworkId)reused.set(node.id,await existingWorkflowResult(actor,node.existingArtworkId));
   const assemblyQuote=plan.assembly?frozenAssemblyQuote||await mediaBillingQuote(actor,"concat"):null;
@@ -155,7 +163,7 @@ async function resumeVideoWorkflowLocal(runId:string,actor?:string){
         const {comfyWorkflowId,comfyInputs,comfyOverrides,...managedRequest}=request;
         const requestInput:CreateVideoInput={...managedRequest,nodeId:node.canvasNodeId,nodeRevision,workflowRunId:runId,workflowNodeId:node.id,source:"workflow",sourceId:runId,projectKey:plan.projectKey,seconds:request.seconds||String(request.durationSeconds??""),
           size:request.size||request.resolution||"",references,idempotencyKey:operationId(runId,node.id),billingConfirmation:run.confirmations?.[node.id]||request.billingConfirmation};
-        const create=async()=>{if(comfyWorkflowId){const {submitByocComfyVideo}=await import("./byoc");return submitByocComfyVideo(run.email,{workflowId:comfyWorkflowId,idempotencyKey:requestInput.idempotencyKey,source:"workflow",nodeId:node.canvasNodeId,expectedRevision:nodeRevision,projectKey:plan.projectKey,prompt:request.prompt,references,orderedInputs:request.orderedInputs,inputMappings:comfyInputs,...comfyOverrides,negativePrompt:request.negativePrompt,resolution:request.resolution,aspectRatio:request.aspectRatio,generateAudio:request.generateAudio,watermark:request.watermark,...(request.durationSeconds&&request.durationSeconds>0?{durationSeconds:request.durationSeconds}:{})},{runId,nodeId:node.id});}return createVideoGeneration(run.email,requestInput);};if(frozen&&!frozen[node.id])throw new ModelConfigError("WORKFLOW_SNAPSHOT_UNAVAILABLE","阶段冻结记录缺失",503);const stageCreation=creationScope?{...creationScope,requestText:request.prompt,parameters:{...request},workspaceExplicit:false}:undefined;const created=await runWorkflowCreation(stageCreation,()=>frozen?withFrozenWorkflowStage(run.email,frozen[node.id],create):create());await update(state,"processing",undefined,created.taskId);
+        const create=async()=>{if(comfyWorkflowId){const {submitByocComfyVideo}=await import("./byoc");return submitByocComfyVideo(run.email,{workflowId:comfyWorkflowId,idempotencyKey:requestInput.idempotencyKey,source:"workflow",nodeId:node.canvasNodeId,expectedRevision:nodeRevision,projectKey:plan.projectKey,prompt:request.prompt,references,orderedInputs:request.orderedInputs,inputMappings:comfyInputs,...comfyOverrides,negativePrompt:request.negativePrompt,resolution:request.resolution,aspectRatio:request.aspectRatio,generateAudio:request.generateAudio,watermark:request.watermark,...(request.durationSeconds&&request.durationSeconds>0?{durationSeconds:request.durationSeconds}:{})},{runId,nodeId:node.id});}return createVideoGeneration(run.email,requestInput);};if(frozen&&!frozen[node.id])throw new ModelConfigError("WORKFLOW_SNAPSHOT_UNAVAILABLE","阶段冻结记录缺失",503);const stageCreation=creationScope?{...creationScope,requestText:request.prompt,parameters:{...request},workspaceExplicit:false}:undefined;const created=await runWorkflowCreation(stageCreation,()=>frozen?withFrozenWorkflowStage(run.email,frozen[node.id],create,run.confirmations?.[node.id]):create());await update(state,"processing",undefined,created.taskId);
       }catch(error){
         const recovered=await getVideoTaskByIdempotencyKey(run.email,operationId(runId,node.id));
         if(recovered)await update(state,recovered.status==="completed"?"completed":["failed","cancelled"].includes(recovered.status)?"blocked":"needs_attention","提交结果已保留，等待核对",recovered.id);

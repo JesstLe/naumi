@@ -274,3 +274,26 @@ P0核心已加入版本化合同、空默认/有审计的显式政策、独立�
 - 本轮生产配置迁移0、付费0、部署0；47 HOLD、103独立映射实验线隔离继续。总目标保持ACTIVE。
 
 副本验收补记：首次打包副本的浏览器用例在“三次Playwright点击必须只触发一次防抖请求”断言失败，React错误0；点击自动等待的累计时间可能越过250ms防抖窗口。用同一浏览器实际DOM事件、显式15ms间隔提交三个编辑事件，避免把慢测试驱动当作产品回归；保留首次失败回执并在最终包副本重复验证。
+
+## Workflow / 批次延迟素材编译切片（2026-11-14）
+
+模块与职责：
+- `VideoModelProfile.prepareDraft` / `prepareVideoDraftConstraints` 为尚无真实产物的阶段提供同源约束/报价事实。准备结果没有最终计划、媒体hash/MIME/字节数；真实阶段只在依赖就绪后由原 `compileVideoRequest` 最终编译一次。JSON Profile的参数/角色映射规则共用，原始4K没有被有效2K回灌。
+- `prepareDeferredVideoInputs` 复用可信输入所有者，只排除由工作流声明的未来槽；已有素材仍做归属/hash/真实解码，文字冻结。原单任务/预览完整Resolver入口保持。
+- `workflow-compiled.ts` 管理版本1、带摘要的阶段快照：原始草稿、展开后草稿、已有可信素材、未来输入槽、原绑定/政策与报价事实。它不是最终 `CompiledVideoPlan`；没有用/media/pending伪装已完成资产。
+- 新阶段加 `compiledVersion=1`。恢复缺失或损坏的新记录明确失败，不落回legacy；旧Stage/BYOC维持兼容reader。现有encrypted frozen_nodes存储足够，无业务SQL迁移。
+- `workflow-schema.ts` 接受并保存intentPreference/parameters，修复新版节点经过Workflow入口被strict schema拒绝的缺口。Workflow与Canvas批次新绑定不再执行旧normalize能力裁决；旧路径保留至协议迁移。
+- 最终阶段恢复原模型/价格快照；只将已完成的指定前序产物放入声明槽。已有素材版本、顺序、用途、作用域和原始参数均受冻结约束；真实媒体大小/时长在最终编译检查。
+- 保留现有调度、依赖、幂等、取消与UNKNOWN语义；未重建队列/计费平台。新版阶段在预占前核对原授权积分上界，超出走既有needs_confirmation/确认Route；只接受该Route持久化的确认，不恢复全局报价二次门禁。
+
+公共接口、依赖与状态归属：
+Workflow/Canvas批次应用编排 -> video准备/可信Resolver/Profile编译 -> 原生成任务/计费/结果资产事务。绑定/政策仍归模型配置，已有媒体归资产所有者，未来槽归已接受的制作链。阶段快照在既有加密JSON中存储，最终wire计划依然只归v3任务。媒体签名与上游I/O仍在执行适配器。
+
+集中证据与未完成项：
+- 真实隔离PG、本地供应商HTTP、独立媒体Worker进程和ffmpeg：Canvas两阶段先后生成、成片/下游/节点/账务闭环；冻结后更改目录路径/显式禁用/价格不改变原执行；linked text新内容不泄漏到原制作链；2/4批次、取消、并发恢复、UNKNOWN保持、快照损坏、真实时长超限与已有素材变化。最终数量/命令以 `E:/Workspace/naumi/output/video-compiler-workflow-20261114/VERIFICATION.txt` 为准。
+- 纯Profile测试证明准备阶段不调用final compile，真正执行只调用一次；明确政策和真实协议约束保持。
+- Windows媒体fixture再次观察到 `MEDIA_STATE_WRITE_FAILED`，原结果重试成功且provider create计数不增加；未把它写成Linux生产沙箱通过。最初类型错误和定向修复日志保留。
+- 本切片仅迁移已发布新版绑定的普通视频Workflow/Canvas批次；所有57个wire profile、2条无profile旧路径、结构化Storyboard/元素/BYOC、Agent其余入口、完整Next/独立App Worker进程重启及A01-A19全矩阵仍继续。
+- 总目标ACTIVE；生产配置迁移0、付费上游0、部署0。47 HOLD和103独立实验线隔离保持；共享checkout不改。
+
+本切片最终候选：制作链22项，连同原单任务38项共60项真实PG/HTTP/媒体Worker闭环；核心137项、发布/预览61项、实际React/Edge18项、Canvas121项、媒体16项、旧冻结来源、账务所有权35项与事务14项集中通过。新增验证包括：超授权零任务/零预占/零POST、过期确认无效、显式持久化确认恢复一次、前序失败阻断下游、原生角色参考只展开一次并冻结。完整TypeScript exit0。生产环境不由这些fixture推定通过。

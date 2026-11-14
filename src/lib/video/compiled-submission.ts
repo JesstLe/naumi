@@ -8,6 +8,7 @@ import {assertQuotedVersion} from '../billing/request';
 import {currentCreationContext,withFrozenCreation} from '../saas/creation-scope';
 import {assertCurrentCreationFeature,bindActualCreationProject} from '../saas/creation-access';
 import {getVideoNode,associateVideoTaskTx} from '../canvas/video-node-repository';
+import {prepareFrozenWorkflowCompiled,assertFrozenWorkflowQuote} from './workflow-compiled';
 import {prepareVideoExecution} from './prepare-execution';
 import {videoSubmissionDraft} from './submission-draft';
 import {compiledVideoRequest,encryptedVideoPlan} from './compiled-task';
@@ -32,12 +33,13 @@ export async function createCompiledVideo(actor:string,input:CreateVideoInput,ex
     if(node.revision!==input.nodeRevision)throw new ModelConfigError('VIDEO_NODE_REVISION_CONFLICT','视频节点已更新，请重新读取后生成',409);
     if(node.projectKey!==input.projectKey)throw new ModelConfigError('VIDEO_NODE_PROJECT_CONFLICT','视频节点项目不一致',409);
   }
-  const result=await prepareVideoExecution({actor,projectKey:input.projectKey??null,draft:videoSubmissionDraft(input),execution:execution.frozen.video?.execution,
+  const result=await prepareFrozenWorkflowCompiled(actor,input)??await prepareVideoExecution({actor,projectKey:input.projectKey??null,draft:videoSubmissionDraft(input),execution:execution.frozen.video?.execution,
     identity:{publicModelId:execution.frozen.publicModelId,wireModel:execution.connection.wireModel,connectionId:execution.connection.providerId}});
   if(!result.ok){const error=result.diagnostics[0];throw new VideoContractError(error.code,error.reason,[error.field]);}
   const plan=result.value,providerId=plan.identity.connectionId,config=getVideoProviderConfig(providerId);
   if(!config||!getVideoProvider(providerId)?.createCompiled)throw new ModelConfigError('VIDEO_COMPILED_TRANSPORT_UNAVAILABLE','此视频传输尚未接入冻结计划',422);
   const quote=await quoteForActor(actor,{feature:'video.generate',quantity:1,modelId:plan.identity.publicModelId,providerId,resolution:plan.billingFacts.resolution,ratio:plan.billingFacts.aspectRatio});
+  assertFrozenWorkflowQuote(quote);
   assertQuotedVersion(input.billingConfirmation||{},quote);
   const idempotencyKey=input.idempotencyKey||randomUUID(),id=`vid-${randomUUID()}`,request={...compiledVideoRequest(plan,input.source,idempotencyKey,input.sourceId),canvasNodeId:input.nodeId,nodeRevision:input.nodeRevision};
   const bundle=currentExecutionBundle()??{modelVersion:execution.frozen.modelVersion,billingVersion:execution.frozen.billingVersion,primary:'video' as const,video:execution.frozen};
