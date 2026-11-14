@@ -55,8 +55,9 @@ export function createWireVideoAdapter(config:VideoProviderRuntimeConfig):VideoP
   };
   const adapter:VideoProviderAdapter={id:config.id,
     async createCompiled(wire,key){
-      if(wire.encoding!=='json')throw new Error('冻结计划需要对应的媒体上传传输');
-      return decodeVideoCreated(profile,await send({...wire,encoding:'json'},true,key));
+      const field=config.idempotencyStrategy==='body'?config.idempotencyBodyField:undefined;
+      if(field&&(wire.encoding==='multipart'?wire.body.has(field):!!wire.body&&typeof wire.body==='object'&&Object.hasOwn(wire.body,field)))throw new PermanentVideoCreateError('幂等字段与冻结请求字段冲突',422);
+      return decodeVideoCreated(profile,await send(wire,true,key));
     },
     async create(input){const prepared=await uploadWorkflowReferences(context(input),transport);const value=await send(buildVideoCreate(context(prepared)),true,input.idempotencyKey);return decodeVideoCreated(profile,value);},
     async poll(task){

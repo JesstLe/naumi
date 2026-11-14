@@ -111,9 +111,13 @@ export type ResolvedVideoInput=ResolvedVideoDraft['inputs'][number];
 
 export const videoWireTemplateSchema=z.strictObject({
   method:z.literal('POST'),path:z.string().regex(/^\/(?!\/)[^?#\s]*$/).max(1000),
-  encoding:z.enum(['json','multipart','workflow']),body:z.json(),
+  encoding:z.enum(['json','multipart','workflow','inline-json']),body:z.json(),
 });
 export type VideoWireTemplate=z.infer<typeof videoWireTemplateSchema>;
+/** Execution-only payload. FormData/bytes never enter a frozen JSON plan. */
+export type MaterializedVideoWireRequest=
+  | {method:'POST';path:string;encoding:'json';body:VideoWireTemplate['body']}
+  | {method:'POST';path:string;encoding:'multipart';body:FormData};
 export const videoProfileOutputSchema=z.strictObject({
   intent:videoExecutionIntentSchema,effectiveParameters:z.record(z.string(),z.json()),
   wireTemplate:videoWireTemplateSchema,consumedInputIds:z.array(id),
@@ -134,7 +138,7 @@ export interface VideoModelProfile {
   compile(draft:ResolvedVideoDraft,contract:VideoInputContract,binding:PublishedVideoModelBinding):VideoResult<VideoProfileOutput>;
 }
 export type CompiledVideoPlan={
-  schemaVersion:1|2|3;
+  schemaVersion:1|2|3|4;
   identity:Pick<PublishedVideoModelBinding,'publicModelId'|'wireModel'|'connectionId'|'profileId'|'profileVersion'>&{bindingRevision:number;policyRevision:number};
   binding:PublishedVideoModelBinding;
   policy:VideoExecutionPolicy;
@@ -150,7 +154,7 @@ export type CompiledVideoPlan={
   digest:string;
 };
 export const compiledVideoPlanSchema=z.strictObject({
-  schemaVersion:z.union([z.literal(1),z.literal(2),z.literal(3)]),
+  schemaVersion:z.union([z.literal(1),z.literal(2),z.literal(3),z.literal(4)]),
   identity:videoModelBindingSchema.omit({recipe:true,revision:true}).extend({bindingRevision:revision,policyRevision:revision}),
   binding:videoModelBindingSchema,policy:videoExecutionPolicySchema,
   scope:videoExecutionScopeSchema,intent:videoExecutionIntentSchema,originalPrompt:z.string().max(65536),
@@ -159,6 +163,7 @@ export const compiledVideoPlanSchema=z.strictObject({
   inputManifest:z.array(resolvedVideoInputSchema).max(256),wireTemplate:videoWireTemplateSchema,
   billingFacts:videoProfileOutputSchema.shape.billingFacts,digest:z.string().regex(/^[a-f0-9]{64}$/),
 }).superRefine((plan,ctx)=>{
+  if((plan.schemaVersion===4)!==(plan.binding.profileId==='native-video'))ctx.addIssue({code:'custom',message:'原生传输计划必须使用对应版本',path:['schemaVersion']});
   if((plan.schemaVersion===3)!==(plan.intent==='workflow'))ctx.addIssue({code:'custom',message:'工作流计划必须使用对应版本',path:['schemaVersion']});
   if((plan.schemaVersion===2)!==Boolean(plan.structure))ctx.addIssue({code:'custom',message:'结构化计划必须使用对应版本',path:['schemaVersion']});
   for(const key of ['publicModelId','wireModel','connectionId','profileId','profileVersion'] as const)

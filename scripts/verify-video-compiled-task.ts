@@ -35,6 +35,19 @@ async function main(){
     if(req.url==='/task/openapi/outputs'){for await(const _ of req){}res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({code:0,data:[{fileType:'mp4',fileUrl:f.origin+'/result.mp4'}]}));return;}
     if(req.url?.startsWith('/api/v1/comfyui/comfyui_workflow/result/')){res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({code:'success',data:{status:'completed',results:[{type:'video',url:f.origin+'/result.mp4'}]}}));return;}
     if(req.url?.startsWith('/view?')){res.writeHead(200,{'content-type':'video/mp4'});res.end(mp4);return;}
+    if(req.method==='POST'&&(req.url?.endsWith('/videos')||req.url?.includes(':predictLongRunning'))){
+      const chunks:Buffer[]=[];for await(const chunk of req)chunks.push(Buffer.from(chunk));const raw=Buffer.concat(chunks);
+      const multipart=String(req.headers['content-type']).startsWith('multipart/');let body:Record<string,any>;
+      if(multipart){const form=await new Response(raw,{headers:{'content-type':String(req.headers['content-type'])}}).formData();body={};for(const [name,value]of form.entries())body[name]=typeof value==='string'?value:{name:value.name,mimeType:value.type,bytes:value.size,sha256:createHash('sha256').update(Buffer.from(await value.arrayBuffer())).digest('hex')};}
+      else body=JSON.parse(raw.toString());
+      posts++;received.push({path:req.url!,body,key:req.headers['idempotency-key'] as string|undefined});
+      if(mode==='disconnect'){req.socket.destroy();return;}
+      if(mode==='reject'){res.writeHead(422,{'content-type':'application/json'});res.end(JSON.stringify({error:{message:'fixture rejected input'}}));return;}
+      res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify(req.url?.includes(':predictLongRunning')?{name:'operations/native-'+posts}:{id:'native-'+posts,status:'queued'}));return;
+    }
+    if(req.url?.includes('/operations/native-')){polls++;res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({done:true,response:{generatedVideos:[{video:{uri:f.origin+'/result.mp4'}}]}}));return;}
+    if(req.method==='GET'&&req.url?.match(/\/videos\/native-\d+$/)){polls++;res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({status:'completed',video_url:f.origin+'/result.mp4'}));return;}
+    if(req.url?.match(/\/videos\/native-\d+\/content$/)){downloads++;res.writeHead(200,{'content-type':'video/mp4'});res.end(mp4);return;}
     if(req.method==='POST'){
       const chunks:Buffer[]=[];for await(const chunk of req)chunks.push(Buffer.from(chunk));const body=JSON.parse(Buffer.concat(chunks).toString());posts++;received.push({path:req.url!,body,key:req.headers['idempotency-key'] as string|undefined});
       if(mode==='disconnect'){req.socket.destroy();return;}
@@ -179,6 +192,7 @@ async function main(){
     const routeResponse=await generate(httpRequest('/api/video/generate',routeBody)),routeResult=await routeResponse.json();check('actual-generate-route-auth-to-compiled-task',()=>assert.equal(routeResponse.status,200,JSON.stringify(routeResult)));assert.equal((await task(routeResult.taskId)).parameters.version,3);
     const retryResponse=await retryRoute(httpRequest('/api/video/tasks/'+changedTask.id+'/retry',{idempotencyKey:randomUUID()}),{params:Promise.resolve({id:changedTask.id})}),retried=await retryResponse.json();check('actual-explicit-retry-route-no-double-mapping',()=>assert.equal(retryResponse.status,202,JSON.stringify(retried)));assert.equal(readTaskCompiledVideoPlan(actor,await task(retried.taskId)).requestedParameters.resolution,'4K');
     const unknownResponse=await retryRoute(httpRequest('/api/video/tasks/'+unknown.id+'/retry',{idempotencyKey:randomUUID()}),{params:Promise.resolve({id:unknown.id})});check('unknown-task-not-new-operation-retryable',()=>assert.equal(unknownResponse.status,409));
+    if(process.argv.includes('--native'))await (await import('./video-compiled-native-checks')).verifyCompiledNative({actor,pool,f,posts:()=>posts,received,task,finish,dispatch,check,key,setMode:value=>{mode=value;}});
     if(process.argv.includes('--byoc'))await (await import('./video-compiled-byoc-checks')).verifyCompiledByoc({actor,pool,f,byoc,task,finish,dispatch,check,key});
     if(process.argv.includes('--structured'))await (await import('./video-compiled-structured-checks')).verifyCompiledStructured({actor,pool,f,posts:()=>posts,received,task,finish,dispatch,check});
     if(process.argv.includes('--agent')||process.argv.includes('--agent-baseline'))await (await import('./video-compiled-agent-checks')).verifyCompiledAgent({actor,pool,f,posts:()=>posts,task,finish,dispatch,completedId:completed.id,check});

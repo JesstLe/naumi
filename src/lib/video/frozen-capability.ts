@@ -1,3 +1,4 @@
+import {nativeVideoQueryMatches} from './profiles/native-profile';
 import {ensureVideoDefaultsSchema} from "@/lib/video/model-defaults-schema";
 export {ensureVideoDefaultsSchema};
 
@@ -22,7 +23,7 @@ export async function freezeManagedVideoCapability(snapshot:ModelSnapshot,upstre
   const create=async()=>{
     if(upstream.parameterMap.videoExecution){
       const profile=upstream.parameterMap.videoProfile??provider.options?.videoProfile;
-      if(!profile||videoProfileProtocol(profile)!==provider.protocol)throw new ModelConfigError("VIDEO_PROFILE_MISMATCH","视频执行映射缺少匹配的查询协议",422);
+      if(upstream.parameterMap.videoExecution.profileId==='native-video'?!nativeVideoQueryMatches(upstream.parameterMap.videoExecution.recipe.layout,profile,provider.protocol):!profile||videoProfileProtocol(profile)!==provider.protocol)throw new ModelConfigError("VIDEO_PROFILE_MISMATCH","视频执行映射缺少匹配的查询协议",422);
       return frozenVideoSchema.parse({definition:{},sources:{},profile,
         execution:{...upstream.parameterMap.videoExecution,modelVersion:snapshot.version,modelDigest:snapshot.digest}});
     }
