@@ -136,3 +136,7 @@
 ## 高级输入真实生产包与节点错误诊断（2026-11-15）
 
 [模块记录](2026-11-15-video-advanced-inputs.md)：现有完整进程驱动新增首尾/双普通图/多模态/音频/镜头元素分组/Canvas/显式retry及native plan4/5十项生成，原始字节、预览摘要、Worker重启后的冻结映射/文字和单账本逐项核对；真实物理超限/权限/身份/结构缺映射反控零业务增量。发现Canvas新建/更新漏接VideoContractError，将正确拒绝错误显示为503，现补齐422/code/fields映射，原校验不变。旧包35高级项＋15底座通过；新增真实POST/PATCH负控后的新包/副本最终数量、四产物回退/main以VERIFICATION和INTEGRATION为准，不把旧包当修复上线。目标站绑定迁移、更多高级Workflow/家族、真实授权上游、浏览器连续性及整站蓝绿仍开放。总目标ACTIVE，47 HOLD、生产写入/付费/部署0。
+
+## Workflow未来元素分组与格式2（2026-11-15）
+
+[模块记录](2026-11-15-video-structured-workflow.md)：复现明确未来video元素因无目标字段/空refs被拒，新增可选elementId，统一冻结/物化位置规则。只有Workflow允许受已声明future slot支撑的空组；普通生成/Canvas schema仍要求具体素材，原flat身份和历史值保持。含新目标的持久run标execution_version2，原run仍1/历史0；reader/固定Worker描述/原回滚守卫一并核对，旧0/1包不得回退消费新组。真实HTTP/独立Worker增量覆盖镜头＋静态元素＋未来普通/分组素材、冻结后改配置/文字/价格和重启、历史欠授权确认、物理超限、取消、UNKNOWN/拒绝和零副作用负控；最终固定包/副本数量与回退以四产物VERIFICATION/INTEGRATION为准。生产启用绑定/全高级家族/真实授权上游/浏览器和整站蓝绿仍开放，总目标ACTIVE、47 HOLD、生产写入/付费/部署0。

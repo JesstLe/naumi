@@ -53,6 +53,17 @@ class RuntimeFormats(unittest.TestCase):
         for summary in [formats([task(version=4)]), formats(workflows=[{'version': 2, 'count': 1}])]:
             self.assertFalse(guard.assess_formats(summary, contract())['safe'])
 
+    def test_element_workflow_requires_exact_reader_and_full_compiled_closure(self):
+        summary = formats(workflows=[{'version': 2, 'count': 1}])
+        prior = contract()
+        current = {**prior, 'workflowExecutionVersions': [0, 1, 2]}
+        self.assertFalse(guard.assess_formats(summary, prior)['safe'])
+        self.assertTrue(guard.assess_formats(summary, current)['safe'])
+        for field, value in [('compiledPlanVersions', [1, 2, 3, 4]),
+                             ('workflowCompiledVersions', [0]),
+                             ('publishedProfileVersions', {'json-video': 1})]:
+            self.assertFalse(guard.assess_formats(summary, {**current, field: value})['safe'])
+
     def test_malformed_or_partial_version_markers_never_fall_back(self):
         for changes in [{'version': True}, {'version': '3'}, {'version': None}, {'version': 2},
                         {'hasCompiledPlan': False}, {'hasPlanDigest': False}, {'planVersion': None},

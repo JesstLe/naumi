@@ -16,6 +16,7 @@ import {videoDraftSchema,resolvedVideoDraftSchema,videoModelBindingSchema,videoE
 import {prepareVideoExecution} from './prepare-execution';
 import {resolvePreparedVideoFacts} from './draft-facts';
 import type {CreateVideoInput} from './submission-types';
+import {withDeferredWorkflowElements,type DeferredWorkflowInput} from './workflow-element-bindings';
 
 const projectedSchema=videoDraftPreparationSchema;
 const payloadSchema=z.strictObject({schemaVersion:z.literal(1),state:z.enum(['prepared','dependency_pending']),
@@ -35,13 +36,14 @@ function required<T>(result:VideoResult<T>):T{if(!result.ok)throw new VideoContr
  * shared Profile mapper only establishes draft constraints/quote facts here.
  * Each stage performs its single final compilation after dependencies resolve. */
 type PrivateBinding={binding:PublishedVideoModelBinding;policy:VideoExecutionPolicy;profile:VideoModelProfile};
-export async function freezeWorkflowCompiled(actor:string,projectKey:string,input:CreateVideoInput,futureInputs:VideoExecutionDraft['inputs'],privateBinding?:PrivateBinding):Promise<FrozenWorkflowCompiled>{
+export async function freezeWorkflowCompiled(actor:string,projectKey:string,input:CreateVideoInput,futureInputs:DeferredWorkflowInput[],privateBinding?:PrivateBinding):Promise<FrozenWorkflowCompiled>{
  const execution=currentModelExecution('video');
  if(!privateBinding&&!execution?.frozen.video?.execution)throw new VideoContractError('VIDEO_EXECUTION_NOT_CONFIGURED','制作链缺少新版执行绑定');
  const {binding,policy,profile}=privateBinding??bindPublishedVideoExecution(execution!.frozen.video!.execution!,{publicModelId:execution!.frozen.publicModelId,wireModel:execution!.connection.wireModel,connectionId:execution!.connection.providerId});
- const requestDraft=videoSubmissionDraft(input),pendingIds=new Set(futureInputs.map(item=>item.id));
+ const slots=futureInputs.map(({elementId:_element,...slot})=>slot);
+ const requestDraft=videoSubmissionDraft(withDeferredWorkflowElements(input,futureInputs)),pendingIds=new Set(slots.map(item=>item.id));
  if(pendingIds.size!==futureInputs.length)throw new VideoContractError('DUPLICATE_INPUT','制作链依赖槽重复');
- for(const future of futureInputs){
+ for(const future of slots){
    const existing=requestDraft.inputs.find(item=>item.id===future.id);
    if(existing&&(existing.kind!==future.kind||existing.role!==future.role||existing.nodeId!==future.nodeId))throw new VideoContractError('INPUT_IDENTITY_MISMATCH','依赖槽与输入身份不一致');
    if(input.references?.some(ref=>ref.id===future.id))throw new VideoContractError('DUPLICATE_INPUT','依赖槽不能覆盖已有素材');
@@ -60,7 +62,7 @@ export async function freezeWorkflowCompiled(actor:string,projectKey:string,inpu
  const staticById=new Map(preparation.resolved.inputs.map(item=>[item.id,item]));
  const draft={...preparation.draft,inputs:preparation.draft.inputs.map(item=>{const known=staticById.get(item.id);return {...item,...(known?.kind==='text'?{value:known.text}:{})};})};
  const projected=required(resolvePreparedVideoFacts(required(prepareVideoDraftConstraints({draft,binding,policy,profile})),preparation.resolved.inputs,false));
- const payload=payloadSchema.parse({schemaVersion:1,state:futureInputs.length?'dependency_pending':'prepared',binding,policy,requestDraft,draft,staticDraft:preparation.resolved,futureInputs,projected});
+ const payload=payloadSchema.parse({schemaVersion:1,state:slots.length?'dependency_pending':'prepared',binding,policy,requestDraft,draft,staticDraft:preparation.resolved,futureInputs:slots,projected});
  return {...payload,digest:hash(payload)};
 }
 
@@ -115,7 +117,7 @@ export async function prepareFrozenWorkflowCompiled(actor:string,input:CreateVid
        if(current.kind!=='text'||current.text!==previous.text)return failure('FROZEN_MEDIA_CHANGED','制作链冻结文字已改变');
      }else if(current.kind==='text'||canonicalConfig(current.asset)!==canonicalConfig(previous.asset))return failure('FROZEN_MEDIA_CHANGED','制作链已冻结素材版本发生变化');
    }
-   for(const future of frozen.futureInputs){const current=resolved.inputs.find(item=>item.id===future.id),ref=input.references?.find(item=>item.id===future.id);
+   for(const future of frozen.futureInputs){const current=resolved.inputs.find(item=>item.id===future.id),ref=[...(input.references??[]),...(input.elements??[]).flatMap(element=>element.references)].find(item=>item.id===future.id);
      if(!ref?.artworkId||!current||current.kind==='text'||current.asset.artworkId!==ref.artworkId||ref.sha256&&ref.sha256!==current.asset.sha256)return failure('FROZEN_MEDIA_CHANGED','前序产物与制作链回执不一致');
    }
    return {ok:true,value:true};

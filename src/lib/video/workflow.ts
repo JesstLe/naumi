@@ -14,6 +14,8 @@ import {getPool} from "@/platform/db/pool";
 import {listArtworksByIds} from "@/lib/artworks/repository";
 import {acquireVideoCoordinationLock} from "./coordination-pool";
 import {ModelConfigError} from "../model-config/types";
+import {validateWorkflowElementBindings,attachWorkflowElementReference,workflowExecutionVersion} from './workflow-element-bindings';
+import {videoRuntimeFormats} from './runtime-formats';
 import {BillingError} from "../billing/types";
 import {WorkflowBudgetChanged,matchesWorkflowStageConfirmation,type WorkflowStageQuote} from './workflow-budget';
 import {createVideoGeneration,withVideoCreationModel} from "./creation";
@@ -57,6 +59,7 @@ export function validateVideoWorkflow(raw:unknown):VideoWorkflowPlan{
     if(new Set(node.dependsOn).size!==node.dependsOn.length||node.dependsOn.some(id=>id===node.id||!ids.has(id)))throw new ModelConfigError("INVALID_VIDEO_WORKFLOW","工作流存在自引用、重复依赖或缺失节点",422);
     if(node.mediaBindings?.some(binding=>!node.dependsOn.includes(binding.fromNodeId)))throw new ModelConfigError("INVALID_VIDEO_WORKFLOW","媒体来源必须是已声明的前序节点",422);
     node.request=requestWithVariables(node.request,plan.variables);
+    validateWorkflowElementBindings(plan.id,node);
   }
   const complete=new Set<string>();
   while(complete.size<plan.nodes.length){const batch=plan.nodes.filter(node=>!complete.has(node.id)&&node.dependsOn.every(id=>complete.has(id)));if(!batch.length)throw new ModelConfigError("INVALID_VIDEO_WORKFLOW","工作流依赖有环",422);for(const node of batch)complete.add(node.id);}
@@ -96,7 +99,7 @@ export async function scheduleVideoWorkflow(actor:string,raw:unknown,canvasInten
     const prior=(await tx.query("SELECT email,creation_scope FROM app_video_workflow_runs WHERE id=$1",[plan.id])).rows[0];
     if(prior&&prior.email!==actor)throw new ModelConfigError("WORKFLOW_OPERATION_CONFLICT","工作流编号已用于另一请求",409);
     const scope=prior?assertWorkflowCreationScope(prior.creation_scope,actor):await acceptWorkflowCreationTx(tx,actor,plan);
-    await tx.query("INSERT INTO app_video_workflow_runs(id,email,project_key,plan,plan_digest,input_digest,frozen_nodes_enc,public_frozen_nodes,canvas_intent_digest,creation_scope,execution_version) VALUES($1,$2,$3,$4::jsonb,$5,$6,$7,$8::jsonb,$9,$10::jsonb,1) ON CONFLICT(id) DO NOTHING",[plan.id,actor,plan.projectKey,JSON.stringify(plan),digest,inputDigest,frozenEnc,JSON.stringify(publicFrozen),canvasIntent?createHash("sha256").update(canonicalConfig(canvasIntent)).digest("hex"):null,scope?JSON.stringify(scope):null]);
+    await tx.query("INSERT INTO app_video_workflow_runs(id,email,project_key,plan,plan_digest,input_digest,frozen_nodes_enc,public_frozen_nodes,canvas_intent_digest,creation_scope,execution_version) VALUES($1,$2,$3,$4::jsonb,$5,$6,$7,$8::jsonb,$9,$10::jsonb,$11) ON CONFLICT(id) DO NOTHING",[plan.id,actor,plan.projectKey,JSON.stringify(plan),digest,inputDigest,frozenEnc,JSON.stringify(publicFrozen),canvasIntent?createHash("sha256").update(canonicalConfig(canvasIntent)).digest("hex"):null,scope?JSON.stringify(scope):null,workflowExecutionVersion(plan)]);
     const row=(await tx.query("SELECT email,plan_digest,input_digest FROM app_video_workflow_runs WHERE id=$1 FOR UPDATE",[plan.id])).rows[0];
     if(row?.email!==actor||(row.input_digest?row.input_digest!==inputDigest:row.plan_digest!==digest))throw new ModelConfigError("WORKFLOW_OPERATION_CONFLICT","工作流编号已用于另一请求",409);
     if(plan.assembly)await tx.query("UPDATE app_video_workflow_runs SET assembly_quote=COALESCE(assembly_quote,$2::jsonb) WHERE id=$1",[plan.id,JSON.stringify(assemblyQuote)]);
@@ -132,7 +135,8 @@ async function resumeVideoWorkflowLocal(runId:string,actor?:string){
     if(!run||actor&&run.email!==actor)throw new ModelConfigError("WORKFLOW_UNAVAILABLE","工作流不存在",404);
     if(!lock.acquired)return getVideoWorkflow(run.email,runId);
     await bindBackgroundClaim(runId);
-    if(run.execution_version===1&&!run.frozen_nodes_enc)throw new ModelConfigError('WORKFLOW_SNAPSHOT_UNAVAILABLE','新版制作链冻结记录缺失',503);
+    if(!(videoRuntimeFormats.workflowExecutionVersions as readonly number[]).includes(run.execution_version))throw new ModelConfigError('WORKFLOW_SNAPSHOT_UNAVAILABLE','制作链执行格式尚未接入当前程序',503);
+    if(run.execution_version!==0&&!run.frozen_nodes_enc)throw new ModelConfigError('WORKFLOW_SNAPSHOT_UNAVAILABLE','新版制作链冻结记录缺失',503);
     const decrypted=run.frozen_nodes_enc?decryptAtRest(run.frozen_nodes_enc):null;
     if(run.frozen_nodes_enc&&!decrypted)throw new ModelConfigError("WORKFLOW_SNAPSHOT_UNAVAILABLE","制作链冻结记录不可用，未继续提交",503);
     const frozen:Record<string,FrozenWorkflowStage>|null=decrypted?JSON.parse(decrypted):null;
@@ -161,7 +165,9 @@ async function resumeVideoWorkflowLocal(runId:string,actor?:string){
       const state=states.get(node.id)!,request=structuredClone(node.request),references=[...(request.references||[])];
       try{
         for(const binding of node.mediaBindings||[]){
-          const reference=await dependencyReference(run.email,runId,binding,states);references.push(reference);
+          const reference=await dependencyReference(run.email,runId,binding,states);
+          if(attachWorkflowElementReference(request,binding,reference))continue;
+          references.push(reference);
           if(request.orderedInputs){const entry={id:reference.id,nodeId:reference.artworkId!,kind:binding.kind,role:binding.role,value:reference.url!},index=request.orderedInputs.findIndex(input=>input.id===reference.id);if(index>=0)request.orderedInputs[index]=entry;else request.orderedInputs.push(entry);}
         }
         let nodeRevision=node.canvasNodeRevision;

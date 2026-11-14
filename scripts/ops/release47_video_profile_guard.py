@@ -174,7 +174,7 @@ def assess_formats(summary, runtime_formats=None):
                 reason = 'durable-format-version-unknown'
             elif version not in readers[key]:
                 reason = 'prior-program-reader-not-proven'
-            if field == 'workflowFormats' and version == 1 and not reason:
+            if field == 'workflowFormats' and version in [1, 2] and not reason:
                 # Encrypted stages have no public profile/plan-version marker.
                 # The operator does not decrypt them or guess from model names.
                 if not set([1, 2, 3, 4, 5]).issubset(readers['compiledPlanVersions']) or \

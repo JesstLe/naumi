@@ -12,11 +12,11 @@ import {ModelConfigError} from "../model-config/types";
 import {bindByocWorkflowRecipe,byocVideoSubmissionInput} from './byoc-execution-binding';
 import {prepareByocRecipe,runFrozenByocRecipe,runLegacyByocStage,type FrozenByocRecipe} from "./byoc-recipe";
 import {runLegacyModelExecution} from "../model-config/context";
-import {createHash} from "node:crypto";
+export {workflowBindingId} from './workflow-element-bindings';
+import {workflowBindingId} from './workflow-element-bindings';
 import type {VideoWorkflowPlan} from "./workflow-schema";
 import {freezeWorkflowCompiled,runFrozenWorkflowCompiled,type FrozenWorkflowCompiled} from './workflow-compiled';
 export type FrozenWorkflowStage={compiledVersion?:1;compiled?:FrozenWorkflowCompiled;byoc?:FrozenByocRecipe;bundle?:ExecutionBundle;legacy?:VideoProviderRuntimeConfig;billingVersion:number;texts:Record<string,string>;quote:{version:number;credits:number;authorizedCredits:number;authorization?:boolean;modelVersion?:number}};
-export function workflowBindingId(runId:string,binding:NonNullable<VideoWorkflowPlan["nodes"][number]["mediaBindings"]>[number]){return binding.inputId||`wf-${createHash("sha256").update(`${runId}:${binding.fromNodeId}:${binding.outputIndex||0}:${binding.role}`).digest("hex").slice(0,40)}`;}
 import {runOwnedLegacyWorkflowStage} from './legacy-workflow-creation';
 export async function withFrozenWorkflowStage<T>(actor:string,stage:FrozenWorkflowStage,run:()=>Promise<T>,confirmation?:{version:number;credits:number},owned?:{runId:string;nodeId:string}){
   const requiresCompiled=!!stage.bundle?.video?.video?.execution||stage.compiledVersion!==undefined||stage.compiled!==undefined;
@@ -58,7 +58,7 @@ export async function freezeVideoWorkflow(actor:string,plan:VideoWorkflowPlan){
     await restoreWorkflowStage(actor,stage,async()=>{
       const frozen=stage.bundle?.video?.video;
       if(frozen?.execution){
-        const futureInputs=(node.mediaBindings||[]).map(binding=>{const id=workflowBindingId(plan.id,binding);return {id,nodeId:request.orderedInputs?.find(item=>item.id===id)?.nodeId||binding.fromNodeId,kind:binding.kind,role:binding.role};});
+        const futureInputs=(node.mediaBindings||[]).map(binding=>{const id=workflowBindingId(plan.id,binding);return {id,nodeId:request.orderedInputs?.find(item=>item.id===id)?.nodeId||binding.fromNodeId,kind:binding.kind,role:binding.role,...(binding.elementId?{elementId:binding.elementId}:{})};});
         const compiled=await freezeWorkflowCompiled(actor,plan.projectKey,{...request,source:'workflow',prompt:request.prompt,seconds:request.seconds||'',size:request.size||''},futureInputs);
         const quote=await quoteForActor(actor,{feature:'video.generate',quantity:1,modelId:stage.bundle!.video!.publicModelId,providerId:compiled.binding.connectionId,resolution:compiled.projected.billingFacts.resolution,ratio:compiled.projected.billingFacts.aspectRatio});
         stage.compiledVersion=1;stage.compiled=compiled;for(const item of compiled.staticDraft.inputs)if(item.kind==='text')values[item.nodeId.replace(/^text:/,'')]=item.text;stage.quote={version:quote.configVersion,credits:quote.requestedCredits,authorizedCredits:quote.authorizedCredits,authorization:quote.tariff.pricing.mode==='api-cost-plus',modelVersion:stage.bundle!.modelVersion};
