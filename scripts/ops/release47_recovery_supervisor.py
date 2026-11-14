@@ -91,7 +91,20 @@ class Adapter:
         return response['data']
 
     def status(self, spec):
-        return self.request(spec, '/api/internal/release/status' if spec['role'] == 'web' else '/status')
+        status = self.request(spec, '/api/internal/release/status' if spec['role'] == 'web' else '/status')
+        if spec['role'] == 'worker':
+            row = self.inspect(spec)
+            env = environment(row)
+            if env.get('NAUMI_WORKER_EXECUTION') == 'direct':
+                from types import SimpleNamespace
+                import worker_handoff
+                try:
+                    worker_handoff.verify_status(status, SimpleNamespace(expected_commit=env['SOURCE_COMMIT'],
+                        expected_origin=env['NAUMI_APP_ORIGIN']), env['NAUMI_INSTANCE_ID'],
+                        env.get('NAUMI_MEDIA_WORKER') == '1', direct=True)
+                except worker_handoff.lifecycle.Blocked as error:
+                    raise Hold(str(error)) from None
+        return status
 
     def readiness(self, spec):
         health = self.request(spec, '/api/health')

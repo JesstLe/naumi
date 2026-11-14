@@ -29,8 +29,9 @@ def configure(cfg):
  require(13000<=cfg['oldPort']<=13999 and 13000<=cfg['newPort']<=13999 and cfg['oldPort']!=cfg['newPort'],'DISTINCT_LOOPBACK_PORTS_REQUIRED')
  require(pathlib.Path(STATE).parent==pathlib.Path('/opt/naumi-staging/releases') and COOKIE.is_absolute(),'REVIEWED_STATE_AND_AUTH_PATHS_REQUIRED')
  require(type(cfg.get('webMemoryMiB',2048)) is int and 1536<=cfg.get('webMemoryMiB',2048)<=2048,'REVIEWED_WEB_MEMORY_REQUIRED')
- require(cfg.get('workerMemoryMiB',128)==(1024 if cfg.get('reviewedCombinedMedia') is True else 128),'REVIEWED_WORKER_MEMORY_REQUIRED')
+ require(cfg.get('workerMemoryMiB',1024 if cfg.get('applicationTaskExecution')=='worker' else 128)==(1024 if cfg.get('reviewedCombinedMedia') is True or cfg.get('applicationTaskExecution')=='worker' else 128),'REVIEWED_WORKER_MEMORY_REQUIRED')
  require(bool(cfg.get('combinedMedia'))==(cfg.get('reviewedCombinedMedia') is True),'REVIEWED_COMBINED_MEDIA_REQUIRED')
+ require(cfg.get('applicationTaskExecution') in [None,'local','worker'],'INVALID_APPLICATION_TASK_EXECUTION')
 
 def now():return dt.datetime.now(dt.timezone.utc).isoformat()
 def enc(v):return recovery.encoded(v)
@@ -241,14 +242,15 @@ class Controller:
   if not getattr(self,'candidate_reused',False):
    self.pre=tasks.collect_task_snapshot(self.tx.run,self.db,self.tx.save,projection='proof',row_limit=self.cfg.get('snapshotRowLimit',5000),allow_absent_tables=tasks.ADDITIVE_TABLES,statement_timeout_ms=self.cfg.get('snapshotStatementTimeoutMs',5000))
    require(self.pre.public.get('tables'),'TASK_BASELINE_MISSING');self.phase('BACKED_UP')
-   web_memory=self.cfg.get('webMemoryMiB',2048);worker_memory=self.cfg.get('workerMemoryMiB',128)
+   task_mode=self.cfg.get('applicationTaskExecution') or environment(self.tx.inspect(self.web['id'])).get('NAUMI_APPLICATION_TASK_EXECUTION','local')
+   web_memory=self.cfg.get('webMemoryMiB',2048);worker_memory=self.cfg.get('workerMemoryMiB',1024 if task_mode=='worker' or self.cfg.get('reviewedCombinedMedia') else 128)
    require(int(next(l.split()[1] for l in pathlib.Path('/proc/meminfo').read_text().splitlines() if l.startswith('MemAvailable:')))//1024>=web_memory+worker_memory+1024,'DUAL_SLOT_MEMORY_INSUFFICIENT')
    image=json.loads(self.tx.run(['docker','image','inspect',self.cfg['image']]))[0];require(image['Id']==self.cfg['image'],'FIXED_IMAGE_MISSING')
    if getattr(self,'partial_nas_web',False):self.newweb=self.succ['operations']['web-create']['receipt'];self.tx.pin(self.newweb)
-   else:self.newweb=self.op('web-create',lambda _:self.tx.clone_web(self.web,name=WEB,port=self.cfg['newPort'],image=self.cfg['image'],commit=self.cfg['commit'],memory_mib=web_memory,cpu=1.5,release_secret=secrets.token_urlsafe(48),state_dir=STATE+'/web',build_version=self.cfg['version'],reviewed_prior_state_dir=self.cfg['oldWebStateDir'],reviewed_nas_credentials_sha256=self.cfg.get('nasCredentialsSha256'),reviewed_video_reference_origin=self.cfg.get('videoReferencePublicOrigin'),reviewed_combined_media=self.cfg.get('combinedMedia')))
+   else:self.newweb=self.op('web-create',lambda _:self.tx.clone_web(self.web,name=WEB,port=self.cfg['newPort'],image=self.cfg['image'],commit=self.cfg['commit'],memory_mib=web_memory,cpu=1.5,release_secret=secrets.token_urlsafe(48),state_dir=STATE+'/web',build_version=self.cfg['version'],reviewed_prior_state_dir=self.cfg['oldWebStateDir'],reviewed_nas_credentials_sha256=self.cfg.get('nasCredentialsSha256'),reviewed_video_reference_origin=self.cfg.get('videoReferencePublicOrigin'),reviewed_combined_media=self.cfg.get('combinedMedia'),application_task_execution=self.cfg.get('applicationTaskExecution')))
    self.newweb=self.op('web-start',lambda _:self.tx.start_candidate(self.newweb,dict(webPeakMiB=web_memory,workerPeakMiB=worker_memory,hostReserveMiB=1024),int(next(l.split()[1] for l in pathlib.Path('/proc/meminfo').read_text().splitlines() if l.startswith('MemAvailable:')))//1024))
    self.wait(lambda:self.request(self.newweb,'/api/health'),'WEB_START')
-   self.newworker=self.op('worker-create',lambda _:c.clone_worker(self.tx,self.newweb,name=WORKER,memory_mib=worker_memory,cpu=1 if self.cfg.get('reviewedCombinedMedia') else .25,state_dir=STATE+'/worker',reviewed_combined_media=self.cfg.get('reviewedCombinedMedia') is True))
+   self.newworker=self.op('worker-create',lambda _:c.clone_worker(self.tx,self.newweb,name=WORKER,memory_mib=worker_memory,cpu=1 if self.cfg.get('reviewedCombinedMedia') or task_mode=='worker' else .25,state_dir=STATE+'/worker',reviewed_combined_media=self.cfg.get('reviewedCombinedMedia') is True))
    self.newworker=self.op('worker-start',lambda _:c.start_worker(self.tx,self.newworker,int(next(l.split()[1] for l in pathlib.Path('/proc/meminfo').read_text().splitlines() if l.startswith('MemAvailable:')))//1024,reviewed_combined_media=self.cfg.get('reviewedCombinedMedia') is True))
    self.wait(lambda:self.worker_control(self.newworker,'status',str(uuid.uuid4())),'WORKER_START')
   self.phase('CANDIDATE',web=self.newweb,worker=self.newworker);self.ready();self.build_gateway()
@@ -415,7 +417,7 @@ class Controller:
   self.tx.run(['systemctl','stop','naumi47-recovery.timer'])
   manifest={**self.original_manifest,'commit':self.cfg['commit'],'buildVersion':self.cfg['version'],'image':self.cfg['image'],'gatewayDumpSha256':sha(self.after_dump.encode()),'operationId':str(uuid.uuid4()),'evidenceDir':str(self.tx.folder),'journalDir':str(ROOT/'supervisor-journal'),'successorReleaseId':RELEASE}
   for role,identity in [('web',self.newweb),('worker',self.newworker)]:
-   row=self.tx.inspect(identity['id']);manifest[role]={**identity,'role':role,'staticSha256':recovery.static_pin(row),'memoryMiB':self.cfg.get('webMemoryMiB',2048) if role=='web' else self.cfg.get('workerMemoryMiB',128),'runningAtEnrollment':True}
+   row=self.tx.inspect(identity['id']);manifest[role]={**identity,'role':role,'staticSha256':recovery.static_pin(row),'memoryMiB':row['HostConfig']['Memory']//1024**2,'runningAtEnrollment':True}
   p=ROOT/'supervisor-manifest.json';save(p,manifest)
   self.state['runtimeRecovery']={**self.runtime,'operationId':manifest['operationId'],'manifestPath':str(p),'manifestSha256':sha(enc(manifest)),'phase':'ACKNOWLEDGED','effectiveWeb':self.newweb,'effectiveWorker':self.newworker,'successorReleaseId':RELEASE}
   self.state['webs']['main']['running']=self.newweb;self.state['worker']['running']=self.newworker

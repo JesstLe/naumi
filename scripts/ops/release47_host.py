@@ -168,7 +168,8 @@ class HostTransaction:
                   state_dir, build_version, admission='draining', reviewed_omitted_mounts=None, media_binding=None,
                   before_create=None, runtime_recovery=None, reviewed_prior_state_dir=None,
                   reviewed_nas_credentials_sha256=None, reviewed_video_reference_origin=None,
-                  reviewed_combined_media=None, reviewed_memory_environment=None, reviewed_deferred_nas_delivery=False):
+                  reviewed_combined_media=None, reviewed_memory_environment=None, reviewed_deferred_nas_delivery=False,
+                  application_task_execution=None):
         require(re.fullmatch('[A-Za-z0-9][A-Za-z0-9_.-]{0,95}', name), 'INVALID_NEW_SLOT_NAME')
         require(type(port) is int and 1024 <= port <= 65535, 'INVALID_LOOPBACK_PORT')
         require(re.fullmatch('sha256:[a-f0-9]{64}', image) and re.fullmatch('[a-f0-9]{40}', commit), 'FIXED_IMAGE_REQUIRED')
@@ -184,6 +185,10 @@ class HostTransaction:
         networks = sorted(old['NetworkSettings']['Networks'])
         require(networks and len(networks) <= 4, 'REVIEW_NETWORKS_REQUIRED')
         env = environment(old)
+        require(application_task_execution in [None, 'local', 'worker'], 'INVALID_APPLICATION_TASK_EXECUTION')
+        if application_task_execution is not None:
+            env['NAUMI_APPLICATION_TASK_EXECUTION'] = application_task_execution
+        require(env.get('NAUMI_WORKER_EXECUTION') in [None, 'http'], 'WEB_CANNOT_BE_DIRECT_SCANNER')
         if reviewed_deferred_nas_delivery:
             require(self.target == TARGET and env.get('STORAGE_DRIVER') == 's3' and env.get('MEDIA_PRIVATE') == '1' and
                     env.get('MEDIA_REMOTE_ACCESS') == 'proxy', 'REVIEWED_PRIVATE_NAS_DELIVERY_REQUIRED')

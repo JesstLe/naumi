@@ -154,7 +154,88 @@ def _combined_media_binding(web_row, name):
     return scratch[0]
 
 
-def _validate_combined_worker(row, web_row, *, reviewed_runtime_memory=None):
+DIRECT_ENV_REMOTE = r"""
+import {directWorkerEnvironment} from '/app/scripts/direct-worker-settings.mjs';
+console.log(JSON.stringify(directWorkerEnvironment(process.env)));
+"""
+
+
+def direct_worker_environment(tx, web_row):
+    """Use the fixed Web package's existing scanner projection, not a Python
+    copy of its credential allowlist. Values stay in memory/private env-file."""
+    env = environment(web_row)
+    mode = env.get('NAUMI_APPLICATION_TASK_EXECUTION', 'local')
+    require(mode in ['local', 'worker'], 'INVALID_APPLICATION_TASK_EXECUTION')
+    if mode == 'local':
+        return None
+    require(bool(env.get('DATABASE_URL')) and bool(env.get('SETTINGS_SECRET')),
+            'DIRECT_WORKER_DATABASE_AND_ENCRYPTION_REQUIRED')
+    result = json.loads(tx.run(['docker', 'exec', '-e', 'NODE_OPTIONS=', web_row['Id'],
+                               'node', '--input-type=module', '-e', DIRECT_ENV_REMOTE]))
+    require(isinstance(result, dict) and all(isinstance(k, str) and isinstance(v, str) for k, v in result.items())
+            and result.get('NAUMI_WORKER_EXECUTION') == 'direct' and result.get('NAUMI_RELEASE_RUNTIME') == '1'
+            and result.get('DATABASE_URL') == env['DATABASE_URL'] and result.get('SETTINGS_SECRET') == env['SETTINGS_SECRET']
+            and not {'RELEASE_CONTROL_SECRET', 'NODE_OPTIONS', 'NAUMI_RELEASE_PEERS'} & set(result),
+            'DIRECT_WORKER_PROJECTION_INVALID')
+    # The helper runs in Web (where NAUMI_APP_ORIGIN is not a Worker setting).
+    result['INTERNAL_APP_ORIGIN'] = 'http://' + web_row['Name'].lstrip('/') + ':3000'
+    return result
+
+
+def direct_media_mount(web_row):
+    """The scanner writes results and local fallback/mirrors even with S3/R2.
+    Copy just the existing media storage mount, never arbitrary Web mounts."""
+    media = pathlib.PurePosixPath(environment(web_row).get('MEDIA_DIR', '/data/media'))
+    require(media.is_absolute() and '..' not in media.parts, 'DIRECT_MEDIA_ROOT_REQUIRED')
+    mounts = [m for m in web_row.get('Mounts', []) if pathlib.PurePosixPath(m['Destination']) in
+              [media, *media.parents] and m['Destination'] != '/']
+    require(len(mounts) == 1 and mounts[0]['Type'] in ['bind', 'volume'] and mounts[0]['RW'] is True,
+            'DIRECT_SHARED_MEDIA_MOUNT_REQUIRED')
+    mount = mounts[0]
+    require(mount['Destination'] not in ['/scratch', '/release-state', '/app', '/tmp'] and
+            ',' not in mount['Source'] + mount['Destination'], 'DIRECT_SHARED_MEDIA_MOUNT_INVALID')
+    return mount
+
+
+def _validate_direct_worker(row, web_row, direct_environment):
+    env, host = environment(row), row['HostConfig']
+    name, web_name = row['Name'].lstrip('/'), web_row['Name'].lstrip('/')
+    require(direct_environment is not None and row['Image'] == web_row['Image'] and
+            web_row['State']['Running'] is True and web_row['Config']['Cmd'] == ['node','server.js'] and
+            row['Config']['Cmd'] == ['node','scripts/video-worker.mjs'] and row['Config'].get('User') == '1001:1001',
+            'DIRECT_WORKER_IDENTITY_CHANGED')
+    expected = {**direct_environment, **worker_interval_settings(environment(web_row)),
+        'NAUMI_APP_ORIGIN': 'http://' + web_name + ':3000', 'NAUMI_INSTANCE_ID': name,
+        'NAUMI_WORKER_TARGET_INSTANCE_ID': name, 'NAUMI_WORKER_RELEASE_CONTROL': '1',
+        'NAUMI_WORKER_START_PAUSED': '1', 'NAUMI_WORKER_CONTROL_PORT': '3001',
+        'NAUMI_WORKER_STATE_FILE': '/release-state/worker.json','NAUMI_VIDEO_WORKER': '0',
+        'NODE_OPTIONS': '--max-old-space-size=512',
+        **{key: environment(web_row)[key] for key in ['SOURCE_COMMIT','BUILD_VERSION','VIDEO_WORKER_SECRET']}}
+    require(all(env.get(k) == v for k,v in expected.items()) and set(env).issubset(set(expected) | IMAGE_ENVIRONMENT),
+            'DIRECT_WORKER_ENVIRONMENT_CHANGED')
+    require(host.get('Memory') == 1024 * 1024**2 and host.get('MemorySwap') == 1024 * 1024**2 and
+            host.get('PidsLimit') == 128 and host.get('NanoCpus') == 1_000_000_000 and
+            host.get('ReadonlyRootfs') is True and not host.get('Privileged') and not host.get('CapAdd') and
+            {v.upper().removeprefix('CAP_') for v in host.get('CapDrop') or []} == {'ALL'} and
+            set(host.get('SecurityOpt') or []) in [{'no-new-privileges:true'}, {'no-new-privileges'}] and
+            host.get('Tmpfs') == {'/tmp':'rw,noexec,nosuid,nodev,size=128m,mode=1777'} and
+            not any(host.get(k) for k in ['PortBindings','PublishAllPorts','Devices','DeviceRequests',
+                                         'VolumesFrom','Links','PidMode','UTSMode']) and
+            host.get('IpcMode') in ['private',''] and host.get('NetworkMode') not in ['host','none'] and
+            set(row['NetworkSettings']['Networks']) == set(web_row['NetworkSettings']['Networks']),
+            'DIRECT_WORKER_SECURITY_CHANGED')
+    media = direct_media_mount(web_row)
+    mounts = row.get('Mounts', [])
+    disk = [m for m in mounts if m['Type'] in ['bind','volume']]
+    require(len(disk) == 2 and {m['Destination'] for m in disk} == {'/release-state',media['Destination']} and
+            any(all(m.get(k) == media.get(k) for k in ['Type','Source','Destination','RW']) for m in disk) and
+            any(m['Destination'] == '/release-state' and m['Type'] == 'bind' and m['RW'] is True and
+                pathlib.PurePosixPath(m['Source']).is_relative_to('/opt/naumi-staging/releases') for m in disk) and
+            all(m in disk or m['Type'] == 'tmpfs' and m['Destination'] == '/tmp' for m in mounts),
+            'DIRECT_WORKER_MOUNTS_CHANGED')
+
+
+def _validate_combined_worker(row, web_row, *, reviewed_runtime_memory=None, direct_environment=None):
     require(reviewed_runtime_memory is None or type(reviewed_runtime_memory) is bool,
             'EXPLICIT_WORKER_RUNTIME_MEMORY_REVIEW_REQUIRED')
     env, web_env, host = environment(row), environment(web_row), row['HostConfig']
@@ -170,7 +251,7 @@ def _validate_combined_worker(row, web_row, *, reviewed_runtime_memory=None):
             re.fullmatch('[0-9]{10,13}', web_env.get('BUILD_VERSION', '')) and
             env.get('NAUMI_APP_ORIGIN') == 'http://' + web_row['Name'].lstrip('/') + ':3000' and
             env.get('NAUMI_INSTANCE_ID') == name and
-            env.get('NAUMI_WORKER_TARGET_INSTANCE_ID') == web_env.get('NAUMI_INSTANCE_ID') and
+            env.get('NAUMI_WORKER_TARGET_INSTANCE_ID') == (name if direct_environment is not None else web_env.get('NAUMI_INSTANCE_ID')) and
             env.get('SOURCE_COMMIT') == web_env.get('SOURCE_COMMIT') and
             env.get('BUILD_VERSION') == web_env.get('BUILD_VERSION') and
             env.get('VIDEO_WORKER_SECRET') == web_env.get('VIDEO_WORKER_SECRET') and
@@ -183,6 +264,10 @@ def _validate_combined_worker(row, web_row, *, reviewed_runtime_memory=None):
         'NAUMI_VIDEO_WORKER': '0', 'NODE_OPTIONS': '--max-old-space-size=64', 'NODE_ENV': 'production',
         'MEDIA_WORKER_ORIGIN': web_env['MEDIA_WORKER_ORIGIN'], 'MEDIA_WORKER_SECRET': web_env['MEDIA_WORKER_SECRET']}
     expected.update(worker_interval_settings(web_env))
+    if direct_environment is not None:
+        expected.update(direct_environment)
+    require((env.get('NAUMI_WORKER_EXECUTION') == 'direct') == (direct_environment is not None),
+            'COMBINED_WORKER_EXECUTION_MODE_CHANGED')
     require(env.get('VIDEO_WORKER_INTERVAL_MS') == web_env.get('VIDEO_WORKER_INTERVAL_MS'),
             'COMBINED_WORKER_INTERVAL_CHANGED')
     bounded = env.get('NODE_OPTIONS') == BOUNDED_WORKER_RUNTIME['NODE_OPTIONS']
@@ -194,7 +279,7 @@ def _validate_combined_worker(row, web_row, *, reviewed_runtime_memory=None):
         require(not (set(BOUNDED_WORKER_RUNTIME) - {'NODE_OPTIONS'}) & set(env),
                 'COMBINED_WORKER_ENVIRONMENT_NOT_REVIEWED')
     require(all(env.get(key) == value for key, value in expected.items()) and
-            set(env).issubset(WORKER_SETTINGS | COMBINED_WORKER_SETTINGS | IMAGE_ENVIRONMENT),
+            set(env).issubset(WORKER_SETTINGS | COMBINED_WORKER_SETTINGS | IMAGE_ENVIRONMENT | set(expected)),
             'COMBINED_WORKER_ENVIRONMENT_NOT_REVIEWED')
     normalize = lambda values: {v.upper().removeprefix('CAP_') for v in values or []}
     require(host.get('Memory') == 1024 * 1024**2 and host.get('MemorySwap') == 1024 * 1024**2 and
@@ -202,7 +287,8 @@ def _validate_combined_worker(row, web_row, *, reviewed_runtime_memory=None):
             host.get('ReadonlyRootfs') is True and host.get('Privileged') is False and
             normalize(host.get('CapDrop')) == {'ALL'} and normalize(host.get('CapAdd')) == COMBINED_WORKER_CAPS and
             set(host.get('SecurityOpt') or []) in [{'no-new-privileges:true'}, {'no-new-privileges'}] and
-            host.get('Tmpfs') == COMBINED_WORKER_TMPFS and not host.get('PortBindings') and
+            host.get('Tmpfs') == {k: v for k, v in COMBINED_WORKER_TMPFS.items()
+                if direct_environment is None or k != direct_media_mount(web_row)['Destination']} and not host.get('PortBindings') and
             not host.get('PublishAllPorts') and not host.get('Devices') and not host.get('DeviceRequests') and
             not host.get('VolumesFrom') and not host.get('Links') and not host.get('PidMode') and
             host.get('IpcMode') in ['private', ''] and not host.get('UTSMode') and
@@ -210,18 +296,27 @@ def _validate_combined_worker(row, web_row, *, reviewed_runtime_memory=None):
             host.get('NetworkMode') not in ['host', 'none'], 'COMBINED_WORKER_SECURITY_CHANGED')
     mounts = row.get('Mounts', [])
     bindings = {m['Destination']: m for m in mounts if m['Type'] == 'bind'}
-    require(len(bindings) == 2 and set(bindings) == {'/scratch', '/release-state'} and
+    media = direct_media_mount(web_row) if direct_environment is not None else None
+    extra = {media['Destination']} if media else set()
+    require(len(bindings) + len([m for m in mounts if m['Type'] == 'volume']) == 2 + len(extra) and
+            {m['Destination'] for m in mounts if m['Type'] in ['bind','volume']} == {'/scratch', '/release-state'} | extra and
+            {'/scratch','/release-state'}.issubset(bindings) and
             bindings['/scratch']['Source'] == scratch['Source'] and bindings['/scratch']['RW'] is True and
             bindings['/release-state']['RW'] is True and
             pathlib.PurePosixPath(bindings['/release-state']['Source']).is_relative_to('/opt/naumi-staging/releases') and
-            all(m['Type'] == 'bind' or m['Type'] == 'tmpfs' and m['Destination'] in COMBINED_WORKER_TMPFS for m in mounts),
+            all(m['Type'] == 'bind' or media and m['Type'] == 'volume' and m['Destination'] == media['Destination']
+                or m['Type'] == 'tmpfs' and m['Destination'] in COMBINED_WORKER_TMPFS for m in mounts),
             'COMBINED_WORKER_MOUNTS_CHANGED')
+    if media:
+        require(any(all(m.get(k) == media.get(k) for k in ['Type','Source','Destination','RW']) for m in mounts),
+                'DIRECT_SHARED_MEDIA_MOUNT_CHANGED')
 
 
 def clone_worker(tx, web, *, name, memory_mib, cpu, state_dir, reviewed_combined_media=False,
                  reviewed_runtime_memory=False):
     row = tx.pin(web)
     env = environment(row)
+    direct = env.get('NAUMI_APPLICATION_TASK_EXECUTION') == 'worker'
     require(row['State']['Running'] and row['Config']['Cmd'] == ['node', 'server.js'], 'RUNNING_CANDIDATE_WEB_REQUIRED')
     require(env.get('NAUMI_RELEASE_RUNTIME') == '1' and env.get('INTERNAL_APP_ORIGIN') == 'http://127.0.0.1:3000' and
             re.fullmatch('[a-f0-9]{40}', env.get('SOURCE_COMMIT', '')), 'CONTROLLED_DIRECT_WEB_REQUIRED')
@@ -232,10 +327,12 @@ def clone_worker(tx, web, *, name, memory_mib, cpu, state_dir, reviewed_combined
     require(reviewed_combined_media or env.get('NAUMI_MEDIA_WORKER') != '1',
             'COMBINED_MEDIA_EXPLICIT_REVIEW_REQUIRED')
     require(type(memory_mib) is int and type(cpu) in [int, float] and
-            (memory_mib == 1024 and cpu == 1 if reviewed_combined_media else 96 <= memory_mib <= 512 and 0 < cpu <= 1),
+            (memory_mib == 1024 and cpu == 1 if reviewed_combined_media or direct else 96 <= memory_mib <= 512 and 0 < cpu <= 1),
             'BOUNDED_WORKER_RESOURCES_REQUIRED')
     require(len(env.get('VIDEO_WORKER_SECRET', '').strip()) >= 32, 'WORKER_SECRET_REQUIRED')
     interval_settings = worker_interval_settings(env)
+    direct_environment = direct_worker_environment(tx, row)
+    media_mount = direct_media_mount(row) if direct_environment is not None else None
     scratch = _combined_media_binding(row, name) if reviewed_combined_media else None
     state = pathlib.Path(state_dir)
     require(state.is_absolute() and not state.is_symlink() and state.resolve().is_relative_to(
@@ -253,6 +350,9 @@ def clone_worker(tx, web, *, name, memory_mib, cpu, state_dir, reviewed_combined
                 'NAUMI_WORKER_STATE_FILE': '/release-state/worker.json', 'NAUMI_VIDEO_WORKER': '0',
                 'NODE_OPTIONS': '--max-old-space-size=' + str(max(48, memory_mib - 64))}
     settings.update(interval_settings)
+    if direct_environment is not None:
+        settings.update(direct_environment)
+        settings['NAUMI_WORKER_TARGET_INSTANCE_ID'] = name
     if reviewed_combined_media:
         settings.update(NAUMI_MEDIA_WORKER='1', MEDIA_WORKER_ORIGIN=env['MEDIA_WORKER_ORIGIN'],
             MEDIA_WORKER_SECRET=env['MEDIA_WORKER_SECRET'], MEDIA_JOB_DIR='/scratch',
@@ -260,20 +360,30 @@ def clone_worker(tx, web, *, name, memory_mib, cpu, state_dir, reviewed_combined
             MEDIA_WORKER_CONCURRENCY='1', NODE_OPTIONS='--max-old-space-size=64', NODE_ENV='production')
     if reviewed_runtime_memory:
         settings.update(BOUNDED_WORKER_RUNTIME)
+    if direct and not reviewed_combined_media:
+        settings['NODE_OPTIONS'] = '--max-old-space-size=512'
     require(all('\n' not in k + v and '\r' not in k + v for k, v in settings.items()), 'INVALID_WORKER_ENV')
     fd, filename = tempfile.mkstemp(prefix='.worker-env-', dir=tx.folder)
     try:
         with os.fdopen(fd, 'w') as stream:
             stream.write(''.join(k + '=' + v + '\n' for k, v in sorted(settings.items())))
         args = ['docker', 'create', '--name', name, '--restart=no', '--memory=' + str(memory_mib) + 'm',
-                '--memory-swap=' + str(memory_mib) + 'm', '--cpus=' + str(cpu), '--pids-limit=' + ('160' if reviewed_combined_media else '64'),
+                '--memory-swap=' + str(memory_mib) + 'm', '--cpus=' + str(cpu), '--pids-limit=' + ('160' if reviewed_combined_media else '128' if direct else '64'),
                 '--network', networks[0], '--mount', 'type=bind,src=' + str(state) + ',dst=/release-state',
                 '--env-file', filename]
         if reviewed_combined_media:
             args += ['--user=0:0', '--read-only', '--cap-drop=ALL', '--security-opt=no-new-privileges:true']
             for capability in sorted(COMBINED_WORKER_CAPS): args += ['--cap-add=' + capability]
-            for destination, options in COMBINED_WORKER_TMPFS.items(): args += ['--tmpfs', destination + ':' + options]
+            for destination, options in COMBINED_WORKER_TMPFS.items():
+                if media_mount is None or destination != media_mount['Destination']:
+                    args += ['--tmpfs', destination + ':' + options]
             args += ['--mount', 'type=bind,src=' + scratch['Source'] + ',dst=/scratch']
+        if media_mount is not None:
+            source = media_mount['Source'] if media_mount['Type'] == 'bind' else media_mount['Name']
+            args += ['--mount', 'type=' + media_mount['Type'] + ',src=' + source + ',dst=' + media_mount['Destination']]
+        if direct and not reviewed_combined_media:
+            args += ['--user=1001:1001','--read-only','--cap-drop=ALL','--security-opt=no-new-privileges:true',
+                     '--tmpfs','/tmp:rw,noexec,nosuid,nodev,size=128m,mode=1777']
         args += [row['Image'], *(COMBINED_WORKER_COMMAND if reviewed_combined_media else ['node', 'scripts/video-worker.mjs'])]
         created = tx.run(args).decode().strip()
         require(re.fullmatch('[a-f0-9]{64}', created), 'WORKER_CREATE_UNKNOWN')
@@ -282,7 +392,10 @@ def clone_worker(tx, web, *, name, memory_mib, cpu, state_dir, reviewed_combined
         require(result['Image'] == web['image'] and not result['State']['Running'] and
                 environment(result).get('NAUMI_WORKER_START_PAUSED') == '1', 'WORKER_CREATE_MISMATCH')
         if reviewed_combined_media:
-            _validate_combined_worker(result, row, reviewed_runtime_memory=reviewed_runtime_memory)
+            _validate_combined_worker(result, row, reviewed_runtime_memory=reviewed_runtime_memory,
+                                      direct_environment=direct_environment)
+        elif direct:
+            _validate_direct_worker(result, row, direct_environment)
         tx.save('worker-created-' + created[:12] + '.json', public_identity(result))
         return public_identity(result)
     finally:
@@ -294,6 +407,7 @@ def start_worker(tx, identity, available_mib, *, reserve_mib=1024, reviewed_comb
     row = tx.pin(identity)
     env = environment(row)
     cap = row['HostConfig'].get('Memory', 0)
+    direct = env.get('NAUMI_WORKER_EXECUTION') == 'direct'
     require(type(reviewed_combined_media) is bool, 'EXPLICIT_COMBINED_MEDIA_REVIEW_REQUIRED')
     require((reviewed_runtime_memory is None or type(reviewed_runtime_memory) is bool)
             and (not reviewed_runtime_memory or reviewed_combined_media),
@@ -302,13 +416,18 @@ def start_worker(tx, identity, available_mib, *, reserve_mib=1024, reviewed_comb
     require(not row['State']['Running'] and row['Config']['Cmd'] == command and
             env.get('NAUMI_WORKER_RELEASE_CONTROL') == '1' and env.get('NAUMI_WORKER_START_PAUSED') == '1',
             'PAUSED_CONTROLLED_WORKER_REQUIRED')
-    if reviewed_combined_media:
+    if reviewed_combined_media or direct:
         origin = re.fullmatch(r'http://([A-Za-z0-9][A-Za-z0-9_.-]{0,95}):3000', env.get('NAUMI_APP_ORIGIN', ''))
         require(origin, 'COMBINED_WORKER_WEB_ORIGIN_CHANGED')
         web_row = tx.inspect(origin.group(1))
-        _validate_combined_worker(row, web_row, reviewed_runtime_memory=reviewed_runtime_memory)
+        direct_environment = direct_worker_environment(tx, web_row)
+        if reviewed_combined_media:
+            _validate_combined_worker(row, web_row, reviewed_runtime_memory=reviewed_runtime_memory,
+                                      direct_environment=direct_environment)
+        else:
+            _validate_direct_worker(row, web_row, direct_environment)
     require(type(available_mib) is int and type(reserve_mib) is int and reserve_mib >= 1024 and
-            (cap == 1024 * 1024**2 if reviewed_combined_media else 96 * 1024**2 <= cap <= 512 * 1024**2) and
+            (cap == 1024 * 1024**2 if reviewed_combined_media or direct else 96 * 1024**2 <= cap <= 512 * 1024**2) and
             available_mib >= cap // 1024**2 + reserve_mib,
             'INSUFFICIENT_WORKER_MEMORY')
     tx.save('worker-start-intent-' + identity['id'][:12] + '.json', identity)
@@ -316,7 +435,10 @@ def start_worker(tx, identity, available_mib, *, reserve_mib=1024, reviewed_comb
     result = tx.inspect(identity['id'])
     require(result['State']['Running'] is True and result['Image'] == identity['image'], 'WORKER_START_UNKNOWN')
     if reviewed_combined_media:
-        _validate_combined_worker(result, web_row, reviewed_runtime_memory=reviewed_runtime_memory)
+        _validate_combined_worker(result, web_row, reviewed_runtime_memory=reviewed_runtime_memory,
+                                  direct_environment=direct_environment)
+    elif direct:
+        _validate_direct_worker(result, web_row, direct_environment)
     return public_identity(result)
 
 
