@@ -16,6 +16,7 @@ async function main(){
   const root=path.resolve(process.env.MEDIA_DIR!,'../compiled-task-'+randomUUID());await mkdir(root,{recursive:true});process.env.MEDIA_DIR=path.join(root,'media');process.env.MEDIA_JOB_DIR=path.join(root,'jobs');
   process.env.MEDIA_PRIVATE='1';process.env.MEDIA_REMOTE_ACCESS='proxy';process.env.VIDEO_REFERENCE_PUBLIC_BASE_URL='https://fixture-media.example';process.env.NAUMI_VIDEO_WORKER='0';process.env.NAUMI_APPLICATION_TASK_EXECUTION='worker';
   let mode:'ok'|'disconnect'|'reject'='ok',posts=0,polls=0,downloads=0,cases=0;
+  const family={enabled:false,layout:'',direct:false,received:[] as Array<{phase:string;path:string;body?:Record<string,any>;key?:string;xkey?:string}>};
   const byoc={posts:0,uploads:0,objects:0,mode:'ok',received:[] as any[],uploadHashes:[] as string[]};
   const received:Array<{path:string;body:Record<string,any>;key:string|undefined}>=[];
   const mp4file=path.join(root,'output.mp4');execFileSync('ffmpeg',['-v','error','-f','lavfi','-i','color=c=blue:s=64x64:r=10','-t','1','-c:v','libx264','-pix_fmt','yuv420p',mp4file],{windowsHide:true});const mp4=await readFile(mp4file);
@@ -35,6 +36,17 @@ async function main(){
     if(req.url==='/task/openapi/outputs'){for await(const _ of req){}res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({code:0,data:[{fileType:'mp4',fileUrl:f.origin+'/result.mp4'}]}));return;}
     if(req.url?.startsWith('/api/v1/comfyui/comfyui_workflow/result/')){res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({code:'success',data:{status:'completed',results:[{type:'video',url:f.origin+'/result.mp4'}]}}));return;}
     if(req.url?.startsWith('/view?')){res.writeHead(200,{'content-type':'video/mp4'});res.end(mp4);return;}
+    if(family.enabled&&req.method==='POST'){
+      const chunks:Buffer[]=[];for await(const chunk of req)chunks.push(Buffer.from(chunk));const body=JSON.parse(Buffer.concat(chunks).toString());posts++;family.received.push({phase:'create',path:req.url!,body,key:req.headers['idempotency-key'] as string|undefined,xkey:req.headers['x-idempotency-key'] as string|undefined});
+      if(mode==='disconnect'){req.socket.destroy();return;}
+      if(mode==='reject'){res.writeHead(422,{'content-type':'application/json'});res.end(JSON.stringify({error:{message:'family rejected input'}}));return;}
+      const id=family.layout==='agnes'?'video_'+posts:'family-'+posts;
+      res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify(family.layout==='gemini'?{name:'operations/'+id}:['minimax','metaso'].includes(family.layout)?{task:{id,status:'queued'}}:{id,status:'queued'}));return;
+    }
+    if(family.enabled&&req.method==='GET'&&req.url!=='/result.mp4'){
+      polls++;family.received.push({phase:'poll',path:req.url!});res.writeHead(200,{'content-type':'application/json'});
+      res.end(JSON.stringify(family.layout==='gemini'?{done:true,response:{generatedVideos:[{video:{uri:f.origin+'/result.mp4'}}]}}:['minimax','metaso'].includes(family.layout)?{task:{status:'succeeded',content:{url:f.origin+'/result.mp4'}}}:family.layout==='ark'?{status:'completed',content:{video_url:f.origin+'/result.mp4'}}:{status:'completed',video_url:f.origin+'/result.mp4'}));return;
+    }
     if(req.method==='POST'&&(req.url?.endsWith('/videos')||req.url?.includes(':predictLongRunning'))){
       const chunks:Buffer[]=[];for await(const chunk of req)chunks.push(Buffer.from(chunk));const raw=Buffer.concat(chunks);
       const multipart=String(req.headers['content-type']).startsWith('multipart/');let body:Record<string,any>;
@@ -82,7 +94,7 @@ async function main(){
     tariff.switches.metering='on';tariff.features['video.generate'].pricing={mode:'fixed',credits:7};tariff.features['video.generate'].rules=[];
     const bill=await billingRuntime.config.publish({id:randomUUID(),actor:'fixture-admin',reason:'local fixture tariff',expectedVersion:initial.version,config:tariff});
     const actor='compiled-video@fixture.test';await pool.query("INSERT INTO app_users(email,name,plan,renews_at) VALUES($1,'fixture','starter',now()+interval '1 day')",[actor]);
-    const {withTransaction}=await import('../src/platform/db/transaction');await withTransaction(pool,tx=>billingRuntime.service.grantTx(tx,{id:'fixture-grant',email:actor,amount:500,source:'grant',reason:'isolated fixture credits',actor:'fixture-admin',fingerprint:'fixture',ledgerId:'fixture-grant-ledger',expiry:{unit:'days',value:1}}));
+    const {withTransaction}=await import('../src/platform/db/transaction');await withTransaction(pool,tx=>billingRuntime.service.grantTx(tx,{id:'fixture-grant',email:actor,amount:process.argv.includes('--families')?5000:500,source:'grant',reason:'isolated fixture credits',actor:'fixture-admin',fingerprint:'fixture',ledgerId:'fixture-grant-ledger',expiry:{unit:'days',value:1}}));
     const {registerMediaAsset}=await import('../src/lib/media-assets');const key='compiler-inputs/'+randomUUID()+'.png',png=await sharp({create:{width:32,height:24,channels:3,background:'#abddff'}}).png().toBuffer();await mkdir(path.join(process.env.MEDIA_DIR!,'compiler-inputs'),{recursive:true});await writeFile(path.join(process.env.MEDIA_DIR!,key),png);await registerMediaAsset(key,png,'image/png',false,actor,false);
     await pool.query("INSERT INTO app_artworks(id,email,title,category,prompt,status,image_url,gradient) VALUES('input-art',$1,'fixture','image','','completed',$2,'')",[actor,`/media/${key}`]);
     const {createVideoGeneration}=await import('../src/lib/video/creation');const {getVideoTask}=await import('../src/lib/video/task-repository');
@@ -193,6 +205,7 @@ async function main(){
     const retryResponse=await retryRoute(httpRequest('/api/video/tasks/'+changedTask.id+'/retry',{idempotencyKey:randomUUID()}),{params:Promise.resolve({id:changedTask.id})}),retried=await retryResponse.json();check('actual-explicit-retry-route-no-double-mapping',()=>assert.equal(retryResponse.status,202,JSON.stringify(retried)));assert.equal(readTaskCompiledVideoPlan(actor,await task(retried.taskId)).requestedParameters.resolution,'4K');
     const unknownResponse=await retryRoute(httpRequest('/api/video/tasks/'+unknown.id+'/retry',{idempotencyKey:randomUUID()}),{params:Promise.resolve({id:unknown.id})});check('unknown-task-not-new-operation-retryable',()=>assert.equal(unknownResponse.status,409));
     if(process.argv.includes('--native'))await (await import('./video-compiled-native-checks')).verifyCompiledNative({actor,pool,f,posts:()=>posts,received,task,finish,dispatch,check,key,setMode:value=>{mode=value;}});
+    if(process.argv.includes('--families'))await (await import('./video-compiled-family-checks')).verifyCompiledFamilies({actor,pool,f,family,completedId:completed.id,posts:()=>posts,task,finish,dispatch,check,key,setMode:value=>{mode=value;}});
     if(process.argv.includes('--byoc'))await (await import('./video-compiled-byoc-checks')).verifyCompiledByoc({actor,pool,f,byoc,task,finish,dispatch,check,key});
     if(process.argv.includes('--structured'))await (await import('./video-compiled-structured-checks')).verifyCompiledStructured({actor,pool,f,posts:()=>posts,received,task,finish,dispatch,check});
     if(process.argv.includes('--agent')||process.argv.includes('--agent-baseline'))await (await import('./video-compiled-agent-checks')).verifyCompiledAgent({actor,pool,f,posts:()=>posts,task,finish,dispatch,completedId:completed.id,check});
@@ -201,7 +214,7 @@ async function main(){
     const replayResponse=await generate(httpRequest('/api/video/generate',routeBody)),replayed=await replayResponse.json();check('accepted-http-replay-survives-new-model-disable',()=>{assert.equal(replayResponse.status,200,JSON.stringify(replayed));assert.equal(replayed.taskId,routeResult.taskId);});
     await assert.rejects(()=>create(),{code:'MODEL_UNAVAILABLE'});cases++;console.log('CASE=new-operation-still-obeys-explicit-disable PASS');
     console.log(`VIDEO_COMPILED_TASK=PASS CASES=${cases} REAL_PG=true REAL_SUPPLIER_HTTP=true REAL_MEDIA_WORKER=true REAL_FFMPEG_DECODE=true PAID_CALLS=0 PRODUCTION_WRITES=0 POSTS=${posts} POLLS=${polls} DOWNLOADS=${downloads}`);
-    await writeFile(path.join(root,'RESULT.json'),JSON.stringify({ok:true,cases,posts,polls,downloads,actualWorkerFunctions:true,actualMediaWorkerProcess:true,mediaSandbox:false,actualNextServer:false,paidCalls:0,productionWrites:0,received},null,2));console.log('EVIDENCE='+path.join(root,'RESULT.json'));
+    await writeFile(path.join(root,'RESULT.json'),JSON.stringify({ok:true,cases,posts,polls,downloads,actualWorkerFunctions:true,actualMediaWorkerProcess:true,mediaSandbox:false,actualNextServer:false,paidCalls:0,productionWrites:0,received,familyReceived:family.received},null,2));console.log('EVIDENCE='+path.join(root,'RESULT.json'));
   }finally{await stopFixtureChild(mediaWorker);await writeFile(path.join(root,'MEDIA_WORKER.log'),mediaLog);await pool?.end();await f.cleanup();console.log('CLEANUP=PASS own_schema_dropped=true pools_closed=true own_media_worker_stopped=true');}
 }
 void main().catch(error=>{console.error(error);process.exitCode=1;});

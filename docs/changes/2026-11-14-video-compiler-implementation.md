@@ -383,3 +383,7 @@ Agent工具/Agent报价 -> video公共准备用例/模型快照 -> 原Resolver/C
 ## 原生字节协议后续切片
 
 OpenAI Videos、Gemini及无Profile OpenAI接入native-video Profile/计划schemaVersion4；multipart和inlineData在执行时按原素材身份物化，参数映射与现有事务保持。尺寸显式发布，未配置不猜测/降档。模块接口、迁移边界、测试与未完成项详见 [原生切片](2026-11-14-video-compiler-native.md)。全协议与完整App/应用Worker/发布验收继续，不能用这一切片关闭总目标。
+
+## 参考协议族与direct增量
+
+7种参考布局和Ark/MiniMax/Gemini无Profile direct执行组合接到冻结编译链；Agnes精确帧数/时长、MiniMax帧模式实际画幅、内联图片与URL物化及真实默认query差异均保留。详细接口、证据与全范围未完成项见 [参考协议族迁移](2026-11-14-video-compiler-families.md)。本地协议证明不代表生产绑定已切换，目标继续ACTIVE。

@@ -25,11 +25,12 @@ export async function materializeNativeVideoPlan(raw:unknown,ports:{bytes:(scope
  async function inline(value:Json):Promise<VideoResult<Json>>{
   if(Array.isArray(value)){const out:Json[]=[];for(const item of value){const got=await inline(item);if(!got.ok)return got;out.push(got.value);}return {ok:true,value:out};}
   if(!value||typeof value!=='object')return {ok:true,value};
-  if(Object.hasOwn(value,'$videoAsset')){const got=await get(value);return got.ok?{ok:true,value:{data:Buffer.from(got.value.bytes).toString('base64'),mimeType:got.value.asset.mimeType}}:got;}
+  if(Object.hasOwn(value,'$videoAsset')){const got=await get(value);return got.ok?{ok:true,value:recipe.data!.layout==='gemini'?{data:Buffer.from(got.value.bytes).toString('base64'),mimeType:got.value.asset.mimeType}:`data:${got.value.asset.mimeType};base64,${Buffer.from(got.value.bytes).toString('base64')}`}:got;}
   const out:Record<string,Json>={};for(const [key,item]of Object.entries(value)){const got=await inline(item);if(!got.ok)return got;Object.defineProperty(out,key,{value:got.value,enumerable:true,writable:true,configurable:true});}return {ok:true,value:out};
  }
  try{
-  if(plan.wireTemplate.encoding==='inline-json'){const got=await inline(plan.wireTemplate.body);return got.ok?{ok:true,value:{method:'POST',path:plan.wireTemplate.path,encoding:'json',body:got.value}}:got;}
+  if(plan.wireTemplate.encoding==='inline-json'){
+   if(!['gemini','grok2api','cogvideox3','agnes'].includes(recipe.data.layout))return fail('WRONG_MATERIALIZER','该布局没有图片内联协议');const got=await inline(plan.wireTemplate.body);return got.ok?{ok:true,value:{method:'POST',path:plan.wireTemplate.path,encoding:'json',body:got.value}}:got;}
   const body=plan.wireTemplate.body;
   if(!body||typeof body!=='object'||Array.isArray(body))return fail('INVALID_WIRE_BODY','原生请求体不是字段对象');
   if(plan.wireTemplate.encoding==='json'){
