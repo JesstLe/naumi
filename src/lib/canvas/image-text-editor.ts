@@ -12,8 +12,8 @@ export type {OcrBox as CanvasOcrBox} from "../canvas-ocr";
 import type {OcrBox as CanvasOcrBox} from "../canvas-ocr";
 import {visibleTimeout} from "../visible-timeout";
 export type CanvasOcrSegment={id:string;text:string;editedText:string;confidence:number;box:CanvasOcrBox};
-export type CanvasImageTextState={artworkId:string|null;segments:CanvasOcrSegment[];status:"idle"|"scanning"|"ready"|"applying"|"done"|"error";engine:string;error:string|null;applyingId:string|null;progress:number;imageSize:{width:number;height:number}|null;focusedId:string|null};
-const initial=():CanvasImageTextState=>({artworkId:null,segments:[],status:"idle",engine:"",error:null,applyingId:null,progress:0,imageSize:null,focusedId:null});
+export type CanvasImageTextState={artworkId:string|null;segments:CanvasOcrSegment[];status:"idle"|"scanning"|"ready"|"applying"|"done"|"error";engine:string;error:string|null;applyingId:string|null;progress:number;imageSize:{width:number;height:number}|null;focusedId:string|null;batch:{done:number;total:number}|null};
+const initial=():CanvasImageTextState=>({artworkId:null,segments:[],status:"idle",engine:"",error:null,applyingId:null,progress:0,imageSize:null,focusedId:null,batch:null});
 export const EMPTY_CANVAS_IMAGE_TEXT=initial();
 export type CanvasImageEditReceipt={id:string;kind:"text-edit";sourceArtworkId:string;parameters?:{canvasX?:number;canvasY?:number;newText?:string;operationId?:string};status:"queued"|"processing"|"needs_attention"|"completed"|"failed";progress?:number;resultArtworkId?:string;error?:string};
 export type CanvasImageTextContext={owner:string;quality:string;members:()=>Artwork[];position:(artwork:Artwork)=>CanvasPoint;
@@ -24,7 +24,7 @@ export type CanvasImageTextContext={owner:string;quality:string;members:()=>Artw
   refresh:()=>void;credits:()=>Promise<unknown>;notice:(message:string)=>void;
 };
 type Attempt={panelEpoch:number;operationId:string;unknown?:boolean;body:string;submission:RetainedBillingSubmission;pending:CanvasPendingNode;sourceId:string;segmentId:string;oldText:string;newText:string;taskId?:string};
-type Document={context?:CanvasImageTextContext;attempts:Map<string,Attempt>;flights:Map<string,Promise<void>>;segments:Map<string,Attempt>;settled:Set<string>;failed:Set<string>;attachments:Map<string,ReturnType<typeof createCanvasResultAttachment>>};
+type Document={context?:CanvasImageTextContext;attempts:Map<string,Attempt>;flights:Map<string,Promise<boolean>>;segments:Map<string,Attempt>;settled:Set<string>;failed:Set<string>;attachments:Map<string,ReturnType<typeof createCanvasResultAttachment>>};
 const normalize=(data:{segments?:Partial<CanvasOcrSegment>[]})=>(data.segments||[]).map((segment,index)=>({id:segment.id||`ocr-${index+1}`,text:String(segment.text||""),editedText:String(segment.text||""),confidence:Number(segment.confidence||0),box:segment.box as CanvasOcrBox})).filter(segment=>segment.text&&segment.box);
 
 /** One editor owns OCR drafts, retained enqueue identity and observation of the
@@ -39,7 +39,7 @@ export function createCanvasImageTextEditor(){
     if(scope!==next){scope=next;reset(false);}const bound=next,current=()=>mounted&&scope===bound&&bound.viewCurrent();
     let document=documents.get(bound.key);if(!document){document={attempts:new Map(),flights:new Map(),segments:new Map(),settled:new Set(),failed:new Set(),attachments:new Map()};documents.set(bound.key,document);}const doc=document;
     const close=()=>{if(current())reset();};
-    const edit=(id:string,text:string)=>{if(current()&&state.status!=="applying")publish({segments:state.segments.map(s=>s.id===id?{...s,editedText:text}:s)});};
+    const edit=(id:string,text:string)=>{if(current()&&state.status!=="applying"&&!state.batch)publish({segments:state.segments.map(s=>s.id===id?{...s,editedText:text}:s)});};
     const focus=(id:string)=>{if(current())publish({focusedId:id});};
     async function open(artwork:Artwork,context:CanvasImageTextContext){
       if(!current())return;invalidate();const token=epoch,controller=new AbortController();scan=controller;
@@ -52,35 +52,56 @@ export function createCanvasImageTextEditor(){
       }catch(error){if(active())publish({error:error instanceof Error?error.message:"图片文字识别失败",status:"error",progress:0});}
       finally{clearInterval(timer);if(progress===timer)progress=undefined;if(scan===controller)scan=undefined;}
     }
-    function apply(segment:CanvasOcrSegment,context:CanvasImageTextContext):Promise<void>{
-      if(!current()||!state.artworkId)return Promise.resolve();const sourceId=state.artworkId,slot=JSON.stringify([sourceId,segment.id]);const flight=doc.flights.get(slot)||doc.flights.values().next().value;if(flight)return flight;
-      const source=context.members().find(a=>a.id===sourceId);if(!source)return Promise.resolve();const text=segment.editedText.trim();
-      if(!text||text===segment.text){publish({error:text?"请先修改文字内容":"新文字不能为空"});return Promise.resolve();}
+    /** True when the edit task was actually enqueued; false on no-op, rejection
+     * or an in-flight redirect. Batch relies on this to stop at the first failure. */
+    function apply(segment:CanvasOcrSegment,context:CanvasImageTextContext,opts:{silent?:boolean}={}):Promise<boolean>{
+      if(!current()||!state.artworkId)return Promise.resolve(false);const sourceId=state.artworkId,slot=JSON.stringify([sourceId,segment.id]);const flight=doc.flights.get(slot)||doc.flights.values().next().value;if(flight)return flight;
+      const source=context.members().find(a=>a.id===sourceId);if(!source)return Promise.resolve(false);const text=segment.editedText.trim();
+      if(!text||text===segment.text){publish({error:text?"请先修改文字内容":"新文字不能为空"});return Promise.resolve(false);}
       let attempt=doc.attempts.get(slot);
       // An unknown submit retains its original intent, even if the draft was
       // subsequently edited. Resolve that receipt before creating another job.
       if(!attempt){const point=context.position(source),operationId=browserRandomUUID();attempt={panelEpoch:epoch,operationId,sourceId,segmentId:segment.id,oldText:segment.text,newText:text,submission:createRetainedBillingSubmission(),body:JSON.stringify({kind:"text-edit",quality:context.quality,artworkId:sourceId,oldText:segment.text,newText:text,box:segment.box,canvasX:Math.round(point.x),canvasY:Math.round(point.y),operationId}),pending:{id:`pend-text-edit-${operationId}`,taskKind:"image-edit",x:point.x,y:point.y,parentId:sourceId,linked:true,label:`改字结果 · ${text}`,uploading:false,progress:8,inputs:[sourceId],generating:true}};doc.attempts.set(slot,attempt);}
-      if(attempt.taskId){context.refresh();context.notice("原改字任务已受理，正在读取原任务结果");return Promise.resolve();}
+      if(attempt.taskId){context.refresh();context.notice("原改字任务已受理，正在读取原任务结果");return Promise.resolve(false);}
       const saved=attempt,token=epoch,visible=()=>current()&&epoch===token&&state.artworkId===sourceId;
-      const run=async()=>{if(visible())publish({applyingId:segment.id,status:"applying",error:null,progress:8});context.pending(items=>items.some(p=>p.id===saved.pending.id)?items:[...items,saved.pending]);
+      const run=async():Promise<boolean>=>{if(visible())publish({applyingId:segment.id,status:"applying",error:null,progress:8});context.pending(items=>items.some(p=>p.id===saved.pending.id)?items:[...items,saved.pending]);
         try{let taskId:string;
           if(saved.unknown){
-            const id="imgtask-"+(await browserSha256Hex(new TextEncoder().encode(`${context.owner.toLowerCase()}:${saved.operationId}`))).slice(0,32);if(!current())return;
-            const response=await context.read(`/api/canvas/image-tasks/${encodeURIComponent(id)}`);const data=await response.json();if(!current())return;
+            const id="imgtask-"+(await browserSha256Hex(new TextEncoder().encode(`${context.owner.toLowerCase()}:${saved.operationId}`))).slice(0,32);if(!current())return false;
+            const response=await context.read(`/api/canvas/image-tasks/${encodeURIComponent(id)}`);const data=await response.json();if(!current())return false;
             const task=response.ok&&data.task?.sourceArtworkId===saved.sourceId&&data.task?.parameters?.operationId===saved.operationId?data.task as CanvasImageEditReceipt:undefined;
             if(!task)throw Error("原改字提交尚待核实，请稍后读取原任务；不会重复生成");taskId=task.id;
           }else{
-          saved.unknown=true;const response=await context.submit(saved.body,saved.submission,current);const data=await response.json();if(!current())return;
+          saved.unknown=true;const response=await context.submit(saved.body,saved.submission,current);const data=await response.json();if(!current())return false;
           if(!response.ok||!data?.taskId){if(response.status>=400&&response.status<500&&!["OPERATION_PENDING","OPERATION_CONFLICT"].includes(data?.code))doc.attempts.delete(slot);throw Error(data?.error||"在线改字任务创建失败");}
           taskId=String(data.taskId);
           }
           saved.taskId=taskId;saved.unknown=false;doc.segments.set(saved.taskId,saved);
           context.pending(items=>items.map(p=>p.id===saved.pending.id?{...p,taskId:saved.taskId,taskKind:"image-edit"}:p));context.refresh();
-          if(visible())publish({status:"ready",progress:0});context.notice("改字任务已进入后台，可关闭面板继续其他工作");
-        }catch(error){if(!saved.submission.ready){saved.unknown=false;doc.attempts.delete(slot);}if(!current())return;context.pending(items=>items.filter(p=>p.id!==saved.pending.id));if(visible())publish({error:error instanceof Error?error.message:"在线改字任务创建失败",status:"error",progress:0});}
+          if(visible())publish({status:"ready",progress:0});if(!opts.silent)context.notice("改字任务已进入后台，可关闭面板继续其他工作");
+          return true;
+        }catch(error){if(!saved.submission.ready){saved.unknown=false;doc.attempts.delete(slot);}if(!current())return false;context.pending(items=>items.filter(p=>p.id!==saved.pending.id));if(visible())publish({error:error instanceof Error?error.message:"在线改字任务创建失败",status:"error",progress:0});return false;}
         finally{if(visible())publish({applyingId:null});}
       };
       const promise=run().finally(()=>{if(doc.flights.get(slot)===promise)doc.flights.delete(slot);});doc.flights.set(slot,promise);return promise;
+    }
+    /** Batch-apply every edited draft through the same retained enqueue path as
+     * single apply. Sequential by design (one flight at a time); stops at the
+     * first rejection so the remaining drafts stay editable for a retry. */
+    async function applyAll(context:CanvasImageTextContext):Promise<void>{
+      if(!current()||state.batch)return;
+      const pending=state.segments.filter(s=>s.editedText.trim()&&s.editedText.trim()!==s.text),batchSourceId=state.artworkId;
+      if(!batchSourceId||!pending.length)return;
+      publish({batch:{done:0,total:pending.length}});
+      let done=0,failure:string|null=null,aborted=false;
+      for(const segment of pending){
+        if(!current()||state.artworkId!==batchSourceId){aborted=true;break;}
+        const ok=await apply(segment,context,{silent:true});
+        if(!ok){failure=state.error||"请检查后重试";break;}
+        done+=1;publish({batch:{done,total:pending.length}});
+      }
+      if(current()&&state.artworkId===batchSourceId)publish({batch:null});
+      if(!aborted)context.notice(failure===null?`已批量提交 ${done} 处改字任务，结果将陆续生成在原图右侧`:done?`批量应用：已提交 ${done}/${pending.length} 处，其余未提交（${failure}）`:`批量应用未提交任何任务（${failure}）`);
     }
     function receive(task:CanvasImageEditReceipt,running:CanvasImageEditReceipt[]){
       if(state.artworkId!==task.sourceArtworkId||state.status==="scanning"||doc.segments.get(task.id)&&doc.segments.get(task.id)!.panelEpoch!==epoch)return;
@@ -112,7 +133,7 @@ export function createCanvasImageTextEditor(){
       }catch{if(active())timer=visibleTimeout(sync,10000);}};
       void sync();return()=>{stopped=true;timer?.();};
     }
-    return {getSnapshot:()=>state,subscribe:(fn:()=>void)=>{listeners.add(fn);return()=>{listeners.delete(fn);};},open,close,edit,focus,apply,follow};
+    return {getSnapshot:()=>state,subscribe:(fn:()=>void)=>{listeners.add(fn);return()=>{listeners.delete(fn);};},open,close,edit,focus,apply,applyAll,follow};
   }
   return {bind,mount:(value:boolean)=>{mounted=value;if(!value)invalidate();}};
 }

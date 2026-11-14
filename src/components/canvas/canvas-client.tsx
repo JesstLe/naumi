@@ -1448,6 +1448,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     await imageTextEditor.open(artwork,canvasImageTextContext());
   }
   function applyOcrSegment(segment:OcrSegment){const source=active?.members.find(artwork=>artwork.id===ocrArtworkId);if(!user||!imageToolState(source).canMutate)return Promise.resolve();return imageTextEditor.apply(segment,canvasImageTextContext());}
+  function applyAllOcrSegments(){return imageTextEditor.applyAll(canvasImageTextContext());}
 
   /** React supplies geometry and existing document/transport adapters only. */
   function canvasGenerationRunContext():CanvasGenerationRunContext {
@@ -3981,7 +3982,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           />}
 
           <CanvasImageTextPanel state={imageTextEditor.state} artwork={active?.members.find(artwork=>artwork.id===ocrArtworkId)} lightCanvas={lightCanvas}
-            onClose={imageTextEditor.close} onFocus={imageTextEditor.focus} onEdit={imageTextEditor.edit} onApply={applyOcrSegment} />
+            onClose={imageTextEditor.close} onFocus={imageTextEditor.focus} onEdit={imageTextEditor.edit} onApply={applyOcrSegment} onApplyAll={applyAllOcrSegments} />
 
           {/* 重命名节点:在节点标签处弹出内联输入(编辑按钮触发),失焦/回车确定、Esc 取消 */}
           {renamingNodeId &&
