@@ -16,7 +16,7 @@ export const videoWorkflowManifestSchema=z.strictObject({version:z.literal(1),ki
 export type VideoWorkflowManifest=z.infer<typeof videoWorkflowManifestSchema>;
 export const workflowVideoRequestSchema=videoInputSchema.omit({durationSeconds:true,resolution:true,references:true}).extend({intentPreference:videoPreferenceSchema.optional(),parameters:z.record(z.string().min(1).max(100),z.json()).optional(),prompt:z.string().max(16384),negativePrompt:z.string().max(8192).optional(),mode:z.enum(VIDEO_MODES).optional(),
   workflowManifest:videoWorkflowManifestSchema.optional(),workflowTaskId:id.optional(),comfyWorkflowId:id.optional(),comfyInputs:videoWorkflowManifestSchema.shape.inputs.optional(),comfyOverrides:videoByocOverridesSchema.optional(),camera:videoCameraSchema.optional(),
-  providerId:id.optional(),modelId:id.optional(),durationSeconds:z.number().int().min(-1).max(3600).optional(),seconds:z.string().max(10).optional(),size:z.string().max(100).optional(),resolution:z.string().max(100).optional(),
+  providerId:id.optional(),modelId:id.optional(),durationSeconds:z.number().finite().optional(),seconds:z.string().max(10).optional(),size:z.string().max(100).optional(),resolution:z.string().max(100).optional(),
   aspectRatio:z.string().max(20).optional(),generateAudio:z.boolean().optional(),watermark:z.boolean().optional(),references:z.array(videoReferenceSchema).max(128).optional(),
   orderedInputs:z.array(orderedInputSchema).max(256).optional(),providerOptions:z.record(z.string(),z.json()).optional(),
   billingConfirmation:z.strictObject({version:z.number().int().positive().optional(),credits:z.number().int().nonnegative().optional()}).optional()});

@@ -17,6 +17,13 @@ export async function withVideoCreationModel<T>(requestedModelId:string|undefine
   if(currentModelExecution('video')||!await modelConfigurationEnabled())return run();
   const services=getModelExecutionServices(),[snapshot,billing]=await Promise.all([services.models.current(),services.billing.current()]);
   const executor=await getModelExecutor(),video=await executor.resolve({feature:'video.generate',binding:'video.generate',requestedModelId,snapshot,billing});
+  // Only genuinely persisted pre-freeze workflow runs have no original model
+  // snapshot. Preserve their old resolution semantics inside the DB-verified
+  // compatibility scope; ordinary new resolve never reads capability metadata.
+  if(!video.video?.execution&&(await import('./legacy-workflow-creation')).legacyWorkflowCreationActive()){
+    const upstream=snapshot.config.upstreamModels.find(row=>row.id===video.target.id),provider=snapshot.config.providers.find(row=>row.id===upstream?.providerId);
+    if(upstream&&provider)video.video=await (await import('./frozen-capability')).freezeManagedVideoCapability(snapshot,upstream,provider);
+  }
   return executor.runBundle({modelVersion:snapshot.version,billingVersion:billing.version,primary:'video',video},billing,run);
 }
 

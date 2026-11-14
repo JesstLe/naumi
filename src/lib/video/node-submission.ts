@@ -11,7 +11,7 @@ import {createVideoGeneration,withVideoCreationModel} from "./creation";
 import {currentModelExecution} from '../model-config/context';
 import type {CanvasVideoNode} from '../canvas/video-node-schema';
 import {readOwnedVideoWorkflow} from "./workflow-source";
-import {requireOwnedVideoText} from "./submission";
+import {requireOwnedVideoText} from "./owned-text";
 import type {VideoReference} from "./types";
 import type {OrderedInput} from "./references";
 import {resolveCanvasNodeInputs} from "../canvas/node-inputs";

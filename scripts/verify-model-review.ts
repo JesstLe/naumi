@@ -71,13 +71,14 @@ async function main() {
     const catalogResponse = await videoCatalog();
     const catalog = await catalogResponse.json();
     assert.equal(catalogResponse.status, 200);
-    assert.equal(catalog.models[0].maxReferenceImages, 0, "Public video catalog honors configured reference restriction");
+    assert.equal(catalog.models[0].maxReferenceImages, undefined, "Unbound catalog must not invent a reference limit");
+    assert.equal(catalog.models[0].executionStatus, 'mapping_required');
     const { createVideoGeneration } = await import("../src/lib/video/service");
     const beforeVideo = models.length;
-    await assert.rejects(withModelRequest(new Request("http://fixture.test/api/video/generate", { method: "POST", headers: { cookie, "Content-Type": "application/json" }, body: JSON.stringify({ modelId: "video-no-reference" }) }), () => createVideoGeneration(email, { source: "workbench", modelId: "video-no-reference", mode: "reference", prompt: "fixture", durationSeconds: 4, seconds: "4", size: "1280x720", references: [{ id: "fixture-ref", kind: "image", role: "first_frame", url: "https://supplier.invalid/fixture.png" }] })), (error: any) => error.code === "REFERENCE_LIMIT_EXCEEDED" && error.status === 422 && error.fields.includes("references"));
+    await assert.rejects(withModelRequest(new Request("http://fixture.test/api/video/generate", { method: "POST", headers: { cookie, "Content-Type": "application/json" }, body: JSON.stringify({ modelId: "video-no-reference" }) }), () => createVideoGeneration(email, { source: "workbench", modelId: "video-no-reference", mode: "reference", prompt: "fixture", durationSeconds: 4, seconds: "4", size: "1280x720", references: [{ id: "fixture-ref", kind: "image", role: "first_frame", url: "https://supplier.invalid/fixture.png" }] })), (error: any) => error.code === "VIDEO_EXECUTION_NOT_CONFIGURED" && error.status === 422 && error.fields.includes("binding"));
     assert.equal(models.length, beforeVideo, "Rejected reference cannot reserve/submit a video");
     assert.equal(Number((await f.sql.query("SELECT count(*) FROM app_video_tasks")).rows[0].count), 0);
-    console.log("PASS configured video catalog and actual pre-submission reference limit, zero task/supplier creation");
+    console.log("PASS identity-only video catalog and explicit missing-mapping diagnostic, zero task/supplier creation");
     // Execute the exact SQL shipped inside generated ROLLBACK.sh against real
     // task tables, rather than having a mocked psql return a chosen count.
     const source = await readFile("scripts/deploy-release.sh", "utf8");
@@ -93,6 +94,14 @@ async function main() {
     const { setAdminPassword, authenticateAdminPassword } = await import("../src/lib/admin-auth");
     await setAdminPassword("FixtureReviewAccess2026!");
     const adminCookie = `${cookie}; nv_admin=${await authenticateAdminPassword("FixtureReviewAccess2026!")}`;
+    const {GET:readinessRoute}=await import('../src/app/api/admin/model-management/route');
+    const readinessUrl='http://fixture.test/api/admin/model-management?view=video-execution-readiness';
+    assert.equal((await readinessRoute(new Request(readinessUrl))).status,404);
+    const readinessResponse=await readinessRoute(new Request(readinessUrl,{headers:{cookie:adminCookie}}));
+    assert.equal(readinessResponse.status,200);const readiness=await readinessResponse.json();
+    assert.equal(readiness.ready,false);assert.equal(readiness.issues[0].code,'VIDEO_EXECUTION_NOT_CONFIGURED');
+    assert(!JSON.stringify(readiness).includes('fixture-review-video'));
+    console.log('PASS actual authorized admin readiness route, anonymous denied, missing mapping reported without secret');
     const { modelAdminHandler } = await import("../src/lib/model-config/access");
     const draft = await f.repo.draft(email);
     const notStaged = { id: randomUUID(), draftId: draft.id, expectedRevision: draft.revision, expectedVersion: 999, reason: "fixture stale expected version" };

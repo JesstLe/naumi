@@ -50,6 +50,7 @@ export async function ensureVideoWorkflowSchema(){
  ALTER TABLE app_video_workflow_runs ADD COLUMN IF NOT EXISTS input_digest text;
  ALTER TABLE app_video_workflow_runs ADD COLUMN IF NOT EXISTS canvas_intent_digest text;
  ALTER TABLE app_video_workflow_runs ADD COLUMN IF NOT EXISTS frozen_nodes_enc text;
+ ALTER TABLE app_video_workflow_runs ADD COLUMN IF NOT EXISTS execution_version integer NOT NULL DEFAULT 0;
  ALTER TABLE app_video_workflow_runs ADD COLUMN IF NOT EXISTS creation_scope jsonb;
  ALTER TABLE app_video_workflow_runs ADD COLUMN IF NOT EXISTS creation_evidence_pending boolean NOT NULL DEFAULT false;
  CREATE INDEX IF NOT EXISTS app_video_workflow_evidence_pending_idx ON app_video_workflow_runs(updated_at) WHERE creation_evidence_pending;

@@ -84,7 +84,7 @@ async function register(db: PoolClient, identity = releaseIdentity()): Promise<B
 export async function checkAdmission(): Promise<void> {
   await transaction(async (db) => { const boot = await register(db); if (boot.admission !== "open") throw new ReleaseRuntimeError("RELEASE_DRAINING", 503); });
 }
-export async function controlAdmission(input: unknown) {
+export async function controlAdmission(input:unknown,beforeResume?:()=>Promise<void>) {
   const body = input as Record<string, unknown>, identity = releaseIdentity();
   if (!body || body.instanceId !== identity.instanceId || body.bootId !== identity.bootId || !Number.isInteger(body.expectedRevision) || !/^[a-f0-9-]{36}$/i.test(String(body.operationId || "")) || !["drain", "resume"].includes(String(body.action))) throw new ReleaseRuntimeError("RELEASE_CONTROL_INVALID", 400);
   const hash = createHash("sha256").update(JSON.stringify([body.instanceId, body.bootId, body.expectedRevision, body.operationId, body.action])).digest("hex");
@@ -93,6 +93,7 @@ export async function controlAdmission(input: unknown) {
     const prior = await db.query("SELECT payload_hash,result FROM app_release_controls WHERE instance_id=$1 AND boot_id=$2 AND operation_id=$3", [identity.instanceId, identity.bootId, body.operationId]);
     if (prior.rows.length) { if (prior.rows[0].payload_hash !== hash) throw new ReleaseRuntimeError("RELEASE_OPERATION_CONFLICT", 409); return prior.rows[0].result; }
     if (boot.revision !== body.expectedRevision) throw new ReleaseRuntimeError("RELEASE_REVISION_CONFLICT", 409);
+    if(body.action==='resume')await beforeResume?.();
     const mode = body.action === "drain" ? "draining" : "open";
     const result = { identity, admission: { mode, revision: boot.revision + 1 }, operationId: body.operationId };
     await db.query("UPDATE app_release_boots SET admission=$3,revision=revision+1,last_seen=now() WHERE instance_id=$1 AND boot_id=$2", [identity.instanceId, identity.bootId, mode]);

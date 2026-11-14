@@ -11,6 +11,7 @@ import {videoPreferenceSchema,videoDraftSchema} from '../video/execution-contrac
 export {videoNodeIdSchema} from "./video-node-id";
 
 export const videoNodeConfigSchema=videoInputSchema.omit({orderedInputs:true}).partial().extend({
+  durationSeconds:z.number().finite().optional(),
   intentPreference:videoPreferenceSchema.optional(),parameters:videoDraftSchema.shape.parameters.optional(),
   batchCount:z.union([z.literal(1),z.literal(2),z.literal(4)]).optional(),
   modelId:videoNodeIdSchema.optional(),providerId:videoNodeIdSchema.optional(),comfyWorkflowId:videoNodeIdSchema.optional(),workflowTaskId:videoNodeIdSchema.optional(),

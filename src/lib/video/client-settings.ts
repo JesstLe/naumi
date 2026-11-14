@@ -12,7 +12,7 @@ import type {VideoUiContract} from './ui-contract';
 import {videoUiCreationDefaults,videoUiDraft} from './ui-draft';
 
 export type VideoNodeConfig=CanvasVideoNode["config"];
-export type VideoCatalogModel=VideoModelCapability&{isDefault?:boolean};
+export type VideoCatalogModel=Partial<VideoModelCapability>&{modelId:string;providerId:string;label:string;isDefault?:boolean};
 import type {VideoInputChoice} from "./input-choice";
 export type {VideoInputChoice} from "./input-choice";
 export function resolveVideoTextInputs(inputs:readonly OrderedInput[],choices:readonly VideoInputChoice[]):OrderedInput[]{
