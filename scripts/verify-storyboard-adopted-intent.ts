@@ -1,0 +1,20 @@
+import assert from 'node:assert/strict';
+import {randomUUID} from 'node:crypto';
+import {storyboardIntent} from '../src/lib/video/storyboard-client';
+import type {CanvasVideoNode} from '../src/lib/canvas/video-node-schema';
+
+const project='tree:adopted-intent',node=(id:string):CanvasVideoNode=>({id,projectKey:project,revision:1,title:id,x:0,y:0,width:360,height:240,config:{modelId:'configured-video',prompt:id,parameters:{durationSeconds:1,resolution:'4K'}},inputs:[],lastTaskId:null,lastResultId:null,displayResultId:null,deletedAt:null,createdAt:'2026-11-15',updatedAt:'2026-11-15'});
+const nodes=[node('fork-a'),node('fork-b')],selection=nodes.map(n=>({id:n.id,reuseCompleted:true})),context={id:randomUUID(),revision:3},id=randomUUID();
+const invoke:(...args:any[])=>any=storyboardIntent;
+assert.throws(()=>invoke(id,project,nodes,selection,true),/镜头还没有可复用结果/);
+let result:any;assert.doesNotThrow(()=>{result=invoke(id,project,nodes,selection,true,context);},'A saved storyboard owns the adopted take; a clean fork node must not need fabricated lastResultId');
+assert.deepEqual(result,{id,projectKey:project,storyboard:context,nodes:nodes.map(n=>({id:n.id,revision:1,reuseCompleted:true})),assembly:{nodeIds:nodes.map(n=>n.id)}});
+assert.throws(()=>invoke(id,project,nodes,selection,true,{...context,revision:0}));
+assert.throws(()=>invoke(id,project,nodes,selection,true,{id:'invalid',revision:1}));
+assert.throws(()=>invoke(id,'tree:foreign',nodes,selection,true,context),/镜头已改变/);
+assert.throws(()=>invoke(id,project,nodes,[selection[0],selection[0]],true,context),/镜头不能重复/);
+assert.throws(()=>invoke(id,project,nodes,[selection[0]],true,context),/合成至少需要两个镜头/);
+const ordinary=nodes.map(n=>({...n,lastResultId:'existing-'+n.id}));assert.deepEqual(invoke(id,project,ordinary,selection,true).assembly,{nodeIds:nodes.map(n=>n.id)});
+assert.equal(invoke(id,project,nodes,nodes.map(n=>({id:n.id,reuseCompleted:false})),false).storyboard,undefined);
+assert.equal(nodes[0].lastResultId,null);assert.equal(nodes[0].lastTaskId,null);
+console.log('STORYBOARD_ADOPTED_INTENT=PASS CHECKS=12 FORMAL_PLAN_OWNS_ADOPTION=1 ORDINARY_REUSE_GUARD=1 NODE_RESULTS_NOT_FABRICATED=1 NETWORK=0');

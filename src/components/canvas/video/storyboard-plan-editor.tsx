@@ -14,11 +14,11 @@ import type {VideoInputChoice} from "@/lib/video/client-settings";
 import {StoryboardRestructure} from "./storyboard-restructure";
 import {StoryboardTakes} from "./storyboard-takes";
 
-export function StoryboardPlanEditor({scope,projectKey,nodes,initialNodeIds,request,english=false,blocked,onEditNode,onSubmit,onNodesCreated,choices,onOpenTimeline}:{scope:string;projectKey:string;nodes:CanvasVideoNode[];initialNodeIds:string[];request:VideoPrivateFetch;english?:boolean;blocked:boolean;onEditNode:(id:string)=>void;choices?:VideoInputChoice[];onOpenTimeline?:(id:string)=>Promise<void>|void;onNodesCreated:(nodes:CanvasVideoNode[])=>void;onSubmit:(selection:StoryboardSelection[],assemble:boolean,plan:StoryboardContext)=>Promise<unknown>}){
+export function StoryboardPlanEditor({scope,projectKey,nodes,initialNodeIds,initialPlanId,request,english=false,blocked,onEditNode,onSubmit,onNodesCreated,choices,onOpenTimeline}:{scope:string;projectKey:string;nodes:CanvasVideoNode[];initialNodeIds:string[];initialPlanId?:string;request:VideoPrivateFetch;english?:boolean;blocked:boolean;onEditNode:(id:string)=>void;choices?:VideoInputChoice[];onOpenTimeline?:(id:string)=>Promise<void>|void;onNodesCreated:(nodes:CanvasVideoNode[])=>void;onSubmit:(selection:StoryboardSelection[],assemble:boolean,plan:StoryboardContext)=>Promise<unknown>}){
   const L=(zh:string,en:string)=>english?en:zh;
   const [createdNodes,setCreatedNodes]=useState<CanvasVideoNode[]>([]),[restructure,setRestructure]=useState<{nodes:CanvasVideoNode[];document:StoryboardDocument}|null>(null);
   const available=[...nodes,...createdNodes.filter(node=>!nodes.some(item=>item.id===node.id))];
-  const store=useStoryboardPlan({scope,projectKey,nodes:available,initialNodeIds,request});
+  const store=useStoryboardPlan({scope,projectKey,nodes:available,initialNodeIds,initialPlanId,request});
   const fork=useStoryboardFork(scope,projectKey,request);
   const [open,setOpen]=useState<string|null>(null),[adding,setAdding]=useState(""),[execution,setExecution]=useState<Record<string,"generate"|"reuse"|"skip">>({}),[actionError,setActionError]=useState(""),[acting,setActing]=useState(false);
   const doc=store.draft?.document,locked=blocked||store.busy||acting||!!store.draft?.pending||!!restructure||!!fork.pending;
