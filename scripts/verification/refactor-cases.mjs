@@ -4,6 +4,7 @@ import path from "node:path";
 const ts=(id,group,file,expect,args=[])=>({id,group,file,args,expect,pg:true,tsx:true});
 const node=(id,group,file,expect,args=[])=>({id,group,file,args,expect,pg:false,tsx:false});
 export const refactorCases=[
+ node('video-recovery-admission','generation','scripts/verify-video-recovery-admission.cjs','VIDEO_RECOVERY_ADMISSION=PASS'),
  {...ts('linked-image-text','canvas','scripts/verify-linked-image-text.ts','LINKED_IMAGE_TEXT=PASS'),pg:false},
  {...ts('prepare-linked-image-text','canvas','scripts/verify-prepare-linked-image-text.ts','PREPARE_LINKED_IMAGE_TEXT=PASS'),pg:false},
  {...ts('canvas-node-drafts','canvas','scripts/verify-canvas-node-drafts.ts','PASS CANVAS_NODE_DRAFTS'),pg:false},

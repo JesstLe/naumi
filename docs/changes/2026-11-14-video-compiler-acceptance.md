@@ -60,6 +60,14 @@
 
 ## A01–A19 逐项状态
 
+### Combined 活动中断增量（2026-11-15）
+
+[本轮模块记录](2026-11-15-video-compiler-combined-interruption.md)：修复真实SIGKILL下已sending无回执任务被误分类为新claim、继而受旧active记录阻塞而永留queued的问题。两恢复入口集中使用`videoRecoveryAdmission`；只对v2/v3非prepared无回执任务允许不重发的continuation，实际重提限制/原UNKNOWN/活动记录不变。
+
+固定8201d649/1794683899生产镜像实际root PID1 combined监督器＋非root scanner＋native sandbox，HTTP4项/中断8项完整exit0；真实SIGTERM在途超过13.5秒、POST/GET各SIGKILL一次、两次210秒lease自然到期、旧UNKNOWN逐字保留。未知POST转待核查且0账本，原回执GET恢复结果及单笔17；另一个原任务单笔7。最终独立解包生产62项、tsc/核心137/Worker49/恢复26项通过，6个combined容器及schema/进程/pools回收；四产物和副本回滚详见同名证据目录VERIFICATION.txt。
+
+这补齐A14/A19的combined在途信号证据，不替代历史v2/新v3混合、新旧双槽、启用绑定、目标站蓝绿和真实付费上游。总目标ACTIVE、生产写入0/付费0/部署0。
+
 | ID | 当前证据 | 仍需完成或证据边界 |
 |---|---|---|
 | A01 | 核心/发布执行/1,741 App 的 poison modes/limits/verified 正控与显式政策反控；本轮真实 HTTP+Worker 普通图片成功 | 每个生产通道显式发布绑定和真实上游不由本地正控代替 |
@@ -75,7 +83,7 @@
 | A11 | 注册57个 wire Profile 的分族序列化、上传/JSON/multipart/DAG；ComfyUI、RunningHub、AutoDL新增真实Next/独立Worker上传或签名素材、冻结与结果回执 | 注册覆盖≠所有在用配置已迁移；全部生产启用配置和env-only仍需明确审计/迁移，不能从本地显式recipe推断线上已配置 |
 | A12 | 真实PG Workflow22项：future slots、真实前序时长、静态hash、冻结报价确认、批次/不重放；新增实际分镜按钮按17而非历史1确认，两个镜头最终各执行一次 | 独立Worker的8run/13项及HTTP预算反控继承；欠授权历史检查点显式seed，未冒称新准入自然涨价或真实成本加成供应商验收 |
 | A13 | 本轮实际 requested4K→effective2K→wire2k 恰好一次，历史恢复4K；冻结原价7、后续新任务17，账本三笔41 | 更多映射组合由各Profile固定输入测试；不把wire值回填用户选择 |
-| A14 | 独立应用Worker、持久tick原身份、重启/UNKNOWN/LIVE lease/取消/显式重试及环境投影；Worker49、Windows真实500控制/501状态写入；新增固定Linux生产包62项中实际独立Worker恢复、单账本与原生sandbox | Workflow/BYOC的Linux独立Worker重启与UNKNOWN不重放已通过；当前重启仍停机前drain，combined supervisor活动发送中断/真正多槽回滚继续 |
+| A14 | 独立应用Worker、持久tick原身份、重启/UNKNOWN/LIVE lease/取消/显式重试及环境投影；Worker49、Windows真实500控制/501状态写入；新增固定Linux生产包62项中实际独立Worker恢复、单账本与原生sandbox | Workflow/BYOC的Linux独立Worker重启与UNKNOWN不重放已通过；本轮固定生产包combined真实PID1在途SIGTERM/SIGKILL、两次自然lease和UNKNOWN原像保持已通过；混合版本和真正多槽回滚继续 |
 | A15 | 服务端专项实际持久化加密v2 stage及新发布后恢复；原文本/模型/价格/回执不变，伪造阶段拒绝；本轮v3显式retryOf | 历史v2与新v3混合独立Worker/新旧Web发布组合仍待实际验收 |
 | A16 | 原媒体token/版本/过期测试；本轮Worker物化真实签名URL，供应商fixture经真实Next媒体路由读取原字节，篡改404 | 时间推进的过期测试与实际公网CDN/存储恢复分别验收，不把本地域名别名当公网可达 |
 | A17 | 本轮真实Next受理→独立Worker落片→结果作为下一Canvas节点source_video→再次落片，父子资产/单账本通过 | 已新增真实浏览器选旧历史→ReactFlow拖线→下一节点提交→独立Worker落片，冻结资产/parent/单账本一致；当前为本地供应商fixture，非真实付费上游 |

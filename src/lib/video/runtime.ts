@@ -26,7 +26,7 @@ import {getVideoProvider} from "./providers/adapter";
 import {getVideoProviderConfig,publicProviderSnapshot} from "./providers/config";
 import type {VideoTaskRow} from "./task-types";
 import {compiledVideoRequest,readTaskCompiledVideoPlan} from './compiled-task';
-import {hasVersionedVideoSubmission} from './submission-state';
+import {hasVersionedVideoSubmission,videoRecoveryAdmission} from './submission-state';
 import {materializeCompiledVideoTask} from './compiled-materialization';
 
 export const VIDEO_PROVIDER_ID = "openai-videos";
@@ -411,7 +411,7 @@ export async function recoverDueVideoTasks(limit = 5): Promise<number> {
         try{
           const task=await getVideoTask(ref.email,ref.id);
           if(!task){recoveringVideoTasks.delete(ref.id);continue;}
-          const admission=task.status==="queued"||!task.upstreamId?"claim":"continuation";
+          const admission=videoRecoveryAdmission(task);
           const admitted=await detachBackgroundActivity("video-poll",ref.id,admission,async()=>{
             try{await pollAndSettleLocal(ref.email,ref.id);}finally{
               recoveringVideoTasks.delete(ref.id);
@@ -436,6 +436,6 @@ export async function pollAndSettle(email:string,id:string):Promise<VideoTaskRow
   if(await deferApplicationTask())return task;
   // Existing upstream tasks remain GET-only poll/settlement during drain. A
   // queued creation intent is a new local claim and waits for the open slot.
-  const admission=task.status==="queued"||!task.upstreamId?"claim":"continuation";
+  const admission=videoRecoveryAdmission(task);
   return withBackgroundActivity("video-poll", id, admission, () => pollAndSettleLocal(email,id), () => getVideoTask(email,id));
 }
