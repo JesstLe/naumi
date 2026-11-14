@@ -114,7 +114,7 @@ export interface VideoProviderAdapter {
   id: string;
   create(input: VideoGenerationRequest): Promise<VideoProviderCreateResult>;
   /** Consumes an already compiled/materialized template, never runs create codec. */
-  createCompiled?(wire:import('./execution-contract').VideoWireTemplate,idempotencyKey:string):Promise<VideoProviderCreateResult>;
+  createCompiled?(wire:import('./execution-contract').MaterializedVideoWireRequest,idempotencyKey:string):Promise<VideoProviderCreateResult>;
   poll(task: VideoTaskSnapshot): Promise<VideoProviderPollResult>;
   fetchResult(
     task: VideoTaskSnapshot,

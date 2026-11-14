@@ -62,6 +62,29 @@ function mapStatus(raw: string): VideoTaskStatus {
 export const openAiVideosAdapter: VideoProviderAdapter = {
   id: "openai-videos",
 
+  // New compiled tasks only. Historical create/poll/content semantics below
+  // remain unchanged, including legacy endpoint concatenation.
+  async createCompiled(wire,key) {
+    const cfg=resolveOpenAiVideosConfig();if(!cfg)throw new Error('视频执行连接缺失');
+    const headers:Record<string,string>=authHeaders(cfg.apiKey,cfg.options?.rawAuthorization);
+    if(cfg.options?.idempotencyStrategy==='header')headers['Idempotency-Key']=key;
+    const field=cfg.options?.idempotencyStrategy==='body'?cfg.options.idempotencyBodyField:undefined;
+    if(cfg.options?.idempotencyStrategy==='body'&&!field)throw new Error('视频body幂等字段缺失');
+    if(field&&(wire.encoding==='multipart'?wire.body.has(field):!!wire.body&&typeof wire.body==='object'&&Object.hasOwn(wire.body,field)))throw new PermanentVideoCreateError('幂等字段与冻结请求字段冲突',422);
+    let body:BodyInit;
+    if(wire.encoding==='multipart'){
+      body=wire.body;if(field)(body as FormData).set(field,key);
+    }else{
+      if(!wire.body||typeof wire.body!=='object'||Array.isArray(wire.body))throw new Error('冻结视频JSON字段无效');
+      headers['content-type']='application/json';body=JSON.stringify({...wire.body,...(field?{[field]:key}:{})});
+    }
+    const res=await upstreamFetch(cfg.baseUrl)(cfg.baseUrl+wire.path,{method:'POST',headers,body,signal:AbortSignal.timeout(60000)});
+    const data=await res.json().catch(()=>null) as {id?:string;status?:string;progress?:number;error?:{message?:string}}|null;
+    if(!res.ok){const message=data?.error?.message||`视频服务创建任务失败(${res.status})`;if(res.status>=400&&res.status<500&&res.status!==429)throw new PermanentVideoCreateError(message,res.status);throw new Error(message);}
+    if(!data?.id)throw new Error('视频服务未返回任务ID');
+    return {upstreamTaskId:data.id,status:mapStatus(data.status??'queued'),progress:data.progress,rawResponse:data};
+  },
+
   async create(input: VideoGenerationRequest): Promise<VideoProviderCreateResult> {
     const cfg = resolveOpenAiVideosConfig();
     if (!cfg) throw new Error("视频服务未配置(需在服务器设置 VIDEO_API_BASE_URL/KEY/MODEL)");

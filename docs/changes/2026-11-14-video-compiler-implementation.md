@@ -379,3 +379,7 @@ Agent工具/Agent报价 -> video公共准备用例/模型快照 -> 原Resolver/C
 全部57个wire profile与2条无profile路径的原子绑定迁移/条件规则仍需逐项核实；通用Workflow能力及三协议本地调用不是生产目录已迁移证据。旧新任务能力门禁/整对象升级/fallback的调用退出、全部A01-A19、完整Next/App/独立应用Worker/restart/浏览器、真实上游和发布验收仍在总目标中。UI-format新custom-node需endpoint定义、跨租户/并发边界和随机种子预览语义保持后续全应用验收项。main整合不代表上线；本轮生产配置0、付费0、部署0，47HOLD及103隔离线保持。
 
 本切片集中结果：Workflow Profile纯域30项；BYOC/三类托管工作流新增26项，连同原任务/Agent/结构/Workflow共114项实际PG/HTTP/媒体Worker链路；实际React/Edge预览20项、结构/无端点编辑8项、Storyboard6项；原核心137、结构核心32、发布预览61、Canvas121、媒体16、旧冻结来源8案例/16入口与账务事务14项通过。完整tsc及修改包副本的再次验证见最终证据。新增工作流运行时与旧1/2计划区分为计划schemaVersion3，不与task.parameters.version3混为同一字段。未把预览在未显式种子时的模板digest写成未来随机种子已确定。
+
+## 原生字节协议后续切片
+
+OpenAI Videos、Gemini及无Profile OpenAI接入native-video Profile/计划schemaVersion4；multipart和inlineData在执行时按原素材身份物化，参数映射与现有事务保持。尺寸显式发布，未配置不猜测/降档。模块接口、迁移边界、测试与未完成项详见 [原生切片](2026-11-14-video-compiler-native.md)。全协议与完整App/应用Worker/发布验收继续，不能用这一切片关闭总目标。

@@ -1,3 +1,4 @@
+import {nativeVideoQueryMatches} from '../video/profiles/native-profile';
 import { upstreamSupportsFeature } from "./feature-model-policy";
 import {ensureModelSchema} from "@/lib/model-config/storage-schema";
 export {ensureModelSchema};
@@ -124,7 +125,8 @@ export function validateModelConfig(input: unknown, options: ValidationOptions =
       if(c.edit || c.vision || c.transparent || c.preserveIdentity || c.textAccuracy || c.maxReferenceImages || c.qualities.length || c.nativeResolutions.length || c.video || c.imagegen || Object.keys(m.parameterMap).length)fail("音频模型不能继承图片或视频能力与参数映射");
     }
     const profile=m.parameterMap.videoProfile??p.options?.videoProfile;
-    if(m.parameterMap.videoExecution&&(m.modality!=='video'||!profile))fail('视频执行映射只适用于具有查询协议的视频通道',[`upstreamModels.${m.id}.parameterMap.videoExecution`]);
+    if(m.parameterMap.videoExecution&&(m.modality!=='video'||!profile&&!(m.parameterMap.videoExecution.profileId==='native-video'&&nativeVideoQueryMatches(m.parameterMap.videoExecution.recipe.layout,profile,p.protocol))))fail('视频执行映射只适用于具有查询协议的视频通道',[`upstreamModels.${m.id}.parameterMap.videoExecution`]);
+    if(m.parameterMap.videoExecution?.profileId==='native-video'&&!nativeVideoQueryMatches(m.parameterMap.videoExecution.recipe.layout,profile,p.protocol))fail('原生Profile与冻结查询协议不一致',[`upstreamModels.${m.id}.parameterMap.videoExecution`]);
     if(m.parameterMap.videoExecution?.profileId==='workflow-video'&&m.parameterMap.videoExecution.recipe.manifest.kind!==profile)fail('工作流Profile与冻结查询协议不一致',[`upstreamModels.${m.id}.parameterMap.videoExecution`]);
     if(profile&&(m.modality!=="video"||videoProfileProtocol(profile)!==p.protocol))fail("视频wire profile与供应商协议不一致",[`upstreamModels.${m.id}.parameterMap.videoProfile`]);
     if(m.parameterMap.apimartImages && (p.protocol!=="apimart-images" || !m.parameterMap.qualityPolicy || !m.parameterMap.resolutionPolicy || config.defaultImagePreset?.enabled && config.defaultImagePreset.upstreamId===m.id))fail("异步图片契约需要APIMart图片协议及显式质量和尺寸策略，不能覆盖成本预设");

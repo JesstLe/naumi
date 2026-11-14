@@ -1,3 +1,5 @@
+import {materializeNativeVideoPlan} from './profiles/native-materialization';
+import {readManagedObject} from '../object-storage/managed-read';
 import 'server-only';
 import {currentCreationContext,withFrozenCreation,frozenCreationScope} from '../saas/creation-scope';
 import {assertCreationMediaInput} from '../saas/creation-access';
@@ -7,7 +9,7 @@ import {materializeVideoReferences} from './reference-materialization';
 import {materializeJsonVideoPlan} from './profiles/json-materialization';
 import {VideoContractError} from './contract';
 import type {VideoTaskRow} from './task-types';
-import type {VideoWireTemplate} from './execution-contract';
+import type {MaterializedVideoWireRequest} from './execution-contract';
 import {currentModelExecution} from '../model-config/context';
 import {materializeWorkflowVideoPlan} from './profiles/workflow-materialization';
 import {uploadCompiledWorkflowAsset} from './providers/compiled-workflow-upload';
@@ -18,7 +20,7 @@ import {TeamError} from '../teams/errors';
 
 /** Signing is execution-only. Revalidate the same immutable assets/ACLs and
  * refresh their addresses; never re-read a node selection or model catalogue. */
-export async function materializeCompiledVideoTask(actor:string,task:VideoTaskRow):Promise<VideoWireTemplate> {
+export async function materializeCompiledVideoTask(actor:string,task:VideoTaskRow):Promise<MaterializedVideoWireRequest> {
   if(!currentCreationContext())return withFrozenCreation(frozenCreationScope(task.parameters.creationScope,actor)??{actorEmail:actor.toLowerCase(),scopeKind:'personal',tenantId:null},()=>materializeCompiledVideoTask(actor,task));
   try{return await materializeOwnedCompiledTask(actor,task);}catch(error){
     if(error instanceof TeamError||error instanceof Error&&['不能直接引用其他企业的素材','素材不存在或无权访问'].includes(error.message))
@@ -26,7 +28,7 @@ export async function materializeCompiledVideoTask(actor:string,task:VideoTaskRo
     throw error;
   }
 }
-async function materializeOwnedCompiledTask(actor:string,task:VideoTaskRow):Promise<VideoWireTemplate>{
+async function materializeOwnedCompiledTask(actor:string,task:VideoTaskRow):Promise<MaterializedVideoWireRequest>{
   const plan=readTaskCompiledVideoPlan(actor,task),context=currentCreationContext()!;
   const execution=currentModelExecution('video');
   if(task.parameters.byocSnapshot){
@@ -41,6 +43,18 @@ async function materializeOwnedCompiledTask(actor:string,task:VideoTaskRow):Prom
   await creationTransaction(tx=>assertCreationInputsTx(tx,actor,artIds));
   await assertCreationObjectRefs(actor,artIds);
   for(const ref of allReferences)await assertCreationMediaInput(actor,`/media/${ref.storageKey}`);
+  if(plan.binding.profileId==='native-video'){
+    // Revalidate current access/facts without signing, uploading or fetching an
+    // external URL. The frozen materializer checks the actual original bytes.
+    const owned=await materializeVideoReferences(actor,request,{multipart:true});
+    const result=await materializeNativeVideoPlan(plan,{bytes:async(_scope,asset)=>{
+      const ref=owned.references.find(r=>r.storageKey===asset.storageKey&&r.sha256===asset.sha256);
+      if(!ref)return {ok:false,diagnostics:[{category:'input',code:'FROZEN_MEDIA_CHANGED',field:'inputs',reason:'原生图片身份不一致',actionable:'核对原始图片'}]};
+      const object=await readManagedObject(`/media/${asset.storageKey}`,12*1024*1024);
+      return {ok:true,value:{asset:{storageKey:ref.storageKey!,sha256:ref.sha256!,bytes:ref.bytes!,mimeType:ref.mimeType!,...(ref.artworkId?{artworkId:ref.artworkId}:{}),...(ref.width?{width:ref.width}:{}),...(ref.height?{height:ref.height}:{})},bytes:object.bytes}};
+    }});
+    if(!result.ok)throw new VideoContractError(result.diagnostics[0].code,result.diagnostics[0].reason,['inputs']);return result.value;
+  }
   if(plan.wireTemplate.encoding==='workflow'){
     const config=getVideoProviderConfig(task.providerId);if(!config)throw new VideoContractError('VIDEO_COMPILED_TRANSPORT_UNAVAILABLE','工作流传输缺失');
     // Authorize/verify owned bytes without creating signed URLs or uploads first.
@@ -53,7 +67,7 @@ async function materializeOwnedCompiledTask(actor:string,task:VideoTaskRow):Prom
       else{const signed=await materializeVideoReferences(actor,{...request,references:[ref]});value=signed.references[0].url!;}
       return {ok:true,value:{asset:{storageKey:ref.storageKey!,sha256:ref.sha256!,bytes:ref.bytes!,mimeType:ref.mimeType!,...(ref.artworkId?{artworkId:ref.artworkId}:{}),...(ref.width?{width:ref.width}:{}),...(ref.height?{height:ref.height}:{}),...(ref.durationSeconds?{durationSeconds:ref.durationSeconds}:{})},value}};
     }});
-    if(!result.ok)throw new VideoContractError(result.diagnostics[0].code,result.diagnostics[0].reason,['inputs']);return result.value;
+    if(!result.ok)throw new VideoContractError(result.diagnostics[0].code,result.diagnostics[0].reason,['inputs']);return {...result.value,encoding:'json'};
   }
   const materialized=await materializeVideoReferences(actor,request);
   const result=await materializeJsonVideoPlan(plan,{url:async(_scope,asset)=>{
@@ -63,5 +77,5 @@ async function materializeOwnedCompiledTask(actor:string,task:VideoTaskRow):Prom
       ...(ref.artworkId?{artworkId:ref.artworkId}:{}),...(ref.width?{width:ref.width}:{}),...(ref.height?{height:ref.height}:{}),...(ref.durationSeconds?{durationSeconds:ref.durationSeconds}:{})}}};
   }});
   if(!result.ok)throw new VideoContractError(result.diagnostics[0].code,result.diagnostics[0].reason,['inputs']);
-  return result.value;
+  return {...result.value,encoding:'json'};
 }
