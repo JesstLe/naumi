@@ -4,6 +4,7 @@ import {publishedVideoExecutionSchema,type PublishedVideoExecution} from '../vid
 import {videoWireProfileSchema,type VideoWireProfile,videoProfileProtocol} from '../video/capability-schema';
 import {ModelConfigError,type ModelConfig,type UpstreamModel,type ModelProvider} from './types';
 import {canonicalConfig} from './snapshot-value';
+import {mapVideoParameters} from '../video/profiles/parameters';
 
 type Identity={upstreamId:string;providerId:string;model:string};
 export type VideoExecutionPatch=Identity&({field:'parameterMap.videoExecution';before?:PublishedVideoExecution;after:PublishedVideoExecution}|{field:'parameterMap.videoProfile';before?:VideoWireProfile;after:VideoWireProfile});
@@ -27,7 +28,14 @@ export function proposedVideoExecution(upstream:UpstreamModel,provider:ModelProv
  if(map.resolution&&Object.keys(map.resolution).length){
   // Requested presentation values remain requested values. Do not rewrite
   // the legacy field or translate them a second time on the wire boundary.
-  const values=structuredClone(map.resolution),preferred=manual?.defaultResolution??recipe.parameters.resolution.default,fallback=Object.hasOwn(values,String(preferred))?String(preferred):Object.keys(values).find(k=>values[k as keyof typeof values]===preferred)??Object.keys(values)[0];
+  const values=structuredClone(map.resolution),preferred=manual?.defaultResolution??recipe.parameters.resolution.default;
+  const aliases=Object.keys(values).filter(k=>values[k as keyof typeof values]===preferred);
+  // An explicit display choice wins. A native default may be translated back
+  // only when there is one unambiguous display choice. Never silently replace
+  // an administrator default with the first mapping entry.
+  if(!Object.hasOwn(values,String(preferred))&&manual?.defaultResolution!=null&&aliases.length!==1)
+   return fail('defaultResolution','已有默认分辨率与参数映射不一致或对应多个显示选项，请明确默认选项后迁移');
+  const fallback=Object.hasOwn(values,String(preferred))?String(preferred):aliases.length===1?aliases[0]:Object.keys(values)[0];
   recipe.parameters.resolution={...recipe.parameters.resolution,mapping:values,default:fallback};
   for(const operation of recipe.operations)if(operation.parameters?.resolution)operation.parameters.resolution={...operation.parameters.resolution,mapping:values,default:fallback};
  }
@@ -47,6 +55,15 @@ export function proposedVideoExecution(upstream:UpstreamModel,provider:ModelProv
    rules[name]={...(rules[name]??prior!),...(option.defaultValue!==undefined?{default:option.defaultValue}:{}),...(option.minimum!==undefined?{minimum:option.minimum}:{}),...(option.maximum!==undefined?{maximum:option.maximum}:{}),...(option.values?{values:option.values}:{})};
   }
  }
+
+ // Use the same value mapper as the compiler, not another capability matrix.
+ // Reject only a proposed default that the resulting executable field rules
+ // themselves cannot map; no input/model support is inferred here.
+ for(const rules of [recipe.parameters,...recipe.operations.map(op=>({...recipe.parameters,...op.parameters}))])
+  for(const [name,rule] of Object.entries(rules))if(rule.default!==undefined){
+   const mapped=mapVideoParameters({[name]:rule.default},{[name]:rule});
+   if(!mapped.ok)return fail('parameters.'+name,'已有默认参数与执行字段映射不一致，请核对默认值后迁移');
+  }
 
  return {profile:videoWireProfileSchema.parse(entry.profile),execution:publishedVideoExecutionSchema.parse(execution)};
 }
