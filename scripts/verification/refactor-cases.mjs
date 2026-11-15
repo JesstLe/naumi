@@ -4,6 +4,7 @@ import path from "node:path";
 const ts=(id,group,file,expect,args=[])=>({id,group,file,args,expect,pg:true,tsx:true});
 const node=(id,group,file,expect,args=[])=>({id,group,file,args,expect,pg:false,tsx:false});
 export const refactorCases=[
+ node('video-canvas-submit-owner','video','scripts/verify-video-canvas-submit-owner.cjs','CANVAS_SUBMIT_OWNER=PASS'),
  {...ts('client-renderer-contract','runtime','scripts/verify-client-renderer-contract.ts','CLIENT_RENDERER_CONTRACT=PASS'),pg:false},
  {...ts('video-composer-drafts','canvas','scripts/verify-video-composer-drafts.ts','VIDEO_COMPOSER_DRAFTS=PASS'),pg:false},
  {...ts('video-runtime-formats','video','scripts/verify-video-runtime-formats.ts','VIDEO_RUNTIME_FORMATS=PASS'),pg:false},

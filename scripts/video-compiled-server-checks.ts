@@ -65,6 +65,34 @@ export async function verifyServerExit(input:{actor:string;pool:Pool;f:Awaited<R
   await assert.rejects(()=>scoped(()=>createVideoGeneration(actor,{...base,idempotencyKey:randomUUID()})),{code:'VIDEO_EXECUTION_NOT_CONFIGURED'});
   await assert.rejects(()=>scoped(()=>freezeVideoWorkflow(actor,{id:randomUUID(),projectKey:'tree:legacy',nodes:[{id:'stage',dependsOn:[],request:base}]})),{code:'VIDEO_EXECUTION_NOT_CONFIGURED'});
   check('unbound-new-request-and-workflow-zero-old-gate-or-side-effects',()=>{assert.equal(input.posts(),before);});assert.equal(await count('app_video_tasks'),tasks);assert.equal(await count('app_gen_reservations'),reservations);
+  // Exercise the real saved Canvas entry after its channel loses the binding.
+  // Empty expansion is a harmless positive control for V8; reset it before
+  // observing the entry. Missing mapping must not invoke old graph assembly.
+  const {submitCanvasVideo}=await import('../src/lib/video/node-submission'),{resolveCanvasNodeInputs}=await import('../src/lib/canvas/node-inputs');
+  const canvasCoverage=new Session();canvasCoverage.connect();
+  const canvasPost=(name:string,params:Record<string,unknown>={})=>new Promise<any>((resolve,reject)=>canvasCoverage.post(name as any,params,(error,result)=>error?reject(error):resolve(result)));
+  const canvasTables=['app_video_tasks','app_gen_reservations','app_creation_records','app_billing_operations','app_ledger'];
+  const canvasCounts=await Promise.all(canvasTables.map(count));
+  const inputFunctionCounts=(result:any)=>result.result.filter((s:any)=>s.url.replaceAll('\\','/').endsWith('/src/lib/canvas/node-inputs.ts')).flatMap((s:any)=>s.functions.filter((fn:any)=>fn.functionName==='resolveCanvasNodeInputs').map((fn:any)=>fn.ranges[0].count));
+  let oldInputCalls=0;
+  try{
+   await canvasPost('Profiler.enable');await canvasPost('Profiler.startPreciseCoverage',{callCount:true,detailed:true});
+   await resolveCanvasNodeInputs(actor,[],'coverage calibration');
+   const calibrated=await canvasPost('Profiler.takePreciseCoverage');
+   assert(inputFunctionCounts(calibrated).some((n:number)=>n>0),'Canvas coverage positive control');
+   await assert.rejects(()=>scoped(()=>submitCanvasVideo(actor,{nodeId:draftNode.id,expectedRevision:draftNode.revision,idempotencyKey:randomUUID()})),{code:'VIDEO_EXECUTION_NOT_CONFIGURED'});
+   const measured=await canvasPost('Profiler.takePreciseCoverage');
+   console.log('CANVAS_INPUT_COVERAGE_RAW='+JSON.stringify(measured.result.filter((s:any)=>s.url.replaceAll('\\','/').endsWith('/src/lib/canvas/node-inputs.ts')).map((s:any)=>({url:s.url,functions:s.functions.filter((fn:any)=>fn.functionName==='resolveCanvasNodeInputs')}))));
+   oldInputCalls=inputFunctionCounts(measured).reduce((a:number,b:number)=>a+b,0);
+  }finally{await canvasPost('Profiler.stopPreciseCoverage');canvasCoverage.disconnect();}
+  const canvasBaseline=process.argv.includes('--canvas-submit-owner-baseline');
+  // V8/tsx reports both export accessors and async continuation entries under
+  // this symbol. Positive execution vs zero reachability is the assertion;
+  // these hits are not a count of business requests or supplier calls.
+  check('unbound-canvas-single-input-owner',()=>{if(canvasBaseline)assert(oldInputCalls>0);else assert.equal(oldInputCalls,0);});
+  check('unbound-canvas-zero-task-billing-or-provider-increment',()=>{assert.equal(input.posts(),before);});
+  assert.deepEqual(await Promise.all(canvasTables.map(count)),canvasCounts);
+  console.log('CANVAS_SUBMIT_OWNER_PG='+(canvasBaseline?'BASELINE':'PASS')+' OLD_INPUT_V8_HITS='+oldInputCalls+' BUSINESS_TABLES_UNCHANGED=5 PROVIDER_POSTS_ADDED=0');
   const readiness=videoExecutionReadiness(old);check('enabled-unbound-channel-reported-even-generate-false',()=>{assert.equal(readiness.ready,false);assert(readiness.issues.some(row=>row.code==='VIDEO_EXECUTION_NOT_CONFIGURED'));assert(!JSON.stringify(readiness).includes(f.marker));});
   const healthOld=await health(),healthBody=await healthOld.json();check('candidate-health-not-ready-without-public-model-or-secret-leak',()=>{assert.equal(healthOld.status,503);assert.equal(healthBody.videoExecution.ready,false);assert(!JSON.stringify(healthBody).includes('seedance'));assert(!JSON.stringify(healthBody).includes(f.marker));});
   const cat=await catalog(),list=await cat.json();check('unbound-catalog-keeps-identity-without-invented-capability',()=>{assert.equal(cat.status,200);const row=list.models.find((m:any)=>m.modelId==='video-fixture');assert(row);assert.equal(row.executionStatus,'mapping_required');assert.equal(row.definition,undefined);assert.equal(row.modes,undefined);});
