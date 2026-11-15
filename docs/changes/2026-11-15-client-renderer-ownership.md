@@ -21,3 +21,11 @@ Nextconfig只导入纯构建身份函数；middleware只调用纯协议读期限
 ## 验证与退出状态
 
 集中纯规则、真实Nginx/固定Next/Edge、期限、任务/账务、独立副本和回滚结果以 E:/Workspace/naumi/output/client-renderer-ownership-20261115/VERIFICATION.txt 为准。不是给旧包注入原生身份；首次带身份版本之前的旧浏览器不获虚假零刷新承诺。本片不是实际目标站发布，47 HOLD，103隔离线保持，生产配置/付费/部署0。总目标ACTIVE，实际启用绑定/上游/目标站蓝绿继续未完成。
+
+## 集成发现与修正
+
+首对固定包e648f72d中，真实严格浏览器11项已通过（两个方向0次文档升级、两个上下文各1份原始文档、原生deployment header与实际renderer匹配），但期限检查失败，整个runtime仍exit1，未宣称完整通过。保留STRICT2与DIAGNOSTIC原失败/7槽/schema/network清理。DIAGNOSTIC记录期限已过仍返回保留renderer200；读取实际镜像Next15.5.28的server/web/adapter.js确认Node middleware先提取并删除Flight headers，导致原守卫再次读取RSC字段得不到原事实。
+
+修正使用网关覆盖的私有只读上下文与期限；ordinary/current/fallback均清除这些私有头，保留RSC命名location独立设置，原Native Flight头和b不改写。Node不从框架已删除的头重新猜请求类型。client-protocol.json是TS与Python共用的唯一路径/头名/窗口/桶大小事实源，Node及ops均消费它；新合同反控覆盖没有RSC原头但有可信网关上下文，以及超长窗口。重建最终固定包后再执行完整严格与期限验收，首对旧包不被冒称包含修正。
+
+最初真实nginx -t还发现长deploymentId超过默认map桶，原失败保留；接口显式返回所需128桶大小，既有owner负责与完整配置合并，未靠忽略语法检查继续。最初fixture缺本地MP4在创建槽前已终止并清理，补复用原fixture字节，不改媒体实现。

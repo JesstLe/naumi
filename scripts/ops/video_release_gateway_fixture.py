@@ -273,7 +273,7 @@ class VideoReleaseGateway:
         new=self.renderer_builds['new'];old=self.renderer_builds['old']
         live=read(new['deploymentId']);self.check('retained-native-RSC-before-deadline',live['status']==200 and live['renderer']==new['deploymentId'] and new['buildId'] in live['body'])
         time.sleep(max(0,self.compat_until-time.time())+.25)
-        expired=read(new['deploymentId']);self.check('expired-RSC-GET-converges-current-without-client-5xx',expired['status']==200 and expired['renderer']==old['deploymentId'] and old['buildId'] in expired['body'])
+        expired=read(new['deploymentId']);self.tx.save('renderer-expiry-observed.json',{'live':live,'expired':expired,'until':self.compat_until,'identities':self.renderer_builds});self.check('expired-RSC-GET-converges-current-without-client-5xx',expired['status']==200 and expired['renderer']==old['deploymentId'] and old['buildId'] in expired['body'])
         unknown=read('unknown-deployment');self.check('unknown-renderer-is-current-not-guessed',unknown['status']==200 and unknown['renderer']==old['deploymentId'])
         self.switch('old',notify_browser=False)
         self.check('expired-renderer-route-pruned-before-retirement',self.renderer_builds['new']['deploymentId'].encode() not in self.config.read_bytes())

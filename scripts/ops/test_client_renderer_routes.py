@@ -6,7 +6,7 @@ class RendererRoutes(unittest.TestCase):
  def test_only_get_rsc_reviewed_paths(self):
   out=renderer_routes(**self.args());self.assertIn('"GET:1:/canvas:" 1;',out['http']);self.assertNotIn('POST:1',out['http']);self.assertNotIn('GET:1:/api/',out['http']);self.assertIn('proxy_next_upstream off;',out['server']);self.assertIn('location @naumi_rsc_owner',out['server'])
  def test_native_identity_and_gateway_deadline(self):
-  out=renderer_routes(**self.args());self.assertIn('map $http_x_deployment_id',out['http']);self.assertIn('X-Naumi-Rsc-Until $naumi_renderer_until',out['server']);self.assertIn('X-Naumi-Rsc-Until ""',out['server']);self.assertEqual(out['notBeforeRetire'],1794712100)
+  out=renderer_routes(**self.args());self.assertIn('map $http_x_deployment_id',out['http']);self.assertIn('x-naumi-rsc-until $naumi_renderer_until',out['server']);self.assertIn('x-naumi-rsc-until ""',out['server']);self.assertEqual(out['notBeforeRetire'],1794712100);self.assertIn('x-naumi-renderer-read "1"',out['server']);self.assertIn('x-naumi-renderer-read ""',out['server'])
  def test_expired_owner_pruned_not_kept_forever(self):
   args=self.args();args['now']=1794712100;out=renderer_routes(**args);self.assertEqual(out['activeRetained'],[]);self.assertNotIn('old-web',out['http']);self.assertEqual(out['notBeforeRetire'],args['now'])
  def test_oversized_or_multiple_windows_rejected(self):

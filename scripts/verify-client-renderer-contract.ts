@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {buildDeploymentId} from '../src/lib/release-runtime/build-deployment-id.mjs';
-import {isRendererRead,rendererReadExpired,RENDERER_DEADLINE_HEADER} from '../src/lib/release-runtime/client-renderer';
+import {isRendererRead,rendererReadExpired,RENDERER_DEADLINE_HEADER,RENDERER_READ_CONTEXT} from '../src/lib/release-runtime/client-renderer';
 let cases=0;const check=(name:string,run:()=>void)=>{run();cases++;console.log('RENDERER_CASE='+name+' PASS')},env={SOURCE_COMMIT:'a'.repeat(40),BUILD_VERSION:'1794712000'},now=1794712000000;
 check('native-id-preserves-unversioned-builds',()=>{for(const e of [{},{SOURCE_COMMIT:'a'.repeat(40)},{...env,BUILD_VERSION:'0'},{...env,SOURCE_COMMIT:'bad'}])assert.equal(buildDeploymentId(e),undefined)});
 check('source-version-flavor-identities-distinct',()=>{const ids=[env,{...env,BUILD_VERSION:'1794712001'},{...env,DESKTOP_UI_BUILD:'1'},{...env,ENTERPRISE_UI_BUILD:'1'},{...env,FLEET_UI_BUILD:'1'}].map(buildDeploymentId);assert.equal(new Set(ids).size,5);assert.equal(ids[0],'naumi-'+env.SOURCE_COMMIT+'-1794712000-standard');assert.equal(buildDeploymentId({...env,FLEET_UI_BUILD:'1',ENTERPRISE_UI_BUILD:'1'}),ids[4])});
@@ -8,4 +8,6 @@ check('ordinary-requests-unmodified',()=>{for(const path of ['/canvas','/api/vid
 check('explicit-retained-read-expires-at-deadline',()=>{const h=new Headers({rsc:'1',[RENDERER_DEADLINE_HEADER]:'1794712001'});assert(isRendererRead('GET','/canvas',h));assert(!rendererReadExpired('GET','/canvas',h,now));assert(rendererReadExpired('GET','/canvas',h,now+1000))});
 check('malformed-deadline-is-not-an-extension',()=>{for(const until of ['', '0','1794712001;injection','Infinity'])assert(rendererReadExpired('GET','/canvas',new Headers({rsc:'1',[RENDERER_DEADLINE_HEADER]:until}),now))});
 check('post-actions-and-apis-never-enter-get-fallback',()=>{const h=new Headers({rsc:'1',[RENDERER_DEADLINE_HEADER]:'1'});for(const [method,path]of [['POST','/canvas'],['POST','/api/video/generate'],['GET','/api/video/generate'],['GET','/_next/static/chunk.js'],['GET','/sign-in']])assert(!rendererReadExpired(method,path,h,now));h.set('next-action','action');assert(!rendererReadExpired('GET','/canvas',h,now))});
+check('gateway-read-context-survives-native-flight-header-filter',()=>{const h=new Headers({[RENDERER_READ_CONTEXT]:'1',[RENDERER_DEADLINE_HEADER]:'1794712001'});assert(!h.has('rsc'));assert(isRendererRead('GET','/canvas',h));assert(!rendererReadExpired('GET','/canvas',h,now));assert(rendererReadExpired('GET','/canvas',h,now+1000));h.set(RENDERER_READ_CONTEXT,'2');assert(!isRendererRead('GET','/canvas',h))});
+check('shared-protocol-window-not-extendable',()=>{assert(rendererReadExpired('GET','/canvas',new Headers({[RENDERER_READ_CONTEXT]:'1',[RENDERER_DEADLINE_HEADER]:'1794712901'}),now))});
 console.log('CLIENT_RENDERER_CONTRACT=PASS CASES='+cases+' NETWORK=0 BUSINESS_WRITES=0');

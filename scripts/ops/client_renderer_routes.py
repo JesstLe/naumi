@@ -3,10 +3,12 @@
 Pure preparation only: no reload, connection, clock mutation or container action.
 The lock/CAS/lifecycle owner installs these in its existing complete config.
 """
-import re
+import re,json,pathlib
 
-MAX_RENDERER_WINDOW=900
-READ_PATHS=('/canvas','/dashboard','/works','/video')
+_contract=json.loads((pathlib.Path(__file__).resolve().parents[2]/'src/lib/release-runtime/client-protocol.json').read_text())
+assert _contract['schemaVersion']==1
+MAX_RENDERER_WINDOW=_contract['maxWindowSeconds']
+READ_PATHS=tuple(_contract['readPaths'])
 
 def renderer_routes(*,current,retained,now,host='$host',response_headers=''):
     assert isinstance(now,int) and not isinstance(now,bool) and now>0
@@ -29,8 +31,8 @@ def renderer_routes(*,current,retained,now,host='$host',response_headers=''):
     maps+='map $http_x_deployment_id $naumi_renderer_until{default "";'+''.join(f'"{row["deploymentId"]}" "{row["until"]}";' for row in active)+'}'
     maps+='map $http_x_deployment_id $naumi_renderer_id{default "'+current['deploymentId']+'";'+''.join(f'"{row["deploymentId"]}" "{row["deploymentId"]}";' for row in active)+'}'
     common=f'proxy_http_version 1.1;proxy_set_header Host {host};proxy_set_header X-Forwarded-Proto $scheme;proxy_set_header Connection "";proxy_buffering off;proxy_read_timeout 90s;proxy_next_upstream off;{response_headers}'
-    current_proxy='proxy_set_header X-Naumi-Rsc-Until "";proxy_pass http://naumi_renderer_current;'
+    current_proxy='proxy_set_header '+_contract['deadlineHeader']+' "";proxy_set_header '+_contract['readContextHeader']+' "";proxy_pass http://naumi_renderer_current;'
     locations='location /{error_page 418 = @naumi_rsc_owner;if ($naumi_renderer_read){return 418;}'+common+current_proxy+'}'
-    locations+='location @naumi_rsc_owner{'+common+'proxy_cache off;add_header Cache-Control "private, no-store" always;add_header Vary X-Deployment-ID always;'+'proxy_intercept_errors on;error_page 409 502 503 504 = @naumi_rsc_current;proxy_set_header X-Naumi-Rsc-Until $naumi_renderer_until;add_header X-Naumi-Renderer-ID $naumi_renderer_id always;proxy_pass http://$naumi_renderer_backend;}'
+    locations+='location @naumi_rsc_owner{'+common+'proxy_cache off;add_header Cache-Control "private, no-store" always;add_header Vary X-Deployment-ID always;'+'proxy_intercept_errors on;error_page 409 502 503 504 = @naumi_rsc_current;proxy_set_header '+_contract['deadlineHeader']+' $naumi_renderer_until;proxy_set_header '+_contract['readContextHeader']+' "1";add_header X-Naumi-Renderer-ID $naumi_renderer_id always;proxy_pass http://$naumi_renderer_backend;}'
     locations+='location @naumi_rsc_current{'+common+'proxy_cache off;add_header Cache-Control "private, no-store" always;add_header Vary X-Deployment-ID always;'+current_proxy+'add_header X-Naumi-Renderer-ID "'+current['deploymentId']+'" always;}'
-    return {'http':maps,'server':locations,'mapHashBucketSize':128,'activeRetained':active,'notBeforeRetire':max([now,*[row['until'] for row in active]])}
+    return {'http':maps,'server':locations,'mapHashBucketSize':_contract['mapHashBucketSize'],'activeRetained':active,'notBeforeRetire':max([now,*[row['until'] for row in active]])}
