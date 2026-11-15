@@ -35,7 +35,11 @@ export async function verifyVideoCompilerCanvasBrowser(input:{origin:string;cook
   const project=attached.projectKey,source=attached.nodeId;await load(project,source);const original=await input.observeNode(source);
   assert.equal(original.config.parameters.resolution,'4K');assert.equal(original.inputs[0].role,'reference');await check(prompt).toHaveText(original.config.prompt);pass('real-history-send-restores-native-node-requested-parameters-and-reference');
   stage='switch-save-reload';const text='真实画布：保留输入身份，镜头平稳推进。';await prompt.fill(text);
-  await dock.getByRole('combobox',{name:'视频模型',exact:true}).click();await page.getByRole('option',{name:'视频验收备选',exact:true}).click();await save(source);
+  await dock.getByRole('combobox',{name:'视频模型',exact:true}).click();await page.getByRole('option',{name:'视频验收备选',exact:true}).click();
+  const unsaved=await input.observeNode(source);assert.equal(unsaved.config.prompt,original.config.prompt);assert.equal(input.posts(),before);
+  await load(project,source);await check(prompt).toHaveText(text);await check(dock.getByRole('combobox',{name:'视频模型',exact:true})).toContainText('视频验收备选');
+  assert.deepEqual((await input.observeNode(source)).config,unsaved.config);assert.deepEqual((await input.observeNode(source)).inputs,original.inputs);assert.equal(input.posts(),before);
+  pass('unsaved-prompt-model-and-inputs-survive-document-reload-without-server-write');await save(source);
   const switched=await input.observeNode(source);assert.equal(switched.config.modelId,'video-process-alias');assert.deepEqual(switched.config.parameters,original.config.parameters);assert.deepEqual(switched.inputs,original.inputs);
   await load(project,source);await check(prompt).toHaveText(text);await check(dock.getByRole('combobox',{name:'视频模型',exact:true})).toContainText('视频验收备选');
   await dock.getByRole('combobox',{name:'视频模型',exact:true}).click();await page.getByRole('option',{name:'视频验收模型',exact:true}).click();await save(source);pass('model-switch-save-and-real-reload-preserve-prompt-parameters-roles-and-order');
