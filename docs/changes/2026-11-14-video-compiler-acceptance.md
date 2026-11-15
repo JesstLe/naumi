@@ -156,3 +156,7 @@
 ## 完整BYOC输入的真实生产入口与诊断（2026-11-15）
 
 [模块记录](2026-11-15-video-full-ingress-process.md)：新增真实HTTP/Agent harness的六类完整草稿跨入口检查，独立生产包实际复现Comfy应用catch遗漏VideoContractError，将422误转成502；仅修正原错误映射，已受理语义/未知错误净化保持。预览零I/O与执行可能进行object_info/加密凭据准备分别计数，不把零任务等同零网络。实际原生Web/独立应用Worker/媒体sandbox/PG组合、修复包版本/源哈希、集中回归与独立副本回退以本轮VERIFICATION及INTEGRATION为准，原失败/完整清理保留。真实启用绑定/授权上游、浏览器RSC/TLS和目标站蓝绿仍开放，总目标ACTIVE，47 HOLD，生产配置/付费/部署0。
+
+## 固定生产包三媒体真实交互（2026-11-15）
+
+[模块记录](2026-11-15-video-production-input-ui.md)：把既有上传/连线/@提及三媒体21项实际交互接到固定Linux Web/独立Worker/native媒体与Windows Edge的owned session；原Workbench4/Canvas恢复2/Storyboard10保持，合计37项浏览器＋15底座分别验收。host不直调Route/submit/compiler，不替换成功HTTP或React状态；阶段/节点前缀/未知操作反控与实际ledger/POST增量分别核对。最终源/副本/回退、精确数量和exit以本轮VERIFICATION及INTEGRATION为准，不泛化所有结构节点或公网。103实际配置仍因连接未取得，已询问入口；真实启用绑定/授权上游/站点RSC-TLS蓝绿仍开放，目标ACTIVE，47 HOLD，生产配置/付费/部署0。

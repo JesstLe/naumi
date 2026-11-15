@@ -4,11 +4,13 @@ import {mkdir,readdir,readFile,writeFile,rename} from 'node:fs/promises';
 import path from 'node:path';
 import type {Pool} from 'pg';
 
+export type ProductionInputSession=Pick<Parameters<typeof import('./video-compiler-input-equivalence').verifyVideoInputEquivalence>[0],'snapshotCounts'|'foreignPreview'|'observeNode'|'readPlan'|'complete'|'observeLedger'|'observeParent'>&{files:Array<{kind:'image'|'video'|'audio';name:string;mimeType:string;file:string}>};
+
 /** Interactive, file-receipted acceptance bridge for the actual shared browser.
  * No browser/React injection, replacement responses or direct workflow calls.
  * Setup, observation and an explicitly labelled historical budget seed only. */
 export async function videoStoryboardSession(input:{actor:string;pool:Pool;origin:string;cookie:string;root:string;posts:()=>number;
- historyTaskId?:string;runtime?:{mode:string;commit:string};
+ inputEquivalence?:ProductionInputSession;historyTaskId?:string;runtime?:{mode:string;commit:string};
  http:(url:string,body?:unknown)=>Promise<{status:number;value:any}>;resume:()=>Promise<unknown>;drain:()=>Promise<unknown>}){
  const {actor,pool,http,root}=input;const commands=path.join(root,'commands');await mkdir(commands,{recursive:true});
  // Cross-OS bind mounts expose a newly created file before writeFile finishes.
@@ -29,9 +31,9 @@ export async function videoStoryboardSession(input:{actor:string;pool:Pool;origi
   const ledger=(await pool.query("SELECT count(*)::int n,COALESCE(-sum(delta),0)::int amount FROM app_ledger WHERE email=$1 AND kind='consume'",[actor])).rows[0];
   return {projectKey:project,plans:plans.value.plans,nodes,runs,tasks,postsAdded:input.posts()-posts,ledgerAdded:{n:ledger.n-baselineLedger.n,amount:ledger.amount-baselineLedger.amount}};
  };
- await publish(path.join(root,'STORYBOARD_SESSION.json'),{origin:input.origin,cookie:input.cookie,historyTaskId:input.historyTaskId,runtime:input.runtime,projectKey:project,nodeIds:[first.value.node.id,second.value.node.id],url:input.origin+'/canvas?project='+encodeURIComponent(project)+'&node='+first.value.node.id,commands});
+ await publish(path.join(root,'STORYBOARD_SESSION.json'),{origin:input.origin,cookie:input.cookie,historyTaskId:input.historyTaskId,runtime:input.runtime,inputEquivalence:input.inputEquivalence?{files:input.inputEquivalence.files}:undefined,projectKey:project,nodeIds:[first.value.node.id,second.value.node.id],url:input.origin+'/canvas?project='+encodeURIComponent(project)+'&node='+first.value.node.id,commands});
  console.log('STORYBOARD_SESSION_READY='+root);
- const handled=new Set<string>();let finished=false,aborted=false;
+ const handled=new Set<string>();let finished=false,aborted=false,inputBoundary:Awaited<ReturnType<typeof snapshot>>|undefined;
  while(!finished){for(const name of (await readdir(commands)).filter(n=>/^cmd-[a-f0-9-]+\.json$/.test(n)&&!handled.has(n)).sort()){
   const file=path.join(commands,name);let command:any;try{command=JSON.parse(await readFile(file,'utf8'));}catch{continue;}handled.add(name);
   try{
@@ -53,7 +55,22 @@ export async function videoStoryboardSession(input:{actor:string;pool:Pool;origi
     if(command.adopted!==undefined)assert.equal(plan.document.shots.filter((s:any)=>s.adoptedArtworkId).length,command.adopted);
     if(command.annotations!==undefined)assert.equal(plan.document.shots.flatMap((s:any)=>s.takes).reduce((n:number,t:any)=>n+(t.annotations?.length||0),0),command.annotations);
     assert(command.name);console.log('STORYBOARD_SESSION_CHECK='+command.name+' PASS');
-   }else if(command.action==='finish'){value=await snapshot();assert(value.tasks.length>=2&&value.tasks.every((t:any)=>t.status==='completed'));assert(value.runs.some((r:any)=>r.assembly_state?.status==='completed'));finished=true;}
+   }else if(command.action==='finish'){value=await snapshot();assert(value.tasks.length>=2&&value.tasks.every((t:any)=>t.status==='completed'));assert(value.runs.some((r:any)=>r.assembly_state?.status==='completed'));if(input.inputEquivalence)inputBoundary=value;else finished=true;}
+   else if(command.action==='input-equivalence'){
+    assert(input.inputEquivalence&&inputBoundary,'Production input session unavailable or storyboard not finished');const ports=input.inputEquivalence;let result:unknown;
+    switch(command.op){
+     case 'counts':result=await ports.snapshotCounts();break;
+     case 'node':assert(typeof command.id==='string'&&command.id.startsWith('input-eq-'));result=await ports.observeNode(command.id);break;
+     case 'plan':assert(typeof command.id==='string');result=await ports.readPlan(command.id);break;
+     case 'complete':assert(typeof command.id==='string');result=await ports.complete(command.id);break;
+     case 'ledger':assert(typeof command.id==='string');result=await ports.observeLedger(command.id);break;
+     case 'parent':assert(typeof command.id==='string');result=await ports.observeParent(command.id);break;
+     case 'foreign':assert(command.asset&&typeof command.asset.artworkId==='string'&&['image','video','audio'].includes(command.asset.kind));result=await ports.foreignPreview(command.asset);break;
+     case 'finish':{const after=await snapshot();assert.equal(after.postsAdded-inputBoundary.postsAdded,10);assert.equal(after.ledgerAdded.n-inputBoundary.ledgerAdded.n,10);assert.equal(after.ledgerAdded.amount-inputBoundary.ledgerAdded.amount,170);result={ledgerAdded:{n:10,amount:170},postsAdded:10};finished=true;break;}
+     default:throw Error('Unknown input equivalence observation');
+    }
+    value={result,posts:input.posts()};
+   }
    else throw Error('Unknown fixture command');
    receipts.push({command,ok:true,value});await publish(path.join(commands,name.replace('cmd-','result-')),{ok:true,value});
   }catch(error){receipts.push({command,ok:false,error:String(error)});await publish(path.join(commands,name.replace('cmd-','result-')),{ok:false,error:String(error)});}
