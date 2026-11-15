@@ -19,5 +19,5 @@ class RendererRoutes(unittest.TestCase):
    args=self.args();args['retained'][0][field]=value
    with self.assertRaises(AssertionError):renderer_routes(**args)
  def test_unknown_identity_falls_to_current_and_no_post_replay(self):
-  out=renderer_routes(**self.args());self.assertIn('default naumi_renderer_current;',out['http']);self.assertIn('error_page 409 502 503 504 = @naumi_rsc_current;',out['server']);self.assertEqual(out['server'].count('proxy_intercept_errors on;'),1)
+  out=renderer_routes(**self.args());self.assertIn('default naumi_renderer_current;',out['http']);self.assertIn('error_page 409 502 503 504 = @naumi_rsc_current;',out['server']);self.assertEqual(out['server'].count('proxy_intercept_errors on;'),1);self.assertEqual(out['server'].count('recursive_error_pages on;'),1);self.assertEqual(out['server'].count('recursive_error_pages off;'),2);self.assertEqual(out['server'].count('proxy_intercept_errors off;'),2)
 if __name__=='__main__':unittest.main()

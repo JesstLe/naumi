@@ -29,3 +29,19 @@ Nextconfig只导入纯构建身份函数；middleware只调用纯协议读期限
 修正使用网关覆盖的私有只读上下文与期限；ordinary/current/fallback均清除这些私有头，保留RSC命名location独立设置，原Native Flight头和b不改写。Node不从框架已删除的头重新猜请求类型。client-protocol.json是TS与Python共用的唯一路径/头名/窗口/桶大小事实源，Node及ops均消费它；新合同反控覆盖没有RSC原头但有可信网关上下文，以及超长窗口。重建最终固定包后再执行完整严格与期限验收，首对旧包不被冒称包含修正。
 
 最初真实nginx -t还发现长deploymentId超过默认map桶，原失败保留；接口显式返回所需128桶大小，既有owner负责与完整配置合并，未靠忽略语法检查继续。最初fixture缺本地MP4在创建槽前已终止并清理，补复用原fixture字节，不改媒体实现。
+
+第二轮最终程序C/D已实际返回期限409，证明私有上下文修正生效；但Nginx默认不进行第二次error_page跳转，根location的内部418消耗了跳转，导致409未转当前。保留FINAL原整轮exit1与renderer-expiry-observed.json，不能只报浏览器11项通过。网关只在入口允许递归跳转，RSC owner与current命名location明确关闭递归，保持GET专属两段跳转、普通POST不拦截、不自动重试。此修正仅属原网关装配，不改C/D程序。
+
+常规入口和current fallback显式proxy_intercept_errors off，避免继承外层设置后将普通API/POST错误误交给RSC路径。只有GET专属owner启用拦截；递归只开放入口一次，两个命名location均关闭。FINAL2在相同默认off条件下取得81项原事务＋11项严格浏览器通过、0文档升级、真实到期200回当前；最终显式off装配另由独立副本运行完整链路验证。
+
+## 最终结果与精确边界
+
+最终固定测试包C/D均从6685d4c27037b904c73cfed03469639c8f240c84完整构建，版号1794714000/1794714127，镜像45272f1f/1fb523e3；真实Next BUILD_ID分别LDjxuo2YYb0jUqSBsF230/J4VQIwVdMUcY7Vws03qbV，原生deploymentId分别包含对应真实版号。每包578个tracked Worker源哈希匹配固定归档；两个实际Server Action manifest均0。未改写b或BUILD_ID，原生Flight过滤器代码保持原样。
+
+FINAL2源与最终显式off装配的独立副本COPY各通过81项原真实Nginx/Worker/原生媒体/PG/lifecycle＋11项严格Edge检查。旧→新→回旧两个上下文各documentRequests=1，documentUpgrades=0，pageerror0；真实RSC请求的原生deploymentId均匹配实际renderer响应身份，API版本/两向保存仍为当前槽。真实5秒到期后，保留renderer409经GET专属fallback得到当前renderer200，未知身份同样当前200，过期路由剪除再退役。各4供应商fixture创建、3笔视频账本41积分，UNKNOWN不重发，回滚不回灌资产/账务；各7槽/随机schema/network及浏览器均清理。
+
+同一最终C/D程序关闭所有权路由的BASELINE显式审计仍复现2次文档升级，每上下文documents=2；64项原事务完成、浏览器10项观察，STRICT_NO_RELOAD=FAIL。该对照是“同程序无路由”而不是原main没有新代码；原main配置缺少deploymentId另由独立源码探针确认。不能把审计exit0当零刷新PASS。
+
+源/副本纯合同8、ops6、旧browser fixture7、core137、完整tsc与runner33case470检查通过；原static16有1项缺真实站点捕获跳过。独立副本15路径原字节/不存在状态恢复，配置探针再次ABSENT、原core137通过；源码与ZIP保留修改版，精确命令/输入/literal输出/exit以四产物为准。
+
+这证明已审查四页面、原生身份版本及兼容窗口的本地闭环。无身份旧版本、到期后的原生升级、其他页面/未来Server Actions、任意不同业务版本，不能从本例推断零刷新。native deploymentId本身不证明期限guard正确；接入方必须使用通过真实期限验收的固定程序，不得只见原生ID就自动登记任意旧包。真实站点网关合并/既有Agent与Worker归属/全业务collector/锁与容量/实际配置绑定审查/授权上游和上线仍未完成；总目标ACTIVE，47 HOLD，站点配置/付费/部署0。
