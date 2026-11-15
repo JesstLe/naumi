@@ -29,7 +29,7 @@ class VideoReleaseGateway:
         self.api,self.execute,self.tx,self.args=api,execute,tx,args
         self.prefix,self.network,self.slots=prefix,network,slots
         self.web,self.worker,self.wait,self.check=web,worker,wait,check
-        self.folder=args.root/'gateway';self.folder.mkdir();self.phases=[];self.http=[]
+        self.folder=args.root/'gateway';self.folder.mkdir();self.phases=[];self.http=[];self.browser_seed=None;self.browser_observations=[]
         self.old_web_name=prefix+'-old-web';self.old_worker_name=prefix+'-old-worker'
         self.name=prefix+'-nginx';self.origin='http://'+self.name
         old_image=api('GET','/images/'+args.prior_image+'/json')
@@ -53,6 +53,7 @@ class VideoReleaseGateway:
             'Entrypoint':['nginx'],'Cmd':['-c','/fixture/nginx.conf','-g','daemon off;'],
             'HostConfig':{'NetworkMode':network,'ReadonlyRootfs':True,'Memory':128*1024**2,
                 'MemorySwap':128*1024**2,'NanoCpus':500_000_000,'PidsLimit':64,
+                **({'PortBindings':{'80/tcp':[{'HostIp':'127.0.0.1','HostPort':str(args.browser_port)}]}} if getattr(args,'browser_port',None) else {}),
                 'Tmpfs':{'/tmp':'rw,nosuid,size=64m'},'Mounts':[{'Type':'bind','Source':str(self.folder),'Target':'/fixture','ReadOnly':True}]},
             'NetworkingConfig':{'EndpointsConfig':{network:{}}}})['Id'];slots.append(gateway);self.gateway=gateway
         api('POST','/containers/'+gateway+'/start')
@@ -60,6 +61,25 @@ class VideoReleaseGateway:
         check('actual-nginx-starts-on-distinct-prior-build',self.old_commit!=values['SOURCE_COMMIT'])
         self.assets_before=self.read_assets('old')
         self.lifecycle=None
+
+    def browser_phase(self, phase, seed=None, observe=None):
+        if not getattr(self.args,'browser_port',None):return
+        if seed is not None:
+            assert phase=='old' and self.browser_seed is None;self.browser_seed=seed;self.browser_observe=observe
+        assert self.browser_seed is not None and phase in ['old','new','rollback']
+        folder=self.args.evidence/'browser';folder.mkdir(exist_ok=True);token=uuid.uuid4().hex;before=self.browser_observe()
+        command={'phase':phase,'token':token,**self.browser_seed,'origin':'http://127.0.0.1:'+str(self.args.browser_port),
+                 'oldCommit':self.old_commit,'newCommit':environment(self.tx.inspect(self.web))['SOURCE_COMMIT']}
+        temp=folder/('request-'+token+'.tmp');temp.write_text(json.dumps(command));temp.replace(folder/'request.json')
+        deadline=time.time()+240;receipt=folder/('reply-'+token+'.json')
+        while time.time()<deadline:
+            if receipt.exists():
+                value=json.loads(receipt.read_text());assert value['token']==token and value['phase']==phase and value['ok'] is True,value
+                after=self.browser_observe();assert after==before,{'phase':phase,'before':before,'after':after};self.tx.save('browser-zero-generation-'+phase+'.json',{'before':before,'after':after});assert type(value.get('noReload',True)) is bool
+                if not getattr(self.args,'browser_observe_upgrades',False):assert value.get('noReload',True) is True,'STRICT_BROWSER_DOCUMENT_UPGRADE'
+                self.browser_observations.append(value);self.tx.save('browser-observations.json',self.browser_observations);self.check(('actual-browser-observed-' if getattr(self.args,'browser_observe_upgrades',False) else 'actual-browser-survives-')+phase,True);return
+            time.sleep(.1)
+        raise RuntimeError('ACTUAL_BROWSER_PHASE_TIMEOUT '+phase)
 
     def start_lifecycle(self, query):
         from video_release_lifecycle_fixture import VideoReleaseLifecycle
@@ -77,7 +97,7 @@ class VideoReleaseGateway:
             "http{access_log off;types{application/javascript js;text/css css;}default_type application/octet-stream;"
             "client_body_temp_path /tmp/body;proxy_temp_path /tmp/proxy;fastcgi_temp_path /tmp/fcgi;uwsgi_temp_path /tmp/uwsgi;scgi_temp_path /tmp/scgi;"
             "server{listen 80;client_max_body_size 20m;location ^~ /_next/static/{alias /fixture/union/_next/static/;add_header Cache-Control 'public,max-age=31536000,immutable' always;}"
-            "location /{proxy_pass http://"+target+":3000;proxy_http_version 1.1;proxy_set_header Host $host;proxy_set_header X-Forwarded-Proto $scheme;proxy_set_header Connection '';proxy_buffering off;proxy_read_timeout 90s;add_header X-Release-Slot "+phase+" always;}}}").encode()
+            "location /{proxy_pass http://"+target+":3000;proxy_http_version 1.1;proxy_set_header Host "+("$http_host" if getattr(self.args,"browser_port",None) else "$host")+";proxy_set_header X-Forwarded-Proto $scheme;proxy_set_header Connection '';proxy_buffering off;proxy_read_timeout 90s;add_header X-Release-Slot "+phase+" always;}}}").encode()
 
     def prepare_assets(self):
         sources=[]
@@ -197,6 +217,7 @@ class VideoReleaseGateway:
         self.check('actual-nginx-CAS-reload-'+phase,observed['slot']==phase)
         assert self.read_assets(phase)==self.assets_before
         if self.lifecycle and phase=='new':self.lifecycle.switched()
+        if self.browser_seed is not None:self.browser_phase('new' if phase=='new' else 'rollback')
 
     def rollback(self, query):
         # Stop the drained prior slots, then run the actual pinned-image format

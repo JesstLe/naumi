@@ -57,6 +57,12 @@ async function main(){
    const saved=await repo.saveDraft({id:draft.id,expectedRevision:draft.revision,actor:'fixture-admin',config}),staged=await repo.stage({id:randomUUID(),draftId:saved.id,expectedRevision:saved.revision,expectedVersion:snapshot.version,actor:'fixture-admin',reason:'change after original acceptance'});await repo.markApplied(staged.id,staged.digest,saved.id);
    const billing=await(await import('../src/lib/billing/runtime')).getBillingRuntime(),bill=await billing.config.current(),price=structuredClone(bill.config);price.features['video.generate'].pricing={mode:'fixed',credits:17};
    await billing.config.publish({id:randomUUID(),actor:'fixture-admin',reason:'new price after acceptance',expectedVersion:bill.version,config:price});console.log(JSON.stringify({changed:true}));
+  }else if(input.action==='browser-configure'){
+   // Explicit setup of the random local fixture only. Keep actual page setup
+   // and authentication guards, rather than bypassing a /setup redirect.
+   await(await import('../src/lib/admin-auth')).setAdminPassword('ReleaseBrowserFixtureAdmin2026!');console.log(JSON.stringify({configured:await(await import('../src/lib/setup')).isConfigured()}));
+  }else if(input.action==='browser-counts'){
+   const counts:Record<string,number>={};for(const table of ['app_video_tasks','app_gen_reservations','app_creation_records','app_billing_operations','app_ledger'])counts[table]=Number((await pool.query('SELECT count(*) n FROM '+table)).rows[0].n);console.log(JSON.stringify(counts));
   }else if(input.action==='ledger'){
    const rows=(await pool.query("SELECT id,delta FROM app_ledger WHERE id=ANY($1::text[]) ORDER BY id",[input.ids.map((id:string)=>'led-video-'+id)])).rows;
    const artifacts=(await pool.query('SELECT id,parent_id,status FROM app_artworks WHERE id=ANY($1::text[])',[input.artworks])).rows;
