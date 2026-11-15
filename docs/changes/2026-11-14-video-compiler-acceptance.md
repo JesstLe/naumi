@@ -197,3 +197,9 @@
 ## 最新main固定包与不同业务源码集中验收（2026-11-15）
 
 [模块记录](2026-11-15-video-main-package.md)：固定main19d/1794718498完整Dockerfile构建、Worker49/578源输入通过。旧6685D→新19d→回旧，产品差异确为Canvas提交入口收口而非只换版号；源/副本各81实际Nginx/Worker/PG/lifecycle＋11严格Edge，窗口内0升级、到期GET回当前、UNKNOWN/账务/资产不回退。首次全部串接命中原30/10min限流整轮exit1保留；最终同固定包INGRESS_UI与ADVANCED分组联合覆盖全入口/高级/未来结构Workflow/生产UI43，均exit0，无模块跳过或限流/时钟改动。精确分组/账本/调用/清理以该轮SUMMARY和VERIFICATION为准。源码副本13路径真实回退，修改包保留；当前main整合与固定程序来源分开记录，实际站点绑定/env-only/授权上游和全业务蓝绿继续开放，总目标ACTIVE、47 HOLD、生产配置/付费/部署0。
+
+## 47实际绑定迁移与公网切流（2026-11-15）
+
+[站点记录](2026-11-15-video-compiler-release47.md)：用户本轮明确更新47并接受短维护。实际原4c→固定main19d/1794718498，同镜像Web/Worker已切公网，v154→155通过原管理repository/runtime发布32条绑定、21启用通道ready；仅64个videoProfile/videoExecution字段改变，其余完整配置/禁用项/原v154整行/计费保持。真实可见自有参考图在21模型以legacyMode=text自动编译single_image，21/21预览200、自己的任务0/付费0。公开版本/健康、8项业务读、创作历史21412/20、6份公开静态字节和真实systemd服务/四锁ACK通过。维护约4分15秒，原错误及维护回退记录保留，不放宽SHA/CAS。兼容6685包对实际持久视频格式/历史Profile回退guard通过；未执行生产切回。
+
+当前canonical2283/CLEANUP_PENDING：旧HTTP0、旧Worker已排空暂停，但旧Web仍有2条media-mirror活动及1条当前boot UNKNOWN；原8条UNKNOWN逐项保留，新Web/Worker未知0。旧槽未强停，无公网引用；因此不是蓝绿完整退役、成功发布计数仍0。实际21通道迁移和公网状态由本记录替代此前“47 HOLD/部署0”的旧现场描述，不改变此前固定版本测试的证据边界；103不再是本轮前置条件，隔离实验线不带入main。P4旧槽收敛和经授权的真实付费上游仍未完成，整个目标未标完成。
