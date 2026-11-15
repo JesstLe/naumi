@@ -185,3 +185,7 @@
 ## 有界客户端渲染器协议所有权（2026-11-15）
 
 [模块记录](2026-11-15-client-renderer-ownership.md)：以Next原生deploymentId/x-deployment-id标识客户端，只对四个已审查页面的RSC GET提供有界渲染器路由；普通HTML/API/生成POST/ServerAction保持当前、不重放。期限到达回到当前，保留原Next身份保护；最长窗口、notBeforeRetire及全站controller接入分开验收。真实双固定包、严格旧新回滚浏览器/到期、原任务与五表、副本回退结果以VERIFICATION为准。103本轮仍SSH255/HTTP52未取得配置；目标站/真实上游/旧无身份版本与全页面兼容不能由本片推断，总目标ACTIVE。
+
+## Canvas 缺绑定路径的重复输入编排退出（2026-11-15）
+
+[模块记录](2026-11-15-video-canvas-submit-owner.md)：删除 node-submission 在缺新版 Binding 时的旧展开/文字/引用转换回退，所有新托管 Canvas 请求直接传递原草稿给同一应用用例。原回执、节点/project/revision、BYOC、确认、参数和素材顺序保持；历史 Workflow DB核验兼容入口不变。实际入口 I/O ports 13 项及原 PG/HTTP/媒体Worker组合增加真实 saved-node/V8 正控归零与五表/供应商零增量，源码/副本/回退及最终集中结果以该轮 VERIFICATION/INTEGRATION 为准。当前新任务职责进一步收口，不等于线上 Binding 已迁移或新固定站点包上线；总目标 ACTIVE、47 HOLD、生产配置/付费/部署0。
