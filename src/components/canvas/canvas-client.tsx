@@ -4030,8 +4030,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             onClose={()=>setStoryboardPanel(null)} onEditNode={id=>{setStoryboardPanel(null);openVideoEditor(id);}}
             onChanged={run=>{void videoNodesStore.refresh();const ids=(run.assembly?.outputs||[]).map(output=>output.artworkId).filter((id):id is string=>!!id);if(ids.length)void mergeWorks(ids);}}/>}
           {videoComposerNode&&multiSel.length<=1&&!propertiesOpen&&canFeature("video")&&<VideoSettingsDialog
-            key={`${user?.email}:${targetEmail}:${activeKey}:${videoComposerNode.id}`} node={videoComposerNode} presentation="dock"
-            dockRef={panelRef} dockStyle={dockStyle??{left:12,bottom:12,maxHeight:"60%"}} expanded={mediaComposerExpanded} onToggleExpand={()=>setMediaComposerExpanded(value=>!value)} draftScope={JSON.stringify([user?.email,targetEmail,activeKey])} advanced={videoDockAdvancedId===videoComposerNode.id} onCloseAdvanced={()=>setVideoDockAdvancedId(null)}
+            key={JSON.stringify([user?.email,targetEmail,canvasArtworkDocument.scope.workspace,activeKey,videoComposerNode.id])} node={videoComposerNode} presentation="dock"
+            dockRef={panelRef} dockStyle={dockStyle??{left:12,bottom:12,maxHeight:"60%"}} expanded={mediaComposerExpanded} onToggleExpand={()=>setMediaComposerExpanded(value=>!value)} draftScope={JSON.stringify([user?.email,targetEmail,canvasArtworkDocument.scope.workspace,activeKey])} advanced={videoDockAdvancedId===videoComposerNode.id} onCloseAdvanced={()=>setVideoDockAdvancedId(null)}
             task={videoTaskStore.tasks.find(task=>task.id===videoComposerNode.lastTaskId)}
             generationBlocked={!!videoComposerNode.lastTaskId&&!videoTaskStore.tasks.some(task=>task.id===videoComposerNode.lastTaskId)}
             onCancel={()=>{if(videoComposerNode.lastTaskId)void videoTaskStore.cancel(videoComposerNode.lastTaskId).catch(error=>flashTip(error.message));}}

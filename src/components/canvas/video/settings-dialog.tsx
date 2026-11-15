@@ -15,8 +15,7 @@ import { VideoField, videoFieldClass, videoButtonClass, assertVideoFieldsValid }
 import { isTopVideoDialog } from "./dialog-stack";
 import {type PublicVideoTaskView} from "@/lib/video/queries";
 import {useVideoCompilePreview} from '@/lib/video/use-compile-preview';
-type CachedComposer = { title:string; config:VideoNodeConfig; inputs:OrderedInput[]; revision:number; baseline:string };
-const localComposerDrafts = new Map<string,CachedComposer>();
+import {videoComposerDrafts,videoComposerDraftKey,type VideoComposerDraft as CachedComposer} from '@/lib/video/composer-drafts';
 import type {VideoNodeDraft} from "@/lib/video/canvas-draft";
 export type {VideoNodeDraft} from "@/lib/video/canvas-draft";
 export function VideoSettingsDialog({ node, models, choices, light, email, readOnly = false, onClose, onSave, onGenerate, onImport, onLoadMoreAssets, canLoadMoreAssets = false, catalogLoading=false, catalogError="", onRetryCatalog, presentation="dialog", dockStyle, dockRef, expanded, onToggleExpand, advanced=false, onCloseAdvanced, draftScope, task, onCancel, generationBlocked=false, onOptimize, onStoryboard }: {
@@ -50,8 +49,8 @@ export function VideoSettingsDialog({ node, models, choices, light, email, readO
     generationBlocked?: boolean;
 }) {
     const V = useVideoI18n();
-    const draftKey = draftScope ? JSON.stringify([draftScope,node.id]) : null;
-    const [initialDraft] = useState(() => draftKey ? localComposerDrafts.get(draftKey) : undefined);
+    const draftKey = presentation==='dock'&&!readOnly?videoComposerDraftKey(draftScope,email,node.projectKey,node.id):null;
+    const [initialDraft] = useState(() => videoComposerDrafts.read(draftKey));
     const [title, setTitle] = useState(initialDraft?.title ?? node.title), [config, setConfig] = useState<VideoNodeConfig>(() => structuredClone(initialDraft?.config ?? node.config)), [inputs, setInputs] = useState<OrderedInput[]>(() => structuredClone(initialDraft?.inputs ?? node.inputs));
     const count = config.batchCount ?? 1;
     const setCount = (value:number) => setConfig(current=>({...current,batchCount:value as 1|2|4}));
@@ -63,19 +62,34 @@ export function VideoSettingsDialog({ node, models, choices, light, email, readO
     const submitting=useRef(false);
     const latestLocal = useRef<CachedComposer>({title,config,inputs,revision:revision.current,baseline:baseline.current});
     latestLocal.current = {title,config,inputs,revision:revision.current,baseline:baseline.current};
-    useEffect(() => () => {
-      if (!draftKey || presentation !== 'dock' || readOnly) return;
-      localComposerDrafts.delete(draftKey);
-      localComposerDrafts.set(draftKey, structuredClone(latestLocal.current));
-      while (localComposerDrafts.size > 64) localComposerDrafts.delete(localComposerDrafts.keys().next().value!);
-    }, [draftKey,presentation,readOnly]);
+    const restoredKey=useRef(draftKey),restoring=useRef(false);
+    useEffect(()=>{
+      if(!draftKey)return;
+      // A node first mounted locked/loading must not erase a writable recovery
+      // record when permissions/settings become ready later in the same view.
+      if(restoredKey.current!==draftKey){
+        restoredKey.current=draftKey;const cached=videoComposerDrafts.read(draftKey);
+        if(cached&&JSON.stringify({title,config,inputs})===baseline.current){setTitle(cached.title);setConfig(cached.config);setInputs(cached.inputs);revision.current=cached.revision;baseline.current=cached.baseline;latestLocal.current=cached;restoring.current=true;return;}
+      }
+      videoComposerDrafts.write(draftKey,latestLocal.current);
+    },[draftKey,title,config,inputs,node.revision]);
+    useEffect(()=>{
+      if(!draftKey)return;
+      const persist=()=>videoComposerDrafts.write(draftKey,latestLocal.current);
+      window.addEventListener('pagehide',persist);
+      return()=>{window.removeEventListener('pagehide',persist);persist();};
+    },[draftKey]);
     // Position-only revisions may be rebased, but not another editor's config.
     useEffect(()=>{
+      if(restoring.current){restoring.current=false;return;}
       const incoming=JSON.stringify({title:node.title,config:node.config,inputs:node.inputs});
       const local=JSON.stringify({title,config,inputs});
-      if(local===baseline.current){setTitle(node.title);setConfig(structuredClone(node.config));setInputs(structuredClone(node.inputs));revision.current=node.revision;baseline.current=incoming;}
+      const pristine=local===baseline.current;
+      if(pristine){setTitle(node.title);setConfig(structuredClone(node.config));setInputs(structuredClone(node.inputs));revision.current=node.revision;baseline.current=incoming;}
       else if(incoming===baseline.current||incoming===local){revision.current=node.revision;baseline.current=incoming;}
-    },[dock,node.revision,node.title,node.config,node.inputs]); // Local edits intentionally do not trigger this effect.
+      latestLocal.current={title:pristine?node.title:title,config:pristine?node.config:config,inputs:pristine?node.inputs:inputs,revision:revision.current,baseline:baseline.current};
+      videoComposerDrafts.write(draftKey,latestLocal.current);
+    },[dock,draftKey,node.revision,node.title,node.config,node.inputs]); // Local edits intentionally do not trigger this effect.
     closeRef.current = onClose;
     const model=selectedVideoCatalogModel(models,config);
     const resolvedInputs = resolveVideoTextInputs(inputs,choices);
@@ -130,6 +144,7 @@ export function VideoSettingsDialog({ node, models, choices, light, email, readO
             const saved=await onSave(draft);if(saved)revision.current=saved.revision;
         }
         baseline.current=JSON.stringify({title,config,inputs:resolvedInputs});
+        latestLocal.current={title,config,inputs:resolvedInputs,revision:revision.current,baseline:baseline.current};videoComposerDrafts.write(draftKey,latestLocal.current);
         if(dock)setSaved(true);else onClose();
     }
     catch (cause) {
@@ -142,7 +157,7 @@ export function VideoSettingsDialog({ node, models, choices, light, email, readO
     async function openStoryboard(){
         if(!onStoryboard||readOnly||busy||importing||submitting.current)return;
         submitting.current=true;setBusy(true);setError("");
-        try{const saved=await onSave({title,config,inputs:resolvedInputs,expectedRevision:revision.current});if(saved)revision.current=saved.revision;baseline.current=JSON.stringify({title,config,inputs:resolvedInputs});setSaved(true);onStoryboard();}
+        try{const saved=await onSave({title,config,inputs:resolvedInputs,expectedRevision:revision.current});if(saved)revision.current=saved.revision;baseline.current=JSON.stringify({title,config,inputs:resolvedInputs});latestLocal.current={title,config,inputs:resolvedInputs,revision:revision.current,baseline:baseline.current};videoComposerDrafts.write(draftKey,latestLocal.current);setSaved(true);onStoryboard();}
         catch(cause){setError(cause instanceof Error?cause.message:"镜头保存失败");}
         finally{submitting.current=false;setBusy(false);}
     }

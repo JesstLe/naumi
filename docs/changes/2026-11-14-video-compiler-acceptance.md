@@ -169,3 +169,9 @@
 
 
 最终源/独立副本各10项浏览器观察及64项原事务检查；两个方向原画布留存和跨版本保存描述/4K/1秒通过，但每个上下文documentRequests=2、共2次文档升级，strictNoReload=false，严格零刷新仍FAIL。两镜像Next15.5.28实际源码和真实RSC body确认build身份不符触发原生MPA导航；没有伪造build身份。核心137、两份tsc及副本8文件原哈希/不存在状态回退通过。完整记录/框架依据/精确exit在上述模块四产物；AUDIT exit0不是A19通过，总目标保持ACTIVE。
+
+## 视频Dock未保存草稿恢复（2026-11-15）
+
+[模块记录](2026-11-15-video-composer-recovery.md)：原module Map不能跨文档刷新恢复，现以tab-local有界恢复日志保留完整草稿、原baseline及revision，并补齐workspace scope。显式保存和服务端CAS继续拥有节点写入；readonly、跨owner/workspace/project/node、损坏/不可用存储和远端冲突分别验证。实际React Dialog及原Next/ReactFlow/独立Worker链路数量、基线和独立副本回滚以四产物为准。该改动解决草稿丢失，不改写Next身份、不等于跨build零刷新或站点已上线；A19及总目标ACTIVE，47 HOLD，生产配置/付费/部署0。
+
+最终源真实Next/独立Worker底座14＋Canvas11通过，新增未保存描述/模型/输入在刷新后恢复且服务端无写；原历史下游链、Dock、锁定、多选与移动端保持，fixture5笔账本75积分。独立Dialog最终8、纯规则10、核心137及副本回滚通过；图片草稿旧静态断言在基线亦失败，未改图片业务。上述为development与独立组件证据，非新固定生产包/跨build零刷新/站点上线。
