@@ -1,4 +1,6 @@
 import "server-only";
+import {videoByocDraft} from "../video/byoc-draft";
+import {VideoContractError} from "../video/contract";
 import {createAudioReviewTools} from "./audio-review-tools";
 import {createAudioTools} from "./audio-tools";
 import {createTimelineTools} from "./timeline-tools";
@@ -11,7 +13,7 @@ import {Type,type TSchema} from "typebox";
 import type {AgentTool} from "@earendil-works/pi-agent-core";
 import {videoNodeConfigSchema,type CanvasVideoNode} from "../canvas/video-node-schema";
 import {scheduleCanvasVideoWorkflow,type PreparedCanvasVideoWorkflow} from "../video/canvas-workflow";
-import {inputReference,selectedVideoCatalogModel} from "../video/client-settings";
+import {inputReference} from "../video/client-settings";
 import {orderedInputSchema} from "../video/references";
 import {mediaJobRequestSchema} from "../video/media-job-schema";
 import {type PublicVideoTaskView} from "../video/queries";
@@ -35,16 +37,8 @@ export function createCanvasVideoTools(d:Deps):AgentTool[]{
   function tool(name:string,label:string,description:string,properties:Record<string,TSchema>,execute:AgentTool["execute"]):AgentTool{return {name,label,description,parameters:Type.Object(properties),executionMode:"sequential",execute};}
   async function assertIntentMode(settings:CanvasVideoNode["config"],inputs:CanvasVideoNode["inputs"],requiredMode:"extend"|"video_edit"|undefined,signal?:AbortSignal,ownedNode?:CanvasVideoNode){
     const modern=await withPreparedAgentVideo(d.actor,{config:settings,inputs,requiredIntent:requiredMode,...(ownedNode?{node:{id:ownedNode.id,revision:ownedNode.revision},projectKey:ownedNode.projectKey}:{})},async plan=>!!plan);
-    if(modern)return true;
-    if(!requiredMode||settings.mode===requiredMode)return;
-    // Some upstreams implement continuation/editing through their declared video
-    // reference mode. Preserve that explicit saved mode and the formal source;
-    // never turn this request into text generation or guess from a model name.
-    if(settings.mode!=="reference")throw new Error(`请先按真实模型能力保存 ${requiredMode} 或视频参考模式，未提交生成`);
-    const references=inputs.length?inputs.flatMap(value=>{const ref=inputReference(value);return ref?[ref]:[];}):settings.references||[];
-    if(!references.some(ref=>ref.kind==="video"&&ref.role==="source_video"))throw new Error("续写或编辑需要明确的正式来源视频引用，未提交生成");
-    const catalog=await d.internal("/api/video/catalog",signal),model=selectedVideoCatalogModel(catalog.models||[],settings),cap=model?.definition;
-    if(!cap?.modes?.includes("reference")||cap.limits?.videos==null||cap.limits.videos<1)throw new Error("当前模型未明确声明视频参考能力，未提交生成");
+    if(!modern)throw new VideoContractError('VIDEO_EXECUTION_NOT_CONFIGURED','此通道尚未配置新版执行映射',['binding']);
+    return true;
   }
   async function generate(callId:string,args:Record<string,any>,signal?:AbortSignal,requiredMode?:"extend"|"video_edit"){
     if(!args.node_id&&!d.canvas){
@@ -53,7 +47,7 @@ export function createCanvasVideoTools(d:Deps):AgentTool[]{
       const key=(args.operation_id||videoAgentOperationId(d.actor,callId,"video-generate")),{comfyWorkflowId,comfyInputs,comfyOverrides,workflowTaskId:_source,...base}=settings;
       try{const known=await d.internal(`/api/video/tasks?idempotencyKey=${encodeURIComponent(key)}`,signal);if(known.task){if(known.task.source!=="workbench")throw new Error("操作编号已用于另一来源任务");return result("工作台原任务已恢复",{task:known.task,taskId:known.task.id,operationId:key,source:"workbench"});}}catch(error){if((error as {status?:number}).status!==404)throw error;}
       const modern=await assertIntentMode(settings,inputs,requiredMode,signal);
-      const body=comfyWorkflowId?{workflowId:comfyWorkflowId,mediaType:"video",source:"workbench",prompt:base.prompt||"",parameters:base.parameters,negativePrompt:base.negativePrompt,resolution:base.resolution,aspectRatio:base.aspectRatio,generateAudio:base.generateAudio,watermark:base.watermark,durationSeconds:base.durationSeconds&&base.durationSeconds>0?base.durationSeconds:undefined,references:modern&&inputs.length?undefined:references,orderedInputs:inputs,inputMappings:comfyInputs,...comfyOverrides,idempotencyKey:key}:{...base,workflowTaskId:settings.workflowTaskId,source:"workbench",orderedInputs:inputs.length?inputs:undefined,references:modern&&inputs.length?undefined:references,idempotencyKey:key};
+      const body=comfyWorkflowId?{...videoByocDraft(settings,inputs),mediaType:"video",source:"workbench",idempotencyKey:key}:{...base,workflowTaskId:settings.workflowTaskId,source:"workbench",orderedInputs:inputs.length?inputs:undefined,references:modern&&inputs.length?undefined:references,idempotencyKey:key};
       let created;try{created=await post(comfyWorkflowId?"/api/comfyui/run":"/api/video/generate",body,signal);}catch(error){throw Object.assign(new Error(`${error instanceof Error?error.message:"提交尚未核实"}；原操作编号 ${key}，先查询此编号，不重复创建`),{status:(error as any).status});}return result("视频任务已提交到工作台",{taskId:created.taskId,cost:created.cost,operationId:key,source:"workbench"});
     }
     const current=await node(args.node_id,signal),key=(args.operation_id||videoAgentOperationId(d.actor,callId,"video-generate"));
@@ -90,16 +84,13 @@ export function createCanvasVideoTools(d:Deps):AgentTool[]{
     tool("set_video_prompt","保存视频描述","保存完整描述/对白到实际视频节点，超过16384字拒绝，不截断，不启动生成。",{node_id:Type.Optional(id),expected_revision:revision,prompt},async(call,args,signal)=>{const a=args as any,current=await node(a.node_id,signal);return save(current,a.expected_revision,{config:{...current.config,prompt:a.prompt}},call,signal);}),
     tool("set_video_references","保存视频有序引用","保存本人真实文字/图片/视频/音频节点与角色顺序。视频节点依赖只在前序真实完成后使用；移除引用不会留下隐式旧媒体。",{node_id:Type.Optional(id),expected_revision:revision,inputs:Type.Array(input,{maxItems:256})},async(call,args,signal)=>{const a=args as any,current=await node(a.node_id,signal);return save(current,a.expected_revision,{inputs:a.inputs.map((value:unknown)=>orderedInputSchema.parse(value)),config:{...current.config,references:[]}},call,signal);}),
     tool("plan_video_shot","保存单镜头方案","完整保存单镜头描述、对白、声音角色和正式引用到可编辑视频节点；不自动生成，已有节点必须提供revision。",{node_id:Type.Optional(id),expected_revision:Type.Optional(revision),project_key:Type.Optional(Type.String({maxLength:166})),title:Type.Optional(Type.String({maxLength:200})),prompt,config:Type.Optional(config),inputs:Type.Optional(Type.Array(input,{maxItems:256}))},async(call,args,signal)=>{const a=args as any,settings=videoNodeConfigSchema.parse({...a.config,prompt:a.prompt}),inputs=a.inputs?.map((value:unknown)=>orderedInputSchema.parse(value));if(a.node_id){if(!Number.isInteger(a.expected_revision))throw new Error("修改镜头前请先读取revision");const current=await node(a.node_id,signal);return save(current,a.expected_revision,{config:{...current.config,...settings},...(inputs?{inputs}:{})},call,signal);}const key=videoAgentOperationId(d.actor,call,"video-shot"),nodeId=`vnode-agent-${key}`,created=await post("/api/canvas/video-nodes",{id:nodeId,projectKey:target(a.project_key)||`tree:${nodeId}`,expectedRevision:0,operationId:key,title:a.title||"镜头",config:settings,inputs:inputs||[]},signal);return result("镜头方案已保存，尚未生成",{node:created.node,nodeId,projectKey:created.node.projectKey,suggestedRunId:videoAgentOperationId(d.actor,call,"video-workflow")});}),
-    tool("plan_video_storyboard","保存分镜方案","完整保存有序片段与对白。multi_shot仅用于已声明结构化分镜能力；independent保存独立可编辑镜头及真实前序节点依赖，不自动收费生成。",{project_key:Type.Optional(Type.String({maxLength:166})),mode:Type.Union([Type.Literal("multi_shot"),Type.Literal("independent")]),script_source:Type.Optional(Type.Object({node_id:id,mapping:Type.Optional(Type.Literal("cinematic")),start:Type.Optional(Type.Integer({minimum:0,maximum:65536})),end:Type.Optional(Type.Integer({minimum:1,maximum:65536}))})),config,inputs:Type.Optional(Type.Array(input,{maxItems:256})),shots:Type.Array(Type.Object({id,prompt,mapping:Type.Optional(cinematicMapping),scene:Type.Optional(Type.String({maxLength:200})),purpose:Type.Optional(Type.String({maxLength:2000})),originalText:Type.Optional(Type.String({minLength:1,maxLength:16384})),scriptStart:Type.Optional(Type.Integer({minimum:0,maximum:65536})),scriptEnd:Type.Optional(Type.Integer({minimum:1,maximum:65536})),inputs:Type.Optional(Type.Array(input,{maxItems:256})),config:Type.Optional(config),durationSeconds:Type.Number({exclusiveMinimum:0,maximum:3600}),title:Type.Optional(Type.String({maxLength:200})),dependsOn:Type.Optional(Type.Array(id,{maxItems:100}))}),{minItems:1,maxItems:100})},async(call,args,signal)=>{
+    tool("plan_video_storyboard","保存分镜方案","完整保存有序片段与对白。multi_shot保存完整镜头草稿，实际执行由统一编译预览诊断；independent保存独立可编辑镜头及真实前序节点依赖，不自动收费生成。",{project_key:Type.Optional(Type.String({maxLength:166})),mode:Type.Union([Type.Literal("multi_shot"),Type.Literal("independent")]),script_source:Type.Optional(Type.Object({node_id:id,mapping:Type.Optional(Type.Literal("cinematic")),start:Type.Optional(Type.Integer({minimum:0,maximum:65536})),end:Type.Optional(Type.Integer({minimum:1,maximum:65536}))})),config,inputs:Type.Optional(Type.Array(input,{maxItems:256})),shots:Type.Array(Type.Object({id,prompt,mapping:Type.Optional(cinematicMapping),scene:Type.Optional(Type.String({maxLength:200})),purpose:Type.Optional(Type.String({maxLength:2000})),originalText:Type.Optional(Type.String({minLength:1,maxLength:16384})),scriptStart:Type.Optional(Type.Integer({minimum:0,maximum:65536})),scriptEnd:Type.Optional(Type.Integer({minimum:1,maximum:65536})),inputs:Type.Optional(Type.Array(input,{maxItems:256})),config:Type.Optional(config),durationSeconds:Type.Number({exclusiveMinimum:0,maximum:3600}),title:Type.Optional(Type.String({maxLength:200})),dependsOn:Type.Optional(Type.Array(id,{maxItems:100}))}),{minItems:1,maxItems:100})},async(call,args,signal)=>{
       const a=args as any,settings=videoNodeConfigSchema.parse(a.config),shots=(a.shots as ScriptShot[]).map(shot=>({...shot})),shared=(a.inputs||[]).map((value:unknown)=>orderedInputSchema.parse(value));
       if(new Set(shots.map(shot=>shot.id)).size!==shots.length)throw new Error("分镜ID不能重复");
       const scriptProject=target(a.project_key);if(a.script_source&&!scriptProject)throw new Error("请指定实际剧本所属画布项目");
       const prepareScript=()=>prepareScriptShotAssets(a.script_source,shots,shared,{projectKey:scriptProject!,promptAssets:a.mode==="multi_shot",mainPrompt:settings.prompt,read:path=>d.internal(path,signal),save:body=>post("/api/video/texts",body,signal),operationId:kind=>videoAgentOperationId(d.actor,call,kind)});
       if(a.mode==="multi_shot"){
-        if(settings.comfyWorkflowId)throw new Error("自备工作流的分镜需使用实际输入节点，不猜测结构化分镜能力");
-        const catalog=await d.internal("/api/video/catalog",signal),model=selectedVideoCatalogModel(catalog.models||[],settings);if(model?.definition?.supportsMultiShot!==true)throw new Error("当前模型没有结构化分镜能力，请选择独立镜头");
         if(shots.some(shot=>shot.dependsOn?.length||shot.config||shot.inputs?.length))throw new Error("结构化分镜不接受外部阶段依赖，请使用独立镜头");
-        if(settings.durationSeconds!==shots.reduce((total,shot)=>total+shot.durationSeconds,0))throw new Error("分镜合计时长与视频时长不一致");
         if(!a.script_source)videoNodeConfigSchema.parse({prompt:settings.prompt?.trim()?settings.prompt:storyboardMainPrompt(shots)});
         const authors=await prepareScript();
         const key=videoAgentOperationId(d.actor,call,"video-storyboard"),nodeId=`vnode-agent-${key}`,config=videoNodeConfigSchema.parse({...settings,prompt:settings.prompt?.trim()?settings.prompt:storyboardMainPrompt(shots),shots:shots.map(({title:_title,dependsOn:_depends,config:_config,inputs:_inputs,originalText:_original,scriptStart:_start,scriptEnd:_end,scriptInput:_author,scriptX:_x,mapping:_mapping,source:_source,scene:_scene,purpose:_purpose,...shot})=>shot)}),created=await post("/api/canvas/video-nodes",{id:nodeId,projectKey:target(a.project_key)||`tree:${nodeId}`,expectedRevision:0,operationId:key,title:"分镜视频",...(authors.length?{x:Math.max(...shots.map(shot=>shot.scriptX||0)),y:0}:{}),config,inputs:[...shared,...authors]},signal);return result("完整多镜头参数已保存，尚未生成",{node:created.node,nodeId,projectKey:created.node.projectKey,suggestedRunId:videoAgentOperationId(d.actor,call,"video-workflow")});

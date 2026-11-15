@@ -31,10 +31,7 @@ export async function withPreparedAgentVideo<T>(actor:string,input:{config:Video
  }
  return withVideoCreationModel(config.modelId,async()=>{
   const execution=currentModelExecution('video');
-  if(!execution?.frozen.video?.execution){
-   if(config.parameters!==undefined||config.intentPreference!==undefined)throw new VideoContractError('VIDEO_EXECUTION_NOT_CONFIGURED','此通道尚未配置新版执行映射',['binding']);
-   return run(undefined);
-  }
+  if(!execution?.frozen.video?.execution)throw new VideoContractError('VIDEO_EXECUTION_NOT_CONFIGURED','此通道尚未配置新版执行映射',['binding']);
   const draft=videoSubmissionDraft({...config,source:'agent',prompt:config.prompt||'',seconds:String(config.durationSeconds??''),size:config.resolution||'',orderedInputs:inputs.length?inputs:undefined,references:inputs.length?undefined:config.references});
   if(input.requiredIntent&&!draft.inputs.some(item=>item.kind==='video'&&item.role==='source_video'))throw new VideoContractError('SOURCE_VIDEO_REQUIRED','编辑或续写需要明确的来源视频',['inputs']);
   const result=await prepareVideoExecution({actor,projectKey:projectKey??null,draft,execution:execution.frozen.video.execution,identity:{publicModelId:execution.frozen.publicModelId,wireModel:execution.connection.wireModel,connectionId:execution.connection.providerId}});

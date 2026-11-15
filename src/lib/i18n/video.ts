@@ -1,5 +1,6 @@
 /** Canvas video UI; user prompts, workflow JSON and model labels are never translated. */
 export const videoEn:Record<string,string>={
+  "按工作流输入槽执行":"Use workflow input slots",
   "已保存":"Saved","分镜制作":"Storyboard production",
   "场景":"Scene","场景或状态素材已不可用":"Scene or state is unavailable","场景参考图片尚未完成或已不可用":"Scene reference image is pending or unavailable",
   "角色或外观素材已不可用":"Character or look is unavailable",

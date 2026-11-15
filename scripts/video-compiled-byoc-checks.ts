@@ -82,6 +82,37 @@ export async function verifyCompiledByoc(input:{actor:string;pool:Pool;f:Awaited
   }});
   const generate=tools.find(t=>t.name==='generate_video')!,args={config:{comfyWorkflowId:workflowId,prompt:'Agent BYOC',parameters:{durationSeconds:1}},inputs:[{id:'agent-byoc-image',nodeId:'input-art',kind:'image',role:'reference',value:'ignored'}],operation_id:randomUUID()};validateToolArguments(generate.parameters,args);
   const agentResult=await scoped(async()=>(await generate.execute(randomUUID(),args)).details as any),agentTask=await task(agentResult.taskId);check('actual-agent-tool-uses-byoc-compiler-and-route',()=>assert.equal(agentTask.parameters.version,3));await ownedDispatch(agentTask);await finish(agentTask.id);
+  // Every BYOC entry must pass the exact saved draft to the compiler. Missing
+  // mappings may reject, but no entry may silently run a stripped request.
+  const {videoByocDraft}=await import('../src/lib/video/byoc-draft');
+  const invalidDrafts=[
+    {name:'intent',change:{intentPreference:'single_image'},code:'WORKFLOW_MODE_CONFLICT'},
+    {name:'shots',change:{shots:[{id:'shot',prompt:'Exact shot',durationSeconds:1}]},code:'WORKFLOW_STRUCTURE_NOT_MAPPED'},
+    {name:'elements',change:{elements:[{id:'character',name:'Character',references:[{id:'nested-image',kind:'image',role:'element',artworkId:'input-art'}]}]},code:'WORKFLOW_STRUCTURE_NOT_MAPPED'},
+    {name:'camera',change:{camera:{movement:'pan left'}},code:'PARAMETER_MAPPING_MISSING'},
+    {name:'dimensions',change:{width:1024,height:768},code:'PARAMETER_MAPPING_MISSING'},
+    {name:'provider-options',change:{providerOptions:{toggle:false}},code:'PARAMETER_MAPPING_MISSING'},
+  ];
+  const effects=async()=>Promise.all(['app_video_tasks','app_gen_reservations','app_creation_records','app_ledger'].map(count));
+  const effectsBefore=await effects(),sendBefore=[byoc.posts,byoc.uploads];
+  for(const variant of invalidDrafts){
+    const config= (await import('../src/lib/canvas/video-node-schema')).videoNodeConfigSchema.parse({comfyWorkflowId:workflowId,prompt:'Exact BYOC draft',references:base.references,...variant.change});
+    const preview=await scoped(()=>previewVideoExecution(actor,{byoc:{...videoByocDraft(config,[]),draftRevision:1}}));assert(!preview.ok);assert.equal(preview.diagnostics[0].code,variant.code,variant.name);
+    await assert.rejects(()=>submit({...videoByocDraft(config,[])}),{code:variant.code});
+    const args={config,inputs:[],operation_id:randomUUID()};validateToolArguments(generate.parameters,args);await assert.rejects(()=>scoped(()=>generate.execute(randomUUID(),args)),{code:variant.code});
+    check('complete-standalone-and-agent-'+variant.name+'-not-silently-dropped',()=>{assert.deepEqual([byoc.posts,byoc.uploads],sendBefore);});
+    const current=await getVideoNode(actor,node.id);assert(current);
+    const edited=await scoped(()=>saveVideoNode(actor,{id:current.id,expectedRevision:current.revision,operationId:randomUUID(),config,inputs:[]}));
+    const nodePreview=await scoped(()=>previewCanvasVideo(actor,edited.id,{expectedRevision:edited.revision,draftRevision:1}));assert(!nodePreview.ok);assert.equal(nodePreview.diagnostics[0].code,variant.code,variant.name);
+    await assert.rejects(()=>scoped(()=>submitCanvasVideo(actor,{nodeId:edited.id,expectedRevision:edited.revision,idempotencyKey:randomUUID()})),{code:variant.code});
+    check('saved-canvas-'+variant.name+'-preview-submit-agree',()=>assert.deepEqual([byoc.posts,byoc.uploads],sendBefore));
+  }
+  assert.deepEqual(await effects(),effectsBefore);
+  check('all-invalid-ingress-has-zero-task-reservation-creation-ledger-and-generation',()=>assert.deepEqual([byoc.posts,byoc.uploads],sendBefore));
+  const staticArgs={config:{comfyWorkflowId:workflowId,prompt:'Agent static reference',references:base.references},inputs:[],operation_id:randomUUID()};validateToolArguments(generate.parameters,staticArgs);
+  const staticResult=await scoped(async()=>(await generate.execute(randomUUID(),staticArgs)).details as any),staticTask=await task(staticResult.taskId),staticPlan=readTaskCompiledVideoPlan(actor,staticTask);
+  check('agent-empty-ordered-list-retains-config-reference',()=>{assert.equal(staticPlan.inputManifest.length,1);assert.equal(staticPlan.inputManifest[0].nodeId,'input-art');assert.equal(staticTask.parameters.version,3);});
+  await ownedDispatch(staticTask);await finish(staticTask.id);
   const videoApi=structuredClone(api);(videoApi.save.inputs as Record<string,unknown>).source_video='old.mp4';await saveComfyWorkflow(actor,{id:workflowId,name:'Owned workflow',apiJson:videoApi,inputs:{},required:[]});
   const linked=validateVideoWorkflow({id:randomUUID(),projectKey:'tree:byoc-compiled',nodes:[{id:'completed-source',existingArtworkId:done.artworkId,dependsOn:[],request:{prompt:''}},{id:'future-byoc',dependsOn:['completed-source'],request:{comfyWorkflowId:workflowId,prompt:'Frozen linked BYOC',references:base.references,comfyInputs:[{name:'image-load',type:'image',path:['load','inputs','image'],required:true},{name:'source-video',type:'video',path:['save','inputs','source_video'],required:true}]},mediaBindings:[{fromNodeId:'completed-source',kind:'video',role:'source_video'}]}]});
   const linkedStages=await scoped(()=>freezeVideoWorkflow(actor,linked));assert.equal(linkedStages['future-byoc'].compiled!.state,'dependency_pending');assert(!linkedStages['future-byoc'].compiled!.staticDraft.inputs.some(i=>i.kind==='video'));

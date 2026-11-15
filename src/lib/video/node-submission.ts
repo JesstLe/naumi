@@ -1,4 +1,5 @@
 import "server-only";
+import {videoByocDraft} from "./byoc-draft";
 import {bindActualCreationProject} from "@/lib/saas/creation-access";
 import {currentCreationContext,frozenCreationScope} from "@/lib/saas/creation-scope";
 import {authorizeNodeInputs} from "../canvas/video-node-service";
@@ -40,8 +41,7 @@ async function submitOwnedVideoNode(actor:string,node:CanvasVideoNode,input:{nod
   }
   if(node.config.comfyWorkflowId){
     const {submitByocComfyVideo}=await import('./byoc');const config=node.config;
-    return submitByocComfyVideo(actor,{workflowId:config.comfyWorkflowId,nodeId:node.id,expectedRevision:input.expectedRevision,projectKey:node.projectKey,idempotencyKey:input.idempotencyKey,prompt:config.prompt??'',references:node.inputs.length?undefined:config.references,orderedInputs:node.inputs.length?node.inputs:undefined,inputMappings:config.comfyInputs,...config.comfyOverrides,
-    parameters:config.parameters,negativePrompt:config.negativePrompt,resolution:config.resolution,aspectRatio:config.aspectRatio,generateAudio:config.generateAudio,watermark:config.watermark,...(config.durationSeconds&&config.durationSeconds>0?{durationSeconds:config.durationSeconds}:{})});
+    return submitByocComfyVideo(actor,{...videoByocDraft(config,node.inputs),nodeId:node.id,expectedRevision:input.expectedRevision,projectKey:node.projectKey,idempotencyKey:input.idempotencyKey});
   }
   const resolved=await resolveCanvasNodeInputs(actor,node.inputs,node.config.prompt||"");
   await authorizeNodeInputs(actor,{id:node.id,expectedRevision:node.revision,operationId:input.idempotencyKey,config:node.config,inputs:resolved.inputs});

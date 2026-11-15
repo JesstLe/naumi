@@ -148,3 +148,7 @@
 ## 执行迁移默认值保真（2026-11-15）
 
 [模块记录](2026-11-15-video-migration-defaults.md)：真实函数复现默认1080p在仅4K→720p映射下被静默替换为4K。自动迁移现只接受明确显示key/唯一反向对应，不匹配或歧义进入审查；调用原compiler参数mapper核对已提供默认值，不复制能力门禁。已有Binding不重解释、不覆盖，原草稿/审查CAS/激活/字段回退保持；新增纯16/实际PG管理冻结13项与既有迁移79/管理19/readiness15/bootstrap56/核心137及tsc以最终VERIFICATION为准。实际目标站只读连接未取得当前配置，已询问入口；不把32候选当在线清单。生产配置/付费/部署0，47 HOLD，总目标ACTIVE。
+
+## BYOC完整草稿与Agent分镜保存（2026-11-15）
+
+[模块记录](2026-11-15-video-byoc-ingress.md)：复现BYOC入口漏传意图/镜头/元素/摄影，以及Agent保存分镜依赖旧supportsMultiShot而误拦。统一完整投影，保持Workbench原操作字节、旧mode和显式意图区分；保存不读目录/不收费，真实执行由原compiler判断。实际隔离PG/Route/Agent/供应商HTTP/媒体Worker150项覆盖各入口一致诊断及零业务副作用、真实分镜保存与显式绑定正控；Workflow30/核心137/纯域/UI调用图/React事件/完整tsc与独立复制回退以四产物VERIFICATION和INTEGRATION为准。夹具多actor陈旧草稿失败保留，未弱化发布CAS。新整包/真实站点配置、授权上游、浏览器/RSC/整站蓝绿仍开放，总目标ACTIVE，47 HOLD，生产写入/付费/部署0。

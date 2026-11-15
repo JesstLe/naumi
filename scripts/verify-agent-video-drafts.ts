@@ -1,0 +1,24 @@
+import assert from 'node:assert/strict';
+import {createCanvasVideoTools} from '../src/lib/agent/canvas-video-tools';
+import {validateToolArguments} from '../src/lib/agent/harness';
+import {readFileSync} from 'node:fs';
+import {createSourceFile,ScriptTarget,forEachChild,isPropertyAccessExpression} from 'typescript';
+async function main(){let cases=0;const writes:any[]=[];const paths:string[]=[];const tools=createCanvasVideoTools({actor:'fixture',internal:async(path,_s,init)=>{paths.push(path);assert.equal(path,'/api/canvas/video-nodes','Draft planning must not call catalog/quote/generate');const body=JSON.parse(String(init!.body));writes.push(body);return {node:{id:body.id,projectKey:body.projectKey,config:body.config,inputs:body.inputs}};}});
+ const tool=tools.find(t=>t.name==='plan_video_storyboard')!;const invoke=async(args:any)=>{validateToolArguments(tool.parameters,args);return tool.execute('fixture-call',args);};const check=(name:string,run:()=>void)=>{run();cases++;console.log('AGENT_DRAFT_CHECK='+name+' PASS');};
+ const base={mode:'multi_shot',config:{modelId:'arbitrary-new-model',prompt:'Full exact script',parameters:{durationSeconds:2,resolution:'4K',generateAudio:false}},shots:[{id:'a',prompt:'A. Exact dialogue.',durationSeconds:1},{id:'b',prompt:'B. Last sentence.',durationSeconds:1}]};
+ await invoke(base);check('modern-parameter-container-is-saved-without-legacy-capability',()=>{assert.equal(writes.length,1);assert.deepEqual(writes[0].config.parameters,base.config.parameters);assert.deepEqual(writes[0].config.shots,base.shots);});
+ await invoke({...base,config:{...base.config,parameters:{...base.config.parameters,durationSeconds:9}}});check('draft-duration-conflict-is-preserved-for-common-compiler',()=>{assert.equal(writes[1].config.parameters.durationSeconds,9);assert.equal(writes[1].config.shots.reduce((n:number,s:any)=>n+s.durationSeconds,0),2);});
+ await invoke({...base,config:{comfyWorkflowId:'owned-workflow',prompt:'Owned workflow draft',parameters:{durationSeconds:2}}});check('byoc-structure-is-saved-not-silently-flattened-or-denied',()=>{assert.equal(writes[2].config.comfyWorkflowId,'owned-workflow');assert.deepEqual(writes[2].config.shots,base.shots);});
+ const before=writes.length;await assert.rejects(()=>invoke({...base,shots:[base.shots[0],base.shots[0]]}),/分镜ID不能重复/);check('duplicate-shot-identities-still-rejected-before-write',()=>assert.equal(writes.length,before));
+ await assert.rejects(()=>invoke({...base,shots:[{...base.shots[0],dependsOn:['b']},base.shots[1]]}),/不接受外部阶段依赖/);check('multishot-stage-dependencies-still-rejected-before-write',()=>assert.equal(writes.length,before));
+ await assert.rejects(()=>invoke({...base,script_source:{node_id:'source'},shots:[{...base.shots[0],originalText:'original'},base.shots[1]]}),/实际剧本所属/);check('formal-script-still-requires-owned-project',()=>assert.equal(writes.length,before));
+ const canvas={anchorId:'',imageUrls:[],ratio:'auto',resolution:'1K',quality:'medium',video:{projectKey:'tree:owned',nodeId:'owned'}};
+ const guarded=createCanvasVideoTools({actor:'fixture',canvas,internal:async()=>{throw Error('No cross-project request allowed');}}).find(t=>t.name==='plan_video_storyboard')!;
+ await assert.rejects(()=>guarded.execute('fixture-call',{...base,project_key:'tree:other'}),/其他画布项目/);check('project-boundary-not-weakened',()=>assert.equal(writes.length,before));
+ const ast=createSourceFile('tools.ts',readFileSync('src/lib/agent/canvas-video-tools.ts','utf8'),ScriptTarget.Latest,true),old:string[]=[];
+ const visit=(node:import('typescript').Node)=>{if(isPropertyAccessExpression(node)&&['supportsMultiShot','modes','limits'].includes(node.name.text))old.push(node.name.text);forEachChild(node,visit);};visit(ast);
+ check('agent-tool-runtime-source-has-no-old-capability-decisions',()=>assert.deepEqual(old,[]));
+ check('planning-makes-only-draft-save-requests',()=>assert(paths.every(path=>path==='/api/canvas/video-nodes')));
+ console.log('AGENT_VIDEO_DRAFTS=PASS CASES='+cases+' DB=0 NETWORK=0 GENERATION_CALLS=0');
+}
+main().catch(error=>{console.error(error);process.exitCode=1;});

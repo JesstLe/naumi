@@ -9,7 +9,7 @@ export type ComfyRunResult={
   taskId?:string;creationId?:string;videoArtworkId?:string;
   message?:string;
 };
-export type ComfyRunInput=Partial<ComfyRunPayload>&{
+export type ComfyRunInput=Partial<ComfyRunPayload>&Pick<import('../video/submission-types').CreateVideoInput,'intentPreference'|'shots'|'elements'|'camera'|'width'|'height'|'providerOptions'>&{
   parameters?:Record<string,import('zod').z.infer<ReturnType<typeof import('zod').z.json>>>;artworkId?:string;imageUrl?:string;prompt?:string;seed?:number;numericDefaults?:Record<string,number>;
   source?:"canvas"|"workbench"|"agent"|"workflow";mediaType?:"video";idempotencyKey?:string;
   nodeId?:string;expectedRevision?:number;projectKey?:string;durationSeconds?:number;references?:unknown[];inputMappings?:unknown[];

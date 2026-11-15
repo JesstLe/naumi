@@ -1,4 +1,5 @@
 import 'server-only';
+import {videoByocDraft} from './byoc-draft';
 import {z} from 'zod';
 import {getVideoNode} from '../canvas/video-node-repository';
 import {ModelConfigError} from '../model-config/types';
@@ -18,7 +19,7 @@ export async function previewCanvasVideo(actor:string,nodeId:string,raw:unknown)
   if(node.revision!==parsed.data.expectedRevision)throw new ModelConfigError('VIDEO_NODE_REVISION_CONFLICT','视频节点已更新，请重新读取后预览',409);
   if(node.config.comfyWorkflowId){
     const {previewByocVideo}=await import('./byoc-preview');const config=node.config;
-    return previewByocVideo(actor,{workflowId:config.comfyWorkflowId,prompt:config.prompt??'',parameters:config.parameters,references:node.inputs.length?undefined:config.references,orderedInputs:node.inputs.length?node.inputs:undefined,inputMappings:config.comfyInputs,...config.comfyOverrides,...parsed.data.byoc,projectKey:node.projectKey,draftRevision:parsed.data.draftRevision});
+    return previewByocVideo(actor,{...videoByocDraft(config,node.inputs),...parsed.data.byoc,projectKey:node.projectKey,draftRevision:parsed.data.draftRevision});
   }
   const {batchCount:_batch,comfyWorkflowId:_comfy,comfyInputs:_inputs,comfyOverrides:_overrides,...config}=node.config;
   const draft=parsed.data.draft??videoSubmissionDraft({...config,source:'canvas',prompt:config.prompt||'',seconds:String(config.durationSeconds??''),size:config.resolution||'',

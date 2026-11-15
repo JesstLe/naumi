@@ -1,5 +1,6 @@
 "use client";
 import {useRef} from "react";
+import {videoByocWorkbenchDraft} from "@/lib/video/byoc-draft";
 import {browserRandomUUID} from "@/lib/browser-crypto";
 import {clientIntentKey} from "@/lib/billing/client-intent";
 import type {PublicQuote} from "@/lib/billing/client";
@@ -18,7 +19,7 @@ export function useVideoGeneration({email,request}:{email?:string;request:VideoP
     const expected=actor.current.revision,current=()=>actor.current.revision===expected&&actor.current.email===email;
     const {comfyWorkflowId:_workflow,comfyInputs:_inputs,batchCount:_batchCount,...settings}=config;
     const references=inputs.length?inputs.flatMap(input=>{const ref=inputReference(input);return ref?[ref]:[];}):config.references;
-    const body=config.comfyWorkflowId?{mediaType:"video",workflowId:config.comfyWorkflowId,source:"workbench",prompt:config.prompt||"",parameters:config.parameters,negativePrompt:config.negativePrompt,resolution:config.resolution,aspectRatio:config.aspectRatio,generateAudio:config.generateAudio,watermark:config.watermark,durationSeconds:config.durationSeconds&&config.durationSeconds>0?config.durationSeconds:undefined,references,orderedInputs:inputs.length?inputs:undefined,inputMappings:config.comfyInputs,...config.comfyOverrides}:{...settings,source:"workbench",orderedInputs:inputs.length?inputs:undefined,references};
+    const body=config.comfyWorkflowId?videoByocWorkbenchDraft(config,inputs):{...settings,source:"workbench",orderedInputs:inputs.length?inputs:undefined,references};
     busy.current=true;
     try{
       const key=(await clientIntentKey(email,"/video/generation-batch",{body:JSON.stringify({body,count})})).replace("naumi:billing-intent:","naumi:video-generation:");if(!current())throw new Error("账号已切换");
