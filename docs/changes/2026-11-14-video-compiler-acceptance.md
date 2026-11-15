@@ -189,3 +189,7 @@
 ## Canvas 缺绑定路径的重复输入编排退出（2026-11-15）
 
 [模块记录](2026-11-15-video-canvas-submit-owner.md)：删除 node-submission 在缺新版 Binding 时的旧展开/文字/引用转换回退，所有新托管 Canvas 请求直接传递原草稿给同一应用用例。原回执、节点/project/revision、BYOC、确认、参数和素材顺序保持；历史 Workflow DB核验兼容入口不变。实际入口 I/O ports 13 项及原 PG/HTTP/媒体Worker组合增加真实 saved-node/V8 正控归零与五表/供应商零增量，源码/副本/回退及最终集中结果以该轮 VERIFICATION/INTEGRATION 为准。当前新任务职责进一步收口，不等于线上 Binding 已迁移或新固定站点包上线；总目标 ACTIVE、47 HOLD、生产配置/付费/部署0。
+
+## 视频域验收契约迁移（2026-11-15）
+
+[模块记录](2026-11-15-video-domain-contract.md)：旧verify-video-domain要求已退役能力执法函数存在，已在6037基线复现。迁移为37个当前所有者的40项源码接线检查，保留租约/重试/鉴权/历史/回执/分块/血缘等有效不变量；内存注入42类退化准确拒绝，含旧门禁别名/star/namespace重导出和预览副作用。源码检查、实际运行验收严格分层；src/配置/业务数据未改。集中回归、副本原字节恢复和主线整合以该轮VERIFICATION/INTEGRATION为准。未据测试绿色关闭P2线上绑定或P4真实上游/目标站蓝绿，总目标ACTIVE、47 HOLD、生产配置/付费/部署0。
