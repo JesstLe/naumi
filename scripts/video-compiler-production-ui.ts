@@ -16,8 +16,8 @@ async function main(){
   const end=Date.now()+180000;
   for(;;){try{const value=JSON.parse(await readFile(out,'utf8'));assert(value.ok,value.error);return value.value;}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}if(Date.now()>end)throw Error('Production UI bridge deadline');await new Promise(resolve=>setTimeout(resolve,150));}
  };
- const run=async(script:string)=>{
-  const child=spawn(process.execPath,[script,file],{cwd:process.cwd(),env:process.env,windowsHide:true,stdio:'inherit'});
+ const run=async(script:string,args:string[]=[])=>{
+  const child=spawn(process.execPath,[script,file,...args],{cwd:process.cwd(),env:process.env,windowsHide:true,stdio:'inherit'});
   const code=await new Promise<number>((resolve,reject)=>{child.once('error',reject);child.once('exit',(code,signal)=>resolve(signal?1:code??1));});assert.equal(code,0,script);
  };
  try{
@@ -28,6 +28,13 @@ async function main(){
   const after=await rpc({action:'snapshot'});assert.equal(after.postsAdded,before.postsAdded);assert.deepEqual(after.ledgerAdded,before.ledgerAdded);assert.deepEqual(after.tasks,before.tasks);
   await run('scripts/video-compiler-canvas-recovery-browser.cjs');
   const afterRecovery=await rpc({action:'snapshot'});assert.equal(afterRecovery.postsAdded,before.postsAdded);assert.deepEqual(afterRecovery.ledgerAdded,before.ledgerAdded);
+  let draftChecks=0;
+  if(process.argv.includes('--production-draft-recovery')){
+   await run('scripts/video-compiler-composer-production-browser.cjs',process.argv.includes('--expect-composer-loss')?['--expect-loss']:[]);
+   const draft=JSON.parse(await readFile(path.join(root,process.argv.includes('--expect-composer-loss')?'COMPOSER_PRODUCTION_BASELINE.json':'COMPOSER_PRODUCTION_BROWSER.json'),'utf8'));
+   assert.equal(draft.version.commit,session.runtime.commit);assert(draft.ok);draftChecks=draft.expectedOldLoss?0:draft.checks.length;if(!draft.expectedOldLoss)assert.equal(draftChecks,6);
+   const unchanged=await rpc({action:'snapshot'});assert.equal(unchanged.postsAdded,afterRecovery.postsAdded);assert.deepEqual(unchanged.ledgerAdded,afterRecovery.ledgerAdded);assert.deepEqual(unchanged.tasks,afterRecovery.tasks);assert.deepEqual(unchanged.nodes,afterRecovery.nodes);
+  }
   // The existing full driver finishes the bridge only after actual split/merge,
   // budget confirmation, review/adoption, clean fork, assembly and remake.
   await run('scripts/video-compiler-storyboard-browser.cjs');
@@ -42,8 +49,8 @@ async function main(){
   }
   const workbench=JSON.parse(await readFile(path.join(root,'BROWSER_RESULT.json'),'utf8')),canvas=JSON.parse(await readFile(path.join(root,'CANVAS_RECOVERY_BROWSER.json'),'utf8')),storyboard=JSON.parse(await readFile(path.join(root,'STORYBOARD_BROWSER_RESULT.json'),'utf8'));
   assert.equal(workbench.checks,4);assert.equal(canvas.results.length,2);assert(canvas.results.every((row:{ok:boolean})=>row.ok));assert.equal(storyboard.checks.length,10);
-  await writeFile(path.join(root,'PRODUCTION_UI_RESULT.json'),JSON.stringify({ok:true,checks:workbench.checks+canvas.results.length+storyboard.checks.length+inputChecks,inputChecks,version,runtime:session.runtime,actualPackage:true,successHttpMocks:0,reactInjection:0,paidCalls:0},null,2));
-  console.log('PRODUCTION_VIDEO_UI=PASS CHECKS='+(16+inputChecks)+' WORKBENCH=4 CANVAS_RECOVERY=2 STORYBOARD=10 INPUT_EQUIVALENCE='+inputChecks+' REAL_PACKAGE=1');
+  await writeFile(path.join(root,'PRODUCTION_UI_RESULT.json'),JSON.stringify({ok:true,checks:workbench.checks+canvas.results.length+storyboard.checks.length+inputChecks+draftChecks,inputChecks,draftChecks,version,runtime:session.runtime,actualPackage:true,successHttpMocks:0,reactInjection:0,paidCalls:0},null,2));
+  console.log('PRODUCTION_VIDEO_UI=PASS CHECKS='+(16+inputChecks+draftChecks)+' DRAFT_RECOVERY='+draftChecks+' WORKBENCH=4 CANVAS_RECOVERY=2 STORYBOARD=10 INPUT_EQUIVALENCE='+inputChecks+' REAL_PACKAGE=1');
  }catch(error){
   await writeFile(path.join(root,'PRODUCTION_UI_FAILURE.json'),JSON.stringify({error:String(error),runtime:session.runtime},null,2));
   try{await rpc({action:'abort'});}catch(abort){console.error('PRODUCTION_UI_ABORT='+String(abort));}

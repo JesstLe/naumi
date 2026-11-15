@@ -77,7 +77,7 @@
 | A05 | 实际 Next 预览前后 tasks/creations/billing operations/reservations/ledger 数量相等、供应商0；现有 React 测试覆盖陈旧响应/账号和修订 | 陈旧响应的受控 React 测试不冒充所有真实 Web 交互 |
 | A06 | 可信输入/顺序/角色核心测试及 Canvas/上传/Agent App 输入路径 | 本轮真实三媒体上传/连线/@提及21项及混合顺序通过；本地行ID不作语义等价依据；字符/场景/多轨等结构化组合仍逐项验收 |
 | A07 | 原 text+image 自动意图、两普通图保留reference、明确偏好报缺素材；实际 Next 的 text+普通图进入 single_image | 真实浏览器端口拖线已通过；全部历史输入形态仍逐项保留，不以单条reference概括首尾帧等组合 |
-| A08 | 原 UI/图谱18项、实际 React/Edge10项、Dock连续性受控检查；本轮真实Next工作台历史参数展示/复用/390px/当前报价4项通过 | 本轮真实Canvas已覆盖切模型/保存/重载/生成前后Dock/锁定解锁/两节点多选与右键/390px；三媒体上传/提及/拖线等价和混合重排本轮通过；更多结构化节点组合继续 |
+| A08 | 原UI/图谱/React、真实Next Canvas及Dock连续性；固定5396a864生产包源/副本各6项草稿恢复，描述/时长刷新、离开返回、tab隔离及零节点写入；原模型/引用/锁定/多选/移动端保持 | 证据限定相应输入和版本；跨BUILD_ID主动导航的严格零刷新仍FAIL，草稿恢复不冒称框架零刷新 |
 | A09 | PG/HTTP 跨用户拒绝、媒体身份/hash/真实解码、结构/角色/数量约束；本轮实际签名输入字节及篡改404；新增5种当前未完成状态不可隐式使用旧结果、显式历史可用；实际HTTP queued反控 | 新增三媒体跨用户实际预览422且零任务/账务/供应商增量、移除提及后生成禁用；完整物理边界仍逐维验收，不能把已授权URL当真实解码 |
 | A10 | Canvas/Workbench/Workflow批次/Agent/Storyboard/BYOC/重试共享编译底座；Agent6项；新增实际分镜编辑/拆合/批注/采用/独立分叉/成片/单镜返工与确认按钮10项 | 高级音频/模型辅助审片、原稿Agent分镜质量及生产浏览器完整入口矩阵继续，不从基本10项泛化所有高级操作；初始account读取问题开放 |
 | A11 | 注册57个 wire Profile 的分族序列化、上传/JSON/multipart/DAG；ComfyUI、RunningHub、AutoDL新增真实Next/独立Worker上传或签名素材、冻结与结果回执 | 注册覆盖≠所有在用配置已迁移；全部生产启用配置和env-only仍需明确审计/迁移，不能从本地显式recipe推断线上已配置 |
@@ -88,7 +88,7 @@
 | A16 | 原媒体token/版本/过期测试；本轮Worker物化真实签名URL，供应商fixture经真实Next媒体路由读取原字节，篡改404 | 时间推进的过期测试与实际公网CDN/存储恢复分别验收，不把本地域名别名当公网可达 |
 | A17 | 本轮真实Next受理→独立Worker落片→结果作为下一Canvas节点source_video→再次落片，父子资产/单账本通过 | 已新增真实浏览器选旧历史→ReactFlow拖线→下一节点提交→独立Worker落片，冻结资产/parent/单账本一致；当前为本地供应商fixture，非真实付费上游 |
 | A18 | 编译、供应商fixture受理、成片真实解码保存、账务分别核对，结果含真实输入字节hash | 真实付费供应商质量/成功率和用户采用仍未验，不能标Production-confirmed |
-| A19 | 已有源码副本回退/扩展字段兼容、发布控制/版本准备门禁；固定Linux生产镜像构建、Worker49/无DB包HTTP7项；新增带隔离DB/独立Worker/原生sandbox/账务62项实际组合通过 | 本轮生产工作台/Canvas恢复/完整Storyboard16项通过；生产三媒体及更多结构化组合、新旧Web/Worker双槽、排空/切回/旧资产、目标站蓝绿和实际发布仍未验 |
+| A19 | 固定5396a864完整生产构建、578tracked Worker输入核对、LinuxWorker49；源/副本各15生产进程＋43真实Edge；既有混合版本、实际Nginx/CAS/旧资源/格式守卫/lifecycle与双向保存审计分开留存 | 跨build导航原生MPA升级仍不满足严格零刷新；实际启用绑定/环境路线、目标站TLS/全业务collector/真实蓝绿及发布尚未完成；不能用本地包替代站点验收 |
 
 ### 真实混合运行与视频新操作准入（2026-11-15）
 
@@ -175,3 +175,9 @@
 [模块记录](2026-11-15-video-composer-recovery.md)：原module Map不能跨文档刷新恢复，现以tab-local有界恢复日志保留完整草稿、原baseline及revision，并补齐workspace scope。显式保存和服务端CAS继续拥有节点写入；readonly、跨owner/workspace/project/node、损坏/不可用存储和远端冲突分别验证。实际React Dialog及原Next/ReactFlow/独立Worker链路数量、基线和独立副本回滚以四产物为准。该改动解决草稿丢失，不改写Next身份、不等于跨build零刷新或站点已上线；A19及总目标ACTIVE，47 HOLD，生产配置/付费/部署0。
 
 最终源真实Next/独立Worker底座14＋Canvas11通过，新增未保存描述/模型/输入在刷新后恢复且服务端无写；原历史下游链、Dock、锁定、多选与移动端保持，fixture5笔账本75积分。独立Dialog最终8、纯规则10、核心137及副本回滚通过；图片草稿旧静态断言在基线亦失败，未改图片业务。上述为development与独立组件证据，非新固定生产包/跨build零刷新/站点上线。
+
+## 视频草稿恢复的固定生产包（2026-11-15）
+
+[模块记录](2026-11-15-video-composer-production.md)：固定5396a864重新构建完整生产程序；host验收增加显式草稿恢复检查，真实Canvas控件编辑未发送描述/时长后重载、离开返回、tab-local隔离与恢复基线，前后节点/任务/账务快照不变。原Workbench/Canvas恢复/Storyboard/三媒体组合保持；准确源/副本/旧包反证、镜像/版本、四产物回滚和最终数量以VERIFICATION为准。固定生产包本地证据不替代跨build零刷新、实际启用绑定、授权上游或目标站蓝绿。总目标ACTIVE，47 HOLD，生产配置/付费/部署0。
+
+最终固定5396a864/1794711127镜像4ecf0de4，578个tracked Worker源哈希核对、LinuxWorker49通过。源/独立副本各15production底座＋43Edge通过，含新增草稿6与原三媒体21/分镜10；每份16笔262 fixture积分，完整清理。旧be535真实确认未发送描述/时长刷新丢失，原37＋15仍通过；工具5路径回退和core137/tsc保持。该证据不是跨build零刷新、实际站点/上游或部署，总目标ACTIVE。
