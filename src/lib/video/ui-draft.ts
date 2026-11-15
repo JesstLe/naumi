@@ -52,13 +52,7 @@ export function videoUiCreationDefaults(model:VideoCatalogModel):VideoNodeConfig
   for(const [key,parameter]of Object.entries(params))if(parameter.default!==undefined)config=setVideoUiValue(config,key,parameter.default);
   return config;
 }
-/** Exactly the same ingress translation as submission; no client compile or
- * capability matrix. Media/text metadata are still re-read by the server. */
-export function videoByocDraft(config:VideoNodeConfig,inputs:readonly OrderedInput[]){
-  return {workflowId:config.comfyWorkflowId!,prompt:config.prompt??'',parameters:config.parameters,
-    durationSeconds:config.durationSeconds,resolution:config.resolution,aspectRatio:config.aspectRatio,negativePrompt:config.negativePrompt,generateAudio:config.generateAudio,watermark:config.watermark,
-    references:inputs.length?undefined:config.references,orderedInputs:inputs.length?[...inputs]:undefined,inputMappings:config.comfyInputs,...config.comfyOverrides};
-}
+export {videoByocDraft} from './byoc-draft';
 export function videoUiDraft(config:VideoNodeConfig,inputs:readonly OrderedInput[]){
   return videoSubmissionDraftValue({...config,source:'workbench',prompt:config.prompt||'',seconds:String(config.durationSeconds??''),size:config.resolution||'',
     references:inputs.length?undefined:config.references,orderedInputs:inputs.length?[...inputs]:undefined});

@@ -19,6 +19,7 @@ export async function verifyCompiledAgent(input:{actor:string;pool:Pool;f:Awaite
  const {GET:tasks}=await import('../src/app/api/video/tasks/route');
  const {GET:oneTask}=await import('../src/app/api/video/tasks/[id]/route');
  const {GET:nodeRoute}=await import('../src/app/api/canvas/video-nodes/[id]/route');
+ const {POST:createNodeRoute}=await import('../src/app/api/canvas/video-nodes/route');
  const {POST:canvasGenerate}=await import('../src/app/api/canvas/video-nodes/[id]/generate/route');
  const {GET:catalog}=await import('../src/app/api/video/catalog/route');
  const calls:string[]=[];
@@ -27,6 +28,7 @@ export async function verifyCompiledAgent(input:{actor:string;pool:Pool;f:Awaite
   const nodeMatch=url.pathname.match(/^\/api\/canvas\/video-nodes\/([^/]+)(\/generate)?$/),taskMatch=url.pathname.match(/^\/api\/video\/tasks\/([^/]+)$/);
   let response:Response;
   if(url.pathname==='/api/video/generate')response=await generate(req);
+  else if(url.pathname==='/api/canvas/video-nodes')response=await createNodeRoute(req);
   else if(url.pathname==='/api/video/catalog')response=await catalog();
   else if(url.pathname==='/api/video/tasks')response=await tasks(req);
   else if(taskMatch)response=await oneTask(req,{params:Promise.resolve({id:decodeURIComponent(taskMatch[1])})});
@@ -42,6 +44,23 @@ export async function verifyCompiledAgent(input:{actor:string;pool:Pool;f:Awaite
  let cases=0;const check=(name:string,run:()=>void)=>{input.check('agent-'+name,run);cases++;};
  const count=async(table:string)=>Number((await pool.query(`SELECT count(*)::int n FROM ${table}`)).rows[0].n);
  const before=await Promise.all(['app_video_tasks','app_gen_reservations','app_creation_records'].map(count));
+ if(!process.argv.includes('--agent-baseline')){
+ const draftEffects=await Promise.all(['app_video_tasks','app_gen_reservations','app_creation_records'].map(count)),draftPostCount=input.posts();
+ const planArgs={mode:'multi_shot',config:{...config,parameters:{...config.parameters,durationSeconds:2}},shots:[{id:'a',prompt:'First full shot',durationSeconds:1},{id:'b',prompt:'Last full shot',durationSeconds:1}]};
+ const planned=await invoke('plan_video_storyboard',planArgs),persisted=await getVideoNode(actor,planned.nodeId);assert(persisted);
+ check('multishot-planning-real-route-keeps-structure-and-modern-parameters',()=>{assert.deepEqual(persisted.config.parameters,planArgs.config.parameters);assert.deepEqual(persisted.config.shots,planArgs.shots);});
+ const {previewCanvasVideo}=await import('../src/lib/video/node-preview');const unsupported=await scoped(()=>previewCanvasVideo(actor,persisted.id,{expectedRevision:persisted.revision,draftRevision:1}));assert(!unsupported.ok);assert.equal(unsupported.diagnostics[0].code,'STRUCTURED_SHOTS_MAPPING_MISSING');
+ check('real-preview-not-plan-tool-owns-missing-structure-mapping',()=>assert.equal(input.posts(),draftPostCount));
+ const ready=structuredClone((await f.repo.current()).config);const executable=ready.upstreamModels[0].parameterMap.videoExecution!;assert(executable.profileId==='json-video');for(const operation of executable.recipe.operations)operation.shots={wireField:'shots',promptField:'prompt',durationField:'duration'};
+ // Reuse the suite publication actor so markApplied advances its draft base;
+ // a second actor would leave downstream fixture drafts stale, correctly rejected.
+ const held=await f.repo.current(),draft=await f.repo.draft('fixture-admin'),saved=await f.repo.saveDraft({id:draft.id,expectedRevision:draft.revision,actor:'fixture-admin',config:ready}),published=await f.repo.stage({id:randomUUID(),draftId:saved.id,expectedRevision:saved.revision,expectedVersion:held.version,actor:'fixture-admin',reason:'explicit fixture structured mapping'});await f.repo.markApplied(published.id,published.digest,saved.id);
+ const supported=await scoped(()=>previewCanvasVideo(actor,persisted.id,{expectedRevision:persisted.revision,draftRevision:2}));assert(supported.ok,JSON.stringify(supported));
+ check('same-saved-agent-draft-compiles-after-explicit-binding-with-no-metadata-change',()=>assert.equal(supported.value.intent,'text'));
+ assert.deepEqual(await Promise.all(['app_video_tasks','app_gen_reservations','app_creation_records'].map(count)),draftEffects);assert.equal(input.posts(),draftPostCount);cases++;
+ const restoreDraft=await f.repo.draft('fixture-admin'),restore=await f.repo.saveDraft({id:restoreDraft.id,expectedRevision:restoreDraft.revision,actor:'fixture-admin',config:held.config}),restoreStage=await f.repo.stage({id:randomUUID(),draftId:restore.id,expectedRevision:restore.revision,expectedVersion:(await f.repo.current()).version,actor:'fixture-admin',reason:'restore fixture mapping'});await f.repo.markApplied(restoreStage.id,restoreStage.digest,restore.id);
+ }
+ const callsBeforeQuote=calls.length;
  const quote=await scoped(()=>agentQuote('edit_video',{config,inputs},actor,{cookie,authorization:''}));
  if(process.argv.includes('--agent-baseline')){
   assert(quote);assert.equal((quote.quote as import('../src/lib/billing/types').BillingQuote).facts.resolution,'1K');
@@ -50,7 +69,7 @@ export async function verifyCompiledAgent(input:{actor:string;pool:Pool;f:Awaite
   assert.deepEqual(await Promise.all(['app_video_tasks','app_gen_reservations','app_creation_records'].map(count)),before);
   console.log('AGENT_BASELINE_REPRO=CONFIRMED QUOTE_RESOLUTION=1K REQUESTED=4K EXPECTED_EFFECTIVE=2K EDIT_EXTEND=OLD_MODE_VETO EXTRA_TASKS=0');return;
  }
- check('quotation-uses-compiler-effective-facts-not-raw-config',()=>{assert(quote);assert.equal((quote.quote as import('../src/lib/billing/types').BillingQuote).facts.resolution,'2K');assert.equal(config.parameters.resolution,'4K');assert(!calls.length);});
+ check('quotation-uses-compiler-effective-facts-not-raw-config',()=>{assert(quote);assert.equal((quote.quote as import('../src/lib/billing/types').BillingQuote).facts.resolution,'2K');assert.equal(config.parameters.resolution,'4K');assert.equal(calls.length,callsBeforeQuote);});
  assert.deepEqual(await Promise.all(['app_video_tasks','app_gen_reservations','app_creation_records'].map(count)),before);
  for(const name of ['edit_video','extend_video']){
   const operation_id=randomUUID(),result=await invoke(name,{config,inputs,operation_id}),saved=await task(result.taskId),plan=readTaskCompiledVideoPlan(actor,saved);
