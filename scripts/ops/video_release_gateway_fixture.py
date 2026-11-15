@@ -34,6 +34,13 @@ class VideoReleaseGateway:
         self.name=prefix+'-nginx';self.origin='http://'+self.name
         old_image=api('GET','/images/'+args.prior_image+'/json')
         self.old_commit=environment(old_image)['SOURCE_COMMIT']
+        self.old_version=environment(old_image)['BUILD_VERSION']
+        self.compat_until=int(time.time())+600
+        self.renderer_builds={}
+        if getattr(args,'renderer_affinity',False):
+            code="const f=require('node:fs');console.log(JSON.stringify({deploymentId:JSON.parse(f.readFileSync('/app/.next/required-server-files.json')).config.deploymentId,buildId:f.readFileSync('/app/.next/BUILD_ID','utf8').trim()}))"
+            # Inspect the actual immutable images, not an inferred source label.
+            for phase,container in [('new',web)]:self.renderer_builds[phase]=json.loads(execute(container,['node','-e',code]))
         old_values=copy.deepcopy(values)
         old_values.update(SOURCE_COMMIT=self.old_commit,BUILD_VERSION=environment(old_image)['BUILD_VERSION'],
             NAUMI_INSTANCE_ID=self.old_web_name,MEDIA_WORKER_ORIGIN='http://'+self.old_worker_name+':3002')
@@ -43,6 +50,11 @@ class VideoReleaseGateway:
             'NetworkingConfig':{'EndpointsConfig':{network:{}}}})['Id'];slots.append(self.old_web)
         api('POST','/containers/'+self.old_web+'/start')
         wait(lambda:self.fetch(self.old_web,'http://127.0.0.1:3000/api/version'),lambda r:r['status']==200)
+        if getattr(args,'renderer_affinity',False):
+            self.renderer_builds['old']=json.loads(execute(self.old_web,['node','-e',code]))
+            assert all(row.get('deploymentId') for row in self.renderer_builds.values())
+            assert self.renderer_builds['old']!=self.renderer_builds['new'],'DISTINCT_RENDERER_IDENTITIES_REQUIRED'
+            self.tx.save('actual-renderer-identities.json',self.renderer_builds)
         self.old_worker=controls.clone_worker(tx,public_identity(tx.inspect(self.old_web)),name=self.old_worker_name,
             memory_mib=1024,cpu=1,state_dir=str(args.root/'old-worker-state'),reviewed_combined_media=True)
         controls.start_worker(tx,self.old_worker,4096,reviewed_combined_media=True)
@@ -58,7 +70,7 @@ class VideoReleaseGateway:
             'NetworkingConfig':{'EndpointsConfig':{network:{}}}})['Id'];slots.append(gateway);self.gateway=gateway
         api('POST','/containers/'+gateway+'/start')
         wait(lambda:self.fetch(web,self.origin+'/api/version'),lambda r:r['status']==200 and json.loads(r['body'])['commit']==self.old_commit)
-        check('actual-nginx-starts-on-distinct-prior-build',self.old_commit!=values['SOURCE_COMMIT'])
+        check('actual-nginx-starts-on-distinct-prior-build',args.prior_image!=args.image and (self.old_commit,self.old_version)!=(values['SOURCE_COMMIT'],values['BUILD_VERSION']))
         self.assets_before=self.read_assets('old')
         self.lifecycle=None
 
@@ -69,7 +81,8 @@ class VideoReleaseGateway:
         assert self.browser_seed is not None and phase in ['old','new','rollback']
         folder=self.args.evidence/'browser';folder.mkdir(exist_ok=True);token=uuid.uuid4().hex;before=self.browser_observe()
         command={'phase':phase,'token':token,**self.browser_seed,'origin':'http://127.0.0.1:'+str(self.args.browser_port),
-                 'oldCommit':self.old_commit,'newCommit':environment(self.tx.inspect(self.web))['SOURCE_COMMIT']}
+                 'oldCommit':self.old_commit,'newCommit':environment(self.tx.inspect(self.web))['SOURCE_COMMIT'],
+                 'oldVersion':self.old_version,'newVersion':environment(self.tx.inspect(self.web))['BUILD_VERSION']}
         temp=folder/('request-'+token+'.tmp');temp.write_text(json.dumps(command));temp.replace(folder/'request.json')
         deadline=time.time()+240;receipt=folder/('reply-'+token+'.json')
         while time.time()<deadline:
@@ -91,13 +104,21 @@ class VideoReleaseGateway:
 
     def render(self, phase):
         target=self.old_web_name if phase=='old' else self.tx.inspect(self.web)['Name'].lstrip('/')
+        protocol_http=''
+        location="location /{proxy_pass http://"+target+":3000;proxy_http_version 1.1;proxy_set_header Host "+("$http_host" if getattr(self.args,"browser_port",None) else "$host")+";proxy_set_header X-Forwarded-Proto $scheme;proxy_set_header Connection '';proxy_buffering off;proxy_read_timeout 90s;add_header X-Release-Slot "+phase+" always;}"
+        if getattr(self.args,'renderer_affinity',False):
+            from client_renderer_routes import renderer_routes
+            other='old' if phase=='new' else 'new'
+            endpoints={'old':self.old_web_name+':3000','new':self.tx.inspect(self.web)['Name'].lstrip('/')+':3000'}
+            retained=[{**self.renderer_builds[other],'endpoint':endpoints[other],'until':self.compat_until}] if phase=='new' or any(p['phase']=='new' for p in self.phases) else []
+            routes=renderer_routes(current={**self.renderer_builds[phase],'endpoint':endpoints[phase]},retained=retained,now=int(time.time()),host='$http_host',response_headers='add_header X-Release-Slot '+phase+' always;')
+            protocol_http='map_hash_bucket_size '+str(routes['mapHashBucketSize'])+';'+routes['http'];location=routes['server']
         # One-file closure: MIME types are inline, so no included mutable file
         # disappears from the original CAS owner's complete-closure inventory.
         return ("worker_processes 1;pid /tmp/nginx.pid;error_log stderr;events{worker_connections 256;}"
             "http{access_log off;types{application/javascript js;text/css css;}default_type application/octet-stream;"
             "client_body_temp_path /tmp/body;proxy_temp_path /tmp/proxy;fastcgi_temp_path /tmp/fcgi;uwsgi_temp_path /tmp/uwsgi;scgi_temp_path /tmp/scgi;"
-            "server{listen 80;client_max_body_size 20m;location ^~ /_next/static/{alias /fixture/union/_next/static/;add_header Cache-Control 'public,max-age=31536000,immutable' always;}"
-            "location /{proxy_pass http://"+target+":3000;proxy_http_version 1.1;proxy_set_header Host "+("$http_host" if getattr(self.args,"browser_port",None) else "$host")+";proxy_set_header X-Forwarded-Proto $scheme;proxy_set_header Connection '';proxy_buffering off;proxy_read_timeout 90s;add_header X-Release-Slot "+phase+" always;}}}").encode()
+            +protocol_http+"server{listen 80;client_max_body_size 20m;location ^~ /_next/static/{alias /fixture/union/_next/static/;add_header Cache-Control 'public,max-age=31536000,immutable' always;}"+location+"}}").encode()
 
     def prepare_assets(self):
         sources=[]
@@ -159,7 +180,7 @@ class VideoReleaseGateway:
             return out
         finally:self.api('DELETE','/containers/'+validation)
 
-    def switch(self, phase):
+    def switch(self, phase, notify_browser=True):
         if self.lifecycle and phase=='new':self.lifecycle.ready()
         current=self.execute(self.gateway,['sh','-c',"nginx -T -c /fixture/nginx.conf 2>/tmp/check-error || { cat /tmp/check-error >&2; exit 1; }"])
         parsed=static.Dump(current.decode());assert set(parsed.files)=={'/fixture/nginx.conf'}
@@ -211,13 +232,13 @@ class VideoReleaseGateway:
         self.tx.save('concurrent-http-'+phase+'.json',observations)
         commits={self.old_commit,environment(self.tx.inspect(self.web))['SOURCE_COMMIT']}
         self.check('concurrent-HTTP-no-errors-'+phase,len(observations)==60 and all(r['status']==200 and r['commit'] in commits for r in observations))
-        want=self.old_commit if phase=='old' else environment(self.tx.inspect(self.web))['SOURCE_COMMIT']
-        observed=self.wait(lambda:self.fetch(self.web,self.origin+'/api/version'),lambda r:r['status']==200 and json.loads(r['body'])['commit']==want)
+        want=(self.old_commit,self.old_version) if phase=='old' else (environment(self.tx.inspect(self.web))['SOURCE_COMMIT'],environment(self.tx.inspect(self.web))['BUILD_VERSION'])
+        observed=self.wait(lambda:self.fetch(self.web,self.origin+'/api/version'),lambda r:r['status']==200 and (json.loads(r['body'])['commit'],str(json.loads(r['body'])['version']))==want)
         self.phases.append({'phase':phase,'version':json.loads(observed['body']),'beforeDump':sha(current),'afterDump':sha(expected),'reload':'smooth'})
         self.check('actual-nginx-CAS-reload-'+phase,observed['slot']==phase)
         assert self.read_assets(phase)==self.assets_before
         if self.lifecycle and phase=='new':self.lifecycle.switched()
-        if self.browser_seed is not None:self.browser_phase('new' if phase=='new' else 'rollback')
+        if self.browser_seed is not None and notify_browser:self.browser_phase('new' if phase=='new' else 'rollback')
 
     def rollback(self, query):
         # Stop the drained prior slots, then run the actual pinned-image format
@@ -238,3 +259,23 @@ class VideoReleaseGateway:
         self.wait(self.state,lambda s:(s.get('lastTick') or {}).get('phase')=='complete' and s.get('activeTicks')==0)
         self.control_old('drain');self.wait(self.state,lambda s:s.get('phase')=='QUIESCENT')
         self.tx.save('NGINX_PHASES.json',self.phases)
+
+
+    def verify_renderer_expiry(self, observe):
+        if not getattr(self.args,'renderer_affinity',False):return
+        before=observe();self.compat_until=int(time.time())+5
+        self.switch('old',notify_browser=False)
+        def read(identity):
+            request={'url':self.origin+'/dashboard?_rsc=expiry-'+uuid.uuid4().hex,
+                'headers':{'RSC':'1','x-deployment-id':identity,'Cookie':self.browser_seed['cookie']}}
+            code="const x=JSON.parse(process.argv[1]);fetch(x.url,{headers:x.headers}).then(async r=>console.log(JSON.stringify({status:r.status,renderer:r.headers.get('x-naumi-renderer-id'),contentType:r.headers.get('content-type'),body:await r.text()})))"
+            return json.loads(self.execute(self.web,['node','-e',code,json.dumps(request)]))
+        new=self.renderer_builds['new'];old=self.renderer_builds['old']
+        live=read(new['deploymentId']);self.check('retained-native-RSC-before-deadline',live['status']==200 and live['renderer']==new['deploymentId'] and new['buildId'] in live['body'])
+        time.sleep(max(0,self.compat_until-time.time())+.25)
+        expired=read(new['deploymentId']);self.check('expired-RSC-GET-converges-current-without-client-5xx',expired['status']==200 and expired['renderer']==old['deploymentId'] and old['buildId'] in expired['body'])
+        unknown=read('unknown-deployment');self.check('unknown-renderer-is-current-not-guessed',unknown['status']==200 and unknown['renderer']==old['deploymentId'])
+        self.switch('old',notify_browser=False)
+        self.check('expired-renderer-route-pruned-before-retirement',self.renderer_builds['new']['deploymentId'].encode() not in self.config.read_bytes())
+        self.check('renderer-expiry-no-generation-or-billing',observe()==before)
+        self.tx.save('actual-renderer-expiry.json',{'before':live,'after':expired,'unknown':unknown,'until':self.compat_until,'businessStateUnchanged':True})

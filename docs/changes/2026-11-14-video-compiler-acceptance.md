@@ -181,3 +181,7 @@
 [模块记录](2026-11-15-video-composer-production.md)：固定5396a864重新构建完整生产程序；host验收增加显式草稿恢复检查，真实Canvas控件编辑未发送描述/时长后重载、离开返回、tab-local隔离与恢复基线，前后节点/任务/账务快照不变。原Workbench/Canvas恢复/Storyboard/三媒体组合保持；准确源/副本/旧包反证、镜像/版本、四产物回滚和最终数量以VERIFICATION为准。固定生产包本地证据不替代跨build零刷新、实际启用绑定、授权上游或目标站蓝绿。总目标ACTIVE，47 HOLD，生产配置/付费/部署0。
 
 最终固定5396a864/1794711127镜像4ecf0de4，578个tracked Worker源哈希核对、LinuxWorker49通过。源/独立副本各15production底座＋43Edge通过，含新增草稿6与原三媒体21/分镜10；每份16笔262 fixture积分，完整清理。旧be535真实确认未发送描述/时长刷新丢失，原37＋15仍通过；工具5路径回退和core137/tsc保持。该证据不是跨build零刷新、实际站点/上游或部署，总目标ACTIVE。
+
+## 有界客户端渲染器协议所有权（2026-11-15）
+
+[模块记录](2026-11-15-client-renderer-ownership.md)：以Next原生deploymentId/x-deployment-id标识客户端，只对四个已审查页面的RSC GET提供有界渲染器路由；普通HTML/API/生成POST/ServerAction保持当前、不重放。期限到达回到当前，保留原Next身份保护；最长窗口、notBeforeRetire及全站controller接入分开验收。真实双固定包、严格旧新回滚浏览器/到期、原任务与五表、副本回退结果以VERIFICATION为准。103本轮仍SSH255/HTTP52未取得配置；目标站/真实上游/旧无身份版本与全页面兼容不能由本片推断，总目标ACTIVE。

@@ -10,6 +10,7 @@ import { releaseControlAuthorized } from "@/lib/release-runtime/identity";
 import { CONTINUATION_HEADER, verifyAgentContinuation } from "@/lib/release-runtime/accepted-context";
 import { resolveUserEmail } from "@/lib/admin-auth";
 import { releaseError } from "@/lib/release-runtime/identity";
+import {rendererReadExpired} from '@/lib/release-runtime/client-renderer';
 
 // Node middleware enforces live database grants before page/API dispatch.
 // Overwrite the path header so a client cannot forge layout routing metadata.
@@ -71,6 +72,10 @@ export async function middleware(req: NextRequest) {
     try { await verifyAgentContinuation(req,await resolveUserEmail(req),false); }
     catch(error){return releaseError(error);}
   }
+  // A retained renderer stops answering protocol reads after its reviewed
+  // window. The gateway falls back to CURRENT for this GET only; Next retains
+  // its native cross-build upgrade. No generation/API/Server Action is replayed.
+  if(rendererReadExpired(req.method,path,req.headers))return accessJson({code:'CLIENT_RENDERER_EXPIRED'},409);
   if(dedicated&&path==='/enterprise') {
     // Keep the render destination separate from the legacy URL, which redirects
     // to /enterprise. Next may run middleware again after an internal rewrite.

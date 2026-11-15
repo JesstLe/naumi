@@ -1,5 +1,7 @@
+import {buildDeploymentId} from './src/lib/release-runtime/build-deployment-id.mjs';
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  deploymentId: buildDeploymentId(process.env),
   reactStrictMode: true,
   // Preserve Next 15's HTML-limited bots, adding AI retrieval clients that may
   // only read <head>. Ordinary browsers retain streamed metadata and UI.
