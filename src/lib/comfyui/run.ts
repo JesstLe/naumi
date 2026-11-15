@@ -13,6 +13,7 @@ import { uploadImage } from "@/lib/media-upload";
 import { safeError } from "@/lib/api-error";
 import {submitByocComfyVideo,knownComfyVideoOutput} from "@/lib/video/byoc";
 import {ModelConfigError} from "@/lib/model-config/types";
+import {VideoContractError} from "@/lib/video/contract";
 import {
   applyWorkflowOverrides,
   extractWorkflowInputs,
@@ -219,7 +220,7 @@ export async function executeComfyRun(email:string,body:ComfyRunInput|null,reque
     return reply({ ok: true, images, videos, videoArtworkId, promptId,creationId:creationRecord });
   } catch (error) {
     await finishCreation(creationRecord,email!,'needs_review',{summary:'工作流执行中断，按原任务核查，不重复提交'});
-    if(error instanceof ModelConfigError)return reply({error:error.message,code:error.code,...(!creationRecord?{accepted:false}:{})},{status:error.status});
+    if(error instanceof ModelConfigError||error instanceof VideoContractError)return reply({error:error.message,code:error.code,...(error instanceof VideoContractError?{fields:error.fields}:{}),...(!creationRecord?{accepted:false}:{})},{status:error.status});
     return reply(
       { error: safeError(error, "工作流执行失败") },
       { status: 502 }
