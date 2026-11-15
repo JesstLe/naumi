@@ -57,6 +57,7 @@ def main():
     p.add_argument('--prior-image');p.add_argument('--nginx-image')
     p.add_argument('--lifecycle',choices=['complete','rollback']);p.add_argument('--retained-image')
     p.add_argument('--browser-port',type=int);p.add_argument('--browser-observe-upgrades',action='store_true')
+    p.add_argument('--renderer-affinity',action='store_true')
     args=p.parse_args()
     assert os.name=='posix' and args.root.is_relative_to('/opt/naumi-staging/releases')
     assert args.image.startswith('sha256:') and len(args.image)==71
@@ -65,6 +66,7 @@ def main():
     if args.lifecycle:
         assert args.prior_image and args.retained_image and args.retained_image.startswith('sha256:') and len(args.retained_image)==71
     if args.browser_observe_upgrades:assert args.browser_port is not None,'BROWSER_AUDIT_REQUIRES_EXPLICIT_PORT'
+    if args.renderer_affinity:assert args.browser_port is not None and not args.browser_observe_upgrades,'RENDERER_AFFINITY_REQUIRES_STRICT_BROWSER'
     if args.browser_port is not None:
         assert args.prior_image and args.lifecycle!='complete' and 1024<=args.browser_port<=65535,'BROWSER_REQUIRES_COMPATIBLE_GATEWAY_ROLLBACK_AND_LOOPBACK_PORT'
     args.evidence.mkdir(parents=True,exist_ok=True);args.root.mkdir(parents=True,exist_ok=True)
@@ -366,6 +368,7 @@ def main():
                     else:
                         controls.control_app(tx,public_identity(tx.inspect(web)),'drain',str(uuid.uuid4()))
                         gateway.rollback(lambda query:sql('SET search_path TO '+schema+';'+query))
+                        gateway.verify_renderer_expiry(lambda:fixture('browser-counts'))
                         peer_state['web']=gateway.old_web_name
                         check('gateway-rollback-preserves-history-and-UNKNOWN',http('/api/video/tasks/'+task_id)['body']['task']['status']=='completed'
                             and fixture('task',id=unknown_id)==original_unknown)

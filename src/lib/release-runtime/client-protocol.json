@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "readPaths": ["/canvas", "/dashboard", "/works", "/video"],
+  "deadlineHeader": "x-naumi-rsc-until",
+  "readContextHeader": "x-naumi-renderer-read",
+  "maxWindowSeconds": 900,
+  "mapHashBucketSize": 128
+}

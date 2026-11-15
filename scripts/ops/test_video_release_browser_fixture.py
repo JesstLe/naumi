@@ -6,7 +6,7 @@ from video_release_gateway_fixture import VideoReleaseGateway
 class BrowserFixture(unittest.TestCase):
  def owner(self):
   self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
-  owner=object.__new__(VideoReleaseGateway);owner.args=SimpleNamespace(browser_port=15693,evidence=pathlib.Path(self.temp.name));owner.browser_seed=None;owner.browser_observations=[];owner.old_commit='a'*40;owner.web='new';owner.tx=Mock();owner.tx.inspect.return_value={'Config':{'Env':['SOURCE_COMMIT='+'b'*40]}};owner.check=Mock();owner.old_web_name='fixture-old';return owner
+  owner=object.__new__(VideoReleaseGateway);owner.args=SimpleNamespace(browser_port=15693,evidence=pathlib.Path(self.temp.name));owner.browser_seed=None;owner.browser_observations=[];owner.old_commit='a'*40;owner.old_version='1';owner.web='new';owner.tx=Mock();owner.tx.inspect.return_value={'Config':{'Env':['SOURCE_COMMIT='+'b'*40,'BUILD_VERSION=2']}};owner.check=Mock();owner.old_web_name='fixture-old';return owner
  def ack(self,owner,mutate=lambda value:value):
   folder=owner.args.evidence/'browser';value=json.loads((folder/'request.json').read_text());reply=mutate({'ok':True,'phase':value['phase'],'token':value['token']});(folder/('reply-'+value['token']+'.json')).write_text(json.dumps(reply))
  def test_disabled_path_is_noop(self):
