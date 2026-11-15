@@ -152,3 +152,7 @@
 ## BYOC完整草稿与Agent分镜保存（2026-11-15）
 
 [模块记录](2026-11-15-video-byoc-ingress.md)：复现BYOC入口漏传意图/镜头/元素/摄影，以及Agent保存分镜依赖旧supportsMultiShot而误拦。统一完整投影，保持Workbench原操作字节、旧mode和显式意图区分；保存不读目录/不收费，真实执行由原compiler判断。实际隔离PG/Route/Agent/供应商HTTP/媒体Worker150项覆盖各入口一致诊断及零业务副作用、真实分镜保存与显式绑定正控；Workflow30/核心137/纯域/UI调用图/React事件/完整tsc与独立复制回退以四产物VERIFICATION和INTEGRATION为准。夹具多actor陈旧草稿失败保留，未弱化发布CAS。新整包/真实站点配置、授权上游、浏览器/RSC/整站蓝绿仍开放，总目标ACTIVE，47 HOLD，生产写入/付费/部署0。
+
+## 完整BYOC输入的真实生产入口与诊断（2026-11-15）
+
+[模块记录](2026-11-15-video-full-ingress-process.md)：新增真实HTTP/Agent harness的六类完整草稿跨入口检查，独立生产包实际复现Comfy应用catch遗漏VideoContractError，将422误转成502；仅修正原错误映射，已受理语义/未知错误净化保持。预览零I/O与执行可能进行object_info/加密凭据准备分别计数，不把零任务等同零网络。实际原生Web/独立应用Worker/媒体sandbox/PG组合、修复包版本/源哈希、集中回归与独立副本回退以本轮VERIFICATION及INTEGRATION为准，原失败/完整清理保留。真实启用绑定/授权上游、浏览器RSC/TLS和目标站蓝绿仍开放，总目标ACTIVE，47 HOLD，生产配置/付费/部署0。
