@@ -160,3 +160,12 @@
 ## 固定生产包三媒体真实交互（2026-11-15）
 
 [模块记录](2026-11-15-video-production-input-ui.md)：把既有上传/连线/@提及三媒体21项实际交互接到固定Linux Web/独立Worker/native媒体与Windows Edge的owned session；原Workbench4/Canvas恢复2/Storyboard10保持，合计37项浏览器＋15底座分别验收。host不直调Route/submit/compiler，不替换成功HTTP或React状态；阶段/节点前缀/未知操作反控与实际ledger/POST增量分别核对。最终源/副本/回退、精确数量和exit以本轮VERIFICATION及INTEGRATION为准，不泛化所有结构节点或公网。103实际配置仍因连接未取得，已询问入口；真实启用绑定/授权上游/站点RSC-TLS蓝绿仍开放，目标ACTIVE，47 HOLD，生产配置/付费/部署0。
+
+## 真实浏览器跨固定包切流与回滚（2026-11-15）
+
+[模块记录](2026-11-15-video-browser-cutover.md)：在原Nginx/CAS/静态并集/格式守卫/lifecycle验证器上增加可选loopback浏览器阶段；旧/新两个实际Edge上下文保留未保存Canvas描述和原文档，再观察另一槽的真实NextLink/RSC，阶段前后五类生成/账务表必须不变。当前版本对为a554b6a0→be535f6e→a554b6a0；原失败、首启夹具配置、实际可见导航选择和最终源/副本/回退数量以VERIFICATION/INTEGRATION为准，不将静态200写成水合或公网验收。真实站点/全业务collector/启用绑定/授权上游仍开放，目标ACTIVE，47 HOLD，生产配置/收费/站点操作/部署0。
+
+严格浏览器反证补充：a554→be535的切流本身不刷新旧画布/不丢未保存描述，但后续真实Next Link收到新槽RSC后触发文档升级，timeOrigin改变、documentRequests1→2，零刷新严格检查失败。新增显式audit仅继续观察回滚方向/账务，不能当零刷新PASS；原严格模式保持。A19该项仍未完成，详见上述模块及STRICT_RSC_DOCUMENT_UPGRADE。
+
+
+最终源/独立副本各10项浏览器观察及64项原事务检查；两个方向原画布留存和跨版本保存描述/4K/1秒通过，但每个上下文documentRequests=2、共2次文档升级，strictNoReload=false，严格零刷新仍FAIL。两镜像Next15.5.28实际源码和真实RSC body确认build身份不符触发原生MPA导航；没有伪造build身份。核心137、两份tsc及副本8文件原哈希/不存在状态回退通过。完整记录/框架依据/精确exit在上述模块四产物；AUDIT exit0不是A19通过，总目标保持ACTIVE。

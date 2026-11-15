@@ -56,6 +56,7 @@ def main():
     p.add_argument('--tasks',action='store_true');p.add_argument('--driver-container')
     p.add_argument('--prior-image');p.add_argument('--nginx-image')
     p.add_argument('--lifecycle',choices=['complete','rollback']);p.add_argument('--retained-image')
+    p.add_argument('--browser-port',type=int);p.add_argument('--browser-observe-upgrades',action='store_true')
     args=p.parse_args()
     assert os.name=='posix' and args.root.is_relative_to('/opt/naumi-staging/releases')
     assert args.image.startswith('sha256:') and len(args.image)==71
@@ -63,6 +64,9 @@ def main():
         assert args.tasks and args.nginx_image and args.prior_image.startswith('sha256:') and len(args.prior_image)==71
     if args.lifecycle:
         assert args.prior_image and args.retained_image and args.retained_image.startswith('sha256:') and len(args.retained_image)==71
+    if args.browser_observe_upgrades:assert args.browser_port is not None,'BROWSER_AUDIT_REQUIRES_EXPLICIT_PORT'
+    if args.browser_port is not None:
+        assert args.prior_image and args.lifecycle!='complete' and 1024<=args.browser_port<=65535,'BROWSER_REQUIRES_COMPATIBLE_GATEWAY_ROLLBACK_AND_LOOPBACK_PORT'
     args.evidence.mkdir(parents=True,exist_ok=True);args.root.mkdir(parents=True,exist_ok=True)
     suffix=uuid.uuid4().hex[:12];prefix='naumi-release-direct-fixture-'+suffix;schema='release_direct_'+suffix
     network=api('POST','/networks/create',{'Name':prefix,'Driver':'bridge'})['Id']
@@ -278,6 +282,12 @@ def main():
                 base={'source':'workbench','modelId':seed['modelId'],'prompt':'RELEASE_ACCEPTED','mode':'text',
                     'parameters':{'durationSeconds':1,'resolution':'4K'},'references':[{'id':'ref','artworkId':seed['artworkId'],'kind':'image','role':'reference'}],
                     'idempotencyKey':str(uuid.uuid4())}
+                if args.browser_port is not None:
+                    assert fixture('browser-configure')['configured'] is True
+                    draft=http('/api/canvas/video-nodes',{'id':'release-browser-node','title':'Release browser continuity','expectedRevision':0,'operationId':str(uuid.uuid4()),
+                        'config':{'modelId':seed['modelId'],'prompt':'Old browser draft','parameters':{'durationSeconds':1,'resolution':'4K'}},'inputs':[]})
+                    assert draft['status']==201,draft
+                    gateway.browser_phase('old',{'cookie':seed['cookie'],'nodeId':draft['body']['node']['id'],'projectKey':draft['body']['node']['projectKey']},lambda:fixture('browser-counts'))
                 preview=http('/api/video/compile-preview',{'modelId':seed['modelId'],'draftRevision':1,'draft':{'prompt':base['prompt'],'parameters':base['parameters'],
                     'inputs':[{'id':'ref','nodeId':seed['artworkId'],'kind':'image','role':'reference'}]}})
                 check(name+'-task-preview-not-old-capability-gated',preview['status']==200 and preview['body']['value']['intent']=='single_image')
@@ -369,7 +379,8 @@ def main():
                         check('gateway-old-build-accepts-new-operation-after-rollback',rollback_done['quotedCredits']==17 and len(rollback_ledger['rows'])==3
                             and sum(-int(x['delta']) for x in rollback_ledger['rows'])==41 and len(peer_state['calls'])==4)
                     task_proof['gateway']={'phases':gateway.phases,'oldImage':args.prior_image,'newImage':args.image,
-                        'oldStaticAssets':len(gateway.assets_before),'rollbackTask':rollback_done,'ledger':rollback_ledger}
+                        'oldStaticAssets':len(gateway.assets_before),'rollbackTask':rollback_done,'ledger':rollback_ledger,
+                        'browserContinuity':{'mode':'audit' if args.browser_observe_upgrades else 'strict','strictNoReload':all(row.get('noReload',True) for row in gateway.browser_observations),'observations':gateway.browser_observations} if args.browser_port is not None else None}
                     if gateway.lifecycle and args.lifecycle=='rollback':gateway.lifecycle.rolled_back()
             for target in [worker,web]:
                 api('POST','/containers/'+target+'/stop?t=60')
