@@ -1,0 +1,46 @@
+import assert from 'node:assert/strict';
+import {randomUUID} from 'node:crypto';
+import presets from '../src/lib/model-config/video-family-presets.json';
+import {createModelFixture} from './model-config-fixture';
+import {fixtureConfig} from './billing-unit-fixture';
+import {createModelManagementHandler} from '../src/lib/model-config/management-access';
+import {createModelRuntime} from '../src/lib/model-config/runtime';
+import {createRouterControl,type RouterStatus} from '../src/lib/model-config/router-client';
+import {rollbackVideoExecutionMigration,planVideoExecutionMigration} from '../src/lib/model-config/video-execution-migration';
+import {freezeManagedVideoCapability} from '../src/lib/video/frozen-capability';
+import {videoProfileProtocol,videoWireProfileSchema,type VideoModelDefinition} from '../src/lib/video/capability-schema';
+import {canonicalConfig} from '../src/lib/model-config/snapshot-value';
+
+async function main(){const f=await createModelFixture();let digest='',activations=0,cases=0;
+const check=(name:string,fn:()=>void)=>{fn();cases++;console.log('MIGRATION_DEFAULT_ROUTE_CHECK='+name+' PASS');};
+try{
+ const entry=presets.items[0],profile=videoWireProfileSchema.parse(entry.profile),providerId=entry.providerId,key=await f.credentials.importPlain({providerId,plain:'fixture-video-'+randomUUID(),actor:'fixture'});
+ f.config.providers.push({id:providerId,name:providerId,protocol:videoProfileProtocol(profile),baseUrl:f.origin,credentialRef:key.id,enabled:true,timeoutMs:120000,maxConcurrent:2});
+ f.config.upstreamModels.push({...structuredClone(f.config.upstreamModels[0]),id:'video-source',providerId,model:entry.model,modality:'video',costRef:'fixture-preserved-video-price',parameterMap:{videoProfile:profile,resolution:{'4K':'720p'}},capabilities:{...structuredClone(f.config.upstreamModels[0].capabilities),maxReferenceImages:entry.definition.limits.images,video:{...structuredClone(entry.definition),defaultResolution:'1080p'} as VideoModelDefinition}});
+ f.config.publicModels.push({id:'video-a',label:'Video',modality:'video',enabled:true,visible:true,target:{type:'upstream',id:'video-source'}});f.config.bindings['video.generate']='video-a';
+ const old=await f.repo.current(),billing={version:1,config:fixtureConfig()},router=createRouterControl({baseUrl:f.origin,token:'fixture-router-'+'r'.repeat(40),envelopeSecret:'fixture-envelope-'+'e'.repeat(40),trustedOrigins:[f.origin]});
+ router.prepare=async()=>{};router.state=async()=>digest;const applied=new Map<string,RouterStatus>();router.status=async id=>applied.get(id)||null;router.activate=async(id,expected,next)=>{assert.equal(expected,digest);activations++;digest=next;const value:RouterStatus={id,digest,phase:'applied'};applied.set(id,value);return value;};
+ const runtime=createModelRuntime({pool:f.sql,repo:f.repo,credentials:f.credentials,router,trustedOrigins:[f.origin],billing:async()=>billing,billingByVersion:async()=>billing});
+ const handler=createModelManagementHandler({authorize:async()=>({actor:'fixture-admin'}),administration:async()=>({pool:f.sql,repo:f.repo,credentials:f.credentials,router,runtime,billing:{current:async()=>billing},trustedOrigins:[f.origin]}) as never,managed:async()=>true});
+ const request=(body?:unknown)=>new Request('http://fixture/api/admin/model-management'+(body?'':'?view=video-execution-migration'),{method:body?'POST':'GET',headers:body?{'content-type':'application/json'}:{},...(body?{body:JSON.stringify(body)}:{})});
+ const counts=async()=> (await f.sql.query("SELECT jsonb_build_object('versions',(SELECT count(*) FROM app_model_config_versions),'drafts',(SELECT count(*) FROM app_model_drafts)) value")).rows[0].value;
+ const start=await counts(),beforeBilling=canonicalConfig(billing),beforeKeys=(await f.sql.query('SELECT * FROM app_model_credentials ORDER BY id')).rows;
+ const response=await handler(request());assert.equal(response.status,200);const review=await response.json();
+ check('review-reports-conflict-not-ready',()=>{assert.equal(review.rows.find((r:any)=>r.publicId==='video-a').status,'mapping_required');assert.deepEqual(review.publicIds,[]);assert(review.rows[0].reason.includes('默认'));});
+ check('review-has-no-credential-or-config-payload',()=>{assert(!JSON.stringify(review).includes(key.id));assert(!JSON.stringify(review).includes('fixture-video-'));assert(!Object.hasOwn(review,'config'));});
+ assert.deepEqual(await counts(),start);assert.equal((await f.repo.current()).digest,old.digest);cases++;
+ const attempted=await handler(request({action:'video-execution-migration',id:randomUUID(),expectedVersion:old.version,reviewDigest:review.reviewDigest,publicIds:['video-a']}));
+ check('conflicting-forced-publish-is-rejected-before-activation',()=>{assert.equal(attempted.status,409);assert.equal(activations,0);});assert.equal((await counts()).versions,start.versions);assert.equal((await f.repo.current()).digest,old.digest);cases++;
+ const draft=await f.repo.draft('fixture-editor'),corrected=structuredClone(draft.config);corrected.upstreamModels.find(u=>u.id==='video-source')!.capabilities.video!.defaultResolution='4K';const saved=await f.repo.saveDraft({id:draft.id,expectedRevision:draft.revision,actor:'fixture-editor',config:corrected});
+ const correctedReceipt=await runtime.publish({id:randomUUID(),draftId:saved.id,expectedRevision:saved.revision,expectedVersion:old.version,actor:'fixture-editor',reason:'explicit fixture display default correction'});assert.equal(correctedReceipt.phase,'applied');const fixed=await f.repo.current();
+ const second=await handler(request());assert.equal(second.status,200);const nextReview=await second.json();check('explicit-correction-now-produces-ready-review',()=>{assert.deepEqual(nextReview.publicIds,['video-a']);assert.equal(nextReview.rows[0].status,'ready');});
+ const body={action:'video-execution-migration',id:randomUUID(),expectedVersion:fixed.version,reviewDigest:nextReview.reviewDigest,publicIds:nextReview.publicIds};const published=await handler(request(body));assert.equal(published.status,200,await published.clone().text());const current=await f.repo.current();
+ check('published-recipe-keeps-requested-default-and-exact-mapping',()=>{const up=current.config.upstreamModels.find(u=>u.id==='video-source')!;assert.equal(up.parameterMap.videoExecution!.recipe.parameters.resolution.default,'4K');assert.deepEqual(up.parameterMap.videoExecution!.recipe.parameters.resolution.mapping,{'4K':'720p'});assert.equal(up.capabilities.video!.defaultResolution,'4K');assert.equal(up.costRef,'fixture-preserved-video-price');});
+ const up=current.config.upstreamModels.find(u=>u.id==='video-source')!,provider=current.config.providers.find(p=>p.id===providerId)!;const frozen=await freezeManagedVideoCapability(current,up,provider,f.sql);check('actual-frozen-reader-keeps-the-published-revision',()=>{assert.equal(frozen.execution!.modelVersion,current.version);assert.equal(frozen.execution!.modelDigest,current.digest);assert.equal(frozen.execution!.recipe.parameters.resolution.default,'4K');});
+ const afterActivation=activations;assert.equal((await handler(request(body))).status,200);check('replay-does-not-activate-twice',()=>assert.equal(activations,afterActivation));
+ check('binding-only-rollback-restores-corrected-not-old-conflicting-config',()=>assert.deepEqual(rollbackVideoExecutionMigration(current.config,planVideoExecutionMigration(fixed.config,['video-a']).patches),fixed.config));
+ check('old-version-default-and-price-are-unchanged',()=>{const prior=old.config.upstreamModels.find(u=>u.id==='video-source')!;assert.equal(prior.capabilities.video!.defaultResolution,'1080p');assert.equal(prior.parameterMap.videoExecution,undefined);assert.equal(prior.costRef,up.costRef);});assert.equal((await f.repo.byVersion(old.version)).digest,old.digest);cases++;
+ assert.equal(canonicalConfig(billing),beforeBilling);assert.deepEqual((await f.sql.query('SELECT * FROM app_model_credentials ORDER BY id')).rows,beforeKeys);cases++;
+ console.log('VIDEO_MIGRATION_DEFAULT_ROUTE=PASS CASES='+cases+' ACTIVATIONS='+activations+' OLD_VERSION=UNCHANGED BILLING=UNCHANGED CREDENTIALS=UNCHANGED PAID_CALLS=0 SITE_WRITES=0');
+}finally{await f.cleanup();console.log('MIGRATION_DEFAULT_ROUTE_CLEANUP=PASS SCHEMA_DROPPED=1 POOLS_CLOSED=1');}}
+main().catch(error=>{console.error(error);process.exitCode=1;});

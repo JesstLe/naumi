@@ -144,3 +144,7 @@
 ## 固定包与真实 lifecycle CLI 事务（2026-11-15）
 
 [模块记录](2026-11-15-video-lifecycle-acceptance.md)：既有真实Nginx/固定Next/独立Worker/PG验证器接到原deploy-release.sh --lifecycle；实际旧槽仍运行时finish→CLEANUP_PENDING，下一发布与陈旧CAS拒绝；实际排空/退役/兼容材料及候选状态分别支持complete/rollback事务。新增fixture适配不被生产调用，原partial覆盖不升级成全局事实，数据库/媒体/UNKNOWN不回退；131集中回归与首次complete51项通过，最终源/独立副本数字、四产物及main以VERIFICATION/INTEGRATION为准。真实生产controller/全部业务覆盖、实际启用配置/授权上游、浏览器/TLS与目标站发布仍开放；A19/总目标ACTIVE，47 HOLD，生产写入/付费/部署0。
+
+## 执行迁移默认值保真（2026-11-15）
+
+[模块记录](2026-11-15-video-migration-defaults.md)：真实函数复现默认1080p在仅4K→720p映射下被静默替换为4K。自动迁移现只接受明确显示key/唯一反向对应，不匹配或歧义进入审查；调用原compiler参数mapper核对已提供默认值，不复制能力门禁。已有Binding不重解释、不覆盖，原草稿/审查CAS/激活/字段回退保持；新增纯16/实际PG管理冻结13项与既有迁移79/管理19/readiness15/bootstrap56/核心137及tsc以最终VERIFICATION为准。实际目标站只读连接未取得当前配置，已询问入口；不把32候选当在线清单。生产配置/付费/部署0，47 HOLD，总目标ACTIVE。
