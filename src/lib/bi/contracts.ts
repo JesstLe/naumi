@@ -1,4 +1,4 @@
-import { USER_POSITION_FILTERS } from "./positions";
+import { USER_POSITION_FILTERS } from "@/lib/accounts/positions";
 export const BI_SECTIONS = [
   "overview",
   "users",

@@ -2,6 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { getPool } from "../../src/platform/db/pool";
 import { planPositionBindings, positionPlanSchema } from "../../src/lib/bi/position-binding";
 import { manageBiUser } from "../../src/lib/bi/user-management";
+import { enterpriseSiteIdentity } from "../../src/lib/site-control/identity";
 
 // Plan first, apply the saved commands second. The plan contains private roster
 // data: store it outside Git. Reuse it verbatim after an interrupted application.
@@ -9,6 +10,7 @@ async function main() {
   const args = process.argv.slice(2);
   const option = (name: string) => { const i = args.indexOf(name); return i < 0 ? undefined : args[i + 1]; };
   if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
+  if (enterpriseSiteIdentity()) throw new Error("Dedicated sites must use scoped enterprise member commands");
   const pool = getPool();
   try {
     if (!args.includes("--apply")) {

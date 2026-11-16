@@ -1,5 +1,5 @@
 "use client";
-import { USER_POSITIONS } from "@/lib/bi/positions";
+import { USER_POSITIONS } from "@/lib/accounts/positions";
 import { useRef, useState } from "react";
 import type { BiRow } from "@/lib/bi/contracts";
 import styles from "./dashboard.module.css";

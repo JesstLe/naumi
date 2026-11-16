@@ -11,6 +11,7 @@ import {BillingError} from '@/lib/billing/types';
 import {TeamError} from '@/lib/teams/errors';
 import type {TeamActor} from '@/lib/teams/grants';
 import {enterpriseManageTransaction,validateHierarchy} from './server';
+import {USER_POSITIONS} from '@/lib/accounts/positions';
 
 const common={id:z.string().uuid(),enterpriseId:z.string().uuid(),email:accountIdentifierSchema,reason:z.string().trim().min(3).max(500)};
 const version={expectedVersion:z.number().int().nonnegative(),expectedUserVersion:z.number().int().nonnegative()};
@@ -18,8 +19,9 @@ const password=z.string().min(8).max(128);
 const profile={name:z.string().trim().min(1).max(80),phone:z.string().trim().max(40),note:z.string().trim().max(1000)};
 const months=z.number().int().min(1).max(120).optional();
 export const enterpriseMemberCommandSchema=z.discriminatedUnion('action',[
+ z.object({...common,...version,action:z.literal('position'),position:z.enum(USER_POSITIONS)}).strict(),
  z.object({...common,action:z.literal('create'),...profile,password,initialCredits:z.number().int().min(0).max(1000000),months,roleId:z.string().uuid(),supervisorEmail:accountIdentifierSchema,employment:z.enum(['permanent','intern']),expiresAt:z.string().datetime({offset:true}).nullable()}).strict(),
- z.object({...common,...version,action:z.literal('profile'),...profile}).strict(),
+ z.object({...common,...version,action:z.literal('profile'),...profile,position:z.enum(USER_POSITIONS).optional()}).strict(),
  z.object({...common,...version,action:z.literal('reset-password'),password}).strict(),
  z.object({...common,...version,action:z.literal('adjust'),delta:z.number().int().min(-1000000).max(1000000).refine(x=>x!==0),months}).strict(),
 ]);
@@ -36,8 +38,8 @@ export async function manageEnterpriseMember(actor:TeamActor,command:EnterpriseM
   const old=(await tx.query('SELECT actor,fingerprint,result FROM app_enterprise_audit WHERE id=$1',[command.id])).rows[0];
   if(old){if(old.actor!==actor.email||old.fingerprint!==fingerprint)throw new TeamError('操作编号已用于其他请求',409);return {...old.result,replayed:true};}
   if(command.email===actor.email||command.email===s.team.owner_email)throw new TeamError('请在个人安全设置中管理负责人账号',403);
-  let user=(await tx.query('SELECT email,name,phone,note,role,banned,account_expires_at,management_version,credits_used FROM app_users WHERE email=$1 FOR UPDATE',[command.email])).rows[0];
-  const before=user?{name:user.name,phone:user.phone,note:user.note,managementVersion:user.management_version}:null;
+  let user=(await tx.query('SELECT email,name,phone,note,position,role,banned,account_expires_at,management_version,credits_used FROM app_users WHERE email=$1 FOR UPDATE',[command.email])).rows[0];
+  const before=user?{name:user.name,phone:user.phone,note:user.note,position:user.position,managementVersion:user.management_version}:null;
   if(command.action==='create'){
    if(user)throw new TeamError('该账号已存在，未修改原账号或企业归属',409);
    const selectedRole=s.roles.find(r=>r.id===command.roleId);
@@ -63,10 +65,11 @@ export async function manageEnterpriseMember(actor:TeamActor,command:EnterpriseM
    await runtime.service.adjustTx(tx,{id:`enterprise-member-${command.id}`,email:command.email,amount:delta,source:'admin',reason:'管理员调整积分',expiry:'months'in command&&command.months?{unit:'months',value:command.months}:billing.config.credits.admin,ledgerId:`led-enterprise-member-${command.id}`,actor:actor.email,fingerprint,debitOrder:billing.config.credits.debitOrder});
    balance={delta,availableBefore:available,availableAfter:available+delta};
   }
-  if(command.action==='profile')await tx.query("UPDATE app_users SET name=$2,phone=NULLIF($3,''),note=$4 WHERE email=$1",[command.email,command.name,command.phone,command.note]);
+  if(command.action==='position')await tx.query('UPDATE app_users SET position=$2 WHERE email=$1',[command.email,command.position]);
+  if(command.action==='profile')await tx.query("UPDATE app_users SET name=$2,phone=NULLIF($3,''),note=$4,position=$5 WHERE email=$1",[command.email,command.name,command.phone,command.note,command.position??user.position??'']);
   if(command.action==='reset-password')await tx.query('UPDATE app_users SET password_hash=$2,auth_revoked_before=clock_timestamp() WHERE email=$1',[command.email,passwordHash]);
   await tx.query('UPDATE app_users SET management_version=management_version+1 WHERE email=$1',[command.email]);
-  const after=(await tx.query('SELECT name,phone,note,management_version FROM app_users WHERE email=$1',[command.email])).rows[0];
+  const after=(await tx.query('SELECT name,phone,note,position,management_version FROM app_users WHERE email=$1',[command.email])).rows[0];
   const result={ok:true,replayed:false,email:command.email,version:after.management_version};
   await tx.query('INSERT INTO app_enterprise_audit(id,enterprise_id,actor,action,target,fingerprint,result,changes) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb)',[command.id,command.enterpriseId,actor.email,`account-${command.action}`,command.email,fingerprint,JSON.stringify(result),JSON.stringify({before,after,reason:command.reason,...balance,...(command.action==='reset-password'?{sessionsRevoked:true}:{})})]);
   return result;

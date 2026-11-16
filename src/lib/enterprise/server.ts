@@ -132,7 +132,7 @@ export async function enterpriseList(actor:TeamActor,allowSelf=false):Promise<En
   });
 }
 async function memberRows(tx:PoolClient,s:Scope):Promise<EnterpriseMember[]> {
-  const rows=(await tx.query(`SELECT m.email,u.name,u.role AS account_role,CASE WHEN $4::boolean THEN u.phone ELSE NULL END AS phone,CASE WHEN $4::boolean THEN u.note ELSE NULL END AS note,m.supervisor_email,m.role_id,m.employment,m.version,m.membership_status,m.membership_expires_at,m.joined_at,m.left_at,u.management_version,u.banned,u.account_expires_at,
+  const rows=(await tx.query(`SELECT m.email,u.name,u.role AS account_role,CASE WHEN $5::boolean THEN u.position ELSE NULL END AS position,CASE WHEN $4::boolean THEN u.phone ELSE NULL END AS phone,CASE WHEN $4::boolean THEN u.note ELSE NULL END AS note,m.supervisor_email,m.role_id,m.employment,m.version,m.membership_status,m.membership_expires_at,m.joined_at,m.left_at,u.management_version,u.banned,u.account_expires_at,
     COALESCE(r.name,'员工') AS role_name,COALESCE(r.level,999)::int AS level,
     CASE WHEN m.email=ANY($3::text[]) THEN GREATEST(0,COALESCE(b.principal,0)-u.credits_used)::int ELSE NULL END AS available,
     CASE WHEN m.email=ANY($3::text[]) THEN COALESCE(l.consumed,0)::int ELSE NULL END AS consumed,
@@ -142,7 +142,7 @@ async function memberRows(tx:PoolClient,s:Scope):Promise<EnterpriseMember[]> {
     LEFT JOIN LATERAL(SELECT sum(remaining) AS principal FROM app_credit_batches WHERE email=u.email AND expires_at>now() AND remaining>0)b ON true
     LEFT JOIN LATERAL(SELECT -sum(delta) AS consumed FROM app_ledger WHERE email=u.email AND kind='consume' AND delta<0)l ON true
     LEFT JOIN LATERAL(SELECT count(*) AS n FROM app_artworks WHERE email=u.email AND deleted_at IS NULL)a ON true
-    WHERE m.enterprise_id=$1 AND m.email=ANY($2::text[]) ORDER BY COALESCE(r.level,999),u.name,u.email`,[s.team.id,s.manageMembers?[...s.manageable]:[...s.visible],s.viewRecords?[...s.visible]:[],s.owner&&enterpriseSiteIdentity()?.enterpriseId===s.team.id])).rows;
+    WHERE m.enterprise_id=$1 AND m.email=ANY($2::text[]) ORDER BY COALESCE(r.level,999),u.name,u.email`,[s.team.id,s.manageMembers?[...s.manageable]:[...s.visible],s.viewRecords?[...s.visible]:[],s.owner&&enterpriseSiteIdentity()?.enterpriseId===s.team.id,enterpriseSiteIdentity()?.enterpriseId===s.team.id])).rows;
   return rows.map(m=>({...m,canManage:m.account_role==='user'&&s.manageMembers&&m.email!==s.team.owner_email&&m.email!==undefined&&m.level>s.level}));
 }
 export async function enterpriseSnapshot(actor:TeamActor,id:string):Promise<EnterpriseSnapshot> {

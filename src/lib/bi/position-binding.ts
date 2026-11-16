@@ -1,7 +1,7 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { USER_POSITIONS } from "./positions";
+import { USER_POSITIONS } from "@/lib/accounts/positions";
 import { userCommandSchema } from "./user-management";
 
 const assignedPosition = z.enum(USER_POSITIONS).refine(p => p !== "", "名单岗位不能为空");

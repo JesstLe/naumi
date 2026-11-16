@@ -10,7 +10,7 @@ import {getBillingRuntime} from "@/lib/billing/runtime";
 import { expiryFrom } from "@/lib/billing/rules/schema";
 import { BillingError } from "@/lib/billing/types";
 import {accountIdentifierSchema} from '@/lib/account-identity-schema';
-import { USER_POSITIONS } from './positions';
+import { USER_POSITIONS } from '@/lib/accounts/positions';
 const base = {
     id: z.string().uuid(),
     email: accountIdentifierSchema,

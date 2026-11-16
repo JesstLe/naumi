@@ -1,5 +1,5 @@
 "use client";
-import { USER_POSITIONS } from "@/lib/bi/positions";
+import { USER_POSITIONS } from "@/lib/accounts/positions";
 
 import { useRouter,useSearchParams } from "next/navigation";
 import { AdminCenterShell } from "@/components/admin/center-shell";
