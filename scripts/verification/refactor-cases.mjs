@@ -287,6 +287,7 @@ export const refactorCases=[
  ts('media-lanes','runtime','scripts/verify-p0-media-recovery.ts','P0_MEDIA_RECOVERY PASS'),
  ts('nas-delivery','runtime','scripts/verify-p0-nas-delivery.ts','P0_NAS_DELIVERY PASS'),
  ts('mirror-eviction','runtime','scripts/verify-media-mirror-eviction.ts','MEDIA_MIRROR_EVICTION PASS'),
+ node('nas-backfill-guards','runtime','scripts/verify-nas47-backfill.cjs','NAS47_BACKFILL_GUARDS=PASS'),
  ts('worker-media','runtime','scripts/verify-worker-media-integration-pg.ts','WORKER_MEDIA_INTEGRATION=PASS MODE=MODIFIED'),
  ts('worker-receipts','runtime','scripts/verify-worker-tick-receipts.ts','WORKER_TICK_RECEIPTS=PASS'),
  {id:'recovery-supervisor',group:'runtime',file:'scripts/ops/test_release47_recovery_supervisor.py',args:['-v'],expect:'OK',pg:false,python:true},
