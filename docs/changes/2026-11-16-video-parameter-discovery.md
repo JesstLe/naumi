@@ -78,4 +78,3 @@
 新recipe含parameterConditions，旧镜像的严格reader不认识这一新增结构。未来蓝绿/回滚时需保留能消费新契约的Worker排空新任务；不能仅回退镜像并声称新任务恢复兼容。此次源码补丁只在独立副本回滚，并验证恢复原源码哈希与旧UI行为；不回灌业务数据库或媒体，不重放任务。
 
 最终SHA、固定提交集中验证、补丁包、原始哈希与副本回滚字面结果记录在 `E:/Workspace/naumi/output/video-parameter-discovery-20261116/VERIFICATION.txt`。
-
