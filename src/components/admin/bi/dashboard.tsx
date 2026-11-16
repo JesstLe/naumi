@@ -1,4 +1,5 @@
 "use client";
+import { USER_POSITIONS } from "@/lib/bi/positions";
 
 import { useRouter,useSearchParams } from "next/navigation";
 import { AdminCenterShell } from "@/components/admin/center-shell";
@@ -55,6 +56,7 @@ type Filter = {
   q: string;
   accountType: string;
   status: string;
+  position: string;
   period: string;
   id: string;
   source: string;
@@ -95,6 +97,7 @@ const columns: Record<Exclude<BiSection, "overview">, Column[]> = {
     { key: "name", label: "用户" },
     { key: "email", label: "账户" },
     { key: "account_type", label: "身份", format: "type" },
+    { key: "position", label: "岗位" },
     { key: "role", label: "权限", format: "status" },
     { key: "banned", label: "已封禁" },
     { key: "company", label: "企业" },
@@ -257,12 +260,14 @@ Object.assign(names, {
   "view-conversation": "查看对话内容",
   create: "创建账户",
   profile: "编辑用户资料",
+  position: "绑定岗位",
   ban: "封禁状态修改",
   role: "权限修改",
   adjust: "调整积分",
   "reset-password": "重置密码",
   "manage-create": "创建账户",
   "manage-profile": "编辑用户资料",
+  "manage-position": "绑定岗位",
   "manage-ban": "封禁状态修改",
   "manage-role": "权限修改",
   "manage-adjust": "调整积分",
@@ -336,10 +341,11 @@ function initialFilter(params?:URLSearchParams): Filter {
     q: "",
     accountType: "",
     status: "",
+    position: "",
     period: 'range',
     id: '',
     source: '',
-    ...Object.fromEntries(['from','to','email','q','accountType','status','period','id','source'].filter(key=>params?.has(key)).map(key=>[key,params!.get(key)!])),
+    ...Object.fromEntries(['from','to','email','q','accountType','status','position','period','id','source'].filter(key=>params?.has(key)).map(key=>[key,params!.get(key)!])),
   };
 }
 const descriptions: Record<BiSection, string> = {
@@ -482,7 +488,7 @@ export function BiDashboard({ initialSection = "overview", embedded = false }: {
   }, [selected]);
   function navigate(next: BiSection, day?: string) {
     navigatedSection.current = next;
-    const nextFilter={...filter,status:'',id:'',source:'',...(next==='overview'?{period:'range'}:{}),...(day?{from:day,to:day,period:'range',status:next==='orders'?'paid':''}:{})};
+    const nextFilter={...filter,status:'',position:'',id:'',source:'',...(next==='overview'?{period:'range'}:{}),...(day?{from:day,to:day,period:'range',status:next==='orders'?'paid':''}:{})};
     router.push(`/admin/center?${new URLSearchParams({...nextFilter,section:next})}`, { scroll: false });
     setSection(next);
     setPage(1);
@@ -503,7 +509,7 @@ export function BiDashboard({ initialSection = "overview", embedded = false }: {
   }
   function account(email: string, next: BiSection) {
     navigatedSection.current = next;
-    const value = { ...filter, email,q:'',accountType:'',status: "",id:'',source:'' };
+    const value = { ...filter, email,q:'',accountType:'',status: "",position:'',id:'',source:'' };
     router.push(`/admin/center?${new URLSearchParams({...value,section:next})}`, { scroll: false });
     setDraft(value);
     setFilter(value);
@@ -625,6 +631,22 @@ export function BiDashboard({ initialSection = "overview", embedded = false }: {
               <option value="unknown">未登记</option>
             </select>
           </label>
+          {section === "users" && (
+            <label>
+              岗位
+              <select
+                aria-label="岗位"
+                value={draft.position}
+                onChange={(e) =>
+                  setDraft((f) => ({ ...f, position: e.target.value }))
+                }
+              >
+                <option value="">全部岗位</option>
+                {USER_POSITIONS.filter(Boolean).map(value => <option key={value} value={value}>{value}</option>)}
+                <option value="unassigned">未分组</option>
+              </select>
+            </label>
+          )}
           <label className={styles.search}>
             搜索账户
             <input
@@ -946,6 +968,7 @@ export function BiDashboard({ initialSection = "overview", embedded = false }: {
                     email,
                     accountType: "",
                     status: "",
+                    position: "",
                   };
                   setFilter(value);
                   setDraft(value);

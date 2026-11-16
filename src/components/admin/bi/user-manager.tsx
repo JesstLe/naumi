@@ -1,4 +1,5 @@
 "use client";
+import { USER_POSITIONS } from "@/lib/bi/positions";
 import { useRef, useState } from "react";
 import type { BiRow } from "@/lib/bi/contracts";
 import styles from "./dashboard.module.css";
@@ -22,7 +23,8 @@ export function UserManager({
   const [action, setAction] = useState(row ? "profile" : "create");
   const [name, setName] = useState(String(row?.name || "")),
     [phone, setPhone] = useState(String(row?.phone || "")),
-    [note, setNote] = useState(String(row?.note || ""));
+    [note, setNote] = useState(String(row?.note || "")),
+    [position, setPosition] = useState(String(row?.position || ""));
   const [email, setEmail] = useState(String(row?.email || "")),
     [password, setPassword] = useState("");
   const [delta, setDelta] = useState(""),
@@ -69,7 +71,7 @@ export function UserManager({
         initialCredits: Number(initial),
         months: Number(months),
       });
-    if (action === "profile") Object.assign(cmd, { name, phone, note });
+    if (action === "profile") Object.assign(cmd, { name, phone, note, position });
     if (action === "adjust")
       Object.assign(cmd, { delta: Number(delta), months: Number(months) });
     if (action === "ban") cmd.banned = banned;
@@ -145,7 +147,8 @@ export function UserManager({
           {action === "profile" && (
             <p>
               姓名：{String(review.name)} · 手机：
-              {String(review.phone) || "留空"} · 备注：
+              {String(review.phone) || "留空"} · 岗位：
+              {String(review.position) || "未分组"} · 备注：
               {String(review.note) || "留空"}
             </p>
           )}
@@ -221,6 +224,17 @@ export function UserManager({
           {action === "profile" && (
             <>
               {field("用户手机号", phone, setPhone, { maxLength: 40 })}
+              <label>
+                岗位
+                <select
+                  aria-label="岗位"
+                  value={position}
+                  onChange={(e) => setPosition(e.target.value)}
+                >
+                  <option value="">未分组</option>
+                  {USER_POSITIONS.filter(Boolean).map(value => <option key={value} value={value}>{value}</option>)}
+                </select>
+              </label>
               <label>
                 用户备注
                 <textarea

@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { execFileSync } from "node:child_process";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { resolve } from "node:path";
 async function main() {
   if (
     process.env.NAUMI_VERIFY_ISOLATED_DB !== "1" ||
@@ -43,6 +46,7 @@ async function main() {
   const cookie = (e: string, now = Date.now()) =>
     "nv_user=" + native.signUserSession(e, now);
   let oldAdmins: { email: string; role: string }[] = [];
+  const positionEmails = Array.from({ length: 4 }, (_, i) => `${prefix}-position-${i}@example.test`);
   try {
     await db.getOrCreateUser(admin, "Fixture admin");
     await db.setUserRole(admin, "admin");
@@ -334,6 +338,100 @@ async function main() {
       command("role", { expectedVersion: 8, role: "user" }),
       actor,
     );
+    // Position binding: set, preserve-on-omit, reject unknown, filter, clear.
+    await m.manageBiUser(
+      command("profile", {
+        expectedVersion: 9,
+        name: "Updated fixture",
+        phone: "fixture-phone",
+        note: "operator note",
+        position: "电商设计-资深",
+      }),
+      admin,
+    );
+    assert.equal(
+      (
+        await pool.query("SELECT position FROM app_users WHERE email=$1", [
+          email,
+        ])
+      ).rows[0].position,
+      "电商设计-资深",
+    );
+    await m.manageBiUser(
+      command("profile", {
+        expectedVersion: 10,
+        name: "Updated fixture",
+        phone: "",
+        note: "",
+      }),
+      admin,
+    );
+    assert.equal(
+      (
+        await pool.query("SELECT position FROM app_users WHERE email=$1", [
+          email,
+        ])
+      ).rows[0].position,
+      "电商设计-资深",
+      "Profile without position keeps the current value",
+    );
+    assert.throws(() =>
+      m.userCommandSchema.parse({
+        id: randomUUID(),
+        email,
+        action: "profile",
+        reason: "Isolated acceptance",
+        expectedVersion: 11,
+        name: "Updated fixture",
+        phone: "",
+        note: "",
+        position: "自由职业",
+      }),
+    );
+    const biContracts = await import("../src/lib/bi/contracts");
+    const usersQuery = (position: string) =>
+      biContracts.parseBiQuery(
+        new URLSearchParams({
+          q: prefix,
+          section: "users",
+          ...(position ? { position } : {}),
+        }),
+      );
+    const unfiltered = await bi.queryBi(usersQuery(""));
+    assert.ok(
+      unfiltered.rows.some(
+        (r) => r.email === email && r.position === "电商设计-资深",
+      ),
+    );
+    const senior = await bi.queryBi(usersQuery("电商设计-资深"));
+    assert.ok(
+      senior.total >= 1 &&
+        senior.rows.every((r) => r.position === "电商设计-资深"),
+    );
+    const packaging = await bi.queryBi(usersQuery("包装设计"));
+    assert.equal(
+      packaging.total,
+      0,
+      "Position filter excludes other groups",
+    );
+    await m.manageBiUser(
+      command("profile", {
+        expectedVersion: 11,
+        name: "Updated fixture",
+        phone: "",
+        note: "",
+        position: "",
+      }),
+      admin,
+    );
+    assert.equal(
+      (
+        await pool.query("SELECT position FROM app_users WHERE email=$1", [
+          email,
+        ])
+      ).rows[0].position,
+      "",
+    );
     const audit = (
       await pool.query(
         "SELECT changes,request_fingerprint FROM app_bi_management_log WHERE email=$1",
@@ -378,8 +476,69 @@ async function main() {
     assert.ok(daily);
     assert.equal(daily.receivedCents, 0);
     assert.equal(daily.mockCents, 0);
+    const { planPositionBindings } = await import("../src/lib/bi/position-binding");
+    const { USER_POSITIONS } = await import("../src/lib/bi/positions");
+    const roster = positionEmails.map((_, i) => ({ name: `${prefix}-花名-${i}`, position: USER_POSITIONS[1 + i % 3] }));
+    for (const [i, target] of positionEmails.entries()) await db.getOrCreateUser(target, roster[i].name);
+    const candidates = (await pool.query("SELECT email,name,position,management_version FROM app_users WHERE email=ANY($1::text[])", [positionEmails])).rows;
+    const plan = planPositionBindings([...roster, roster[0]], candidates);
+    assert.equal(plan.changes.length, 4, "Duplicate roster names deduplicate");
+    assert.equal(planPositionBindings(roster, candidates.slice(1)).unmatched.length, 1);
+    assert.equal(planPositionBindings(roster, [...candidates, { ...candidates[0], email: "duplicate@example.test" }]).ambiguous.length, 1);
+    assert.throws(() => planPositionBindings([...roster, { ...roster[0], position: USER_POSITIONS[2] }], candidates), /不同岗位/);
+    const fortyEight = Array.from({ length: 48 }, (_, i) => ({ name: `验收-${i}`, position: USER_POSITIONS[i < 13 ? 1 : i < 41 ? 2 : 3] }));
+    assert.equal(planPositionBindings(fortyEight, fortyEight.map((r, i) => ({ ...r, email: `fixture-${i}@example.test`, position: "", management_version: 0 }))).changes.length, 48);
+    const out = resolve(process.env.POSITION_EVIDENCE_ROOT || "output/user-position-20261116", prefix);
+    await mkdir(out, { recursive: true });
+    const rosterPath = resolve(out, "roster.json"), planPath = resolve(out, "plan.json");
+    await writeFile(rosterPath, JSON.stringify(roster));
+    const cli = (...args: string[]) => execFileSync(process.execPath, ["--conditions=react-server", "--import", "tsx", "scripts/ops/bind-user-positions.ts", ...args], { encoding: "utf8", windowsHide: true });
+    const beforeRows = (await pool.query("SELECT to_jsonb(u)-'position'-'management_version' AS value FROM app_users u WHERE email=ANY($1::text[]) ORDER BY email", [positionEmails])).rows;
+    const dry = cli("--roster", rosterPath, "--out", planPath);
+    assert.match(dry, /DRY_RUN pending=4 already=0 unmatched=0 ambiguous=0 writes=0/);
+    assert.equal((await pool.query("SELECT count(*)::int AS n FROM app_users WHERE email=ANY($1::text[]) AND position<>''", [positionEmails])).rows[0].n, 0);
+    const applied = cli("--apply", "--plan", planPath, "--actor", admin);
+    assert.match(applied, /applied=4 replayed=0/);
+    const replay = cli("--apply", "--plan", planPath, "--actor", admin);
+    assert.match(replay, /applied=0 replayed=4/);
+    const savedPlan = JSON.parse(await readFile(planPath, "utf8"));
+    for (const row of savedPlan.changes) {
+      const log = (await pool.query("SELECT changes FROM app_bi_management_log WHERE id=$1", [row.command.id])).rows[0];
+      assert.equal(log.changes.before.position, "");
+      assert.equal(log.changes.after.position, row.command.position);
+    }
+    assert.deepEqual((await pool.query("SELECT to_jsonb(u)-'position'-'management_version' AS value FROM app_users u WHERE email=ANY($1::text[]) ORDER BY email", [positionEmails])).rows, beforeRows, "Bulk binding preserves every unrelated user field");
+    const contracts = await import("../src/lib/bi/contracts");
+    const queries = (position: string, page = 1) => contracts.parseBiQuery(new URLSearchParams({ section: "users", q: `${prefix}-position`, position, size: "1", page: String(page) }));
+    for (const position of USER_POSITIONS.slice(1)) {
+      const result = await bi.queryBi(queries(position));
+      assert.equal(result.total, position === USER_POSITIONS[1] ? 2 : 1);
+      assert.ok(result.rows.every(r => r.position === position));
+    }
+    const page1 = await bi.queryBi(queries(USER_POSITIONS[1], 1)), page2 = await bi.queryBi(queries(USER_POSITIONS[1], 2));
+    assert.notEqual(page1.rows[0].email, page2.rows[0].email);
+    assert.equal((await bi.queryBi(queries("unassigned"))).total, 0);
+    assert.throws(() => queries("invalid"), /岗位筛选无效/);
+    const target = positionEmails[0];
+    const update = m.userCommandSchema.parse({ id: randomUUID(), action: "position", email: target, expectedVersion: 1, position: "", reason: "岗位并发与清空验证" });
+    await m.manageBiUser(update, admin);
+    await assert.rejects(m.manageBiUser({ ...update, id: randomUUID() }, admin), /其他管理员/);
+    assert.equal((await bi.queryBi(queries("unassigned"))).total, 1);
+    assert.throws(() => cli("--apply", "--plan", planPath, "--actor", admin), (error: unknown) => {
+      const result = error as { status: number; stdout: string };
+      return result.status === 2 && /MISMATCH applied=0 replayed=4 already=0 verified=3 mismatches=1/.test(result.stdout);
+    }, "An old receipt must not claim the current roster still matches");
+    assert.equal((await pool.query("SELECT position FROM app_users WHERE email=$1", [target])).rows[0].position, "", "Replaying an old plan preserves the newer administrator edit");
+    const apiPosition = { ...update, id: randomUUID(), expectedVersion: 2 };
+    assert.equal((await api.POST(req(cookie(target), apiPosition))).status, 404);
+    assert.equal((await api.POST(req(cookie(admin), apiPosition, "https://evil.test"))).status, 403);
+    assert.equal((await api.POST(req(cookie(admin), { ...apiPosition, position: "invalid" }))).status, 400);
+    assert.equal((await api.POST(req(cookie(admin), apiPosition))).status, 200);
+    assert.equal((await api.POST(req(cookie(admin), apiPosition))).status, 200);
+    await writeFile(resolve(out, "CLI.log"), dry + applied + replay);
+    console.log("POSITION_BINDING=PASS: exact matching, 48-person 13/28/7 roster, duplicate/missing/ambiguous handling, dry-run, audited apply, stable-ID replay, unrelated fields preserved, three filters, unassigned, pagination, CAS, current-state drift and API boundaries");
     console.log(
-      "BI_MANAGEMENT=PASS: all user actions, admin/CSRF boundaries, atomic balances and audit, reserved-credit protection, replay and concurrent duplicates, optimistic conflicts, old-session revocation, password redaction, last-admin/self guards, financial units",
+      "BI_MANAGEMENT=PASS: all user actions, admin/CSRF boundaries, atomic balances and audit, reserved-credit protection, replay and concurrent duplicates, optimistic conflicts, old-session revocation, password redaction, last-admin/self guards, financial units, position binding and position filter",
     );
   } finally {
     for (const a of oldAdmins)
@@ -395,13 +554,10 @@ async function main() {
       "app_credit_batches",
     ])
       await pool.query(
-        `DELETE FROM ${table} WHERE ${table === "app_bi_access_log" ? "actor" : "email"} IN ($1,$2,$3)`,
-        [email, admin, actor],
+        `DELETE FROM ${table} WHERE ${table === "app_bi_access_log" ? "actor" : "email"}=ANY($1::text[])`,
+        [[email, admin, actor, ...positionEmails]],
       );
-    await pool.query("DELETE FROM app_users WHERE email IN ($1,$2)", [
-      email,
-      admin,
-    ]);
+    await pool.query("DELETE FROM app_users WHERE email=ANY($1::text[])", [[email, admin, ...positionEmails]]);
     await pool.end();
   }
 }

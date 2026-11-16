@@ -1,3 +1,4 @@
+import { USER_POSITION_FILTERS } from "./positions";
 export const BI_SECTIONS = [
   "overview",
   "users",
@@ -26,6 +27,7 @@ export type BiQuery = {
   q: string;
   accountType: string;
   status: string;
+  position: string;
   page: number;
   size: number;
 };
@@ -102,6 +104,9 @@ export function parseBiQuery(
   const accountType = params.get("accountType") || "";
   if (!["", "personal", "enterprise", "unknown"].includes(accountType))
     throw new Error("账户类型无效");
+  const position = params.get("position") || "";
+  if (!(USER_POSITION_FILTERS as readonly string[]).includes(position))
+    throw new Error("岗位筛选无效");
   const number = (key: string, fallback: number, max: number) => {
     const raw = params.get(key);
     const value = raw === null ? fallback : Number(raw);
@@ -122,6 +127,7 @@ export function parseBiQuery(
     q: (params.get("q") || "").trim().slice(0, 100),
     accountType,
     status: (params.get("status") || "").slice(0, 40),
+    position,
     page: number("page", 1, 100_000),
     size: number("size", 30, 100),
   };

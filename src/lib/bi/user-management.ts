@@ -10,6 +10,7 @@ import {getBillingRuntime} from "@/lib/billing/runtime";
 import { expiryFrom } from "@/lib/billing/rules/schema";
 import { BillingError } from "@/lib/billing/types";
 import {accountIdentifierSchema} from '@/lib/account-identity-schema';
+import { USER_POSITIONS } from './positions';
 const base = {
     id: z.string().uuid(),
     email: accountIdentifierSchema,
@@ -19,6 +20,7 @@ const version = { expectedVersion: z.number().int().nonnegative() };
 const password = z.string().min(8).max(128);
 const months = z.number().int().min(1).max(120).optional();
 export const userCommandSchema = z.discriminatedUnion("action", [
+    z.object({ ...base, ...version, action: z.literal("position"), position: z.enum(USER_POSITIONS) }).strict(),
     z
         .object({
         ...base,
@@ -37,6 +39,8 @@ export const userCommandSchema = z.discriminatedUnion("action", [
         name: z.string().trim().min(1).max(80),
         phone: z.string().trim().max(40),
         note: z.string().trim().max(2000),
+        // Optional for historical callers; omitting keeps the current value.
+        position: z.enum(USER_POSITIONS).optional(),
     })
         .strict(),
     z
@@ -103,7 +107,7 @@ export async function manageBiUser(command: UserCommand, actor: string) {
             await client.query("COMMIT");
             return { ok: true, replayed: true };
         }
-        let user = (await client.query("SELECT email,name,phone,note,role,banned,management_version,credits_used FROM app_users WHERE email=$1 FOR UPDATE", [command.email])).rows[0];
+        let user = (await client.query("SELECT email,name,phone,note,role,banned,position,management_version,credits_used FROM app_users WHERE email=$1 FOR UPDATE", [command.email])).rows[0];
         const before = user
             ? {
                 name: user.name,
@@ -111,6 +115,7 @@ export async function manageBiUser(command: UserCommand, actor: string) {
                 note: user.note,
                 role: user.role,
                 banned: user.banned,
+                position: user.position,
             }
             : null;
         if (command.action === "create") {
@@ -158,8 +163,10 @@ export async function manageBiUser(command: UserCommand, actor: string) {
             await runtime.service.adjustTx(client, { id: `bi-${command.id}`, email: command.email, amount: delta, source: "admin", reason: "管理员调整积分", expiry: policy,
                 ledgerId: ledgerId!, actor, fingerprint, debitOrder: snapshot.config.credits.debitOrder, ...(expiry ? { expiresAt: expiry } : {}) });
         }
+        if (command.action === "position")
+            await client.query("UPDATE app_users SET position=$2 WHERE email=$1", [command.email, command.position]);
         if (command.action === "profile")
-            await client.query("UPDATE app_users SET name=$2,phone=NULLIF($3,''),note=$4 WHERE email=$1", [command.email, command.name, command.phone, command.note]);
+            await client.query("UPDATE app_users SET name=$2,phone=NULLIF($3,''),note=$4,position=$5 WHERE email=$1", [command.email, command.name, command.phone, command.note, command.position ?? user.position ?? ""]);
         if (command.action === "ban")
             await client.query("UPDATE app_users SET banned=$2,auth_revoked_before=CASE WHEN $2 THEN now() ELSE auth_revoked_before END WHERE email=$1", [command.email, command.banned]);
         if (command.action === "role")
@@ -170,7 +177,7 @@ export async function manageBiUser(command: UserCommand, actor: string) {
         if (command.action === "reset-password")
             await client.query("UPDATE app_users SET password_hash=$2,auth_revoked_before=now() WHERE email=$1", [command.email, passwordHash]);
         await client.query("UPDATE app_users SET management_version=management_version+1 WHERE email=$1", [command.email]);
-        const after = (await client.query("SELECT name,phone,note,role,banned,management_version FROM app_users WHERE email=$1", [command.email])).rows[0];
+        const after = (await client.query("SELECT name,phone,note,role,banned,position,management_version FROM app_users WHERE email=$1", [command.email])).rows[0];
         const changes = {
             before,
             after,
