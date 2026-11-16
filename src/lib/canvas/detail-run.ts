@@ -12,7 +12,7 @@ import type {CanvasGenerationRunContext} from './generation-run-context';
  * display stays at the UI boundary; execution and charging stay unchanged. */
 export async function runCanvasDetail(input:{request:CanvasDetailRequest;pending?:CanvasPendingNode;
   label:(done:number)=>string;errorText:string;saveErrorText:string;
-  failed:(failure:GenerationFailure)=>void;attached:(pendingId:string)=>void;
+  failed:(failure:GenerationFailure)=>void;attached:(pendingId:string,artworkId?:string)=>void;
 },ctx:CanvasGenerationRunContext){
   const {request,pending:pend}=input,{source,count}=request,{generation:view,pending,owner}=ctx;
   const operationKey=pend?`pend:${pend.id}`:`node:${source.id}`;if(view.busy(operationKey))return;
@@ -40,7 +40,7 @@ export async function runCanvasDetail(input:{request:CanvasDetailRequest;pending
       }
       if(pend)pending.release(pend.id);
       if(scope.isCurrent()&&pend){
-        if(result.status==='succeeded'){pending.set(nodes=>nodes.filter(item=>item.id!==pend.id));input.attached(pend.id);}
+        if(result.status==='succeeded'){pending.set(nodes=>nodes.filter(item=>item.id!==pend.id));input.attached(pend.id,result.ids[0]);}
         else pending.set(nodes=>nodes.map(item=>item.id===pend.id?{...item,generating:false}:item));
       }
     },

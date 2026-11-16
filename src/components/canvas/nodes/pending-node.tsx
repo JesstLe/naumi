@@ -97,6 +97,18 @@ export function PendNode({ data, selected }: NodeProps) {
       >
         <span className="pointer-events-none leading-none">+</span>
       </Handle>
+      {/* 右侧分支端口:空节点也能向右拉线建分支(空→空连线由 pending-link 编译;
+        空节点上传后血缘随 inputs 延续),与真图片节点的 out 端口同位同语义。 */}
+      <Handle
+        id="out"
+        type="source"
+        position={Position.Right}
+        style={{ top: PORT_Y }}
+        title="拖动创建分支节点" aria-label="拖动创建分支节点"
+        className="canvas-ui-port !flex !h-12 !w-12 !-right-6 !-translate-y-1/2 !items-center !justify-center !rounded-full !border-2 !text-[26px] !font-medium !leading-none shadow-lg transition-colors"
+      >
+        <span className="pointer-events-none leading-none">+</span>
+      </Handle>
       {!d.uploading && !d.generating && !d.needsAttention && (
         <button
           type="button"
