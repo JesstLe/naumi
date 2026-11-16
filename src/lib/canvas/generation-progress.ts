@@ -13,7 +13,18 @@ function taskNoise(seed: number, index: number) {
 
 export function generationDisplayProgress(stage: GenerationStage, seconds: number, completed?: number, count = 1, seed = 0) {
   const elapsed = Number.isFinite(seconds) ? Math.max(0, seconds) : 0;
-  if (stage === "queued") return 0;
+  if (stage === "queued") {
+    // 排队走进度语言,是"提交→出图"的慢速前段:快启动(0~2.5s 冲到 ~8-11%,
+    // 条立刻动起来),随后每 ~20s 约 +1% 渐近 ~19-23%(排队不算完成度,给真实
+    // 生成留足爬坡空间,条永不在天花板卡死);微幅摆动让整数百分比之间也
+    // 读成"仍在动",长时间等待不呈现为 0% 死条或"卡死"。
+    const kick = 8 + 4 * taskNoise(seed, 6), kickSeconds = 2 + 1.5 * taskNoise(seed, 7);
+    const cap = 19 + 4 * taskNoise(seed, 8), driftSeconds = 260 + 140 * taskNoise(seed, 9);
+    const kicked = Math.min(1, elapsed / kickSeconds);
+    const drift = Math.pow(Math.min(1, Math.max(0, (elapsed - kickSeconds) / driftSeconds)), 1.6);
+    const wobble = 0.5 * Math.sin(elapsed / (4 + 2 * taskNoise(seed, 10)) + 6.2832 * taskNoise(seed, 11));
+    return Math.max(1, Math.min(Math.floor(cap), Math.floor(kick * kicked + (cap - kick) * drift + wobble)));
+  }
   // Optimistic ramp: each task reaches 99% within a per-task 18-32s window, then
   // holds there until the supplier actually returns — 99 reads as "only the final
   // result is pending" instead of a countdown that stalls near the end.
@@ -34,7 +45,11 @@ export function generationDisplayProgress(stage: GenerationStage, seconds: numbe
 }
 
 export function generationProgressHint(stage: GenerationStage, seconds: number, english = false) {
-  if(stage==="queued")return english?"Preparing request":"正在准备请求";
+  if (stage === "queued") {
+    if (seconds >= 90) return english ? "Task saved · it runs automatically, no need to resubmit" : "任务已受理，完成后自动呈现，无需重复提交";
+    if (seconds >= 20) return english ? "High demand · your task starts as soon as possible" : "生成高峰，正在尽快安排你的任务";
+    return english ? "Submitted · starting your generation" : "已提交，正在开始生成";
+  }
   if (stage === "preparing") return english ? "Preparing your images and prompt" : "正在准备素材与提示词";
   if (stage === "saving") return english ? "Adding the result to your canvas" : "正在将结果放入画布";
   if (seconds >= 180) return english ? "Still generating · your task is active" : "仍在生成中，完成后自动呈现";

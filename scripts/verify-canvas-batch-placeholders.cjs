@@ -67,13 +67,15 @@ async function waitFor(test,label){for(let i=0;i<300;i++){if(test())return;await
   await page.evaluate(()=>window.show('queued',Date.now()-180000));
   const queuedText=await page.locator('#root').innerText(),queueProgress=await page.getByRole('progressbar').count();
   if(baseline){assert.equal(queueProgress,1);assert.ok(!queuedText.includes('排队中'));}
-  else{assert.equal(queueProgress,0);assert.equal(queuedText.trim(),'排队中');assert.equal(await page.locator('[data-progress]').count(),0);}
+  else{assert.equal(queueProgress,1);assert.ok(!queuedText.includes('排队中'));assert.equal(await page.locator('[data-progress]').count(),1);
+    const queuePercent=Number(await page.getByRole('progressbar').getAttribute('aria-valuenow'));assert.ok(queuePercent>=1&&queuePercent<=25,'queue shows low but alive progress');}
   await page.evaluate(()=>window.show('generating',Date.now()));
   assert.equal(await page.getByRole('progressbar').count(),1);const percent=Number(await page.getByRole('progressbar').getAttribute('aria-valuenow'));assert.ok(percent<20,'active curve does not inherit queue wait');
-  if(!baseline){await page.evaluate(()=>{window.fixtureLocale='en';window.show('queued',Date.now());});assert.equal((await page.locator('#root').innerText()).trim(),'Queued');}
+  if(!baseline){await page.evaluate(()=>{window.fixtureLocale='en';window.show('queued',Date.now()-200000);});const enText=await page.locator('#root').innerText();
+    assert.ok(!enText.includes('Queued')&&enText.includes('no need to resubmit'),'english queue hint escalates without the queue word');}
   assert.deepEqual(errors,[]);dom={queuedText,queueProgress,activeProgress:percent,pageErrors:errors};
  }finally{await browser.close();}
  const report={status:'PASS',mode:baseline?'BASELINE':'MODIFIED',initialPlaceholders:initial,initialSubmissions:baseline?2:12,totalSubmissions:posts.length,result,queuedStage:baseline?'generating':'queued',actualCanvasEntry:true,actualImageController:true,actualReactDOM:dom,supplierRequests:0};
  fs.writeFileSync(path.join(out,baseline?'BASELINE.json':'MODIFIED.json'),JSON.stringify(report,null,2));
- console.log(`BATCH_PLACEHOLDERS=${baseline?'BASELINE_REPRODUCED':'PASS'} INITIAL_SLOTS=${initial} INITIAL_SUBMITS=${baseline?2:12} TOTAL_SUBMITS=12 SUCCESS=11 FAILED=1 QUEUED_PERCENT=${baseline?'SHOWN':'HIDDEN'} ACTIVE_PERCENT=PRESERVED DRAG=PASS DOUBLE_CLICK=PASS CONTEXT=PASS SUPPLIER=0`);
+ console.log(`BATCH_PLACEHOLDERS=${baseline?'BASELINE_REPRODUCED':'PASS'} INITIAL_SLOTS=${initial} INITIAL_SUBMITS=${baseline?2:12} TOTAL_SUBMITS=12 SUCCESS=11 FAILED=1 QUEUED_PERCENT=SHOWN ACTIVE_PERCENT=PRESERVED DRAG=PASS DOUBLE_CLICK=PASS CONTEXT=PASS SUPPLIER=0`);
 })().catch(error=>{console.error(error);process.exitCode=1;});

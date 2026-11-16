@@ -32,7 +32,7 @@ export function generationPositionForTask(existing: { x: number; y: number } | n
 
 /** Elapsed time changes waiting copy, not the claimed processing stage/percentage. */
 export function generationWaitingHint(stage: GenerationStage, seconds: number, english = false) {
-  if(stage==="queued")return english?"Queued · your task is saved":"任务已排队，原请求已保存";
+  if(stage==="queued")return english?"Task saved · it runs automatically, no need to resubmit":"任务已受理，完成后自动呈现，无需重复提交";
   if (stage === "preparing") return english ? "Preparing your request" : "正在准备素材";
   if (stage === "saving") return english ? "Adding results to the canvas" : "正在放入画布";
   if (seconds >= 75) return english ? "Still processing · please wait" : "任务仍在处理中，请稍候";

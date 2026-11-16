@@ -25,10 +25,10 @@ export function GenerationPlaceholder({ stage = "generating", startedAt, count =
   const [checking, setChecking] = useState(false);
   const retrying=useRef(false);
   useEffect(() => {
-    if (failure || stage === "queued") return;
+    if (failure) return;
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
-  }, [failure, stage]);
+  }, [failure]);
   const seconds = Math.max(0, Math.floor((now - start) / 1000));
   const candidate = generationDisplayProgress(stage, seconds, completed, count, start);
   const displayed = useRef({ start, percent: candidate });
@@ -36,7 +36,7 @@ export function GenerationPlaceholder({ stage = "generating", startedAt, count =
   else displayed.current.percent = Math.max(displayed.current.percent, candidate);
   const percent = displayed.current.percent;
   const labels = english ? ["Prepare", "Generate", "Save"] : ["准备", "生成", "保存"];
-  const current = stage === "queued" ? 0 : ["preparing", "generating", "saving"].indexOf(stage);
+  const current = ["preparing", "generating", "saving"].indexOf(stage === "queued" ? "preparing" : stage);
   const title = kind === "video"
     ? english ? ["Preparing video", "Generating video", "Saving video"] : ["准备生成", "视频生成中", "正在保存"]
     : english ? ["Preparing image", "Generating image", "Saving image"] : ["准备生成", "图片生成中", "正在保存"];
@@ -50,9 +50,6 @@ export function GenerationPlaceholder({ stage = "generating", startedAt, count =
       onClick={event=>{event.stopPropagation();if(retrying.current)return;retrying.current=true;setChecking(true);void Promise.resolve().then(onRetry).catch(()=>{}).finally(()=>{retrying.current=false;setChecking(false);});}}>
       {checking?(english?'Checking…':'正在读取…'):failure.kind==='sync'?(english?'Sync result':'同步结果'):failure.kind==='uncertain'?(english?'Check original task':'查询原任务'):(english?'Retry':'重试')}
     </button>}
-  </div>;
-  if (stage === "queued") return <div data-testid="generation-placeholder" data-stage="queued" aria-busy="true" className={styles.root}>
-    <div className={styles.heading} role="status" aria-live="polite"><ImageIcon className={styles.icon} aria-hidden="true" /><span>{english ? "Queued" : "排队中"}</span></div>
   </div>;
   return <div data-testid="generation-placeholder" data-stage={stage} aria-busy="true"
     data-progress={percent} className={styles.root}>

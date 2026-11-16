@@ -28,7 +28,7 @@ export type VideoGenerationNodeData = {
     resultUrl?: string;
     externalDock?: boolean;
 };
-const statusLabels: Record<string, string> = { queued: "排队中", processing: "生成中", creating: "提交中", submitted: "已提交", running: "生成中", creation_unknown: "等待核查", needs_attention: "等待核查", completed: "已完成", failed: "失败", cancelled: "已停止" };
+const statusLabels: Record<string, string> = { queued: "准备生成", processing: "生成中", creating: "提交中", submitted: "已提交", running: "生成中", creation_unknown: "等待核查", needs_attention: "等待核查", completed: "已完成", failed: "失败", cancelled: "已停止" };
 export function VideoGenerationNode({ data, selected }: NodeProps) {
     const V = useVideoI18n();
     const d = data as unknown as VideoGenerationNodeData, { node, task } = d;

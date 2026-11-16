@@ -38,7 +38,7 @@ const actions: {
     id: MediaJobRequest["action"];
     label: string;
 }[] = [{ id: "frame", label: "抽帧" }, { id: "extract_audio", label: "抽取音轨" }, { id: "separate", label: "分离音画" }, { id: "trim", label: "裁剪" }, { id: "concat", label: "拼接" }, { id: "ffmpeg", label: "FFmpeg" }, { id: "ffprobe", label: "FFprobe" }];
-const labels: Record<PublicMediaJob["status"], string> = { queued: "排队中", processing: "处理中", completed: "已完成", failed: "失败", cancelled: "已停止" };
+const labels: Record<PublicMediaJob["status"], string> = { queued: "准备处理", processing: "处理中", completed: "已完成", failed: "失败", cancelled: "已停止" };
 function jsonField(raw: string, label: string) { try {
     return JSON.parse(raw);
 }

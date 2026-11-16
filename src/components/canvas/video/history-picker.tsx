@@ -37,7 +37,7 @@ type Props = {
     }) => Promise<void>;
     onProcess?: (artworkId: string, action: VideoPlayerAction, projectKey?: string | null) => void;
 };
-const status: Record<string, string> = { queued: "排队中", processing: "生成中", needs_attention: "待核查", completed: "已完成", failed: "失败", cancelled: "已停止" };
+const status: Record<string, string> = { queued: "准备生成", processing: "生成中", needs_attention: "待核查", completed: "已完成", failed: "失败", cancelled: "已停止" };
 const sources: Record<string, string> = { canvas: "画布", workbench: "工作台", agent: "Agent", workflow: "工作流" };
 function price(value: PublicQuote | null) { return value ? value.mode === "api-cost-plus" ? value.authorizedCredits ?? value.reserveCredits : value.credits : 0; }
 export function VideoHistoryPicker({ email, projectKey, node, initialTaskId, projects, assets, canLoadMoreAssets = false, onLoadMoreAssets, request, light, readOnly = false, onClose, onSelectResult, onReuseSettings, onSent, onRetried, onProcess }: Props) {

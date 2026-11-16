@@ -47,7 +47,7 @@ function ScopedRecovery({owner,workspace,project,isCurrent,onAttach}:ImagegenPen
    if(!current())return;
    if(result.operationId!==attempt.operationId||result.jobId!==`imagegen-${attempt.operationId}`)throw new Error('原任务回执不匹配');
    const ids=[...new Set((result.artifacts||[]).map(artifact=>artifact.artworkId).filter(id=>typeof id==='string'&&id.trim().length>0))];
-   const labels:Record<string,string>={queued:'排队中',pending:'等待处理',running:'处理中',needs_attention:'待核查',succeeded:'已完成',partial:'部分完成',failed:'失败',cancelled:'已取消'};
+   const labels:Record<string,string>={queued:'等待开始',pending:'等待处理',running:'处理中',needs_attention:'待核查',succeeded:'已完成',partial:'部分完成',failed:'失败',cancelled:'已取消'};
    let message=labels[result.status]||'状态待确认';
    if((result.status==='succeeded'||result.status==='partial')&&ids.length){
     if(!current())return;
