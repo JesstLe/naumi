@@ -6,6 +6,7 @@ import type {VideoUiContract} from '../ui-contract';
 import {NESTED_VIDEO_LAYOUTS,deriveNestedVideoIntent,compileNestedVideoLayout,isNestedVideoLayout,nestedVideoIntents,nestedVideoProtocol} from './nested-layouts';
 import {z} from 'zod';
 import {videoParameterSchema,mapVideoParameters} from './parameters';
+import {videoParameterConditionSchema,resolveVideoParameterRules} from '../parameter-contract';
 import {compileReferenceVideoLayout,isReferenceVideoLayout} from './reference-layouts';
 import {deriveVideoIntent} from '../intent';
 import {compileVideoPrompt} from '../prompt';
@@ -26,6 +27,7 @@ export const nativeVideoRecipeSchema=z.strictObject({
  sizes:z.record(z.string().min(1),z.record(z.string().min(1),z.tuple([z.number().int().positive(),z.number().int().positive()]))).optional(),
  defaults:z.strictObject({ordinaryImage:z.enum(['single_image','reference']).optional(),sourceVideo:z.enum(['video_edit','reference']).optional()}).default({}),
  parameters:z.record(field,videoParameterSchema),
+ parameterConditions:z.array(videoParameterConditionSchema).max(200).optional(),
  operations:z.array(z.strictObject({intent:videoIntentSchema,requiresPrompt:z.boolean().optional(),maxPromptChars:z.number().int().positive().optional(),images:count.optional(),videos:count.optional(),audios:count.optional(),parameters:z.record(field,videoParameterSchema).optional()})).min(1),
 }).superRefine((v,ctx)=>{
  if(new Set(v.operations.map(o=>o.intent)).size!==v.operations.length)ctx.addIssue({code:'custom',message:'原生协议操作重复'});
@@ -33,6 +35,7 @@ export const nativeVideoRecipeSchema=z.strictObject({
  for(const rules of [v.parameters,...v.operations.map(o=>o.parameters??{})])for(const [name,rule]of Object.entries(rules)){
   if(core.includes(name)&&rule.send!=='omit'&&(rule.send!=='semantic'||rule.wireField!==undefined||rule.wireMapping!==undefined))ctx.addIssue({code:'custom',message:'原生核心参数须使用semantic映射，wire字段归协议编译器'});
  }
+ for(const condition of v.parameterConditions??[])for(const [name,rule]of Object.entries(condition.parameters))if(core.includes(name)&&rule.send!=='omit'&&(rule.send!==undefined&&rule.send!=='semantic'||rule.wireField!==undefined||rule.wireMapping!==undefined))ctx.addIssue({code:'custom',message:'条件核心参数须继承semantic映射，wire字段归协议编译器'});
  if(isChannelVideoLayout(v.layout)?!v.channel||!channelMappingMatches(v.layout,v.channel):v.channel!==undefined)ctx.addIssue({code:'custom',message:'通道布局缺少对应的显式字段配方'});
  if(v.channel&&v.operations.some(op=>!channelOperationMatches(v.channel!,op.intent)))ctx.addIssue({code:'custom',message:'通道操作缺少对应的实际字段布局'});
  const intents=channelVideoIntents(v.layout)??jobVideoIntents(v.layout)??nestedVideoIntents(v.layout)??(['agnes-v25','ark','minimax','metaso'].includes(v.layout)?['text','single_image','frames_required','first_optional','last_optional','reference','video_edit','extend']:['gemini','cogvideox3','agnes','compshare-hailuo'].includes(v.layout)?['text','single_image','frames_required','reference']:['text','single_image','reference']);
@@ -71,7 +74,9 @@ export function createNativeVideoProfile():VideoModelProfile {
 function mapDraft(draft:VideoExecutionDraft,recipe:NativeVideoRecipe,model:string,assets?:Record<string,ResolvedVideoAsset>):VideoResult<VideoProfileOutput>{
  if(draft.structure&&!isJobVideoLayout(recipe.layout)&&!isChannelVideoLayout(recipe.layout))return fail('STRUCTURE_NOT_CONSUMED','structure','此原生协议尚未映射镜头或元素分组');
  const intent=deriveJobVideoIntent(draft,recipe.layout)??deriveNestedVideoIntent(draft,recipe.layout)??deriveVideoIntent(draft,recipe.defaults);if(!intent.ok)return intent;
- const operation=recipe.operations.find(o=>o.intent===intent.value);if(!operation)return fail('INPUT_INTENT_NOT_MAPPABLE','intentPreference','此绑定没有该输入意图的协议映射');
+ let operation=recipe.operations.find(o=>o.intent===intent.value);if(!operation)return fail('INPUT_INTENT_NOT_MAPPABLE','intentPreference','此绑定没有该输入意图的协议映射');
+ const parameters=resolveVideoParameterRules({...recipe.parameters,...operation.parameters},recipe.parameterConditions,{intent:intent.value,inputs:draft.inputs,parameters:draft.parameters});
+ recipe={...recipe,parameters};operation={...operation,parameters:{}};
  const media=draft.inputs.filter(i=>i.kind!=='text'),images=media.filter(i=>i.kind==='image');
  if(isChannelVideoLayout(recipe.layout))return compileChannelVideoLayout(draft,recipe,model,intent.value,operation,assets);
  if(isJobVideoLayout(recipe.layout))return compileJobVideoLayout(draft,recipe,model,intent.value,operation,assets);

@@ -8,9 +8,10 @@ import type {ProviderCatalogModel} from "../model-config/catalog";
 import {specificationResolution} from "./specifications";
 import {imageModelDisplayId} from "../image-model-routing";
 import { cleanSource, documentedMetadata, reverseHubCatalogMetadata, sourceHash, type PublicSupplierDirectory } from "./discovery";
-import {documentedVideoDefinition} from "./discovery";
+import {selectDocumentedVideoDefinition} from "./discovery";
 import {recordSupplierVideoDefinition} from "./video-access";
 import {ensureSupplierVideoSchema} from "@/lib/supplier-models/video-schema";
+import {videoDefinitionParameters} from './video-parameters';
 
 
 export class SupplierMetadataError extends Error{constructor(public code:string,message:string,public status=400){super(message);}}
@@ -49,7 +50,7 @@ export async function ingestSupplierSources(pool: Pool, provider: ModelProvider,
   const publishedRows = (published?.body.data || []).filter((m: any) => typeof m.model_name === "string" && !!m.model_name.trim() && m.model_name.length <= 160 && !/[\u0000-\u001f\u007f]/.test(m.model_name));
   const publicMap = new Map<string, any>(publishedRows.map((m: any) => [m.model_name, m]));
   const specifications=published?.specifications;
-  const specificationMap=new Map<string,any>((specifications?.body.models||[]).filter((m:any)=>typeof m.id==="string"&&m.id.length<=160&&Array.isArray(m.parameters)&&JSON.stringify(m).length<=35000).map((m:any)=>[m.id,m]));
+  const specificationMap=new Map<string,any>((specifications?.body.models||[]).filter((m:any)=>typeof m.id==="string"&&m.id.length<=160&&(Array.isArray(m.parameters)||m.videoParameters||m.requestSchema||m.videoDefinition)&&JSON.stringify(m).length<=35000).map((m:any)=>[m.id,m]));
   const directoryUrl = provider.baseUrl.replace(/\/$/, "") + "/models";
   const snapshot = async (kind: string, url: string, data: unknown) => {
    const safe = cleanSource(data);
@@ -63,8 +64,13 @@ export async function ingestSupplierSources(pool: Pool, provider: ModelProvider,
   for (const id of new Set([...accessible.keys(), ...publicMap.keys(), ...specificationMap.keys(), ...oldModels])) {
    const raw = publicMap.get(id), listed = accessible.get(id),specification=specificationMap.get(id);
    if (!raw && !listed && !specification && !["ok", "empty"].includes(directory.status)) continue;
-   const videoDefinition=documentedVideoDefinition(cleanSource(specification))||documentedVideoDefinition(cleanSource(raw))||documentedVideoDefinition(cleanSource(listed?.sourceMetadata));
-   if(videoDefinition)await recordSupplierVideoDefinition(pool,{providerId:provider.id,modelId:id,definition:videoDefinition,sourceUrl:specification&&specifications?specifications.url:raw&&published?published.url:directoryUrl},tx);
+   const videoSource=selectDocumentedVideoDefinition([{raw:cleanSource(specification),sourceUrl:specifications?.url??directoryUrl},{raw:cleanSource(raw),sourceUrl:published?.url??directoryUrl},{raw:cleanSource(listed?.sourceMetadata),sourceUrl:directoryUrl}]);
+   const videoDefinition=videoSource?.definition;
+   if(videoDefinition){
+    const contract=videoDefinitionParameters(videoDefinition);if(contract)videoDefinition.parameterContract=contract;
+    if(videoDefinition.parameterContract){videoDefinition.parameterContract.providerOrigin=new URL(provider.baseUrl).origin;videoDefinition.parameterContract.providerEndpoint=new URL(provider.baseUrl).href.replace(/\/$/,'');}
+    await recordSupplierVideoDefinition(pool,{providerId:provider.id,modelId:id,definition:videoDefinition,sourceUrl:videoSource!.sourceUrl},tx);
+   }
    const initial = raw && published ? documentedMetadata(raw, published) : (provider.options?.imageAdapter === "reverse-hub" ? reverseHubCatalogMetadata(listed?.sourceMetadata, directoryUrl, directory.fetchedAt) : undefined) || unknownSupplierMetadata();
    if(specification&&specifications){
     if(initial.modality==="unknown"&&["image","video","text","audio"].includes(specification.modality))initial.modality=specification.modality;

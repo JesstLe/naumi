@@ -4,6 +4,15 @@ import path from "node:path";
 const ts=(id,group,file,expect,args=[])=>({id,group,file,args,expect,pg:true,tsx:true});
 const node=(id,group,file,expect,args=[])=>({id,group,file,args,expect,pg:false,tsx:false});
 export const refactorCases=[
+ {...ts('video-parameter-discovery','video-parameter-discovery','scripts/verify-video-parameter-discovery.ts','VIDEO_PARAMETER_DISCOVERY=PASS'),pg:false},
+ ts('video-parameter-discovery-pg','video-parameter-discovery','scripts/verify-video-parameter-discovery-pg.ts','VIDEO_PARAMETER_DISCOVERY_PG=PASS'),
+ {...node('video-parameter-discovery-ui','video-parameter-discovery','scripts/verify-video-parameter-discovery-ui.cjs','VIDEO_PARAMETER_DISCOVERY_UI=PASS'),serverConditions:true},
+ {...ts('video-parameter-regression-native','video-parameter-discovery','scripts/verify-video-native-profile.ts','VIDEO_NATIVE_PROFILE=PASS'),pg:false},
+ {...ts('video-parameter-regression-migration','video-parameter-discovery','scripts/verify-video-execution-migration.ts','VIDEO_EXECUTION_MIGRATION=PASS'),pg:false},
+ {...ts('video-parameter-regression-core','video-parameter-discovery','scripts/verify-video-compiler-core.ts','VIDEO_COMPILER_CORE=PASS'),pg:false},
+ ts('video-parameter-regression-published','video-parameter-discovery','scripts/verify-video-published-execution.ts','VIDEO_PUBLISHED_EXECUTION=PASS'),
+ ts('video-parameter-regression-catalog','video-parameter-discovery','scripts/verify-provider-catalog.ts','PROVIDER_CATALOG=PASS'),
+ {...ts('video-parameter-regression-ui-draft','video-parameter-discovery','scripts/verify-video-ui-gate-exit.ts','VIDEO_UI_GATE_EXIT=PASS'),pg:false},
  node('video-domain-contract','video','scripts/verify-video-domain.mjs','VIDEO_DOMAIN_CONTRACT=PASS'),
  node('video-domain-regressions','video','scripts/verify-video-domain-regressions.mjs','VIDEO_DOMAIN_REGRESSIONS=PASS'),
  node('video-canvas-submit-owner','video','scripts/verify-video-canvas-submit-owner.cjs','CANVAS_SUBMIT_OWNER=PASS'),

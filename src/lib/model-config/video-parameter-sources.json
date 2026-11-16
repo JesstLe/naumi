@@ -1,0 +1,2012 @@
+{
+  "schemaVersion": 1,
+  "evidence": "supplier-documentation-not-paid-generation-tested",
+  "items": [
+    {
+      "model": "seedance-1-0-pro-fast",
+      "providerOrigin": "https://api.apib.ai",
+      "sourceSha256": "404c1a0799a3c60386014bd968200936c83de562aa0719010ce373b7d94148d1",
+      "sourceLines": [
+        {
+          "field": "duration",
+          "startLine": 375,
+          "endLine": 381
+        },
+        {
+          "field": "aspect_ratio",
+          "startLine": 383,
+          "endLine": 396
+        },
+        {
+          "field": "resolution",
+          "startLine": 398,
+          "endLine": 408
+        }
+      ],
+      "sourceRevision": {
+        "id": "0fc2c4c3-daf0-5bda-8eb1-ab66f527e4ab",
+        "revision": 1,
+        "sourceUrl": "https://docs.apimart.ai/en/api-reference/videos/doubao/generation.md",
+        "collectedAt": "2026-11-16T06:01:05.838868+00:00"
+      },
+      "contract": {
+        "version": 1,
+        "providerOrigin": "https://api.apib.ai",
+        "parameters": {
+          "resolution": {
+            "type": "string",
+            "values": [
+              "480p",
+              "720p",
+              "1080p"
+            ]
+          },
+          "durationSeconds": {
+            "type": "integer",
+            "values": [
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12
+            ]
+          },
+          "aspectRatio": {
+            "type": "string",
+            "values": [
+              "16:9",
+              "9:16",
+              "1:1",
+              "4:3",
+              "3:4",
+              "21:9"
+            ]
+          }
+        },
+        "conditions": [
+          {
+            "when": {
+              "intents": [
+                "single_image",
+                "frames_required",
+                "first_optional",
+                "last_optional"
+              ]
+            },
+            "parameters": {
+              "aspectRatio": {
+                "type": "string",
+                "send": "omit"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "model": "seedance-1-0-pro-quality",
+      "providerOrigin": "https://api.apib.ai",
+      "sourceSha256": "404c1a0799a3c60386014bd968200936c83de562aa0719010ce373b7d94148d1",
+      "sourceLines": [
+        {
+          "field": "duration",
+          "startLine": 375,
+          "endLine": 381
+        },
+        {
+          "field": "aspect_ratio",
+          "startLine": 383,
+          "endLine": 396
+        },
+        {
+          "field": "resolution",
+          "startLine": 398,
+          "endLine": 408
+        }
+      ],
+      "sourceRevision": {
+        "id": "0fc2c4c3-daf0-5bda-8eb1-ab66f527e4ab",
+        "revision": 1,
+        "sourceUrl": "https://docs.apimart.ai/en/api-reference/videos/doubao/generation.md",
+        "collectedAt": "2026-11-16T06:01:05.838868+00:00"
+      },
+      "contract": {
+        "version": 1,
+        "providerOrigin": "https://api.apib.ai",
+        "parameters": {
+          "resolution": {
+            "type": "string",
+            "values": [
+              "480p",
+              "720p",
+              "1080p"
+            ]
+          },
+          "durationSeconds": {
+            "type": "integer",
+            "values": [
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12
+            ]
+          },
+          "aspectRatio": {
+            "type": "string",
+            "values": [
+              "16:9",
+              "9:16",
+              "1:1",
+              "4:3",
+              "3:4",
+              "21:9"
+            ]
+          }
+        },
+        "conditions": [
+          {
+            "when": {
+              "intents": [
+                "single_image",
+                "frames_required",
+                "first_optional",
+                "last_optional"
+              ]
+            },
+            "parameters": {
+              "aspectRatio": {
+                "type": "string",
+                "send": "omit"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "model": "seedance-1-5-pro",
+      "providerOrigin": "https://api.apib.ai",
+      "sourceSha256": "60a7973dba7568f41ba1fa364549a31d078cc0b268f1e5f62028ab3649401696",
+      "sourceLines": [
+        {
+          "field": "duration",
+          "startLine": 384,
+          "endLine": 390
+        },
+        {
+          "field": "aspect_ratio",
+          "startLine": 392,
+          "endLine": 405
+        },
+        {
+          "field": "resolution",
+          "startLine": 407,
+          "endLine": 417
+        }
+      ],
+      "sourceRevision": {
+        "id": "13cc7c89-c266-5037-9945-e0dd209855ab",
+        "revision": 1,
+        "sourceUrl": "https://docs.apimart.ai/en/api-reference/videos/seedance-1-5-pro/generation.md",
+        "collectedAt": "2026-11-16T06:01:06.857724+00:00"
+      },
+      "contract": {
+        "version": 1,
+        "providerOrigin": "https://api.apib.ai",
+        "parameters": {
+          "resolution": {
+            "type": "string",
+            "values": [
+              "480p",
+              "720p",
+              "1080p"
+            ]
+          },
+          "durationSeconds": {
+            "type": "integer",
+            "values": [
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12
+            ]
+          },
+          "aspectRatio": {
+            "type": "string",
+            "values": [
+              "16:9",
+              "9:16",
+              "1:1",
+              "4:3",
+              "3:4",
+              "21:9"
+            ]
+          }
+        },
+        "conditions": [
+          {
+            "when": {
+              "intents": [
+                "single_image",
+                "frames_required",
+                "first_optional",
+                "last_optional"
+              ]
+            },
+            "parameters": {
+              "aspectRatio": {
+                "type": "string",
+                "send": "omit"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "model": "seedance-2.0",
+      "providerOrigin": "https://api.apib.ai",
+      "sourceSha256": "55fbf56d512d10a4adfef22ea0a47f4adf90508fb1cd6eb56f21cb8f4d86818e",
+      "sourceLines": [
+        {
+          "field": "duration",
+          "startLine": 434,
+          "endLine": 440
+        },
+        {
+          "field": "size",
+          "startLine": 442,
+          "endLine": 458
+        },
+        {
+          "field": "resolution",
+          "startLine": 460,
+          "endLine": 471
+        },
+        {
+          "field": "conditional/context",
+          "startLine": 833,
+          "endLine": 842
+        }
+      ],
+      "sourceRevision": {
+        "id": "6104a032-d063-5b33-b29f-9f35bc70d4de",
+        "revision": 1,
+        "sourceUrl": "https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation.md",
+        "collectedAt": "2026-11-16T06:01:06.873605+00:00"
+      },
+      "contract": {
+        "version": 1,
+        "providerOrigin": "https://api.apib.ai",
+        "parameters": {
+          "resolution": {
+            "type": "string",
+            "values": [
+              "480p",
+              "720p",
+              "1080p",
+              "4k"
+            ]
+          },
+          "durationSeconds": {
+            "type": "integer",
+            "values": [
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15
+            ]
+          },
+          "aspectRatio": {
+            "type": "string",
+            "values": [
+              "16:9",
+              "9:16",
+              "1:1",
+              "4:3",
+              "3:4",
+              "21:9",
+              "adaptive"
+            ]
+          }
+        },
+        "conditions": [
+          {
+            "when": {
+              "intents": [
+                "single_image",
+                "frames_required"
+              ]
+            },
+            "parameters": {
+              "aspectRatio": {
+                "type": "string",
+                "values": [
+                  "adaptive"
+                ]
+              }
+            }
+          }
+        ],
+        "conflicts": [
+          {
+            "fields": [
+              "durationSeconds"
+            ],
+            "reason": "参数正文L434–440声明4–15秒；末尾型号对比表L838仍写5–15秒。保留冲突，文档核对不证明4秒已实际生成成功。"
+          }
+        ]
+      }
+    },
+    {
+      "model": "seedance-2.0-fast",
+      "providerOrigin": "https://api.apib.ai",
+      "sourceSha256": "55fbf56d512d10a4adfef22ea0a47f4adf90508fb1cd6eb56f21cb8f4d86818e",
+      "sourceLines": [
+        {
+          "field": "duration",
+          "startLine": 434,
+          "endLine": 440
+        },
+        {
+          "field": "size",
+          "startLine": 442,
+          "endLine": 458
+        },
+        {
+          "field": "resolution",
+          "startLine": 460,
+          "endLine": 471
+        },
+        {
+          "field": "conditional/context",
+          "startLine": 833,
+          "endLine": 842
+        }
+      ],
+      "sourceRevision": {
+        "id": "6104a032-d063-5b33-b29f-9f35bc70d4de",
+        "revision": 1,
+        "sourceUrl": "https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation.md",
+        "collectedAt": "2026-11-16T06:01:06.873605+00:00"
+      },
+      "contract": {
+        "version": 1,
+        "providerOrigin": "https://api.apib.ai",
+        "parameters": {
+          "resolution": {
+            "type": "string",
+            "values": [
+              "480p",
+              "720p"
+            ]
+          },
+          "durationSeconds": {
+            "type": "integer",
+            "values": [
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15
+            ]
+          },
+          "aspectRatio": {
+            "type": "string",
+            "values": [
+              "16:9",
+              "9:16",
+              "1:1",
+              "4:3",
+              "3:4",
+              "21:9",
+              "adaptive"
+            ]
+          }
+        },
+        "conditions": [
+          {
+            "when": {
+              "intents": [
+                "single_image",
+                "frames_required"
+              ]
+            },
+            "parameters": {
+              "aspectRatio": {
+                "type": "string",
+                "values": [
+                  "adaptive"
+                ]
+              }
+            }
+          }
+        ],
+        "conflicts": [
+          {
+            "fields": [
+              "durationSeconds"
+            ],
+            "reason": "参数正文L434–440声明4–15秒；末尾型号对比表L838仍写5–15秒。保留冲突，文档核对不证明4秒已实际生成成功。"
+          }
+        ]
+      }
+    },
+    {
+      "model": "seedance-2.0-mini",
+      "providerOrigin": "https://api.apib.ai",
+      "sourceSha256": "55fbf56d512d10a4adfef22ea0a47f4adf90508fb1cd6eb56f21cb8f4d86818e",
+      "sourceLines": [
+        {
+          "field": "duration",
+          "startLine": 434,
+          "endLine": 440
+        },
+        {
+          "field": "size",
+          "startLine": 442,
+          "endLine": 458
+        },
+        {
+          "field": "resolution",
+          "startLine": 460,
+          "endLine": 471
+        },
+        {
+          "field": "conditional/context",
+          "startLine": 833,
+          "endLine": 842
+        }
+      ],
+      "sourceRevision": {
+        "id": "6104a032-d063-5b33-b29f-9f35bc70d4de",
+        "revision": 1,
+        "sourceUrl": "https://docs.apimart.ai/en/api-reference/videos/seedance-2-0/generation.md",
+        "collectedAt": "2026-11-16T06:01:06.873605+00:00"
+      },
+      "contract": {
+        "version": 1,
+        "providerOrigin": "https://api.apib.ai",
+        "parameters": {
+          "resolution": {
+            "type": "string",
+            "values": [
+              "480p",
+              "720p"
+            ]
+          },
+          "durationSeconds": {
+            "type": "integer",
+            "values": [
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15
+            ]
+          },
+          "aspectRatio": {
+            "type": "string",
+            "values": [
+              "16:9",
+              "9:16",
+              "1:1",
+              "4:3",
+              "3:4",
+              "21:9",
+              "adaptive"
+            ]
+          }
+        },
+        "conditions": [
+          {
+            "when": {
+              "intents": [
+                "single_image",
+                "frames_required"
+              ]
+            },
+            "parameters": {
+              "aspectRatio": {
+                "type": "string",
+                "values": [
+                  "adaptive"
+                ]
+              }
+            }
+          }
+        ],
+        "conflicts": [
+          {
+            "fields": [
+              "durationSeconds"
+            ],
+            "reason": "参数正文L434–440声明4–15秒；末尾型号对比表L838仍写5–15秒。保留冲突，文档核对不证明4秒已实际生成成功。"
+          }
+        ]
+      }
+    },
+    {
+      "model": "seedance-2.5",
+      "providerOrigin": "https://api.apib.ai",
+      "sourceSha256": "c051ff4f2a7b4c85060376db3afb303a488ee2c2a130c092f578c811d87d0e49",
+      "sourceLines": [
+        {
+          "field": "resolution",
+          "startLine": 340,
+          "endLine": 350
+        },
+        {
+          "field": "size",
+          "startLine": 352,
+          "endLine": 360
+        },
+        {
+          "field": "duration",
+          "startLine": 362,
+          "endLine": 369
+        },
+        {
+          "field": "conditional/context",
+          "startLine": 514,
+          "endLine": 542
+        }
+      ],
+      "sourceRevision": {
+        "id": "aa037cea-e912-5448-88d0-547dd3a6450b",
+        "revision": 1,
+        "sourceUrl": "https://docs.apimart.ai/en/api-reference/videos/seedance-2-5/generation.md",
+        "collectedAt": "2026-11-16T06:01:06.887878+00:00"
+      },
+      "contract": {
+        "version": 1,
+        "providerOrigin": "https://api.apib.ai",
+        "parameters": {
+          "resolution": {
+            "type": "string",
+            "values": [
+              "480p",
+              "720p",
+              "1080p"
+            ]
+          },
+          "durationSeconds": {
+            "type": "integer",
+            "values": [
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30
+            ]
+          },
+          "aspectRatio": {
+            "type": "string",
+            "values": [
+              "16:9",
+              "9:16",
+              "1:1",
+              "4:3",
+              "3:4",
+              "21:9",
+              "adaptive"
+            ]
+          }
+        },
+        "conditions": [
+          {
+            "when": {
+              "intents": [
+                "single_image",
+                "frames_required"
+              ]
+            },
+            "parameters": {
+              "aspectRatio": {
+                "type": "string",
+                "values": [
+                  "adaptive"
+                ]
+              }
+            }
+          }
+        ],
+        "conflicts": [
+          {
+            "fields": [
+              "automaticDuration"
+            ],
+            "reason": "上游支持-1自动时长，但当前原生编译器只接受正时长；本切片不扩展预占和结算语义。"
+          }
+        ]
+      }
+    },
+    {
+      "model": "kling-3.0-turbo",
+      "providerOrigin": "https://api.apib.ai",
+      "sourceSha256": "9623a615fc636f369848b9ab413a4151d310e17cb78874128136cd1808652aff",
+      "sourceLines": [
+        {
+          "field": "aspect_ratio",
+          "startLine": 389,
+          "endLine": 403
+        },
+        {
+          "field": "resolution",
+          "startLine": 405,
+          "endLine": 414
+        },
+        {
+          "field": "duration",
+          "startLine": 416,
+          "endLine": 424
+        }
+      ],
+      "sourceRevision": {
+        "id": "9224ebc3-0c6a-5532-a251-fbbb330dc306",
+        "revision": 1,
+        "sourceUrl": "https://docs.apimart.ai/en/api-reference/videos/kling-3.0-turbo/generation.md",
+        "collectedAt": "2026-11-16T06:01:05.839622+00:00"
+      },
+      "contract": {
+        "version": 1,
+        "providerOrigin": "https://api.apib.ai",
+        "parameters": {
+          "resolution": {
+            "type": "string",
+            "values": [
+              "720p",
+              "1080p"
+            ]
+          },
+          "durationSeconds": {
+            "type": "integer",
+            "values": [
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15
+            ]
+          },
+          "aspectRatio": {
+            "type": "string",
+            "values": [
+              "16:9",
+              "9:16",
+              "1:1"
+            ]
+          }
+        },
+        "conditions": [
+          {
+            "when": {
+              "intents": [
+                "single_image",
+                "frames_required",
+                "first_optional",
+                "last_optional"
+              ]
+            },
+            "parameters": {
+              "aspectRatio": {
+                "type": "string",
+                "send": "omit"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "model": "kling-v2-6",
+      "providerOrigin": "https://api.apib.ai",
+      "sourceSha256": "3b58ee554816f22b8201329577e407d7f6d39402435e5eef7d2bbfd5506a9e37",
+      "sourceLines": [
+        {
+          "field": "mode",
+          "startLine": 375,
+          "endLine": 388
+        },
+        {
+          "field": "duration",
+          "startLine": 390,
+          "endLine": 396
+        },
+        {
+          "field": "aspect_ratio",
+          "startLine": 398,
+          "endLine": 408
+        },
+        {
+          "field": "conditional/context",
+          "startLine": 440,
+          "endLine": 475
+        }
+      ],
+      "sourceRevision": {
+        "id": "dd0d7188-c290-5879-b668-120a2e8b7ed2",
+        "revision": 1,
+        "sourceUrl": "https://docs.apimart.ai/en/api-reference/videos/kling-v2-6/generation.md",
+        "collectedAt": "2026-11-16T06:01:05.839967+00:00"
+      },
+      "contract": {
+        "version": 1,
+        "providerOrigin": "https://api.apib.ai",
+        "parameters": {
+          "resolution": {
+            "type": "string",
+            "values": [
+              "720p",
+              "1080p"
+            ]
+          },
+          "durationSeconds": {
+            "type": "integer",
+            "values": [
+              5,
+              10
+            ]
+          },
+          "aspectRatio": {
+            "type": "string",
+            "values": [
+              "16:9",
+              "9:16",
+              "1:1"
+            ]
+          }
+        },
+        "conditions": [
+          {
+            "when": {
+              "intents": [
+                "single_image",
+                "frames_required",
+                "first_optional",
+                "last_optional"
+              ]
+            },
+            "parameters": {
+              "aspectRatio": {
+                "type": "string",
+                "send": "omit"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "model": "kling-v3",
+      "providerOrigin": "https://api.apib.ai",
+      "sourceSha256": "7bd1c29ba668a387983cc9ab845c8fdcedba75004d73be00f9b2cadbf2d7ecae",
+      "sourceLines": [
+        {
+          "field": "mode",
+          "startLine": 382,
+          "endLine": 392
+        },
+        {
+          "field": "duration",
+          "startLine": 394,
+          "endLine": 401
+        },
+        {
+          "field": "aspect_ratio",
+          "startLine": 403,
+          "endLine": 413
+        },
+        {
+          "field": "conditional/context",
+          "startLine": 518,
+          "endLine": 548
+        }
+      ],
+      "sourceRevision": {
+        "id": "dae336fb-f683-5012-ade7-e6b7e90386be",
+        "revision": 1,
+        "sourceUrl": "https://docs.apimart.ai/en/api-reference/videos/kling-v3/generation.md",
+        "collectedAt": "2026-11-16T06:01:06.352719+00:00"
+      },
+      "contract": {
+        "version": 1,
+        "providerOrigin": "https://api.apib.ai",
+        "parameters": {
+          "resolution": {
+            "type": "string",
+            "values": [
+              "720p",
+              "1080p",
+              "4k"
+            ]
+          },
+          "durationSeconds": {
+            "type": "integer",
+            "values": [
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15
+            ]
+          },
+          "aspectRatio": {
+            "type": "string",
+            "values": [
+              "16:9",
+              "9:16",
+              "1:1"
+            ]
+          }
+        },
+        "conditions": [
+          {
+            "when": {
+              "intents": [
+                "single_image",
+                "frames_required",
+                "first_optional",
+                "last_optional"
+              ]
+            },
+            "parameters": {
+              "aspectRatio": {
+                "type": "string",
+                "send": "omit"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "model": "kling-v3-omni",
+      "providerOrigin": "https://api.apib.ai",
+      "sourceSha256": "dfbcb9105981e478ee3226cbef3055f9122bad48eae3eea9f90753ebfda0972e",
+      "sourceLines": [
+        {
+          "field": "mode",
+          "startLine": 393,
+          "endLine": 403
+        },
+        {
+          "field": "duration",
+          "startLine": 405,
+          "endLine": 412
+        },
+        {
+          "field": "aspect_ratio",
+          "startLine": 414,
+          "endLine": 424
+        },
+        {
+          "field": "conditional/context",
+          "startLine": 564,
+          "endLine": 572
+        }
+      ],
+      "sourceRevision": {
+        "id": "abb2e0bb-ceb7-51bb-a15e-e6ef3ef77777",
+        "revision": 1,
+        "sourceUrl": "https://docs.apimart.ai/en/api-reference/videos/kling-v3-omni/generation.md",
+        "collectedAt": "2026-11-16T06:01:05.840322+00:00"
+      },
+      "contract": {
+        "version": 1,
+        "providerOrigin": "https://api.apib.ai",
+        "parameters": {
+          "resolution": {
+            "type": "string",
+            "values": [
+              "720P",
+              "1080P",
+              "4K"
+            ]
+          },
+          "durationSeconds": {
+            "type": "integer",
+            "values": [
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15
+            ]
+          },
+          "aspectRatio": {
+            "type": "string",
+            "values": [
+              "16:9",
+              "9:16",
+              "1:1"
+            ]
+          }
+        },
+        "conditions": [
+          {
+            "when": {
+              "intents": [
+                "single_image",
+                "frames_required",
+                "first_optional",
+                "last_optional"
+              ]
+            },
+            "parameters": {
+              "aspectRatio": {
+                "type": "string",
+                "send": "omit"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "model": "kling-v4",
+      "providerOrigin": "https://api.apib.ai",
+      "sourceSha256": "04a319eb0dba631718fa9752134e991102dbfbcf84f63c2c343519ccfb058a63",
+      "sourceLines": [
+        {
+          "field": "duration",
+          "startLine": 107,
+          "endLine": 112
+        },
+        {
+          "field": "resolution",
+          "startLine": 114,
+          "endLine": 116
+        },
+        {
+          "field": "aspect_ratio",
+          "startLine": 118,
+          "endLine": 150
+        }
+      ],
+      "sourceRevision": {
+        "id": "16598741-efc6-5add-b4e9-c896790e10e4",
+        "revision": 1,
+        "sourceUrl": "https://docs.apimart.ai/en/api-reference/videos/kling-v4/generation.md",
+        "collectedAt": "2026-11-16T06:01:06.374549+00:00"
+      },
+      "contract": {
+        "version": 1,
+        "providerOrigin": "https://api.apib.ai",
+        "parameters": {
+          "resolution": {
+            "type": "string",
+            "values": [
+              "720p",
+              "1080p"
+            ]
+          },
+          "durationSeconds": {
+            "type": "integer",
+            "values": [
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30
+            ]
+          },
+          "aspectRatio": {
+            "type": "string",
+            "values": [
+              "16:9",
+              "9:16",
+              "1:1",
+              "21:9",
+              "adaptive"
+            ]
+          }
+        },
+        "conditions": [
+          {
+            "when": {
+              "intents": [
+                "single_image",
+                "frames_required",
+                "first_optional",
+                "last_optional"
+              ]
+            },
+            "parameters": {
+              "aspectRatio": {
+                "type": "string",
+                "send": "omit"
+              }
+            }
+          },
+          {
+            "when": {
+              "intents": [
+                "extend"
+              ]
+            },
+            "parameters": {
+              "aspectRatio": {
+                "type": "string",
+                "send": "omit"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "model": "kling-video-o1",
+      "providerOrigin": "https://api.apib.ai",
+      "sourceSha256": "74e6004a3e0b38e46451e8cac86586950a30287b954750c71134270700038e83",
+      "sourceLines": [
+        {
+          "field": "mode",
+          "startLine": 391,
+          "endLine": 400
+        },
+        {
+          "field": "duration",
+          "startLine": 402,
+          "endLine": 408
+        },
+        {
+          "field": "aspect_ratio",
+          "startLine": 410,
+          "endLine": 420
+        }
+      ],
+      "sourceRevision": {
+        "id": "15e638ae-257b-5a41-8ba0-2f642c12e92a",
+        "revision": 1,
+        "sourceUrl": "https://docs.apimart.ai/en/api-reference/videos/kling-video-o1/generation.md",
+        "collectedAt": "2026-11-16T06:01:06.378387+00:00"
+      },
+      "contract": {
+        "version": 1,
+        "providerOrigin": "https://api.apib.ai",
+        "parameters": {
+          "resolution": {
+            "type": "string",
+            "values": [
+              "720p",
+              "1080p"
+            ]
+          },
+          "durationSeconds": {
+            "type": "integer",
+            "values": [
+              5,
+              10
+            ]
+          },
+          "aspectRatio": {
+            "type": "string",
+            "values": [
+              "16:9",
+              "9:16",
+              "1:1"
+            ]
+          }
+        },
+        "conditions": [
+          {
+            "when": {
+              "intents": [
+                "single_image",
+                "frames_required",
+                "first_optional",
+                "last_optional"
+              ]
+            },
+            "parameters": {
+              "aspectRatio": {
+                "type": "string",
+                "send": "omit"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "model": "wan2.5-preview",
+      "providerOrigin": "https://api.apib.ai",
+      "sourceSha256": "7b0d4968659b474f3e6203ef1435b90be0a351fbb38e0cc53d4c3c7fa2f4129a",
+      "sourceLines": [
+        {
+          "field": "resolution",
+          "startLine": 393,
+          "endLine": 411
+        },
+        {
+          "field": "duration",
+          "startLine": 413,
+          "endLine": 419
+        },
+        {
+          "field": "size",
+          "startLine": 421,
+          "endLine": 445
+        }
+      ],
+      "sourceRevision": {
+        "id": "f3716e4b-1dbe-5471-97d3-af19bbc1df75",
+        "revision": 1,
+        "sourceUrl": "https://docs.apimart.ai/en/api-reference/videos/wan2.5/generation.md",
+        "collectedAt": "2026-11-16T06:01:07.322747+00:00"
+      },
+      "contract": {
+        "version": 1,
+        "providerOrigin": "https://api.apib.ai",
+        "parameters": {
+          "resolution": {
+            "type": "string",
+            "values": [
+              "480p",
+              "720p",
+              "1080p"
+            ]
+          },
+          "durationSeconds": {
+            "type": "integer",
+            "values": [
+              5,
+              10
+            ]
+          },
+          "aspectRatio": {
+            "type": "string",
+            "values": [
+              "16:9",
+              "9:16",
+              "1:1",
+              "4:3",
+              "3:4"
+            ]
+          }
+        },
+        "conditions": [
+          {
+            "when": {
+              "intents": [
+                "single_image",
+                "frames_required",
+                "first_optional",
+                "last_optional"
+              ]
+            },
+            "parameters": {
+              "aspectRatio": {
+                "type": "string",
+                "send": "omit"
+              }
+            }
+          },
+          {
+            "when": {
+              "parameters": {
+                "resolution": [
+                  "480p"
+                ]
+              }
+            },
+            "parameters": {
+              "aspectRatio": {
+                "type": "string",
+                "values": [
+                  "16:9",
+                  "9:16",
+                  "1:1"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "model": "wan2.6",
+      "providerOrigin": "https://api.apib.ai",
+      "sourceSha256": "b20f0d701bb834c2671f06c098c47ecc484c9f3ba1d34664a8be3ea8a6504ace",
+      "sourceLines": [
+        {
+          "field": "aspect_ratio",
+          "startLine": 389,
+          "endLine": 405
+        },
+        {
+          "field": "resolution",
+          "startLine": 407,
+          "endLine": 424
+        },
+        {
+          "field": "duration",
+          "startLine": 426,
+          "endLine": 432
+        }
+      ],
+      "sourceRevision": {
+        "id": "ea4f91ec-1244-5013-84bf-73e42c0d6e6c",
+        "revision": 1,
+        "sourceUrl": "https://docs.apimart.ai/en/api-reference/videos/wan2.6/generation.md",
+        "collectedAt": "2026-11-16T06:01:07.350287+00:00"
+      },
+      "contract": {
+        "version": 1,
+        "providerOrigin": "https://api.apib.ai",
+        "parameters": {
+          "resolution": {
+            "type": "string",
+            "values": [
+              "720p",
+              "1080p"
+            ]
+          },
+          "durationSeconds": {
+            "type": "integer",
+            "values": [
+              5,
+              10,
+              15
+            ]
+          },
+          "aspectRatio": {
+            "type": "string",
+            "values": [
+              "16:9",
+              "9:16",
+              "1:1",
+              "4:3",
+              "3:4"
+            ]
+          }
+        },
+        "conditions": [
+          {
+            "when": {
+              "intents": [
+                "single_image",
+                "frames_required",
+                "first_optional",
+                "last_optional"
+              ]
+            },
+            "parameters": {
+              "aspectRatio": {
+                "type": "string",
+                "send": "omit"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "model": "wan2.6-i2v-flash",
+      "providerOrigin": "https://api.apib.ai",
+      "sourceSha256": "c9b91ddee8a419bc8b2d422635217fefe192cf76ebc3a2876658cae322ea030e",
+      "sourceLines": [
+        {
+          "field": "resolution",
+          "startLine": 398,
+          "endLine": 411
+        },
+        {
+          "field": "duration",
+          "startLine": 413,
+          "endLine": 419
+        }
+      ],
+      "sourceRevision": {
+        "id": "5bd27114-2b8b-57be-9624-e973c0712800",
+        "revision": 1,
+        "sourceUrl": "https://docs.apimart.ai/en/api-reference/videos/wan2.6/i2v-flash-generation.md",
+        "collectedAt": "2026-11-16T06:01:07.362428+00:00"
+      },
+      "contract": {
+        "version": 1,
+        "providerOrigin": "https://api.apib.ai",
+        "parameters": {
+          "resolution": {
+            "type": "string",
+            "values": [
+              "720p",
+              "1080p"
+            ]
+          },
+          "durationSeconds": {
+            "type": "integer",
+            "values": [
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15
+            ]
+          }
+        },
+        "conditions": [
+          {
+            "when": {
+              "intents": [
+                "single_image",
+                "frames_required",
+                "first_optional",
+                "last_optional"
+              ]
+            },
+            "parameters": {
+              "aspectRatio": {
+                "type": "string",
+                "send": "omit"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "model": "wan2.7-r2v",
+      "providerOrigin": "https://api.apib.ai",
+      "sourceSha256": "b3d0278cff8975a14706178870d9fa039c404c146730da369471d7aba40f5dd2",
+      "sourceLines": [
+        {
+          "field": "resolution",
+          "startLine": 418,
+          "endLine": 425
+        },
+        {
+          "field": "duration",
+          "startLine": 427,
+          "endLine": 439
+        },
+        {
+          "field": "size",
+          "startLine": 441,
+          "endLine": 455
+        }
+      ],
+      "sourceRevision": {
+        "id": "d0ece5d1-3b15-59a9-9c20-d8240f38a10e",
+        "revision": 1,
+        "sourceUrl": "https://docs.apimart.ai/en/api-reference/videos/wan2.7-r2v/generation.md",
+        "collectedAt": "2026-11-16T06:01:07.376682+00:00"
+      },
+      "contract": {
+        "version": 1,
+        "providerOrigin": "https://api.apib.ai",
+        "parameters": {
+          "resolution": {
+            "type": "string",
+            "values": [
+              "720P",
+              "1080P"
+            ]
+          },
+          "durationSeconds": {
+            "type": "integer",
+            "values": [
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15
+            ]
+          },
+          "aspectRatio": {
+            "type": "string",
+            "values": [
+              "16:9",
+              "9:16",
+              "1:1",
+              "4:3",
+              "3:4"
+            ]
+          }
+        },
+        "conditions": [
+          {
+            "when": {
+              "intents": [
+                "single_image",
+                "frames_required",
+                "first_optional",
+                "last_optional"
+              ]
+            },
+            "parameters": {
+              "aspectRatio": {
+                "type": "string",
+                "send": "omit"
+              }
+            }
+          },
+          {
+            "when": {
+              "inputs": [
+                {
+                  "kind": "video",
+                  "minimum": 1
+                }
+              ]
+            },
+            "parameters": {
+              "durationSeconds": {
+                "type": "integer",
+                "values": [
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7,
+                  8,
+                  9,
+                  10
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "model": "wan3.0-video",
+      "providerOrigin": "https://api.apib.ai",
+      "sourceSha256": "ba274589774b20a59dbd55184ec58b0263ac3f159b07599d506e470e5aef6717",
+      "sourceLines": [
+        {
+          "field": "resolution",
+          "startLine": 217,
+          "endLine": 227
+        },
+        {
+          "field": "size",
+          "startLine": 229,
+          "endLine": 234
+        },
+        {
+          "field": "duration",
+          "startLine": 236,
+          "endLine": 245
+        }
+      ],
+      "sourceRevision": {
+        "id": "93042d51-a3a4-5e77-b889-6418e8829c5f",
+        "revision": 1,
+        "sourceUrl": "https://docs.apimart.ai/en/api-reference/videos/wan3.0-video/generation.md",
+        "collectedAt": "2026-11-16T06:01:07.798161+00:00"
+      },
+      "contract": {
+        "version": 1,
+        "providerOrigin": "https://api.apib.ai",
+        "parameters": {
+          "resolution": {
+            "type": "string",
+            "values": [
+              "480P",
+              "720P",
+              "1080P"
+            ]
+          },
+          "durationSeconds": {
+            "type": "integer",
+            "values": [
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30
+            ]
+          },
+          "aspectRatio": {
+            "type": "string",
+            "values": [
+              "16:9",
+              "9:16",
+              "1:1",
+              "4:3",
+              "3:4",
+              "adaptive"
+            ]
+          }
+        },
+        "conditions": [
+          {
+            "when": {
+              "intents": [
+                "single_image",
+                "frames_required",
+                "first_optional",
+                "last_optional"
+              ]
+            },
+            "parameters": {
+              "aspectRatio": {
+                "type": "string",
+                "send": "omit"
+              }
+            }
+          }
+        ],
+        "conflicts": [
+          {
+            "fields": [
+              "automaticDuration"
+            ],
+            "reason": "上游支持-1自动时长，但当前原生编译器只接受正时长；本切片不扩展预占和结算语义。"
+          }
+        ]
+      }
+    },
+    {
+      "model": "wan3.0-video-prime",
+      "providerOrigin": "https://api.apib.ai",
+      "sourceSha256": "ba274589774b20a59dbd55184ec58b0263ac3f159b07599d506e470e5aef6717",
+      "sourceLines": [
+        {
+          "field": "resolution",
+          "startLine": 217,
+          "endLine": 227
+        },
+        {
+          "field": "size",
+          "startLine": 229,
+          "endLine": 234
+        },
+        {
+          "field": "duration",
+          "startLine": 236,
+          "endLine": 245
+        }
+      ],
+      "sourceRevision": {
+        "id": "93042d51-a3a4-5e77-b889-6418e8829c5f",
+        "revision": 1,
+        "sourceUrl": "https://docs.apimart.ai/en/api-reference/videos/wan3.0-video/generation.md",
+        "collectedAt": "2026-11-16T06:01:07.798161+00:00"
+      },
+      "contract": {
+        "version": 1,
+        "providerOrigin": "https://api.apib.ai",
+        "parameters": {
+          "resolution": {
+            "type": "string",
+            "values": [
+              "480P",
+              "720P",
+              "1080P"
+            ]
+          },
+          "durationSeconds": {
+            "type": "integer",
+            "values": [
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16,
+              17,
+              18,
+              19,
+              20,
+              21,
+              22,
+              23,
+              24,
+              25,
+              26,
+              27,
+              28,
+              29,
+              30
+            ]
+          },
+          "aspectRatio": {
+            "type": "string",
+            "values": [
+              "16:9",
+              "9:16",
+              "1:1",
+              "4:3",
+              "3:4",
+              "adaptive"
+            ]
+          }
+        },
+        "conditions": [
+          {
+            "when": {
+              "intents": [
+                "single_image",
+                "frames_required",
+                "first_optional",
+                "last_optional"
+              ]
+            },
+            "parameters": {
+              "aspectRatio": {
+                "type": "string",
+                "send": "omit"
+              }
+            }
+          }
+        ],
+        "conflicts": [
+          {
+            "fields": [
+              "automaticDuration"
+            ],
+            "reason": "上游支持-1自动时长，但当前原生编译器只接受正时长；本切片不扩展预占和结算语义。"
+          }
+        ]
+      }
+    },
+    {
+      "model": "MiniMax-H3",
+      "providerOrigin": "https://api.apib.ai",
+      "sourceSha256": "0cafe0bd19a9d47be418e93da6f907d84534416c02670ca50fe8fe5a07350782",
+      "sourceLines": [
+        {
+          "field": "duration",
+          "startLine": 405,
+          "endLine": 410
+        },
+        {
+          "field": "resolution",
+          "startLine": 412,
+          "endLine": 419
+        },
+        {
+          "field": "aspect_ratio",
+          "startLine": 421,
+          "endLine": 427
+        },
+        {
+          "field": "conditional/context",
+          "startLine": 528,
+          "endLine": 587
+        }
+      ],
+      "sourceRevision": {
+        "id": "8fc467fd-3e30-51e6-a9d1-69f92baaab47",
+        "revision": 1,
+        "sourceUrl": "https://docs.apimart.ai/en/api-reference/videos/minimax-h3/generation.md",
+        "collectedAt": "2026-11-16T06:01:06.379134+00:00"
+      },
+      "contract": {
+        "version": 1,
+        "providerOrigin": "https://api.apib.ai",
+        "parameters": {
+          "resolution": {
+            "type": "string",
+            "values": [
+              "768P",
+              "2K"
+            ]
+          },
+          "durationSeconds": {
+            "type": "integer",
+            "values": [
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15
+            ]
+          },
+          "aspectRatio": {
+            "type": "string",
+            "values": [
+              "16:9",
+              "9:16",
+              "1:1",
+              "4:3",
+              "3:4",
+              "21:9"
+            ]
+          }
+        },
+        "conditions": [
+          {
+            "when": {
+              "intents": [
+                "single_image",
+                "frames_required",
+                "first_optional",
+                "last_optional"
+              ]
+            },
+            "parameters": {
+              "aspectRatio": {
+                "type": "string",
+                "send": "omit"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "model": "MiniMax-H3-Max",
+      "providerOrigin": "https://api.apib.ai",
+      "sourceSha256": "dba0ab44c770d2548ca293b324200b13f92a14fc4d4ed270f5be12c43ba66cab",
+      "sourceLines": [
+        {
+          "field": "duration",
+          "startLine": 175,
+          "endLine": 181
+        },
+        {
+          "field": "resolution",
+          "startLine": 183,
+          "endLine": 191
+        },
+        {
+          "field": "aspect_ratio",
+          "startLine": 193,
+          "endLine": 201
+        },
+        {
+          "field": "conditional/context",
+          "startLine": 122,
+          "endLine": 138
+        },
+        {
+          "field": "conditional/context",
+          "startLine": 259,
+          "endLine": 279
+        }
+      ],
+      "sourceRevision": {
+        "id": "d17bdaef-9d9e-52f9-b193-23d026f06c24",
+        "revision": 1,
+        "sourceUrl": "https://docs.apimart.ai/en/api-reference/videos/minimax-h3/max.md",
+        "collectedAt": "2026-11-16T06:01:06.835982+00:00"
+      },
+      "contract": {
+        "version": 1,
+        "providerOrigin": "https://api.apib.ai",
+        "parameters": {
+          "resolution": {
+            "type": "string",
+            "values": [
+              "480P",
+              "768P",
+              "1080P"
+            ]
+          },
+          "durationSeconds": {
+            "type": "integer",
+            "values": [
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15
+            ]
+          },
+          "aspectRatio": {
+            "type": "string",
+            "values": [
+              "16:9",
+              "9:16",
+              "1:1",
+              "4:3",
+              "3:4",
+              "21:9"
+            ]
+          }
+        },
+        "conditions": [
+          {
+            "when": {
+              "intents": [
+                "single_image",
+                "frames_required",
+                "first_optional",
+                "last_optional"
+              ]
+            },
+            "parameters": {
+              "aspectRatio": {
+                "type": "string",
+                "send": "omit"
+              }
+            }
+          },
+          {
+            "when": {
+              "parameters": {
+                "resolution": [
+                  "1080P"
+                ]
+              }
+            },
+            "parameters": {
+              "watermark": {
+                "type": "boolean",
+                "send": "omit"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

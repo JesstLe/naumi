@@ -4,9 +4,10 @@ import {useVideoI18n} from './i18n';
 
 /** Same flat choice tiles and ratio glyph as the image composer. */
 export function VideoParameterTiles({name,label,values,value,onChange,disabled=false}:{name:'resolution'|'aspectRatio';label:string;values:Array<string|number|boolean|null>;value:unknown;onChange:(value:unknown)=>void;disabled?:boolean}){
-  const V=useVideoI18n(),options=value!==undefined&&!values.includes(value as never)?[...values,value]:values;
+  const V=useVideoI18n(),invalid=value!==undefined&&!values.includes(value as never),options=values;
   return <fieldset aria-label={label} disabled={disabled} className='col-span-2 min-w-0'>
     <legend className='canvas-ui-muted mb-2 text-xs font-semibold'>{label}</legend>
+    {invalid&&<output aria-label={V('当前值不适用')} aria-invalid='true' className='mb-2 block text-xs text-amber-700'>{String(value)}</output>}
     <div className={name==='resolution'?'grid grid-cols-3 gap-2':'grid grid-cols-4 gap-2'}>
       {options.map((item,index)=>{const text=item==='adaptive'||item==='auto'?V('自适应'):String(item),parts=String(item).split(':').map(Number);
         return <button key={index} type='button' aria-label={`${label} ${text}`} aria-pressed={item===value} disabled={disabled} onClick={()=>onChange(item)}

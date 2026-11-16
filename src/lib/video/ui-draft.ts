@@ -3,13 +3,17 @@ import type {VideoNodeConfig,VideoCatalogModel} from './client-settings';
 import type {OrderedInput} from './references';
 import {deriveVideoIntent,readVideoIntentPreference} from './intent';
 import {videoSubmissionDraftValue} from './submission-draft-value';
+import {resolveVideoParameterRules} from './parameter-contract';
 
 const common=new Set(['durationSeconds','resolution','aspectRatio','negativePrompt','width','height','generateAudio','watermark','providerOptions','camera']);
+function completeUiInputs(config:VideoNodeConfig,inputs:readonly OrderedInput[]){
+  try{return videoUiDraft(config,inputs).inputs;}catch{return [...inputs,...(config.elements??[]).flatMap(element=>element.references.map(ref=>({id:ref.id,kind:ref.kind,role:ref.role})))];}
+}
 export function videoUiPreference(config:VideoNodeConfig,inputs:readonly OrderedInput[]){
-  return readVideoIntentPreference({intentPreference:config.intentPreference,legacyMode:config.mode,inputs:[...inputs,...(config.elements??[]).flatMap(element=>element.references)]});
+  return readVideoIntentPreference({intentPreference:config.intentPreference,legacyMode:config.mode,inputs:completeUiInputs(config,inputs)});
 }
 export function videoUiIntent(config:VideoNodeConfig,inputs:readonly OrderedInput[],contract:VideoUiContract){
-  return deriveVideoIntent({intentPreference:config.intentPreference,legacyMode:config.mode,inputs:[...inputs,...(config.elements??[]).flatMap(element=>element.references.map(ref=>({id:ref.id,kind:ref.kind,role:ref.role})))]},contract.defaults);
+  return deriveVideoIntent({intentPreference:config.intentPreference,legacyMode:config.mode,inputs:completeUiInputs(config,inputs)},contract.defaults);
 }
 /** Editor availability is a presentation of executable recipes, never an
  * execution verdict. Preserve editors for existing incompatible groups too. */
@@ -21,7 +25,12 @@ export function videoUiStructure(config:VideoNodeConfig,inputs:readonly OrderedI
 export function videoUiParameters(config:VideoNodeConfig,inputs:readonly OrderedInput[],contract:VideoUiContract):Record<string,VideoUiParameter>{
   if(contract.workflow)return contract.workflow.parameters;
   const intent=videoUiIntent(config,inputs,contract);
-  if(intent.ok){const operation=contract.operations.find(op=>op.intent===intent.value);if(operation)return operation.parameters;}
+  if(intent.ok){const operation=contract.operations.find(op=>op.intent===intent.value);if(operation){
+    // A malformed persisted draft must remain editable. Its structural error
+    // belongs to the existing compile preview, not a React render exception.
+    let draft;try{draft=videoUiDraft(config,inputs);}catch{return operation.parameters;}
+    return resolveVideoParameterRules(operation.parameters,contract.parameterConditions,{intent:intent.value,inputs:draft.inputs,parameters:draft.parameters});
+  }}
   // Ambiguous drafts still render shared controls. This is presentation only;
   // it does not invent an execution mode or reset the user's configuration.
   const first=contract.operations[0]?.parameters??{};

@@ -14,7 +14,7 @@ import {discoverPublicSupplierDirectory} from "../supplier-models/discovery";
 export type CatalogEntry = ProviderCatalogResult & { cached: boolean; stale: boolean; lastSuccessAt?: string; refreshing?: boolean; metadataSaved?:boolean };
 
 
-const fingerprint=(p:ModelProvider)=>createHash('sha256').update(JSON.stringify([p.id,p.baseUrl,p.protocol,p.credentialRef||null])).digest('hex');
+const fingerprint=(p:ModelProvider)=>createHash('sha256').update(JSON.stringify([p.id,p.baseUrl,p.protocol,p.credentialRef||null,...(p.options?.parameterCatalogPath?[p.options.parameterCatalogPath]:[])])).digest('hex');
 function entry(row:any,p:ModelProvider):CatalogEntry{
   const result=row?.result as ProviderCatalogResult|undefined;
   const {sourceModels: _internalSource, ...publicResult} = result || {status:'empty' as const,models:[],fetchedAt:''};

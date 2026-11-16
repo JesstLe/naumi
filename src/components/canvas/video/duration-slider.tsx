@@ -13,6 +13,7 @@ export function VideoContractDuration({rule,value,onChange,disabled=false}:{rule
   const current=value===undefined?rule.default:value;
   const text=current===-1?V('自动'):typeof current==='number'?`${current}s`:V('模型默认');
   const invalid=typeof current==='number'&&current!==-1&&(seconds?!seconds.includes(current):current<min||current>max);
+  if(!options.bounded)return <label className={styles.control}><span>{V('视频时长')}</span><input aria-label={V('视频时长')} type='number' value={typeof current==='number'?current:''} min={rule.minimum} max={rule.maximum} step={rule.type==='integer'?1:'any'} placeholder={V('模型默认')} onChange={e=>onChange(e.target.value===''?undefined:Number(e.target.value))}/></label>;
   return <fieldset disabled={disabled} className={styles.control} data-testid='video-contract-duration'>
     <div className={styles.heading}><span>{V('视频时长')}</span><div className={styles.selection}>
       <button type='button' aria-label={V('时长跟随模型')} aria-pressed={value===undefined} onClick={()=>onChange(undefined)}>{V('默认')}</button>

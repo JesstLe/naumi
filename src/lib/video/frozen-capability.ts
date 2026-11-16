@@ -10,6 +10,7 @@ import {ModelConfigError} from "../model-config/types";
 import {supplierVideoDefinition} from "../supplier-models/video-access";
 import {managedVideoDefinition} from "./model-definition";
 import {videoProfileProtocol} from "./capability-schema";
+import {inheritPublishedVideoParameters} from '../model-config/video-parameter-inheritance';
 
 import {frozenVideoSchema,type FrozenVideoCapability} from './frozen-capability-schema';
 export {frozenVideoSchema,type FrozenVideoCapability} from './frozen-capability-schema';
@@ -24,8 +25,10 @@ export async function freezeManagedVideoCapability(snapshot:ModelSnapshot,upstre
     if(upstream.parameterMap.videoExecution){
       const profile=upstream.parameterMap.videoProfile??provider.options?.videoProfile;
       if(upstream.parameterMap.videoExecution.profileId==='native-video'?!nativeVideoQueryMatches(upstream.parameterMap.videoExecution.recipe.layout,profile,provider.protocol,upstream.parameterMap.videoExecution.recipe.queryTransport):!profile||videoProfileProtocol(profile)!==provider.protocol)throw new ModelConfigError("VIDEO_PROFILE_MISMATCH","视频执行映射缺少匹配的查询协议",422);
-      return frozenVideoSchema.parse({definition:{},sources:{},profile,
-        execution:{...upstream.parameterMap.videoExecution,modelVersion:snapshot.version,modelDigest:snapshot.digest}});
+      const inherited=inheritPublishedVideoParameters(upstream.parameterMap.videoExecution,provider,upstream.model,await supplierVideoDefinition(provider.id,upstream.model,connection));
+      return frozenVideoSchema.parse({definition:inherited.conflicts?{parameterContract:{version:1,parameters:{},conflicts:inherited.conflicts}}:{},sources:inherited.sourceRevision?{parameters:'vendor'}:{},profile,
+        ...(inherited.sourceRevision?{sourceRevision:inherited.sourceRevision}:{}),
+        execution:{...inherited.execution,modelVersion:snapshot.version,modelDigest:snapshot.digest}});
     }
     const value=managedVideoDefinition(upstream,provider,await supplierVideoDefinition(provider.id,upstream.model,connection));
     if(value.profile&&videoProfileProtocol(value.profile)!==provider.protocol)throw new ModelConfigError("VIDEO_PROFILE_MISMATCH","视频来源协议与所选适配分支不一致",422);

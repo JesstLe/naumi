@@ -1,4 +1,5 @@
 import {videoParameterSchema,mapVideoParameters} from './parameters';
+import {videoParameterConditionSchema,resolveVideoParameterRules} from '../parameter-contract';
 import {shotsMapping,elementsMapping,mapStructuredJson} from './structured-json';
 import {z} from 'zod';
 import {validateVideoStructure} from '../input-resolver';
@@ -23,6 +24,7 @@ export const jsonVideoRecipeSchema=z.strictObject({
   createPath:z.string().regex(/^\/(?!\/)[^?#\s]*$/),modelField:field,promptField:field,bodyField:field.optional(),
   defaults:z.strictObject({ordinaryImage:z.enum(['single_image','reference']).optional(),sourceVideo:z.enum(['video_edit','reference']).optional()}).default({}),
   parameters:z.record(field,videoParameterSchema),
+  parameterConditions:z.array(videoParameterConditionSchema).max(200).optional(),
   operations:z.array(z.strictObject({intent:videoIntentSchema,requiresPrompt:z.boolean().optional(),
     maxPromptChars:z.number().int().positive().optional(),images:range.optional(),videos:range.optional(),audios:range.optional(),
     shots:shotsMapping.optional(),elements:elementsMapping.optional(),
@@ -105,7 +107,7 @@ function mapJsonDraft(draft:VideoExecutionDraft,binding:PublishedVideoModelBindi
   const body:Record<string,Json>={},effective:Record<string,Json>={};
   const put=(name:string,value:Json):boolean=>{if(Object.hasOwn(body,name))return false;body[name]=value;return true;};
   if(!put(recipe.modelField,binding.wireModel)||!put(recipe.promptField,prompt))return fail('mapping','WIRE_FIELD_COLLISION','binding.recipe','模型和提示词字段冲突','修正协议字段映射');
-  const parameters={...recipe.parameters,...operation.parameters};
+  const parameters=resolveVideoParameterRules({...recipe.parameters,...operation.parameters},recipe.parameterConditions,{intent:operation.intent,inputs:draft.inputs,parameters:draft.parameters});
   const mapped=mapVideoParameters(draft.parameters,parameters);if(!mapped.ok)return mapped;
   Object.assign(effective,mapped.value.effective);
   for(const [name,value] of Object.entries(mapped.value.wire)){
