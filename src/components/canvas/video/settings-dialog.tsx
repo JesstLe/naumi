@@ -9,7 +9,7 @@ import {VideoCompactComposer} from "./compact-composer";
 import type { CanvasVideoNode } from "@/lib/canvas/video-node-schema";
 import type { OrderedInput } from "@/lib/video/references";
 import {selectedVideoCatalogModel, resolveVideoTextInputs, validateVideoSettings, type VideoCatalogModel, type VideoNodeConfig, type VideoInputChoice } from "@/lib/video/client-settings";
-import { useBillingEstimate, type PublicQuote } from "@/lib/billing/client";
+import { useBilling, type PublicQuote } from "@/lib/billing/client";
 import { VideoSettingsFields } from "./settings-fields";
 import { VideoField, videoFieldClass, videoButtonClass, assertVideoFieldsValid } from "./form-controls";
 import { isTopVideoDialog } from "./dialog-stack";
@@ -17,6 +17,7 @@ import {type PublicVideoTaskView} from "@/lib/video/queries";
 import {useVideoCompilePreview} from '@/lib/video/use-compile-preview';
 import {videoComposerDrafts,videoComposerDraftKey,type VideoComposerDraft as CachedComposer} from '@/lib/video/composer-drafts';
 import type {VideoNodeDraft} from "@/lib/video/canvas-draft";
+import {videoPriceEstimate,videoQuoteSelection,videoKnownPrice,videoPriceSelectionKey,VIDEO_ESTIMATED_CREDITS_PER_SECOND} from '@/lib/video/price-estimate';
 export type {VideoNodeDraft} from "@/lib/video/canvas-draft";
 export function VideoSettingsDialog({ node, models, choices, light, email, readOnly = false, onClose, onSave, onGenerate, onImport, onLoadMoreAssets, canLoadMoreAssets = false, catalogLoading=false, catalogError="", onRetryCatalog, presentation="dialog", dockStyle, dockRef, expanded, onToggleExpand, advanced=false, onCloseAdvanced, draftScope, task, onCancel, generationBlocked=false, onOptimize, onStoryboard }: {
     node: CanvasVideoNode;
@@ -94,10 +95,12 @@ export function VideoSettingsDialog({ node, models, choices, light, email, readO
     const model=selectedVideoCatalogModel(models,config);
     const resolvedInputs = resolveVideoTextInputs(inputs,choices);
     const compilePreview=useVideoCompilePreview({email,model,config,inputs:resolvedInputs,node:{id:node.id,revision:node.revision},enabled:!readOnly&&!active});
-    const estimate = useBillingEstimate({ feature: "video.generate", quantity: 1, canvas: true, modelId: config.modelId, providerId: config.providerId,
-      resolution:model?.execution?compilePreview.value?.billingFacts.resolution:config.resolution,ratio:model?.execution?compilePreview.value?.billingFacts.aspectRatio:config.aspectRatio }, !readOnly && !config.comfyWorkflowId&&(!model?.execution||compilePreview.status==='ready'));
-    const totalQuote = videoBatchQuote(estimate.quote,count);
-    const totalCost = totalQuote?.mode === "api-cost-plus" ? totalQuote.authorizedCredits ?? totalQuote.reserveCredits : totalQuote?.credits;
+    const billing=useBilling(),[knownPrice,setKnownPrice]=useState<{key:string;quote:PublicQuote}|null>(null);
+    const priceKey=JSON.stringify([email,draftScope,node.projectKey,billing.catalog?.version,videoPriceSelectionKey(config,model?.execution),resolvedInputs]);
+    const knownQuote=knownPrice?.key===priceKey?knownPrice.quote:undefined,knownCredits=videoKnownPrice(knownQuote,count);
+    const estimatedCredits=videoPriceEstimate(config,resolvedInputs,model?.execution,count,compilePreview.value?.billingFacts);
+    const priceText=config.comfyWorkflowId?'0':knownCredits!==undefined?V(`${knownQuote?.mode==='api-cost-plus'?'上限 ':''}${knownCredits} 积分`):estimatedCredits===undefined?V(`约 ${VIDEO_ESTIMATED_CREDITS_PER_SECOND} 积分/秒`):V(`约 ${estimatedCredits} 积分`);
+    const compileReady=!model?.execution||compilePreview.status==='ready';
     const invalid = validateVideoSettings(config, resolvedInputs, {sources:{}}, choices,model?.execution)||compilePreview.error;
     useEffect(() => {
         if(dock)return;
@@ -136,9 +139,10 @@ export function VideoSettingsDialog({ node, models, choices, light, email, readO
         if(generate)assertVideoFieldsValid(dock?dockRef?.current||null:dialogRef.current);
         const draft = { title, config, inputs: resolvedInputs, expectedRevision: revision.current };
         if (generate) {
-            if (!config.comfyWorkflowId && !estimate.quote)
-                throw new Error(estimate.error || "请等待报价");
-            await onGenerate(draft, config.comfyWorkflowId ? null : totalQuote, savedRevision => { revision.current = savedRevision; }, count);
+            if(!config.comfyWorkflowId&&!compileReady)throw new Error(compilePreview.error||'请等待输入检查');
+            const quote=config.comfyWorkflowId?null:await billing.quote(videoQuoteSelection(config,compilePreview.value?.billingFacts,true));
+            if(quote)setKnownPrice({key:priceKey,quote});
+            await onGenerate(draft, videoBatchQuote(quote,count), savedRevision => { revision.current = savedRevision; }, count);
         }
         else {
             const saved=await onSave(draft);if(saved)revision.current=saved.revision;
@@ -165,10 +169,10 @@ export function VideoSettingsDialog({ node, models, choices, light, email, readO
           <span role="status" className="min-w-0 truncate text-xs canvas-ui-muted">{active?V(generationBlocked||task?.status==='needs_attention'?"等待核查":"生成中"):saved?V("已保存"):''}{active&&task&&task.progress>0?` · ${task.progress}%`:''}</span>
 
             <button type="button" title={V("保存设置")} aria-label={V("保存设置")} className={`${videoButtonClass} h-8 w-8 shrink-0 p-0`} disabled={readOnly||busy||importing} onClick={()=>void submit(false)}>{busy?<Loader2 size={14} className="animate-spin"/>:saved?<Check size={14}/>:<Save size={14}/>}</button>
-            {!active&&!readOnly&&<span className="flex items-center gap-1 text-xs font-semibold canvas-ui-muted" data-testid="video-composer-price"><Sparkles size={13}/>{config.comfyWorkflowId?'0':estimate.quote?`${estimate.quote.mode==='api-cost-plus'?V('上限')+' ':''}${totalCost}`:V("报价中…")}</span>}
-            {active?<button type="button" aria-label={V(task?.cancellationRequestedAt?"正在停止":"停止")} title={V(task?.cancellationRequestedAt?"正在停止":"停止")} className="canvas-ui-primary flex h-9 w-9 shrink-0 items-center justify-center rounded-full disabled:opacity-40" disabled={readOnly||busy||generationBlocked||!!task?.cancellationRequestedAt||!onCancel||['needs_attention','creation_unknown'].includes(task?.status||'')} onClick={onCancel}><Square size={13} fill="currentColor"/></button>:<button type="button" aria-label={V("生成视频")} title={V("生成视频")} className="canvas-ui-primary flex h-9 w-9 shrink-0 items-center justify-center rounded-full disabled:opacity-40" disabled={readOnly||busy||importing||catalogLoading||!!invalid||!config.comfyWorkflowId&&!estimate.quote} onClick={()=>void submit(true)}>{busy?<Loader2 size={17} className="animate-spin"/>:<ArrowUp size={19}/>}</button>}
+            {!active&&!readOnly&&<span className="flex items-center gap-1 text-xs font-semibold canvas-ui-muted" data-testid="video-composer-price"><Sparkles size={13}/>{priceText}</span>}
+            {active?<button type="button" aria-label={V(task?.cancellationRequestedAt?"正在停止":"停止")} title={V(task?.cancellationRequestedAt?"正在停止":"停止")} className="canvas-ui-primary flex h-9 w-9 shrink-0 items-center justify-center rounded-full disabled:opacity-40" disabled={readOnly||busy||generationBlocked||!!task?.cancellationRequestedAt||!onCancel||['needs_attention','creation_unknown'].includes(task?.status||'')} onClick={onCancel}><Square size={13} fill="currentColor"/></button>:<button type="button" aria-label={V("生成视频")} title={V("生成视频")} className="canvas-ui-primary flex h-9 w-9 shrink-0 items-center justify-center rounded-full disabled:opacity-40" disabled={readOnly||busy||importing||catalogLoading||!!invalid||!config.comfyWorkflowId&&!compileReady} onClick={()=>void submit(true)}>{busy?<Loader2 size={17} className="animate-spin"/>:<ArrowUp size={19}/>}</button>}
         </>);
-    const dockFeedback=((error||task?.error||invalid||estimate.error)&&<p role={error?"alert":"status"} className="mb-2 break-words text-xs text-amber-600">{V(error||task?.error||invalid||estimate.error||"")}{compilePreview.status==='unavailable'&&<button type='button' className={videoButtonClass} onClick={compilePreview.retry}>{V('重试')}</button>}</p>);
+    const dockFeedback=((error||task?.error||invalid)&&<p role={error?"alert":"status"} className="mb-2 break-words text-xs text-amber-600">{V(error||task?.error||invalid||"")}{compilePreview.status==='unavailable'&&<button type='button' className={videoButtonClass} onClick={compilePreview.retry}>{V('重试')}</button>}</p>);
     if(dock)return <CanvasComposerShell ref={dockRef} style={dockStyle} expanded={expanded} onToggleExpand={onToggleExpand} kind="video" compact heading={node.title||V('视频生成')} onDismiss={onClose} closeLabel={V('关闭创作栏')} expandLabel={V('展开输入区')} collapseLabel={V('收起输入区')} data-testid="video-node-dock" role="region" aria-label={V('视频节点设置')} onKeyDown={event=>event.stopPropagation()}>
       <VideoCompactComposer count={count} onCount={value=>{setSaved(false);setCount(value);}} onOptimize={onOptimize} config={config} inputs={resolvedInputs} models={models} choices={choices} nodeId={node.id} light={light} blocked={readOnly||busy||importing}
         onConfig={value=>{setSaved(false);setConfig(value);}} onInputs={value=>{setSaved(false);setInputs(value);setConfig(current=>({...current,references:[]}));}} onImport={onImport} onImportBusyChange={setImporting}
@@ -189,7 +193,7 @@ export function VideoSettingsDialog({ node, models, choices, light, email, readO
         <VideoSettingsFields config={config} inputs={resolvedInputs} models={models} choices={choices} nodeId={node.id} email={email} readOnly={readOnly} busy={busy} onConfig={setConfig} onInputs={setInputs} onImport={onImport} onImportBusyChange={setImporting} onLoadMoreAssets={onLoadMoreAssets} canLoadMoreAssets={canLoadMoreAssets}/>
 
       </fieldset></div>
-      <footer className="shrink-0 space-y-2 border-t border-current/10 px-4 py-3">{(error || invalid || !config.comfyWorkflowId && estimate.error) && <p role={error ? "alert" : "status"} className={`text-xs ${error ? "text-red-500" : "text-amber-500"}`}>{V(error || invalid || estimate.error||"")}{compilePreview.status==='unavailable'&&<button type="button" className={videoButtonClass} onClick={compilePreview.retry}>{V("重试")}</button>}</p>}<div className="flex justify-end gap-2"><button type="button" className={videoButtonClass} disabled={readOnly || busy || importing} onClick={() => void submit(false)}>{busy ? V("保存中…") : V("保存设置")}</button><button type="button" className="rounded-lg bg-teal-500 px-4 py-2 text-xs font-semibold text-white hover:bg-teal-600 disabled:opacity-40" disabled={readOnly || busy || importing || active || catalogLoading || !!invalid || !config.comfyWorkflowId && !estimate.quote} onClick={() => void submit(true)}>{V("\u751F\u6210\u89C6\u9891 \u00B7 ")}{readOnly ? V("只读") : config.comfyWorkflowId ? V("0 积分") : estimate.quote ? V(`${estimate.quote.mode === "api-cost-plus" ? "上限 " : ""}${totalCost} 积分`) : V("报价中…")}</button></div></footer>
+      <footer className="shrink-0 space-y-2 border-t border-current/10 px-4 py-3">{(error || invalid) && <p role={error ? "alert" : "status"} className={`text-xs ${error ? "text-red-500" : "text-amber-500"}`}>{V(error || invalid || "")}{compilePreview.status==='unavailable'&&<button type="button" className={videoButtonClass} onClick={compilePreview.retry}>{V("重试")}</button>}</p>}<div className="flex justify-end gap-2"><button type="button" className={videoButtonClass} disabled={readOnly || busy || importing} onClick={() => void submit(false)}>{busy ? V("保存中…") : V("保存设置")}</button><button type="button" className="rounded-lg bg-teal-500 px-4 py-2 text-xs font-semibold text-white hover:bg-teal-600 disabled:opacity-40" disabled={readOnly || busy || importing || active || catalogLoading || !!invalid || !config.comfyWorkflowId && !compileReady} onClick={() => void submit(true)}>{V("\u751F\u6210\u89C6\u9891 \u00B7 ")}{readOnly ? V("只读") : config.comfyWorkflowId ? V("0 积分") : priceText}</button></div></footer>
     </div>
   </div>, document.body);
 }
