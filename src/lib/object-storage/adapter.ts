@@ -1,14 +1,14 @@
 import 'server-only';
 import {AwsClient} from 'aws4fetch';
 import {createReadStream} from 'node:fs';
-import {mkdir,stat,writeFile,unlink,rename} from 'node:fs/promises';
+import {mkdir,stat,writeFile,unlink,rename,link} from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
 import {Readable} from 'node:stream';
 import path from 'node:path';
 import type {StorageConfiguration} from './config';
 import {WriteAvailability,nasWriteTimeout} from './write-availability';
 export interface ObjectStorage {
-  put(key:string,bytes:Uint8Array,type:string,cache:string):Promise<void>;
+  put(key:string,bytes:Uint8Array,type:string,cache:string,options?:{ifAbsent?:boolean}):Promise<void>;
   get(key:string,range?:string,signal?:AbortSignal):Promise<Response>;
   exists(key:string):Promise<boolean>;
   delete(key:string):Promise<void>;
@@ -25,8 +25,8 @@ export class StorageRequestError extends Error {
 export function createObjectStorage(config:StorageConfiguration):ObjectStorage {
   const full=(key:string)=>{const root=path.resolve(config.mediaDir),file=path.resolve(root,safeStorageKey(key));if(!file.startsWith(root+path.sep))throw new Error('对象路径非法');return file;};
   if(config.driver==='local') return {
-    async put(key,bytes){const file=full(key);await mkdir(path.dirname(file),{recursive:true});const temporary=file+'.'+randomUUID()+'.tmp';
-      try{await writeFile(temporary,bytes,{flag:'wx',mode:0o600});await rename(temporary,file);}finally{await unlink(temporary).catch(e=>{if(e.code!=='ENOENT')throw e;});}},
+    async put(key,bytes,_type,_cache,options){const file=full(key);await mkdir(path.dirname(file),{recursive:true});const temporary=file+'.'+randomUUID()+'.tmp';
+      try{await writeFile(temporary,bytes,{flag:'wx',mode:0o600});if(options?.ifAbsent){try{await link(temporary,file);}catch(e){if((e as NodeJS.ErrnoException).code==='EEXIST')throw new StorageRequestError(412,'PUT');throw e;}}else await rename(temporary,file);}finally{await unlink(temporary).catch(e=>{if(e.code!=='ENOENT')throw e;});}},
     async get(key,range=''){
       const file=full(key);let info;try{info=await stat(file);}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')return new Response(null,{status:404});throw e;}
       if(!info.isFile())return new Response(null,{status:404});
@@ -60,7 +60,7 @@ export function createObjectStorage(config:StorageConfiguration):ObjectStorage {
     return fetch(signed,{signal,cache:'no-store'});
   }
   return {
-    async put(key,bytes,type,cache){
+    async put(key,bytes,type,cache,options){
       if(nasWrites && !await nasWrites.available(async()=>{
         const response=await request(key,{method:'HEAD',signal:AbortSignal.timeout(3000)});
         await response.body?.cancel();
@@ -70,10 +70,10 @@ export function createObjectStorage(config:StorageConfiguration):ObjectStorage {
       try {
         const response=await request(key,{method:'PUT',body:Buffer.from(bytes),
           ...(nasWrites?{signal:AbortSignal.timeout(nasWriteTimeout(bytes.byteLength))}:{}),
-          headers:{'content-type':type,'content-length':String(bytes.byteLength),'cache-control':cache}});
+          headers:{'content-type':type,'content-length':String(bytes.byteLength),'cache-control':cache,...(options?.ifAbsent?{'if-none-match':'*'}:{})}});
         await response.body?.cancel();
         if(!response.ok)throw new StorageRequestError(response.status,'PUT');
-      } catch(error) {nasWrites?.failed();throw error;}
+      } catch(error) {if(!(error instanceof StorageRequestError&&error.status===412))nasWrites?.failed();throw error;}
     },
     get(key,range='',signal){return request(key,{method:'GET',headers:range?{range}:{},...(signal?{signal:AbortSignal.any([signal,AbortSignal.timeout(120000)])}:{})});},
     async exists(key){const response=await request(key,{method:'HEAD',signal:AbortSignal.timeout(30000)});if(response.status===404)return false;if(!response.ok)throw new StorageRequestError(response.status,'HEAD');return true;},
