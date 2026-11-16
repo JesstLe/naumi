@@ -10,6 +10,7 @@ import { DISPLAY_QUALITY_IDS, qualityPolicySchema } from "./quality-policy";
 import { FEATURE_IDS, QUALITY_IDS, RESOLUTION_IDS } from "../billing/rules/registry";
 import { z } from "zod";
 import {onboardingFields} from './onboarding-schema';
+import {parameterCatalogPathSchema} from './schema';
 import type { getModelAdministration } from "./server";
 /** Wire contract of POST /api/admin/model-management (and the legacy /api/admin/mvp alias).
  * Operation ids, actions and field names are a persisted compatibility protocol. */
@@ -36,7 +37,7 @@ export const managementInput = z.discriminatedUnion("action", [
   z.strictObject({action:z.literal("scope"),...common,rowId:identifier,features:z.array(z.enum(FEATURE_IDS)).max(FEATURE_IDS.length),canvas:z.boolean().optional()}),
   z.strictObject({action:z.literal("parameters"),...common,rowId:identifier,parameters:z.strictObject({choices:z.array(z.strictObject({id:z.enum(DISPLAY_QUALITY_IDS),label:z.string().trim().min(1).max(30)})).min(1).max(5),routes:z.array(z.strictObject({upstreamId:identifier,mode:z.enum(["map","passthrough","omit"]),values:z.record(z.string(),z.string().max(100)),metadataRef:z.strictObject({id:z.uuid(),revision:z.number().int().positive()}).nullable().optional(),evidence:z.strictObject({status:z.enum(["unverified","documented","accepted","rejected"]),source:z.string().max(1000),checkedAt:z.string().max(30)}).optional()})).min(1).max(100)}).nullable()}),
   z.strictObject({action:z.literal("pricing"),...common,expectedBillingVersion:z.number().int().positive(),rowId:identifier,features:z.array(z.enum(FEATURE_IDS)).min(1).max(FEATURE_IDS.length),pricing:creditPricing.nullable()}),
-  z.strictObject({ action: z.literal("connect"), ...common, name: z.string().trim().min(1).max(100), baseUrl: z.string().max(1024), protocol: z.enum(MODEL_MANAGEMENT_PROTOCOLS), credentialRef: z.uuid() }),
+  z.strictObject({ action: z.literal("connect"), ...common, name: z.string().trim().min(1).max(100), baseUrl: z.string().max(1024), protocol: z.enum(MODEL_MANAGEMENT_PROTOCOLS), credentialRef: z.uuid(),parameterCatalogPath:parameterCatalogPathSchema.optional() }),
   z.strictObject({ action: z.literal("register"), ...common, providerId: identifier, model: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,159}$/), confirmed: z.literal(true), capabilityVerified:z.boolean().optional(), qualityPolicy:qualityPolicySchema.optional(), edit: z.boolean(), vision: z.boolean(), qualityRank: z.number().int().min(1).max(5).default(2), qualities: z.array(z.enum(["low", "medium", "high", "xhigh", "max", "auto"])).max(6), resolutions: z.array(z.enum(["1K", "2K", "4K"])).max(3), maxReferenceImages: z.number().int().min(0).max(128),videoDefinition:videoDefinitionSchema.optional(),videoProfile:videoWireProfileSchema.optional() }),
 ]);
 export type ManagementInput = z.infer<typeof managementInput>;

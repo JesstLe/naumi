@@ -19,9 +19,13 @@ async function main() {
     assert.equal(unsupported.status, "unsupported");
     const missing = await discoverProviderCatalog({ ...provider, credentialRef: undefined }, f.credentials, [f.origin], async () => { throw new Error("must not call"); });
     assert.equal(missing.status, "no-credential");
-    let queries=0;const fetcher:typeof fetch=async(input,init)=>{assert.equal(new Request(input,init).method,'GET');queries++;return Response.json({data:[{id:'ext-model-a',name:'灵动 2.5'}]})};
+    // Catalog concurrency and optional public metadata are different reads.
+    // Counting /api/pricing as a second /models query made the old fixture
+    // fail before this change; retain both concurrency assertions explicitly.
+    let queries=0,metadataQueries=0;const fetcher:typeof fetch=async(input,init)=>{assert.equal(new Request(input,init).method,'GET');if(new URL(String(input)).pathname!=='/v1/models'){metadataQueries++;return new Response('{}',{status:404});}queries++;return Response.json({data:[{id:'ext-model-a',name:'灵动 2.5'}]})};
     await Promise.all([refreshProviderCatalog(f.sql,provider,f.credentials,[f.origin],fetcher),refreshProviderCatalog(f.sql,provider,f.credentials,[f.origin],fetcher)]);
     assert.equal(queries,1);
+    assert.equal(metadataQueries,1);
     const persisted=await readProviderCatalog(f.sql,[provider]);assert.equal(persisted[0].models[0].label,'灵动 2.5');assert.equal(persisted[0].cached,true);assert.equal(persisted[0].stale,false);
     await refreshProviderCatalog(f.sql,provider,f.credentials,[f.origin],fetcher);assert.equal(queries,1);
     await f.sql.query("UPDATE app_model_provider_catalog SET updated_at=now()-interval '6 minutes'");

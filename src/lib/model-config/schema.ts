@@ -31,7 +31,9 @@ const quality = z.enum(["low", "medium", "high", "xhigh", "max", "auto"]);
 const resolution = z.enum(["1K", "2K", "4K"]);
 const displayRatios = z.array(z.string().regex(/^[1-9]\d{0,2}:[1-9]\d{0,2}$/)).min(1).max(30).refine(v => new Set(v).size === v.length, "比例不能重复").optional();
 export const MODEL_PROTOCOLS = ["openai-audio", "openai-images", "new-api-flow", "openai-chat", "apimart-images", "fal-images", "openai-videos", "ark", "kie", "apimart", "gemini", "minimax", "metaso", "tokendance", "tfrouter", "compshare", "comfyui", "autodl", "runninghub"] as const;
+export const parameterCatalogPathSchema=z.string().regex(/^\/(?!\/)[A-Za-z0-9_./-]+$/).max(500);
 const videoOptions = z.strictObject({
+  parameterCatalogPath:parameterCatalogPathSchema.optional(),
   imageAdapter: z.literal("reverse-hub").optional(),
   imageRatios: displayRatios,
   createPath: z.string().regex(/^\/[A-Za-z0-9_./{}:-]*$/).max(200).optional(),

@@ -8,14 +8,16 @@ import { decimalMicros } from "../supplier-cost/money";
 import { unknownSupplierMetadata, type SupplierMetadata, type SupplierPrice } from "./types";
 import type { ModelProvider } from "../model-config/types";
 import {videoDefinitionSchema,type VideoModelDefinition} from "../video/capability-schema";
+import {documentedVideoParameters} from './video-parameters';
 
 /** Only explicit supplier declarations are translated; names and independent size lists are not evidence of combinations. */
 export function documentedVideoDefinition(raw:any):VideoModelDefinition|undefined{
   if(!raw||typeof raw!=="object")return undefined;
   const direct=raw.videoDefinition||raw.capabilities?.video||raw.parameterMetadata?.video;
-  if(direct){const parsed=videoDefinitionSchema.safeParse(direct);return parsed.success?parsed.data:undefined;}
+  const parameterContract=documentedVideoParameters(raw);
+  if(direct){const parsed=videoDefinitionSchema.safeParse({...direct,...(parameterContract?{parameterContract}:{})});return parsed.success?parsed.data:undefined;}
   const source=raw.video_capabilities||raw;
-  if(!Array.isArray(source.mode)&&!Array.isArray(source.durationResolutionMap))return undefined;
+  if(!Array.isArray(source.mode)&&!Array.isArray(source.durationResolutionMap))return parameterContract?{parameterContract}:undefined;
   const aliases:Record<string,string>={text:"text",singleImage:"single_image",startEndRequired:"frames_required",startFrameOptional:"first_optional",endFrameOptional:"last_optional"};
   const modes:string[]=[],limits:Record<string,number>={};
   for(const mode of source.mode||[]){
@@ -24,11 +26,16 @@ export function documentedVideoDefinition(raw:any):VideoModelDefinition|undefine
       modes.push("reference");for(const count of mode){const match=typeof count==="string"&&count.match(/^(image|video|audio)Reference:(\d+)$/);if(match)limits[`${match[1]}s`]=Number(match[2]);}
     }
   }
-  const definition={...(modes.length?{modes:[...new Set(modes)]}:{}),...(Object.keys(limits).length?{limits}:{}),
+  const definition={...(parameterContract?{parameterContract}:{}),...(modes.length?{modes:[...new Set(modes)]}:{}),...(Object.keys(limits).length?{limits}:{}),
     ...(Array.isArray(source.durationResolutionMap)?{durationResolutionMap:source.durationResolutionMap.map((m:any)=>({durations:m.durations||m.duration,resolutions:m.resolutions||m.resolution}))}:{}),
     ...(source.audio!==undefined?{audio:source.audio===true?"required":source.audio===false?"disabled":source.audio}:{}),
     ...(Array.isArray(source.aspectRatios)?{aspectRatios:source.aspectRatios}:{})};
   const parsed=videoDefinitionSchema.safeParse(definition);return parsed.success?parsed.data:undefined;
+}
+
+/** Keep the successful decoder and its actual source URL inseparable. */
+export function selectDocumentedVideoDefinition(candidates:Array<{raw:unknown;sourceUrl:string}>){
+  for(const candidate of candidates){const definition=documentedVideoDefinition(candidate.raw);if(definition&&Object.keys(definition).length)return {definition,sourceUrl:candidate.sourceUrl};}
 }
 
 // Source data is evidence, never credentials or executable configuration.
@@ -63,17 +70,29 @@ export function reverseHubCatalogMetadata(row: any, url: string, observedAt: str
 }
 export type PublicSupplierDirectory = { url: string; fetchedAt: string; hash: string; body: any;specifications?:SupplierSpecificationCatalog };
 export async function discoverPublicSupplierDirectory(provider: ModelProvider, trustedOrigins: readonly string[], fetcher?: typeof fetch): Promise<PublicSupplierDirectory | null> {
-  if (!["openai-images", "new-api-flow", "openai-chat", "openai-videos"].includes(provider.protocol)) return null;
+  if (!provider.options?.parameterCatalogPath&&!["openai-images", "new-api-flow", "openai-chat", "openai-videos"].includes(provider.protocol)) return null;
   try {
     const endpoint = validateModelEndpoint(provider.baseUrl, { trustedOrigins });
     const url = new URL("/api/pricing", endpoint).toString();
-    const response = await (fetcher || modelEndpointFetch(endpoint, { trustedOrigins }))(url, { cache: "no-store", redirect: "error", signal: AbortSignal.timeout(8000) });
     let body:any=null;
-    if(response.ok){const parsed=cleanSource(JSON.parse(await readBounded(response)));if(parsed.success===true&&Array.isArray(parsed.data)&&parsed.data.length<=10000)body=parsed;}
-    else await response.body?.cancel();
+    try{
+      const response = await (fetcher || modelEndpointFetch(endpoint, { trustedOrigins }))(url, { cache: "no-store", redirect: "error", signal: AbortSignal.timeout(8000) });
+      if(response.ok){const parsed=cleanSource(JSON.parse(await readBounded(response)));if(parsed.success===true&&Array.isArray(parsed.data)&&parsed.data.length<=10000)body=parsed;}
+      else await response.body?.cancel();
+    }catch{/* A missing pricing endpoint must not prevent explicit parameter discovery. */}
     let specifications:SupplierSpecificationCatalog|undefined;
+    // Explicit same-origin catalog location, reusable across providers. Never
+    // follow arbitrary links or send a provider key to a documentation host.
+    if(provider.options?.parameterCatalogPath){
+      const docsUrl=new URL(provider.options.parameterCatalogPath,endpoint).toString();
+      try{
+        const docsResponse=await (fetcher||modelEndpointFetch(endpoint,{trustedOrigins}))(docsUrl,{cache:'no-store',redirect:'error',signal:AbortSignal.timeout(8000)});
+        if(docsResponse.ok){const docs=cleanSource(JSON.parse(await readBounded(docsResponse)));if(Array.isArray(docs.models)&&docs.models.length<=10000)specifications={url:docsUrl,fetchedAt:new Date().toISOString(),hash:sourceHash(docs),body:docs};}
+        else await docsResponse.body?.cancel();
+      }catch{/* Preserve the previous separately-versioned source on an unavailable refresh. */}
+    }
     // This is a documented export endpoint of this supplier, not a guessed convention for every host.
-    if(new URL(endpoint).hostname==="newapi.prompt-hubs.com"||new URL(endpoint).hostname==="console.prompt-hubs.com"){
+    if(!specifications&&(new URL(endpoint).hostname==="newapi.prompt-hubs.com"||new URL(endpoint).hostname==="console.prompt-hubs.com")){
       try{
         const docsUrl="https://console.prompt-hubs.com/docs/catalog.json";
         const docsResponse=await (fetcher||modelEndpointFetch(docsUrl,{trustedOrigins}))(docsUrl,{cache:"no-store",redirect:"error",signal:AbortSignal.timeout(8000)});

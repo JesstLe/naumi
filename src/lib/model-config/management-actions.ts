@@ -81,7 +81,7 @@ export async function applyManagementConfigAction({ admin, snapshot, body, fetch
           const endpoint = validateModelEndpoint(body.protocol === "apimart-images" ? body.baseUrl.replace(/\/v1\/?$/, "") : body.baseUrl, { trustedOrigins: admin.trustedOrigins });
           const providerId = `mvp-${body.id}`;
           await admin.credentials.read(body.credentialRef, providerId);
-          config.providers.push({ id: providerId, name: body.name, baseUrl: endpoint, protocol: body.protocol, credentialRef: body.credentialRef, enabled: true, timeoutMs: 120000, maxConcurrent: 4 });
+          config.providers.push({ id: providerId, name: body.name, baseUrl: endpoint, protocol: body.protocol, credentialRef: body.credentialRef, enabled: true, timeoutMs: 120000, maxConcurrent: 4,...(body.parameterCatalogPath?{options:{parameterCatalogPath:body.parameterCatalogPath}}:{}) });
         } else {
           const p = config.providers.find(p => p.id === body.providerId);
           if (!p?.enabled || !p.credentialRef || !MODEL_MANAGEMENT_PROTOCOLS.includes(p.protocol as typeof MODEL_MANAGEMENT_PROTOCOLS[number])) throw new ModelConfigError("MODEL_INCOMPATIBLE", "该来源尚未启用或协议未支持快捷接入");

@@ -22,7 +22,7 @@ export function VideoContractFields({config,inputs=[],contract,onChange,disabled
   // The server preview, not this renderer, reports any mapping gap.
   try{for(const [key,value]of Object.entries(videoUiDraft(config,inputs).parameters))if(!parameters[key])parameters[key]={type:typeof value==='boolean'?'boolean':typeof value==='number'?'number':typeof value==='string'?'string':'json'};}catch{/* Structural error belongs to compile preview. */}
   return <fieldset disabled={disabled} className='grid grid-cols-2 gap-3' data-testid='video-contract-fields'>
-    {Object.entries(parameters).filter(([key])=>(!advancedOnly||!primary.has(key))&&(!only||only.includes(key))).sort(([a],[b])=>(fieldOrder[a]??3)-(fieldOrder[b]??3)).map(([key,parameter])=>{
+    {Object.entries(parameters).filter(([key,rule])=>!rule.omitted&&(!advancedOnly||!primary.has(key))&&(!only||only.includes(key))).sort(([a],[b])=>(fieldOrder[a]??3)-(fieldOrder[b]??3)).map(([key,parameter])=>{
       const label=V(labels[key]||key),value=videoUiValue(config,key),change=(next:unknown)=>{if(contract)onChange(setVideoUiValue(config,key,next));else if(Object.hasOwn(config.parameters??{},key))onChange({...config,parameters:{...config.parameters,[key]:next as never}});else onChange({...config,[key]:next});};
       if(key==='durationSeconds'&&(parameter.type==='number'||parameter.type==='integer'))return <div key={key} className='col-span-2'><VideoContractDuration rule={parameter} value={value} onChange={change} disabled={disabled}/></div>;
       const values=videoEditorChoices(key,parameter,value),selected=values?.findIndex(item=>item===value);

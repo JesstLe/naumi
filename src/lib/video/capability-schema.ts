@@ -1,4 +1,5 @@
 import { z } from "zod";
+import {videoParameterContractSchema} from './parameter-contract';
 
 export const VIDEO_MODES=["text","single_image","frames_required","first_optional","last_optional","reference","video_edit","extend","motion_control","lip_sync"] as const;
 export type VideoMode=typeof VIDEO_MODES[number];
@@ -22,6 +23,7 @@ export const videoLimitsSchema=z.strictObject({
   totalVideoDurationSeconds:number(86400),totalAudioDurationSeconds:number(86400),
 });
 export const videoDefinitionSchema=z.strictObject({
+  parameterContract:videoParameterContractSchema.optional(),
   modes:z.array(z.enum(VIDEO_MODES)).max(VIDEO_MODES.length).refine(v=>new Set(v).size===v.length,"视频模式重复").nullable().optional(),
   durationResolutionMap:specMap.nullable().optional(),
   modeParameters:z.partialRecord(z.enum(VIDEO_MODES),z.strictObject({durationResolutionMap:specMap.optional(),aspectRatios:z.array(ratio).max(100).optional()})).nullable().optional(),

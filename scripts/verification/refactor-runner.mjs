@@ -74,6 +74,8 @@ export async function runRefactorVerification({root,out,cases,commandFor,expecte
    if(spec.id==='canvas-downloads')stageEnv.CANVAS_DOWNLOAD_EVIDENCE=evidence;
    if(spec.id==='canvas-download-browser')stageEnv.CANVAS_DOWNLOAD_BROWSER_EVIDENCE=evidence;
    if(spec.id==='canvas-node-operations-client')stageEnv.NODE_OP_EVIDENCE=evidence;
+   if(spec.id==='video-parameter-discovery'||spec.id==='video-parameter-discovery-ui')stageEnv.VIDEO_PARAMETER_EVIDENCE=evidence;
+   if(spec.id==='video-parameter-discovery-ui')stageEnv.VIDEO_PARAMETER_MODELS=path.join(out,'video-parameter-discovery','BROWSER_MODELS.json');
    if(spec.id==='canvas-node-creation')stageEnv.NODE_CREATION_EVIDENCE=evidence;
    if(spec.id==='mixed-load-driver')stageEnv.MIXED_LOAD_EVIDENCE=evidence;
    if(spec.id==='native-fixture-lifecycle')stageEnv.NATIVE_FIXTURE_EVIDENCE=evidence;

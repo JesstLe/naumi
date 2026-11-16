@@ -7,6 +7,7 @@ import type {z} from 'zod';
 import type {videoParameterSchema} from './profiles/parameters';
 import type {VideoUiContract,VideoUiParameter} from './ui-contract';
 import {ModelConfigError} from '../model-config/types';
+import type {VideoParameterCondition,VideoParameterRule} from './parameter-contract';
 
 /** Projection consumes the exact Profile description used by compile. Never
  * reconstruct UI modes/limits from old manual/vendor/test declarations. */
@@ -19,27 +20,41 @@ export function projectVideoUiContract(frozen:FrozenVideoExecution,identity:{pub
   }
   if(frozen.profileId==='native-video'){
     const recipe=described.value.description as NativeVideoDescription;
-    return {version:1,modelVersion:frozen.modelVersion,modelDigest:frozen.modelDigest,policyRevision:policy.revision,defaults:recipe.defaults,
+    return {version:1,modelVersion:frozen.modelVersion,modelDigest:frozen.modelDigest,policyRevision:policy.revision,defaults:recipe.defaults,...projectConditions(recipe),
       operations:recipe.operations.map(operation=>({intent:operation.intent,...(operation.structure?{structure:operation.structure}:{}),parameters:projectParameters({...recipe.parameters,...operation.parameters})}))};
   }
   const recipe=jsonVideoRecipeSchema.parse(described.value.description);
-  return {version:1,modelVersion:frozen.modelVersion,modelDigest:frozen.modelDigest,policyRevision:policy.revision,defaults:recipe.defaults,
+  return {version:1,modelVersion:frozen.modelVersion,modelDigest:frozen.modelDigest,policyRevision:policy.revision,defaults:recipe.defaults,...projectConditions(recipe),
     operations:recipe.operations.map(operation=>({intent:operation.intent,...(operation.shots||operation.elements?{structure:{
       ...(operation.shots?{shots:{min:operation.shots.min,max:operation.shots.max,maxPromptChars:operation.shots.maxPromptChars,minDurationSeconds:operation.shots.minDurationSeconds,durationStep:operation.shots.durationStep}}:{}),
       ...(operation.elements?{elements:{min:operation.elements.min,max:operation.elements.max,media:operation.elements.media.map(({kinds,min,max})=>({kinds,min,max}))}}:{})
     }}:{}),parameters:projectParameters({...recipe.parameters,...operation.parameters})}))};
 }
 
-function projectParameters(parameters:Record<string,z.infer<typeof videoParameterSchema>>):Record<string,VideoUiParameter>{
+function projectParameters(parameters:Record<string,z.infer<typeof videoParameterSchema>>,conditional=false):Record<string,VideoUiParameter>{
   return Object.fromEntries(Object.entries(parameters).flatMap(([name,rule])=>{
-      if(rule.send==='omit')return [];
       const values=rule.values??(rule.mapping?Object.keys(rule.mapping).flatMap<string|number|boolean>(value=>{
         if(rule.type==='integer'||rule.type==='number'){const number=Number(value);return value.trim()&&Number.isFinite(number)&&(rule.type!=='integer'||Number.isInteger(number))?[number]:[];}
         if(rule.type==='boolean')return value==='true'?[true]:value==='false'?[false]:[];
         return [value];
       }):undefined);
       const parameter:VideoUiParameter={type:rule.type,...(rule.required!==undefined?{required:rule.required}:{}),...(rule.default!==undefined?{default:rule.default}:{}),
-        ...(values?{values}:{}),...(rule.minimum!==undefined?{minimum:rule.minimum}:{}),...(rule.maximum!==undefined?{maximum:rule.maximum}:{})};
+        ...(values?{values}:{}),...(rule.minimum!==undefined?{minimum:rule.minimum}:{}),...(rule.maximum!==undefined?{maximum:rule.maximum}:{}),
+        ...(rule.send==='omit'?{omitted:true}:conditional&&rule.send!==undefined?{omitted:false}:{})};
       return [[name,parameter]];
     }));
+}
+
+function projectConditions(recipe:{parameters:Record<string,VideoParameterRule>;operations:Array<{intent:string;parameters?:Record<string,VideoParameterRule>}>;parameterConditions?:VideoParameterCondition[]}):Pick<VideoUiContract,'parameterConditions'>{
+  if(!recipe.parameterConditions?.length)return {};
+  // Mapping keys are public semantic choices, not supplier wire values. Each
+  // operation can override a mapping, so project predicates per operation.
+  return {parameterConditions:recipe.operations.flatMap(op=>recipe.parameterConditions!.filter(c=>!c.when.intents||c.when.intents.includes(op.intent)).map(c=>{
+    const rules={...recipe.parameters,...op.parameters};
+    const parameters=c.when.parameters?Object.fromEntries(Object.entries(c.when.parameters).map(([name,values])=>{
+      const mapping=rules[name]?.mapping;
+      return [name,mapping?Object.entries(mapping).filter(([,value])=>values.includes(value)).map(([key])=>rules[name].type==='integer'||rules[name].type==='number'?Number(key):rules[name].type==='boolean'?key==='true':key):values];
+    })):undefined;
+    return {when:{...c.when,intents:[op.intent],...(parameters?{parameters}:{})},parameters:projectParameters(c.parameters,true)};
+  }))};
 }
