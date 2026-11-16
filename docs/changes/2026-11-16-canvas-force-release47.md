@@ -20,7 +20,7 @@
 
 本次以用户后续明确强行发布为有限例外，新增本轮独立reconciled记录和原UUID操作回执，不删除/更换状态目录、不回填normal journal、不把前驱或根状态改COMPLETE。历史前驱逐字段和canonical原像SHA保留；原root status/phase/legacyDrainProven保持。
 
-真实磁盘预算取固定镜像实测Size1,112,694,584B，并复核2倍导入峰值+备份预留+静态并集+2GiB主机余量；导入前约6.50GB可用，2倍预算约6.05GB。新备份840,511,002B，真实pg_restore --list通过；导入和静态并集后仍约4.74GB。没有删除业务媒体、volume、近七天备份或五轮恢复材料凑空间，未按固定10GiB条件伪称通过。
+真实磁盘检查取固定镜像实测Size1,112,694,584B；00d执行器实际强制1倍Size+备份预留+静态并集+2GiB主机余量，合计4,937,899,832B。独立审查另按2倍Size复算为6,050,594,416B，仍低于当时6,498,729,984B空闲；该2倍数值是独立复算，不冒称执行器当时已强制2倍断言。新备份840,511,002B，真实pg_restore --list通过；导入和静态并集后仍约4.74GB，并实际执行不少于2GiB的检查。没有删除业务媒体、volume、近七天备份或五轮恢复材料凑空间，未按固定10GiB条件伪称通过。
 
 ## 公共接口、依赖与数据/事务归属
 
@@ -45,6 +45,7 @@
 - 00/01/02：真实dump/pg_restore list、镜像导入及原生候选创建均exit0；物理空间/内存预算不使用Swap充数。
 - 03d：11条登录态真实读取200、21模型使用真实自有且原文件SHA匹配的QA图编译200，匿名401、缺媒体422；QA任务0、ledger2、reservation0、billingOperations2保持，生成提交/付费调用0。
 - `node browser-check.cjs baseline http://127.0.0.1:19137`、candidate19138、public公网：真实生产React/登录QA账号，Canvas/Video、平铺分辨率/画幅、时长键盘4→5、390px无横向溢出、零JS/5xx；均exit0。未点生成；presence及compile-preview请求单独记录，不声称完全无写入。
+- 切流后额外执行`node browser-check.cjs public-controls https://47.105.59.142`，exit0：真实点击720p及9:16并核对aria-pressed，时长4→5，断言按钮即时估价20积分；参数编辑未请求billing/quote，生成提交0。该追加结果见PUBLIC_CONTROLS.log及public-controls-browser.json；它不是付费生成或所有工具验收。
 - 30条公网version/health采样全200，实际返回96。该采样时段从切流后开始，不伪称全切流时段零错误证明。
 - 04/04a：实际网关切换与原Worker resume均已ACK；观察器遇初始lastTick=null报AttributeError，原失败保留；04a核对原ACK/网关后只继续读原tick，未重复切流或重新提交任务。
 - 05/06/postflight：公开页面实测回执绑定实际commit/build；新旧配置hash、原UNKNOWN行、原前驱记录保持；真实监督器systemd Result=success/ExecMainStatus=0，exit0。
