@@ -10,7 +10,7 @@ import { artworkRows, mergeArtworkFields, sortCanvasArtworks } from "./artwork-d
 
 export type ArtworkDocumentSnapshot={conflicts:Record<string,ArtworkDocumentConflict>;nodes:Artwork[]|null;phase:"idle"|"loading"|"ready"|"error";error:string;trash:Artwork[]|null;trashError:string;trashBusy:boolean};
 export const EMPTY_ARTWORK_DOCUMENT:ArtworkDocumentSnapshot={conflicts:{},nodes:null,phase:"idle",error:"",trash:null,trashError:"",trashBusy:false};
-type Bucket={snapshot:ArtworkDocumentSnapshot;listeners:Set<()=>void>;revision:number;changes:Map<string,number>;deleted:Set<string>;dimensionSync:Set<string>;read:number;rowReads:Map<string,number>;statusRead:number;lastIds?:string[];trashRead:number;frame?:Map<string,Artwork>};
+type Bucket={snapshot:ArtworkDocumentSnapshot;listeners:Set<()=>void>;revision:number;changes:Map<string,number>;deleted:Set<string>;absent:Set<string>;dimensionSync:Set<string>;read:number;rowReads:Map<string,number>;statusRead:number;lastIds?:string[];trashRead:number;frame?:Map<string,Artwork>};
 const documentKey=(scope:CanvasDocumentScope)=>JSON.stringify([scope.account,scope.workspace]);
 class ArtworkReadError extends Error{constructor(message:string,readonly status?:number){super(message);}}
 const denied=(error:unknown)=>!!error&&typeof error==="object"&&"status" in error&&[401,403].includes(Number(error.status));
@@ -33,7 +33,7 @@ export function createCanvasArtworkDocument(){
   };
   function bind(scope:CanvasDocumentScope,owner:string,writable:boolean){
     const key=documentKey(scope);let b=buckets.get(key);
-    if(!b){b={snapshot:EMPTY_ARTWORK_DOCUMENT,listeners:new Set(),revision:0,changes:new Map(),deleted:new Set(),dimensionSync:new Set(),read:0,rowReads:new Map(),statusRead:0,trashRead:0};buckets.set(key,b);}
+    if(!b){b={snapshot:EMPTY_ARTWORK_DOCUMENT,listeners:new Set(),revision:0,changes:new Map(),deleted:new Set(),absent:new Set(),dimensionSync:new Set(),read:0,rowReads:new Map(),statusRead:0,trashRead:0};buckets.set(key,b);}
     const state=b,current=(extra:()=>boolean=()=>true)=>scope.documentCurrent()&&extra();
     const update=(change:Artwork[]|null|((nodes:Artwork[]|null)=>Artwork[]|null))=>{
       if(!current())return;const previous=state.snapshot.nodes,next=typeof change==="function"?change(previous):change;
@@ -100,7 +100,10 @@ export function createCanvasArtworkDocument(){
         }
         if(!current(extra))return [];
         applyRead(rows,before,revision,ticket,!wanted);
-        if(wanted&&wanted.some(id=>!rows.some(row=>row.id===id)||!state.snapshot.nodes?.some(row=>row.id===id)))throw new ArtworkReadError("作品已保存或状态已变化，画布尚未同步完整；请重试同步原结果");
+        // 权威读取缺席=读取结果(作品已删除/回收),不是同步失败,不再弹横幅;
+        // 记录缺席 id,让"补拉缺失结果"的轮询跳过,避免每 15s 无意义重查。
+        if(wanted)for(const id of wanted)if(rows.some(row=>row.id===id))state.absent.delete(id);else state.absent.add(id);
+        else for(const row of rows)state.absent.delete(row.id);
         if(ticket>=state.statusRead){state.statusRead=ticket;publish(state,{phase:"ready",error:""});}
         return state.snapshot.nodes||[];
       }catch(error){
@@ -132,7 +135,8 @@ export function createCanvasArtworkDocument(){
     };
     const clearConflict=(id:string)=>{const conflicts={...state.snapshot.conflicts};delete conflicts[id];publish(state,{conflicts});};
     return {resolveConflict,clearConflict,history,getSnapshot:()=>state.snapshot,subscribe:(fn:()=>void)=>{state.listeners.add(fn);return()=>{state.listeners.delete(fn);};},set:update,accept,remove,recordDimensions,
-      merge:(ids:string[],extra?:()=>boolean)=>read(ids,extra),refresh:(extra?:()=>boolean)=>read(undefined,extra),load:()=>read(undefined,undefined,true),retry:()=>read(state.lastIds),loadTrash,trashAction};
+      merge:(ids:string[],extra?:()=>boolean)=>read(ids,extra),refresh:(extra?:()=>boolean)=>read(undefined,extra),load:()=>read(undefined,undefined,true),retry:()=>read(state.lastIds),loadTrash,trashAction,
+      absent:(id:string)=>state.absent.has(id)};
   }
   return {bind};
 }

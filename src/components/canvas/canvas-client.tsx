@@ -1059,7 +1059,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   useEffect(()=>{
     if(!user?.email||!activeKey||readOnly)return;
     const account=canvasAccountRef.current,epoch=canvasContextEpochRef.current,known=new Set((works||[]).map(art=>art.id)),now=Date.now();
-    const ids=Array.from(new Set([...videoNodesStore.nodes.filter(node=>node.projectKey===activeKey&&!node.deletedAt).map(node=>node.displayResultId||node.lastResultId),...directorNodesStore.nodes.filter(node=>node.projectKey===activeKey).flatMap(node=>node.outputs.map(output=>output.artworkId)),...visualReferenceIds].filter((id):id is string=>!!id&&!known.has(id)))).filter(id=>{const key=JSON.stringify([account,activeKey,id]),last=videoResultLoads.current.get(key)||0;if(now-last<15000)return false;videoResultLoads.current.set(key,now);return true;});
+    const ids=Array.from(new Set([...videoNodesStore.nodes.filter(node=>node.projectKey===activeKey&&!node.deletedAt).map(node=>node.displayResultId||node.lastResultId),...directorNodesStore.nodes.filter(node=>node.projectKey===activeKey).flatMap(node=>node.outputs.map(output=>output.artworkId)),...visualReferenceIds].filter((id):id is string=>!!id&&!known.has(id)&&!canvasArtworkDocument.absent(id)))).filter(id=>{const key=JSON.stringify([account,activeKey,id]),last=videoResultLoads.current.get(key)||0;if(now-last<15000)return false;videoResultLoads.current.set(key,now);return true;});
     if(!ids.length)return;
     void (async()=>{for(let offset=0;offset<ids.length;offset+=100){if(account!==canvasAccountRef.current||epoch!==canvasContextEpochRef.current)return;await mergeWorks(ids.slice(offset,offset+100));}})().catch(()=>{});
   },[user?.email,targetEmail,activeKey,readOnly,works,videoNodesStore.nodes,directorNodesStore.nodes,characterNodesStore.nodes,sceneNodesStore.nodes,audioNodesStore.nodes,timelineNodesStore.nodes,visualReferenceIds]);
@@ -1648,7 +1648,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     return runCanvasDetail({request:{source,references:referenceArts,uploads:uploadedRefs,referenceInputs,feedback,model:genModel,ratio:genRatio,count,maxReferences:MAX_TOTAL_IMAGES,missingReferences:t("canvas.detailNeedRefs")},pending:pend,
       label:done=>fmt(t("canvas.detailProgress"),{done,total:count}),errorText:t("canvas.genFail"),saveErrorText:t("canvas.saveFailed"),
       failed:failure=>{const message=generationFailureMessage(failure);if(pend?selectedPendIdRef.current===pend.id:selectedIdRef.current===source.id)setGenError(message);else flashTip(`${source.title}：${message}`);},
-      attached:id=>{canvasHistory.consumePending(id);setSelectedPendId(current=>current===id?null:current);},
+      attached:(id,artworkId)=>{void rewirePendingBranchSources(id,artworkId).then(()=>{canvasHistory.consumePending(id);setSelectedPendId(current=>current===id?null:current);});},
     },canvasGenerationRunContext());
   }
 
@@ -2324,6 +2324,20 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     const c = centerScreen();
     openHistoryPicker(c.x, c.y);
   }
+  /** 空节点落地为作品时换新 id:把以它为源的分支 inputs/parentId 同步改写,
+   * 否则"空节点骨架"的分支连线会在落地后静默消失。改写走 pending-link 本地
+   * 历史(可撤销);个别分支正在生成/上传时改写失败不阻断结果落地。 */
+  async function rewirePendingBranchSources(consumedId:string,artworkId?:string){
+    if(!artworkId||artworkId===consumedId)return;
+    const scope=canvasArtworkDocument.scope;
+    if(!scope.viewCurrent()||readOnly)return;
+    for(const node of pendingPresentation.getSnapshot()){
+      if(node.id===consumedId||(!node.inputs.includes(consumedId)&&node.parentId!==consumedId))continue;
+      const from={inputs:node.inputs,parentId:node.parentId,linked:node.linked};
+      const to={inputs:node.inputs.map(source=>source===consumedId?artworkId:source),parentId:node.parentId===consumedId?artworkId:node.parentId,linked:node.linked};
+      try{await canvasHistory.submit(scope,()=>({kind:"pending-link",id:node.id,from,to}));}catch{/* 保持原状,由后续生成校验提示 */}
+    }
+  }
   function onPendUpload(id: string) {
     if(preparingPendingImagesRef.current.has(id))return;
     const context=user?canvasImportContext():null,saved=context?imageImportOwner.pendingBatch(id,context):null;
@@ -2388,7 +2402,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         const nextId=carryCompletedCanvasImageDraft({owner:requestOwner,target:requestTarget,project:requestProject,workspace:requestWorkspace,pendingId:pend.id,prompt:opts?.prompt??editPrompt,ratio:opts?.ratio||genRatio,resultId:images[0]?.id,artworks,currentArtworks:worksRef.current||[]},{draft:imageDraft,references:referenceDraft});
         if(nextId&&selectedPendIdRef.current===pend.id){setSelectedId(nextId);selectedIdRef.current=nextId;}
         if(selectedPendIdRef.current===pend.id&&!activeKey)projectNavigation.requestNode(images[0]?.id||null);
-        canvasHistory.consumePending(pend.id);
+        void rewirePendingBranchSources(pend.id,images[0]?.id).then(()=>canvasHistory.consumePending(pend.id));
       },
       completed:()=>{setSelectedPendId(id=>id===pend.id?null:id);if(selectedPendIdRef.current===pend.id)setGenError(null);},
     },canvasImageRunContext(opts?.isCurrent));
@@ -2407,7 +2421,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       history:records=>pushUndo({kind:"pending-add",records}),
       attached:(id,artworkId,rows)=>{
         carryUploadedCanvasImageDraft({owner:draftOwner,target:draftTarget,project:draftProject,workspace:draftWorkspace,pendingId:id,resultId:artworkId,artworks:rows,currentArtworks:worksRef.current||[]},{draft:imageDraft,references:referenceDraft});
-        canvasHistory.consumePending(id);if(scope.viewCurrent())setSelectedPendId(current=>current===id?null:current);
+        void rewirePendingBranchSources(id,artworkId).then(()=>{canvasHistory.consumePending(id);if(scope.viewCurrent())setSelectedPendId(current=>current===id?null:current);});
       },
       error:message=>{if(scope.viewCurrent())setGenError(message);},
     });}catch(error){if(scope.viewCurrent())setGenError(error instanceof Error?error.message:t("canvas.genFail"));}
