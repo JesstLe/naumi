@@ -116,7 +116,9 @@ function operationKeys(authorizedEmployees = false) {
 }
 
 const artworkFilter = (scoped: boolean) => `${accountFilter("a.email", scoped)} AND (${inRange("a")} OR $7::text<>'') AND ($7::text='' OR a.id=$7) AND (($6::text='' AND a.deleted_at IS NULL) OR ($6='deleted' AND a.deleted_at IS NOT NULL) OR $6='all')`;
-const userFilter = () => `${accountFilter("u.email")} AND ($6::text='' OR CASE WHEN u.banned THEN 'banned' ELSE 'active' END=$6)`;
+// Users section appends the position bind last (filterBinds keeps $1-$6 stable),
+// so $7 is reserved for it in both count and page statements below.
+const userFilter = () => `${accountFilter("u.email")} AND ($6::text='' OR CASE WHEN u.banned THEN 'banned' ELSE 'active' END=$6) AND ($7::text='' OR u.position=CASE WHEN $7='unassigned' THEN '' ELSE $7 END)`;
 const modelFilter = () => `${accountFilter("c.email")} AND ${inRange("c")} AND ($6::text='' OR ($6='fallback' AND (c.requested_quality<>'' AND c.executed_quality<>'' AND c.requested_quality<>c.executed_quality OR c.reason IN ('provider-fallback','quality-downgrade','upstream-unsupported'))))`;
 // Keep session JSON out of the count/sort input: only the selected page needs
 // entry counts. Agent IDs are email-scoped and may also overlap genchat IDs.
@@ -220,7 +222,7 @@ export async function queryBi(q: BiQuery, access?: { client: PoolClient; allowed
     result.overview = await snapshot((client) => overview(q, client));
     return result;
   }
-  const filterBinds = [...values(q), q.status, ...(q.section === "artworks" ? [q.recordId || ""] : []), ...(q.section==='operations'?[q.recordId||'',q.recordSource||'']:[]), ...(access ? [access.allowedEmails] : [])];
+  const filterBinds = [...values(q), q.status, ...(q.section === "artworks" ? [q.recordId || ""] : []), ...(q.section==='operations'?[q.recordId||'',q.recordSource||'']:[]), ...(access ? [access.allowedEmails] : []), ...(q.section === "users" ? [q.position ?? ""] : [])];
   const scopedSql = scope;
   const binds = [...filterBinds, q.size, (q.page - 1) * q.size];
   let source = "";
@@ -231,7 +233,7 @@ export async function queryBi(q: BiQuery, access?: { client: PoolClient; allowed
       source = `SELECT m.id,m.actor,m.email,m.action,m.reason,m.changes::text AS changes,m.ledger_id,m.created_at FROM app_bi_management_log m WHERE ${accountFilter("m.email")} AND ${inRange("m")} AND ($6::text='' OR m.action=$6)`;
       break;
     case "users":
-      source = `SELECT u.email,u.name,u.phone,u.role,u.plan,u.banned,u.joined_at,u.last_login_at,u.last_ip,u.note,u.management_version,
+      source = `SELECT u.email,u.name,u.phone,u.role,u.plan,u.banned,u.position,u.joined_at,u.last_login_at,u.last_ip,u.note,u.management_version,
       CASE WHEN membership.company IS NOT NULL THEN 'enterprise' ELSE COALESCE(p.account_type,'unknown') END AS account_type,COALESCE(membership.company,p.company,'') AS company,p.agreed_pay_percent,
       CASE WHEN membership.company IS NOT NULL THEN 'enterprise-membership' ELSE 'manual-profile' END AS organization_source,
       COALESCE(p.account_type,'unknown') AS registered_account_type,COALESCE(p.company,'') AS registered_company,
@@ -255,7 +257,7 @@ export async function queryBi(q: BiQuery, access?: { client: PoolClient; allowed
         sum(delta) FILTER(WHERE kind='refund' AND delta>0) AS refunded,count(*) AS events
         FROM app_ledger l JOIN filtered_users f ON f.email=l.email WHERE ${inRange("l")} GROUP BY l.email),
         selected AS MATERIALIZED (SELECT f.email FROM filtered_users f LEFT JOIN user_usage l ON l.email=f.email
-          ORDER BY COALESCE(l.consumed,0)::float8 DESC,f.email ASC LIMIT $7 OFFSET $8)`;
+          ORDER BY COALESCE(l.consumed,0)::float8 DESC,f.email ASC LIMIT $8 OFFSET $9)`;
       break;
     case "ledger":
       source = `SELECT l.id,l.email,l.delta,l.kind,l.reason,l.expires_at,l.created_at,COALESCE(m.reason,'') AS management_reason,m.actor AS management_actor FROM app_ledger l LEFT JOIN app_bi_management_log m ON m.ledger_id=l.id WHERE ${accountFilter("l.email")} AND ${inRange("l")} AND ($6::text='' OR l.kind=$6)`;

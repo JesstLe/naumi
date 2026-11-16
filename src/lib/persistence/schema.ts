@@ -51,6 +51,8 @@ export async function ensureSchema(): Promise<void> {
         ALTER TABLE app_users ADD COLUMN IF NOT EXISTS management_version integer NOT NULL DEFAULT 0;
         ALTER TABLE app_users ADD COLUMN IF NOT EXISTS auth_revoked_before timestamptz;
         ALTER TABLE app_users ADD COLUMN IF NOT EXISTS account_expires_at timestamptz;
+        -- Admin-only department position label; '' means unassigned.
+        ALTER TABLE app_users ADD COLUMN IF NOT EXISTS position text NOT NULL DEFAULT '';
         -- Additive feature ACL schema must exist before any billed transaction.
         -- Lazy FK DDL inside an Agent transaction can wait on that transaction's app_users lock.
         CREATE TABLE IF NOT EXISTS app_feature_access (
