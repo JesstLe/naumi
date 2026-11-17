@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | `DELETE /api/admin/login` | `src/app/api/admin/login/route.ts` | 待核查 |
 | `GET /api/admin/artworks` | `src/app/api/admin/artworks/route.ts` | 待核查 |
-| `GET /api/admin/bi` | `src/app/api/admin/bi/route.ts` | 部分：overview 去重复扫描、作品深页先排序键、所有列表越界只计数；全分类 145 项新旧结果对照通过；其余长窗、入口背压及断开待核 |
+| `GET /api/admin/bi` | `src/app/api/admin/bi/route.ts` | 部分：overview 去重复扫描、作品深页先排序键、越界只计数；全分类 145 项新旧结果对照；作品计数、模型调用证据、概览断开后的 SQL 与连接释放见 `verify-bi-read-cancellation.ts`。鉴权/审计阶段、其他路由、长窗背压及真实网关待核 |
 | `GET /api/admin/bi/channel-capacity` | `src/app/api/admin/bi/channel-capacity/route.ts` | 待核查 |
 | `GET /api/admin/bi/conversation` | `src/app/api/admin/bi/conversation/route.ts` | 待核查 |
 | `GET /api/admin/bi/media` | `src/app/api/admin/bi/media/route.ts` | 待核查 |

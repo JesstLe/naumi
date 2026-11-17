@@ -17,9 +17,11 @@ export async function GET(request: Request) {
     );
   }
   try {
+    request.signal.throwIfAborted();
     await logBiAccess(auth.actor, "view", query.section, query.email);
-    return biJson(await queryBi(query));
+    return biJson(await queryBi(query, undefined, request.signal));
   } catch {
+    if (request.signal.aborted) return biJson({ error: "查询已取消" }, 499);
     return biJson({ error: "BI 查询失败，请稍后重试或检查数据库状态" }, 500);
   }
 }

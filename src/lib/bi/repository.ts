@@ -190,31 +190,73 @@ function normalize(rows: Record<string, unknown>[]): BiRow[] {
   );
 }
 
+function acquireSnapshotClient(signal?: AbortSignal): Promise<PoolClient> {
+  if (!signal) return getPool().connect();
+  signal.throwIfAborted();
+  const pending = getPool().connect();
+  // pg does not expose a way to unlink a pending checkout. A late checkout
+  // must go straight back to the pool without starting a transaction.
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+    void pending.then(client => {
+      signal.removeEventListener("abort", abort);
+      if (signal.aborted) client.release();
+      else resolve(client);
+    }, error => {
+      signal.removeEventListener("abort", abort);
+      reject(error);
+    });
+  });
+}
+
 async function snapshot<T>(
   run: (client: PoolClient) => Promise<T>,
+  signal?: AbortSignal,
 ): Promise<T> {
-  const client = await getPool().connect();
+  const client = await acquireSnapshotClient(signal);
+  let held = true;
+  const release = (discard = false) => {
+    if (!held) return;
+    held = false;
+    client.release(discard);
+  };
+  const abort = () => release(true);
+  signal?.addEventListener("abort", abort, { once: true });
   try {
+    signal?.throwIfAborted();
     await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-    await client.query("SET LOCAL statement_timeout='20s'; SET LOCAL lock_timeout='5s'");
+    // On PostgreSQL 16/Linux, check the wire even while SQL is busy so closing
+    // the discarded socket stops server-side work as well as freeing a slot.
+    await client.query("SET LOCAL statement_timeout='20s'; SET LOCAL lock_timeout='5s'" +
+      (signal ? "; SET LOCAL client_connection_check_interval='250ms'" : ""));
     const result = await run(client);
+    signal?.throwIfAborted();
     await client.query("COMMIT");
     return result;
   } catch (error) {
-    await client.query("ROLLBACK");
+    if (held) {
+      try { await client.query("ROLLBACK"); }
+      catch { release(true); }
+    }
+    signal?.throwIfAborted();
     throw error;
   } finally {
-    client.release();
+    signal?.removeEventListener("abort", abort);
+    release();
   }
 }
 
 /** Scoped callers must supply a server-authorized member list and its transaction.
- * This path is artworks-only; it never grants enterprise users other BI sections. */
-export async function queryBi(q: BiQuery, access?: { client: PoolClient; allowedEmails: readonly string[] }): Promise<BiResponse> {
+ * They retain ownership; the optional signal is for platform-owned reads only. */
+export async function queryBi(q: BiQuery, access?: { client: PoolClient; allowedEmails: readonly string[] }, signal?: AbortSignal): Promise<BiResponse> {
   if (access && !["artworks", "operations"].includes(q.section)) throw new Error("Scoped BI supports artworks and operations only");
   // Scoped callers initialize schema before opening their authorization transaction.
   // Never acquire a second pool connection while holding that transaction.
-  if (!access) await ensureBiSchema();
+  if (!access) {
+    signal?.throwIfAborted();
+    await ensureBiSchema();
+  }
   const result: BiResponse = {
     section: q.section,
     rows: [],
@@ -225,7 +267,7 @@ export async function queryBi(q: BiQuery, access?: { client: PoolClient; allowed
     query: { from: q.from, to: q.to },
   };
   if (q.section === "overview") {
-    result.overview = await snapshot((client) => overview(q, client));
+    result.overview = await snapshot((client) => overview(q, client), signal);
     return result;
   }
   const filterBinds = [...values(q), q.status, ...(q.section === "artworks" ? [q.recordId || ""] : []), ...(q.section==='operations'?[q.recordId||'',q.recordSource||'']:[]), ...(access ? [access.allowedEmails] : []), ...(q.section === "users" ? [q.position ?? ""] : [])];
@@ -336,9 +378,18 @@ export async function queryBi(q: BiQuery, access?: { client: PoolClient; allowed
   const readPage = async (client: PoolClient) => {
     const total=(await client.query(countSql,filterBinds)).rows[0].total as number;
     const rows=(q.page-1)*q.size>=total?[]:(await client.query(pageSql,binds)).rows;
-    return {total,rows};
+    let evidence: ModelCallEvidence[] | undefined;
+    if (rows.length && ["calls", "operations", "models"].includes(q.section)) {
+      const pairs = [...new Map(rows.map(row => {
+        const id = String(q.section === "models" ? row.job_id : row.id), email = String(row.email);
+        return [email + "\u0000" + id, {id, email}];
+      })).values()];
+      evidence = (await client.query<ModelCallEvidence>(MODEL_CALL_EVIDENCE_SQL,
+        [pairs.map(pair => pair.id), pairs.map(pair => pair.email), q.section === "calls"])).rows;
+    }
+    return {total,rows,evidence};
   };
-  const page = access ? await readPage(access.client) : await snapshot(readPage);
+  const page = access ? await readPage(access.client) : await snapshot(readPage, signal);
   result.total = page.total;
   result.rows = normalize(q.section === "artworks" ? page.rows.map(raw => {
     const presentation = artworkBiPresentation(raw);
@@ -346,13 +397,11 @@ export async function queryBi(q: BiQuery, access?: { client: PoolClient; allowed
     const { creation_provenance, source_url, image_url, job_kind, job_origin, job_entry, canvas_task_kind, video_task_source, input_params, input_images, input_request, input_source_id, ...row } = raw;
     return { ...row, ...presentation, ...artworkInputPresentation(raw) };
   }) : page.rows);
-  if (["calls", "operations", "models"].includes(q.section) && result.rows.length) {
-    const ids = result.rows.map(row => String(q.section === "models" ? row.job_id : row.id));
-    const emails = result.rows.map(row => String(row.email));
-    const pairs = [...new Map(ids.map((id,i) => [emails[i]+"\u0000"+id,{id,email:emails[i]}])).values()];
-    const evidence = await (access?.client ?? getPool()).query(MODEL_CALL_EVIDENCE_SQL, [pairs.map(p=>p.id),pairs.map(p=>p.email),q.section === "calls"]);
-    result.rows = result.rows.map((row,i) => {
-      const calls = (evidence.rows as ModelCallEvidence[]).filter(call => call.email === emails[i] && call.root_id === ids[i] && (q.section !== "calls" || call.id === row.id));
+  if (page.evidence) {
+    const evidence = page.evidence;
+    result.rows = result.rows.map(row => {
+      const id = String(q.section === "models" ? row.job_id : row.id), email = String(row.email);
+      const calls = evidence.filter(call => call.email === email && call.root_id === id && (q.section !== "calls" || call.id === row.id));
       return { ...row, ...modelChainPresentation(calls), model_evidence_scope: q.section === "calls" ? "本次调用" : "任务内调用汇总" };
     });
   }
