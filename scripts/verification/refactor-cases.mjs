@@ -46,6 +46,7 @@ export const refactorCases=[
  {...node('billing-history-client','pricing','scripts/verify-billing-history-client.mjs','BILLING_HISTORY_CLIENT=PASS'),clientReact:true},
  ts('supplier-cost-admin-read','pricing','scripts/verify-supplier-cost-admin-read.ts','SUPPLIER_COST_ADMIN_READ=PASS'),
  {...node('supplier-cost-detail-client','pricing','scripts/verify-supplier-cost-detail-client.mjs','SUPPLIER_COST_DETAIL_CLIENT=PASS'),clientReact:true},
+ ts('supplier-cost-summary-pressure','pricing','scripts/verify-supplier-cost-summary-pressure.ts','SUPPLIER_COST_PRESSURE=PASS'),
  node('native-fixture-lifecycle','runtime','scripts/verify-native-fixture-lifecycle.cjs','NATIVE_FIXTURE_LIFECYCLE=PASS'),
  node('native-fixture-memory','runtime','scripts/verify-native-fixture-memory.cjs','NATIVE_FIXTURE_MEMORY=PASS'),
  node('native-parent-database','runtime','scripts/verify-native-parent-database.cjs','NATIVE_PARENT_DATABASE=PASS'),

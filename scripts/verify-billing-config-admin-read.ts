@@ -13,7 +13,7 @@ async function main(){
  assert.equal(process.env.NAUMI_VERIFY_ISOLATED_DB,'1');
  assert.equal(new URL(process.env.DATABASE_URL??'http://invalid').hostname,'127.0.0.1');
  Object.assign(process.env,{NAUMI_MULTI_USER:'1',SETTINGS_SECRET:'fixture-settings-0123456789abcdef0123456789abcdef0123456789'});
- const f=await (await import('./billing-fixture')).createBillingFixture();
+ const f=await (await import('./billing-fixture')).createBillingFixture({freshSchema:true});
  let lock:PoolClient|undefined,observer:PoolClient|undefined,server:Server|undefined,completion:Promise<void>|undefined;
  try{
   const {ensureBillingSchema}=await import('../src/lib/billing/schema');

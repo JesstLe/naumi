@@ -14,7 +14,7 @@ async function main(){
  assert.equal(new URL(process.env.DATABASE_URL??'http://invalid').hostname,'127.0.0.1');
  const baseline=process.argv.includes('--baseline');
  Object.assign(process.env,{SETTINGS_SECRET:'fixture-settings-0123456789abcdef0123456789abcdef0123456789',PGPOOL_MAX:'5'});
- const f=await (await import('./billing-fixture')).createBillingFixture();
+ const f=await (await import('./billing-fixture')).createBillingFixture({freshSchema:true});
  const guard=new Client({connectionString:process.env.DATABASE_URL,connectionTimeoutMillis:2000});
  let server:Server|undefined,locked=false,guardConnected=false;
  const pending:Promise<unknown>[]=[],controllers:AbortController[]=[];

@@ -9,31 +9,63 @@ import type { Pool, PoolClient } from "pg";
 import { costWhere } from "./call-filter";
 import {checkReadClientSocket,withOwnedReportClient} from "@/platform/db/owned-read-client";
 
+type CostTotals={calls:number;confirmed:number;pending:number;estimated:number;incomplete:number;cny_micros:string|null};
+type CurrencyTotals={currency:string|null;reported_micros:string|null;estimated_micros:string|null;supplier_credits_micros:string|null};
+const incomplete=(alias:string)=>`(${alias}.cny_micros IS NULL OR ${alias}.cost_status NOT IN('reported','reconciled') OR (${alias}.currency<>'CNY' AND ${alias}.fx->>'basis'='budget'))`;
+
 export async function costsSummary(ledger: ReturnType<typeof createSupplierLedger>, f: CostFilter, tx?:PoolClient) {
   if(!tx)await ensureSupplierSchema(ledger.pool);
   const query=tx??ledger.pool;
   const { where, args } = costWhere(f);
-  const stats = (await query.query(`SELECT count(*)::int calls,count(*) FILTER(WHERE cost_status IN('reported','reconciled'))::int confirmed,
-    count(*) FILTER(WHERE cost_status='pending')::int pending,count(*) FILTER(WHERE cost_status='estimated')::int estimated,
-    count(*) FILTER(WHERE cny_micros IS NULL OR cost_status NOT IN('reported','reconciled') OR (currency<>'CNY' AND fx->>'basis'='budget'))::int incomplete,
-    sum(cny_micros)::text cny_micros,COALESCE(sum(delivered),0)::text delivered
-    FROM app_supplier_calls c ${where}`,args)).rows[0];
-  const currencies = (await query.query(`SELECT currency,sum(amount_micros) FILTER(WHERE cost_status IN('reported','reconciled'))::text reported_micros,
-    sum(amount_micros) FILTER(WHERE cost_status='estimated')::text estimated_micros,sum(credits_micros)::text supplier_credits_micros FROM app_supplier_calls c ${where} GROUP BY currency`,args)).rows;
-  // Filters select operations; margins always include their WHOLE supplier chain, not just one cheap stage/model.
-  const groups = (await query.query(`WITH selected AS (SELECT DISTINCT operation_id FROM app_supplier_calls c ${where}) SELECT operation_id,min(user_email) user_email,min(feature) feature,count(*)::int calls,
-    sum(cny_micros)::text cny_micros,count(*) FILTER(WHERE cny_micros IS NULL OR cost_status NOT IN('reported','reconciled') OR (currency<>'CNY' AND fx->>'basis'='budget'))::int incomplete FROM app_supplier_calls c WHERE operation_id IN(SELECT operation_id FROM selected) GROUP BY operation_id ORDER BY max(started_at) DESC LIMIT 500`,args)).rows;
+  // Filter calls once for counts and currencies. The qualifying operations are
+  // ranked by their last call across the whole chain, even outside the filter.
+  // Only the latest 500 chains need a full rollup; amounts stay decimal strings.
+  const {stats,currencies,groups}=(await query.query<{stats:CostTotals;currencies:CurrencyTotals[];groups:any[]}>(`
+    WITH matched AS MATERIALIZED (
+      SELECT GROUPING(currency,operation_id) AS scope,currency,operation_id,count(*)::int AS calls,
+        count(*) FILTER(WHERE cost_status IN('reported','reconciled'))::int AS confirmed,
+        count(*) FILTER(WHERE cost_status='pending')::int AS pending,count(*) FILTER(WHERE cost_status='estimated')::int AS estimated,
+        count(*) FILTER(WHERE ${incomplete("c")})::int AS incomplete,sum(cny_micros)::text AS cny_micros,
+        sum(amount_micros) FILTER(WHERE cost_status IN('reported','reconciled'))::text AS reported_micros,
+        sum(amount_micros) FILTER(WHERE cost_status='estimated')::text AS estimated_micros,
+        sum(credits_micros)::text AS supplier_credits_micros
+      FROM app_supplier_calls c ${where}
+      GROUP BY GROUPING SETS ((),(currency),(operation_id))
+    ), newest AS MATERIALIZED (
+      SELECT m.operation_id,recent.started_at
+      FROM matched m CROSS JOIN LATERAL (
+        SELECT c.started_at FROM app_supplier_calls c WHERE c.operation_id=m.operation_id ORDER BY c.started_at DESC LIMIT 1
+      ) recent
+      WHERE m.scope=2 ORDER BY recent.started_at DESC,m.operation_id LIMIT 500
+    ), chain_rollups AS (
+      SELECT n.operation_id,n.started_at,full_chain.* FROM newest n CROSS JOIN LATERAL (
+        SELECT min(c.user_email) AS user_email,min(c.feature) AS feature,count(*)::int AS calls,
+          sum(c.cny_micros)::text AS cny_micros,count(*) FILTER(WHERE ${incomplete("c")})::int AS incomplete
+        FROM app_supplier_calls c WHERE c.operation_id=n.operation_id
+      ) full_chain
+    )
+    SELECT
+      (SELECT jsonb_build_object('calls',calls,'confirmed',confirmed,'pending',pending,'estimated',estimated,'incomplete',incomplete,'cny_micros',cny_micros)
+       FROM matched WHERE scope=3) AS stats,
+      (SELECT COALESCE(jsonb_agg(jsonb_build_object('currency',currency,'reported_micros',reported_micros,'estimated_micros',estimated_micros,
+               'supplier_credits_micros',supplier_credits_micros) ORDER BY currency),'[]'::jsonb) FROM matched WHERE scope=1) AS currencies,
+      (SELECT COALESCE(jsonb_agg(to_jsonb(g)-'started_at' ORDER BY started_at DESC,operation_id),'[]'::jsonb) FROM chain_rollups g) AS groups
+  `,args)).rows[0];
   const ids = groups.map(g=>g.operation_id);
-  const operations = ids.length ? (await query.query("SELECT id,charged_credits,quote,state,settlement_result FROM app_billing_operations WHERE id=ANY($1::text[])",[ids])).rows : [];
-  const extra = ids.length ? (await query.query("SELECT operation_id,amount_cny_micros FROM app_supplier_variable_costs WHERE operation_id=ANY($1::text[])",[ids])).rows : [];
+  const operations = ids.length ? (await query.query(`SELECT id,charged_credits,state,quote->'tariff'->'pricing'->'creditsPerCnyMicros' AS rate,
+    CASE WHEN quote->'tariff'->>'unit'='image' AND jsonb_typeof(settlement_result->'items')='array' THEN
+      (SELECT count(*)::int FROM jsonb_array_elements(settlement_result->'items') i WHERE i->>'state'='succeeded')
+    ELSE 0 END AS delivered
+    FROM app_billing_operations WHERE id=ANY($1::text[])`,[ids])).rows : [];
+  const extra = ids.length ? (await query.query("SELECT operation_id,sum(amount_cny_micros)::text AS amount_cny_micros FROM app_supplier_variable_costs WHERE operation_id=ANY($1::text[]) GROUP BY operation_id",[ids])).rows : [];
   const operationsById=new Map(operations.map(op=>[op.id,op]));
   const extraByOperation=new Map<string,bigint>();
   for(const item of extra)extraByOperation.set(item.operation_id,(extraByOperation.get(item.operation_id)??BigInt(0))+BigInt(item.amount_cny_micros));
   let revenue = BigInt(0), charged = BigInt(0), unknownRevenue = 0, variable = BigInt(0),delivered=0;
   for (const g of groups) {
-    const op = operationsById.get(g.operation_id), rate = op?.quote?.tariff?.pricing?.creditsPerCnyMicros;
+    const op = operationsById.get(g.operation_id), rate = op?.rate;
     const credits = BigInt(op?.charged_credits || 0); charged += credits;
-    if(op?.quote?.tariff?.unit==='image'&&Array.isArray(op?.settlement_result?.items))delivered+=op.settlement_result.items.filter((i:any)=>i.state==='succeeded').length;
+    delivered+=op?.delivered??0;
     const known = op?.state === "settled" && typeof rate === "string" && /^\d+$/.test(rate) && BigInt(rate)>BigInt(0);
     g.chargedCredits = credits.toString(); g.revenueCnyMicros = known ? ((credits*MICRO*MICRO+BigInt(rate)/BigInt(2))/BigInt(rate)).toString() : null;
     if (known) revenue += BigInt(g.revenueCnyMicros); else unknownRevenue++;

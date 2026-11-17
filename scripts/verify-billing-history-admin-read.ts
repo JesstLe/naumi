@@ -14,7 +14,7 @@ async function main(){
  assert.equal(process.env.NAUMI_VERIFY_ISOLATED_DB,'1');
  assert.equal(new URL(process.env.DATABASE_URL??'http://invalid').hostname,'127.0.0.1');
  process.env.SETTINGS_SECRET='fixture-settings-0123456789abcdef0123456789abcdef0123456789';
- const f=await (await import('./billing-fixture')).createBillingFixture();
+ const f=await (await import('./billing-fixture')).createBillingFixture({freshSchema:true});
  let lock:PoolClient|undefined,server:Server|undefined;
  let finished:Promise<void>|undefined;
  try{
