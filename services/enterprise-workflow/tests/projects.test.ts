@@ -24,6 +24,18 @@ export async function projectChecks(pool:Pool){
  await apply(command(id,v++,{type:'invite',teamId:second}));const invites=await store.read(p('lead',second),{action:'invitations'})as any;assert.equal(invites.total,1);assert(!JSON.stringify(invites).includes('project metadata'));await assert.rejects(detail(id,'lead',second),/PROJECT_NOT_FOUND/);
  await apply(command(id,v++,{type:'consent',approve:true}),'lead',second);await apply(command(id,v++,{type:'link',orderId:b.orderId,milestoneId:m2.id}),'lead',second);
  let d=await detail(id);assert.equal(d.summary.committedPoints,10);assert.equal(d.summary.acceptedPoints,0);assert.equal(d.links.length,1);assert.equal(d.hiddenLinks,1);assert(!JSON.stringify(d).includes('FOREIGN_PRIVATE_TITLE'));assert(!JSON.stringify(d).includes(b.orderId));assert.equal(d.summary.milestones[1].dependencyBlocked,true);
+ const lockPreview=command(id,v,{type:'edit',title:'read-only concurrency',brief:'fixture',ownerSubject:'reviewer'});
+ const legacyProject=new ProjectStore(pool,(tx,principal)=>resolveDatabaseActor(tx,principal));
+ const hadLocks=async()=>Promise.all([`project:${enterpriseId}:${id}`,`order:${enterpriseId}:${a.orderId}`].map(async key=>!(await pool.query('SELECT pg_try_advisory_xact_lock(hashtextextended($1,0)) AS acquired',[key])).rows[0].acquired));
+ const locked=await whileReadWaits(pool,'orders',()=>legacyProject.preview(p(),lockPreview),async()=>{assert.deepEqual(await hadLocks(),[true,true]);});
+ const unlocked=await whileReadWaits(pool,'orders',()=>store.preview(p(),lockPreview),async()=>{assert.deepEqual(await hadLocks(),[false,false]);});
+ assert.equal(locked.status,'fulfilled');assert.equal(unlocked.status,'fulfilled');assert.deepEqual(locked.value,unlocked.value);
+ const ownerChanged=await whileReadWaits(pool,'orders',()=>store.preview(p(),lockPreview),async()=>{
+  await pool.query("UPDATE enterprise_workflow.team_members SET enabled=false WHERE enterprise_id=$1 AND team_id=$2 AND subject='reviewer'",[enterpriseId,teamId]);
+ });
+ assert.equal(ownerChanged.status,'rejected');assert.match(String(ownerChanged.reason),/PROJECT_OWNER_UNAVAILABLE/);
+ await pool.query("UPDATE enterprise_workflow.team_members SET enabled=true WHERE enterprise_id=$1 AND team_id=$2 AND subject='reviewer'",[enterpriseId,teamId]);
+ console.log('PROJECT_PREVIEW_READ_PASS: previous_project_and_order_locks=1 snapshot_no_locks=1 preview_hash_and_values_unchanged=1 prospective_owner_revocation=1');
  const before=JSON.stringify((await pool.query('SELECT document FROM enterprise_workflow.orders WHERE enterprise_id=$1 AND id=ANY($2::uuid[]) ORDER BY id',[enterpriseId,oids])).rows);await apply(command(id,v++,{type:'milestones',milestones:[{...m1,targetAt:'2099-02-01T00:00:00Z'},m2]}));assert.equal(JSON.stringify((await pool.query('SELECT document FROM enterprise_workflow.orders WHERE enterprise_id=$1 AND id=ANY($2::uuid[]) ORDER BY id',[enterpriseId,oids])).rows),before);
  const edit=command(id,v,{type:'edit',title:'adjusted title',brief:'project metadata',ownerSubject:'lead'}),stale=await store.preview(p(),edit);await b.act('worker',{type:'progress',taskId:b.taskId,percent:20,note:'actual change'});await assert.rejects(store.execute(p(),{...edit,previewHash:stale.previewHash,confirmed:true}),/PROJECT_PREVIEW_CHANGED/);
  await a.act('worker',{type:'submit-delivery',taskId:a.taskId,assetIds:[randomUUID()],note:'synthetic validator'});await a.act('reviewer',{type:'accept-delivery',taskId:a.taskId,quality:4,note:'independent accepted'});d=await detail(id);assert.equal(d.summary.ratio,20);assert.equal(d.summary.ready,false);await assert.rejects(apply(command(id,v,{type:'transition',status:'retrospective'})),/PROJECT_NOT_READY/);

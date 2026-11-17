@@ -37,7 +37,10 @@ export class ProjectStore{
   const orders=new Map<string,OrderMetrics>(orderIds.length?(await tx.query<{document:OrderMetrics}>(`SELECT ${doc} FROM enterprise_workflow.orders WHERE enterprise_id=$1 AND id=ANY($2::uuid[])`,[a.enterpriseId,orderIds])).rows.map(r=>[r.document.id,r.document]):[]);
   return {teamIds,orderIds,enabled,orders};
  }
- private async data(tx:PoolClient,a:Actor,p:Project,virtual?:WorkOrder){return this.compute(a,p,await this.inputs(tx,a,[p],true),virtual);}
+ private async checkEvidence(tx:PoolClient,a:Actor,evidence:ProjectInputEvidence){
+  if(evidence.teamIds.size){const current=await this.enabledTeams(tx,a,[...evidence.teamIds],false);ensure(current.size===evidence.enabled.size&&[...current].every(id=>evidence.enabled.has(id)),'PROJECT_SCOPE_CHANGED');}
+  if(evidence.orderIds.size){const current=(await tx.query('SELECT id,version FROM enterprise_workflow.orders WHERE enterprise_id=$1 AND id=ANY($2::uuid[])',[a.enterpriseId,[...evidence.orderIds]])).rows;ensure(current.length===evidence.versions.size&&current.every(r=>evidence.versions.get(r.id)===r.version),'PROJECT_SCOPE_CHANGED');}
+ }
  private compute(a:Actor,p:Project,{enabled,orders}:ProjectInputs,virtual?:WorkOrder,includeDetails=true){
   const allowed=(team:string)=>enabled.has(team)&&(team===p.teamId||p.grants.some(g=>g.teamId===team&&g.state==='approved'));
   const order=(id:string)=>virtual?.id===id?virtual:orders.get(id);
@@ -55,32 +58,45 @@ export class ProjectStore{
  private metadata(p:Project){const {links,archiveSnapshot,...meta}=p;return meta;}
  private projection(a:Actor,p:Project,d:ReturnType<ProjectStore['compute']>){ensure(this.visible(a,p),'PROJECT_NOT_FOUND',404);const archive=p.archiveSnapshot;return {project:{...this.metadata(p),grants:p.grants.filter(g=>this.owner(a,p)||g.teamId===a.teamId)},...d,archiveSnapshot:archive&&d.summary.unavailable===0?{...archive,dataHash:undefined}:null,archiveMasked:!!archive&&d.summary.unavailable>0,liveChanged:archive?archive.dataHash!==d.summary.dataHash:false,canManage:this.owner(a,p),canLink:request(a),canCreateDemand:a.permissions.includes('request'),canApprove:this.owner(a,p)&&a.permissions.includes('review')&&a.subject!==p.createdBy};}
  private async lock(tx:PoolClient,a:Actor,c:ProjectInput){await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`project:${a.enterpriseId}:${c.id}`]);const old=await this.row(tx,a,c.id);this.authorize(a,old,c);const ids=[...new Set([...(old?.links.map(l=>l.orderId)??[]),...('orderId'in c.action?[c.action.orderId]:[])])].sort();for(const id of ids)await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`order:${a.enterpriseId}:${id}`]);return old;}
- private async prepare(tx:PoolClient,a:Actor,c:ProjectInput,old:Project|undefined,at:string){
+ private async prepare(tx:PoolClient,a:Actor,c:ProjectInput,old:Project|undefined,at:string,lock=true,evidence?:ProjectInputEvidence){
   ensure((old?.version??0)===c.expectedVersion,'PROJECT_VERSION_CONFLICT');const action=c.action;let p:Project;let draft:ReturnType<typeof evolve>|undefined;
   if(action.type==='create'){
-   ensure(!old,'PROJECT_EXISTS');await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`project-code:${a.enterpriseId}:${action.code}`]);ensure(!(await tx.query('SELECT 1 FROM enterprise_workflow.projects WHERE enterprise_id=$1 AND code=$2',[a.enterpriseId,action.code])).rowCount,'PROJECT_CODE_EXISTS');
+   ensure(!old,'PROJECT_EXISTS');if(lock)await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`project-code:${a.enterpriseId}:${action.code}`]);ensure(!(await tx.query('SELECT 1 FROM enterprise_workflow.projects WHERE enterprise_id=$1 AND code=$2',[a.enterpriseId,action.code])).rowCount,'PROJECT_CODE_EXISTS');
    p={id:c.id,enterpriseId:a.enterpriseId,teamId:a.teamId!,code:action.code,title:action.title,brief:action.brief,ownerSubject:a.subject,createdBy:a.subject,createdAt:at,updatedAt:at,version:1,status:'planning',milestones:[],links:[],grants:[]};
   }else{
    ensure(old,'PROJECT_NOT_FOUND',404);p={...structuredClone(old),version:old.version+1,updatedAt:at};ensure(p.status!=='archived'||action.type==='reopen'||action.type==='revoke','PROJECT_ARCHIVED');
-   if(action.type==='edit'){const member=await this.resolveActor(tx,{enterpriseId:a.enterpriseId,teamId:p.teamId,subject:action.ownerSubject});ensure(member?.permissions.includes('manage'),'PROJECT_OWNER_UNAVAILABLE',403);p.title=action.title;p.brief=action.brief;p.ownerSubject=action.ownerSubject;}
+   if(action.type==='edit'){const lookup=lock?this.resolveActor:this.resolveActor.readSnapshot!;const member=await lookup(tx,{enterpriseId:a.enterpriseId,teamId:p.teamId,subject:action.ownerSubject});ensure(member?.permissions.includes('manage'),'PROJECT_OWNER_UNAVAILABLE',403);p.title=action.title;p.brief=action.brief;p.ownerSubject=action.ownerSubject;}
    else if(action.type==='milestones'){validateMilestones(action.milestones);ensure(p.links.every(l=>!l.milestoneId||action.milestones.some(m=>m.id===l.milestoneId)),'PROJECT_MILESTONE_IN_USE');p.milestones=action.milestones;}
-   else if(action.type==='invite'){ensure(action.teamId!==p.teamId,'PROJECT_OWNER_TEAM');ensure((await tx.query('SELECT 1 FROM enterprise_workflow.teams WHERE enterprise_id=$1 AND team_id=$2 AND enabled FOR SHARE',[a.enterpriseId,action.teamId])).rowCount,'PROJECT_TEAM_UNAVAILABLE',404);const oldGrant=p.grants.find(g=>g.teamId===action.teamId);ensure(!oldGrant||oldGrant.state==='revoked','PROJECT_INVITATION_EXISTS');ensure(oldGrant||p.grants.length<50,'PROJECT_TEAM_LIMIT',422);p.grants=p.grants.filter(g=>g.teamId!==action.teamId);p.grants.push({teamId:action.teamId,state:'invited',invitedBy:a.subject,invitedAt:at});}
+   else if(action.type==='invite'){ensure(action.teamId!==p.teamId,'PROJECT_OWNER_TEAM');ensure((await this.enabledTeams(tx,a,[action.teamId],lock)).has(action.teamId),'PROJECT_TEAM_UNAVAILABLE',404);const oldGrant=p.grants.find(g=>g.teamId===action.teamId);ensure(!oldGrant||oldGrant.state==='revoked','PROJECT_INVITATION_EXISTS');ensure(oldGrant||p.grants.length<50,'PROJECT_TEAM_LIMIT',422);p.grants=p.grants.filter(g=>g.teamId!==action.teamId);p.grants.push({teamId:action.teamId,state:'invited',invitedBy:a.subject,invitedAt:at});}
    else if(action.type==='consent'){const g=p.grants.find(g=>g.teamId===a.teamId)!;ensure(g.state==='invited','PROJECT_INVITATION_STATE');g.state=action.approve?'approved':'revoked';g.decidedBy=a.subject;g.decidedAt=at;}
    else if(action.type==='revoke'){const g=p.grants.find(g=>g.teamId===action.teamId);ensure(g&&g.state!=='revoked','PROJECT_INVITATION_NOT_FOUND',404);g.state='revoked';g.decidedBy=a.subject;g.decidedAt=at;}
-   else if(action.type==='remove-unavailable'){const teamActive=!!(await tx.query('SELECT 1 FROM enterprise_workflow.teams WHERE enterprise_id=$1 AND team_id=$2 AND enabled',[a.enterpriseId,action.teamId])).rowCount;ensure(action.teamId!==p.teamId&&(!teamActive||!p.grants.some(g=>g.teamId===action.teamId&&g.state==='approved')),'PROJECT_TEAM_STILL_AUTHORIZED');ensure(p.links.some(l=>l.teamId===action.teamId),'PROJECT_NO_UNAVAILABLE_LINKS');p.links=p.links.filter(l=>l.teamId!==action.teamId);}
+   else if(action.type==='remove-unavailable'){const teamActive=(await this.enabledTeams(tx,a,[action.teamId],false)).has(action.teamId);if(evidence){evidence.teamIds.add(action.teamId);if(teamActive)evidence.enabled.add(action.teamId);}ensure(action.teamId!==p.teamId&&(!teamActive||!p.grants.some(g=>g.teamId===action.teamId&&g.state==='approved')),'PROJECT_TEAM_STILL_AUTHORIZED');ensure(p.links.some(l=>l.teamId===action.teamId),'PROJECT_NO_UNAVAILABLE_LINKS');p.links=p.links.filter(l=>l.teamId!==action.teamId);}
    else if(action.type==='link'||action.type==='create-demand'){
     ensure(!action.milestoneId||p.milestones.some(m=>m.id===action.milestoneId),'PROJECT_MILESTONE_NOT_FOUND',404);const existing=p.links.find(l=>l.orderId===action.orderId);ensure(existing||p.links.length<300,'PROJECT_ORDER_LIMIT',422);
     let order=(await tx.query('SELECT document FROM enterprise_workflow.orders WHERE enterprise_id=$1 AND id=$2',[a.enterpriseId,action.orderId])).rows[0]?.document as WorkOrder|undefined;
     if(action.type==='create-demand'){ensure(!order,'PROJECT_DEMAND_EXISTS');const command:Command={commandId:c.commandId,orderId:action.orderId,expectedVersion:0,action:{type:'create',title:action.title,brief:action.brief,acceptance:action.acceptance}};draft=evolve(null,a,command,at);order=draft.order;}
     ensure(order&&canRead(a,order)&&(order.requestTeamId??order.teamId)===a.teamId,'PROJECT_ORDER_UNAVAILABLE',404);ensure(!existing||existing.teamId===a.teamId,'PROJECT_LINK_FORBIDDEN',403);if(existing){ensure(existing.milestoneId!==action.milestoneId,'PROJECT_LINK_NO_CHANGE');existing.milestoneId=action.milestoneId;}else p.links.push({orderId:action.orderId,milestoneId:action.milestoneId,teamId:a.teamId!,linkedBy:a.subject,linkedAt:at});
    }else if(action.type==='unlink'){const link=p.links.find(l=>l.orderId===action.orderId);ensure(link&&link.teamId===a.teamId,'PROJECT_ORDER_UNAVAILABLE',404);p.links=p.links.filter(l=>l.orderId!==action.orderId);}
-   else if(action.type==='transition'){const next={planning:'approved',approved:'active',active:'retrospective',retrospective:'archived'}[old.status as 'planning'|'approved'|'active'|'retrospective'];ensure(next===action.status,'PROJECT_STATE');if(action.status==='approved')ensure(a.permissions.includes('review')&&a.subject!==p.createdBy,'PROJECT_INDEPENDENT_APPROVAL_REQUIRED',403);if(['retrospective','archived'].includes(action.status)){const {summary}=await this.data(tx,a,p);ensure(summary.ready,'PROJECT_NOT_READY');if(action.status==='archived')p.archiveSnapshot=summary;}p.status=action.status;}
+   else if(action.type==='transition'){const next={planning:'approved',approved:'active',active:'retrospective',retrospective:'archived'}[old.status as 'planning'|'approved'|'active'|'retrospective'];ensure(next===action.status,'PROJECT_STATE');if(action.status==='approved')ensure(a.permissions.includes('review')&&a.subject!==p.createdBy,'PROJECT_INDEPENDENT_APPROVAL_REQUIRED',403);p.status=action.status;}
    else if(action.type==='reopen'){ensure(old.status==='archived'&&a.permissions.includes('review'),'PROJECT_REOPEN_REQUIRED',403);p.status='active';p.archiveSnapshot=null;}
   }
-  const d=await this.data(tx,a,p,draft?.order),previewHash=digest({principal:a,command:c,oldVersion:old?.version??0,summary:d.summary.dataHash});
+  const inputs=await this.inputs(tx,a,[p],lock);if(evidence)observe(evidence,inputs);
+  const d=this.compute(a,p,inputs,draft?.order),previewHash=digest({principal:a,command:c,oldVersion:old?.version??0,summary:d.summary.dataHash});
+  if(action.type==='transition'&&['retrospective','archived'].includes(action.status)){ensure(d.summary.ready,'PROJECT_NOT_READY');if(action.status==='archived')p.archiveSnapshot=d.summary;}
   const consent=action.type==='consent';return {next:p,draft,previewHash,preview:{id:p.id,version:p.version,code:p.code,title:p.title,status:p.status,action:action.type,summary:consent?undefined:d.summary,visibleOrders:consent?undefined:d.links,hiddenLinks:consent?undefined:d.hiddenLinks,milestones:consent?undefined:p.milestones,milestoneChanges:action.type==='milestones'?p.milestones.filter(m=>digest(m)!==digest(old?.milestones.find(x=>x.id===m.id)??null)).map(m=>({id:m.id,title:m.title,before:old?.milestones.find(x=>x.id===m.id)?.targetAt??null,after:m.targetAt})):[],notice:'项目修改不改变原任务期限、排期、验收或积分。'}};
  }
- async preview(p:Principal,raw:unknown){const c=projectInput.parse(raw);return this.tx(p,async(tx,a)=>{const old=await this.lock(tx,a,c),plan=await this.prepare(tx,a,c,old,this.now().toISOString());return {preview:plan.preview,previewHash:plan.previewHash};});}
+ async preview(p:Principal,raw:unknown){const c=projectInput.parse(raw);return (await readWorkflowSnapshot(this.pool,this.resolveActor,p,async(tx,a,snapshot)=>{
+  await this.ready(tx,a);const old=snapshot?await this.row(tx,a,c.id):await this.lock(tx,a,c);
+  if(snapshot)this.authorize(a,old,c);
+  const evidence=emptyEvidence(),plan=await this.prepare(tx,a,c,old,this.now().toISOString(),!snapshot,evidence);
+  return {result:{preview:plan.preview,previewHash:plan.previewHash},version:old?.version??null,team:old?.teamId??a.teamId!,evidence};
+ },{statementTimeoutMs:20000,checkCurrent:async(tx,a,read)=>{
+  const {rows}=await tx.query('SELECT version FROM enterprise_workflow.projects WHERE enterprise_id=$1 AND id=$2',[a.enterpriseId,c.id]);
+  ensure((rows[0]?.version??null)===read.version,'PROJECT_SCOPE_CHANGED');
+  await this.checkEvidence(tx,a,read.evidence);
+  if(c.action.type==='edit'){const member=await this.resolveActor.readSnapshot!(tx,{enterpriseId:a.enterpriseId,teamId:read.team,subject:c.action.ownerSubject});ensure(member?.permissions.includes('manage'),'PROJECT_OWNER_UNAVAILABLE',403);}
+  if(c.action.type==='create')ensure(!(await tx.query('SELECT 1 FROM enterprise_workflow.projects WHERE enterprise_id=$1 AND code=$2',[a.enterpriseId,c.action.code])).rowCount,'PROJECT_CODE_EXISTS');
+ }})).result;}
  async execute(p:Principal,raw:unknown){const input=projectApply.parse(raw),{previewHash,confirmed,...c}=input;return this.tx(p,async(tx,a)=>{
   await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`project-command:${a.enterpriseId}:${c.commandId}`]);const old=await this.lock(tx,a,c),fp=digest({p,c,previewHash}),prior=(await tx.query('SELECT fingerprint,applied_version FROM enterprise_workflow.project_commands WHERE enterprise_id=$1 AND id=$2',[a.enterpriseId,c.commandId])).rows[0];
   if(prior){ensure(prior.fingerprint===fp,'IDEMPOTENCY_CONFLICT');ensure(old,'PROJECT_NOT_FOUND',404);return {id:old.id,version:old.version,appliedVersion:prior.applied_version,replayed:true};}
@@ -113,8 +129,6 @@ export class ProjectStore{
  },{legacyRepeatable:true,statementTimeoutMs:20000,checkCurrent:async(tx,a,{projects,evidence})=>{
   const versions=new Map(projects.map(p=>[p.id,p.version]));
   if(versions.size){const current=(await tx.query('SELECT id,version FROM enterprise_workflow.projects WHERE enterprise_id=$1 AND id=ANY($2::uuid[])',[a.enterpriseId,[...versions.keys()]])).rows;ensure(current.length===versions.size&&current.every(r=>versions.get(r.id)===r.version),'PROJECT_SCOPE_CHANGED');}
-  if(!evidence)return;
-  if(evidence.teamIds.size){const current=await this.enabledTeams(tx,a,[...evidence.teamIds],false);ensure(current.size===evidence.enabled.size&&[...current].every(id=>evidence.enabled.has(id)),'PROJECT_SCOPE_CHANGED');}
-  if(evidence.orderIds.size){const current=(await tx.query('SELECT id,version FROM enterprise_workflow.orders WHERE enterprise_id=$1 AND id=ANY($2::uuid[])',[a.enterpriseId,[...evidence.orderIds]])).rows;ensure(current.length===evidence.versions.size&&current.every(r=>evidence.versions.get(r.id)===r.version),'PROJECT_SCOPE_CHANGED');}
+  if(evidence)await this.checkEvidence(tx,a,evidence);
  }})).result;}
 }
