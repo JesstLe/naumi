@@ -54,7 +54,10 @@ async function main(){
    await capture("first-owners",()=>owners.all(pool!));const after=(await admin.query("SELECT count(*)::int n FROM pg_tables WHERE schemaname=$1",[schema])).rows[0].n;if(baseline)ok(after>before);else eq(after,before);
    await capture("warm-owners",()=>owners.all(pool!));eq(ddl("warm-owners").length,baseline?1:0);
    if(!baseline){const config=(await load("src/lib/billing/configuration.ts")).getBillingConfiguration(),runtime=await(await load("src/lib/billing/runtime.ts")).getBillingRuntime();eq(runtime.config,config);}
-   const snapshot=await catalog();await writeFile(path.join(out,`SCHEMA_${mode}.json`),JSON.stringify(snapshot,null,2));ok(snapshot.columns.length>400);
+   const snapshot=await catalog();if(reports[0].steps.includes("canvas-comfy-nodes")){
+     ok(snapshot.columns.some((column:{table_name:string;attname:string})=>column.table_name==="app_canvas_comfy_nodes"&&column.attname==="workflow"));
+     ok(snapshot.columns.some((column:{table_name:string;attname:string})=>column.table_name==="app_canvas_comfy_operations"&&column.attname==="input_digest"));
+   }await writeFile(path.join(out,`SCHEMA_${mode}.json`),JSON.stringify(snapshot,null,2));ok(snapshot.columns.length>400);
    eq((await admin.query("SELECT count(*)::int n FROM app_gen_reservations")).rows[0].n,0);eq((await admin.query("SELECT count(*)::int n FROM app_ledger WHERE kind='consume'")).rows[0].n,0);
    console.log(`PERSISTENCE_OBSERVATION mode=${mode} startup_ddl=${ddl("startup").length} first_owner_ddl=${ddl("first-owners").length} warm_owner_ddl=${ddl("warm-owners").length} tables=${after}`);
   }else if(part==="fault"){
