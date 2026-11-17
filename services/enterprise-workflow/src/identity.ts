@@ -36,6 +36,17 @@ export function createBffAuthenticator(options: {
 }
 
 const member = z.strictObject({ permissions: z.array(permission).min(1), work_kinds: z.array(z.enum(['design', 'artwork'])) });
+const activeTeamMembers=`FROM enterprise_workflow.team_members m
+  JOIN enterprise_workflow.accounts a USING(enterprise_id,subject)
+  JOIN enterprise_workflow.teams t USING(enterprise_id,team_id)
+  WHERE m.enterprise_id=$1 AND m.team_id=$2 AND a.enabled AND t.enabled AND m.enabled
+    AND (a.expires_at IS NULL OR a.expires_at>now()) AND (m.expires_at IS NULL OR m.expires_at>now())`;
+function parseMember(principal: Principal, row: unknown): Actor|null {
+  const parsed=member.safeParse(row);
+  if(!parsed.success)return null;
+  const permissions=principal.sourcePermissions===undefined?parsed.data.permissions:parsed.data.permissions.filter(value=>principal.sourcePermissions!.includes(value));
+  return permissions.length?{...principal,permissions,workKinds:permissions.includes('execute')?parsed.data.work_kinds:[]}:null;
+}
 /** Each request resolves exactly one team. No union of roles across teams; no permission cache. */
 async function databaseActor(tx: Parameters<ResolveActor>[0], principal: Principal, lock: boolean): Promise<Actor | null> {
   if (!id.safeParse(principal.teamId).success) return null;
@@ -44,21 +55,19 @@ async function databaseActor(tx: Parameters<ResolveActor>[0], principal: Princip
     const current=await tx.query(`SELECT 1 FROM enterprise_workflow.source_identities i JOIN enterprise_workflow.source_enterprises e USING(source_instance,source_enterprise,enterprise_id) WHERE i.source_instance=$1 AND i.source_enterprise=$2 AND i.source_subject=$3 AND i.enterprise_id=$4 AND i.subject=$5 AND i.enabled AND e.enabled${lock?' FOR SHARE OF i,e':''}`,[s.sourceInstance,s.sourceEnterprise,s.sourceSubject,principal.enterpriseId,principal.subject]);
     if(current.rowCount!==1)return null;
   }
-  const result = await tx.query(`SELECT m.permissions,m.work_kinds FROM enterprise_workflow.team_members m
-    JOIN enterprise_workflow.accounts a USING(enterprise_id,subject)
-    JOIN enterprise_workflow.teams t USING(enterprise_id,team_id)
-    WHERE m.enterprise_id=$1 AND m.team_id=$2 AND m.subject=$3
-      AND a.enabled AND t.enabled AND m.enabled
-      AND (a.expires_at IS NULL OR a.expires_at>now())
-      AND (m.expires_at IS NULL OR m.expires_at>now())${lock?' FOR SHARE OF m,a,t':''}`,
+  const result = await tx.query(`SELECT m.permissions,m.work_kinds ${activeTeamMembers} AND m.subject=$3${lock?' FOR SHARE OF m,a,t':''}`,
   [principal.enterpriseId, principal.teamId, principal.subject]);
-  const parsed = member.safeParse(result.rows[0]);
-  if(!parsed.success)return null;
-  const permissions=principal.sourcePermissions===undefined?parsed.data.permissions:parsed.data.permissions.filter(value=>principal.sourcePermissions!.includes(value));
-  return permissions.length?{...principal,permissions,workKinds:permissions.includes('execute')?parsed.data.work_kinds:[]}:null;
+  return parseMember(principal,result.rows[0]);
 }
 
+async function readDatabaseTeamMembers(tx:Parameters<ResolveActor>[0],scope:Pick<Principal,'enterpriseId'|'teamId'>,subjects:readonly string[]){
+  if(!subjects.length||!id.safeParse(scope.teamId).success)return [];
+  const {rows}=await tx.query<{subject:string;permissions:unknown;work_kinds:unknown}>(`SELECT m.subject,m.permissions,m.work_kinds ${activeTeamMembers} AND m.subject=ANY($3::text[])`,[scope.enterpriseId,scope.teamId,subjects]);
+  const actors:Actor[]=[];
+  for(const {subject,...row} of rows){const a=parseMember({enterpriseId:scope.enterpriseId,teamId:scope.teamId,subject},row);if(a)actors.push(a);}
+  return actors;
+}
 export const resolveDatabaseActor: ResolveActor = Object.assign(
   (tx: Parameters<ResolveActor>[0], p: Principal) => databaseActor(tx, p, true),
-  {readSnapshot: (tx: Parameters<ResolveActor>[0], p: Principal) => databaseActor(tx, p, false)},
+  {readSnapshot: (tx: Parameters<ResolveActor>[0], p: Principal) => databaseActor(tx, p, false),readTeamMembers:readDatabaseTeamMembers},
 );

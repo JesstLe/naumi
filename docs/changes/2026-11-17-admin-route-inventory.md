@@ -90,7 +90,7 @@
 | `GET /api/enterprise/workflow/publication-preflight` | `src/app/api/enterprise/workflow/publication-preflight/route.ts` | 部分：隔离代理身份、取消和有界响应；直连列表、详情、释放连接、文件取消和撤权回归，真实网关待核 |
 | `GET /api/enterprise/workflow/publications` | `src/app/api/enterprise/workflow/publications/route.ts` | 部分：隔离代理读契约，直连列表、历史、来源及详情的快照、权限与分页验证，真实网关待核 |
 | `GET /api/enterprise/workflow/references` | `src/app/api/enterprise/workflow/references/route.ts` | 待核查 |
-| `GET /api/enterprise/workflow/reviews` | `src/app/api/enterprise/workflow/reviews/route.ts` | 待核查 |
+| `GET /api/enterprise/workflow/reviews` | `src/app/api/enterprise/workflow/reviews/route.ts` | 部分：代理静态确认请求信号和有界响应；直连断开、权限、候选和分页已验证，真实网关待核 |
 | `GET /api/enterprise/workflow/routing` | `src/app/api/enterprise/workflow/routing/route.ts` | 待核查 |
 | `GET /api/enterprise/workflow/sla` | `src/app/api/enterprise/workflow/sla/route.ts` | 待核查 |
 | `GET /api/enterprise/workflow/source` | `src/app/api/enterprise/workflow/source/route.ts` | 部分：候选、证据与来源权限；媒体分支共用渲染器经本地 HTTP 验证，真实代理断开待核 |
@@ -196,7 +196,7 @@
 | `工作流 GET /v1/capacity` | `services/enterprise-workflow/src/server.ts` | 部分：成员、摘要、历史已走只读快照，跨团队负荷及授权测试见 `capacity.test.ts` |
 | `工作流 GET /v1/catalog` | `services/enterprise-workflow/src/server.ts` | 部分：上下文、SKU、选择、管理列表与历史进入可取消快照；历史无目录锁、撤权和分页回归，高基数浏览待量化 |
 | `工作流 GET /v1/dashboard` | `services/enterprise-workflow/src/server.ts` | 已核查：一致汇总、分页、团队权限以及撤权并发，`dashboard.test.ts`、`read-transaction.test.ts` |
-| `工作流 GET /v1/delivery-reviews` | `services/enterprise-workflow/src/server.ts` | 待复现：静态确认评审读取持订单行锁后继续查提交及规范；候选与历史成本待核 |
+| `工作流 GET /v1/delivery-reviews` | `services/enterprise-workflow/src/server.ts` | 隔离已核查：context/detail 候选批量读取、history 无提交事件查询、深页、执行组与撤权、HTTP 断开归还连接；超大订单历史计划待量化 |
 | `工作流 GET /v1/delivery/assets` | `services/enterprise-workflow/src/server.ts` | 部分：列表快照、任务复核、共享扫描查询，回归通过；高峰待量化 |
 | `工作流 GET /v1/delivery/download` | `services/enterprise-workflow/src/server.ts` | 部分：直连断开关闭哈希、同句柄字节/审计/撤权回归；真实大文件并发待核 |
 | `工作流 GET /v1/delivery/library` | `services/enterprise-workflow/src/server.ts` | 部分：按订单一次查事件、24 项详情；两组合成负载十组返回与旧版一致，HTTP 断开和途中撤权回归、旧库兼容；生产高峰待核 |
@@ -258,7 +258,7 @@
 | `工作流 POST /v1/catalog/preview` | `services/enterprise-workflow/src/server.ts` | 部分：无目录锁、原预览哈希、过程中撤权回归；最大批量查询成本待量化 |
 | `工作流 POST /v1/change-preview` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 POST /v1/commands` | `services/enterprise-workflow/src/server.ts` | 待核查 |
-| `工作流 POST /v1/delivery-reviews` | `services/enterprise-workflow/src/server.ts` | 待核查 |
+| `工作流 POST /v1/delivery-reviews` | `services/enterprise-workflow/src/server.ts` | 部分：隔离回归评审人、接收门禁、历史与审计、并发、幂等；写入时的素材校验耗时待复查 |
 | `工作流 POST /v1/delivery/scan` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 POST /v1/delivery/upload` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 POST /v1/demand-batches/apply` | `services/enterprise-workflow/src/server.ts` | 部分：原哈希重算、回滚、竞争单胜者、回执重放和权限回归；真实负载待核 |

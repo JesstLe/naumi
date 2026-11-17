@@ -47,7 +47,10 @@ export {readScope} from './read-scope';
 // Must check live membership, enabled/expiry, entry grant, feature policy and business permissions.
 // It is also called for an assignment target; role display names and client headers are not authority.
 type ActorLookup = (tx: PoolClient, principal: Principal) => Promise<Actor | null>;
-export type ResolveActor = ActorLookup & {readSnapshot?: ActorLookup};
+export type ResolveActor = ActorLookup & {
+  readSnapshot?: ActorLookup;
+  readTeamMembers?: (tx:PoolClient,scope:Pick<Principal,'enterpriseId'|'teamId'>,subjects:readonly string[])=>Promise<Actor[]>;
+};
 // Must verify tenant ownership and usability of each immutable deliverable revision.
 type AssetValidation = (tx: PoolClient, actor: Actor, assetIds: string[], context?:{orderId:string;taskId:string}) => Promise<boolean>;
 /** `metadata` is for callers that verify the exact bytes outside their transaction. */
