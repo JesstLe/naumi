@@ -3,12 +3,17 @@ import {randomUUID} from 'node:crypto';
 import {mkdtemp} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
+import {once} from 'node:events';
+import {setTimeout as delay} from 'node:timers/promises';
 import type {Pool} from 'pg';
 import {WorkflowStore} from '../src/store';
 import {ReviewStore} from '../src/review-store';
 import {DeliveryStore} from '../src/delivery-store';
 import {resolveDatabaseActor} from '../src/identity';
 import type {Action,Principal} from '../src/contracts';
+import type {ResolveActor} from '../src/store';
+import {createWorkflowServer} from '../src/server';
+import {whileReadWaits} from './read-transaction.test';
 export async function reviewChecks(pool:Pool){
  const enterpriseId=randomUUID(),teamId=randomUUID(),other=randomUUID(),p=(subject:string,team=teamId):Principal=>({enterpriseId,teamId:team,subject});await pool.query('INSERT INTO enterprise_workflow.teams(enterprise_id,team_id)VALUES($1,$2),($1,$3)',[enterpriseId,teamId,other]);
  for(const [subject,permissions]of [['manager',['manage','request','dispatch','review']],['worker',['execute','review']],['peer',['review']],['replacement',['review']]] as const){await pool.query('INSERT INTO enterprise_workflow.accounts(enterprise_id,subject)VALUES($1,$2)',[enterpriseId,subject]);for(const team of [teamId,other])await pool.query('INSERT INTO enterprise_workflow.team_members(enterprise_id,team_id,subject,permissions,work_kinds)VALUES($1,$2,$3,$4,\'["design"]\')',[enterpriseId,team,subject,JSON.stringify(permissions)]);}
@@ -17,6 +22,46 @@ export async function reviewChecks(pool:Pool){
  const a=await make(),b=await make(),checks=[{id:randomUUID(),label:'文案准确'},{id:randomUUID(),label:'版式清晰'}],open=(x=a,id=randomUUID())=>({commandId:randomUUID(),reviewId:id,expectedVersion:0,reason:'分派独立评审',action:{type:'open',orderId:x.o.id,taskId:x.taskId,expectedOrderVersion:x.o.version,reviewers:['manager','peer'],checks}}),command=open();
  await assert.rejects(reviews.execute(p('worker'),command),/REVIEW_INDEPENDENT_REQUIRED/);await assert.rejects(new ReviewStore(pool,resolveDatabaseActor,files.validate,false).read(p('manager'),{action:'context',orderId:a.o.id,taskId:a.taskId}),/REVIEWS_NOT_ENABLED/);await assert.rejects(reviews.execute(p('manager',other),command),/REVIEW_TASK_UNAVAILABLE/);await assert.rejects(reviews.execute(p('manager'),{...command,action:{...command.action,reviewers:['worker']}}),/REVIEW_PANEL_UNAVAILABLE/);
  let d=await reviews.execute(p('manager'),command);assert.deepEqual(d.review.submission.assets,[{id:a.asset.id,revision:a.asset.revision,sha256:a.asset.sha256,bytes:a.asset.bytes,name:a.asset.name}]);assert.equal((await reviews.execute(p('manager'),command)).replayed,true);await assert.rejects(reviews.execute(p('manager'),{...command,reason:'changed'}),/IDEMPOTENCY_CONFLICT/);await assert.rejects(reviews.execute(p('manager'),open()),/REVIEW_ALREADY_EXISTS/);
+ const context={action:'context',orderId:a.o.id,taskId:a.taskId},manager=p('manager');
+ const addDirectory=async(first:number,last:number)=>{
+  await pool.query("INSERT INTO enterprise_workflow.accounts(enterprise_id,subject,enabled) SELECT $1,'candidate-'||n,n<>1 FROM generate_series($2::int,$3::int) n",[enterpriseId,first,last]);
+  await pool.query(`INSERT INTO enterprise_workflow.team_members(enterprise_id,team_id,subject,permissions,work_kinds,expires_at) SELECT $1,$2,'candidate-'||n,'["review"]','[]',CASE WHEN n=2 THEN now()-interval '1 day' END FROM generate_series($3::int,$4::int) n`,[enterpriseId,teamId,first,last]);
+ };
+ await addDirectory(1,180);
+ let legacyCalls=0,snapshotCalls=0,batches=0;
+ const legacy=new ReviewStore(pool,(tx,who)=>{legacyCalls++;return resolveDatabaseActor(tx,who);},files.validate);
+ const observed:ResolveActor=Object.assign(resolveDatabaseActor.bind(null),{readSnapshot:(tx:Parameters<ResolveActor>[0],who:Principal)=>{snapshotCalls++;return resolveDatabaseActor.readSnapshot!(tx,who);},readTeamMembers:(...args:Parameters<NonNullable<ResolveActor['readTeamMembers']>>)=>{batches++;return resolveDatabaseActor.readTeamMembers!(...args);}});
+ const batched=new ReviewStore(pool,observed,files.validate),before=await legacy.read(manager,context),after=await batched.read(manager,context);
+ assert.deepEqual(after,before);assert.equal(legacyCalls,185);assert.equal(snapshotCalls,2);assert.equal(batches,1);
+ assert('candidates' in after&&after.candidates?.length===181&&!after.candidates.includes('worker')&&!after.candidates.includes('candidate-1')&&!after.candidates.includes('candidate-2'));
+ await addDirectory(181,197);await assert.rejects(batched.read(manager,context),/REVIEW_PANEL_DIRECTORY_TOO_LARGE/);
+ await pool.query("DELETE FROM enterprise_workflow.team_members WHERE enterprise_id=$1 AND subject LIKE 'candidate-%'",[enterpriseId]);
+ const orderLock=()=>pool.query('SELECT id FROM enterprise_workflow.orders WHERE enterprise_id=$1 AND id=$2 FOR UPDATE NOWAIT',[enterpriseId,a.o.id]);
+ const blocked=await whileReadWaits(pool,'events',()=>legacy.read(manager,context),async()=>{await assert.rejects(orderLock(),{code:'55P03'});});
+ const released=await whileReadWaits(pool,'events',()=>reviews.read(manager,context),async()=>{assert.equal((await orderLock()).rowCount,1);});
+ assert.equal(blocked.status,'fulfilled');assert.deepEqual(released,blocked);
+ const member=(enabled:boolean)=>pool.query("UPDATE enterprise_workflow.team_members SET enabled=$3 WHERE enterprise_id=$1 AND team_id=$2 AND subject='manager'",[enterpriseId,teamId,enabled]);
+ const revoked=await whileReadWaits(pool,'events',()=>reviews.read(manager,context),async()=>{await member(false);});
+ assert.equal(revoked.status,'rejected');assert.equal(revoked.reason.code,'MEMBERSHIP_REQUIRED');await member(true);
+ const moved=await whileReadWaits(pool,'events',()=>reviews.read(manager,context),async()=>{
+  await pool.query("UPDATE enterprise_workflow.orders SET document=jsonb_set(document,'{teamId}',to_jsonb($3::text)) WHERE enterprise_id=$1 AND id=$2",[enterpriseId,a.o.id,other]);
+ });
+ assert.equal(moved.status,'rejected');assert.equal(moved.reason.code,'REVIEW_TASK_UNAVAILABLE');
+ await pool.query('UPDATE enterprise_workflow.orders SET document=$3 WHERE enterprise_id=$1 AND id=$2',[enterpriseId,a.o.id,a.o]);
+ const guard=await pool.connect();try{
+  await guard.query('BEGIN');await guard.query('LOCK TABLE enterprise_workflow.events IN ACCESS EXCLUSIVE MODE');
+  const history=await reviews.read(manager,{action:'history',id:d.review.id,page:1});assert('events' in history&&history.events?.length===1);
+  const empty=await reviews.read(manager,{action:'history',id:d.review.id,page:100});assert('events' in empty&&empty.events?.length===0&&empty.total===1);
+ }finally{await guard.query('ROLLBACK');guard.release();}
+ const http=createWorkflowServer(wf,async()=>manager);http.listen(0,'127.0.0.1');await once(http,'listening');try{
+  const address=http.address();assert(address&&typeof address!=='string');const url=`http://127.0.0.1:${address.port}/v1/delivery-reviews?action=context&orderId=${a.o.id}&taskId=${a.taskId}`;
+  const abort=new AbortController(),stopped=await whileReadWaits(pool,'events',()=>fetch(url,{signal:abort.signal}),async()=>{
+   abort.abort();for(let i=0;i<50&&pool.totalCount-pool.idleCount>1;i++)await delay(10);
+   assert.equal(pool.totalCount-pool.idleCount,1,'disconnected review must release the slot before the blocker clears');
+  });
+  assert.equal(stopped.status,'rejected');assert.equal(stopped.reason.name,'AbortError');const retry=await fetch(url);assert.equal(retry.status,200);assert.deepEqual((await retry.json() as {candidates:string[]}).candidates,['manager','peer','replacement']);
+ }finally{http.closeAllConnections();await new Promise<void>(resolve=>http.close(()=>resolve()));}
+ console.log('DELIVERY_REVIEW_READ_PASS: legacy_actor_lookups=185 first_and_final_snapshot=2 directory_batch=1 cap_unchanged=1 read_releases_order_lock=1 member_revoke_and_team_move_denied=2 history_without_submission_lookup=1 http_abort_releases_slot=1');
  const original=JSON.stringify(a.o);const accept=()=>a.go({type:'accept-delivery',taskId:a.taskId,quality:4,note:'独立验收'});await assert.rejects(accept(),/REVIEW_NOT_APPROVED/);
  const mutate=async(action:unknown,who='manager')=>{d=await reviews.execute(p(who),{commandId:randomUUID(),reviewId:d.review.id,expectedVersion:d.review.version,reason:'明确处理原因',action});return d;},verdict={type:'verdict',verdict:'approve',checks:checks.map(x=>({id:x.id,result:'pass',note:''}))};
  await assert.rejects(mutate({...verdict,checks:[verdict.checks[0],verdict.checks[0]]}),/REVIEW_CHECKS_MISMATCH/);await assert.rejects(mutate({...verdict,checks:verdict.checks.map(x=>({...x,result:'na'}))}),/REVIEW_CHECK_NOTE_REQUIRED/);
