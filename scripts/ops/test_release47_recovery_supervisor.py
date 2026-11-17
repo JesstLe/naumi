@@ -6,7 +6,7 @@ import unittest
 import uuid
 
 from release47_host import Hold
-from release47_recovery_supervisor import Supervisor, recovery_binding, encoded, sha, static_pin
+from release47_recovery_supervisor import Adapter, Supervisor, recovery_binding, encoded, sha, static_pin
 
 
 class Fake:
@@ -164,6 +164,41 @@ class Recovery(unittest.TestCase):
         self.assertEqual(row['HostConfig']['Dns'],[], 'pin calculation must not mutate inspect')
         row['HostConfig']['Dns']=['192.0.2.53'];self.assertNotEqual(static_pin(row),pin)
         row['HostConfig']['Dns']=[];row['Config']['Env']=['SAMPLE=2'];self.assertNotEqual(static_pin(row),pin)
+
+    def test_docker_reboot_accepts_only_equivalent_dns_defaults_in_enrolled_pin(self):
+        primary = dict(Id='web', Name='/web', Image='image', Config={'Env': ['SAMPLE=1']},
+                       HostConfig={'Dns': None, 'DnsOptions': None, 'DnsSearch': None, 'Memory': 2048},
+                       Mounts=[{'Destination': '/data', 'Source': '/stable-data'}])
+        live = copy.deepcopy(primary)
+        live['HostConfig'].update(Dns=[], DnsOptions=[], DnsSearch=[])
+        tx = type('Tx', (), {'inspect': lambda _self, _id: live})()
+        adapter = Adapter(tx, {'image': 'image'})
+        # Preserve pre-reboot manifests, including pairs enrolled with different
+        # default DNS representations. Do not change static_pin's persisted format.
+        for opts in (None, []):
+            for search in (None, []):
+                enrolled = {**primary, 'HostConfig': {**primary['HostConfig'], 'DnsOptions': opts, 'DnsSearch': search}}
+                spec = {'id': 'web', 'staticSha256': static_pin(enrolled)}
+                before = copy.deepcopy(live)
+                self.assertIs(adapter.inspect(spec), live)
+                self.assertEqual(live, before)
+        spec = {'id': 'web', 'staticSha256': static_pin(primary)}
+        for section, key, value in [
+            ('HostConfig', 'Dns', ['192.0.2.53']),
+            ('HostConfig', 'DnsOptions', ['attempts:2']),
+            ('HostConfig', 'DnsSearch', ['fixture.invalid']),
+            ('HostConfig', 'Memory', 1024),
+            ('Config', 'Env', ['SAMPLE=2']),
+        ]:
+            with self.subTest(key=key):
+                before = live[section][key]
+                live[section][key] = value
+                with self.assertRaisesRegex(Hold, 'CONTAINER_CONFIGURATION_CHANGED'):
+                    adapter.inspect(spec)
+                live[section][key] = before
+        del live['HostConfig']['DnsOptions']
+        with self.assertRaisesRegex(Hold, 'CONTAINER_CONFIGURATION_CHANGED'):
+            adapter.inspect(spec)
 
     def completed_receipt_recovery(self):
         self.fake.worker.update(bootId=str(uuid.uuid4()),activeTicks=0)

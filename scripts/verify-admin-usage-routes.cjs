@@ -23,7 +23,7 @@ async function main() {
     '@/lib/bi/repository': { logBiAccess: async () => { audits++; } },
     '@/lib/bi/usage-repository': { queryUserUsage: async query => { reads++; return { query }; }, readUserUsage: async (tx, query, scope) => { assert.equal(tx, client); received = { query, scope }; reads++; return received; } },
     '@/lib/enterprise/access': { enterpriseAuthorize: async () => auth ? { email: 'manager@example.test', admin: false } : json({ error: 'login' }, 401) },
-    '@/lib/enterprise/server': { enterpriseRead: async (actor, id, run) => { assert.equal(actor.admin, false); if (!permission || id !== tenant) throw new TeamError('forbidden'); return run(client, { owner, visible: new Set(['self@example.test', 'child@example.test']), team: { id: tenant, name: '企业A', owner_email: 'owner@example.test' } }); } },
+    '@/lib/enterprise/server': { enterpriseReportRead: async (actor, id, run) => { assert.equal(actor.admin, false); if (!permission || id !== tenant) throw new TeamError('forbidden'); return run(client, { owner, visible: new Set(['self@example.test', 'child@example.test']), team: { id: tenant, name: '企业A', owner_email: 'owner@example.test' } }); } },
     '@/lib/teams/errors': { TeamError },
     '@/lib/teams/access': { teamJson: json, teamFailure: error => json({ error: error.message }, error.status || 500) },
   };

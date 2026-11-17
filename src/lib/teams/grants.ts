@@ -17,11 +17,11 @@ export function grantStatus(g: Pick<TeamAccessGrant, "enabled" | "revoked_at" | 
   return new Date(g.starts_at).getTime() > now ? "scheduled" : "active";
 }
 
-/** Lock the same grant row that lifecycle mutations update, including content reads. */
-export async function requireTeamGrant(tx: PoolClient, actor: TeamActor) {
+/** Use the same grant rules in a locked authorization check or a read-only report snapshot. */
+export async function requireTeamGrant(tx: PoolClient, actor: TeamActor, lock: 'share' | 'snapshot' = 'share') {
   if (actor.consoleAdmin) return null;
   const row = (await tx.query(`SELECT g.*,u.role,u.banned,u.account_expires_at FROM app_team_access_grants g
-    JOIN app_users u ON u.email=g.email WHERE g.email=$1 FOR SHARE OF g,u`, [actor.email])).rows[0];
+    JOIN app_users u ON u.email=g.email WHERE g.email=$1${lock === 'share' ? ' FOR SHARE OF g,u' : ''}`, [actor.email])).rows[0];
   if (!row || grantStatus(row) !== "active" || row.banned || (row.account_expires_at && new Date(row.account_expires_at).getTime() <= Date.now())) throw new TeamError("团队入口授权未生效、已到期或已关闭");
   if (actor.admin && (row.scope !== "all" || row.role !== "admin")) throw new TeamError("没有全团队管理权限");
   return row as TeamAccessGrant;

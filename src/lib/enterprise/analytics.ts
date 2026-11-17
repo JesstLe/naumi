@@ -4,7 +4,7 @@ import type { TeamActor } from '@/lib/teams/grants';
 import { TeamError } from "@/lib/teams/errors";
 import { CATEGORY_FEATURES } from '@/lib/billing/feature-map';
 import { excludeImportedHistory } from '@/lib/staging-history';
-import { enterpriseRead } from './server';
+import { enterpriseReportRead } from './server';
 import { PURPOSES, shiftDate, type AnalyticsFilter, type EnterpriseAnalytics, type LedgerEntry } from './analytics-contracts';
 
 const date=z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(v=>{const n=Date.parse(v+'T00:00:00Z');return Number.isFinite(n)&&new Date(n).toISOString().slice(0,10)===v},'日期无效');
@@ -62,7 +62,7 @@ const tasksCTE=`WITH raw_tasks AS (
 ), tasks AS (SELECT * FROM raw_tasks WHERE created_at >= $2::timestamptz AND created_at < $3::timestamptz AND ($4::text='' OR email=$4) AND ($5::text='' OR purpose=$5))`;
 const taskSums=`count(*)::int AS tasks,count(*) FILTER(WHERE status='succeeded')::int AS succeeded,count(*) FILTER(WHERE status='failed')::int AS failed,count(*) FILTER(WHERE status='pending')::int AS pending,count(*) FILTER(WHERE status='unknown')::int AS unknown`;
 function range(q:AnalyticsFilter,emails:string[]){return [emails,q.from+'T00:00:00+08:00',shiftDate(q.to,1)+'T00:00:00+08:00',q.email,q.purpose]}
-function scopedEmails(s:Parameters<Parameters<typeof enterpriseRead>[2]>[1],q:AnalyticsFilter){
+function scopedEmails(s:Parameters<Parameters<typeof enterpriseReportRead>[2]>[1],q:AnalyticsFilter){
  let emails=[...s.visible,...(s.owner?[s.team.owner_email]:[])];
  if(q.team){
   if(!emails.includes(q.team))throw new TeamError('没有该团队经营数据的查看权限');
@@ -75,7 +75,7 @@ function scopedEmails(s:Parameters<Parameters<typeof enterpriseRead>[2]>[1],q:An
 }
 const detailSQL=`SELECT l.id,l.email,u.name,l.created_at AS "createdAt",l.event_kind AS kind,l.purpose,l.delta,l.operation_id AS "operationId",l.source FROM ledger l JOIN app_users u ON u.email=l.email WHERE ($6::text='' OR event_kind=$6) ORDER BY l.created_at DESC,l.id DESC`;
 export async function enterpriseAnalytics(actor:TeamActor,q:AnalyticsFilter):Promise<EnterpriseAnalytics>{
- return enterpriseRead(actor,q.enterpriseId,async(tx,s)=>{
+ return enterpriseReportRead(actor,q.enterpriseId,async(tx,s)=>{
   const emails=scopedEmails(s,q),p=range(q,emails);
   const choices=(await tx.query(`SELECT u.email,u.name,COALESCE(m.supervisor_email,'') AS supervisor FROM app_users u LEFT JOIN app_enterprise_members m ON m.email=u.email AND m.enterprise_id=$2 WHERE u.email=ANY($1::text[]) ORDER BY u.name,u.email`,[emails,q.enterpriseId])).rows;
   // Materialize the filtered ledger once for the six views of the current range.
@@ -138,7 +138,7 @@ export async function enterpriseAnalytics(actor:TeamActor,q:AnalyticsFilter):Pro
 
 export function csvCell(value:unknown){let text=String(value??'');if(typeof value==='string'&&/^[\s\u0000-\u001f]*[=+@-]/.test(text))text="'"+text;return '"'+text.replaceAll('"','""')+'"'}
 export async function enterpriseLedgerCsv(actor:TeamActor,q:AnalyticsFilter){
- return enterpriseRead(actor,q.enterpriseId,async(tx,s)=>{
+ return enterpriseReportRead(actor,q.enterpriseId,async(tx,s)=>{
   const p=range(q,scopedEmails(s,q));
   const total=Number((await tx.query(`${ledgerCTE} SELECT count(*)::int AS n FROM ledger WHERE $6::text='' OR event_kind=$6`,[...p,q.kind])).rows[0].n);
   if(total>50000)throw new TeamError('超过50000条，请缩小日期范围或选择成员后导出',400);
