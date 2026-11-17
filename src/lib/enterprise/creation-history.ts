@@ -4,7 +4,7 @@ import {TeamError} from '@/lib/teams/server';
 import {enterpriseRead,enterpriseReportRead} from './server';
 import {ensureBiSchema} from '@/lib/bi/repository';
 import {ensureMediaSchema} from '@/lib/media-assets-schema';
-import {listLegacyCreations,legacyCreationDetail,legacyCreationAsset,type LegacyReadScope} from '@/lib/saas/legacy-creations';
+import {listLegacyCreations,legacyCreationDetail,legacyCreationAsset,legacyCreationEvents,type LegacyReadScope} from '@/lib/saas/legacy-creations';
 import {publicCreationParameters} from '@/lib/saas/creation-parameters';
 import type {DetailPages} from '@/lib/saas/creations';
 import type {CreationFilters,CreationPage} from '@/lib/saas/creation-contracts';
@@ -31,6 +31,9 @@ export async function enterpriseHistoryDetail(actor:TeamActor,id:string,creation
     const {technical,failure,...publicDetail}=detail;
     return {...publicDetail,parameters:{...detail.parameters,values:publicCreationParameters(detail.parameters.values)}};
   });
+}
+export function enterpriseHistoryEvents(actor:TeamActor,id:string,creationId:string,page:number){
+  return read(actor,id,access=>legacyCreationEvents(creationId,page,access));
 }
 export async function enterpriseHistoryAsset(actor:TeamActor,id:string,creationId:string,assetId:string){
   // Schema initialization may borrow the business pool, so finish it before

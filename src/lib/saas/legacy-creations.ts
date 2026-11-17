@@ -14,7 +14,7 @@ import {ensureMediaSchema} from '@/lib/media-assets-schema';
 import {legacyCreationId,parseLegacyCreationId as parseId,type LegacySource as Source} from './creation-history-identity';
 export {legacyCreationId} from './creation-history-identity';
 import {linkedCreation,assertLegacySourceTenant} from './creation-history-link';
-import {creationDetailInTransaction,creationAssetInTransaction,type DetailPages} from './creations';
+import {creationDetailInTransaction,creationAssetInTransaction,creationEventsInTransaction,type DetailPages} from './creations';
 import {creationRequestFacts} from './creation-parameters';
 import {legacyImageChildren,legacyOutputFilter,confirmedParentCharge} from './legacy-creation-family';
 export type LegacyReadScope={client:PoolClient;allowedEmails:readonly string[];tenantId?:string};
@@ -28,6 +28,32 @@ export async function listLegacyCreations(f:CreationFilters,access?:LegacyReadSc
   return {items,pagination:{total:rows.total,page:rows.page,size:rows.size},appliedFilters:f,generatedAt:rows.generatedAt,scope:'platform',availability:'available',summary:{total:rows.total,activeMembers:0,settledCredits:null,pending:0,failed:0,needsReview:0},memberUsage:[]};
 }
 type LegacyMedia={asset:CreationAsset;storageRef:string;actorEmail:string};
+async function platformLegacyRead<T>(run:(tx:PoolClient)=>Promise<T>):Promise<T>{
+ await ensureBiSchema();
+ const tx=await getPool().connect();try{await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');await tx.query("SET LOCAL statement_timeout='20s'");const result=await run(tx);await tx.query('COMMIT');return result;}catch(error){await tx.query('ROLLBACK');throw error;}finally{tx.release();}
+}
+function legacyInputMedia(ref:Source,row:Record<string,any>):LegacyMedia[]{
+ const request=row.payload?.plan?.request||row.payload?.p?.imagegen?.request;
+ const media:LegacyMedia[]=[];
+ const add=(role:string,storageRef:string)=>{const position=media.length;media.push({asset:{id:`legacy-media-${position}`,direction:'input',role,position,variant:'original',mime:null,bytes:null,hash:null,availability:'recorded',mediaType:'image'},storageRef,actorEmail:ref.email});};
+ if(Array.isArray(request?.inputs))for(const input of request.inputs)if(typeof input.artworkId==='string')add(String(input.role||'reference'),`artwork:${input.artworkId}`);
+ const uploaded=row.payload?.p?.images||row.payload?.images;if(Array.isArray(uploaded))for(const image of uploaded){const url=image?.buf?.$imageJobBuffer;if(typeof url==='string'&&isManagedImageUrl(url))add('reference',url);}
+ if(row.source_artwork_id)add('edit-target',`artwork:${row.source_artwork_id}`);
+ return media;
+}
+export async function legacyCreationEvents(id:string,page:number,access?:LegacyReadScope){
+ const ref=parseId(id);if(access&&!access.allowedEmails.includes(ref.email))throw new TeamError('记录不存在或无权访问',404);
+ const run=async(tx:PoolClient)=>{
+  if(access)await assertLegacySourceTenant(tx,ref,access.tenantId);
+  const exists=await tx.query(`SELECT 1 FROM ${ref.table} WHERE id=$1 AND email=$2`,[ref.id,ref.email]);
+  if(!exists.rowCount)throw new TeamError('记录不存在或无权访问',404);
+  if(access&&!access.tenantId)return [];
+  const linked=await linkedCreation(tx,ref,access?.tenantId);
+  if(!linked)return [];
+  return creationEventsInTransaction(tx,access?{platform:false,tenantId:access.tenantId!,historyEmails:access.allowedEmails}:{platform:true},linked.id,access?.allowedEmails||null,page);
+ };
+ return access?run(access.client):platformLegacyRead(run);
+}
 export async function legacyCreationDetail(id:string,pages:DetailPages&{diagnostics?:boolean;canonical?:boolean}={},access?:LegacyReadScope){
  const ref=parseId(id);if(access&&!access.allowedEmails.includes(ref.email))throw new TeamError('记录不存在或无权访问',404);
  if(!access)await ensureBiSchema();const pool=access?.client||getPool();
@@ -41,22 +67,17 @@ export async function legacyCreationDetail(id:string,pages:DetailPages&{diagnost
    const tx=await getPool().connect();try{await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');const result=await run(tx);await tx.query('COMMIT');return result;}catch(error){await tx.query('ROLLBACK');throw error;}finally{tx.release();}
   }
  }
- const request=row.payload?.plan?.request||row.payload?.p?.imagegen?.request;
  const facts=creationRequestFacts(row.payload,row.parameters,row.prompt),text=facts.text;
  const childRows=await legacyImageChildren(pool,ref,row);
  const root=item({source_table:ref.table,id:ref.id,email:ref.email,content:typeof text==='string'?text:'',kind:row.kind||'视频创作',status:row.snapshot?.result?.status||row.snapshot?.status||row.status,created_at:row.created_at});
- const media:LegacyMedia[]=[];let i=0;
- const add=(direction:'input'|'output',role:string,storageRef:string,variant:'original'|'processed'='original',mediaType:'image'|'video'='image')=>{media.push({asset:{id:`legacy-media-${i}`,direction,role,position:i++,variant,mime:null,bytes:null,hash:null,availability:'recorded',mediaType},storageRef,actorEmail:ref.email});};
- if(Array.isArray(request?.inputs))for(const input of request.inputs)if(typeof input.artworkId==='string')add('input',String(input.role||'reference'),`artwork:${input.artworkId}`);
- const uploaded=row.payload?.p?.images||row.payload?.images;if(Array.isArray(uploaded))for(const image of uploaded){const url=image?.buf?.$imageJobBuffer;if(typeof url==='string'&&isManagedImageUrl(url))add('input','reference',url,'original');}
- if(row.source_artwork_id)add('input','edit-target',`artwork:${row.source_artwork_id}`);
+ const media=legacyInputMedia(ref,row);
  const inputCount=media.length,page=pages.assetPage||1,size=24,start=(page-1)*size;
  const inputs=media.slice(start,start+size),outputOffset=Math.max(0,start-inputCount),outputLimit=size-inputs.length;
  const outputScope=legacyOutputFilter(ref,row,childRows),outputFilter=outputScope.sql,args=outputScope.values;
  const outputTotal=Number((await pool.query(`SELECT count(*)::int AS n FROM app_artworks WHERE email=$1 AND ${outputFilter}`,args)).rows[0].n);
  const results=outputLimit?(await pool.query(`SELECT id,image_url,video_url FROM app_artworks WHERE email=$1 AND ${outputFilter} ORDER BY created_at,id LIMIT $${args.length+1} OFFSET $${args.length+2}`,[...args,outputLimit,outputOffset])).rows:[];
  media.length=0;media.push(...inputs);
- for(const [index,result] of results.entries()){add('output','result',`artwork:${result.id}`,'original',result.video_url?'video':'image');const added=media[media.length-1];added.asset.id=`legacy-artwork-${Buffer.from(result.id).toString('base64url')}`;added.asset.position=inputCount+outputOffset+index;}
+ for(const [index,result] of results.entries())media.push({asset:{id:`legacy-artwork-${Buffer.from(result.id).toString('base64url')}`,direction:'output',role:'result',position:inputCount+outputOffset+index,variant:'original',mime:null,bytes:null,hash:null,availability:'recorded',mediaType:result.video_url?'video':'image'},storageRef:`artwork:${result.id}`,actorEmail:ref.email});
  const billings=(await pool.query(`SELECT id,state,charged_credits,reserved_credits,quote FROM app_billing_operations WHERE email=$1 AND id=ANY($2::text[])`,[ref.email,[ref.id,...childRows.map(c=>c.id)]])).rows;
  const billing=billings.find(b=>b.id===ref.id),parentCharged=confirmedParentCharge(row);
  const ledgerId=ref.table==='app_image_jobs'?`led-image-${ref.id}`:ref.table==='app_video_tasks'?`led-video-${ref.id}`:ref.table==='app_canvas_image_tasks'?`led-canvas-image-${ref.id}`:null;
@@ -66,28 +87,36 @@ export async function legacyCreationDetail(id:string,pages:DetailPages&{diagnost
   if(!access&&pages.diagnostics!==false&&hasCreationFailure(root.status))detail.failure=(await legacyCreationFailures(getPool(),[{root:id,table_name:ref.table,id:ref.id,email:ref.email}])).get(id);
   return {detail,media};
 }
-export async function legacyCreationAsset(id:string,assetId:string,access?:LegacyReadScope){const pool=access?.client||getPool();
+export async function legacyCreationAsset(id:string,assetId:string,access?:LegacyReadScope){
  const ref=parseId(id);if(access&&!access.allowedEmails.includes(ref.email))throw new TeamError('记录不存在或无权访问',404);
- if(access)await assertLegacySourceTenant(access.client,ref,access.tenantId);
- if(!assetId.startsWith('legacy-')&&(!access||access.tenantId)){
-  if(!access)await ensureBiSchema();const linked=await linkedCreation(pool as PoolClient,ref,access?.tenantId);
-  if(linked){if(access)return creationAssetInTransaction(access.client,{platform:false,tenantId:access.tenantId!,historyEmails:access.allowedEmails},linked.id,assetId,access.allowedEmails);
-   await ensureMediaSchema();
-   const tx=await getPool().connect();try{await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');const result=await creationAssetInTransaction(tx,{platform:true},linked.id,assetId,null);await tx.query('COMMIT');return result;}catch(error){await tx.query('ROLLBACK');throw error;}finally{tx.release();}
+ const run=async(tx:PoolClient)=>{
+  if(access)await assertLegacySourceTenant(tx,ref,access.tenantId);
+  if(!assetId.startsWith('legacy-')&&(!access||access.tenantId)){
+   const linked=await linkedCreation(tx,ref,access?.tenantId);
+   if(linked)return creationAssetInTransaction(tx,access?{platform:false,tenantId:access.tenantId!,historyEmails:access.allowedEmails}:{platform:true},linked.id,assetId,access?.allowedEmails||null);
   }
- }
- const {media}=await legacyCreationDetail(id,{diagnostics:false,canonical:false},access);let m=media.find(m=>m.asset.id===assetId);
- if(!m&&/^legacy-media-\d+$/.test(assetId)){const index=Number(assetId.slice(13));m=(await legacyCreationDetail(id,{assetPage:Math.floor(index/24)+1,diagnostics:false,canonical:false},access)).media.find(m=>m.asset.id===assetId);}
- if(!m&&assetId.startsWith('legacy-artwork-')){
-  const ref=parseId(id),artworkId=Buffer.from(assetId.slice(15),'base64url').toString();if(artworkId.length>240)throw new TeamError('素材不存在',404);
-  const row=(await pool.query(`SELECT * FROM ${ref.table} WHERE id=$1 AND email=$2`,[ref.id,ref.email])).rows[0];if(!row)throw new TeamError('素材不存在',404);
-  const childRows=await legacyImageChildren(pool,ref,row),scope=legacyOutputFilter(ref,row,childRows);
-  const found=(await pool.query(`SELECT id,video_url FROM app_artworks WHERE email=$1 AND ${scope.sql} AND id=$${scope.values.length+1}`,[...scope.values,artworkId])).rows[0];
-  if(found)m={asset:{id:assetId,direction:'output',role:'result',position:0,variant:'original',mime:null,bytes:null,hash:null,availability:'recorded',mediaType:found.video_url?'video':'image'},storageRef:`artwork:${found.id}`,actorEmail:ref.email};
- }
- if(!m)throw new TeamError('素材不存在',404);let url=m.storageRef;
- // Only resolve owned metadata here. The HTTP media renderer reads bytes after
- // enterpriseRead has committed and released its authorization locks/client.
- if(url.startsWith('artwork:')){const artwork=url.slice(8);if(artwork.startsWith('asset-')){url=(await readImagegenInputAssetReference(artwork,m.actorEmail,access?.client)).url;}else{const row=(await pool.query('SELECT image_url,video_url FROM app_artworks WHERE id=$1 AND email=$2 AND deleted_at IS NULL',[artwork,m.actorEmail])).rows[0];if(!row)throw new TeamError('素材已失效',404);url=m.asset.mediaType==='video'?row.video_url:row.image_url;}}
- if(!isManagedImageUrl(url)&&!url.startsWith('data:image/'))throw new TeamError('素材不在受控存储中',422);return {url,mediaType:m.asset.mediaType,mime:m.asset.mime};
+  const row=(await tx.query(`SELECT * FROM ${ref.table} WHERE id=$1 AND email=$2`,[ref.id,ref.email])).rows[0];if(!row)throw new TeamError('记录不存在或无权访问',404);
+  let url:string,mediaType:'image'|'video'='image';
+  if(assetId.startsWith('legacy-artwork-')){
+   const artworkId=Buffer.from(assetId.slice(15),'base64url').toString();
+   const scope=legacyOutputFilter(ref,row,await legacyImageChildren(tx,ref,row));
+   const select=`SELECT id,image_url,video_url,deleted_at FROM app_artworks WHERE email=$1 AND ${scope.sql}`;
+   // Older detail pages could emit an unusually long ID on page one; keep
+   // accepting that exact ID while retaining the existing deep lookup bound.
+   const found=artworkId.length<=240?(await tx.query(`${select} AND id=$${scope.values.length+1}`,[...scope.values,artworkId])).rows[0]:
+    (await tx.query(`${select} ORDER BY created_at,id LIMIT $${scope.values.length+1}`,[...scope.values,Math.max(0,24-legacyInputMedia(ref,row).length)])).rows.find(a=>`legacy-artwork-${Buffer.from(a.id).toString('base64url')}`===assetId);
+   if(!found)throw new TeamError('素材不存在',404);
+   mediaType=found.video_url?'video':'image';
+   if(found.id.startsWith('asset-'))url=(await readImagegenInputAssetReference(found.id,ref.email,tx)).url;
+   else{if(found.deleted_at)throw new TeamError('素材已失效',404);url=found.video_url||found.image_url;}
+  }else{
+   const input=legacyInputMedia(ref,row).find(m=>m.asset.id===assetId);if(!input)throw new TeamError('素材不存在',404);
+   url=input.storageRef;
+   if(url.startsWith('artwork:')){const artwork=url.slice(8);if(artwork.startsWith('asset-')){url=(await readImagegenInputAssetReference(artwork,ref.email,tx)).url;}else{const owned=(await tx.query('SELECT image_url FROM app_artworks WHERE id=$1 AND email=$2 AND deleted_at IS NULL',[artwork,ref.email])).rows[0];if(!owned)throw new TeamError('素材已失效',404);url=owned.image_url;}}
+  }
+  // The HTTP media renderer serves bytes after the metadata client is released.
+  if(!isManagedImageUrl(url)&&!url.startsWith('data:image/'))throw new TeamError('素材不在受控存储中',422);return {url,mediaType,mime:null};
+ };
+ if(access)return run(access.client);
+ await ensureMediaSchema();return platformLegacyRead(run);
 }

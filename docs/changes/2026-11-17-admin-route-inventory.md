@@ -24,10 +24,10 @@
 | `GET /api/admin/billing/operations` | `src/app/api/admin/billing/operations/route.ts` | 待核查 |
 | `GET /api/admin/billing/pending` | `src/app/api/admin/billing/pending/route.ts` | 部分：角标、待核查查询和旧账务状态边界，`verify-billing-pending-view.ts` |
 | `GET /api/admin/billing/versions` | `src/app/api/admin/billing/versions/route.ts` | 待核查 |
-| `GET /api/admin/creations` | `src/app/api/admin/creations/route.ts` | 待核查 |
-| `GET /api/admin/creations/[id]` | `src/app/api/admin/creations/[id]/route.ts` | 待核查 |
-| `GET /api/admin/creations/[id]/assets/[assetId]` | `src/app/api/admin/creations/[id]/assets/[assetId]/route.ts` | 待核查 |
-| `GET /api/admin/creations/[id]/events` | `src/app/api/admin/creations/[id]/events/route.ts` | 待核查 |
+| `GET /api/admin/creations` | `src/app/api/admin/creations/route.ts` | 部分：历史时间、精确计数、筛选，`verify-saas-creations.ts`；混合归档深页和连接成本待核 |
+| `GET /api/admin/creations/[id]` | `src/app/api/admin/creations/[id]/route.ts` | 部分：规范与历史详情、证据分页、状态与费用，`verify-saas-creations.ts`；大任务族待核 |
+| `GET /api/admin/creations/[id]/assets/[assetId]` | `src/app/api/admin/creations/[id]/assets/[assetId]/route.ts` | 部分：历史深页输入和输出独立读取、拒绝跨来源和已删作品、视频 Range，锁竞争专项通过；页面并发素材待核 |
+| `GET /api/admin/creations/[id]/events` | `src/app/api/admin/creations/[id]/events/route.ts` | 部分：规范与历史事件投影、鉴权、无事件历史空结果，`verify-saas-creations.ts`；大任务族待核 |
 | `GET /api/admin/enterprise-workbench` | `src/app/api/admin/enterprise-workbench/route.ts` | 待核查 |
 | `GET /api/admin/feature-access` | `src/app/api/admin/feature-access/route.ts` | 待核查 |
 | `GET /api/admin/fleet` | `src/app/api/admin/fleet/route.ts` | 待核查 |
@@ -62,10 +62,10 @@
 | `GET /api/enterprise/analytics` | `src/app/api/enterprise/analytics/route.ts` | 待核查 |
 | `GET /api/enterprise/artworks` | `src/app/api/enterprise/artworks/route.ts` | 待核查 |
 | `GET /api/enterprise/content` | `src/app/api/enterprise/content/route.ts` | 待核查 |
-| `GET /api/enterprise/creations` | `src/app/api/enterprise/creations/route.ts` | 待核查 |
-| `GET /api/enterprise/creations/[id]` | `src/app/api/enterprise/creations/[id]/route.ts` | 待核查 |
-| `GET /api/enterprise/creations/[id]/assets/[assetId]` | `src/app/api/enterprise/creations/[id]/assets/[assetId]/route.ts` | 待核查 |
-| `GET /api/enterprise/creations/[id]/events` | `src/app/api/enterprise/creations/[id]/events/route.ts` | 待核查 |
+| `GET /api/enterprise/creations` | `src/app/api/enterprise/creations/route.ts` | 部分：企业近期固定 5 条、历史归属与统一列表；混合归档深页待核 |
+| `GET /api/enterprise/creations/[id]` | `src/app/api/enterprise/creations/[id]/route.ts` | 部分：证据及费用分页、脱敏、跨租户和撤权，`verify-saas-creations.ts`；大任务族待核 |
+| `GET /api/enterprise/creations/[id]/assets/[assetId]` | `src/app/api/enterprise/creations/[id]/assets/[assetId]/route.ts` | 部分：视频 Range、撤权、保留一连接时的受控输入、历史输入与账务解耦；页面并发素材待核 |
+| `GET /api/enterprise/creations/[id]/events` | `src/app/api/enterprise/creations/[id]/events/route.ts` | 部分：事件分页、规范与归档脱敏、跨租户、撤权和锁竞争，`verify-saas-creations.ts`；大任务族待核 |
 | `GET /api/enterprise/health` | `src/app/api/enterprise/health/route.ts` | 部分：健康统计权限、账户行锁及隔离，`verify-enterprise-analytics.ts` |
 | `GET /api/enterprise/integration` | `src/app/api/enterprise/integration/route.ts` | 待核查 |
 | `GET /api/enterprise/media` | `src/app/api/enterprise/media/route.ts` | 待核查 |
@@ -295,7 +295,7 @@
 | `页面 /admin/billing/price-table` | `src/app/admin/billing/price-table/page.tsx` | 待核查 |
 | `页面 /admin/billing/supplier-cost` | `src/app/admin/billing/supplier-cost/page.tsx` | 待核查 |
 | `页面 /admin/center` | `src/app/admin/center/page.tsx` | 部分：默认双概览分口径，旧 URL 重复 BI GET 已在真实浏览器复现及修复；导航和各面板仍待复查 |
-| `页面 /admin/creations` | `src/app/admin/creations/page.tsx` | 待核查 |
+| `页面 /admin/creations` | `src/app/admin/creations/page.tsx` | 部分：共用创作浏览器实测可见性、独立重试、会话取消和预览解码；真实导航组合待核 |
 | `页面 /admin/creations/[id]` | `src/app/admin/creations/[id]/page.tsx` | 待核查 |
 | `页面 /admin/creations/resolve` | `src/app/admin/creations/resolve/page.tsx` | 待核查 |
 | `页面 /admin/deployments` | `src/app/admin/deployments/page.tsx` | 待核查 |
