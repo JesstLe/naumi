@@ -2,7 +2,20 @@
 
 配套[PRD v1.0](2026-11-10-agent-creation-platform.md)。更新：2026-11-10。源码基线：`41a59ff0260ef5550b6ee8ada7ba01c05b201df8`。
 
-本文件是持续实施入口。当前仅P0规划交付；P1–P7均未按本计划实施或验收。既有能力与历史测试只是复用基线，不自动转换为本计划已完成。
+本文件是持续实施入口。P0规划已交付；P1–P7按以下工作包逐项记录，既有能力与历史测试不自动转换为本计划已完成。
+
+## 2026-11-17 Desktop 创作 MCP 接续（开工台账）
+
+- 用户目标：Desktop Agent 经现有 Harness MCP Client → 固定 naumi.mjs mcp → HTTP Gateway 调用创作能力；CLI仍供脚本/排障。不新建模型路由、计费或任务系统。
+- 基线：`ee9220ea6e61ea333378fbcb10d41f43123f3a25`；分支 `codex/desktop-creation-mcp-20261117`；工作树 `E:/Workspace/naumi-desktop-creation-mcp-20261117`。共享Naumi的27项修改和Desktop共享目录全部保留。
+- 本轮所有者：Naumi侧客户端、MCP契约、可分发的Desktop薄适配、能力矩阵、既有网关smoke扩展。本轮不编辑 `E:/Workspace/naumi-desktop`；其Harness注册/账号界面接线由Desktop侧消费本轮交付。
+- 首切片：显式账号/企业空间连接、动态工具schema/available发现、稳定外层operationId恢复、参考图上传与结果下载/原生present适配。保留内层领域operation_id；远程不推断网页选中上下文。
+- 状态：W01工具覆盖调查 IN PROGRESS；W04 Desktop/MCP接入 IN PROGRESS。全域画布节点/连线布局、三类媒体、全部创作能力、真实收费与生产上线仍未验收。
+- 保护行为：既有工具与账务owner、令牌创建/预算/吊销、个人/企业隔离、原冻结上下文、防重放、UNKNOWN、现有47与103生产状态不变。
+- 验收：修改前既有gateway基线；完整切片后集中执行实际CLI/MCP、受控HTTP/隔离PG及原生Harness契约；记录供应商fixture和真实生产证据边界。没有真实额度授权，不提交生产付费任务。
+- 接口/证据/最终SHA/未完成项随实施更新；禁止以页面链接或历史工具数量标“全部可用”。
+- 本轮模块已实现：客户端1.1/固定bundle/Host薄适配/实时schema矩阵；源码目录93项（非全站功能分母）。本地首链真实Next+PG+MCP证明同UUID断连恢复、供应商fixture请求1/作品增量1/账本增量1、实扣8、下载hash相同，原生present包真实body产生fixture Session事件；不代表Desktop安装或生产收费验收。
+- 账号中心旧UI在1440/390真实Chrome验收通过。独立审查补正`GET /tools`缺creation scope、稳定ID需覆盖billed只读工具、测试隔离目录和外部manifest pin。最终固定提交集中验证/真实Route企业负例/剩余边界见本轮changes与证据。
 
 ## 1. 执行与责任
 

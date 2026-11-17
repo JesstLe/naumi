@@ -50,9 +50,23 @@ export async function listGatewayTools(caller: GatewayCaller): Promise<(GatewayT
   const { tools } = toolSession(caller);
   const admin = await requireAdmin(new Request(caller.internalOrigin, { headers: { cookie: internalCookie(caller.email) } }));
   const policy = admin ? null : await userFeaturePolicy(caller.email);
-  return gatewayToolViews(tools)
+  const views = gatewayToolViews(tools)
     .filter(view => caller.token.scopes.includes("write") || !view.write)
     .map(view => ({ ...view, available: admin || (!!policy && allows(policy, "agent") && !!TOOL_ACCESS[view.name] && allows(policy, TOOL_ACCESS[view.name])) }));
+  const tenantId = currentCreationContext()?.tenantId;
+  if (!tenantId) return views;
+  // Discovery and execution consume the SAME enterprise entitlement owner.
+  // An account-level allowance must not advertise a tenant-disabled tool.
+  return enterpriseCreationRead(caller.email, tenantId, async (_tx, scope) => views.map(view => {
+    if (!view.available) return view;
+    try {
+      assertCreationFeature((scope as {entitlement:{featurePolicy:Record<string,boolean>}}).entitlement.featurePolicy, "/api/agent", "POST", view.name);
+      return view;
+    } catch (error) {
+      if (!(error instanceof TeamError)) throw error;
+      return {...view,available:false};
+    }
+  }));
 }
 
 /** Human/agent readable reasons, so a remote caller can fix its arguments without guessing. */
