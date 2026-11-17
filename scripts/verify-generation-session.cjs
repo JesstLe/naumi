@@ -8,6 +8,7 @@ for(let i=0;i<args.length;i++){if(args[i]==='--source-root')sourceRoot=path.reso
 out=path.resolve(out);fs.mkdirSync(out,{recursive:true});
 const req=createRequire(path.resolve(process.env.REVIEW_DEPS||'node_modules','package.json'));
 const {build}=req('esbuild'),{chromium}=req('playwright');
+const ts=req('typescript');
 const source=path.join(sourceRoot,'src/components/generate/generate-client.tsx'),sha=p=>createHash('sha256').update(fs.readFileSync(p)).digest('hex');
 const bound=['src/components/generate/generate-client.tsx','src/components/generate/use-generation-session.ts','src/lib/imagegen/generation-session.ts','src/components/use-image-job-resume.ts'].filter(n=>fs.existsSync(path.join(sourceRoot,n)));
 const report={tier:'Actual React19 GenerateClient + Chromium/loopback/real timers; authentication, billing service and supplier are fixtures',sourceRoot,sourceHashes:Object.fromEntries(bound.map(n=>[n,sha(path.join(sourceRoot,n))])),checks:[],failures:[],observations:[],requests:[]};
@@ -58,7 +59,18 @@ window.mount=options=>{window.actor=options.actor===undefined?'a@example.test':o
 window.account=actor=>{window.actor=actor;flushSync(()=>window.authRender?.())};window.detach=()=>flushSync(()=>root.render(null));
 window.holdBilling=()=>{window.billingGate=new Promise(resolve=>window.releaseBilling=()=>{window.billingGate=null;resolve()})};window.flushImages=()=>{const queue=window.imageQueue||[];window.imageQueue=[];for(const update of queue)update()};
   window.addEventListener('unhandledrejection',e=>{window.metrics.errors.push(String(e.reason));e.preventDefault()});`,resolveDir:root,loader:'tsx'},bundle:true,write:false,platform:'browser',jsx:'automatic',nodePaths:[path.resolve('node_modules')],define:{'process.env.NODE_ENV':'"development"','process.env':'{}'},plugins:[{name:'generation-fixture',setup(b){
-    b.onLoad({filter:/generate-client\.tsx$/},args=>{let text=fs.readFileSync(args.path,'utf8');const marker='  return (\n    <div className="w-full px-5 py-6 sm:px-6 lg:px-8">';assert.ok(text.includes(marker),'actual component instrumentation anchor');text=text.replace(marker,instrument+marker);text=text.replace('const [images, setImages] = useState<GeneratedImage[]>([]);','const [images, nativeSetImages] = useState<GeneratedImage[]>([]); const setImages:typeof nativeSetImages=change=>{if(window.deferImages&&typeof change==="function")(window.imageQueue ||= []).push(()=>nativeSetImages(change));else nativeSetImages(change)};');return {contents:text,loader:'tsx',resolveDir:path.dirname(args.path)};});
+    b.onLoad({filter:/generate-client\.tsx$/},args=>{
+      let text=fs.readFileSync(args.path,'utf8');
+      const file=ts.createSourceFile(args.path,text,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+      const component=file.statements.find(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='GenerateClient');
+      const returns=component?.body?.statements.filter(ts.isReturnStatement)||[];
+      assert.equal(returns.length,1,'GenerateClient must expose the real render scope');
+      const start=returns[0].getStart(file);text=text.slice(0,start)+instrument+text.slice(start);
+      const imageState='const [images, setImages] = useState<GeneratedImage[]>([]);';
+      assert.ok(text.includes(imageState),'actual image-state queue instrumentation anchor');
+      text=text.replace(imageState,'const [images, nativeSetImages] = useState<GeneratedImage[]>([]); const setImages:typeof nativeSetImages=change=>{if(window.deferImages&&typeof change==="function")(window.imageQueue ||= []).push(()=>nativeSetImages(change));else nativeSetImages(change)};');
+      return {contents:text,loader:'tsx',resolveDir:path.dirname(args.path)};
+    });
     b.onResolve({filter:/^(@\/|next\/|lucide-react$)/},args=>{
       if(['@/lib/imagegen/generation-session','@/lib/mock-data','@/lib/images','@/lib/image-quality','@/lib/image-model-routing','@/components/use-image-job-resume'].includes(args.path))return{path:path.join(sourceRoot,'src',args.path.slice(2)+'.ts')};
       return {path:args.path,namespace:'fixture'};
