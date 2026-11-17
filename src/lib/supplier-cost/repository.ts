@@ -5,6 +5,7 @@ import { ensureSupplierSchema } from "./schema";
 import { multiplyMicros } from "./money";
 import { assertMutableStagingTask } from "../staging-history";
 import type { AccountInput, CallInput, CostReceipt, CostFilter, FxSnapshot } from "./types";
+import { costWhere } from "./call-filter";
 
 export function createSupplierLedger(pool: Pool) {
   const transaction = async <T>(run: (tx: PoolClient) => Promise<T>) => { await ensureSupplierSchema(pool); const tx = await pool.connect(); try { await tx.query("BEGIN"); const v = await run(tx); await tx.query("COMMIT"); return v; } catch (e) { await tx.query("ROLLBACK"); throw e; } finally { tx.release(); } };
@@ -72,13 +73,12 @@ export function createSupplierLedger(pool: Pool) {
       await assertMutableStagingTask(tx || pool, "app_supplier_cost_jobs", key);
       await (tx || pool).query(`INSERT INTO app_supplier_cost_jobs(key,kind,payload,account_id) VALUES($1,$2,$3::jsonb,$4) ON CONFLICT(key) DO UPDATE SET due_at=LEAST(app_supplier_cost_jobs.due_at,now()),state=CASE WHEN app_supplier_cost_jobs.lease_until>now() THEN app_supplier_cost_jobs.state ELSE 'queued' END,updated_at=now()`, [key,kind,JSON.stringify(payload),accountId||null]);
     },
-    async list(f: CostFilter = {}) {
-      await ensureSupplierSchema(pool); const w: string[] = [], a: unknown[] = [];
-      for (const [k,c] of [["email","user_email"],["feature","feature"],["publicModel","public_model_id"],["model","COALESCE(actual_model,model)"],["operation","operation_id"],["order","order_id"],["account","account_id"],["status","cost_status"]] as const) if (f[k]) { a.push(f[k]); w.push(`${c}=$${a.length}`); }
-      if (f.from) { a.push(f.from); w.push(`started_at >= $${a.length}`); } if (f.to) { a.push(f.to); w.push(`started_at < $${a.length}`); }
-      const where = w.length ? `WHERE ${w.join(" AND ")}` : "";
-      const total = (await pool.query(`SELECT count(*)::int n FROM app_supplier_calls ${where}`, a)).rows[0].n;
-      const rows = (await pool.query(`SELECT * FROM app_supplier_calls ${where} ORDER BY started_at DESC,id LIMIT 50 OFFSET $${a.length+1}`, [...a,(Math.max(1,f.page||1)-1)*50])).rows;
+    async list(f: CostFilter = {}, tx?:PoolClient, brief=false) {
+      if(!tx)await ensureSupplierSchema(pool);
+      const query=tx??pool,{where,args}=costWhere(f);
+      const columns=brief?'id,operation_id,user_email,feature,phase,public_model_id,actual_model,model,account_id,provider_id,state,cost_status,amount_micros,credits_micros,currency,cny_micros,started_at,completed_at,fx->>\'basis\' AS fx_basis':'c.*';
+      const total = (await query.query(`SELECT count(*)::int n FROM app_supplier_calls c ${where}`, args)).rows[0].n;
+      const rows = (await query.query(`SELECT ${columns} FROM app_supplier_calls c ${where} ORDER BY started_at DESC,id LIMIT 50 OFFSET $${args.length+1}`, [...args,(Math.max(1,f.page||1)-1)*50])).rows;
       return { rows, total };
     },
     async chain(operation: string) {

@@ -102,6 +102,31 @@ async function main(){
     const {signUserSession}=await import('../src/lib/native-auth');await db.getOrCreateUser('cost-user@example.test','fixture');await db.setSetting('multi_user_enabled','1');
     const userReq=(path:string,method='GET')=>new Request('http://fixture.test'+path,{method,headers:{cookie:`nv_user=${signUserSession('cost-user@example.test',Date.now())}`}});
     assert.equal((await api.GET(userReq('/api/admin/supplier-cost'))).status,404);assert.equal((await actions.POST(userReq('/api/admin/supplier-cost/actions','POST'))).status,404);
+    await db.getOrCreateUser('cost-admin@example.test','fixture');
+    await f.sql.query("UPDATE app_users SET role='admin' WHERE email='cost-admin@example.test'");
+    const read=(path:string)=>api.GET(new Request('http://fixture.test/api/admin/supplier-cost'+path,{headers:{cookie:`nv_user=${signUserSession('cost-admin@example.test',Date.now())}`}}));
+    const selected='operation=fixture-operation&model=actual-ext';
+    const inspect=async(view:string)=>{
+      const response=await read(`?${selected}&view=${view}`);
+      assert.equal(response.status,200);assert.match(response.headers.get('cache-control')||'',/private.*no-store/);return response.json();
+    };
+    const initial=await inspect('calls');assert.deepEqual(Object.keys(initial).sort(),['accounts','rows','total']);assert.equal(initial.total,1);
+    assert.equal(initial.rows[0].id,row.id);assert(!('evidence' in initial.rows[0])&&!('usage' in initial.rows[0])&&!('parameters' in initial.rows[0]));
+    assert.deepEqual(Object.keys(initial.accounts[0]).sort(),['id','label']);
+    assert.deepEqual((await inspect('stats')).stats,filtered);
+    assert.deepEqual(Object.keys(await inspect('reconcile')).sort(),['accounts','anomalies','jobs']);
+    assert.equal(typeof (await inspect('accounts')).accounts[0].query_configured,'boolean');
+    const compatibility=await(await read('?'+selected)).json();
+    assert.deepEqual(compatibility.stats,filtered);assert('evidence'in compatibility.rows[0]);assert(Array.isArray(compatibility.jobs));
+    assert.equal((await read('?view=invalid')).status,400);
+    const veto=await f.sql.connect();
+    try {
+      await veto.query('BEGIN');await veto.query('LOCK TABLE app_supplier_usage_buckets IN ACCESS EXCLUSIVE MODE');
+      assert.equal((await inspect('calls')).total,1,'hidden reconciliation must not read its locked table');
+      assert.equal((await read('?view=reconcile')).status,503,'only the selected blocked view should time out');
+      assert.equal((await inspect('accounts')).accounts.length,initial.accounts.length);
+    }finally{await veto.query('ROLLBACK');veto.release();}
+    console.log('SUPPLIER_ADMIN_VIEW_PASS calls=1 brief=1 full_margin_parity=1 blocked_view_isolated=1 compatibility=1');
     const full=(await f.sql.query('SELECT * FROM app_supplier_calls')).rows;assert.ok(!JSON.stringify(full).includes('fixture-private-key'));assert.ok(!JSON.stringify(full).includes('secret prompt'));assert.ok(!JSON.stringify((await f.sql.query('SELECT hint FROM app_supplier_callback_inbox')).rows).includes('999'));
     const reopened=createSupplierLedger(f.sql);assert.equal((await reopened.task(id,'task_one')).amount_micros,'21000');
     // Real collector -> health validator -> exact call's durable diagnostics.

@@ -56,6 +56,25 @@ async function main(){
  await pool.query("UPDATE app_creation_assets SET storage_ref='artwork:deleted-evidence-input' WHERE id=$1",[badAsset]);assert.equal((await mediaRoute.GET(badMediaRequest(),badMediaCtx)).status,404);
  await storage.writeStoredObject(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><script>alert(1)</script><rect width="8" height="8" fill="red"/></svg>'),'image/svg+xml','creation-fixture/unsafe.svg');
  await pool.query("UPDATE app_creation_assets SET storage_ref='/media/creation-fixture/unsafe.svg' WHERE id=$1",[badAsset]);const safeSvg=await mediaRoute.GET(badMediaRequest(),badMediaCtx);assert.equal(safeSvg.status,200);assert.equal(safeSvg.headers.get('content-type'),'image/webp');assert.doesNotMatch(Buffer.from(await safeSvg.arrayBuffer()).toString('utf8'),/<script|alert\(/);
+ // Input asset metadata must use the same authorization transaction. With all
+ // other pool slots held, the route must still reach the HTTP media renderer.
+ const assetId=`ca-${randomUUID()}`,inputId=randomUUID(),inputKey=`imagegen-inputs/${inputId}.png`;
+ const {ensureMediaSchema}=await import('../src/lib/media-assets-schema');await ensureMediaSchema();
+ const png=await (await import('sharp')).default({create:{width:8,height:8,channels:4,background:'#abc'}}).png().toBuffer();
+ await storage.writeStoredObject(png,'image/png',inputKey);
+ await pool.query("INSERT INTO app_media_assets(key,owner,driver,content_type,sha256,bytes) VALUES($1,$2,'local','image/png','fixture',$3)",[inputKey,member,png.length]);
+ await pool.query("INSERT INTO app_creation_assets(id,creation_id,direction,role,storage_ref,actor_email,mime) VALUES($1,$2,'input','mask',$3,$4,'image/png')",[assetId,root,`artwork:asset-${inputId}`,member]);
+ const pngRequest=()=>request(`/api/enterprise/creations/${root}/assets/${assetId}?tenantId=${a.tenantId}`,ownerA);
+ const pngContext={params:Promise.resolve({id:root,assetId})};
+ const held=await Promise.all(Array.from({length:(pool.options.max??5)-1},()=>pool.connect()));
+ let assetDeadline:ReturnType<typeof setTimeout>|undefined;
+ try{
+  const image=await Promise.race([mediaRoute.GET(pngRequest(),pngContext),new Promise<never>((_,reject)=>{assetDeadline=setTimeout(()=>reject(Error('Asset waited for a second pool connection')),2500);})]);
+  assert.equal(image.status,200);assert.match(image.headers.get('content-type')||'',/^image\//);
+ }finally{clearTimeout(assetDeadline);held.forEach(client=>client.release());}
+ await pool.query('UPDATE app_media_assets SET owner=$2 WHERE key=$1',[inputKey,ownerB]);assert.equal((await mediaRoute.GET(pngRequest(),pngContext)).status,503);
+ await pool.query('DELETE FROM app_creation_assets WHERE id=$1',[assetId]);
+ console.log('CREATION_INPUT_ASSET_PASS remaining_pool_slots=1 owned_reference=200 cross_owner_denied=1');
  await storage.writeStoredObject(Buffer.from('<html><script>alert(1)</script></html>'),'text/html','creation-fixture/unsafe.html');
  for(const path of ['/media/creation-fixture/unsafe.html','/media/../../private']){await pool.query('UPDATE app_creation_assets SET storage_ref=$2 WHERE id=$1',[badAsset,path]);assert.equal((await mediaRoute.GET(badMediaRequest(),badMediaCtx)).status,422);}
  const ledgerBefore=(await pool.query('SELECT count(*) n FROM app_ledger')).rows[0].n,recordsBefore=(await pool.query('SELECT count(*) n FROM app_creation_records')).rows[0].n,originalFetch=globalThis.fetch;let unexpectedFetches=0;

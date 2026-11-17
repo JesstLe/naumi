@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, ArrowRight, CheckCircle2, CircleDollarSign, Clock3, Crown, FileText, ImageIcon, RefreshCw, Users } from 'lucide-react';
 import { authHeader } from '@/lib/supabase';
 import type { EnterpriseSnapshot } from '@/lib/enterprise/contracts';
@@ -16,9 +16,20 @@ const effectiveMemberCount = (snapshot: SaasSnapshot) => snapshot.members.filter
 
 function Thumbnail({ tenantId, row }: { tenantId: string; row: EnterpriseCreationSummary['items'][number] }) {
   const [image, setImage] = useState<string | null>(null), [failed, setFailed] = useState(false), [revision, setRevision] = useState(0);
+  const slot=useRef<HTMLSpanElement>(null),[visible,setVisible]=useState('');
+  const key=JSON.stringify([tenantId,row.id,row.thumbnailAssetId]);
+  useEffect(()=>{
+    if(!row.thumbnailAssetId||!slot.current)return;
+    if(typeof IntersectionObserver==='undefined'){setVisible(key);return;}
+    const observer=new IntersectionObserver(entries=>{
+      if(entries.some(entry=>entry.isIntersecting)){setVisible(key);observer.disconnect();}
+    },{rootMargin:'80px'});
+    observer.observe(slot.current);
+    return()=>observer.disconnect();
+  },[key,row.thumbnailAssetId]);
   useEffect(() => {
     setImage(null); setFailed(false);
-    if (!row.thumbnailAssetId) return;
+    if (!row.thumbnailAssetId||visible!==key) return;
     const controller = new AbortController(); let objectUrl = '';
     void (async () => {
       try {
@@ -29,9 +40,10 @@ function Thumbnail({ tenantId, row }: { tenantId: string; row: EnterpriseCreatio
       } catch { if (!controller.signal.aborted) setFailed(true); }
     })();
     return () => { controller.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl); };
-  }, [tenantId, row.id, row.thumbnailAssetId, revision]);
-  if (image) return <img className={styles.creationThumb} src={image} alt={row.title} loading='lazy' />;
-  return <span className={styles.creationMedia}>{failed ? <button aria-label='重新读取缩略图' onClick={() => setRevision(n => n + 1)}><RefreshCw size={17} /></button> : <ImageIcon size={24} />}<small>{failed ? '读取失败' : row.thumbnailAssetId ? '加载中' : '未记录'}</small></span>;
+  }, [tenantId, row.id, row.thumbnailAssetId, revision, visible, key]);
+  return <span ref={slot} className={styles.creationMedia}>{visible===key&&image
+    ? <img className={styles.creationThumb} src={image} alt={row.title} loading='lazy' />
+    : <>{visible===key&&failed ? <button aria-label='重新读取缩略图' onClick={() => setRevision(n => n + 1)}><RefreshCw size={17} /></button> : <ImageIcon size={24} />}<small>{visible===key&&failed ? '读取失败' : row.thumbnailAssetId ? visible===key?'加载中':'预览图' : '未记录'}</small></>}</span>;
 }
 
 export function EnterpriseEntitlement({ snapshot, onView }: { snapshot: SaasSnapshot; onView?: () => void }) {
