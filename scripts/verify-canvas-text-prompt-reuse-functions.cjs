@@ -126,7 +126,7 @@ function uploadFixture(){
   imageDraft:{read:(id,scope)=>drafts.read(helpers.imageDraftKey(scope,id)),seed:(id,patch,scope)=>{state.seeds.push({id,patch:plain(patch),scope});drafts.write(helpers.imageDraftKey(scope,id),patch)}},
   referenceDraft:{copyTo:(target,source)=>{state.copies.push({target,source});references.copy(source,target)}},canvasHistory:{consumePending:id=>state.history.push({consume:id})},t:value=>value,
  };
- const action=compile(['doUploadPend'],env).doUploadPend;
+ const action=compile(['rewirePendingBranchSources','doUploadPend'],env).doUploadPend;
  return{state,refs,artwork,drafts,references,draftKey,draftScope,importer,context,receipt:()=>importer.pendingBatch('pend-upload',context),
   run:async()=>{env.pendUploadTargetRef.current='pend-upload';return action([new File(['original'],'original.png',{type:'image/png'})]);}};
 }
@@ -134,6 +134,7 @@ function uploadFixture(){
 async function uploadChecks(){
  await check('REAL_UPLOAD_SYNC_MIGRATES_EDITABLE_DRAFT_NOT_ARTWORK_PROMPT',async()=>{
   const f=uploadFixture(),before=JSON.stringify(f.artwork);await f.run();
+  await until(()=>f.state.selected===null,'uploaded pending selection cleared');
   assert.equal(f.drafts.read(f.draftKey(f.artwork.id)).prompt,'editable pending direction');assert.equal(f.drafts.read(f.draftKey(f.artwork.id)).ratio,'3:4');
   assert.deepEqual(plain(f.drafts.read(f.draftKey(f.artwork.id)).hiddenReferenceIds),['hidden']);assert.equal(JSON.stringify(f.artwork),before);
   assert.equal(f.references.read(f.draftKey(f.artwork.id)).length,1);assert.notEqual(f.references.read(f.draftKey(f.artwork.id))[0].url,f.references.read(f.draftKey('pend-upload'))[0].url);

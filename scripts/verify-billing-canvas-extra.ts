@@ -25,14 +25,18 @@ async function main() {
     assert.equal(yuanToFen("19.99"), 1999); assert.equal(yuanToFen("0.01"), 1); assert.equal(yuanToFen("2."), 200);
     for (const invalidAmount of ["", "1.001", "-1", "21474836.48", "1e2"]) assert.equal(yuanToFen(invalidAmount), null);
 
-    Object.assign(process.env, { NAUMI_MULTI_USER:"1", SETTINGS_SECRET:"fixture-billing-0123456789abcdef0123456789abcdef", STORAGE_DRIVER:"local", MEDIA_DIR:path.resolve("output/billing-20261003/canvas-extra-media"), OPENAI_API_KEY:"fixture", AGENT_API_KEY:"fixture", OPENAI_TEXT_MODEL:"fixture-text", PADDLE_OCR_REQUIRED:"true" });
+    Object.assign(process.env, { NAUMI_MULTI_USER:"1", SETTINGS_SECRET:"fixture-billing-0123456789abcdef0123456789abcdef", STORAGE_DRIVER:"local", MEDIA_DIR:path.resolve("output/billing-20261003/canvas-extra-media"), OPENAI_API_KEY:"fixture", AGENT_API_KEY:"fixture", OPENAI_TEXT_MODEL:"fixture-text" });
     let calls=0, mode="success";const pausedPrefix="first \n"+"safe fixture stream line\n".repeat(60),pauses=new Set<()=>void>(),release=()=>{for(const resume of pauses)resume();pauses.clear();};
     const mock=createServer(async(req,res)=>{
         let raw="";for await(const chunk of req)raw+=chunk;
         calls++;
         if(mode==="rejected"){res.writeHead(400,{"content-type":"application/json"});res.end(JSON.stringify({error:{message:"fixture rejected"}}));return;}
-        if(req.url==="/ocr"){res.setHeader("content-type","application/json");res.end(JSON.stringify({rec_texts:["hello"],rec_scores:[0.99],rec_polys:[[[1,1],[50,1],[50,20],[1,20]]]}));return;}
+        assert.equal(req.url,"/v1/chat/completions");
         const body=JSON.parse(raw);assert.equal(body.model,"fixture-text");
+        if(body.messages[0].content.includes("你是图片 OCR 服务")){
+            assert.ok(body.messages[1].content.some((item:{type:string;image_url?:{url:string}})=>item.type==="image_url"&&item.image_url?.url.startsWith("data:image/jpeg;base64,")));
+            res.setHeader("content-type","application/json");res.end(JSON.stringify({choices:[{message:{content:JSON.stringify({segments:[{text:"hello",confidence:0.99,box:{x:1,y:1,width:50,height:20}}]})}}]}));return;
+        }
         assert.deepEqual(body.modalities,["text"]);
         assert.ok(body.messages[0].content.includes("不要生成、编辑或返回图片"));
         if(mode==="image") {
@@ -55,7 +59,7 @@ async function main() {
     });
     await new Promise<void>(resolve=>mock.listen(0,"127.0.0.1",resolve));
     const base=`http://127.0.0.1:${(mock.address() as {port:number}).port}`;
-    Object.assign(process.env,{OPENAI_BASE_URL:`${base}/v1`,AGENT_BASE_URL:`${base}/v1`,PADDLE_OCR_BASE_URL:`${base}/ocr`});
+    Object.assign(process.env,{OPENAI_BASE_URL:`${base}/v1`,AGENT_BASE_URL:`${base}/v1`});
     const db=await import("../src/lib/db"), {getBillingRuntime}=await import("../src/lib/billing/server"), {signUserSession}=await import("../src/lib/native-auth");
     const runtime=(await getBillingRuntime()).config, original=await runtime.current(), email=`canvas-extra-${randomUUID()}@example.test`;
     let version=original.version, displayed=3;
