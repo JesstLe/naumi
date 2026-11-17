@@ -99,14 +99,18 @@ export async function fetchStoredObject(key: string, range = "",signal?:AbortSig
   return backend.get(safeKey(key), range,signal);
 }
 
-export async function readLocalMirror(key: string, maxBytes: number): Promise<{ bytes: Buffer; contentType: string; size: number }> {
+export async function readLocalMirror(key: string, maxBytes: number, signal?:AbortSignal): Promise<{ bytes: Buffer; contentType: string; size: number }> {
+  signal?.throwIfAborted();
   const root = path.resolve(MEDIA_DIR);
   const full = path.resolve(root, key.replaceAll("/", path.sep));
   if (full === root || !full.startsWith(root + path.sep)) throw new Error("对象路径非法");
   const info = await stat(full);
+  signal?.throwIfAborted();
   if (!info.isFile()) throw new Error("对象不存在");
   if (info.size > maxBytes) throw new Error("对象超过大小限制");
-  return { bytes: await readFile(full), contentType: "application/octet-stream", size: info.size };
+  const bytes=await readFile(full,{signal});
+  signal?.throwIfAborted();
+  return { bytes, contentType: "application/octet-stream", size: info.size };
 }
 
 export async function readPendingStoredObject(key: string, maxBytes: number) {

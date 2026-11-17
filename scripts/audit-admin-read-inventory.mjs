@@ -25,7 +25,7 @@ function methods(path){
  }
  return [...names].filter(name=>http.has(name));
 }
-const tracked=execFileSync('git',['ls-files','-z','--','src/app/admin','src/app/enterprise','src/app/api/admin','src/app/api/enterprise','src/app/api/team'],{cwd:root,encoding:'utf8'}).split('\0');
+const tracked=execFileSync('git',['ls-files','-z','--','src/app/admin','src/app/enterprise','src/app/api/admin','src/app/api/enterprise','src/app/api/team','src/app/api/fleet'],{cwd:root,encoding:'utf8'}).split('\0');
 for(const path of tracked){
  if(!/\/(page\.tsx|route\.ts|layout\.tsx)$/.test(path))continue;
  const route=path.slice('src/app'.length,path.lastIndexOf('/'));

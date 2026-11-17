@@ -24,7 +24,7 @@ export async function fleetMediaResponse(request: Request) {
   const media=await creationAsset({platform:true,boundTenantId:binding.enterpriseId},grant.creationId,grant.assetId);
   if(media.mediaType!=='image'||media.direction!=='output')return teamJson({error:'作品不存在'},404);
   await getPool().query('INSERT INTO app_site_media_audit(command_id,actor,creation_id,asset_id,original) VALUES($1,$2,$3,$4,$5)',[grant.commandId,receipt.actor,grant.creationId,grant.assetId,grant.original]);
-  if(!grant.original){const clean=new URL(request.url);clean.search='';return enterpriseMediaResponse(new Request(clean,{headers:request.headers}),media.url);}
+  if(!grant.original){const clean=new URL(request.url);clean.search='';return enterpriseMediaResponse(new Request(clean,{headers:request.headers,signal:request.signal}),media.url);}
   const inline=dataUrlToBytes(media.url);
   if(inline)return new Response(Buffer.from(inline.bytes),{headers:{...PRIVATE_HEADERS,'Content-Type':inline.contentType,'Content-Security-Policy':"default-src 'none'"}});
   return streamManagedMedia(request,media.url,media.mime||'application/octet-stream');
