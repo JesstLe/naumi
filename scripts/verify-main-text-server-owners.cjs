@@ -33,7 +33,7 @@ const boundaries={
  'src/lib/canvas/image-size.ts':{adaptiveCanvasImageSize:()=>({width:320,height:240})},
  'src/lib/video/workflow-text-context.ts':{frozenWorkflowText:(actor,id)=>{assert.equal(actor,'actor@fixture.test');assert.equal(id,'text:text-source');return state.frozen;}},
 };
-const actual=new Set(['src/lib/video/submission.ts','src/lib/video/script-assets.ts','src/lib/canvas/text-content.ts','src/app/api/video/texts/route.ts']);
+const actual=new Set(['src/lib/video/submission.ts','src/lib/video/owned-text.ts','src/lib/video/script-assets.ts','src/lib/canvas/text-content.ts','src/app/api/video/texts/route.ts']);
 function load(rel){
  if(boundaries[rel])return boundaries[rel];if(cache.has(rel))return cache.get(rel).exports;
  if(!actual.has(rel))return new Proxy({}, {get:(_target,key)=>forbidden(rel+':'+String(key))});
