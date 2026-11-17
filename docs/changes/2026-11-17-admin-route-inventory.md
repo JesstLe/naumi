@@ -36,10 +36,10 @@
 | `GET /api/admin/login` | `src/app/api/admin/login/route.ts` | 待核查 |
 | `GET /api/admin/model-health` | `src/app/api/admin/model-health/route.ts` | 待核查 |
 | `GET /api/admin/model-management` | `src/app/api/admin/model-management/route.ts` | 部分：列表、积分细项、视频就绪/迁移按已发布快照；真实隔离 HTTP 验证授权、池占用、断开释放、并发版本切换、冻结缺失不补写与摘要不符拒绝。公网网关及冷启动待核 |
-| `GET /api/admin/model-management/library` | `src/app/api/admin/model-management/library/route.ts` | 待核查 |
+| `GET /api/admin/model-management/library` | `src/app/api/admin/model-management/library/route.ts` | 已核查：列表、详情和历史使用可取消的单连接只读快照，数据库去重筛选项，保留全量计数、分页和 404 |
 | `GET /api/admin/model-management/onboarding` | `src/app/api/admin/model-management/onboarding/route.ts` | 待核查 |
 | `GET /api/admin/mvp` | `src/app/api/admin/mvp/route.ts` | 待核查 |
-| `GET /api/admin/mvp/library` | `src/app/api/admin/mvp/library/route.ts` | 待核查 |
+| `GET /api/admin/mvp/library` | `src/app/api/admin/mvp/library/route.ts` | 已核查：与模型管理共用权限和只读查询，旧入口响应结构保持 |
 | `GET /api/admin/owner-account` | `src/app/api/admin/owner-account/route.ts` | 待核查 |
 | `GET /api/admin/prompts` | `src/app/api/admin/prompts/route.ts` | 待核查 |
 | `GET /api/admin/pubkey` | `src/app/api/admin/pubkey/route.ts` | 待核查 |
@@ -310,9 +310,9 @@
 | `页面 /admin/health` | `src/app/admin/health/page.tsx` | 待核查 |
 | `页面 /admin/model-health` | `src/app/admin/model-health/page.tsx` | 待核查 |
 | `页面 /admin/model-management` | `src/app/admin/model-management/page.tsx` | 待核查 |
-| `页面 /admin/model-management/library` | `src/app/admin/model-management/library/page.tsx` | 待核查 |
+| `页面 /admin/model-management/library` | `src/app/admin/model-management/library/page.tsx` | 部分核查：列表、详情和历史 GET 已核；多页导出和同步写操作另验 |
 | `页面 /admin/mvp` | `src/app/admin/mvp/page.tsx` | 待核查 |
-| `页面 /admin/mvp/library` | `src/app/admin/mvp/library/page.tsx` | 待核查 |
+| `页面 /admin/mvp/library` | `src/app/admin/mvp/library/page.tsx` | 部分核查：旧入口 GET 已核；多页导出和同步写操作另验 |
 | `页面 /admin/pending-review` | `src/app/admin/pending-review/page.tsx` | 待核查 |
 | `页面 /admin/pricing` | `src/app/admin/pricing/page.tsx` | 待核查 |
 | `页面 /admin/supplier-balances` | `src/app/admin/supplier-balances/page.tsx` | 待核查 |

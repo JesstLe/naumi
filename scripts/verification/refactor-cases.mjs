@@ -192,6 +192,7 @@ export const refactorCases=[
  ts('admin-report-contention','foundation','scripts/verify-admin-report-contention.ts','ADMIN_REPORT_CONTENTION=PASS'),
  ts('admin-member-history-pg','foundation','scripts/verify-admin-crud-history.ts','ADMIN_CRUD_HISTORY=PASS'),
  node('supplier-library','foundation','scripts/verify-supplier-library-refactor.mjs','SUPPLIER_LIBRARY_REFACTOR=PASS',['--static']),
+ ts('supplier-library-read-pressure','foundation','scripts/verify-supplier-library-read-pressure.ts','SUPPLIER_LIBRARY_READ_PRESSURE=PASS'),
  node('model-management','foundation','scripts/verify-model-management-refactor.mjs','MODEL_MANAGEMENT_REFACTOR=PASS',['--static']),
  node('admin-settings','foundation','scripts/verify-admin-settings-refactor.mjs','ADMIN_SETTINGS=PASS',['--static']),
  ts('admin-settings-pg','foundation','scripts/verify-admin-settings-pg.ts','ADMIN_SETTINGS_PG=PASS'),
