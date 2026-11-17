@@ -123,26 +123,32 @@ export async function importConfiguredSupplierModels(pool:Pool,config:ModelConfi
 }
 type SupplierModelFilter={query:string;provider:string;family:string;brand:string;basis:string;state:string;page:number};
 type LibraryQuery=Pick<Pool,'query'>;
+const supplierModelFilterValues=(filter:SupplierModelFilter)=>[filter.query,filter.provider,filter.family,filter.brand,filter.basis,filter.state];
+const supplierModelFilterSql=`WHERE ($1='' OR m.model_id ILIKE '%'||$1||'%' OR m.label ILIKE '%'||$1||'%' OR m.family ILIKE '%'||$1||'%' OR m.brand ILIKE '%'||$1||'%') AND ($2='' OR m.provider_id=$2) AND ($3='' OR m.family=$3) AND ($4='' OR m.brand=$4) AND ($5='' OR EXISTS(SELECT 1 FROM app_supplier_model_price_points p WHERE p.model_id=m.id AND p.basis=$5)) AND ($6='' OR m.capability_state=$6)`;
+const supplierModelPageSize=50;
+async function supplierModelPage(sql:LibraryQuery,filter:SupplierModelFilter,summary:boolean){
+ const columns=summary?`m.id,m.provider_id,m.provider_name,m.model_id,m.label,m.catalog_owner,m.revision,m.last_seen_at,m.updated_at,
+   jsonb_build_object('family',m.metadata->'family','brand',m.metadata->'brand','modality',m.metadata->'modality',
+   'capabilityState',m.metadata->'capabilityState','capabilitySource',m.metadata->'capabilitySource','checkedAt',m.metadata->'checkedAt',
+   'capabilities',jsonb_build_object('resolutions',m.metadata#>'{capabilities,resolutions}'),'prices',m.metadata->'prices') AS metadata`:'m.*';
+ const {rows}=await sql.query(`SELECT ${columns} FROM app_supplier_model_metadata m ${supplierModelFilterSql} ORDER BY m.updated_at DESC,m.id LIMIT ${supplierModelPageSize} OFFSET $7`,
+  [...supplierModelFilterValues(filter),(filter.page-1)*supplierModelPageSize]);
+ return rows.map(r=>summary?{...r.metadata,id:r.id,providerId:r.provider_id,providerName:r.provider_name,modelId:r.model_id,label:r.label,catalogOwner:r.catalog_owner,revision:Number(r.revision),lastSeenAt:new Date(r.last_seen_at).toISOString(),updatedAt:new Date(r.updated_at).toISOString()}:record(r));
+}
+export const exportSupplierModelPageFrom=(sql:LibraryQuery,filter:SupplierModelFilter)=>supplierModelPage(sql,filter,false);
 export async function listSupplierModels(pool:Pool,filter:SupplierModelFilter,summary=false){
  await ensureSupplierModels(pool);return listSupplierModelsFrom(pool,filter,summary);
 }
 export async function listSupplierModelsFrom(sql:LibraryQuery,filter:SupplierModelFilter,summary=false){
- const values=[filter.query,filter.provider,filter.family,filter.brand,filter.basis,filter.state];
- const where=`WHERE ($1='' OR m.model_id ILIKE '%'||$1||'%' OR m.label ILIKE '%'||$1||'%' OR m.family ILIKE '%'||$1||'%' OR m.brand ILIKE '%'||$1||'%') AND ($2='' OR m.provider_id=$2) AND ($3='' OR m.family=$3) AND ($4='' OR m.brand=$4) AND ($5='' OR EXISTS(SELECT 1 FROM app_supplier_model_price_points p WHERE p.model_id=m.id AND p.basis=$5)) AND ($6='' OR m.capability_state=$6)`;
- const columns=summary ? `m.id,m.provider_id,m.provider_name,m.model_id,m.label,m.catalog_owner,m.revision,m.last_seen_at,m.updated_at,
-   jsonb_build_object('family',m.metadata->'family','brand',m.metadata->'brand','modality',m.metadata->'modality',
-   'capabilityState',m.metadata->'capabilityState','capabilitySource',m.metadata->'capabilitySource','checkedAt',m.metadata->'checkedAt',
-   'capabilities',jsonb_build_object('resolutions',m.metadata#>'{capabilities,resolutions}'),'prices',m.metadata->'prices') AS metadata` : "m.*";
- const rows=await sql.query("SELECT "+columns+" FROM app_supplier_model_metadata m "+where+" ORDER BY m.updated_at DESC,m.id LIMIT 50 OFFSET $7",[...values,(filter.page-1)*50]);
- const count=await sql.query("SELECT count(*) FROM app_supplier_model_metadata m "+where,values);
+ const models=await supplierModelPage(sql,filter,summary);
+ const count=await sql.query(`SELECT count(*) FROM app_supplier_model_metadata m ${supplierModelFilterSql}`,supplierModelFilterValues(filter));
  // Keep global facets. The old name-ordered Map displayed the last name per
  // provider but kept the first name's position. Stable ID breaks equal-name ties.
  const facets=await sql.query<{provider_id:string|null;provider_name:string|null;family:string|null;brand:string|null}>(`
   SELECT provider_id,max(provider_name) AS provider_name,family,brand FROM app_supplier_model_metadata
   GROUP BY GROUPING SETS ((provider_id),(family),(brand))
   ORDER BY min(provider_name),provider_id NULLS LAST`);
- const models=rows.rows.map(r=>summary?{...r.metadata,id:r.id,providerId:r.provider_id,providerName:r.provider_name,modelId:r.model_id,label:r.label,catalogOwner:r.catalog_owner,revision:Number(r.revision),lastSeenAt:new Date(r.last_seen_at).toISOString(),updatedAt:new Date(r.updated_at).toISOString()}:record(r));
- return {models,total:Number(count.rows[0].count),page:filter.page,pageSize:50,facets:{providers:facets.rows.flatMap(r=>r.provider_id!==null?[{id:r.provider_id,name:r.provider_name!}]:[]),families:facets.rows.flatMap(r=>r.family?[r.family]:[]).sort(),brands:facets.rows.flatMap(r=>r.brand?[r.brand]:[]).sort()}};
+ return {models,total:Number(count.rows[0].count),page:filter.page,pageSize:supplierModelPageSize,facets:{providers:facets.rows.flatMap(r=>r.provider_id!==null?[{id:r.provider_id,name:r.provider_name!}]:[]),families:facets.rows.flatMap(r=>r.family?[r.family]:[]).sort(),brands:facets.rows.flatMap(r=>r.brand?[r.brand]:[]).sort()}};
 }
 export async function readSupplierModel(pool:Pool,id:string){
  await ensureSupplierModels(pool);return readSupplierModelFrom(pool,id);

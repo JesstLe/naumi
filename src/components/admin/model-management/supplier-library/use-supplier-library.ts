@@ -60,7 +60,8 @@ export function useSupplierLibrary(){
     const abort=new AbortController();exportAbort.current=abort;
     setExporting(true);
     try{
-      const data=await libraryRequest<{models:SupplierModelRecord[]}>(filterParams(requested),undefined,"导出失败",abort.signal);
+      const params=filterParams(requested);params.set('view','export');
+      const data=await libraryRequest<{models:SupplierModelRecord[]}>(params,undefined,"导出失败",abort.signal);
       if(!abort.signal.aborted && owner.active && owner.generation===generation)download("supplier-model-metadata.json",{schemaVersion:1,exportedAt:new Date().toISOString(),filter:requested,models:data.models});
     }catch(error){if(!abort.signal.aborted && owner.active && owner.generation===generation)setError(error instanceof Error?error.message:"导出失败");}
     finally{exportGuard.current=false;if(owner.active && owner.generation===generation)setExporting(false);}

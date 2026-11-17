@@ -10,7 +10,7 @@ import {modelTrustedOrigins} from '../model-config/environment';
 import {readPublishedModelSnapshot} from '../model-config/published-repository';
 import {readProviderCatalog,refreshProviderCatalog} from "../model-config/catalog-store";
 import {supplierMetadataSchema,PRICE_BASES,CAPABILITY_STATES} from "./types";
-import {importConfiguredSupplierModels,ingestSupplierDirectory,listSupplierModelsFrom,readSupplierModelFrom,saveSupplierModel,supplierModelHistoryFrom,SupplierMetadataError} from "./repository";
+import {exportSupplierModelPageFrom,importConfiguredSupplierModels,ingestSupplierDirectory,listSupplierModelsFrom,readSupplierModelFrom,saveSupplierModel,supplierModelHistoryFrom,SupplierMetadataError} from "./repository";
 import {ensureSupplierModels} from './schema';
 const input=z.discriminatedUnion("action",[
  z.strictObject({action:z.literal("sync"),discover:z.boolean().default(false)}),
@@ -35,7 +35,9 @@ export function createSupplierModelsHandler(deps:{authorize:typeof biAuthorize;a
      await tx.query("SET LOCAL statement_timeout='5s'; SET LOCAL lock_timeout='3s'"+checkReadClientSocket);
      const snapshot=await ports.model(tx);
      if(!snapshot)throw new SupplierMetadataError('CONFIG_UNAVAILABLE','元数据库操作暂不可用，请稍后核对重试',503);
-     const payload=id?{model:await readSupplierModelFrom(tx,id)}:history?{versions:await supplierModelHistoryFrom(tx,history)}:{
+     const payload=id?{model:await readSupplierModelFrom(tx,id)}:history?{versions:await supplierModelHistoryFrom(tx,history)}:p.get('view')==='export'?{
+      models:await exportSupplierModelPageFrom(tx,filter!),
+     }:{
       ...await listSupplierModelsFrom(tx,filter!,p.get('view')==='summary'),modelVersion:snapshot.version,
       providers:snapshot.config.providers.map(p=>({id:p.id,name:p.name,enabled:p.enabled})),
      };

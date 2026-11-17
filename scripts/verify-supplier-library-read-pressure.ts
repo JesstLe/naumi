@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {setTimeout as delay} from 'node:timers/promises';
 import {Pool, type PoolClient} from 'pg';
+import {NextResponse} from 'next/server';
 import {signalFromNodeResponse} from 'next/dist/server/web/spec-extension/adapters/next-request';
 import {createModelFixture} from './model-config-fixture';
 
@@ -12,11 +13,12 @@ async function until(check:()=>Promise<boolean>,reason:string){
 async function main(){
  assert.match(new URL(process.env.DATABASE_URL??'http://invalid').pathname,/fixture/);
  const baseline=process.argv.includes('--baseline');
+ const exportBaseline=process.argv.includes('--export-baseline');
  let handler:((request:Request)=>Promise<Response>)|undefined;
  const f=await createModelFixture(async(req,res)=>{
   const path=req.url??'';
   if(!handler||![first,alias].includes(path.split('?')[0])){res.writeHead(404).end();return;}
-  const result=await handler(new Request(f.origin+path,{signal:signalFromNodeResponse(res)}));
+  const result=await handler(new Request(f.origin+path,{headers:{'x-fixture-access':String(req.headers['x-fixture-access']??'')},signal:signalFromNodeResponse(res)}));
   if(!res.destroyed)res.writeHead(result.status).end(await result.text());
  });
  const observer=new Pool({connectionString:process.env.DATABASE_URL,ssl:false,max:2,options:`-c search_path=${f.schemaName}`});
@@ -28,11 +30,12 @@ async function main(){
  const work:Promise<unknown>[]=[];
  let lock:PoolClient|undefined;
  let facetRows=0;
+ let metadataStatements:string[]=[];
  let insertAfterPage:(()=>Promise<void>)|undefined;
  try{
   await ensureSupplierModels(f.sql);
   const stable=await f.repo.current();
-  handler=createSupplierModelsHandler({authorize:async()=>({actor}),administration:async()=>{
+  handler=createSupplierModelsHandler({authorize:async request=>request.headers.get('x-fixture-access')==='denied'?NextResponse.json({},{status:404}):({actor}),administration:async()=>{
    assert.ok(baseline,'GET must not initialize or assemble the model administration runtime');
    return {...f,pool:f.sql,trustedOrigins:[f.origin]} as never;
   },...(baseline?{}:{readPorts:()=>({pool:f.sql,model:tx=>readPublishedModelSnapshot(tx,{trustedOrigins:[f.origin]})})})});
@@ -44,6 +47,7 @@ async function main(){
    if(patched.has(client))return;patched.add(client);
    const query=client.query.bind(client);
    (client as any).query=(sql:any,...args:any[])=>{
+    if(typeof sql==='string'&&sql.includes('FROM app_supplier_model_metadata'))metadataStatements.push(sql);
     const facet=typeof sql==='string'&&/provider_name/.test(sql)&&/family/.test(sql)&&/brand/.test(sql)&&!sql.includes('LIMIT 50')&&!sql.includes('INSERT');
     if(facet&&typeof args.at(-1)==='function'){
      const callback=args.at(-1);
@@ -68,12 +72,33 @@ async function main(){
   assert.deepEqual(body.facets.brands,Array.from({length:6},(_,i)=>'brand-'+i));
   if(baseline)assert.equal(facetRows,12000);else assert.ok(facetRows>0&&facetRows<=20);
   const observed=facetRows;
+  if(!baseline){
+   const filter='q=model&provider=provider-0&family=family-0&brand=brand-0&page=2';
+   const classic=await fetch(f.origin+first+'?'+filter);assert.equal(classic.status,200);
+   const original=await classic.json();assert.ok(original.total>50&&original.facets.families.length>0);
+   assert.equal(original.models.length,50);assert.ok(original.models.every((m:{modelId:string})=>Number(m.modelId.slice(6))%24===0));
+   for(const path of [first,alias]){
+    metadataStatements=[];
+    const response=await fetch(f.origin+path+'?view=export&'+filter);assert.equal(response.status,200);
+    const data=await response.json();assert.equal(data.schemaVersion,1);assert.deepEqual(data.models,original.models);
+    assert.equal(metadataStatements.length,exportBaseline?3:1);
+    assert.match(metadataStatements[0],/LIMIT 50 OFFSET/);
+    if(exportBaseline){assert.equal(data.total,original.total);assert.match(metadataStatements[1],/count\(\*\)/i);assert.match(metadataStatements[2],/GROUPING SETS/);}
+    else assert.deepEqual(Object.keys(data).sort(),['models','schemaVersion']);
+   }
+   metadataStatements=[];
+   assert.equal((await fetch(f.origin+first+'?view=export&page=2',{headers:{'x-fixture-access':'denied'}})).status,404);
+   assert.equal((await fetch(f.origin+alias+'?view=export&page=201')).status,400);
+   assert.equal(metadataStatements.length,0);
+   console.log(`SUPPLIER_LIBRARY_EXPORT=${exportBaseline?'BASELINE_REPRODUCED':'PASS'} METADATA_STATEMENTS=${exportBaseline?3:1} EXACT_PAGE=1 LEGACY_SHAPE=1 AUTH_LIMITS=1 SUPPLIER_CALLS=0`);
+   if(exportBaseline)return;
+  }
   lock=await observer.connect();await lock.query('BEGIN');
   await lock.query('LOCK app_supplier_model_metadata IN ACCESS EXCLUSIVE MODE');
   const waiting=async()=>Number((await observer.query(`SELECT count(*) FROM pg_stat_activity
     WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%app_supplier_model_metadata%' AND pid<>pg_backend_pid()`)).rows[0].count);
   const controllers=[new AbortController(),new AbortController()];
-  for(const [i,path] of [first,alias].entries())work.push(fetch(f.origin+path,{signal:controllers[i].signal}).catch(()=>null));
+  for(const [i,path] of [baseline?first:first+'?view=export',alias].entries())work.push(fetch(f.origin+path,{signal:controllers[i].signal}).catch(()=>null));
   const before=baseline?5:2;
   await until(async()=>await waiting()===before,'Unexpected number of database connections blocked by two library reads');
   controllers[0].abort();
