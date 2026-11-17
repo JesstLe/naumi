@@ -79,6 +79,7 @@ export const refactorCases=[
  node('enterprise-pool-deadlock','foundation','scripts/verify-enterprise-pool-deadlock.cjs','ENTERPRISE_POOL_DEADLOCK_FIX=PASS'),
  ts('platform-bi-preview-pressure','foundation','scripts/verify-platform-bi-preview-pressure.ts','PLATFORM_BI_PREVIEW_PRESSURE=PASS'),
  ts('enterprise-media-manifest','foundation','scripts/verify-enterprise-media-manifest.ts','ENTERPRISE_MEDIA_MANIFEST=PASS'),
+ ts('team-media-manifest','foundation','scripts/verify-team-media-manifest.ts','TEAM_PREVIEW_MANIFEST=PASS'),
  node('platform-bi-preview-browser','foundation','scripts/verify-bi-preview-browser.cjs','BI_PREVIEW_BROWSER=PASS'),
  node('enterprise-source-onboarding','foundation','scripts/verify-enterprise-source-onboarding.mjs','ENTERPRISE_SOURCE_ONBOARDING=PASS'),
  node('enterprise-source-audit','foundation','scripts/verify-enterprise-source-audit.mjs','SOURCE_AUDIT_VERIFY_PASS'),

@@ -13,9 +13,11 @@ async function storedVersion(key:string,asset:MediaAsset|null|undefined){
   const base=path.resolve(MEDIA_DIR),file=path.resolve(base,key);if(!file.startsWith(base+path.sep))return null;
   try{const info=await stat(file);return info.isFile()?`local:${info.size}:${info.mtimeMs}`:null;}catch{return null;}
 }
-export async function mediaCacheVersion(raw:string):Promise<string|null>{
+export async function mediaCacheVersion(raw:string,signal?:AbortSignal):Promise<string|null>{
+  signal?.throwIfAborted();
   const inline=inlineVersion(raw);if(inline)return inline;
-  const key=storageKeyFromManagedUrl(raw);return key?storedVersion(key,await getMediaAsset(key)):null;
+  const key=storageKeyFromManagedUrl(raw);
+  return key?storedVersion(key,signal?(await getMediaAssets([key],signal)).get(key):await getMediaAsset(key)):null;
 }
 
 /** Already authorized sources only. One catalogue SQL read, no storage body

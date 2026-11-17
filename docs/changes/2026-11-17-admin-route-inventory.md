@@ -100,7 +100,7 @@
 | `GET /api/team` | `src/app/api/team/route.ts` | 部分：快照、聚合及账务写入竞争，`verify-team-subaccounts.ts` |
 | `GET /api/team/access` | `src/app/api/team/access/route.ts` | 待核查 |
 | `GET /api/team/conversation` | `src/app/api/team/conversation/route.ts` | 部分：对话 JSON 投影的锁及撤权，见连续排查首个检查点 |
-| `GET /api/team/media` | `src/app/api/team/media/route.ts` | 待核查 |
+| `GET /api/team/media` | `src/app/api/team/media/route.ts` | 部分：真实回环断开能释放被锁的作品查询或关闭存储连接；共享预览队列、私有响应、版本 409 和旧 WebP 字节通过；生产网关和慢盘待核 |
 | `GET /api/team/users` | `src/app/api/team/users/route.ts` | 待核查 |
 | `GET /enterprise/workflow` | `src/app/enterprise/workflow/route.ts` | 待核查 |
 | `GET /enterprise/workspace` | `src/app/enterprise/workspace/route.ts` | 待核查 |
@@ -182,7 +182,7 @@
 | `入口 /admin` | `src/middleware.ts` | 待核查 |
 | `入口 /enterprise（站点模式）` | `src/middleware.ts` | 待核查 |
 | `共享素材 GET /media/[...path]` | `src/app/media/[...path]/route.ts` | 部分：旧冷预览占满业务池已复现并修复；隔离 PG、真实处理器与回环 NAS 验证挂起读取/写入、租户归属、版本竞争、恢复回执及旧历史；生产 Range、峰值和网关仍待验收 |
-| `共享素材 POST /api/media/image-cache` | `src/app/api/media/image-cache/route.ts` | 部分：原件/两种预览、私有权限、旧版本冲突；企业批量按属主/作品组读取并在断开后释放，16 件＋历史/跨企业隔离见 `verify-enterprise-media-manifest.ts`；64 项直接素材回归。旧团队批量路径、本地慢盘和真实网关待核 |
+| `共享素材 POST /api/media/image-cache` | `src/app/api/media/image-cache/route.ts` | 部分：原件/两种预览、私有权限、旧版本冲突；企业与旧团队按范围批量读取并在断开后释放，旧团队保留逐项审计与同一限流配额，实时移除成员时不返回旧版本。见 `verify-enterprise-media-manifest.ts` 和 `verify-team-media-manifest.ts`；64 项直接素材回归。本地慢盘、断开前鉴权与真实网关待核 |
 | `工作流 GET /healthz` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 GET /readyz` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 GET /v1/appeals` | `services/enterprise-workflow/src/server.ts` | 隔离已核查：依据与旧指纹、列表、详情、修订历史、审核人回避、成员撤权与改派、断开归还连接；长历史数据库提取成本待量化 |

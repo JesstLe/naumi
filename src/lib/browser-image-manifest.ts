@@ -10,8 +10,8 @@ import { managedImageSource, publicImageSource, type BrowserImageDescriptor } fr
 import { checkRateLimit } from "@/lib/rate-limit-http";
 import {clientIp} from '@/lib/ip';
 import {mediaCacheVersion,mediaCacheVersions} from '@/lib/media-cache-version';
-import {teamAuthorize} from '@/lib/teams/access';
-import {teamArtwork} from '@/lib/teams/server';
+import {teamAuthorizePreviewBatch} from '@/lib/teams/access';
+import {teamArtwork,teamArtworkPreviewSources} from '@/lib/teams/server';
 import {enterpriseAuthorize} from '@/lib/enterprise/access';
 import {enterpriseArtwork,enterpriseArtworkPreviewSources} from '@/lib/enterprise/server';
 import {resolveMediaRepresentation} from '@/lib/media/representation';
@@ -19,43 +19,65 @@ import {resolveMediaRepresentation} from '@/lib/media/representation';
 const headers = {'cache-control':'private, no-store', vary:'Cookie, Authorization', 'x-content-type-options':'nosniff'};
 const mime: Record<string,string> = {png:'image/png', jpg:'image/jpeg',jpeg:'image/jpeg',webp:'image/webp',avif:'image/avif',gif:'image/gif'};
 
-async function enterprisePreviewVersions(request:Request,sources:Iterable<string>,origin:string){
+async function previewVersions(request:Request,sources:ReadonlyMap<string,string>,origin:string){
   const signal=request.signal;
-  type Ref={id:string;email:string;sources:Set<string>};
-  const groups=new Map<string,Map<string,Ref>>();
-  for(const source of sources){
-    if(!source.startsWith('/api/enterprise/media?'))continue;
+  type Ref={id:string;email:string;raws:Set<string>};
+  type Groups=Map<string,Map<string,Ref>>;
+  const enterpriseGroups:Groups=new Map(),teamGroups:Groups=new Map();
+  const teamItems:{raw:string;tenant:string;email:string;id:string}[]=[];
+  const add=(tenants:Groups,tenant:string,key:string,raw:string,email:string,id:string)=>{
+    let group=tenants.get(tenant);if(!group)tenants.set(tenant,group=new Map());
+    let ref=group.get(key);if(!ref)group.set(key,ref={id,email,raws:new Set()});
+    ref.raws.add(raw);
+  };
+  for(const [raw,source] of sources){
+    const kind=source.startsWith('/api/enterprise/media?')?'enterprise':source.startsWith('/api/team/media?')?'team':null;
+    if(!kind)continue;
     const params=new URL(source,origin).searchParams;
-    const tenant=params.get('enterpriseId')!,id=params.get('id')!,email=params.get('email')!,key=JSON.stringify([email,id]);
-    let group=groups.get(tenant);if(!group)groups.set(tenant,group=new Map());
-    let ref=group.get(key);if(!ref)group.set(key,ref={id,email,sources:new Set()});
-    ref.sources.add(source);
+    const tenant=params.get(kind==='enterprise'?'enterpriseId':'teamId')!,id=params.get('id')!,email=params.get('email')!;
+    if(kind==='team')teamItems.push({raw,tenant,email,id});
+    else add(enterpriseGroups,tenant,JSON.stringify([email,id]),raw,email,id);
   }
   const result=new Map<string,string>();
-  if(!groups.size)return result;
-  const actor=await enterpriseAuthorize(request);
-  if(actor instanceof Response)return result;
   const authorized=new Map<string,Set<string>>();
-  for(const [tenant,group] of groups){
-    signal.throwIfAborted();const refs=[...group.values()];
-    try{
-      const urls=await enterpriseArtworkPreviewSources(actor,tenant,refs,signal);
-      for(const [index,url] of urls){
-        signal.throwIfAborted();const ref=refs[index];
-        if(url!==null){
-          let matches=authorized.get(url);if(!matches)authorized.set(url,matches=new Set());
-          for(const source of ref.sources)matches.add(source);
-          continue;
-        }
-        // Preserve the old descriptor for oversized legacy fields, while never
-        // carrying all inline image bodies in memory at once.
-        try{
-          const row=await enterpriseArtwork(actor,tenant,ref.email,ref.id,signal);
-          const version=await mediaCacheVersion(String(row.image_url));
-          if(version)for(const source of ref.sources)result.set(source,version);
-        }catch{signal.throwIfAborted();}
+  if(!teamItems.length&&!enterpriseGroups.size)return result;
+  if(teamItems.length){
+    try {
+      const admission=await teamAuthorizePreviewBatch(request,teamItems.length);
+      if(admission){
+        // Distinct raw aliases retain distinct quota hits and audit records.
+        for(const {raw,tenant,email,id} of teamItems.slice(0,admission.allowed))add(teamGroups,tenant,raw,raw,email,id);
+        await collect(teamGroups, (tenant,refs)=>teamArtworkPreviewSources(admission.actor,tenant,refs,signal),
+          (tenant,ref)=>teamArtwork(admission.actor,tenant,ref.email,ref.id,signal));
       }
-    }catch{signal.throwIfAborted();/* Refused groups never expose asset metadata. */}
+    }catch{signal.throwIfAborted();}
+  }
+  if(enterpriseGroups.size){
+    const actor=await enterpriseAuthorize(request);
+    if(!(actor instanceof Response))await collect(enterpriseGroups, (tenant,refs)=>enterpriseArtworkPreviewSources(actor,tenant,refs,signal),
+      (tenant,ref)=>enterpriseArtwork(actor,tenant,ref.email,ref.id,signal));
+  }
+  async function collect(tenants:Groups,batch:(tenant:string,refs:Ref[])=>Promise<Map<number,string|null>>,
+    single:(tenant:string,ref:Ref)=>Promise<{image_url:unknown}>){
+    for(const [tenant,group] of tenants){
+      signal.throwIfAborted();const refs=[...group.values()];
+      try{
+        for(const [index,url] of await batch(tenant,refs)){
+          signal.throwIfAborted();const ref=refs[index];
+          if(url!==null){
+            let matches=authorized.get(url);if(!matches)authorized.set(url,matches=new Set());
+            for(const raw of ref.raws)matches.add(raw);
+            continue;
+          }
+          // Never keep more than one oversized legacy body in memory.
+          try{
+            const row=await single(tenant,ref);
+            const version=await mediaCacheVersion(String(row.image_url),signal);
+            if(version)for(const raw of ref.raws)result.set(raw,version);
+          }catch{signal.throwIfAborted();}
+        }
+      }catch{signal.throwIfAborted();/* Refused groups never expose asset metadata. */}
+    }
   }
   try{
     const versions=await mediaCacheVersions([...authorized.keys()],signal);
@@ -86,7 +108,7 @@ export async function imageCacheManifest(request:Request,publicOnly:boolean){
     for(const raw of requested){const source=managedImageSource(raw,origin);if(source&&(!publicOnly||publicImageSource(source)))sources.set(raw,source);}
     const assets=await getMediaAssets([...sources.values()].filter(s=>!s.startsWith('/api/')).map(s=>decodeURIComponent(new URL(s,origin).pathname.slice(7))),signal);
     const variants=await getMediaAssets([...assets.values()].flatMap(a=>[a.thumbnail_key,a.preview_key].filter((k):k is string=>!!k)),signal);
-    const checkedEnterprise=publicOnly?new Map<string,string>():await enterprisePreviewVersions(request,sources.values(),origin);
+    const previewVersion=publicOnly?new Map<string,string>():await previewVersions(request,sources,origin);
     // Bounded batches, no unbounded parallel object reads or model calls.
     for(const raw of requested) {
       signal.throwIfAborted();
@@ -95,13 +117,7 @@ export async function imageCacheManifest(request:Request,publicOnly:boolean){
       if(source.startsWith('/api/')){
         try{
           const u=new URL(source,origin),enterprise=u.pathname.includes('/enterprise/');
-          let rawVersion:string|null|undefined;
-          if(enterprise)rawVersion=checkedEnterprise.get(source);
-          else{
-            const actor=await teamAuthorize(request);if(actor instanceof Response)continue;
-            const row=await teamArtwork(actor,u.searchParams.get('teamId')!,u.searchParams.get('email')!,u.searchParams.get('id')!);
-            rawVersion=await mediaCacheVersion(String(row.image_url));
-          }
+          const rawVersion=previewVersion.get(raw);
           if(!rawVersion)continue;
           const version=(enterprise?(u.searchParams.get('full')==='1'?'enterprise-full-webp-2560-v1:':'enterprise-thumb-webp-480-v1:'):'preview-webp-1280-v1:')+rawVersion;
           results[raw]={account,source,version,fetchUrl:source+'&cacheVersion='+encodeURIComponent(rawVersion),bytes:0,contentType:'image/webp'};

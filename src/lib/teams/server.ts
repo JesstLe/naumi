@@ -8,6 +8,7 @@ import type {PoolClient} from "pg";
 import {z} from "zod";
 
 import {getPool} from "@/platform/db/pool";
+import {checkReadClientSocket,withOwnedReadClient} from "@/platform/db/owned-read-client";
 import {hashPassword} from "@/lib/pw";
 import {settingsSecret} from "@/lib/settings-secret";
 import {requireTeamGrant,type TeamActor} from "./grants";
@@ -28,13 +29,17 @@ export const adminCommandSchema = z.discriminatedUnion("action", [
   z.object({ ...base, action: z.literal("detach"), email, expectedVersion: z.number().int().nonnegative() }).strict(),
 ]);
 type Actor = TeamActor;
-async function transaction<T>(run: (tx: PoolClient) => Promise<T>, mode:'write'|'snapshot'|'audit'='write') {
-  await ensureTeamSchema(); const tx = await getPool().connect();
-  try {
+async function transaction<T>(run: (tx: PoolClient) => Promise<T>, mode:'write'|'snapshot'|'audit'='write',signal?:AbortSignal) {
+  signal?.throwIfAborted();
+  await ensureTeamSchema();
+  const execute=async(tx:PoolClient)=>{
     await tx.query(mode==='snapshot'?"BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY":"BEGIN");
-    if(mode!=='write')await tx.query(mode==='snapshot'?"SET LOCAL statement_timeout='5s'; SET LOCAL lock_timeout='3s'":"SET LOCAL statement_timeout='3s'; SET LOCAL lock_timeout='1s'");
+    if(mode!=='write')await tx.query(mode==='snapshot'?"SET LOCAL statement_timeout='5s'; SET LOCAL lock_timeout='3s'"+(signal?checkReadClientSocket:''):"SET LOCAL statement_timeout='3s'; SET LOCAL lock_timeout='1s'");
     const out = await run(tx); await tx.query("COMMIT"); return out;
-  }
+  };
+  if(mode==='snapshot'&&signal)return withOwnedReadClient(getPool(),execute,signal);
+  const tx=await getPool().connect();
+  try {return await execute(tx);}
   catch (error) { await tx.query("ROLLBACK").catch(()=>{}); throw error; } finally { tx.release(); }
 }
 type ReadLock='share'|'snapshot';
@@ -52,12 +57,13 @@ async function audit(tx: PoolClient, actor: Actor, teamId: string, target: strin
   await tx.query("INSERT INTO app_account_team_audit(id,actor,team_id,target_email,action,changes,fingerprint) VALUES($1,$2,$3,$4,$5,$6::jsonb,$7)", [id, actor.email, teamId, target, action, JSON.stringify(changes), fingerprint]);
 }
 type TeamProjection<T>={value:T; confirm?:(tx:PoolClient)=>Promise<void>};
-async function teamProjection<T>(read:(tx:PoolClient)=>Promise<TeamProjection<T>>):Promise<T>{
+async function teamProjection<T>(read:(tx:PoolClient)=>Promise<TeamProjection<T>>,signal?:AbortSignal):Promise<T>{
   try{
-    const result=await transaction(read,'snapshot');
+    const result=await transaction(read,'snapshot',signal);
     // Publish a projection only after checking the current scope and recording
     // its existing audit event. Aggregation never holds those authorization locks.
-    if(result.confirm)await transaction(result.confirm,'audit');
+    signal?.throwIfAborted();
+    if(result.confirm)await transaction(tx=>{signal?.throwIfAborted();return result.confirm!(tx);},'audit');
     return result.value;
   }catch(error){
     if(['57014','55P03','40001','40P01'].includes((error as {code?:string})?.code??''))throw new TeamError('团队资料暂不可读取，请稍后重试',503);
@@ -194,11 +200,50 @@ async function auditMemberRead(tx:PoolClient,actor:Actor,teamId:string,target:st
   await scopedMember(tx,teamId,target);
   await audit(tx,actor,teamId,target,action,changes);
 }
-export async function teamArtwork(actor: Actor, teamId: string, target: string, id: string) {
-  return transaction(async tx => {
-    const team = await scopedTeam(tx, actor, teamId); await scopedMember(tx, team.id, target);
+export async function teamArtwork(actor: Actor, teamId: string, target: string, id: string,signal?:AbortSignal) {
+  return teamProjection(async tx => {
+    const team = await scopedTeam(tx, actor, teamId,'snapshot'); await scopedMember(tx, team.id, target,'snapshot');
     const row = (await tx.query("SELECT image_url FROM app_artworks WHERE id=$1 AND email=$2 AND deleted_at IS NULL", [id, target])).rows[0];
     if (!row) throw new TeamError("作品不存在", 404);
-    await audit(tx, actor, team.id, target, "view-media", { artwork: id }); return row;
-  });
+    return {value:row,confirm:fresh=>auditMemberRead(fresh,actor,team.id,target,"view-media",{artwork:id})};
+  },signal);
+}
+
+/** Request-local references only; null asks the caller to resolve one legacy body separately. */
+export async function teamArtworkPreviewSources(actor:Actor,teamId:string,refs:readonly {email:string;id:string}[],signal:AbortSignal){
+  const result=new Map<number,string|null>();
+  if(!refs.length)return result;
+  return teamProjection(async tx=>{
+    const team=await scopedTeam(tx,actor,teamId,'snapshot');
+    const {rows}=await tx.query<{position:number;preview:string}>(`
+      SELECT ref.position,left(a.image_url,4097) AS preview
+      FROM unnest($2::text[],$3::text[]) WITH ORDINALITY ref(email,artwork,position)
+      JOIN app_account_team_members m ON m.team_id=$1 AND m.email=ref.email
+      JOIN app_users u ON u.email=m.email AND u.role='user'
+      JOIN app_artworks a ON a.id=ref.artwork AND a.email=m.email AND a.deleted_at IS NULL`,
+      [team.id,refs.map(ref=>ref.email),refs.map(ref=>ref.id)]);
+    const auditIndices:number[]=[];
+    for(const row of rows){
+      const index=Number(row.position)-1;
+      result.set(index,row.preview.length<=4096?row.preview:null);
+      if(row.preview.length<=4096)auditIndices.push(index);
+    }
+    if(!auditIndices.length)return {value:result};
+    return {value:result,confirm:async fresh=>{
+      await scopedTeam(fresh,actor,team.id);
+      const {rows:members}=await fresh.query<{email:string}>(`
+        SELECT m.email FROM app_account_team_members m JOIN app_users u ON u.email=m.email
+        WHERE m.team_id=$1 AND m.email=ANY($2::text[]) AND u.role='user' FOR SHARE OF m,u`,
+        [team.id,[...new Set(auditIndices.map(i=>refs[i].email))]]);
+      const stillAllowed=new Set(members.map(row=>row.email));
+      const audited=auditIndices.filter(i=>{
+        if(stillAllowed.has(refs[i].email))return true;
+        result.delete(i);return false;
+      }).map(i=>refs[i]);
+      if(audited.length)await fresh.query(`INSERT INTO app_account_team_audit(id,actor,team_id,target_email,action,changes,fingerprint)
+        SELECT ref.id,$1,$2,ref.email,'view-media',jsonb_build_object('artwork',ref.artwork),''
+        FROM unnest($3::uuid[],$4::text[],$5::text[]) ref(id,email,artwork)`,
+        [actor.email,team.id,audited.map(()=>randomUUID()),audited.map(ref=>ref.email),audited.map(ref=>ref.id)]);
+    }};
+  },signal);
 }

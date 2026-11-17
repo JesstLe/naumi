@@ -2,7 +2,7 @@ import 'server-only';
 import { createHmac } from 'node:crypto';
 import { getPool } from '@/platform/db/pool';
 import { settingsSecret } from './settings-secret';
-import { consumePostgresRateLimit } from './rate-limit-store';
+import { consumePostgresRateLimitUpTo } from './rate-limit-store';
 
 type Bucket = { hits: number[]; windowMs: number };
 const stateKey = Symbol.for('naumi.rate-limit.v1');
@@ -20,7 +20,7 @@ export class RateLimitUnavailableError extends Error {
  * Keys share history even when limits differ. Retain the longest window seen
  * for that live key, so a shorter call/sweep cannot erase a longer window.
  */
-function consumeLocal(key: string, limit: number, windowMs: number): boolean {
+function consumeLocal(key: string, limit: number, windowMs: number, requested: number): number {
   const now = Date.now();
   state.sweep ||= state.buckets.entries();
   for (let i = 0; i < 64; i++) {
@@ -33,9 +33,9 @@ function consumeLocal(key: string, limit: number, windowMs: number): boolean {
   bucket.windowMs = Math.max(bucket.windowMs, windowMs);
   bucket.hits = bucket.hits.filter(hit => hit >= now - bucket.windowMs);
   state.buckets.set(key, bucket);
-  if (bucket.hits.filter(hit => hit >= now - windowMs).length >= limit) return false;
-  bucket.hits.push(now);
-  return true;
+  const allowed = Math.min(requested, Math.max(0, limit - bucket.hits.filter(hit => hit >= now - windowMs).length));
+  for (let i=0;i<allowed;i++) bucket.hits.push(now);
+  return allowed;
 }
 
 /** true=admitted, false=quota exhausted; infrastructure failure rejects with
@@ -44,13 +44,19 @@ function consumeLocal(key: string, limit: number, windowMs: number): boolean {
  * receipt and must not retry or replay accepted supplier/paid operations.
  */
 export async function rateLimit(key: string, limit: number, windowMs: number): Promise<boolean> {
-  if (!Number.isSafeInteger(limit) || limit < 1 || !Number.isSafeInteger(windowMs) || windowMs < 1) {
+  return (await rateLimitUpTo(key,limit,windowMs,1))===1;
+}
+
+/** Admit a bounded prefix and count each admitted item against the same budget. */
+export async function rateLimitUpTo(key: string, limit: number, windowMs: number, requested: number): Promise<number> {
+  if (!Number.isSafeInteger(limit) || limit < 1 || !Number.isSafeInteger(windowMs) || windowMs < 1 ||
+      !Number.isSafeInteger(requested) || requested < 1 || requested > 64) {
     throw new RangeError('INVALID_RATE_LIMIT_PARAMETERS');
   }
-  if (!(process.env.DATABASE_URL || '').trim()) return consumeLocal(key, limit, windowMs);
+  if (!(process.env.DATABASE_URL || '').trim()) return consumeLocal(key, limit, windowMs, requested);
   try {
     const digest = createHmac('sha256', settingsSecret()).update('rate-limit:v1:').update(key).digest('hex');
-    return await consumePostgresRateLimit(getPool(), digest, limit, windowMs);
+    return await consumePostgresRateLimitUpTo(getPool(), digest, limit, windowMs, requested);
   } catch {
     const now = Date.now();
     if (state.loggedAt === undefined || now - state.loggedAt >= 30_000) {

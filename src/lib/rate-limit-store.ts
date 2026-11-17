@@ -101,7 +101,7 @@ export async function ensurePostgresRateLimitSchema(pool: Pool): Promise<void> {
   await ready;
 }
 
-export async function consumePostgresRateLimit(pool: Pool, digest: string, limit: number, windowMs: number): Promise<boolean> {
+export async function consumePostgresRateLimitUpTo(pool: Pool, digest: string, limit: number, windowMs: number, requested: number): Promise<number> {
   await ensurePostgresRateLimitSchema(pool);
   const cleanup: { claim?: { now: number; full: boolean } } = {};
   try {
@@ -114,8 +114,8 @@ export async function consumePostgresRateLimit(pool: Pool, digest: string, limit
       RETURNING hits, window_ms, floor(extract(epoch FROM clock_timestamp()) * 1000)::bigint AS now`, [digest, windowMs]);
     const now = Number(bucket.now), retention = Math.max(Number(bucket.window_ms), windowMs);
     const hits = bucket.hits.map(Number).filter(hit => hit >= now - retention);
-    const allowed = hits.filter(hit => hit >= now - windowMs).length < limit;
-    if (allowed) hits.push(now);
+    const allowed = Math.min(requested, Math.max(0, limit - hits.filter(hit => hit >= now - windowMs).length));
+    for (let i=0;i<allowed;i++) hits.push(now);
     await client.query('UPDATE app_rate_limit_buckets SET hits=$2::bigint[], window_ms=$3, expires_at=$4 WHERE key_hash=$1',
       [digest, hits, retention, hits[hits.length - 1] + retention]);
     // One bounded batch per admission, at most one in flight per pool. A full

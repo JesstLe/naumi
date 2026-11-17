@@ -5,7 +5,7 @@ import {MediaPreviewBusy,MediaPreviewVersionChanged,renderMediaPreview} from '@/
 export async function enterpriseMediaResponse(request:Request,imageUrl:string){
   const signal=request.signal;
   try {
-    const {image}=await renderMediaPreview(request,async()=>({url:imageUrl}),true);
+    const {image}=await renderMediaPreview(request,async()=>({url:imageUrl}),{validateCacheVersion:true});
     return new NextResponse(image, { headers: { ...PRIVATE_HEADERS, "Content-Type": "image/webp", "Content-Security-Policy": "default-src 'none'" } });
   } catch(error) {
     if(signal.aborted)return teamJson({error:'请求已取消'},499);

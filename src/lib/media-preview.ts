@@ -13,14 +13,14 @@ export class MediaPreviewVersionChanged extends Error {}
 
 /** Resolve only authorized sources. Any metadata transaction must end before
  * this function reads storage or decodes image data. */
-export function renderMediaPreview<T extends PreviewSource>(request:Request,resolve:()=>Promise<T>,validateCacheVersion=false){
+export function renderMediaPreview<T extends PreviewSource>(request:Request,resolve:()=>Promise<T>,options:{validateCacheVersion?:boolean;profile?:'team'}={}){
  const signal=request.signal;
  return withMediaPreviewSlot(signal,async()=>{
   const source=await resolve();signal.throwIfAborted();
   const {url}=source,max=Math.min(source.maxBytes??maxPreviewBytes,maxPreviewBytes);
-  const target=new URL(request.url),query=target.searchParams,expected=validateCacheVersion?query.get('cacheVersion'):null;
+  const target=new URL(request.url),query=target.searchParams,expected=options.validateCacheVersion?query.get('cacheVersion'):null;
   if(url.length>max*1.4)throw new Error('Image too large');
-  if(expected){const version=await mediaCacheVersion(url);signal.throwIfAborted();if(expected!==version)throw new MediaPreviewVersionChanged();}
+  if(expected){const version=await mediaCacheVersion(url,signal);signal.throwIfAborted();if(expected!==version)throw new MediaPreviewVersionChanged();}
   const inline=dataUrlToBytes(url);let bytes:Buffer;
   if(inline){if(!/^image\/(png|jpeg|webp|gif|avif)$/.test(inline.contentType))throw new Error('Invalid image');bytes=Buffer.from(inline.bytes);}
   else if(isManagedImageUrl(url))bytes=(await readManagedObject(url,max,signal)).bytes;
@@ -36,11 +36,12 @@ export function renderMediaPreview<T extends PreviewSource>(request:Request,reso
   }
   signal.throwIfAborted();
   if(bytes.length>max)throw new Error('Image too large');
-  const bound=query.get('full')==='1'?2560:480;
+  const team=options.profile==='team';
+  const bound=team?1280:query.get('full')==='1'?2560:480;
   // Native libvips work already dispatched is not instantly cancellable; keep
   // the slot until it returns and discard any output for a disconnected client.
   const image=await sharp(bytes,{limitInputPixels:40000000}).timeout({seconds:15}).rotate()
-   .resize({width:bound,height:bound,fit:'inside',withoutEnlargement:true}).webp({quality:82}).toBuffer();
+   .resize({width:bound,height:bound,fit:'inside',withoutEnlargement:true}).webp({quality:team?85:82}).toBuffer();
   signal.throwIfAborted();
   return {image,source};
  });

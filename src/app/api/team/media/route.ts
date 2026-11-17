@@ -1,42 +1,35 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import sharp from "sharp";
 import { teamAuthorize, teamJson, teamFailure, PRIVATE_HEADERS } from "@/lib/teams/access";
 import { teamArtwork } from "@/lib/teams/server";
-import { dataUrlToBytes, isManagedImageUrl } from "@/lib/object-storage/runtime";
-import { readManagedObject } from "@/lib/object-storage/managed-read";
-import { parseDownloadSource, fetchDownloadSource } from "@/lib/download-source";
-import {mediaCacheVersion} from '@/lib/media-cache-version';
+import { MediaPreviewBusy, MediaPreviewVersionChanged, renderMediaPreview } from "@/lib/media-preview";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const query = z.object({ teamId: z.string().uuid(), email: z.string().min(1).max(254), id: z.string().min(1).max(200) });
+
 export async function GET(request: Request) {
   const actor = await teamAuthorize(request); if (actor instanceof NextResponse) return actor;
   const parsed = query.safeParse(Object.fromEntries(new URL(request.url).searchParams));
   if (!parsed.success) return teamJson({ error: "作品参数无效" }, 400);
-  let row;
-  try { const q = parsed.data; row = await teamArtwork(actor, q.teamId, q.email.trim().toLowerCase(), q.id); }
-  catch (error) { return teamFailure(error); }
+  const {teamId,email,id}=parsed.data,signal=request.signal;
+  let lookupFailed=false;
   try {
-    const max = 32 * 1024 * 1024, url = String(row.image_url); let bytes: Buffer;
-    const expected=new URL(request.url).searchParams.get('cacheVersion');
-    if(expected && expected!==await mediaCacheVersion(url))return teamJson({error:'素材版本已改变'},409);
-    if (url.length > max * 1.4) throw new Error();
-    const inline = dataUrlToBytes(url);
-    if (inline) { if (!/^image\/(png|jpeg|webp|gif|avif)$/.test(inline.contentType)) throw new Error(); bytes = Buffer.from(inline.bytes); }
-    else if (isManagedImageUrl(url)) bytes = (await readManagedObject(url, max)).bytes;
-    else {
-      const source = parseDownloadSource(url, new URL(request.url).origin);
-      if (source.origin === new URL(request.url).origin) throw new Error();
-      const upstream = await fetchDownloadSource(source, AbortSignal.timeout(15000));
-      if (!upstream.ok || !upstream.body) throw new Error();
-      const reader = upstream.body.getReader(), chunks: Uint8Array[] = []; let size = 0;
-      try { for (;;) { const next = await reader.read(); if (next.done) break; size += next.value.byteLength; if (size > max) throw new Error(); chunks.push(next.value); } }
-      finally { await reader.cancel().catch(() => {}); }
-      bytes = Buffer.concat(chunks);
+    const {image}=await renderMediaPreview(request,async()=>{
+      try{
+        const row=await teamArtwork(actor,teamId,email.trim().toLowerCase(),id,signal);
+        return {url:String(row.image_url)};
+      }catch(error){lookupFailed=true;throw error;}
+    },{validateCacheVersion:true,profile:'team'});
+    return new NextResponse(image, { headers: { ...PRIVATE_HEADERS, "Content-Type": "image/webp", "Content-Security-Policy": "default-src 'none'" } });
+  } catch(error) {
+    if(signal.aborted)return teamJson({error:'请求已取消'},499);
+    if(lookupFailed)return teamFailure(error);
+    if(error instanceof MediaPreviewBusy){
+      const response=teamJson({error:'预览请求较多，请稍后重试'},503);
+      response.headers.set('Retry-After','1');return response;
     }
-    if (bytes.length > max) throw new Error();
-    const output = await sharp(bytes, { limitInputPixels: 40000000 }).rotate().resize({ width: 1280, height: 1280, fit: "inside", withoutEnlargement: true }).webp({ quality: 85 }).toBuffer();
-    return new NextResponse(output, { headers: { ...PRIVATE_HEADERS, "Content-Type": "image/webp", "Content-Security-Policy": "default-src 'none'" } });
-  } catch { return teamJson({ error: "媒体暂时不可读取" }, 422); }
+    if(error instanceof MediaPreviewVersionChanged)return teamJson({error:'素材版本已改变'},409);
+    return teamJson({ error: "媒体暂时不可读取" }, 422);
+  }
 }
