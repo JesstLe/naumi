@@ -1,15 +1,16 @@
 "use client";
 
 import {WORKFLOW_PERMISSIONS,DEFAULT_WORKFLOW_PERMISSIONS,WORKFLOW_PERMISSION_LABELS,type WorkflowPermission} from '@/lib/enterprise/workflow-permissions';
-import {USER_POSITIONS,matchesUserPosition} from '@/lib/accounts/positions';
+import {USER_POSITIONS} from '@/lib/accounts/positions';
 import { useSiteProfile } from '@/lib/site-control/client';
 import { scheduleVisibleRefresh } from '@/lib/visible-refresh';
 import { UserUsage } from '@/components/admin/bi/user-usage';
 import { EnterpriseMemberManager } from './member-manager';
+import { EnterpriseMemberDirectory } from './enterprise-member-directory';
 import { EnterpriseHealthPanel } from './enterprise-health';
 import { TenantUsagePanel } from '@/components/saas/tenant-usage-panel';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, BarChart3, Building2, ChevronDown, CircleUserRound, Eye, FileText, HeartPulse, LayoutDashboard, Menu, Plus, RefreshCw, Settings, ShieldCheck, Users, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowLeft, BarChart3, Building2, ChevronDown, CircleUserRound, FileText, HeartPulse, LayoutDashboard, Menu, Plus, RefreshCw, Settings, ShieldCheck, Users, X } from 'lucide-react';
 import {ACCESS_FEATURES} from '@/lib/feature-access/catalog';
 import { useAuth } from '@/lib/auth-context';
 import { authHeader } from '@/lib/supabase';
@@ -33,8 +34,13 @@ const datetime = (value: string | null | undefined) => value ? new Date(value).t
 const inputDate = (value: string | null | undefined) => { if (!value) return ''; const date = new Date(value); return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16); };
 const validView = (value?: string): View => ['overview', 'members', 'roles', 'records', 'usage', 'settings', 'health'].includes(value || '') ? value as View : 'overview';
 const validDate = (value?: string) => !!value && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value));
+async function enterpriseFetch(url: string, init?: RequestInit) {
+  const headers=new Headers(await authHeader());
+  new Headers(init?.headers).forEach((value,key)=>headers.set(key,value));
+  return fetch(url,{cache:'no-store',...init,headers});
+}
 async function json<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, { cache: 'no-store', ...init, headers: { ...(await authHeader()), ...init?.headers } });
+  const response = await enterpriseFetch(url,init);
   const body = await response.json(); if (!response.ok) throw new Error(body.error || '读取失败'); return body;
 }
 
@@ -75,7 +81,6 @@ function Workspace({ enterprises, initialQuery, email }: { enterprises: Enterpri
   const [accountLocked,setAccountLocked]=useState(false);const accountLockRef=useRef(false);
   const accountLock=useCallback((value:boolean)=>{accountLockRef.current=value;setAccountLocked(value);},[]);
   const [positionFilter,setPositionFilter]=useState(initialQuery.position||'');
-  const filteredMembers=(data?.members||[]).filter(member=>!dedicated||matchesUserPosition(member.position,positionFilter));
   const [accountEditor,setAccountEditor]=useState<{email?:string}|null>(null);
   const [editor, setEditor] = useState<Editor>(null), [expiry, setExpiry] = useState('');
   const [roleId, setRoleId] = useState(''), [supervisor, setSupervisor] = useState(''), [employment, setEmployment] = useState<'permanent' | 'intern'>('permanent');
@@ -83,6 +88,7 @@ function Workspace({ enterprises, initialQuery, email }: { enterprises: Enterpri
   const [roleName, setRoleName] = useState(''), [level, setLevel] = useState(100), [manageMembers, setManageMembers] = useState(false), [viewRecords, setViewRecords] = useState(false);
   const command = useRef<{ payload: string; id: string } | null>(null), newRoleId = useRef(''), sequence = useRef(0), scopeAbort = useRef<AbortController | null>(null), mutationAbort = useRef<AbortController | null>(null);
   const dialog = useRef<HTMLElement | null>(null), activeEnterprise = useRef(enterpriseId), loadedEnterprise = useRef(enterpriseId);
+  const directoryVersion=useRef<{id:string;etag:string}|null>(null);
   activeEnterprise.current = enterpriseId;
   const updateUrl = useCallback((updates: Record<string, string | undefined>, push = false) => {
     const url = new URL(window.location.href);
@@ -117,18 +123,32 @@ function Workspace({ enterprises, initialQuery, email }: { enterprises: Enterpri
   useEffect(() => { if (!editor) return; const previous = document.activeElement as HTMLElement | null; dialog.current?.querySelector<HTMLElement>('input,select,button')?.focus(); return () => previous?.focus(); }, [editor]);
   const load = useCallback(async () => {
     const n = ++sequence.current; scopeAbort.current?.abort(); const controller = new AbortController(); scopeAbort.current = controller; setLoading(true); setError('');
+    const prior=directoryVersion.current?.id===enterpriseId?directoryVersion.current.etag:null;
     try {
-      const result = await json<EnterpriseSnapshot>(`/api/enterprise?${new URLSearchParams({ enterpriseId })}`, { signal: controller.signal });
+      const response=await enterpriseFetch(`/api/enterprise?${new URLSearchParams({ enterpriseId })}`,{
+        signal:controller.signal,headers:prior?{'If-None-Match':prior}:undefined,
+      });
       if (n !== sequence.current || controller.signal.aborted || activeEnterprise.current !== enterpriseId) return;
-      setData(result); setSelected(old => result.actor.owner && old === result.enterprise.owner_email || result.members.some(m => m.email === old) ? old : '');
-    } catch (reason) { if (n === sequence.current && !controller.signal.aborted) { setError((reason as Error).message); setData(null); setMeta(null); setEditor(null); } }
+      if(response.status===304){
+        if(!prior||response.headers.get('etag')?.replace(/^W\//,'')!==prior)throw new Error('企业目录版本无法确认，请重试');
+        return;
+      }
+      const result = await response.json();
+      if (n !== sequence.current || controller.signal.aborted || activeEnterprise.current !== enterpriseId) return;
+      if(!response.ok)throw new Error(result.error||'读取失败');
+      const snapshot=result as EnterpriseSnapshot,etag=response.headers.get('etag')?.replace(/^W\//,'');
+      directoryVersion.current=etag?{id:enterpriseId,etag}:null;
+      setData(snapshot); setSelected(old => snapshot.actor.owner && old === snapshot.enterprise.owner_email || snapshot.members.some(m => m.email === old) ? old : '');
+    } catch (reason) { if (n === sequence.current && !controller.signal.aborted && activeEnterprise.current===enterpriseId) {
+      directoryVersion.current=null;setError((reason as Error).message);setData(null);setMeta(null);setEditor(null);
+    } }
     finally {
       if (scopeAbort.current === controller) scopeAbort.current = null;
       if (n === sequence.current && !controller.signal.aborted) setLoading(false);
     }
   }, [enterpriseId]);
   useEffect(() => {
-    setData(null); setMeta(null); setEditor(null); setPending(false); command.current = null; mutationAbort.current?.abort();
+    directoryVersion.current=null;setData(null); setMeta(null); setEditor(null); setPending(false); command.current = null; mutationAbort.current?.abort();
     if (loadedEnterprise.current !== enterpriseId) setSelected(''); loadedEnterprise.current = enterpriseId;
     void load(); return () => { sequence.current++; scopeAbort.current?.abort(); mutationAbort.current?.abort(); };
   }, [load]);
@@ -136,7 +156,7 @@ function Workspace({ enterprises, initialQuery, email }: { enterprises: Enterpri
     if (!scopeAbort.current) await load();
   }, 30_000), [load]);
   useEffect(() => { if (!enterprises.some(t => t.id === enterpriseId)) { setData(null); setMeta(null); setEnterpriseId(enterprises[0].id); setView('overview'); } }, [enterprises, enterpriseId]);
-  const scopeKey = data ? JSON.stringify([data.enterprise, data.actor, data.members.map(m => [m.email, m.version, m.membership_status, m.membership_expires_at, m.banned, m.account_expires_at]), data.roles]) : '';
+  const scopeKey = useMemo(()=>data ? JSON.stringify([data.enterprise, data.actor, data.members.map(m => [m.email, m.version, m.membership_status, m.membership_expires_at, m.banned, m.account_expires_at]), data.roles]) : '',[data]);
   const needsOverviewMeta = view === 'settings' || view === 'overview' && !dedicated;
   useEffect(() => {
     setMeta(null); setMetaError(''); if (!data?.actor.viewRecords || !needsOverviewMeta) return;
@@ -159,8 +179,6 @@ function Workspace({ enterprises, initialQuery, email }: { enterprises: Enterpri
   const closeEditor=()=>{if(!pending&&(!editorDirty.current||window.confirm('有未保存的修改，确定放弃并关闭？')))setEditor(null);};
   const edit = (kind: 'organization' | 'expiry', member: Member) => { editorDirty.current=false;setEditor({ kind, member }); setExpiry(inputDate(member.membership_expires_at)); setEmployment(member.employment); setRoleId(member.role_id || ''); setSupervisor(member.supervisor_email); setError(''); };
   const editRole = (role: EnterpriseRole | null) => { editorDirty.current=false;newRoleId.current = role?.id || crypto.randomUUID(); setEditor({ kind: 'role', role }); setRoleName(role?.name || ''); setLevel(role?.level || 100); setManageMembers(role?.manage_members || false); setViewRecords(role?.view_records || false);setWorkflowPermissions(role?.workflow_permissions??DEFAULT_WORKFLOW_PERMISSIONS); setError(''); };
-  const label = (value: string) => data?.members.find(member => member.email === value)?.name || identity(value);
-  const status = (member: Member) => member.membership_status === 'suspended' ? '已暂停' : member.membership_expires_at && Date.parse(member.membership_expires_at) <= Date.now() ? '身份到期' : '正常';
   const nav = [{ id: 'overview' as View, label: dedicated?'经营概览':'企业概览', icon: LayoutDashboard }, { id: 'members' as View, label: '组织与成员', icon: Users }, ...(data?.actor.owner ? [{ id: 'roles' as View, label: '岗位与权限', icon: ShieldCheck }] : []), ...(data?.actor.viewRecords ? [{ id: 'records' as View, label: '创作记录', icon: FileText }, { id: 'usage' as View, label: '额度与用量', icon: BarChart3 }] : []), ...(data?.actor.manageMembers?[{id:'health' as View,label:'运行健康',icon:HeartPulse}]:[]), { id: 'settings' as View, label:dedicated?'系统设置':'企业设置', icon: Settings }];
   const title = nav.find(item => item.id === view)?.label || '企业概览', currentEnterprise = enterprises.find(t => t.id === enterpriseId) || enterprises[0];
   return <main className={styles.page} data-testid='enterprise-console' onClickCapture={event=>{if(accountLockRef.current&&(event.target as HTMLElement).closest('a')){event.preventDefault();event.stopPropagation();setNotice('请先确认当前账号操作的结果');}}}>
@@ -178,7 +196,21 @@ function Workspace({ enterprises, initialQuery, email }: { enterprises: Enterpri
       {loading && !data ? <div className={styles.empty} role='status'>加载企业数据…</div> : !data ? <div className={styles.empty}>企业数据暂不可读取<button onClick={() => void load()}>重试</button></div> : <>
         {view === 'overview' && dedicated && data.actor.viewRecords && <UserUsage key={email+':'+scopeKey} embedded enterpriseId={enterpriseId} refreshRevision={metaRevision}/>}
         {view === 'overview' && !dedicated && (data.actor.viewRecords ? <EnterpriseSaasOverview dedicated={dedicated} key={scopeKey} refreshRevision={metaRevision} snapshot={data} from={range.from} to={range.to} meta={meta} metaError={metaError} onRetryMeta={() => setMetaRevision(n => n + 1)} onView={navigate} onCreation={id => { navigate('records');setSection('records');updateUrl({ creationId:id,recordView:'records' }); }} /> : <div className={styles.empty}>当前岗位未开放创作数据查看权限<button onClick={() => navigate('members')}>查看组织成员</button></div>)}
-        {view === 'members' && <div className={styles.pane}>{dedicated&&<div className={styles.sectionHead}><h2>成员账号</h2><div className={styles.actions}><label>岗位 <select aria-label='岗位筛选' disabled={accountLocked} value={positionFilter} onChange={e=>{setPositionFilter(e.target.value);updateUrl({position:e.target.value});}}><option value=''>全部岗位</option>{USER_POSITIONS.filter(Boolean).map(value=><option key={value} value={value}>{value}</option>)}<option value='unassigned'>未分组</option></select></label>{data.actor.owner&&<button className={styles.primary} disabled={accountLocked} onClick={()=>setAccountEditor({})}><Plus size={16}/>新增成员</button>}</div></div>}{dedicated&&accountEditor&&data.actor.owner&&<div><div className={styles.actions}><button disabled={accountLocked} onClick={()=>setAccountEditor(null)}>关闭账号编辑</button></div><EnterpriseMemberManager key={accountEditor.email||'new'} snapshot={data} member={data.members.find(m=>m.email===accountEditor.email)} onLockChange={accountLock} onSaved={()=>{setAccountEditor(null);setNotice('成员账号已保存');setMetaRevision(n=>n+1);void load();}}/></div>}<div className={styles.tableWrap}><table><thead><tr><th>成员 / 账号</th>{dedicated&&<th>岗位</th>}<th>权限角色 / 级别</th><th>直属上级</th><th>用工 / 访问期限</th><th>成员状态 / 账号</th><th>操作</th></tr></thead><tbody>{filteredMembers.map((member: Member) => <tr key={member.email}><td><strong>{member.name || identity(member.email)}</strong><small title={member.email}>{identity(member.email)}</small></td>{dedicated&&<td>{member.position||'未分组'}</td>}<td>{member.role_name}<small>{member.level === 999 ? '基础成员' : `L${member.level}`}</small></td><td>{label(member.supervisor_email)}</td><td>{member.employment === 'permanent' ? '正式员工' : '实习生'}<small>{datetime(member.membership_expires_at)}</small></td><td><span className={`${styles.badge} ${status(member) !== '正常' ? styles.inactive : ''}`}>{status(member)}</span><small>{member.banned ? '账号已封禁' : member.account_expires_at && Date.parse(member.account_expires_at) <= Date.now() ? '账号已到期' : '账号正常'}</small></td><td><div className={styles.rowActions}>{dedicated&&data.actor.owner&&member.account_role!=='admin'&&<button disabled={accountLocked} onClick={()=>setAccountEditor({email:member.email})}>账号与积分</button>}{data.actor.viewRecords && <button onClick={() => navigate('records', { email: member.email })}><Eye size={14} />创作</button>}{member.canManage && <>{data.actor.owner && <button disabled={pending} onClick={() => edit('organization', member)}>岗位与上级</button>}<button disabled={pending} onClick={() => edit('expiry', member)}>身份期限</button><button disabled={pending} onClick={() => { if (window.confirm(`${member.membership_status === 'suspended' ? '恢复' : '暂停'} ${member.name || identity(member.email)} 的管理与创作访问权限？`)) void mutate({ ...body(member), action: 'status', banned: member.membership_status !== 'suspended' }); }}>{member.membership_status === 'suspended' ? '恢复身份' : '暂停身份'}</button></>}</div></td></tr>)}</tbody></table>{!filteredMembers.length && <div className={styles.empty}>{positionFilter?'当前岗位暂无成员':'当前范围暂无成员'}</div>}</div></div>}
+        {view === 'members' && <div className={styles.pane}>
+          {dedicated&&<div className={styles.sectionHead}><h2>成员账号</h2><div className={styles.actions}>
+            <label>岗位 <select aria-label='岗位筛选' disabled={accountLocked} value={positionFilter} onChange={e=>{setPositionFilter(e.target.value);updateUrl({position:e.target.value});}}>
+              <option value=''>全部岗位</option>{USER_POSITIONS.filter(Boolean).map(value=><option key={value} value={value}>{value}</option>)}<option value='unassigned'>未分组</option>
+            </select></label>
+            {data.actor.owner&&<button className={styles.primary} disabled={accountLocked} onClick={()=>setAccountEditor({})}><Plus size={16}/>新增成员</button>}
+          </div></div>}
+          {dedicated&&accountEditor&&data.actor.owner&&<div><div className={styles.actions}><button disabled={accountLocked} onClick={()=>setAccountEditor(null)}>关闭账号编辑</button></div>
+            <EnterpriseMemberManager key={accountEditor.email||'new'} snapshot={data} member={data.members.find(m=>m.email===accountEditor.email)} onLockChange={accountLock} onSaved={()=>{setAccountEditor(null);setNotice('成员账号已保存');setMetaRevision(n=>n+1);void load();}}/>
+          </div>}
+          <EnterpriseMemberDirectory key={enterpriseId+':'+positionFilter} members={data.members} dedicated={dedicated} position={positionFilter} owner={data.actor.owner}
+            pending={pending} accountLocked={accountLocked} onAccount={member=>setAccountEditor({email:member.email})}
+            onCreation={data.actor.viewRecords?member=>navigate('records',{email:member.email}):undefined} onEdit={edit}
+            onStatus={(member,banned)=>void mutate({...body(member),action:'status',banned})}/>
+        </div>}
         {view === 'roles' && (data.actor.owner ? <div className={styles.pane}><div className={styles.sectionHead}><h2>岗位与权限</h2><button className={styles.primary} onClick={() => editRole(null)}><Plus size={15} />新增岗位</button></div><div className={styles.roleGrid}>{data.roles.map(role => <article className={styles.roleCard} key={role.id}><header><ShieldCheck size={18} /><h3>{role.name}</h3><span>L{role.level}</span></header><div className={styles.capabilities}><span>{role.manage_members ? '管理下属成员' : '无成员管理权限'}</span><span>{role.view_records ? '查看下属成员的创作记录' : '无创作查看权限'}</span></div><footer><span>{data.members.filter(member => member.role_id === role.id).length} 位成员</span><div className={styles.rowActions}><button disabled={pending} onClick={() => editRole(role)}>编辑</button><button disabled={pending||data.members.some(member=>member.role_id===role.id)} onClick={()=>{if(window.confirm(`删除岗位“${role.name}”？`))void mutate({enterpriseId,action:'delete-role',roleId:role.id,expectedVersion:role.version});}}>删除</button></div></footer></article>)}</div>{!data.roles.length && <div className={styles.empty}>尚未配置管理岗位</div>}</div> : <div className={styles.empty}>岗位与权限由超级管理员管理</div>)}
         {view === 'records' && data.actor.viewRecords && <div className={styles.pane}><div className={styles.recordViewTabs}>{([['records','创作记录'],['artworks','图片作品']] as const).map(([id,label])=><button key={id} className={section===id?styles.selectedTab:''} onClick={()=>{setSection(id);updateUrl({recordView:id,creationId:undefined,page:'1',source:undefined,period:undefined,from:undefined,to:undefined});}}>{label}</button>)}</div>{section==='artworks'?<EnterpriseArtworks key={scopeKey+selected} snapshot={data} initialEmail={selected} dedicated={dedicated}/>:<CreationBrowser key={scopeKey+section} tenantId={enterpriseId} enterprise/>}</div>}
         {view==='health'&&data.actor.manageMembers&&<EnterpriseHealthPanel enterpriseId={enterpriseId}/>}

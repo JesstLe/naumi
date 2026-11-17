@@ -13,7 +13,7 @@ async function until<T>(read:()=>Promise<T>,match:(v:T)=>boolean,message:string,
 }
 
 async function main(){
- const baseline=process.argv.includes('--baseline'),qty=1800,owner='owner@directory-fixture.test',manager='manager@directory-fixture.test',
+ const baseline=process.argv.includes('--baseline'),conditionalBaseline=process.argv.includes('--conditional-baseline'),qty=1800,owner='owner@directory-fixture.test',manager='manager@directory-fixture.test',
   outside='outside@directory-fixture.test',one='member-1@directory-fixture.test',paused='member-2@directory-fixture.test';
  Object.assign(process.env,{SETTINGS_SECRET:'fixture-directory-0123456789abcdef0123456789abcdef',NAUMI_MULTI_USER:'1',PGPOOL_MAX:'5'});
  const f=await (await import('./billing-fixture')).createBillingFixture({freshSchema:true});
@@ -52,8 +52,9 @@ async function main(){
     FROM generate_series(1,$1::int+900) i CROSS JOIN generate_series(1,3) j`,[qty]);
   await f.pool.query('ANALYZE app_users; ANALYZE app_enterprise_members; ANALYZE app_ledger; ANALYZE app_credit_batches; ANALYZE app_artworks');
   const {GET}=await import('../src/app/api/enterprise/route'),{signUserSession}=await import('../src/lib/native-auth');
-  const run=(page:'picker'|'directory',signal?:AbortSignal,email=owner,id=tenantId)=>
-    GET(new Request('http://localhost/api/enterprise'+(page==='directory'?'?enterpriseId='+id:''),{signal,headers:{cookie:'nv_user='+signUserSession(email,Date.now())}}));
+  const run=(page:'picker'|'directory',signal?:AbortSignal,email=owner,id=tenantId,tag?:string)=>
+    GET(new Request('http://localhost/api/enterprise'+(page==='directory'?'?enterpriseId='+id:''),{signal,
+     headers:{cookie:'nv_user='+signUserSession(email,Date.now()),...(tag?{'if-none-match':tag}:{})}}));
   assert.deepEqual((await (await run('picker')).json()).enterprises.map((t:{id:string})=>t.id),[tenantId]);
   assert.equal((await run('directory',undefined,owner,foreign)).status,403);
   let statement:{sql:string;values:unknown[]}|undefined,jitDisabled=false;
@@ -95,6 +96,35 @@ async function main(){
   }
   const managerRows=(await (await run('directory',undefined,manager)).json()).members;
   assert.deepEqual(managerRows.map((m:{email:string})=>m.email),[manager,one,paused]);
+  if(conditionalBaseline){
+   const repeated=await run('directory',undefined,owner,tenantId,'"old-client-fixture"');
+   assert.equal(repeated.status,200);assert.equal(await repeated.text(),raw);
+   console.log('ENTERPRISE_DIRECTORY_CONDITIONAL_BASELINE=PASS BODY_BYTES='+Buffer.byteLength(raw));
+  }else if(!baseline){
+   const tag=response.headers.get('etag');assert.match(tag||'',/^"[a-f0-9]{64}"$/);
+   assert.match(response.headers.get('cache-control')||'',/private.*no-store/);
+   const unchanged=await run('directory',undefined,owner,tenantId,tag!);
+   assert.equal(unchanged.status,304);assert.equal(unchanged.headers.get('etag'),tag);assert.equal(await unchanged.text(),'');
+   assert.match(unchanged.headers.get('cache-control')||'',/private.*no-store/);
+   const noTag=await run('directory');assert.equal(noTag.status,200);assert.equal(await noTag.text(),raw);
+   assert.equal((await run('directory',undefined,owner,foreign,tag!)).status,403);
+   const differentScope=await run('directory',undefined,manager,tenantId,tag!);
+   assert.equal(differentScope.status,200);assert.notEqual(differentScope.headers.get('etag'),tag);
+   await f.pool.query('UPDATE app_users SET name=$2 WHERE email=$1',[one,'Renamed fixture']);
+   const changed=await run('directory',undefined,owner,tenantId,tag!);
+   assert.equal(changed.status,200);const updated=(await changed.json()).members.find((m:{email:string})=>m.email===one);
+   assert.equal(updated.name,'Renamed fixture');const changedTag=changed.headers.get('etag');assert.notEqual(changedTag,tag);
+   await f.pool.query('UPDATE app_credit_batches SET remaining=30 WHERE id=\'batch-1-1\'');
+   const balance=await run('directory',undefined,owner,tenantId,changedTag!);
+   assert.equal(balance.status,200);const billed=(await balance.json()).members.find((m:{email:string})=>m.email===one);
+   assert.equal(billed.available,28);assert.notEqual(balance.headers.get('etag'),changedTag);
+   await f.pool.query('UPDATE app_team_access_grants SET enabled=false WHERE email=$1',[owner]);
+   try{
+    const denied=await run('directory',undefined,owner,tenantId,balance.headers.get('etag')!);
+    assert.equal(denied.status,403);assert.equal(denied.headers.get('etag'),null);
+   }finally{await f.pool.query('UPDATE app_team_access_grants SET enabled=true WHERE email=$1',[owner]);}
+   console.log('ENTERPRISE_DIRECTORY_CONDITIONAL=PASS OLD_CLIENT_200=1 UNCHANGED_BYTES=0 LIVE_REVOKE=403 PROFILE_AND_BALANCE_INVALIDATE=1 SCOPE_PIN=1');
+  }
   await guard.connect();connected=true;
   const waiting=async()=>Number((await guard.query(`SELECT count(DISTINCT pid) AS n FROM pg_locks WHERE NOT granted
    AND database=(SELECT oid FROM pg_database WHERE datname=current_database()) AND relation='app_enterprise_members'::regclass`)).rows[0].n);
