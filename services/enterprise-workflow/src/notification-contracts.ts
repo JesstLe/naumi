@@ -2,6 +2,7 @@ import {z} from 'zod';
 import {id} from './contracts';
 const connector=z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$/),subject=z.string().trim().min(1).max(254),reason=z.string().trim().min(1).max(2000);
 export const notificationQuery=z.discriminatedUnion('action',[
+ z.strictObject({action:z.literal('badge')}),
  z.strictObject({action:z.literal('inbox'),page:z.coerce.number().int().min(1).max(10000).default(1),unread:z.enum(['','1']).default('')}),
  z.strictObject({action:z.literal('deliveries'),page:z.coerce.number().int().min(1).max(10000).default(1),state:z.enum(['','pending','retry','sending','accepted','polling','delivered','blocked','dead','unknown','cancelled']).default('')}),
  z.strictObject({action:z.literal('settings')}),

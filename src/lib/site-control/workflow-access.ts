@@ -1,4 +1,5 @@
 import { siteProfile } from './store';
+import type { SiteProfile } from './contracts';
 import { TeamError } from '@/lib/teams/server';
 
 const paths: Record<string, string> = {
@@ -34,7 +35,9 @@ export function workflowModulesFor(url: URL, commandType?: string, method = 'GET
   return null;
 }
 export async function assertWorkflowSiteAccess(request: Request, commandType?: string) {
-  const site = await siteProfile();
+  assertWorkflowProfileAccess(await siteProfile(),request,commandType);
+}
+export function assertWorkflowProfileAccess(site:SiteProfile,request:Request,commandType?:string) {
   if (site.mode === 'platform') return;
   const required = workflowModulesFor(new URL(request.url), commandType, request.method);
   if (!required || !site.policy.enabledFeatures.includes('team') || required.length > 0 && !required.some(id => site.policy.workspaceModules.includes(id))) throw new TeamError('此协作功能尚未开放', 403);

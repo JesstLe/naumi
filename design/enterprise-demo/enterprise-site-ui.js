@@ -46,6 +46,11 @@ if (document.documentElement.dataset.workspaceMode === 'enterprise') {
   return result;
  };
  document.title = site.brand + ' · 协作交付';
- async function refreshSitePolicy(){try{const response=await fetch('/api/site-profile',{cache:'no-store'});if(!response.ok)return;const data=await response.json();if(data.mode!=='enterprise'||data.policy.revision<=site.revision)return;Object.assign(site,{brand:data.policy.brand,revision:data.policy.revision,workspaceModules:data.policy.enabledFeatures.includes('team')?data.policy.workspaceModules:[]});document.title=site.brand+' · 协作交付';if(!$('#overlay')?.children.length)shell();}catch{}}
- window.addEventListener('focus',refreshSitePolicy);setInterval(refreshSitePolicy,60000);
+ let policyInFlight=false,policyReadAt=-Infinity;
+ async function refreshSitePolicy(){
+  if(document.visibilityState!=='visible'||policyInFlight||performance.now()-policyReadAt<1000)return;
+  policyInFlight=true;policyReadAt=performance.now();
+  try{const response=await fetch('/api/site-profile',{cache:'no-store'});if(!response.ok)return;const data=await response.json();if(data.mode!=='enterprise'||data.policy.revision<=site.revision)return;Object.assign(site,{brand:data.policy.brand,revision:data.policy.revision,workspaceModules:data.policy.enabledFeatures.includes('team')?data.policy.workspaceModules:[]});document.title=site.brand+' · 协作交付';if(!$('#overlay')?.children.length)shell();}catch{}finally{policyInFlight=false;}
+ }
+ window.addEventListener('focus',refreshSitePolicy);document.addEventListener('visibilitychange',refreshSitePolicy);setInterval(refreshSitePolicy,60000);
 }

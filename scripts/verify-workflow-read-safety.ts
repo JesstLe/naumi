@@ -18,6 +18,7 @@ async function main(){
  const {readWorkflowJson,WORKFLOW_JSON_MAX_BYTES}=await import('../src/lib/enterprise/workflow-read');
  const {CreationAdapter}=await import('../src/lib/enterprise/integration/creation-adapter');
  const {deploymentPolicy}=await import('../src/lib/enterprise/integration/policy');
+ const {workflowDiscovery}=await import('../src/lib/enterprise/workflow-identity');
  await ensureTenantSchema();await ensureBiSchema();
  const pool=getPool(),id=randomUUID(),team=randomUUID(),email=`owner-${id}@fixture.test`,employee=`member-${id}@fixture.test`;
  for(const name of [email,employee]){
@@ -55,6 +56,17 @@ async function main(){
  const req=(method='GET',probe='',signal?:AbortSignal)=>new Request(`http://fixture.invalid/api/enterprise/workflow/worklogs?enterpriseId=${id}&teamId=${team}${probe?'&probe='+probe:''}`,{method,signal,headers:{cookie:'nv_user='+signUserSession(email,Date.now()),origin:'http://fixture.invalid','content-type':'application/json'},...(method==='POST'?{body:'{}'}:{})});
  const until=<T,>(p:Promise<T>)=>Promise.race([p,delay(2500,undefined,{ref:false}).then(()=>{throw Error('Fixture did not finish in time');})]);
  try{
+  const discovery=(viewer:string,extra:Record<string,string>={})=>new Request('http://fixture.invalid/api/enterprise/workflow?action=discovery',{headers:{cookie:'nv_user='+signUserSession(viewer,Date.now()),...extra}});
+  const sponsor=await pool.connect();
+  try{
+   await sponsor.query('BEGIN');await sponsor.query('SELECT email FROM app_users WHERE email=$1 FOR UPDATE',[email]);
+   assert.deepEqual((await until(workflowDiscovery(discovery(employee)))).enterprises.map(t=>t.id),[id]);
+  }finally{await sponsor.query('ROLLBACK');sponsor.release();}
+  assert.deepEqual((await workflowDiscovery(discovery(email))).enterprises.map(t=>t.id),[id]);
+  await assert.rejects(workflowDiscovery(discovery(employee,{'x-workflow-viewer':email})),{code:'ACCOUNT_CHANGED',status:409});
+  await pool.query('UPDATE app_team_access_grants SET enabled=false WHERE email=$1',[email]);
+  assert.deepEqual((await workflowDiscovery(discovery(employee))).enterprises,[]);
+  await pool.query('UPDATE app_team_access_grants SET enabled=true WHERE email=$1',[email]);
   assert.deepEqual(await(await GET(req())).json(),{rows:[{name:'原始内容'}]});
   for(const route of ['appeals','capacity','catalog','demand-batches','forms','guidelines','projects','publication-preflight','publications','reviews','sla'] as const){
    const {GET:read}=await import(`../src/app/api/enterprise/workflow/${route}/route`);
@@ -106,7 +118,22 @@ async function main(){
    await wallet.query('UPDATE app_team_access_grants SET enabled=false WHERE email=$1',[email]);
   }finally{await blocker.query('ROLLBACK');await wallet.query('ROLLBACK');blocker.release();wallet.release();}
   await assert.rejects(report!,{status:403});
-  console.log('WORKFLOW_READ_SAFETY_PASS route_reads=12 binary_stream=1 socket_aborted=1 bounded_json=1 submitted_write_preserved=1 self_scope=1 billing_nonblocking=1 revocation=403');
+  await pool.query('UPDATE app_team_access_grants SET enabled=true WHERE email=$1',[email]);
+  Object.assign(process.env,{NAUMI_ENTERPRISE_DEPLOYMENT_MODE:'dedicated',NAUMI_ENTERPRISE_ALLOWED_IDS:id});
+  const {ensureSitePolicySchema,applySitePolicyTx}=await import('../src/lib/site-control/store');await ensureSitePolicySchema();
+  const siteTx=await pool.connect();
+  try{
+   const policy={enterpriseId:id,sourceInstanceId:'workflow-read-fixture',brand:'Dedicated fixture',enabledFeatures:['team'],workspaceModules:['notifications']};
+   await siteTx.query('BEGIN');await applySitePolicyTx(siteTx,{id:randomUUID(),actor:'fixture',expectedRevision:0,policy});await siteTx.query('COMMIT');
+   const dedicated=await workflowDiscovery(discovery(employee));
+   assert.equal(dedicated.mode,'dedicated');assert.deepEqual(dedicated.enterprises.map(t=>t.id),[id]);
+   await pool.query("UPDATE app_users SET role='admin' WHERE email=$1",[employee]);
+   await pool.query("UPDATE app_enterprise_members SET membership_status='suspended' WHERE enterprise_id=$1 AND email=$2",[id,employee]);
+   assert.deepEqual((await workflowDiscovery(discovery(employee))).enterprises.map(t=>t.id),[id]);
+   await siteTx.query('BEGIN');await applySitePolicyTx(siteTx,{id:randomUUID(),actor:'fixture',expectedRevision:1,policy:{...policy,enabledFeatures:[]}});await siteTx.query('COMMIT');
+   await assert.rejects(workflowDiscovery(discovery(employee)),{status:403});
+  }finally{await siteTx.query('ROLLBACK');siteTx.release();}
+  console.log('WORKFLOW_READ_SAFETY_PASS route_reads=12 binary_stream=1 socket_aborted=1 bounded_json=1 submitted_write_preserved=1 self_scope=1 billing_nonblocking=1 revocation=403 discovery_nonblocking=1 dedicated_site_policy=1');
  }finally{srv.closeAllConnections();await new Promise<void>(resolve=>srv.close(()=>resolve()));await pool.end();}
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});
