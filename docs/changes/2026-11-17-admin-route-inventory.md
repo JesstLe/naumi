@@ -77,10 +77,10 @@
 | `GET /api/enterprise/workflow/capacity` | `src/app/api/enterprise/workflow/capacity/route.ts` | 待核查 |
 | `GET /api/enterprise/workflow/catalog` | `src/app/api/enterprise/workflow/catalog/route.ts` | 部分：隔离代理身份/读契约，直连无目录锁、撤权和分页；真实网关待核 |
 | `GET /api/enterprise/workflow/corrections` | `src/app/api/enterprise/workflow/corrections/route.ts` | 待核查 |
-| `GET /api/enterprise/workflow/demand-batches` | `src/app/api/enterprise/workflow/demand-batches/route.ts` | 待核查 |
+| `GET /api/enterprise/workflow/demand-batches` | `src/app/api/enterprise/workflow/demand-batches/route.ts` | 部分：代理身份/有界读，直连列表分页、回执批量读取、范围复核和断开已回归，真实网关待核 |
 | `GET /api/enterprise/workflow/demand-files` | `src/app/api/enterprise/workflow/demand-files/route.ts` | 待核查 |
 | `GET /api/enterprise/workflow/files` | `src/app/api/enterprise/workflow/files/route.ts` | 待核查 |
-| `GET /api/enterprise/workflow/forms` | `src/app/api/enterprise/workflow/forms/route.ts` | 待核查 |
+| `GET /api/enterprise/workflow/forms` | `src/app/api/enterprise/workflow/forms/route.ts` | 部分：代理身份/有界读、直连只读快照、表单可见性和列表查询计数；真实网关待核 |
 | `GET /api/enterprise/workflow/guidelines` | `src/app/api/enterprise/workflow/guidelines/route.ts` | 待核查 |
 | `GET /api/enterprise/workflow/imports` | `src/app/api/enterprise/workflow/imports/route.ts` | 部分：代码确认 source/worksheet 流式代理及客户端断开传递；工作流直连两份 64 MiB 已核查，代理实流复查保留 |
 | `GET /api/enterprise/workflow/notifications` | `src/app/api/enterprise/workflow/notifications/route.ts` | 部分：JSON 上限、取消和浏览器角标，`verify-workflow-read-safety.ts`、`verify-workflow-polling.mjs` |
@@ -154,7 +154,7 @@
 | `POST /api/enterprise/workflow/capacity` | `src/app/api/enterprise/workflow/capacity/route.ts` | 待核查 |
 | `POST /api/enterprise/workflow/catalog` | `src/app/api/enterprise/workflow/catalog/route.ts` | 部分：隔离 HTTP 预览断开取消、已提交命令继续转发；真实网关待核 |
 | `POST /api/enterprise/workflow/corrections` | `src/app/api/enterprise/workflow/corrections/route.ts` | 待核查 |
-| `POST /api/enterprise/workflow/demand-batches` | `src/app/api/enterprise/workflow/demand-batches/route.ts` | 待核查 |
+| `POST /api/enterprise/workflow/demand-batches` | `src/app/api/enterprise/workflow/demand-batches/route.ts` | 部分：隔离 HTTP 预览取消、已转发确认继续；直连预览无业务锁、确认原子与重放回归，真实网关待核 |
 | `POST /api/enterprise/workflow/demand-files` | `src/app/api/enterprise/workflow/demand-files/route.ts` | 待核查 |
 | `POST /api/enterprise/workflow/files` | `src/app/api/enterprise/workflow/files/route.ts` | 待核查 |
 | `POST /api/enterprise/workflow/forms` | `src/app/api/enterprise/workflow/forms/route.ts` | 待核查 |
@@ -202,12 +202,12 @@
 | `工作流 GET /v1/delivery/library` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 GET /v1/delivery/preview` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 GET /v1/delivery/scan-history` | `services/enterprise-workflow/src/server.ts` | 待核查 |
-| `工作流 GET /v1/demand-batches` | `services/enterprise-workflow/src/server.ts` | 待复现：静态确认详情逐条读取订单，列表深页与断开释放待核 |
+| `工作流 GET /v1/demand-batches` | `services/enterprise-workflow/src/server.ts` | 部分：回执 20 项 2 次订单查询含范围复核，途中失去授权拒绝、不可见项遮蔽、断开和深空页回归；真实高峰待核 |
 | `工作流 GET /v1/demand-files/assets` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 GET /v1/demand-files/download` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 GET /v1/demand-files/preview` | `services/enterprise-workflow/src/server.ts` | 待核查 |
-| `工作流 GET /v1/demand-files/scan-history` | `services/enterprise-workflow/src/server.ts` | 待核查 |
-| `工作流 GET /v1/demand-forms` | `services/enterprise-workflow/src/server.ts` | 待核查 |
+| `工作流 GET /v1/demand-files/scan-history` | `services/enterprise-workflow/src/server.ts` | 待复现：静态确认两次读取附件与持订单行锁；待查询计数与并发核验 |
+| `工作流 GET /v1/demand-forms` | `services/enterprise-workflow/src/server.ts` | 部分：四种读走快照，历史无团队锁，禁用复核、30 项 1 次查修订、草稿标题权限通过；深历史高峰待核 |
 | `工作流 GET /v1/facts` | `services/enterprise-workflow/src/server.ts` | 部分：团队及参与人范围、撤权，`performance.test.ts`、`read-transaction.test.ts` |
 | `工作流 GET /v1/guidelines` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 GET /v1/handover-candidates` | `services/enterprise-workflow/src/server.ts` | 待核查 |
@@ -261,11 +261,11 @@
 | `工作流 POST /v1/delivery-reviews` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 POST /v1/delivery/scan` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 POST /v1/delivery/upload` | `services/enterprise-workflow/src/server.ts` | 待核查 |
-| `工作流 POST /v1/demand-batches/apply` | `services/enterprise-workflow/src/server.ts` | 待核查 |
-| `工作流 POST /v1/demand-batches/preview` | `services/enterprise-workflow/src/server.ts` | 待复现：静态确认预览持订单锁，可同时持表单与目录锁；待隔离锁竞争对照 |
+| `工作流 POST /v1/demand-batches/apply` | `services/enterprise-workflow/src/server.ts` | 部分：原哈希重算、回滚、竞争单胜者、回执重放和权限回归；真实负载待核 |
+| `工作流 POST /v1/demand-batches/preview` | `services/enterprise-workflow/src/server.ts` | 部分：订单、表单和目录无写锁，旧哈希一致，授权及冻结版本复核；最大复制批次资源待量化 |
 | `工作流 POST /v1/demand-files/scan` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 POST /v1/demand-files/upload` | `services/enterprise-workflow/src/server.ts` | 待核查 |
-| `工作流 POST /v1/demand-forms` | `services/enterprise-workflow/src/server.ts` | 待核查 |
+| `工作流 POST /v1/demand-forms` | `services/enterprise-workflow/src/server.ts` | 部分：保留原锁与事务，隔离独立发布、回滚、并发 CAS 和重放通过；写入峰值待核 |
 | `工作流 POST /v1/guidelines` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 POST /v1/imports/resolve` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 POST /v1/imports/worksheet-command` | `services/enterprise-workflow/src/server.ts` | 部分：工作表命令保留版本、幂等、并发和回滚，`source-worksheet.ts` |
