@@ -49,7 +49,9 @@ export {readScope} from './read-scope';
 type ActorLookup = (tx: PoolClient, principal: Principal) => Promise<Actor | null>;
 export type ResolveActor = ActorLookup & {readSnapshot?: ActorLookup};
 // Must verify tenant ownership and usability of each immutable deliverable revision.
-export type ValidateAssets = (tx: PoolClient, actor: Actor, assetIds: string[], context?:{orderId:string;taskId:string}) => Promise<boolean>;
+type AssetValidation = (tx: PoolClient, actor: Actor, assetIds: string[], context?:{orderId:string;taskId:string}) => Promise<boolean>;
+/** `metadata` is for callers that verify the exact bytes outside their transaction. */
+export type ValidateAssets = AssetValidation & {metadata?: AssetValidation};
 function stable(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`;
   if (value && typeof value === 'object') return `{${Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([k,v]) => `${JSON.stringify(k)}:${stable(v)}`).join(',')}}`;

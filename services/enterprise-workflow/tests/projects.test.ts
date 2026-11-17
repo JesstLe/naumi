@@ -5,6 +5,7 @@ import {ProjectStore} from '../src/project-store';
 import {WorkflowStore} from '../src/store';
 import {resolveDatabaseActor} from '../src/identity';
 import type {Action,WorkOrder} from '../src/contracts';
+import {whileReadWaits} from './read-transaction.test';
 export async function projectChecks(pool:Pool){
  const enterpriseId=randomUUID(),teamId=randomUUID(),second=randomUUID(),foreign=randomUUID(),foreignTeam=randomUUID();
  await pool.query('INSERT INTO enterprise_workflow.teams(enterprise_id,team_id)VALUES($1,$2),($1,$3),($4,$5)',[enterpriseId,teamId,second,foreign,foreignTeam]);
@@ -35,6 +36,17 @@ export async function projectChecks(pool:Pool){
  const ca={...createDemand,confirmed:true,previewHash:cp.previewHash};await store.execute(p(),ca);assert.equal((await store.execute(p(),ca)).replayed,true);assert.equal((await workflow.get(p(),made)).status,'draft');assert.equal((await pool.query('SELECT 1 FROM enterprise_workflow.events WHERE enterprise_id=$1 AND order_id=$2',[enterpriseId,made])).rowCount,1);await apply(command(another,3,{type:'unlink',orderId:made}));assert.equal((await workflow.get(p(),made)).status,'draft');
  for(let i=0;i<31;i++)await apply(command(another,4+i,{type:'edit',title:'history '+i,brief:'preserved',ownerSubject:'lead'}));const h=await store.read(p(),{action:'history',id:another,page:2})as any;assert.equal(h.total,35);assert.equal(h.events.length,5);
  for(let i=0;i<29;i++)await apply(command(randomUUID(),0,{type:'create',code:'PAGE-'+i,title:'pagination',brief:'fixture'}));const page=await store.read(p(),{action:'list',page:2})as any;assert.equal(page.total,31);assert.equal(page.items.length,1);assert.equal((await store.read(p(),{action:'list',page:99})as any).total,31);
+ // Give all three batches linked metrics without changing the production write path.
+ await pool.query(`UPDATE enterprise_workflow.projects p SET document=jsonb_set(p.document,'{links}',s.document->'links')
+  FROM enterprise_workflow.projects s WHERE p.enterprise_id=$1 AND s.enterprise_id=p.enterprise_id AND s.id=$2 AND p.code LIKE 'PAGE-%'`,[enterpriseId,another]);
+ let selects=0;const counted={connect:async()=>{const tx=await pool.connect();return {query:(sql:string,values?:unknown[])=>{if(/^SELECT\b/.test(sql))selects++;return tx.query(sql,values);},release:tx.release.bind(tx)};}} as unknown as Pool;
+ const first=await new ProjectStore(counted,resolveDatabaseActor).read(p(),{action:'list'}) as any;
+ assert.equal(first.items.length,30);assert.equal(selects,14);assert.deepEqual(first.items.find((x:any)=>x.id===another).summary,(await detail(another)).summary);
+ const revoke=await whileReadWaits(pool,'orders',()=>store.read(p(),{action:'list'}),async()=>{
+  const tx=await pool.connect();try{await tx.query('BEGIN');await tx.query("SET LOCAL lock_timeout='400ms'");await tx.query("UPDATE enterprise_workflow.team_members SET enabled=false WHERE enterprise_id=$1 AND team_id=$2 AND subject='lead'",[enterpriseId,teamId]);await tx.query('COMMIT');}finally{try{await tx.query('ROLLBACK');}finally{tx.release();}}
+ });
+ assert.equal(revoke.status,'rejected');assert.match(String(revoke.reason),/MEMBERSHIP_REQUIRED/);await pool.query("UPDATE enterprise_workflow.team_members SET enabled=true WHERE enterprise_id=$1 AND team_id=$2 AND subject='lead'",[enterpriseId,teamId]);
+ console.log('PROJECT_BATCH_READ_PASS: page30=1 total_selects='+selects+' summary_unchanged=1 fresh_revocation_denied=1');
  const raceId=randomUUID(),race=command(raceId,0,{type:'create',code:'RACE',title:'race',brief:'unique code'}),rp=await store.preview(p(),race),race2={...race,commandId:randomUUID()},rp2=await store.preview(p(),race2),out=await Promise.allSettled([[race,rp],[race2,rp2]].map(([c,r]:any)=>store.execute(p(),{...c,confirmed:true,previewHash:r.previewHash})));assert.equal(out.filter(x=>x.status==='fulfilled').length,1);
  await pool.query("UPDATE enterprise_workflow.team_members SET enabled=false WHERE enterprise_id=$1 AND team_id=$2 AND subject='lead'",[enterpriseId,teamId]);await assert.rejects(store.execute(p(),create),/MEMBERSHIP_REQUIRED/);await pool.query("UPDATE enterprise_workflow.team_members SET enabled=true WHERE enterprise_id=$1 AND team_id=$2 AND subject='lead'",[enterpriseId,teamId]);await assert.rejects(new ProjectStore(pool,resolveDatabaseActor,false).read(p(),{action:'list'}),/PROJECTS_NOT_ENABLED/);
  console.log('PROJECT_SERVICE_PASS: preview_no_write=1 native_draft_atomic=1 draft_event_once=1 independent_approval=1 bidirectional_consent=1 foreign_details_hidden=1 revoked_aggregate_masked=1 archive_masked=1 points2of10=1 shared_reference_no_fact=1 milestone_dag=1 deadline_no_task_write=1 stale_order_preview=1 critical_readiness=1 immutable_archive_late_change=1 explicit_reopen=1 unlink_keeps_order=1 audit_rollback=1 replay=1 race1=1 history35=1 pagination31=1 schema_scope=1 revoked_replay=1 default_off=1');

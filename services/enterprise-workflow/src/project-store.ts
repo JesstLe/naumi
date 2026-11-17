@@ -1,36 +1,59 @@
 import type {Pool,PoolClient} from 'pg';
 import type {Actor,Principal,WorkOrder,Command} from './contracts';
 import type {ResolveActor} from './store';
+import {readWorkflowSnapshot} from './read-transaction';
 import {canRead,evolve} from './domain';
 import {ensure,digest} from './performance-domain';
 import {projectInput,projectApply,projectQuery,type ProjectInput,type Project,type ProjectNumbers,type ProjectSummary,type Milestone} from './project-contracts';
 const manager=(a:Actor)=>a.permissions.includes('manage');
 const request=(a:Actor)=>a.permissions.some(p=>['manage','dispatch','request'].includes(p));
 const empty=():ProjectNumbers=>({orders:0,unavailable:0,committedPoints:0,acceptedPoints:0,blockedTasks:0,unplannedTasks:0,unfinishedOrders:0,ratio:null,ready:false});
+type OrderMetrics=Pick<WorkOrder,'id'|'requestTeamId'|'teamId'|'version'|'status'>&{tasks:Pick<WorkOrder['tasks'][number],'id'|'status'|'points'|'dueAt'|'planStart'|'planEnd'|'dependencyIds'>[]};
+type ProjectInputs={teamIds:string[];orderIds:string[];enabled:Set<string>;orders:Map<string,OrderMetrics>};
+type ProjectInputEvidence={teamIds:Set<string>;orderIds:Set<string>;enabled:Set<string>;versions:Map<string,number>};
+const emptyEvidence=():ProjectInputEvidence=>({teamIds:new Set(),orderIds:new Set(),enabled:new Set(),versions:new Map()});
+function observe(evidence:ProjectInputEvidence,inputs:ProjectInputs){
+ for(const id of inputs.teamIds)evidence.teamIds.add(id);for(const id of inputs.orderIds)evidence.orderIds.add(id);
+ for(const id of inputs.enabled)evidence.enabled.add(id);for(const [id,order] of inputs.orders)evidence.versions.set(id,order.version);
+ return evidence;
+}
 export function validateMilestones(ms:Milestone[]){const ids=new Set(ms.map(m=>m.id));ensure(ids.size===ms.length,'PROJECT_MILESTONE_DUPLICATE',400);const done=new Set<string>(),active=new Set<string>();function visit(id:string){if(done.has(id))return;ensure(!active.has(id),'PROJECT_DEPENDENCY_CYCLE',400);active.add(id);const m=ms.find(m=>m.id===id)!;ensure(new Set(m.dependsOn).size===m.dependsOn.length&&m.dependsOn.every(x=>ids.has(x)&&x!==id),'PROJECT_DEPENDENCY_INVALID',400);for(const x of m.dependsOn)visit(x);active.delete(id);done.add(id);}for(const id of ids)visit(id);}
 export class ProjectStore{
  constructor(private pool:Pool,private resolveActor:ResolveActor,readonly enabled=true,private now=()=>new Date()){}
- private async tx<T>(p:Principal,fn:(tx:PoolClient,a:Actor)=>Promise<T>,read=false){const tx=await this.pool.connect();try{await tx.query(read?'BEGIN ISOLATION LEVEL REPEATABLE READ':'BEGIN');await tx.query("SET LOCAL lock_timeout='3s';SET LOCAL statement_timeout='20s'");const a=await this.resolveActor(tx,p);ensure(a&&a.teamId&&a.enterpriseId===p.enterpriseId&&a.subject===p.subject&&a.teamId===p.teamId,'MEMBERSHIP_REQUIRED',403);ensure(this.enabled,'PROJECTS_NOT_ENABLED',503);ensure((await tx.query('SELECT 1 FROM enterprise_workflow.schema_version WHERE version=28')).rowCount,'PROJECTS_MIGRATION_REQUIRED',503);const r=await fn(tx,a);await tx.query('COMMIT');return r;}catch(e){await tx.query('ROLLBACK');throw e;}finally{tx.release();}}
+ private async ready(tx:PoolClient,a:Actor){ensure(a.teamId,'MEMBERSHIP_REQUIRED',403);ensure(this.enabled,'PROJECTS_NOT_ENABLED',503);ensure((await tx.query('SELECT 1 FROM enterprise_workflow.schema_version WHERE version=28')).rowCount,'PROJECTS_MIGRATION_REQUIRED',503);}
+ private async tx<T>(p:Principal,fn:(tx:PoolClient,a:Actor)=>Promise<T>){const tx=await this.pool.connect();try{await tx.query('BEGIN');await tx.query("SET LOCAL lock_timeout='3s';SET LOCAL statement_timeout='20s'");const a=await this.resolveActor(tx,p);ensure(a&&a.enterpriseId===p.enterpriseId&&a.subject===p.subject&&a.teamId===p.teamId,'MEMBERSHIP_REQUIRED',403);await this.ready(tx,a);const r=await fn(tx,a);await tx.query('COMMIT');return r;}catch(e){await tx.query('ROLLBACK');throw e;}finally{tx.release();}}
  private async row(tx:PoolClient,a:Actor,id:string){return(await tx.query('SELECT document FROM enterprise_workflow.projects WHERE enterprise_id=$1 AND id=$2',[a.enterpriseId,id])).rows[0]?.document as Project|undefined;}
  private visible(a:Actor,p:Project){return p.enterpriseId===a.enterpriseId&&(p.teamId===a.teamId||p.grants.some(g=>g.teamId===a.teamId&&g.state==='approved'));}
  private owner(a:Actor,p:Project){return p.teamId===a.teamId&&manager(a);}
  private authorize(a:Actor,p:Project|undefined,c:ProjectInput){if(c.action.type==='create'){ensure(manager(a),'PROJECT_MANAGER_REQUIRED',403);if(p)ensure(this.owner(a,p),'PROJECT_NOT_FOUND',404);return;}ensure(p,'PROJECT_NOT_FOUND',404);if(c.action.type==='consent'){ensure(manager(a)&&p.teamId!==a.teamId&&p.grants.some(g=>g.teamId===a.teamId),'PROJECT_INVITATION_NOT_FOUND',404);return;}ensure(this.visible(a,p),'PROJECT_NOT_FOUND',404);if(['link','unlink','create-demand'].includes(c.action.type))ensure(request(a),'PROJECT_LINK_FORBIDDEN',403);else if(c.action.type==='revoke')ensure(manager(a)&&(p.teamId===a.teamId||c.action.teamId===a.teamId),'PROJECT_MANAGER_REQUIRED',403);else ensure(this.owner(a,p),'PROJECT_OWNER_REQUIRED',403);}
- private async data(tx:PoolClient,a:Actor,p:Project,virtual?:WorkOrder){
-  const teams=[...new Set([p.teamId,...p.grants.map(g=>g.teamId),...p.links.map(l=>l.teamId)])],enabled=new Set<string>((await tx.query('SELECT team_id FROM enterprise_workflow.teams WHERE enterprise_id=$1 AND team_id=ANY($2::uuid[]) AND enabled FOR SHARE',[a.enterpriseId,teams])).rows.map(r=>r.team_id));
+ private async enabledTeams(tx:PoolClient,a:Actor,ids:string[],lock:boolean){return new Set<string>((await tx.query(`SELECT team_id FROM enterprise_workflow.teams WHERE enterprise_id=$1 AND team_id=ANY($2::uuid[]) AND enabled${lock?' FOR SHARE':''}`,[a.enterpriseId,ids])).rows.map(r=>r.team_id));}
+ private async inputs(tx:PoolClient,a:Actor,projects:Project[],lock:boolean,summaryOnly=false):Promise<ProjectInputs>{
+  const teamIds=[...new Set(projects.flatMap(p=>[p.teamId,...p.grants.map(g=>g.teamId),...p.links.map(l=>l.teamId)]))],orderIds=[...new Set(projects.flatMap(p=>p.links.map(l=>l.orderId)))];
+  const enabled=teamIds.length?await this.enabledTeams(tx,a,teamIds,lock):new Set<string>();
+  // Preserve omitted task keys and task order, which are inputs to the existing data hash.
+  const doc=summaryOnly?`jsonb_build_object('id',id,'teamId',document->'teamId','requestTeamId',document->'requestTeamId','version',version,'status',document->'status','tasks',
+   COALESCE((SELECT jsonb_agg((SELECT jsonb_object_agg(key,value) FROM jsonb_each(task) WHERE key IN ('id','status','points','dueAt','planStart','planEnd','dependencyIds')) ORDER BY pos)
+    FROM jsonb_array_elements(document->'tasks') WITH ORDINALITY t(task,pos)),'[]'::jsonb)) AS document`:'document';
+  const orders=new Map<string,OrderMetrics>(orderIds.length?(await tx.query<{document:OrderMetrics}>(`SELECT ${doc} FROM enterprise_workflow.orders WHERE enterprise_id=$1 AND id=ANY($2::uuid[])`,[a.enterpriseId,orderIds])).rows.map(r=>[r.document.id,r.document]):[]);
+  return {teamIds,orderIds,enabled,orders};
+ }
+ private async data(tx:PoolClient,a:Actor,p:Project,virtual?:WorkOrder){return this.compute(a,p,await this.inputs(tx,a,[p],true),virtual);}
+ private compute(a:Actor,p:Project,{enabled,orders}:ProjectInputs,virtual?:WorkOrder,includeDetails=true){
   const allowed=(team:string)=>enabled.has(team)&&(team===p.teamId||p.grants.some(g=>g.teamId===team&&g.state==='approved'));
-  const orders=new Map<string,WorkOrder>((await tx.query('SELECT document FROM enterprise_workflow.orders WHERE enterprise_id=$1 AND id=ANY($2::uuid[])',[a.enterpriseId,p.links.map(l=>l.orderId)])).rows.map(r=>[r.document.id,r.document]));if(virtual)orders.set(virtual.id,virtual);ensure([...orders.values()].reduce((n,o)=>n+o.tasks.length,0)<=5000,'PROJECT_TASK_LIMIT',422);
-  const good=(l:Project['links'][number])=>{const o=orders.get(l.orderId);return allowed(l.teamId)&&o&&(o.requestTeamId??o.teamId)===l.teamId?o:null;};
+  const order=(id:string)=>virtual?.id===id?virtual:orders.get(id);
+  ensure([...new Set(p.links.map(l=>l.orderId))].reduce((n,id)=>n+(order(id)?.tasks.length??0),0)<=5000,'PROJECT_TASK_LIMIT',422);
+  const good=(l:Project['links'][number])=>{const o=order(l.orderId);return allowed(l.teamId)&&o&&(o.requestTeamId??o.teamId)===l.teamId?o:null;};
   const count=(links:Project['links'])=>{const n=empty();n.orders=links.length;for(const l of links){const o=good(l);if(!o){n.unavailable++;n.unfinishedOrders++;continue;}if(o.status!=='completed'&&!(o.status==='archived'&&o.tasks.length&&o.tasks.every(t=>t.status==='accepted')))n.unfinishedOrders++;for(const t of o.tasks){const accepted=t.status==='accepted';if(['active','completed'].includes(o.status)||accepted)n.committedPoints+=t.points;if(accepted)n.acceptedPoints+=t.points;if(o.status==='active'&&!accepted){if(t.status==='blocked')n.blockedTasks++;if(!t.planStart||!t.planEnd)n.unplannedTasks++;}}}n.ratio=n.committedPoints?Math.round(n.acceptedPoints/n.committedPoints*10000)/100:null;n.ready=links.length>0&&n.unfinishedOrders===0&&n.unavailable===0;return n;};
   const stages=p.milestones.map(m=>({...count(p.links.filter(l=>l.milestoneId===m.id)),id:m.id,late:false,dependencyBlocked:false}));
   for(const m of p.milestones){const s=stages.find(s=>s.id===m.id)!;s.dependencyBlocked=m.dependsOn.some(id=>!stages.find(s=>s.id===id)?.ready);s.late=Date.parse(m.targetAt)<+this.now()&&!s.ready;}
   const total=count(p.links),unassigned=p.links.filter(l=>!l.milestoneId).length;
   const dataHash=digest({milestones:p.milestones,links:p.links.map(l=>({orderId:l.orderId,teamId:l.teamId,milestoneId:l.milestoneId,allowed:allowed(l.teamId),version:good(l)?.version??null,status:good(l)?.status??null,tasks:good(l)?.tasks.map(t=>({id:t.id,status:t.status,points:t.points,dueAt:t.dueAt,planStart:t.planStart,planEnd:t.planEnd,dependencyIds:t.dependencyIds}))??null}))});
   const summary:ProjectSummary={...total,unassigned,milestones:stages,ready:total.ready&&!unassigned&&p.milestones.every(m=>{const s=stages.find(s=>s.id===m.id)!;return (!m.critical||s.ready)&&!s.dependencyBlocked;}),dataHash};
-  const links=p.links.filter(l=>{const o=good(l);return o&&canRead(a,o);}).map(l=>{const o=orders.get(l.orderId)!;return {...l,order:{id:o.id,title:o.title,status:o.status,version:o.version,requester:o.requester,brand:o.catalog?.brand.document.name??null,shop:o.catalog?.shop.document.name??null,tasks:o.tasks.map(t=>({id:t.id,title:t.title,status:t.status,points:t.points,dueAt:t.dueAt,planStart:t.planStart??null,planEnd:t.planEnd??null,dependencyIds:t.dependencyIds}))}};});
+  const links=includeDetails?p.links.flatMap(l=>{const o=good(l) as WorkOrder|null;if(!o||!canRead(a,o))return [];return [{...l,order:{id:o.id,title:o.title,status:o.status,version:o.version,requester:o.requester,brand:o.catalog?.brand.document.name??null,shop:o.catalog?.shop.document.name??null,tasks:o.tasks.map(t=>({id:t.id,title:t.title,status:t.status,points:t.points,dueAt:t.dueAt,planStart:t.planStart??null,planEnd:t.planEnd??null,dependencyIds:t.dependencyIds}))}}];}):[];
   return {summary,links,hiddenLinks:p.links.length-links.length};
  }
  private metadata(p:Project){const {links,archiveSnapshot,...meta}=p;return meta;}
- private async projection(tx:PoolClient,a:Actor,p:Project){ensure(this.visible(a,p),'PROJECT_NOT_FOUND',404);const d=await this.data(tx,a,p);const archive=p.archiveSnapshot;return {project:{...this.metadata(p),grants:p.grants.filter(g=>this.owner(a,p)||g.teamId===a.teamId)},...d,archiveSnapshot:archive&&d.summary.unavailable===0?{...archive,dataHash:undefined}:null,archiveMasked:!!archive&&d.summary.unavailable>0,liveChanged:archive?archive.dataHash!==d.summary.dataHash:false,canManage:this.owner(a,p),canLink:request(a),canCreateDemand:a.permissions.includes('request'),canApprove:this.owner(a,p)&&a.permissions.includes('review')&&a.subject!==p.createdBy};}
+ private projection(a:Actor,p:Project,d:ReturnType<ProjectStore['compute']>){ensure(this.visible(a,p),'PROJECT_NOT_FOUND',404);const archive=p.archiveSnapshot;return {project:{...this.metadata(p),grants:p.grants.filter(g=>this.owner(a,p)||g.teamId===a.teamId)},...d,archiveSnapshot:archive&&d.summary.unavailable===0?{...archive,dataHash:undefined}:null,archiveMasked:!!archive&&d.summary.unavailable>0,liveChanged:archive?archive.dataHash!==d.summary.dataHash:false,canManage:this.owner(a,p),canLink:request(a),canCreateDemand:a.permissions.includes('request'),canApprove:this.owner(a,p)&&a.permissions.includes('review')&&a.subject!==p.createdBy};}
  private async lock(tx:PoolClient,a:Actor,c:ProjectInput){await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`project:${a.enterpriseId}:${c.id}`]);const old=await this.row(tx,a,c.id);this.authorize(a,old,c);const ids=[...new Set([...(old?.links.map(l=>l.orderId)??[]),...('orderId'in c.action?[c.action.orderId]:[])])].sort();for(const id of ids)await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`order:${a.enterpriseId}:${id}`]);return old;}
  private async prepare(tx:PoolClient,a:Actor,c:ProjectInput,old:Project|undefined,at:string){
   ensure((old?.version??0)===c.expectedVersion,'PROJECT_VERSION_CONFLICT');const action=c.action;let p:Project;let draft:ReturnType<typeof evolve>|undefined;
@@ -67,15 +90,31 @@ export class ProjectStore{
   await tx.query('INSERT INTO enterprise_workflow.projects(enterprise_id,id,team_id,code,version,document)VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(enterprise_id,id)DO UPDATE SET version=EXCLUDED.version,document=EXCLUDED.document,updated_at=now()',[a.enterpriseId,n.id,n.teamId,n.code,n.version,n]);
   await tx.query('INSERT INTO enterprise_workflow.project_revisions(enterprise_id,project_id,revision,command_id,actor,action,reason,document)VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[a.enterpriseId,n.id,n.version,c.commandId,a.subject,c.action.type,c.reason,n]);return {id:n.id,version:n.version,appliedVersion:n.version,replayed:false};
  });}
- async read(p:Principal,raw:unknown){const q=projectQuery.parse(raw);return this.tx(p,async(tx,a)=>{
+ async read(p:Principal,raw:unknown){const q=projectQuery.parse(raw);return (await readWorkflowSnapshot(this.pool,this.resolveActor,p,async(tx,a,snapshot)=>{
+  await this.ready(tx,a);
   if(q.action==='list'||q.action==='invitations'){
    const invited=q.action==='invitations';if(invited)ensure(manager(a),'PROJECT_MANAGER_REQUIRED',403);
    const where=invited?"enterprise_id=$1 AND document->'grants' @> $2::jsonb":"enterprise_id=$1 AND (team_id=$3 OR document->'grants' @> $2::jsonb) AND ($4='' OR strpos(lower(document->>'title'),lower($4))>0 OR strpos(lower(code),lower($4))>0)",args=invited?[a.enterpriseId,JSON.stringify([{teamId:a.teamId,state:'invited'}])]:[a.enterpriseId,JSON.stringify([{teamId:a.teamId,state:'approved'}]),a.teamId,q.query];
-   const total=Number((await tx.query('SELECT count(*) n FROM enterprise_workflow.projects WHERE '+where,args)).rows[0].n),rows=(await tx.query('SELECT document FROM enterprise_workflow.projects WHERE '+where+` ORDER BY updated_at DESC,id DESC LIMIT 30 OFFSET $${args.length+1}`,[...args,(q.page-1)*30])).rows;const items=[];for(const r of rows){const project=r.document as Project;items.push(invited?{id:project.id,version:project.version,title:project.title,code:project.code,teamId:project.teamId}: {id:project.id,version:project.version,title:project.title,code:project.code,status:project.status,ownerSubject:project.ownerSubject,summary:(await this.data(tx,a,project)).summary});}return {items,total,page:q.page,canCreate:manager(a)};
+   const total=Number((await tx.query('SELECT count(*) n FROM enterprise_workflow.projects WHERE '+where,args)).rows[0].n),projects=(await tx.query<{document:Project}>('SELECT document FROM enterprise_workflow.projects WHERE '+where+` ORDER BY updated_at DESC,id DESC LIMIT 30 OFFSET $${args.length+1}`,[...args,(q.page-1)*30])).rows.map(r=>r.document);
+   const items=[],evidence=invited?null:emptyEvidence();
+   if(!evidence)for(const {id,version,title,code,teamId} of projects)items.push({id,version,title,code,teamId});
+   else for(let offset=0;offset<projects.length;offset+=10){
+    // Keep fan-out bounded without retaining up to thirty large projects' task projections at once.
+    const window=projects.slice(offset,offset+10),inputs=await this.inputs(tx,a,window,!snapshot,true);observe(evidence,inputs);
+    for(const project of window){const {id,version,title,code,status,ownerSubject}=project;items.push({id,version,title,code,status,ownerSubject,summary:this.compute(a,project,inputs,undefined,false).summary});}
+   }
+   return {result:{items,total,page:q.page,canCreate:manager(a)},projects,evidence};
   }
-  const project=await this.row(tx,a,q.id);ensure(project&&this.visible(a,project),'PROJECT_NOT_FOUND',404);if(q.action==='detail')return this.projection(tx,a,project);
+  const project=await this.row(tx,a,q.id);ensure(project&&this.visible(a,project),'PROJECT_NOT_FOUND',404);
+  if(q.action==='detail'){const inputs=await this.inputs(tx,a,[project],!snapshot);return {result:this.projection(a,project,this.compute(a,project,inputs)),projects:[project],evidence:observe(emptyEvidence(),inputs)};}
   const rows=(await tx.query('SELECT revision,actor,action,reason,document,created_at FROM enterprise_workflow.project_revisions WHERE enterprise_id=$1 AND project_id=$2 ORDER BY revision DESC LIMIT 30 OFFSET $3',[a.enterpriseId,project.id,(q.page-1)*30])).rows;
   // Never replay old linked-order IDs or revoked-team data through historical documents.
-  return {events:rows.map(r=>({revision:r.revision,actor:r.actor,action:r.action,reason:r.reason,createdAt:r.created_at,project:{title:r.document.title,code:r.document.code,status:r.document.status,milestones:r.document.milestones}})),total:project.version,page:q.page};
- },true);}
+  return {result:{events:rows.map(r=>({revision:r.revision,actor:r.actor,action:r.action,reason:r.reason,createdAt:r.created_at,project:{title:r.document.title,code:r.document.code,status:r.document.status,milestones:r.document.milestones}})),total:project.version,page:q.page},projects:[project],evidence:null};
+ },{legacyRepeatable:true,statementTimeoutMs:20000,checkCurrent:async(tx,a,{projects,evidence})=>{
+  const versions=new Map(projects.map(p=>[p.id,p.version]));
+  if(versions.size){const current=(await tx.query('SELECT id,version FROM enterprise_workflow.projects WHERE enterprise_id=$1 AND id=ANY($2::uuid[])',[a.enterpriseId,[...versions.keys()]])).rows;ensure(current.length===versions.size&&current.every(r=>versions.get(r.id)===r.version),'PROJECT_SCOPE_CHANGED');}
+  if(!evidence)return;
+  if(evidence.teamIds.size){const current=await this.enabledTeams(tx,a,[...evidence.teamIds],false);ensure(current.size===evidence.enabled.size&&[...current].every(id=>evidence.enabled.has(id)),'PROJECT_SCOPE_CHANGED');}
+  if(evidence.orderIds.size){const current=(await tx.query('SELECT id,version FROM enterprise_workflow.orders WHERE enterprise_id=$1 AND id=ANY($2::uuid[])',[a.enterpriseId,[...evidence.orderIds]])).rows;ensure(current.length===evidence.versions.size&&current.every(r=>evidence.versions.get(r.id)===r.version),'PROJECT_SCOPE_CHANGED');}
+ }})).result;}
 }

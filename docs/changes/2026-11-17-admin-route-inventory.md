@@ -43,7 +43,7 @@
 | `GET /api/admin/owner-account` | `src/app/api/admin/owner-account/route.ts` | 待核查 |
 | `GET /api/admin/prompts` | `src/app/api/admin/prompts/route.ts` | 待核查 |
 | `GET /api/admin/pubkey` | `src/app/api/admin/pubkey/route.ts` | 待核查 |
-| `GET /api/admin/saas-overview` | `src/app/api/admin/saas-overview/route.ts` | 待核查 |
+| `GET /api/admin/saas-overview` | `src/app/api/admin/saas-overview/route.ts` | 部分：确认总数和趋势重复扫描同一创作窗口，隔离查询计划待对照 |
 | `GET /api/admin/settings` | `src/app/api/admin/settings/route.ts` | 待核查 |
 | `GET /api/admin/supplier-cost` | `src/app/api/admin/supplier-cost/route.ts` | 部分：流水、汇总和账户概览分标签，见负载排查记录 |
 | `GET /api/admin/supplier-cost/operations/[id]` | `src/app/api/admin/supplier-cost/operations/[id]/route.ts` | 待核查 |
@@ -222,8 +222,8 @@
 | `工作流 GET /v1/people/audit` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 GET /v1/performance` | `services/enterprise-workflow/src/server.ts` | 部分：结算预览、规则、范围与列表投影，`performance.test.ts` |
 | `工作流 GET /v1/performance-corrections` | `services/enterprise-workflow/src/server.ts` | 部分：对账、参与人范围、分页与调整明细，`corrections.test.ts` |
-| `工作流 GET /v1/projects` | `services/enterprise-workflow/src/server.ts` | 待核查 |
-| `工作流 GET /v1/publication-files` | `services/enterprise-workflow/src/server.ts` | 待核查 |
+| `工作流 GET /v1/projects` | `services/enterprise-workflow/src/server.ts` | 部分：列表分批、30 项 14 次 SELECT、详情及历史的权限与撤权，`projects.test.ts`；大范围聚合待量化 |
+| `工作流 GET /v1/publication-files` | `services/enterprise-workflow/src/server.ts` | 部分：列表 30 项 15 次 SELECT、扫描/下载范围与撤权、ZIP 无锁内整文件重读，`publication-files.test.ts`；大 ZIP 并发待量化 |
 | `工作流 GET /v1/publication-preflight` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 GET /v1/publications` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 GET /v1/references` | `services/enterprise-workflow/src/server.ts` | 已核查：仅显式选中附件、租户/团队、旧来源、停用和变更，`reference-assets.test.ts` |
@@ -276,7 +276,7 @@
 | `工作流 POST /v1/performance` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 POST /v1/performance-corrections` | `services/enterprise-workflow/src/server.ts` | 部分：更正预览不占结算锁，写入重算，`corrections.test.ts` |
 | `工作流 POST /v1/plan-move/preview` | `services/enterprise-workflow/src/server.ts` | 待核查 |
-| `工作流 POST /v1/projects` | `services/enterprise-workflow/src/server.ts` | 待核查 |
+| `工作流 POST /v1/projects` | `services/enterprise-workflow/src/server.ts` | 部分：原命令的原子性、快照、重放及授权回归；预览持项目/订单锁待复现 |
 | `工作流 POST /v1/publication-files` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 POST /v1/publication-preflight` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 POST /v1/publications` | `services/enterprise-workflow/src/server.ts` | 待核查 |
