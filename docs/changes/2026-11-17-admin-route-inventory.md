@@ -1,6 +1,6 @@
 # 后台逐入口排查清单
 
-从 Git 跟踪的页面、布局、Next API 方法和工作流服务分发生成。它只枚举入口；同方法内的 `action`、`operation`、筛选、客户端触发及向下调用要在对应行追加证据。POST 也有只读预览，不能按方法直接划为写入。代理与直连分别记账；覆盖本表不代表完成生产验收。
+从 Git 跟踪的页面、布局、Next API 方法和工作流服务分发生成。另列与后台共用业务连接池的素材入口。它只枚举入口；同方法内的 `action`、`operation`、筛选、客户端触发及向下调用要在对应行追加证据。POST 也有只读预览，不能按方法直接划为写入。代理与直连分别记账；覆盖本表不代表完成生产验收。
 
 `待核查` 表示尚未逐项验证；`部分` 说明已验证的分支；整行所有读取变体和边界都有证据时才标记 `已核查`。用 `node scripts/audit-admin-read-inventory.mjs --update` 刷新入口并保留未变化行的记录，默认命令仅检查清单是否漂移。
 
@@ -181,6 +181,8 @@
 | `PUT /api/enterprise/workflow/uploads` | `src/app/api/enterprise/workflow/uploads/route.ts` | 待核查 |
 | `入口 /admin` | `src/middleware.ts` | 待核查 |
 | `入口 /enterprise（站点模式）` | `src/middleware.ts` | 待核查 |
+| `共享素材 GET /media/[...path]` | `src/app/media/[...path]/route.ts` | 部分：旧冷预览占满业务池已复现并修复；隔离 PG、真实处理器与回环 NAS 验证挂起读取/写入、租户归属、版本竞争、恢复回执及旧历史；生产 Range、峰值和网关仍待验收 |
+| `共享素材 POST /api/media/image-cache` | `src/app/api/media/image-cache/route.ts` | 部分：与字节路由一致的原件和两种预览描述、缺预览回退、私有授权与旧版本冲突已在隔离处理器验证；全批次、取消与线上请求分布待核查 |
 | `工作流 GET /healthz` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 GET /readyz` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 GET /v1/appeals` | `services/enterprise-workflow/src/server.ts` | 隔离已核查：依据与旧指纹、列表、详情、修订历史、审核人回避、成员撤权与改派、断开归还连接；长历史数据库提取成本待量化 |
