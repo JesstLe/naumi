@@ -79,6 +79,7 @@ async function main(){
    setSelectedId:id=>record('focus-art',id),setSelectedPendId:id=>record('focus-pending',id),setNodeRenameValue:s=>record('rename-value',s),setRenamingNodeId:id=>record('rename-id',id),setProductPicker:value=>record('product-picker',value),
   };
   for(const kind of kinds)c[kind+'NodesStore']={nodes:config[kind],saving:!!config.nativeSaving};
+  c.comfyNodesStore={nodes:[],saving:false};
   const named=['openProperties','openCharacterEditor','openSceneEditor','openDirectorEditor','openAudioEditor','openTimelineEditor','openVideoEditor','duplicateCanvasNodes','batchDelete','removeTextNode','openTextImageMenu','copyText','showCopyTip','onPendUpload','onPendRemove','focusCanvasNode','reversePromptsForSelection','openAssistant','tidyLayout','markBatchSelection','downloadBatchSelection','batchRunImages','stitchBatchSelection','toggleArtworkBatchSelection','ungroupBatchSelection','groupBatchSelection','duplicateArt','applyArtworkSelection','deleteTree','createMergeNodeFromSelection','addPendAtScreen','uploadAtScreen','triggerUpload','addTextAtScreen','createCanvasNode','openHistoryPicker','doUndo','doRedo'];
   for(const name of named)c[name]=(...v)=>record(name,...v.map(x=>x&&typeof x==='object'&&'id'in x?x.id:x));
   c.ports=()=>({catalogue:()=>({project:config.project,artworks:config.artworks,text:config.text,...Object.fromEntries(kinds.map(k=>[k,config[k]]))})});
@@ -97,6 +98,10 @@ async function main(){
  if(arg('--compare'))eq(rows,JSON.parse(fs.readFileSync(arg('--compare'),'utf8')).rows,'all original focus/context/property/html/action/kind traces exact');
  eq(Object.fromEntries(loaded.map(p=>[p,hash(path.join(root,p))])),sourceHashes,'loaded source hashes stable');
  if(!baseline){
+  if(focus.includes('comfyNodesStore')){
+   const config=fixture({});const catalogue={...config,comfy:[native('comfy'),native('comfy',{id:'foreign-comfy',projectKey:'B'})]};
+   eq([...api.canvasSelectableNodeKinds(catalogue)].filter(([,kind])=>kind==='comfy'),[['comfy-a','comfy']],'Comfy catalogue is scoped to the selected project');
+  }
   const implementation=read('src/lib/canvas/selection-projection.ts');ok(!/fetch\(|useState|useEffect|createContext|localStorage|indexedDB|withBilling|query\(/.test(implementation),'pure projection without I/O/state');
   ok(source.includes('canvasContextTargets(selectionCatalogue,ctxMenu.nodeId)'));ok(source.includes('canvasSelectionProperties(selectionTargets)'));ok(controller.includes('canvasSelectableNodeKinds(ports().catalogue())'));
  }
