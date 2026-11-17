@@ -23,6 +23,9 @@ function entry(row:any,p:ModelProvider):CatalogEntry{
 }
 export async function readProviderCatalog(pool:Pool,providers:ModelProvider[]){
   await ensure(pool);
+  return readProviderCatalogFrom(pool,providers);
+}
+export async function readProviderCatalogFrom(pool:Pick<Pool,"query">,providers:ModelProvider[]){
   const rows=(await pool.query('SELECT * FROM app_model_provider_catalog WHERE fingerprint=ANY($1::text[])',[providers.map(fingerprint)])).rows;
   return providers.map(p=>entry(rows.find(r=>r.fingerprint===fingerprint(p)),p));
 }

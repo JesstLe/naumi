@@ -35,7 +35,7 @@
 | `GET /api/admin/fleet/status` | `src/app/api/admin/fleet/status/route.ts` | 待核查 |
 | `GET /api/admin/login` | `src/app/api/admin/login/route.ts` | 待核查 |
 | `GET /api/admin/model-health` | `src/app/api/admin/model-health/route.ts` | 待核查 |
-| `GET /api/admin/model-management` | `src/app/api/admin/model-management/route.ts` | 待核查 |
+| `GET /api/admin/model-management` | `src/app/api/admin/model-management/route.ts` | 部分：列表、积分细项、视频就绪/迁移按已发布快照；真实隔离 HTTP 验证授权、池占用、断开释放、并发版本切换、冻结缺失不补写与摘要不符拒绝。公网网关及冷启动待核 |
 | `GET /api/admin/model-management/library` | `src/app/api/admin/model-management/library/route.ts` | 待核查 |
 | `GET /api/admin/model-management/onboarding` | `src/app/api/admin/model-management/onboarding/route.ts` | 待核查 |
 | `GET /api/admin/mvp` | `src/app/api/admin/mvp/route.ts` | 待核查 |
@@ -128,7 +128,7 @@
 | `POST /api/admin/fleet/releases` | `src/app/api/admin/fleet/releases/route.ts` | 待核查 |
 | `POST /api/admin/login` | `src/app/api/admin/login/route.ts` | 待核查 |
 | `POST /api/admin/model-health` | `src/app/api/admin/model-health/route.ts` | 待核查 |
-| `POST /api/admin/model-management` | `src/app/api/admin/model-management/route.ts` | 待核查 |
+| `POST /api/admin/model-management` | `src/app/api/admin/model-management/route.ts` | 部分：隔离回归验证配置发布、并发锁、积分修改、旧任务和未知收据重试；供应商目录发现持事务等待外部 I/O 待独立复现 |
 | `POST /api/admin/model-management/library` | `src/app/api/admin/model-management/library/route.ts` | 待核查 |
 | `POST /api/admin/model-management/onboarding` | `src/app/api/admin/model-management/onboarding/route.ts` | 待核查 |
 | `POST /api/admin/mvp` | `src/app/api/admin/mvp/route.ts` | 待核查 |

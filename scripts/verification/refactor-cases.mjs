@@ -50,6 +50,7 @@ export const refactorCases=[
  {...node('model-management-session','foundation','scripts/verify-model-management-session.mjs','MODEL_MANAGEMENT_SESSION=PASS'),clientReact:true},
  ts('published-draft-continuation','foundation','scripts/verify-published-draft-continuation.ts','PUBLISHED_DRAFT_CONTINUATION=PASS'),
   ts('model-management-pg','foundation','scripts/verify-model-management.ts','ADMIN_MODEL_MANAGEMENT=PASS'),
+  ts('model-management-read-pressure','foundation','scripts/verify-admin-model-management-read.ts','ADMIN_MODEL_MANAGEMENT_READ=PASS'),
   ts('model-management-concurrency','foundation','scripts/verify-model-management-concurrency.ts','MODEL_MANAGEMENT_CONCURRENCY=PASS'),
   ts('model-management-distinct','foundation','scripts/verify-model-management-concurrency.ts','MODEL_MANAGEMENT_DISTINCT_FIRST=PASS',['--distinct-first']),
   node('main-sync-boundaries','foundation','scripts/verify-main-sync-boundaries.cjs','MAIN_SYNC_BOUNDARIES=PASS'),

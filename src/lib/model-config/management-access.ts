@@ -5,6 +5,7 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { PoolClient } from "pg";
+import {ReportReadBusy} from "@/platform/db/owned-read-client";
 import { biAuthorize, biJson, sameSiteBiMutation } from "../bi/access";
 import { readBounded } from "../supplier-cost/io";
 import { getModelAdministration } from "./server";
@@ -20,12 +21,12 @@ import { modelConfigurationEnabled } from "./availability";
 
 import {identifier,managementInput as input,type ManagementAdministration} from "./management-input";
 import {acquireManagementMutationTurn,acquireManagementLock} from "./management-locks";
-import {managementRows as rows,readManagementView} from "./management-read";
+import {injectedManagementRead,managementRows as rows,managementReadSnapshot,publishedManagementRead,readManagementView,type ManagementReadPorts} from "./management-read";
 import {applyManagementConfigAction} from "./management-actions";
 type Administration = ManagementAdministration;
 // Persisted provider IDs, actor markers and locks retain their original namespace.
 // Reasons also participate in historical publication fingerprints; keep their wire format.
-export function createModelManagementHandler(deps: { authorize: typeof biAuthorize; administration: () => Promise<Administration>; managed: () => Promise<boolean>; fetcher?: typeof fetch; mutationWaitMs?:number }) {
+export function createModelManagementHandler(deps: { authorize: typeof biAuthorize; administration: () => Promise<Administration>; managed: () => Promise<boolean>; readPorts?:()=>ManagementReadPorts; fetcher?: typeof fetch; mutationWaitMs?:number }) {
   return async (request: Request) => {
     const auth = await deps.authorize(request); if (auth instanceof Response) return auth;
     if (request.method !== "GET" && !sameSiteBiMutation(request)) return biJson({ error: "不允许跨站修改" }, 403);
@@ -33,18 +34,27 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
     let lock: PoolClient | undefined, lockKey: string | undefined;
     let releaseMutationTurn:(()=>void)|undefined;
     try {
+      if(request.method==="GET"){
+        const signal=request.signal,params=new URL(request.url).searchParams,view=params.get("view");
+        signal.throwIfAborted();
+        if(view==="video-capability-upgrade")return biJson({error:'旧能力升级操作已退出，请刷新后迁移执行绑定',code:'VIDEO_CAPABILITY_UPGRADE_RETIRED'},410);
+        const selective=view==="video-execution-readiness"||view==="video-execution-migration"||params.has("rowId");
+        const ports=deps.readPorts?.()??await injectedManagementRead(await deps.administration(),deps.managed,!selective);
+        if(!selective)return biJson(await readManagementView(ports,signal));
+        if(view==="video-execution-readiness"||view==="video-execution-migration"){
+          const snapshot=await managementReadSnapshot(ports,signal,async (_tx,value)=>value);
+          return biJson(view==="video-execution-readiness"?videoExecutionReadiness(snapshot):reviewVideoExecutionMigration(snapshot.config,snapshot.version));
+        }
+        const rowId=identifier.parse(params.get("rowId")),feature=z.enum(FEATURE_IDS).parse(params.get("feature"));
+        const {snapshot,billing,row}=await managementReadSnapshot(ports,signal,async(tx,snapshot)=>{
+          const row=rows(snapshot).find(r=>r.id===rowId);
+          if(!row||!row.features.some(f=>f.id===feature))throw new ModelConfigError("MODEL_UNAVAILABLE","该模型未应用到此工具",400);
+          return {snapshot,row,billing:await ports.billing(tx)};
+        });
+        return biJson({version:snapshot.version,billingVersion:billing.version,grid:modelCreditGrid(billing,snapshot,row,feature)});
+      }
       const admin = await deps.administration();
       const snapshot = await admin.repo.current();
-      if(request.method==="GET" && new URL(request.url).searchParams.get("view")==="video-capability-upgrade")
-        return biJson({error:'旧能力升级操作已退出，请刷新后迁移执行绑定',code:'VIDEO_CAPABILITY_UPGRADE_RETIRED'},410);
-      if(request.method==='GET'&&new URL(request.url).searchParams.get('view')==='video-execution-readiness')return biJson(videoExecutionReadiness(snapshot));
-      if(request.method==='GET'&&new URL(request.url).searchParams.get('view')==='video-execution-migration')return biJson(reviewVideoExecutionMigration(snapshot.config,snapshot.version));
-      if(request.method==="GET" && new URL(request.url).searchParams.has("rowId")){
-        const params=new URL(request.url).searchParams,rowId=identifier.parse(params.get("rowId")),feature=z.enum(FEATURE_IDS).parse(params.get("feature"));
-        const row=rows(snapshot).find(r=>r.id===rowId);if(!row || !row.features.some(f=>f.id===feature))throw new ModelConfigError("MODEL_UNAVAILABLE","该模型未应用到此工具",400);
-        const billing=await admin.billing.current();return biJson({version:snapshot.version,billingVersion:billing.version,grid:modelCreditGrid(billing,snapshot,row,feature)});
-      }
-      if (request.method === "GET") return biJson(await readManagementView(admin, snapshot, deps.managed));
       const body = input.parse(JSON.parse(await readBounded(new Response(request.body), 96000)));
       if(["video-capability-upgrade","video-execution-migration","create-models"].includes(body.action)&&!await deps.managed())
         throw new ModelConfigError("CONFIG_UNAVAILABLE","请先启用统一模型配置",409);
@@ -137,6 +147,13 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
       if(publication.phase==="applied")await pruneAppliedOperationDrafts(admin.pool).catch(()=>0);
       return await publicationResponse(publication);
     } catch (e) {
+      if(request.method==="GET"){
+        if(request.signal.aborted)return biJson({error:"查询已取消"},499);
+        if(e instanceof ReportReadBusy||["55P03","57014"].includes((e as {code?:string})?.code??"")){
+          const response=biJson({error:"模型资料暂时不可用，请稍后重试",code:"CONFIG_UNAVAILABLE"},503);
+          response.headers.set("Retry-After","1");return response;
+        }
+      }
       // A lock/permit timeout proves no rejection of this operation. Another
       // process may already own or stage it; keep its original retry identity.
       if(e instanceof ModelConfigError&&e.code==="PUBLICATION_LOCK_PENDING")return biJson({error:e.message,code:e.code,operationNotStaged:false},e.status);
@@ -151,4 +168,4 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
     }
   };
 }
-export const modelManagementHandler = createModelManagementHandler({ authorize: biAuthorize, administration: getModelAdministration, managed: modelConfigurationEnabled });
+export const modelManagementHandler = createModelManagementHandler({ authorize: biAuthorize, administration: getModelAdministration, managed: modelConfigurationEnabled,readPorts:publishedManagementRead });

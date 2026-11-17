@@ -22,6 +22,13 @@ type Row = {
     actor: string;
     request_fingerprint: string;
 };
+const selectCurrent = (client: Pick<Pool,"query">) => client.query<Row>("SELECT v.version,v.config,v.actor,v.request_fingerprint FROM app_settings s JOIN app_billing_config_versions v ON v.version::text=s.v WHERE s.k=$1", [POINTER]);
+/** Read-only surface for an already initialized catalogue. */
+export async function readPublishedBillingConfig(client:Pick<Pool,"query">):Promise<ConfigSnapshot>{
+    const row=(await selectCurrent(client)).rows[0];
+    if(!row)throw new BillingError("CONFIG_UNAVAILABLE","计费配置暂时不可用，请稍后重试",503);
+    return snapshot(row);
+}
 
 function validateWrite(id: string, actor: string, reason: string, version: number) {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id) || !actor || actor.length > 254 || !reason.trim() || reason.length > 500 || !Number.isSafeInteger(version) || version < 1)
@@ -48,7 +55,6 @@ export function createConfigRuntime(deps: Deps): ConfigRuntime {
             tx.release();
         }
     };
-    const selectCurrent = (client: Pool | PoolClient) => client.query<Row>("SELECT v.version,v.config,v.actor,v.request_fingerprint FROM app_settings s JOIN app_billing_config_versions v ON v.version::text=s.v WHERE s.k=$1", [POINTER]);
     const insert = async (tx: PoolClient, id: string, hash: string, actor: string, reason: string, config: BillingConfig) => {
         const { rows } = await tx.query<Row>("INSERT INTO app_billing_config_versions(operation_id,request_fingerprint,actor,reason,config) VALUES($1,$2,$3,$4,$5::jsonb) RETURNING *", [id, hash, actor, reason, JSON.stringify(config)]);
         await tx.query("INSERT INTO app_settings(k,v) VALUES($1,$2) ON CONFLICT(k) DO UPDATE SET v=excluded.v,updated_at=now()", [POINTER, String(rows[0].version)]);

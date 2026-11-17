@@ -6,6 +6,9 @@ import { ensureSupplierModels } from "./schema";
 /** Request-local shared read. Never cache metadata across revisions or publications. */
 export async function readImageModelMetadata(pool: Pool, config: ModelConfig): Promise<QueryResultRow[]> {
   await ensureSupplierModels(pool);
+  return readImageModelMetadataFrom(pool,config);
+}
+export async function readImageModelMetadataFrom(pool:Pick<Pool,"query">,config:ModelConfig):Promise<QueryResultRow[]>{
   const targets = [...new Map(config.upstreamModels.filter(u => u.modality === "image")
     .map(u => [JSON.stringify([u.providerId, u.model]), {provider_id: u.providerId, model_id: u.model}])).values()];
   if (!targets.length) return [];

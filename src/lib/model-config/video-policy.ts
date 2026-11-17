@@ -9,7 +9,7 @@ export const videoParametersSchema = z.array(z.strictObject({
 })).min(1).max(100);
 export type VideoParameters = z.infer<typeof videoParametersSchema>;
 export type VideoConfiguration = { routes:{upstreamId:string;model:string;provider:string;definition?:VideoModelDefinition;profile?:VideoWireProfile;execution?:PublishedVideoExecution;executionCandidate?:PublishedVideoExecution;candidateProfile?:VideoWireProfile;
-  effective?:VideoModelDefinition;sources?:Record<string,string>;sourceRevision?:{id:string;revision:number;sourceUrl:string;collectedAt:string}|null}[] };
+  effective?:VideoModelDefinition;sources?:Record<string,string>;frozenRecorded?:false;sourceRevision?:{id:string;revision:number;sourceUrl:string;collectedAt:string}|null}[] };
 
 export function applyVideoParameters(source:ModelConfig,row:ManagedModelRow,raw:VideoParameters):ModelConfig {
   if(row.modality!=="video")throw new ModelConfigError("MODEL_INCOMPATIBLE","只有视频模型可设置视频能力");

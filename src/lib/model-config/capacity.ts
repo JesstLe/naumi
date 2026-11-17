@@ -12,7 +12,7 @@ import {notifyApplicationWork} from '../application/work-signal';
 
 type Limit = { providerId: string; baseUrl: string; maxConcurrent: number; timeoutMs: number };
 function capacityIdentity(providerId: string, baseUrl: string) { return createHash("sha256").update(`${providerId}\n${new URL(baseUrl).origin}`).digest("hex"); }
-export async function providerCapacitySummary(pool: Pool, config: ModelConfig) {
+export async function providerCapacitySummary(pool: Pick<Pool,"query">, config: ModelConfig) {
   const identities = config.providers.map(p => capacityIdentity(p.id, p.baseUrl));
   const rows = (await pool.query("SELECT a.alias,b.max_concurrent,count(l.token)::int AS in_flight FROM unnest($1::text[]) a(alias) LEFT JOIN app_model_capacity_accounts c ON c.alias=a.alias LEFT JOIN app_model_provider_budgets b ON b.identity=COALESCE(c.identity,a.alias) LEFT JOIN app_model_provider_leases l ON l.identity=b.identity AND l.expires_at>now() GROUP BY a.alias,b.max_concurrent", [identities])).rows;
   const byIdentity = new Map(rows.map(row => [row.alias, row]));
