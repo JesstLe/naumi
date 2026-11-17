@@ -39,7 +39,11 @@ export function prepareImageOperation(input:ImagePreparationInput,snapshot:Model
     );
     // A configured default is not a user selection. Keep it implicit so enabled
     // internal processors can remain hidden; explicit IDs still require visibility.
-    const requestedModelId = requestedFeatureModel(mainFeature, (quotedImage || explicitModelId || routedModelId !== configuredModelId) ? routedModelId : undefined);
+    // Quotation records the server-selected identity, not a user selection.
+    // Only the same default in this frozen snapshot can remain implicit;
+    // explicit hidden IDs and quotes for any other identity still fail closed.
+    const quotedDefault = !!quotedImage && !explicitModelId && configuredModelId === canonicalPublicModelId(snapshot.config.publicModels,featureDefault);
+    const requestedModelId = requestedFeatureModel(mainFeature, (quotedImage && !quotedDefault || explicitModelId || routedModelId !== configuredModelId) ? routedModelId : undefined);
     const selection=selectFeatureModel(snapshot.config,{feature:mainFeature,binding:purpose.image!,requestedModelId,scopeSystem:parsed.body.origin==="canvas"?"canvas":undefined})!;
     const {preset,option,model}=selection;
     if (option?.parameters?.inputTypes && ((parsed.references > 0 && !option.parameters.inputTypes.includes("image")) || (parsed.body.needsMask && !option.parameters.inputTypes.includes("mask")))) throw new ModelConfigError("MODEL_INCOMPATIBLE", "本功能模型未开放该输入类型", 400);

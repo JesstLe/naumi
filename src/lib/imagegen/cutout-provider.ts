@@ -5,6 +5,8 @@ import {markBillingUpstream} from "../billing/synchronous-operation";
 import {observeOpenAI} from "@/lib/bi/model-calls";
 import {toFile} from "openai";
 import {getOpenAIBaseUrl} from "../openai-base";
+import {CutoutOutputError} from "./cutout-types";
+import {IMAGEGEN_MAX_PIXELS} from "./image-limits";
 
 async function loadSharp(): Promise<typeof import("sharp").default | null> {
   try {
@@ -107,30 +109,34 @@ export async function cutoutReplicate(
 
   // 探测输出类型:已是透明 PNG 直接用;否则当 mask 合成回原图。
   const sharp = await loadSharp();
-  if (!sharp) return outBuf; // sharp 不可用 → 原样返回(多半已是透明图)
-  try {
-    const outMeta = await sharp(outBuf).metadata();
-    if (outMeta.hasAlpha && (outMeta.channels ?? 0) >= 4) {
-      return outBuf; // 模型已直接输出透明抠图
-    }
-    // mask 路径:缩放到原图尺寸 → 作为 alpha 通道合成
-    const origMeta = await sharp(bytes).metadata();
-    const w = origMeta.width ?? outMeta.width ?? 0;
-    const h = origMeta.height ?? outMeta.height ?? 0;
-    if (!w || !h) return outBuf;
-    const maskRaw = await sharp(outBuf)
-      .resize(w, h, { fit: "fill" })
-      .greyscale()
-      .raw()
-      .toBuffer();
-    return await sharp(bytes)
-      .removeAlpha()
-      .joinChannel(maskRaw, { raw: { width: w, height: h, channels: 1 } })
-      .png()
-      .toBuffer();
-  } catch {
-    return outBuf; // 任何处理异常 → 返回 Replicate 原始输出
+  if (!sharp) throw new CutoutOutputError();
+  const outMeta = await sharp(outBuf,{limitInputPixels:IMAGEGEN_MAX_PIXELS}).metadata();
+  const output = await sharp(outBuf,{limitInputPixels:IMAGEGEN_MAX_PIXELS}).toColourspace("srgb").ensureAlpha().raw().toBuffer({resolveWithObject:true});
+  let cleared=0,visible=0,partial=0,grayscale=true;
+  for(let i=0;i<output.data.length;i+=4){
+    const r=output.data[i],g=output.data[i+1],b=output.data[i+2],a=output.data[i+3];
+    if(a===0)cleared++;else visible++;
+    if(a<255)partial++;
+    if(r!==g||g!==b)grayscale=false;
   }
+  if(cleared&&visible)return outMeta.format==="png"?outBuf:await sharp(outBuf,{limitInputPixels:IMAGEGEN_MAX_PIXELS}).png().toBuffer();
+  // Only an actual grayscale mask may replace alpha. A color result or a
+  // pseudo-transparent checkerboard is not a mask and must not become one.
+  if(partial||!grayscale)throw new CutoutOutputError();
+  // mask 路径:缩放到原图尺寸 → 作为 alpha 通道合成
+  const original = await sharp(bytes,{limitInputPixels:IMAGEGEN_MAX_PIXELS}).rotate().removeAlpha().toColourspace("srgb").raw().toBuffer({resolveWithObject:true});
+  const w=original.info.width,h=original.info.height;
+  const maskRaw = await sharp(outBuf,{limitInputPixels:IMAGEGEN_MAX_PIXELS})
+    .resize(w, h, { fit: "fill" })
+    .removeAlpha().greyscale()
+    .raw()
+    .toBuffer();
+  // Materialize RGB before joinChannel: removeAlpha().joinChannel() on the
+  // same lazy Sharp pipeline can discard the newly joined alpha channel.
+  return await sharp(original.data,{raw:{width:w,height:h,channels:3}})
+    .joinChannel(maskRaw, { raw: { width: w, height: h, channels: 1 } })
+    .png()
+    .toBuffer();
 }
 
 // 兜底:gpt-image 透明底(主要用于本地开发没有自托管服务时)。
@@ -160,10 +166,10 @@ export async function cutoutOpenAI(
   const fileType = png === bytes ? type || "image/png" : "image/png";
   const file = await toFile(png, "input.png", { type: fileType });
   const r = await client.images.edit({
-    // 透明底兜底:只 gpt-image-1 支持 background:transparent(主路径是第三方 BiRefNet)。
+    // Managed execution selects the actual published image model and mapping.
     model: model || "gpt-image-1",
     image: file,
-    prompt: "精确沿主体边缘抠出主体,移除背景,输出干净的透明底 PNG",
+    prompt: "精确沿原图主体边缘移除背景，尽量保留主体外形、文字、颜色和细节，输出带真实 alpha 通道的透明 PNG。背景区域必须完全透明；不要绘制灰白棋盘格、方格、白色底板或任何用于表示透明的图案。",
     n: 1,
     size: "auto" as "1024x1024",
     background: "transparent" as const,

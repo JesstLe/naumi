@@ -15,6 +15,7 @@ import {getCutoutSettings,getOpenAISettings} from "../settings";
 import {safeError} from "../api-error";
 import {cutoutOpenAI,cutoutReplicate} from "./cutout-provider";
 import type {CutoutInput} from "./cutout-types";
+import {CutoutOutputError} from "./cutout-types";
 export type CutoutResult={status:number;body:Record<string,any>};
 function cutoutResult(body:Record<string,any>,options?:{status:number}):CutoutResult{return {status:options?.status??200,body};}
 /** Shared cutout execution; transport parsing and authenticated actor resolution stay at the entry. */
@@ -95,8 +96,13 @@ export async function executeCutout(input:CutoutInput,context:{actor:()=>Promise
       throw e;
     }
 
+    // Preserve the accepted/unknown billing semantics: validation failure is not
+    // permission to resubmit or claim the supplier never accepted the request.
     const transparency=await inspectImagegenPixels(out);
-    if(!transparency.transparentPixels||!transparency.visiblePixels)throw new Error("抠图未返回有效透明主体，请核对供应商能力");
+    // A stray transparent pixel must not turn an otherwise opaque image into a
+    // successful cutout. At least 0.1% of pixels must actually be cleared. This
+    // is an output integrity floor, not a claim of semantic mask correctness.
+    if(transparency.fullyTransparentPixels < Math.ceil(transparency.totalPixels / 1000) || !transparency.visiblePixels)throw new CutoutOutputError();
     // 透明底必须是 PNG
     const id = `cut-${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
     let url = `data:image/png;base64,${out.toString("base64")}`;
@@ -174,6 +180,7 @@ export async function executeCutout(input:CutoutInput,context:{actor:()=>Promise
       user,
     });
   } catch (e) {
+    if(e instanceof CutoutOutputError)return cutoutResult({error:e.message,code:"CUTOUT_OUTPUT_INVALID"},{status:502});
     return cutoutResult(
       { error: safeError(e, "抠图服务暂时不可用,请稍后重试") },
       { status: 500 }

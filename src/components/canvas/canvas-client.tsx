@@ -1,4 +1,5 @@
 "use client";
+import {featureExecutionBlock} from "@/lib/model-config/feature-availability";
 import {CanvasCollaborationActions} from "@/components/collaboration/collaboration-entry";
 import {useCollaboration} from "@/components/collaboration/collaboration-context";
 import {useImagePromptSync} from "./use-image-prompt-sync";
@@ -433,6 +434,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const annotateQuality = useImageQuality("canvas.annotate").quality;
   const canvasToolQualities: Partial<Record<FeatureId,string>> = {"canvas.expand":expandQuality,"canvas.text-edit":textEditQuality,"canvas.annotate":annotateQuality};
   const { catalog: cutoutCatalog, error: cutoutCatalogError } = useFeatureModels("tool.cutout");
+  const cutoutReady = featureExecutionBlock(cutoutCatalog, cutoutCatalogError) === null;
   const [imageComposerMenuOpen,setImageComposerMenuOpen]=useState(false);
   const [genStyle, setGenStyle] = useState(GENERATION_STYLES[0]);
   const [genCount, setGenCount] = useState(1);
@@ -1140,7 +1142,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     ) || (!!selectedId && pendNodes.some(node => node.generating && !node.generationFailure && node.parentId === selectedId));
   const selectedImageAttempts=projectCanvasImageAttempts([...generationTasks].filter(task=>task.isVisible?.()??true),selectedId||"");
   function imageToolState(source:Artwork|null|undefined){return canvasImageToolState({source,readOnly,ready:nodeSettingsReady,locked:!!source&&isNodeLocked(source.id),
-    cutoutReady:!!cutoutCatalog&&!cutoutCatalogError&&cutoutCatalog.available!==false&&cutoutCatalog.supported!==false,cutoutError:cutoutCatalogError});}
+    cutoutReady,cutoutError:cutoutCatalogError});}
   const selectedImageTools=imageToolState(selected);
   const selectedImageSubmitting=!!selectedId&&(imageSubmissionRef.current.has(canvasImageSubmissionKey(canvasAccountRef.current,currentWorkspace(),activeProjectRef.current?.key||null,selectedId))||generationTasks.some(task=>task.sourceId===selectedId&&!task.failure&&task.stage==="preparing"));
   const selectedPendingSubmitting=!!selectedPendId&&imageSubmissionRef.current.has(canvasImageSubmissionKey(canvasAccountRef.current,currentWorkspace(),activeProjectRef.current?.key||null,selectedPendId));
@@ -1261,10 +1263,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   }
   const {displayNodes,displayEdges}=useMemo(()=>projectCanvasScene({nodes,edges,comfyNodes:comfyNodesStore.nodes,comfyActions,comfySaving:comfyNodesStore.saving,active,activeKey,generationTasks:generationTasks.filter(task=>canvasArtworkDocument.scope.viewCurrent()&&(task.isVisible?.()??true)),taskPositions:generationPresentation.positions,
     textBusyIds:new Set(textNodes.filter(node=>textTasks.state(node.id).busy).map(node=>node.id)),pendNodes,textNodes,videoNodes:videoNodesStore.nodes,directorNodes:directorNodesStore.nodes,characterNodes:characterNodesStore.nodes,sceneNodes:sceneNodesStore.nodes,audioNodes:audioNodesStore.nodes,timelineNodes:timelineNodesStore.nodes,videoTasks:videoTaskStore.tasks,works,selectedId,selectedPendId,selectedTextId,multiSel,expandedTextIds,
-    locale,lightCanvas,nodeSettings,nodeSettingsReady,readOnly,cutoutAvailable:!!cutoutCatalog&&!cutoutCatalogError&&cutoutCatalog.available!==false,
+    locale,lightCanvas,nodeSettings,nodeSettingsReady,readOnly,cutoutAvailable:cutoutReady,
     operations:generationPresentation.operations,workflowManifests,actions:sceneActions}),
     [comfyNodesStore.nodes,comfyNodesStore.saving,comfyActions,textTasks.revision,nodes,edges,active,activeKey,generationTasks,generationPresentation.positions,generationPresentation.operations,pendNodes,textNodes,videoNodesStore.nodes,directorNodesStore.nodes,characterNodesStore.nodes,sceneNodesStore.nodes,audioNodesStore.nodes,timelineNodesStore.nodes,videoTaskStore.tasks,works,selectedId,selectedPendId,selectedTextId,multiSel,expandedTextIds,
-      locale,lightCanvas,nodeSettings,nodeSettingsReady,readOnly,cutoutCatalog,cutoutCatalogError,workflowManifests,sceneActions,canvasArtworkDocument.scope]);
+      locale,lightCanvas,nodeSettings,nodeSettingsReady,readOnly,cutoutReady,workflowManifests,sceneActions,canvasArtworkDocument.scope]);
   const {rfNodes,setRfNodes,onNodesChange,rfEdges,setRfEdges,onEdgesChange,holdPositions}=useCanvasScene(displayNodes,displayEdges,canvasArtworkDocument.scope);
   useEffect(()=>{projectCanvasSelection();},[rfNodes,projectCanvasSelection]);
 
@@ -1393,7 +1395,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 同步返回,新节点落在生成占位处,挂在源节点下。
   async function runCutout(source: Artwork, _quality: "fast" | "fine" = "fine") {
     if (readOnly || !user || !canFeature("cutout") || isNodeLocked(source.id)) return;
-    if (!cutoutCatalog || cutoutCatalogError || cutoutCatalog.available === false || cutoutCatalog.supported === false) { setGenError(cutoutCatalogError || "抠图执行配置尚未就绪，请稍后再试"); return; }
+    if (!cutoutReady) { setGenError(cutoutCatalogError || "抠图执行配置尚未就绪，请稍后再试"); return; }
     return landEditResult(source,{kind:"cutout",source},"抠图");
   }
 
@@ -3658,6 +3660,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
               {/* 抠图:发丝级,扣 1 积分/张(已去掉免费极速档) */}
               <FeatureVisible feature="cutout"><button
                 type="button"
+                data-action="cutout"
                 disabled={selectedGenerating || !selectedImageTools.canCutout}
                 title={selectedImageTools.cutoutReason || t("canvas.toolbar.cutoutHint")}
                 onClick={() => onCutout("fine")}

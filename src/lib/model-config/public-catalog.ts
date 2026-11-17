@@ -16,7 +16,9 @@ export function publicModelCatalog(snapshot: ModelSnapshot, modality: Modality, 
   const preset = selectedImagePreset(config,feature,undefined,feature ? undefined : "image.generate");
   let defaultModelId = preset ? preset.aliases[0].id : featureDefaultModel(config,feature,feature ? FEATURE_BINDINGS[feature] : undefined);
   const configuredIds = f?.enabled===false ? [] : f?.inheritExisting ? config.publicModels.filter(m=>!f.options.some(o=>o.modelId===m.id&&!o.enabled)).map(m=>m.id) : preset ? [...preset.aliases.map(a => a.id),...(f?.options.filter(o => o.enabled && !preset.defaultModelIds.includes(o.modelId)).map(o => o.modelId) || [])] : f ? [...f.options].filter(o => o.enabled).sort((a,b) => a.sort-b.sort).map(o => o.modelId) : undefined;
-  const configuredProcessor = adminConfiguredFeature(feature) && f?.enabled !== false
+  // A default cutout processor may be hidden from user selection. Execution
+  // readiness is not the number of visible choices; keep its identity private.
+  const configuredProcessor = (adminConfiguredFeature(feature) || feature === "tool.cutout") && f?.enabled !== false
     ? config.publicModels.find(m => m.id === defaultModelId && m.enabled && m.modality === modality && modelAllowedForFeature(m, feature) && (!configuredIds || configuredIds.includes(m.id)))
     : undefined;
   const processorAvailable = !!configuredProcessor && publicUpstreamIds(config, configuredProcessor).some(id => {
@@ -48,5 +50,5 @@ export function publicModelCatalog(snapshot: ModelSnapshot, modality: Modality, 
     const defaultPreset = selectedImagePreset(config,undefined,id,binding);
     return [[binding,{ qualities: defaultPreset ? [...DISPLAY_QUALITIES] : qualityPresentation(upstreams)?.qualities || Array.from(new Set(upstreams.flatMap(u => u.capabilities.qualities))), nativeResolutions: defaultPreset?.resolutions || Array.from(new Set(upstreams.flatMap(u => u.capabilities.nativeResolutions))) }]];
   }));
-  return { version: snapshot.version, feature, selectionMode: adminConfiguredFeature(feature) ? "admin" : "user", available: adminConfiguredFeature(feature) ? processorAvailable : publishedModels.length > 0, defaultModelId, models: publishedModels, bindingCapabilities, bindings: Object.fromEntries(Object.entries(config.bindings).map(([binding,id]) => [binding, selectedImagePreset(config,undefined,id,binding)?.aliases[0].id || id]).filter(([, id]) => visible.has(id))) };
+  return { version: snapshot.version, feature, selectionMode: adminConfiguredFeature(feature) ? "admin" : "user", available: adminConfiguredFeature(feature) ? processorAvailable : publishedModels.length > 0 || feature === "tool.cutout" && processorAvailable, defaultModelId, models: publishedModels, bindingCapabilities, bindings: Object.fromEntries(Object.entries(config.bindings).map(([binding,id]) => [binding, selectedImagePreset(config,undefined,id,binding)?.aliases[0].id || id]).filter(([, id]) => visible.has(id))) };
 }

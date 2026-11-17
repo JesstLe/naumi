@@ -85,6 +85,13 @@ async function main() {
   check(direct.steps.length===1&&direct.steps[0].modelId==='image-cutout-verified','standalone Agent cutout');
   const prep={path:'/api/cutout',binding:'image.cutout',feature:'tool.cutout',references:1,body:{quality:'medium',resolution:'1K',ratio:'1:1'}};
   check(api.prepareImageOperation(prep,state.models,state.billing).modelId==='image-cutout-verified','implicit default preparation');
+  const quoted=direct.steps[0].billingQuote;
+  check(api.prepareImageOperation({...prep,quote:quoted},state.models,state.billing).modelId==='image-cutout-verified','owner-bound quoted default remains implicit');
+  assert.throws(()=>api.prepareImageOperation({...prep,quote:quoted,featureModel:'image-cutout-verified'},state.models,state.billing),e=>e.code==='MODEL_UNAVAILABLE');checks++;
+  const foreign=structuredClone(config.publicModels[1]);foreign.id='hidden-not-default';config.publicModels.push(foreign);
+  assert.throws(()=>api.prepareImageOperation({...prep,quote:{...quoted,facts:{...quoted.facts,modelId:'hidden-not-default'}}},state.models,state.billing),e=>e.code==='MODEL_UNAVAILABLE');checks++;
+  config.publicModels.pop();
+
   check(api.prepareImageOperation({...prep,body:{...prep.body,model:'visible-cutout'}},state.models,state.billing).modelId==='visible-cutout','visible explicit tool choice preserved');
   const unavailable=e=>e.code==='MODEL_UNAVAILABLE';
   for(const id of ['image-cutout-verified','missing-model']){

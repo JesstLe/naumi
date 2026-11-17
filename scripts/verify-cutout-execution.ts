@@ -30,7 +30,7 @@ async function main() {
   } else {
     assert.equal(adminConfiguredFeature("tool.cutout"), false);
     assert.equal(explicit, "gpt-image-1");
-    assert.equal(catalog.available, false);
+    assert.equal(catalog.available, true, "hidden configured default is executable without a visible user choice");
     assert.equal(catalog.selectionMode, "user");
     await assert.rejects(executor.resolve(input), (error: any) => error.code === "MODEL_UNAVAILABLE");
     // Hidden historical defaults may still execute internally, never as public choices.
