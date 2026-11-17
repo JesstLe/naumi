@@ -120,6 +120,35 @@ function operationKeys(authorizedEmployees = false) {
 }
 
 const artworkFilter = (scoped: boolean) => `${accountFilter("a.email", scoped)} AND (${inRange("a")} OR $7::text<>'') AND ($7::text='' OR a.id=$7) AND (($6::text='' AND a.deleted_at IS NULL) OR ($6='deleted' AND a.deleted_at IS NOT NULL) OR $6='all')`;
+const artworkBinds = (q: BiQuery, allowedEmails?: readonly string[]) =>
+  [...values(q), q.status, q.recordId || "", ...(allowedEmails ? [allowedEmails] : [])];
+function artworkPageSql(scoped: boolean, fields: "detail" | "export", bindCount: number) {
+  // Exports need the same provenance, but not original inputs, preview flags or
+  // the extra metadata used only by the detail drawer.
+  const columns = fields === "detail"
+    ? `a.id,a.email,a.title,a.category,a.prompt,a.status,a.ratio,a.resolution,a.image_width,a.image_height,a.origin,a.parent_id,a.batch_id,a.created_at,a.deleted_at,
+      a.creation_provenance,a.source_url,a.image_url,a.template_id,${ARTWORK_INPUT_COLUMNS}`
+    : `a.id,a.email,a.title,a.prompt,a.resolution,a.image_width,a.image_height,a.origin,a.batch_id,a.created_at,a.creation_provenance,a.source_url,a.image_url,a.template_id`;
+  const previewFlags = fields === "detail" ? `,(a.image_url<>'') AS has_image,(COALESCE(a.video_url,'')<>'') AS has_video` : "";
+  const source = `SELECT ${columns},
+    j.id AS job_id,j.kind AS job_kind,COALESCE(j.payload->'p'->>'origin',j.payload->>'origin') AS job_origin,
+    COALESCE(j.payload->'p'->>'entry',j.payload->>'entry') AS job_entry,
+    c.id AS canvas_task_id,c.kind AS canvas_task_kind,v.id AS video_task_id,v.source AS video_task_source${previewFlags}
+    FROM selected k JOIN app_artworks a ON a.id=k.id ${ARTWORK_INPUT_JOINS}
+    LEFT JOIN LATERAL (SELECT id,source FROM app_video_tasks WHERE email=a.email AND artwork_id=a.id ORDER BY created_at,id LIMIT 1) v ON true`;
+  const pagePrefix = `, selected AS MATERIALIZED (SELECT a.id,a.created_at FROM app_artworks a WHERE ${artworkFilter(scoped)}
+    ORDER BY a.created_at DESC,a.id DESC LIMIT $${bindCount + 1} OFFSET $${bindCount + 2})`;
+  return {source, pagePrefix};
+}
+
+/** CSV page only. The caller supplies tenant membership in its own transaction. */
+export async function readScopedArtworkExport(client: PoolClient, q: BiQuery, allowedEmails: readonly string[]): Promise<BiRow[]> {
+  const args = artworkBinds(q, allowedEmails);
+  const {source, pagePrefix} = artworkPageSql(true, "export", args.length);
+  const {rows} = await client.query(`${scope}${pagePrefix} SELECT * FROM (${source}) result ORDER BY created_at DESC,id DESC`,
+    [...args, q.size, (q.page - 1) * q.size]);
+  return normalize(rows.map(raw => ({created_at: raw.created_at, email: raw.email, title: raw.title, ...artworkBiPresentation(raw)})));
+}
 // Users section appends the position bind last (filterBinds keeps $1-$6 stable),
 // so $7 is reserved for it in both count and page statements below.
 const userFilter = () => `${accountFilter("u.email")} AND ($6::text='' OR CASE WHEN u.banned THEN 'banned' ELSE 'active' END=$6) AND ($7::text='' OR u.position=CASE WHEN $7='unassigned' THEN '' ELSE $7 END)`;
@@ -228,7 +257,8 @@ export async function queryBi(q: BiQuery, access?: { client: PoolClient; allowed
     result.overview = await snapshot((client) => overview(q, client), signal);
     return result;
   }
-  const filterBinds = [...values(q), q.status, ...(q.section === "artworks" ? [q.recordId || ""] : []), ...(q.section==='operations'?[q.recordId||'',q.recordSource||'']:[]), ...(access ? [access.allowedEmails] : []), ...(q.section === "users" ? [q.position ?? ""] : [])];
+  const filterBinds = q.section === "artworks" ? artworkBinds(q, access?.allowedEmails)
+    : [...values(q), q.status, ...(q.section==='operations'?[q.recordId||'',q.recordSource||'']:[]), ...(access ? [access.allowedEmails] : []), ...(q.section === "users" ? [q.position ?? ""] : [])];
   const scopedSql = scope;
   const binds = [...filterBinds, q.size, (q.page - 1) * q.size];
   let source = "";
@@ -268,19 +298,11 @@ export async function queryBi(q: BiQuery, access?: { client: PoolClient; allowed
     case "ledger":
       source = `SELECT l.id,l.email,l.delta,l.kind,l.reason,l.expires_at,l.created_at,COALESCE(m.reason,'') AS management_reason,m.actor AS management_actor FROM app_ledger l LEFT JOIN app_bi_management_log m ON m.ledger_id=l.id WHERE ${accountFilter("l.email")} AND ${inRange("l")} AND ($6::text='' OR l.kind=$6)`;
       break;
-    case "artworks":
-      source = `SELECT a.id,a.email,a.title,a.category,a.prompt,a.status,a.ratio,a.resolution,a.image_width,a.image_height,a.origin,a.parent_id,a.batch_id,a.created_at,a.deleted_at,
-      a.creation_provenance,a.source_url,a.image_url,a.template_id,${ARTWORK_INPUT_COLUMNS},
-      j.id AS job_id,j.kind AS job_kind,COALESCE(j.payload->'p'->>'origin',j.payload->>'origin') AS job_origin,
-      COALESCE(j.payload->'p'->>'entry',j.payload->>'entry') AS job_entry,
-      c.id AS canvas_task_id,c.kind AS canvas_task_kind,v.id AS video_task_id,v.source AS video_task_source,
-      (a.image_url<>'') AS has_image,(COALESCE(a.video_url,'')<>'') AS has_video
-      FROM selected k JOIN app_artworks a ON a.id=k.id ${ARTWORK_INPUT_JOINS}
-      LEFT JOIN LATERAL (SELECT id,source FROM app_video_tasks WHERE email=a.email AND artwork_id=a.id ORDER BY created_at,id LIMIT 1) v ON true`;
+    case "artworks": {
+      ({source, pagePrefix} = artworkPageSql(!!access, "detail", filterBinds.length));
       countSource = `SELECT a.id FROM app_artworks a WHERE ${artworkFilter(!!access)}`;
-      pagePrefix = `, selected AS MATERIALIZED (SELECT a.id,a.created_at FROM app_artworks a WHERE ${artworkFilter(!!access)}
-        ORDER BY a.created_at DESC,a.id DESC LIMIT $${filterBinds.length + 1} OFFSET $${filterBinds.length + 2})`;
       break;
+    }
     case "operations":
       // Count/page are built from operationKeys below; never expand an unpaged source.
       break;

@@ -5,7 +5,7 @@ import { TeamError } from "@/lib/teams/errors";
 import { CATEGORY_FEATURES } from '@/lib/billing/feature-map';
 import { excludeImportedHistory } from '@/lib/staging-history';
 import { enterpriseReportRead } from './server';
-import { PURPOSES, shiftDate, type AnalyticsFilter, type EnterpriseAnalytics, type LedgerEntry } from './analytics-contracts';
+import { EVENT_LABELS, PURPOSES, shiftDate, type AnalyticsFilter, type EnterpriseAnalytics, type LedgerEntry } from './analytics-contracts';
 
 const date=z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(v=>{const n=Date.parse(v+'T00:00:00Z');return Number.isFinite(n)&&new Date(n).toISOString().slice(0,10)===v},'日期无效');
 export const analyticsQuerySchema=z.object({enterpriseId:z.string().uuid(),from:date,to:date,group:z.enum(['day','week','month']).default('day'),email:z.string().max(254).default(''),team:z.string().max(254).default(''),purpose:z.string().refine(v=>v===''||Object.hasOwn(PURPOSES,v)).default(''),kind:z.enum(['','consume','refund','grant','purchase','expire','adjust','other']).default(''),page:z.coerce.number().int().min(1).max(1000000).default(1),format:z.enum(['json','csv']).default('json')}).strict().superRefine((q,c)=>{const span=Date.parse(q.to)-Date.parse(q.from);if(span<0||span>3659*86400000||q.from<'2000-01-01'||q.to>'2100-12-31')c.addIssue({code:z.ZodIssueCode.custom,path:['to'],message:'日期顺序无效或范围超过10年'})});
@@ -75,8 +75,9 @@ function scopedEmails(s:Parameters<Parameters<typeof enterpriseReportRead>[2]>[1
  if(q.email&&!emails.includes(q.email))throw new TeamError('没有该成员经营数据的查看权限');
  return emails;
 }
-const detailSQL=`SELECT l.id,l.email,u.name,l.created_at AS "createdAt",l.event_kind AS kind,l.purpose,l.delta,l.operation_id AS "operationId",l.source FROM ledger l JOIN app_users u ON u.email=l.email WHERE ($6::text='' OR event_kind=$6) ORDER BY l.created_at DESC,l.id DESC`;
-export async function enterpriseAnalytics(actor:TeamActor,q:AnalyticsFilter):Promise<EnterpriseAnalytics>{
+const ledgerDetailColumns=`l.id,l.email,u.name,l.created_at AS "createdAt",l.event_kind AS kind,l.purpose,l.delta,l.operation_id AS "operationId",l.source`;
+const detailSQL=`SELECT ${ledgerDetailColumns} FROM ledger l JOIN app_users u ON u.email=l.email WHERE ($6::text='' OR event_kind=$6) ORDER BY l.created_at DESC,l.id DESC`;
+export async function enterpriseAnalytics(actor:TeamActor,q:AnalyticsFilter,signal?:AbortSignal):Promise<EnterpriseAnalytics>{
  return enterpriseReportRead(actor,q.enterpriseId,async(tx,s)=>{
   const emails=scopedEmails(s,q),p=range(q,emails);
   const choices=(await tx.query(`SELECT u.email,u.name,COALESCE(m.supervisor_email,'') AS supervisor FROM app_users u LEFT JOIN app_enterprise_members m ON m.email=u.email AND m.enterprise_id=$2 WHERE u.email=ANY($1::text[]) ORDER BY u.name,u.email`,[emails,q.enterpriseId])).rows;
@@ -135,19 +136,34 @@ export async function enterpriseAnalytics(actor:TeamActor,q:AnalyticsFilter):Pro
     risk('intern-expiry',wallets.filter(w=>w.employment==='intern'&&w.expiresAt&&Date.parse(w.expiresAt)<=Date.now()+7*86400000)),risk('disabled',wallets.filter(w=>w.banned)),
     risk('settlement-review',wallets.filter(w=>riskRows.some(r=>r.email===w.email)))
   ]};
- });
+ },signal);
 }
 
 export function csvCell(value:unknown){let text=String(value??'');if(typeof value==='string'&&/^[\s\u0000-\u001f]*[=+@-]/.test(text))text="'"+text;return '"'+text.replaceAll('"','""')+'"'}
-export async function enterpriseLedgerCsv(actor:TeamActor,q:AnalyticsFilter){
- return enterpriseReportRead(actor,q.enterpriseId,async(tx,s)=>{
+const LEDGER_EXPORT_LIMIT=50000;
+const ledgerCsvTime=new Intl.DateTimeFormat('zh-CN',{
+ timeZone:'Asia/Shanghai',hour12:false,year:'numeric',month:'numeric',day:'numeric',hour:'numeric',minute:'numeric',second:'numeric',
+});
+export async function enterpriseLedgerCsv(actor:TeamActor,q:AnalyticsFilter,signal?:AbortSignal){
+ const rows=await enterpriseReportRead(actor,q.enterpriseId,async(tx,s)=>{
   const p=range(q,scopedEmails(s,q));
-  const total=Number((await tx.query(`${ledgerCTE} SELECT count(*)::int AS n FROM ledger WHERE $6::text='' OR event_kind=$6`,[...p,q.kind])).rows[0].n);
-  if(total>50000)throw new TeamError('超过50000条，请缩小日期范围或选择成员后导出',400);
-  const rows=(await tx.query(`${ledgerCTE} ${detailSQL}`,[...p,q.kind])).rows as LedgerEntry[];
-  const { EVENT_LABELS }=await import('./analytics-contracts');
-  return '\uFEFF'+[['时间（北京时间）','姓名','账号','变动类型','用途','积分变动','流水编号','操作编号','用途来源'],...rows.map(r=>[new Date(r.createdAt).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false}),r.name,r.email,EVENT_LABELS[r.kind],r.kind==='consume'||r.kind==='refund'?PURPOSES[r.purpose]:'—',r.delta,r.id,r.operationId,r.source])].map(r=>r.map(csvCell).join(',')).join('\r\n');
- });
+  // Keep the original limit before joining account metadata. A single bounded
+  // set serves both the overflow check and the CSV, with no rows on overflow.
+  const result=await tx.query<LedgerEntry & {overflow:boolean}>(`${ledgerCTE},
+    export_eligible AS MATERIALIZED (SELECT id,email,created_at,event_kind,purpose,delta,operation_id,source
+      FROM ledger WHERE ($6::text='' OR event_kind=$6) LIMIT ${LEDGER_EXPORT_LIMIT+1}),
+    export_limit AS (SELECT count(*)>${LEDGER_EXPORT_LIMIT} AS overflow FROM export_eligible),
+    export_rows AS MATERIALIZED (
+      SELECT ${ledgerDetailColumns} FROM export_eligible l JOIN app_users u ON u.email=l.email
+      WHERE (SELECT NOT overflow FROM export_limit)
+    )
+    SELECT cap.overflow,d.* FROM export_limit cap LEFT JOIN export_rows d ON true ORDER BY d."createdAt" DESC,d.id DESC`,[...p,q.kind]);
+  if(result.rows[0].overflow)throw new TeamError('超过50000条，请缩小日期范围或选择成员后导出',400);
+  return result.rows.filter(r=>r.id!==null);
+ },signal);
+ // Release the grant recheck and read connection before formatting up to 50k rows.
+ signal?.throwIfAborted();
+ return '\uFEFF'+[['时间（北京时间）','姓名','账号','变动类型','用途','积分变动','流水编号','操作编号','用途来源'],...rows.map(r=>[ledgerCsvTime.format(new Date(r.createdAt)),r.name,r.email,EVENT_LABELS[r.kind],r.kind==='consume'||r.kind==='refund'?PURPOSES[r.purpose]:'—',r.delta,r.id,r.operationId,r.source])].map(r=>r.map(csvCell).join(',')).join('\r\n');
 }
 
 /** Integration record lists need only ledger details, using the report's scope and 25-row contract. */

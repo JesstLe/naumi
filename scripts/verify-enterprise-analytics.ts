@@ -102,10 +102,56 @@ async function main(){
  const request=(who:string,patch:Record<string,string>={})=>new Request('http://fixture.test/api/enterprise/analytics?'+new URLSearchParams({...q,page:String(q.page),...patch}),{headers:{cookie:who?'nv_user='+native.signUserSession(who,Date.now()):''}});
  assert.equal((await api.GET(request(''))).status,401);assert.equal((await api.GET(request(other))).status,403);assert.equal((await api.GET(request(employee))).status,403);assert.equal((await api.GET(request(lead,{email:employee}))).status,403);assert.equal((await api.GET(request(lead,{team:director}))).status,403);assert.equal((await api.GET(request(owner,{from:'bad'}))).status,400);
  const r=await api.GET(request(owner));assert.equal(r.status,200);assert.match(r.headers.get('cache-control')||'',/no-store/);const serialized=JSON.stringify(await r.json());for(const secret of ['SECRET_MODEL','SECRET_PROVIDER','SECRET_PROMPT','SECRET_OTHER','request_fingerprint','quote','password'])assert(!serialized.includes(secret));
- const csvResponse=await api.GET(request(owner,{format:'csv'}));assert.equal(csvResponse.status,200);const csv=await csvResponse.text();assert.equal(csv.split('\r\n').length,40);assert(csv.includes("'"+'=FORMULA()'));assert(!csv.includes('SECRET_'));assert.equal(analytics.csvCell(' \t=SUM(A1)'),`"' \t=SUM(A1)"`);assert.equal(analytics.csvCell('a"b'),`"a""b"`);assert.equal(analytics.csvCell(-50),'"-50"');assert.equal(analytics.csvCell('-CMD()'),`"'-CMD()"`);
+ const csvResponse=await api.GET(request(owner,{format:'csv'}));assert.equal(csvResponse.status,200);const csv=Buffer.from(await csvResponse.arrayBuffer()).toString('utf8');assert.equal(csv.split('\r\n').length,40);assert(csv.includes("'"+'=FORMULA()'));assert(!csv.includes('SECRET_'));assert.equal(analytics.csvCell(' \t=SUM(A1)'),`"' \t=SUM(A1)"`);assert.equal(analytics.csvCell('a"b'),`"a""b"`);assert.equal(analytics.csvCell(-50),'"-50"');assert.equal(analytics.csvCell('-CMD()'),`"'-CMD()"`);
+ const legacyCsv=(rows:typeof data.details.rows)=>'\uFEFF'+[['时间（北京时间）','姓名','账号','变动类型','用途','积分变动','流水编号','操作编号','用途来源'],...rows.map(r=>[new Date(r.createdAt).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false}),r.name,r.email,contracts.EVENT_LABELS[r.kind],r.kind==='consume'||r.kind==='refund'?contracts.PURPOSES[r.purpose]:'—',r.delta,r.id,r.operationId,r.source])].map(r=>r.map(analytics.csvCell).join(',')).join('\r\n');
+ assert.equal(csv,legacyCsv([...data.details.rows,...page.details.rows]));
+ for(const filters of [{kind:'refund'},{purpose:'image.generate'},{from:'2020-01-01',to:'2020-01-02'}] as Record<string,string>[]){
+  const narrow=analytics.analyticsQuerySchema.parse({...q,...filters});
+  const expected=(await analytics.enterpriseAnalytics(actor,narrow)).details;
+  assert.equal(expected.total,expected.rows.length);
+  const response=await api.GET(request(owner,{...filters,format:'csv'}));assert.equal(response.status,200);
+  assert.equal(Buffer.from(await response.arrayBuffer()).toString('utf8'),legacyCsv(expected.rows));
+ }
  await pool.query('UPDATE app_team_access_grants SET enabled=false WHERE email=$1',[owner]);assert.equal((await api.GET(request(director))).status,403);await pool.query('UPDATE app_team_access_grants SET enabled=true WHERE email=$1',[owner]);
  const roles=(await server.enterpriseSnapshot(actor,root)).roles;const directRole=roles.find(r=>r.name==='设计美工总监')!;await pool.query('UPDATE app_enterprise_roles SET view_records=false WHERE id=$1',[directRole.id]);assert.equal((await api.GET(request(director))).status,403);await pool.query('UPDATE app_enterprise_roles SET view_records=true WHERE id=$1',[directRole.id]);
  assert.equal(await fingerprint(),before);
+ // An unchanged 50,000-row contract; use a separate day so any of the fixture's
+ // existing rows cannot satisfy the boundary or make it fail early.
+ const capDate='2026-09-03';
+ const capPath={format:'csv',from:capDate,to:capDate,email:intern,kind:'consume'};
+ await pool.query(`INSERT INTO app_ledger(id,email,delta,kind,reason,created_at)
+  SELECT 'export-limit-'||i,$1,-1,'consume','生成 1 张图',$2::date+interval '03:00' FROM generate_series(1,50000)i`,[intern,capDate]);
+ const fullExport=await api.GET(request(owner,capPath));assert.equal(fullExport.status,200);assert.equal((await fullExport.text()).split('\r\n').length,50001);
+ // Different kinds do not count toward a filtered export.
+ await ledger('export-limit-grant',intern,1,'grant','开户',`${capDate}T03:00:00Z`);
+ assert.equal((await api.GET(request(owner,capPath))).status,200);
+ assert.equal((await api.GET(request(owner,{...capPath,kind:''}))).status,400);
+ await ledger('export-limit-extra',intern,-1,'consume','生成 1 张图',`${capDate}T03:00:00Z`);
+ const statements:{sql:string;values:unknown[]}[]=[];
+ const patched=new Map<import('pg').PoolClient,import('pg').PoolClient['query']>();
+ const inspect=(client:import('pg').PoolClient)=>{
+  if(patched.has(client))return;
+  const original=client.query;patched.set(client,original);
+  client.query=((sql:string,values:unknown[],...rest:unknown[])=>{
+   if(typeof sql==='string'&&sql.startsWith('WITH ledger_input'))statements.push({sql,values});
+   return Reflect.apply(original,client,[sql,values,...rest]);
+  }) as typeof client.query;
+ };
+ pool.on('acquire',inspect);
+ try{
+  const overflow=await api.GET(request(owner,capPath));assert.equal(overflow.status,400);assert.match(await overflow.text(),/超过50000条/);
+ }finally{pool.off('acquire',inspect);for(const [client,original] of patched)client.query=original;}
+ assert.equal(statements.length,1,'only one ledger classification statement');
+ const [{sql,values}]=statements;
+ const plan=(await pool.query('EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) '+sql,values)).rows[0]['QUERY PLAN'][0].Plan;
+ type Node={['Actual Loops']:number;['Actual Rows']:number;['Relation Name']?:string;['CTE Name']?:string;['Subplan Name']?:string;Plans?:Node[]};
+ const flatten=(node:Node):Node[]=>[node,...(node.Plans??[]).flatMap(flatten)];
+ const nodes=flatten(plan);
+ const candidate=nodes.find(n=>n['Subplan Name']==='CTE export_eligible');
+ assert.equal(candidate?.['Actual Rows'],50001);
+ assert.equal(nodes.find(n=>n['Relation Name']==='app_users')?.['Actual Loops'],0,'overflow must not hydrate user rows');
+ await pool.query("DELETE FROM app_ledger WHERE id LIKE 'export-limit-%'");
+ console.log('ENTERPRISE_LEDGER_CSV=PASS BYTE_PARITY=4 ACCEPTED=50000 OVERFLOW=50001 FILTERED_CAP=1 CLASSIFICATION_SQL=1 OVERFLOW_HYDRATION_LOOPS=0');
  // Ledger IDs may be reused by multiple operations. Keep the original first-by-time/id
  // tie break, and never join another member's operation to this member's ledger entry.
  await pool.query(`INSERT INTO app_billing_operations(id,email,feature,quote,request_fingerprint,state,ledger_id,created_at) VALUES

@@ -35,18 +35,27 @@ async function main() {
   const {GET: conversation} = await import('../src/app/api/admin/bi/conversation/route');
   const {GET: usage} = await import('../src/app/api/admin/bi/usage/route');
   const {GET: tenantUsage} = await import('../src/app/api/enterprise/usage/route');
+  const {GET: tenantArtworks} = await import('../src/app/api/enterprise/artworks/route');
+  const {GET: tenantAnalytics} = await import('../src/app/api/enterprise/analytics/route');
   const {activateEnterprise} = await import('../src/lib/enterprise/server');
   const pool = getPool();
   const lock = new Client({connectionString: url.toString()});
   const done = new Map<string, number>();
+  const handlers = new Map([
+    ['/api/admin/bi', GET], ['/api/admin/bi/conversation', conversation], ['/api/admin/bi/usage', usage],
+    ['/api/enterprise/usage', tenantUsage], ['/api/enterprise/artworks', tenantArtworks], ['/api/enterprise/analytics', tenantAnalytics],
+  ]);
   const server = createServer(async (req, res) => {
     const uri = new URL(req.url!, 'http://fixture.invalid');
+    const probe = uri.searchParams.get('probe') ?? '';
+    uri.searchParams.delete('probe');
     try {
-      const handler = uri.pathname === '/api/enterprise/usage' ? tenantUsage : uri.pathname.endsWith('/conversation') ? conversation : uri.pathname.endsWith('/usage') ? usage : GET;
+      const handler = handlers.get(uri.pathname);
+      if (!handler) throw Error('Unknown test request');
       const result = await handler(new Request(uri, {
         headers: {cookie: req.headers.cookie ?? ''}, signal: signalFromNodeResponse(res),
       }));
-      done.set(uri.searchParams.get('probe') ?? '', result.status);
+      done.set(probe, result.status);
       if (!res.destroyed) res.writeHead(result.status, Object.fromEntries(result.headers)).end(await result.text());
     } catch {
       if (!res.destroyed) res.writeHead(502).end();
@@ -90,6 +99,8 @@ async function main() {
       ['conversation', 'app_agent_sessions', 'WITH extracted AS MATERIALIZED', `/api/admin/bi${detailUrl}`, admin],
       ['usage-export', 'app_ledger', 'WITH tenancy AS MATERIALIZED', '/api/admin/bi/usage?view=export', admin],
       ['enterprise-export', 'app_ledger', 'WITH tenancy AS MATERIALIZED', `${enterpriseUrl}&view=export`, owner],
+      ['artwork-download', 'app_artworks', 'WITH query_window', `/api/enterprise/artworks?enterpriseId=${tenant}&format=csv`, owner],
+      ['ledger-download', 'app_ledger', 'WITH ledger_input', `/api/enterprise/analytics?enterpriseId=${tenant}&format=csv&from=2026-11-01&to=2026-11-30`, owner],
     ]) {
       await lock.query('BEGIN');
       try {
@@ -106,7 +117,7 @@ async function main() {
         assert.equal(pool.totalCount, 1);
         assert.equal(pool.idleCount, 0);
         clientRequest.destroy();
-        assert.equal(await until(async () => done.get(section), `${section}: route exits before unlocking`), 499);
+        assert.equal(await until(async () => done.get(section), `${section}: route exits before unlocking`), 499, section);
         assert.equal(pool.totalCount, 0, `${section}: abandoned client was discarded`);
         await until(async () => {
           await freshStats();
@@ -153,7 +164,7 @@ async function main() {
       tx.release();
     }
     await until(async () => pool.waitingCount === 0 && pool.idleCount === 1 ? true : undefined, 'late checkout returned idle');
-    console.log('BI_READ_CANCELLATION=PASS HTTP_DISCONNECT ARTWORK_COUNT MODEL_EVIDENCE OVERVIEW CONVERSATION TWO_USAGE_EXPORTS POSTGRES_EXIT WAITING_CHECKOUT AUDIT_AUTH_RETRY');
+    console.log('BI_READ_CANCELLATION=PASS HTTP_DISCONNECT ARTWORK_COUNT MODEL_EVIDENCE OVERVIEW CONVERSATION TWO_USAGE_EXPORTS ARTWORK_AND_LEDGER_CSV POSTGRES_EXIT WAITING_CHECKOUT AUDIT_AUTH_RETRY');
   } finally {
     server.closeAllConnections();
     await new Promise<void>(resolve => server.close(() => resolve()));

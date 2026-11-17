@@ -59,8 +59,8 @@
 | `GET /api/admin/usage` | `src/app/api/admin/usage/route.ts` | 待核查 |
 | `GET /api/admin/users` | `src/app/api/admin/users/route.ts` | 待核查 |
 | `GET /api/enterprise` | `src/app/api/enterprise/route.ts` | 部分：目录与站点范围、仅成员管理避开账务/素材表、停用成员指标隔离；超大成员目录和浏览器切换待复核 |
-| `GET /api/enterprise/analytics` | `src/app/api/enterprise/analytics/route.ts` | 部分：隔离 PostgreSQL 验证日期边界、汇总、CSV、订单归属、现行权限及写方获取账户锁，`verify-enterprise-analytics.ts`；长窗口/高容量查询、断开和导出峰值待核 |
-| `GET /api/enterprise/artworks` | `src/app/api/enterprise/artworks/route.ts` | 部分：真实受权范围、回收站、跨企业和撤权、CSV 及私有素材回归；深页键排序，`verify-enterprise-artworks.ts`、`verify-bi-history-pages.ts`；浏览器连续切换/真实网关待核 |
+| `GET /api/enterprise/analytics` | `src/app/api/enterprise/analytics/route.ts` | 部分：账务/现行权限复验；CSV 一次分类，5 万/超限边界及原字节对照，HTTP 断开后隔离库释放。`verify-enterprise-analytics.ts`、`verify-bi-read-cancellation.ts`；长窗口高并发与真实网关待核 |
+| `GET /api/enterprise/artworks` | `src/app/api/enterprise/artworks/route.ts` | 部分：真实受权范围、回收站、跨企业和撤权、深页键排序及私有素材；CSV 只读当页、不精确计数/取源图输入，隔离 HTTP 断开释放，`verify-enterprise-artworks.ts`、`verify-bi-history-pages.ts`；浏览器连续切换/真实网关待核 |
 | `GET /api/enterprise/content` | `src/app/api/enterprise/content/route.ts` | 待核查 |
 | `GET /api/enterprise/creations` | `src/app/api/enterprise/creations/route.ts` | 部分：企业近期固定 5 条、历史归属与统一列表；混合归档深页待核 |
 | `GET /api/enterprise/creations/[id]` | `src/app/api/enterprise/creations/[id]/route.ts` | 部分：共用详情查询经大任务 SQL 对照；企业鉴权、证据和费用分页、脱敏、撤权、来源定位已验证 |

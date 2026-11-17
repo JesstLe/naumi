@@ -82,7 +82,14 @@ async function main() {
   response = await read(owner, { format: "csv" }); const csv = await response.text(); assert.equal(response.status, 200); assert(csv.includes("创建操作")); assert(csv.includes("'=FORMULA_NOT_CODE")); assert(!csv.includes(outsider)); assert(!csv.includes("NEVER_EXPOSE_SOURCE"));
   assert.equal((await read(owner, { format: "csv", email: outsider })).status, 403);
   assert.match(response.headers.get("cache-control") || "", /no-store/);
-  console.log("CSV=PASS SAME_SCOPE=1 FORMULA_ESCAPED=1 PRIVATE_NO_STORE=1");
+  const {enterpriseArtworkCsv} = await import('../src/lib/enterprise/artworks');
+  for (const filters of [{}, {size:'1',page:'2'}, {page:'999'}, {status:'deleted'}, {status:'all',id:'art-old'}, {period:'all',from:'',to:''}] as Record<string,string>[]) {
+    const jsonPage = await read(owner,filters);
+    const csvPage = await read(owner,{...filters,format:'csv'});
+    assert.equal(jsonPage.status,200,JSON.stringify(filters));assert.equal(csvPage.status,200,JSON.stringify(filters));
+    assert.deepEqual(Buffer.from(await csvPage.arrayBuffer()),Buffer.from(enterpriseArtworkCsv(await jsonPage.json())),JSON.stringify(filters));
+  }
+  console.log("CSV=PASS SAME_SCOPE=1 FORMULA_ESCAPED=1 PRIVATE_NO_STORE=1 BYTE_PARITY=6");
   const memberId = "art-" + accounts.indexOf(member), foreignId = "art-" + accounts.indexOf(outsider);
   response = await media.GET(request(owner, "media", { email: member, id: memberId })); assert.equal(response.status, 200); let metadata = await sharp(Buffer.from(await response.arrayBuffer())).metadata(); assert.equal(metadata.width, 480);
   response = await media.GET(request(owner, "media", { email: member, id: memberId, full: "1" })); assert.equal(response.status, 200); metadata = await sharp(Buffer.from(await response.arrayBuffer())).metadata(); assert.equal(metadata.width, 1024);
