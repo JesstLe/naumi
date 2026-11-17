@@ -9,6 +9,7 @@ import {useAuth} from '@/lib/auth-context';
 import Markdown from 'react-markdown';
 import type {CreationListPage,CreationDetail,CreationAsset,CreationFailure} from '@/lib/saas/creation-contracts';
 import styles from './saas.module.css';
+import {queueCreationPreview} from './creation-preview-queue';
 const labels:Record<string,string>={queued:'排队中',running:'处理中',succeeded:'已完成',partial:'部分成功',failed:'失败',cancel_requested:'取消申请中',cancelled:'已取消',needs_review:'待核查'};
 function eventSummary(event:{type:string;summary:string}){
  if(event.type==='agent-tool'){try{const detail=JSON.parse(event.summary);if(typeof detail.tool==='string'&&typeof detail.summary==='string')return `${detail.tool} · ${detail.summary}`;}catch{}}
@@ -68,7 +69,11 @@ export function CreationDetailView({detail,api,tenantId,onPage,onChild}:{detail:
  const [showProcessed,setShowProcessed]=useState(false);
  useEffect(()=>setShowProcessed(false),[detail.id]);
  const outputs=detail.assets.filter(a=>a.direction==='output'&&a.role!=='reply'),replies=detail.assets.filter(a=>a.direction==='output'&&a.role==='reply'),inputs=detail.assets.filter(a=>a.direction==='input'&&a.variant!=='processed'),processed=detail.assets.filter(a=>a.direction==='input'&&a.variant==='processed');
- const media=(assets:CreationAsset[],result=false)=><div className={styles.mediaGrid}>{assets.map((a,i)=><CreationMedia key={`${detail.id}:${a.id}`} asset={a} title={result?(assets.length>1?`结果 ${i+1}`:''):undefined} api={`${api}/${detail.id}/assets/${a.id}${tenantId?`?tenantId=${tenantId}`:''}`}/>)}</div>;
+ const assetApi=(asset:CreationAsset)=>{
+  const q=new URLSearchParams();if(tenantId)q.set('tenantId',tenantId);if(asset.evidenceRecordId)q.set('evidenceRecord',asset.evidenceRecordId);
+  return `${api}/${detail.id}/assets/${asset.id}${q.size?`?${q}`:''}`;
+ };
+ const media=(assets:CreationAsset[],result=false)=><div className={styles.mediaGrid}>{assets.map((a,i)=><CreationMedia key={`${detail.id}:${a.id}`} asset={a} title={result?(assets.length>1?`结果 ${i+1}`:''):undefined} api={assetApi(a)}/>)}</div>;
  const count=(v:number|null)=>v===null?(detail.billing.state==='not_applicable'?'不适用':'未记录'):`${v} 积分`;
  return <><div className={styles.detailTitle}><div><h2>{detail.title}</h2><p>{detail.actorName} · {new Date(detail.acceptedAt).toLocaleString('zh-CN')}</p></div><CreationStatus status={detail.status}/></div>
  {detail.evidencePending&&<p role="status" className={styles.error}>部分执行资料待核查，结果与账务按已记录证据显示。</p>}
@@ -121,7 +126,11 @@ export function CreationMedia({asset,api,title}:{asset:CreationAsset;api:string;
   setUrl('');setFailed(false);if(visibleApi!==api||asset.availability!=='recorded')return;
   const image=asset.mediaType==='image',playback=['video','audio'].includes(asset.mediaType);if(!image&&!playback)return;
   const abort=new AbortController();let objectUrl='';
-  void authHeader().then(headers=>fetch(image?api:`${api}${api.includes('?')?'&':'?'}playback=1`,{headers,cache:'no-store',signal:abort.signal})).then(async response=>{
+  void queueCreationPreview(abort.signal,async()=>{
+   if(abort.signal.aborted)return;
+   const headers=await authHeader();
+   if(abort.signal.aborted)return;
+   const response=await fetch(image?api:`${api}${api.includes('?')?'&':'?'}playback=1`,{headers,cache:'no-store',signal:abort.signal});
    if(!response.ok)throw new Error();
    if(image){const blob=await response.blob();if(abort.signal.aborted)return;objectUrl=URL.createObjectURL(blob);setUrl(objectUrl);}
    else{const data=await response.json();if(!abort.signal.aborted)setUrl(data.url);}
