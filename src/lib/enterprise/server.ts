@@ -142,20 +142,20 @@ function projectionScopeKey(s: Scope) {
  * aggregating. Authorize the data snapshot first, then check a fresh scope in a
  * short transaction before any result leaves the server.
  */
-async function enterpriseProjectionRead<T>(actor:TeamActor,id:string,run:(tx:PoolClient,s:Scope)=>Promise<T>,requireRecords:boolean) {
+async function enterpriseProjectionRead<T>(actor:TeamActor,id:string,run:(tx:PoolClient,s:Scope)=>Promise<T>,requireRecords:boolean,allowSelf=false) {
   await ensureEnterpriseSchema();
   const tx=await getPool().connect();
   try {
     await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
     await tx.query("SET LOCAL statement_timeout='5s'; SET LOCAL lock_timeout='1s'");
-    const s=await scope(tx,actor,id,false,'snapshot');
+    const s=await scope(tx,actor,id,allowSelf,'snapshot');
     if(requireRecords&&!s.viewRecords)throw new TeamError('当前岗位没有经营数据查看权限');
     const key=projectionScopeKey(s);
     const result=await run(tx,s);
     await tx.query('COMMIT');
     await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
     await tx.query("SET LOCAL statement_timeout='3s'; SET LOCAL lock_timeout='1s'");
-    const current=await scope(tx,actor,id);
+    const current=await scope(tx,actor,id,allowSelf);
     if(requireRecords&&!current.viewRecords)throw new TeamError('当前岗位没有经营数据查看权限');
     if(key!==projectionScopeKey(current))throw new TeamError('企业成员范围已变化，请刷新后重试',409);
     await tx.query('COMMIT');
@@ -172,6 +172,15 @@ async function enterpriseProjectionRead<T>(actor:TeamActor,id:string,run:(tx:Poo
 
 export function enterpriseReportRead<T>(actor:TeamActor,id:string,run:(tx:PoolClient,s:Scope)=>Promise<T>) {
   return enterpriseProjectionRead(actor,id,run,true);
+}
+
+/** A workflow evidence picker grants self visibility to ordinary employees,
+ * but must not retain authorization locks while reading historical evidence. */
+export function enterpriseCreationProjectionRead<T>(email:string,id:string,run:(tx:PoolClient,s:Scope)=>Promise<T>) {
+  return enterpriseProjectionRead({email,admin:false},id,(tx,s)=>{
+    if(s.owner)s.visible.add(s.team.owner_email);
+    return run(tx,s);
+  },false,true);
 }
 
 type PickerRow=Omit<EnterpriseIdentity,'owner'>&{

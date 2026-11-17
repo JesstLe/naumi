@@ -1,3 +1,4 @@
+import {readWorkflowJson,workflowReadSignal} from '@/lib/enterprise/workflow-read';
 import {workflowSameOrigin} from '@/lib/enterprise/workflow-origin';
 import {sign} from 'node:crypto';
 import {z} from 'zod';
@@ -22,9 +23,9 @@ const query=z.discriminatedUnion('action',[
 async function prepare(request:Request,q:z.infer<typeof query>){
  const identity=await workflowSourceIdentity(request,q.enterpriseId);if(!(await rateLimit('workflow-source:'+JSON.stringify(identity),60,60000)))throw new IntegrationError('SOURCE_RATE_LIMIT',429);
  const config=workflowBridgeConfig(),token=workflowIdentityToken(identity,config,q.teamId);let response:Response;
- try{response=await fetch(config.origin+'/v1/orders/'+q.orderId,{headers:{authorization:'Bearer '+token},cache:'no-store',redirect:'error',signal:AbortSignal.timeout(5000)});}catch{throw new IntegrationError('WORKFLOW_SERVICE_UNAVAILABLE');}
- if(!response.ok)throw new IntegrationError(response.status===404?'TASK_NOT_FOUND':'WORKFLOW_SCOPE_REQUIRED',response.status);
- const {order}=await response.json() as {order:WorkOrder},task=order.tasks.find(t=>t.id===q.taskId);if(!task)throw new IntegrationError('TASK_NOT_FOUND',404);
+ try{response=await fetch(config.origin+'/v1/orders/'+q.orderId,{headers:{authorization:'Bearer '+token},cache:'no-store',redirect:'error',signal:workflowReadSignal(request,5000)});}catch{throw new IntegrationError('WORKFLOW_SERVICE_UNAVAILABLE');}
+ if(!response.ok){await response.body?.cancel().catch(()=>{});throw new IntegrationError(response.status===404?'TASK_NOT_FOUND':'WORKFLOW_SCOPE_REQUIRED',response.status);}
+ const {order}=await readWorkflowJson(response) as {order:WorkOrder},task=order.tasks.find(t=>t.id===q.taskId);if(!task)throw new IntegrationError('TASK_NOT_FOUND',404);
  return {identity,config,token,order,task,adapter:new CreationAdapter(identity.sourceSubject,deploymentPolicy())};
 }
 function mediaPath(r:IntegratedRecord,q:z.infer<typeof query>){
@@ -35,7 +36,7 @@ export async function GET(request:Request){
  try{const q=parsed.data,{identity,task,adapter}=await prepare(request,q);
   if(q.action==='candidates'){const data=await adapter.records({...q,size:20});return teamJson({...data,rows:data.rows.map(r=>mediaPath(r,q))});}
   if(q.action==='record'||q.action==='media'){const ref={instanceId:identity.sourceInstance,enterpriseId:identity.sourceEnterprise,kind:q.kind,id:q.id};if(q.action==='media')return enterpriseMediaResponse(request,await adapter.media(ref));return teamJson({record:mediaPath(await adapter.record(ref),q)});}
-  const entries=[];for(const link of task.sourceLinks??[]){try{const record=await adapter.record(link.ref);entries.push({link,available:true as const,record:mediaPath(record,q)});}catch(e){if(e instanceof IntegrationError&&[404,409].includes(e.status)||e instanceof TeamError&&[403,404].includes(e.status))entries.push({link,available:false as const,error:'SOURCE_NOT_AVAILABLE_TO_VIEWER'});else throw e;}}
+  const entries=[];for(const link of task.sourceLinks??[]){if(request.signal.aborted)throw new IntegrationError('WORKFLOW_SERVICE_UNAVAILABLE');try{const record=await adapter.record(link.ref);entries.push({link,available:true as const,record:mediaPath(record,q)});}catch(e){if(e instanceof IntegrationError&&[404,409].includes(e.status)||e instanceof TeamError&&[403,404].includes(e.status))entries.push({link,available:false as const,error:'SOURCE_NOT_AVAILABLE_TO_VIEWER'});else throw e;}}
   const visible=entries.flatMap(e=>e.available?[e.record as Awaited<ReturnType<CreationAdapter['record']>>]:[]);
   return teamJson({entries,summary:linkedLedgerSummary(visible,entries.length-visible.length),generatedAt:new Date().toISOString()});
  }catch(e){if(e instanceof IntegrationError)return teamJson({error:e.code},e.status);return teamFailure(e);}

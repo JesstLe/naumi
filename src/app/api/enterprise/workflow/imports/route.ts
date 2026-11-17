@@ -1,3 +1,4 @@
+import {readWorkflowJson,workflowReadSignal} from '@/lib/enterprise/workflow-read';
 import {z} from 'zod';
 import {workflowSourceIdentity,workflowBridgeConfig,workflowIdentityToken} from '@/lib/enterprise/workflow-identity';
 import {IntegrationError} from '@/lib/enterprise/integration/policy';
@@ -11,8 +12,8 @@ export async function GET(request:Request){const parsed=query.safeParse(Object.f
  const identity=await workflowSourceIdentity(new Request(request,{headers}),q.enterpriseId);const rateLimitResult = await checkRateLimit('workflow-import-file:'+JSON.stringify(identity),180,60000);
   if (rateLimitResult instanceof Response) return rateLimitResult;
   if (!rateLimitResult) return teamJson({error:'RATE_LIMITED'},429);
- const c=workflowBridgeConfig();let r:Response;try{r=await fetch(c.origin+(q.kind==='worksheet'?'/v1/imports/worksheet-file?':'/v1/imports/asset?')+new URLSearchParams({source:q.source,id:q.id,download:q.download}),{headers:{authorization:'Bearer '+workflowIdentityToken(identity,c,q.teamId)},cache:'no-store',redirect:'error',signal:AbortSignal.timeout(120000)});}catch{return teamJson({error:'SOURCE_FILE_UNAVAILABLE'},503);}
- if(!r.ok){if(!r.headers.get('content-type')?.includes('application/json'))return teamJson({error:'SOURCE_FILE_RESPONSE_INVALID'},502);return teamJson(await r.json(),r.status);}
- const mime=r.headers.get('content-type');if(!['image/png','image/jpeg','application/octet-stream'].includes(mime||''))return teamJson({error:'SOURCE_FILE_RESPONSE_INVALID'},502);
+ const c=workflowBridgeConfig();let r:Response;try{r=await fetch(c.origin+(q.kind==='worksheet'?'/v1/imports/worksheet-file?':'/v1/imports/asset?')+new URLSearchParams({source:q.source,id:q.id,download:q.download}),{headers:{authorization:'Bearer '+workflowIdentityToken(identity,c,q.teamId)},cache:'no-store',redirect:'error',signal:workflowReadSignal(request,120000)});}catch{return teamJson({error:'SOURCE_FILE_UNAVAILABLE'},503);}
+ if(!r.ok){return teamJson(await readWorkflowJson(r,'SOURCE_FILE_RESPONSE_INVALID'),r.status);}
+ const mime=r.headers.get('content-type');if(!['image/png','image/jpeg','application/octet-stream'].includes(mime||'')){await r.body?.cancel().catch(()=>{});return teamJson({error:'SOURCE_FILE_RESPONSE_INVALID'},502);}
  const output=new Headers({'Content-Type':mime!,'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; sandbox"});for(const k of ['content-length','content-disposition','x-content-sha256']){const v=r.headers.get(k);if(v)output.set(k,v);}return new Response(r.body,{headers:output});
  }catch(e){return e instanceof IntegrationError?teamJson({error:e.code},e.status):teamFailure(e);}}

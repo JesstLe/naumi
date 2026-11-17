@@ -1,3 +1,4 @@
+import {readWorkflowJson} from '@/lib/enterprise/workflow-read';
 import {workflowSameOrigin} from '@/lib/enterprise/workflow-origin';
 import {z} from 'zod';
 import {workflowSourceIdentity,workflowBridgeConfig,workflowIdentityToken} from '@/lib/enterprise/workflow-identity';
@@ -21,7 +22,7 @@ export async function GET(request:Request){const parsed=getSchema.safeParse(Obje
   if (!rateLimitResult) return teamJson({error:'RATE_LIMITED'},429);
  const c=workflowBridgeConfig(),params=new URLSearchParams();for(const [k,v] of Object.entries(q))if(!['action','enterpriseId','teamId','viewer'].includes(k)&&v!==undefined)params.set(k,String(v));let r:Response;
  try{r=await fetch(c.origin+'/v1/delivery/'+(q.action==='list'?'assets':q.action)+'?'+params,{headers:{authorization:'Bearer '+workflowIdentityToken(identity,c,q.teamId)},cache:'no-store',redirect:'error',signal:AbortSignal.any([request.signal,AbortSignal.timeout(stream?900000:120000)])});}catch{return teamJson({error:'FILE_SERVICE_UNAVAILABLE'},503);}
- if(!stream||!r.ok){if(!r.headers.get('content-type')?.includes('application/json'))return teamJson({error:'FILE_RESPONSE_INVALID'},502);return teamJson(await r.json(),r.status);}
+ if(!stream||!r.ok){return teamJson(await readWorkflowJson(r,'FILE_RESPONSE_INVALID'),r.status);}
  const mime=q.action==='preview'?r.headers.get('content-type'):'application/octet-stream';if(q.action==='preview'&&!['image/png','image/jpeg'].includes(mime||'')){await r.body?.cancel();return teamJson({error:'FILE_RESPONSE_INVALID'},502);}
  const headers=new Headers({'Content-Type':mime!,'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; sandbox"});for(const k of ['content-length','content-disposition','x-content-sha256']){const value=r.headers.get(k);if(value)headers.set(k,value);}if(q.action==='preview')headers.set('content-disposition','inline');return new Response(r.body,{headers});
  }catch(e){return e instanceof IntegrationError?teamJson({error:e.code},e.status):teamFailure(e);}}

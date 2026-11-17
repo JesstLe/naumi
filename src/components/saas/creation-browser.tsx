@@ -19,33 +19,48 @@ export function CreationBrowser(props:{tenantId?:string;enterprise?:boolean}){co
 function ScopedCreationBrowser({tenantId,enterprise=false}:{tenantId?:string;enterprise?:boolean}){
  const query=useSearchParams();const selected=query.get('creationId')||'';
  const platformHistory=!enterprise&&!tenantId;
- const [page,setPage]=useState<CreationListPage|null>(null),[detail,setDetail]=useState<CreationDetail|null>(null),[error,setError]=useState(''),[detailError,setDetailError]=useState(''),[retry,setRetry]=useState(0),[loading,setLoading]=useState(true);
+ const [page,setPage]=useState<CreationListPage|null>(null),[detail,setDetail]=useState<CreationDetail|null>(null),[error,setError]=useState(''),[detailError,setDetailError]=useState(''),[listRevision,refreshList]=useState(0),[detailRevision,refreshDetail]=useState(0),[loading,setLoading]=useState(true);
  const api=enterprise?'/api/enterprise/creations':'/api/admin/creations';
  const sessionEnded=useRef(false),listRead=useRef<AbortController|null>(null),detailRead=useRef<AbortController|null>(null);
- useEffect(()=>{const refresh=()=>{if(!sessionEnded.current)setRetry(v=>v+1);};const clear=()=>{
+ const reloadList=()=>{if(!sessionEnded.current&&!listRead.current)refreshList(v=>v+1);};
+ const reloadDetails=()=>{if(!sessionEnded.current&&!detailRead.current)refreshDetail(v=>v+1);};
+ useEffect(()=>{
+  let wasHidden=document.visibilityState==='hidden';
+  const refresh=()=>{
+    if(document.visibilityState!=='visible'){wasHidden=true;return;}
+    if(!wasHidden)return;
+    wasHidden=false;
+    // Restoring a tab refreshes authorization once. Ordinary window focus
+    // (dialogs, file pickers, DevTools) must not restart the reads.
+    if(!sessionEnded.current){
+      if(!listRead.current)refreshList(v=>v+1);
+      if(!detailRead.current)refreshDetail(v=>v+1);
+    }
+  };
+  const clear=()=>{
   sessionEnded.current=true;listRead.current?.abort();detailRead.current?.abort();
   setPage(null);setDetail(null);setLoading(false);setError('请重新登录');setDetailError('请重新登录');
- };window.addEventListener('focus',refresh);window.addEventListener('naumi:cache-session-ended',clear);return()=>{window.removeEventListener('focus',refresh);window.removeEventListener('naumi:cache-session-ended',clear);};},[]);
+ };document.addEventListener('visibilitychange',refresh);window.addEventListener('naumi:cache-session-ended',clear);return()=>{document.removeEventListener('visibilitychange',refresh);window.removeEventListener('naumi:cache-session-ended',clear);};},[]);
  const evidencePages=new URLSearchParams();for(const key of ['assetPage','eventPage','childPage'])if(query.get(key))evidencePages.set(key,query.get(key)!);if(tenantId)evidencePages.set('tenantId',tenantId);const evidenceKey=evidencePages.toString();
  const update=(values:Record<string,string>)=>replaceAdminQuery(values,Object.keys(values).some(k=>['q','from','to','period','user','status','source','page'].includes(k))?['creationId','assetPage','eventPage','childPage']:[]);
  const filters=new URLSearchParams();for(const key of ['q','from','to','period','user','status','source','page'])if(query.get(key))filters.set(key,query.get(key)!);if(tenantId)filters.set('tenantId',tenantId);if(filters.get('source')==='legacy')filters.delete('source');filters.set('view','unified');filters.set('projection','list');const filterKey=filters.toString();
  useEffect(()=>{if(sessionEnded.current)return;const abort=new AbortController();listRead.current=abort;setPage(null);setError('');setLoading(true);
-  void authHeader().then(headers=>fetch(`${api}?${filterKey}`,{headers,cache:'no-store',signal:abort.signal})).then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d.error||'记录读取失败');if(!abort.signal.aborted)setPage(d);}).catch(e=>{if(!abort.signal.aborted)setError(e.message);}).finally(()=>{if(!abort.signal.aborted)setLoading(false);});return()=>abort.abort();
- },[api,filterKey,retry]);
+  void authHeader().then(headers=>fetch(`${api}?${filterKey}`,{headers,cache:'no-store',signal:abort.signal})).then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d.error||'记录读取失败');if(!abort.signal.aborted)setPage(d);}).catch(e=>{if(!abort.signal.aborted)setError(e.message);}).finally(()=>{if(listRead.current===abort)listRead.current=null;if(!abort.signal.aborted)setLoading(false);});return()=>{abort.abort();if(listRead.current===abort)listRead.current=null;};
+ },[api,filterKey,listRevision]);
  useEffect(()=>{if(sessionEnded.current)return;setDetail(null);setDetailError('');if(!selected)return;const abort=new AbortController();detailRead.current=abort;
-  void authHeader().then(headers=>fetch(`${api}/${encodeURIComponent(selected)}?${evidenceKey}`,{headers,cache:'no-store',signal:abort.signal})).then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d.error||'详情读取失败');if(!abort.signal.aborted)setDetail(d);}).catch(e=>{if(!abort.signal.aborted)setDetailError(e.message);});return()=>abort.abort();
- },[api,selected,evidenceKey,retry]);
+  void authHeader().then(headers=>fetch(`${api}/${encodeURIComponent(selected)}?${evidenceKey}`,{headers,cache:'no-store',signal:abort.signal})).then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d.error||'详情读取失败');if(!abort.signal.aborted)setDetail(d);}).catch(e=>{if(!abort.signal.aborted)setDetailError(e.message);}).finally(()=>{if(detailRead.current===abort)detailRead.current=null;});return()=>{abort.abort();if(detailRead.current===abort)detailRead.current=null;};
+ },[api,selected,evidenceKey,detailRevision]);
  const artworkParams=new URLSearchParams({section:'artworks'});for(const key of ['q','from','to'])if(query.get(key))artworkParams.set(key,query.get(key)!);if(query.get('user'))artworkParams.set('email',query.get('user')!);
  const allDates=!query.get('from')&&!query.get('to')&&!page?.appliedFilters.from;
  const range=allDates?'全部日期':`${query.get('from')||page?.appliedFilters.from||'不限'} 至 ${query.get('to')||page?.appliedFilters.to||'不限'}`;
- const filtersUi=(<div className={styles.actions} style={{marginBottom:16}}><AdminQueryInput aria-label="搜索创作记录" placeholder="搜索创作记录" value={query.get('q')||''} onCommit={value=>update({q:value,page:'1'})}/><details className={styles.filterMenu}><summary>筛选</summary><div className={styles.filterFields}><AdminQueryInput aria-label="成员账号" type="email" placeholder="成员账号" value={query.get("user")||""} onCommit={value=>update({user:value,page:"1"})}/><input aria-label="开始日期" type="date" value={query.get('from')||page?.appliedFilters.from||''} onChange={e=>update({from:e.target.value,period:'',page:'1'})}/><input aria-label="结束日期" type="date" value={query.get('to')||page?.appliedFilters.to||''} onChange={e=>update({to:e.target.value,period:'',page:'1'})}/><select aria-label="创作状态" value={query.get('status')||''} onChange={e=>update({status:e.target.value,page:'1'})}><option value="">全部状态</option>{Object.entries(labels).map(([k,v])=><option value={k} key={k}>{v}</option>)}</select></div></details><button aria-label="刷新创作记录" onClick={()=>setRetry(v=>v+1)}><RefreshCw size={16}/></button></div>);
+ const filtersUi=(<div className={styles.actions} style={{marginBottom:16}}><AdminQueryInput aria-label="搜索创作记录" placeholder="搜索创作记录" value={query.get('q')||''} onCommit={value=>update({q:value,page:'1'})}/><details className={styles.filterMenu}><summary>筛选</summary><div className={styles.filterFields}><AdminQueryInput aria-label="成员账号" type="email" placeholder="成员账号" value={query.get("user")||""} onCommit={value=>update({user:value,page:"1"})}/><input aria-label="开始日期" type="date" value={query.get('from')||page?.appliedFilters.from||''} onChange={e=>update({from:e.target.value,period:'',page:'1'})}/><input aria-label="结束日期" type="date" value={query.get('to')||page?.appliedFilters.to||''} onChange={e=>update({to:e.target.value,period:'',page:'1'})}/><select aria-label="创作状态" value={query.get('status')||''} onChange={e=>update({status:e.target.value,page:'1'})}><option value="">全部状态</option>{Object.entries(labels).map(([k,v])=><option value={k} key={k}>{v}</option>)}</select></div></details><button aria-label="刷新创作记录" onClick={()=>{reloadList();reloadDetails();}}><RefreshCw size={16}/></button></div>);
  return <div className={styles.page} style={{padding:0,minHeight:0}}>
 
-  {error?<div className={styles.error} role="alert">{error} <button onClick={()=>setRetry(v=>v+1)}>重试</button></div>:null}
+  {error?<div className={styles.error} role="alert">{error} <button onClick={reloadList}>重试</button></div>:null}
   <div className={styles.detailGrid}>
    <section className={`${styles.panel} ${styles.recordList}`} aria-label="创作记录列表">{filtersUi}<div className={styles.actions}><span className={styles.muted}>{range}</span>{platformHistory&&<a href={`/admin/center?${artworkParams}`}>图片作品</a>}{!allDates&&<button onClick={()=>update({period:'all',from:'',to:'',page:'1'})}>全部日期</button>}</div>{loading?<div className={styles.empty} role="status">正在读取记录</div>:!page?.items.length?<div className={styles.empty}><ImageIcon size={30}/>暂无匹配的创作记录</div>:page.items.map(item=><button aria-pressed={selected===item.id||detail?.id===item.id} className={`${styles.record} ${selected===item.id||detail?.id===item.id?styles.selected:''}`} key={item.id} onClick={()=>update({creationId:item.id,assetPage:"",eventPage:"",childPage:""})}><div><strong>{item.title}</strong><p>{item.actorName} · {new Date(item.acceptedAt).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}</p><CreationStatus status={item.status}/>{item.scopeKind==='legacy_unconfirmed'&&<span className={styles.muted} title="历史任务记录，保留原始归属"> · 历史记录</span>}{!enterprise&&item.failure&&<p className={styles.failureSummary}>{item.failure.title}{item.failure.code&&`（${item.failure.code}）`}</p>}</div><ChevronRight size={16}/></button>)}
    {page&&<div className={styles.pager}><span>共 {page.pagination.total} 次创作</span><div className={styles.actions}><button aria-label="上一页" disabled={page.pagination.page===1} onClick={()=>update({page:String(page.pagination.page-1)})}>‹</button><span>{page.pagination.page}</span><button aria-label="下一页" disabled={page.pagination.page*page.pagination.size>=page.pagination.total} onClick={()=>update({page:String(page.pagination.page+1)})}>›</button></div></div>}</section>
-   <section className={`${styles.panel} ${selected?styles.detail:''}`} aria-label="创作全链路详情">{selected&&<button className={styles.mobileBack} onClick={()=>update({creationId:''})}><ArrowLeft size={15}/>返回列表</button>}{detailError?<div className={styles.error} role="alert">{detailError}<button onClick={()=>setRetry(v=>v+1)}>重试</button></div>:detail?<CreationDetailView detail={detail} api={api} tenantId={tenantId} onPage={(key,value)=>update({[key]:String(value)})} onChild={id=>update({creationId:id,assetPage:'',eventPage:'',childPage:''})}/>:<div className={styles.empty}>{selected?'正在读取详情':'选择创作记录查看输入、结果与费用'}</div>}</section>
+   <section className={`${styles.panel} ${selected?styles.detail:''}`} aria-label="创作全链路详情">{selected&&<button className={styles.mobileBack} onClick={()=>update({creationId:''})}><ArrowLeft size={15}/>返回列表</button>}{detailError?<div className={styles.error} role="alert">{detailError}<button onClick={reloadDetails}>重试</button></div>:detail?<CreationDetailView detail={detail} api={api} tenantId={tenantId} onPage={(key,value)=>update({[key]:String(value)})} onChild={id=>update({creationId:id,assetPage:'',eventPage:'',childPage:''})}/>:<div className={styles.empty}>{selected?'正在读取详情':'选择创作记录查看输入、结果与费用'}</div>}</section>
   </div>
  </div>;
 }
