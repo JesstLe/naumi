@@ -73,7 +73,7 @@
 | `GET /api/enterprise/tenant-usage` | `src/app/api/enterprise/tenant-usage/route.ts` | 待核查 |
 | `GET /api/enterprise/usage` | `src/app/api/enterprise/usage/route.ts` | 部分：报表账户行锁及撤权，`verify-enterprise-analytics.ts` |
 | `GET /api/enterprise/workflow` | `src/app/api/enterprise/workflow/route.ts` | 部分：工作流代理的取消和流限制；动态 action 按工作流直连条目继续追踪 |
-| `GET /api/enterprise/workflow/appeals` | `src/app/api/enterprise/workflow/appeals/route.ts` | 待核查 |
+| `GET /api/enterprise/workflow/appeals` | `src/app/api/enterprise/workflow/appeals/route.ts` | 部分：实际登录 Cookie 和签名代理专项回归，通过跨企业、跨团队和撤权边界；直连断开实测，真实网关待核 |
 | `GET /api/enterprise/workflow/capacity` | `src/app/api/enterprise/workflow/capacity/route.ts` | 待核查 |
 | `GET /api/enterprise/workflow/catalog` | `src/app/api/enterprise/workflow/catalog/route.ts` | 部分：隔离代理身份/读契约，直连无目录锁、撤权和分页；真实网关待核 |
 | `GET /api/enterprise/workflow/corrections` | `src/app/api/enterprise/workflow/corrections/route.ts` | 待核查 |
@@ -150,7 +150,7 @@
 | `POST /api/enterprise` | `src/app/api/enterprise/route.ts` | 待核查 |
 | `POST /api/enterprise/members` | `src/app/api/enterprise/members/route.ts` | 待核查 |
 | `POST /api/enterprise/workflow` | `src/app/api/enterprise/workflow/route.ts` | 待核查 |
-| `POST /api/enterprise/workflow/appeals` | `src/app/api/enterprise/workflow/appeals/route.ts` | 待核查 |
+| `POST /api/enterprise/workflow/appeals` | `src/app/api/enterprise/workflow/appeals/route.ts` | 部分：签名代理和实际 HTTP 流程，拒绝跨站、独立审核、重放与保留原得分；真实网关待核 |
 | `POST /api/enterprise/workflow/capacity` | `src/app/api/enterprise/workflow/capacity/route.ts` | 待核查 |
 | `POST /api/enterprise/workflow/catalog` | `src/app/api/enterprise/workflow/catalog/route.ts` | 部分：隔离 HTTP 预览断开取消、已提交命令继续转发；真实网关待核 |
 | `POST /api/enterprise/workflow/corrections` | `src/app/api/enterprise/workflow/corrections/route.ts` | 待核查 |
@@ -183,7 +183,7 @@
 | `入口 /enterprise（站点模式）` | `src/middleware.ts` | 待核查 |
 | `工作流 GET /healthz` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 GET /readyz` | `services/enterprise-workflow/src/server.ts` | 待核查 |
-| `工作流 GET /v1/appeals` | `services/enterprise-workflow/src/server.ts` | 待核查 |
+| `工作流 GET /v1/appeals` | `services/enterprise-workflow/src/server.ts` | 隔离已核查：依据与旧指纹、列表、详情、修订历史、审核人回避、成员撤权与改派、断开归还连接；长历史数据库提取成本待量化 |
 | `工作流 GET /v1/assignees` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 GET /v1/availability` | `services/enterprise-workflow/src/server.ts` | 已核查：目标权限、日历与当前配置，`availability.test.ts` |
 | `工作流 GET /v1/availability/history` | `services/enterprise-workflow/src/server.ts` | 已核查：权限、隐私和分页，`availability.test.ts` |
@@ -243,7 +243,7 @@
 | `工作流 GET /v1/uploads` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 GET /v1/week` | `services/enterprise-workflow/src/server.ts` | 部分：任务、排期与日历、撤权及跨团队信息边界，`read-transaction.test.ts`、`calendar.test.ts` |
 | `工作流 GET /v1/worklogs` | `services/enterprise-workflow/src/server.ts` | 待核查 |
-| `工作流 POST /v1/appeals` | `services/enterprise-workflow/src/server.ts` | 待核查 |
+| `工作流 POST /v1/appeals` | `services/enterprise-workflow/src/server.ts` | 部分：隔离回归提交、补充、处理、独立审核、写入版本与审计；本轮未改变写事务 |
 | `工作流 POST /v1/availability/preview` | `services/enterprise-workflow/src/server.ts` | 已核查：不持日历或订单行锁，最新目标权限，`availability.test.ts` |
 | `工作流 POST /v1/availability/save` | `services/enterprise-workflow/src/server.ts` | 部分：预览失效、原子保存及幂等；写链路其它负载待复查，`availability.test.ts` |
 | `工作流 POST /v1/batch-close` | `services/enterprise-workflow/src/server.ts` | 待核查 |

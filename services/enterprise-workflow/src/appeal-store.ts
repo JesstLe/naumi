@@ -5,42 +5,69 @@ import type {Period} from './performance-contracts';
 import type {Correction} from './correction-contracts';
 import {ensure,digest} from './performance-domain';
 import {appealCommand,appealQuery,type Appeal,type AppealBasis} from './appeal-contracts';
+import {readWorkflowSnapshot} from './read-transaction';
 const manager=(a:Actor)=>a.permissions.includes('manage');
 const open=(a:Appeal)=>a.status==='submitted'||a.status==='in_review';
+const confirmed="document->>'status'='confirmed' AND document->'snapshot' IS NOT NULL AND document->'snapshot'<>'null'::jsonb";
+type PeriodSnapshot=NonNullable<Period['snapshot']>;
+type AppealReadScope={ids:string[];includeAll:boolean;includeAssigned:boolean};
 export class AppealStore{
  constructor(private pool:Pool,private resolveActor:ResolveActor,readonly enabled=true,private now=()=>new Date()){}
- private async tx<T>(p:Principal,fn:(tx:PoolClient,a:Actor)=>Promise<T>,read=false){const tx=await this.pool.connect();try{await tx.query(read?'BEGIN ISOLATION LEVEL REPEATABLE READ':'BEGIN');await tx.query("SET LOCAL lock_timeout='3s';SET LOCAL statement_timeout='15s'");const a=await this.resolveActor(tx,p);ensure(a&&a.teamId&&a.subject===p.subject&&a.enterpriseId===p.enterpriseId&&a.teamId===p.teamId,'MEMBERSHIP_REQUIRED',403);ensure(this.enabled,'APPEALS_NOT_ENABLED',503);ensure((await tx.query('SELECT 1 FROM enterprise_workflow.schema_version WHERE version=27')).rowCount,'APPEALS_MIGRATION_REQUIRED',503);const r=await fn(tx,a);await tx.query('COMMIT');return r;}catch(e){await tx.query('ROLLBACK');throw e;}finally{tx.release();}}
+ private async available(tx:PoolClient,a:Actor){ensure(a.teamId,'MEMBERSHIP_REQUIRED',403);ensure(this.enabled,'APPEALS_NOT_ENABLED',503);ensure((await tx.query('SELECT 1 FROM enterprise_workflow.schema_version WHERE version=27')).rowCount,'APPEALS_MIGRATION_REQUIRED',503);}
+ private async tx<T>(p:Principal,fn:(tx:PoolClient,a:Actor)=>Promise<T>){const tx=await this.pool.connect();try{await tx.query('BEGIN');await tx.query("SET LOCAL lock_timeout='3s';SET LOCAL statement_timeout='15s'");const a=await this.resolveActor(tx,p);ensure(a&&a.subject===p.subject&&a.enterpriseId===p.enterpriseId&&a.teamId===p.teamId,'MEMBERSHIP_REQUIRED',403);await this.available(tx,a);const r=await fn(tx,a);await tx.query('COMMIT');return r;}catch(e){await tx.query('ROLLBACK');throw e;}finally{tx.release();}}
  private async row(tx:PoolClient,a:Actor,id:string){return(await tx.query('SELECT document FROM enterprise_workflow.performance_appeals WHERE enterprise_id=$1 AND id=$2',[a.enterpriseId,id])).rows[0]?.document as Appeal|undefined;}
  private visible(a:Actor,l:Appeal){return l.enterpriseId===a.enterpriseId&&l.teamId===a.teamId&&(a.subject===l.subject||manager(a)||a.permissions.includes('review')&&l.reviewer===a.subject);}
- private async period(tx:PoolClient,a:Actor,id:string){const p=(await tx.query('SELECT document FROM enterprise_workflow.performance_periods WHERE enterprise_id=$1 AND team_id=$2 AND id=$3',[a.enterpriseId,a.teamId,id])).rows[0]?.document as Period|undefined;ensure(p?.status==='confirmed'&&p.snapshot,'PERIOD_NOT_FOUND',404);return p;}
  private async context(tx:PoolClient,a:Actor,periodId:string,factId:string,subject:string){
-  const period=await this.period(tx,a,periodId),row=period.snapshot!.rows.find(r=>r.fact.id===factId),part=row?.parts.find(p=>p.subject===subject);ensure(row&&part,'APPEAL_FACT_NOT_FOUND',404);
+  const {rows:[period]}=await tx.query<{title:string;ruleVersion:number;version:number;rule:PeriodSnapshot['rule'];createdBy:string;confirmedBy:string|null;row:PeriodSnapshot['rows'][number]|null}>(`SELECT document->>'title' title,document->'ruleVersion' "ruleVersion",document->'version' version,document#>'{snapshot,rule}' rule,document->>'createdBy' "createdBy",document->>'confirmedBy' "confirmedBy",
+   (SELECT r FROM jsonb_array_elements(document#>'{snapshot,rows}') WITH ORDINALITY x(r,ord) WHERE r#>>'{fact,id}'=$4 ORDER BY ord LIMIT 1) AS "row"
+   FROM enterprise_workflow.performance_periods WHERE enterprise_id=$1 AND team_id=$2 AND id=$3 AND ${confirmed}`,[a.enterpriseId,a.teamId,periodId,factId]);
+  ensure(period,'PERIOD_NOT_FOUND',404);const row=period.row,part=row?.parts.find(p=>p.subject===subject);ensure(row&&part,'APPEAL_FACT_NOT_FOUND',404);
   ensure((await tx.query('SELECT 1 FROM enterprise_workflow.performance_claims WHERE enterprise_id=$1 AND team_id=$2 AND period_id=$3 AND fact_id=$4',[a.enterpriseId,a.teamId,periodId,factId])).rowCount,'APPEAL_CLAIM_MISMATCH');
-  const corrections=(await tx.query("SELECT document FROM enterprise_workflow.performance_corrections WHERE enterprise_id=$1 AND team_id=$2 AND period_id=$3 AND fact_id=$4 AND state='approved' ORDER BY applied_revision DESC LIMIT 5001",[a.enterpriseId,a.teamId,periodId,factId])).rows.map(r=>r.document as Correction);ensure(corrections.length<=5000,'APPEAL_HISTORY_TOO_LARGE',422);
-  const latest=corrections[0],current=latest?.afterParts.find(p=>p.subject===subject)??part;
+  const {rows:corrections}=await tx.query<{latest:Correction|null;proposedBy:string;reviewedBy:string|null}>(`SELECT CASE WHEN row_number() OVER(ORDER BY applied_revision DESC)=1 THEN document END latest,
+   document->>'proposedBy' "proposedBy",document->>'reviewedBy' "reviewedBy" FROM enterprise_workflow.performance_corrections WHERE enterprise_id=$1 AND team_id=$2 AND period_id=$3 AND fact_id=$4 AND state='approved' ORDER BY applied_revision DESC LIMIT 5001`,[a.enterpriseId,a.teamId,periodId,factId]);
+  ensure(corrections.length<=5000,'APPEAL_HISTORY_TOO_LARGE',422);
+  const latest=corrections[0]?.latest??undefined,current=latest?.afterParts.find(p=>p.subject===subject)??part;
   const simple=(s:typeof part)=>({bps:s.bps,baseMilli:s.baseMilli,scoreMilli:s.scoreMilli});
-  const basis:AppealBasis={periodId,periodTitle:period.title,factId,taskTitle:row.fact.taskTitle,ruleVersion:period.ruleVersion,subject,original:simple(part),current:simple(current),correctionId:latest?.id??null,correctionRevision:latest?.appliedRevision??0,basisHash:digest({periodId,version:period.version,rule:period.snapshot!.rule,row,latest:latest??null,subject})};
-  const allocation=(await tx.query('SELECT document FROM enterprise_workflow.performance_allocations WHERE enterprise_id=$1 AND team_id=$2 AND fact_id=$3',[a.enterpriseId,a.teamId,factId])).rows[0]?.document;
-  const conflicts=new Set([subject,...row.fact.participants,row.fact.actor,period.createdBy,period.confirmedBy,period.snapshot!.rule.authoredBy,period.snapshot!.rule.publishedBy,row.allocationApprovedBy,allocation?.proposedBy,allocation?.reviewedBy,...corrections.flatMap(c=>[c.proposedBy,c.reviewedBy])].filter((s):s is string=>!!s));
+  const basis:AppealBasis={periodId,periodTitle:period.title,factId,taskTitle:row.fact.taskTitle,ruleVersion:period.ruleVersion,subject,original:simple(part),current:simple(current),correctionId:latest?.id??null,correctionRevision:latest?.appliedRevision??0,basisHash:digest({periodId,version:period.version,rule:period.rule,row,latest:latest??null,subject})};
+  const allocation=(await tx.query("SELECT document->>'proposedBy' \"proposedBy\",document->>'reviewedBy' \"reviewedBy\" FROM enterprise_workflow.performance_allocations WHERE enterprise_id=$1 AND team_id=$2 AND fact_id=$3",[a.enterpriseId,a.teamId,factId])).rows[0];
+  const conflicts=new Set([subject,...row.fact.participants,row.fact.actor,period.createdBy,period.confirmedBy,period.rule.authoredBy,period.rule.publishedBy,row.allocationApprovedBy,allocation?.proposedBy,allocation?.reviewedBy,...corrections.flatMap(c=>[c.proposedBy,c.reviewedBy])].filter((s):s is string=>!!s));
   return {basis,conflicts,latest};
  }
- private async reviewer(tx:PoolClient,a:Actor,subject:string,conflicts:Set<string>){const r=await this.resolveActor(tx,{enterpriseId:a.enterpriseId,teamId:a.teamId,subject});return !!r?.permissions.includes('review')&&!conflicts.has(subject);}
- private async projection(tx:PoolClient,a:Actor,l:Appeal){ensure(this.visible(a,l),'APPEAL_NOT_FOUND',404);const c=await this.context(tx,a,l.periodId,l.factId,l.subject);return {appeal:l,currentBasis:c.basis,canSupplement:open(l)&&l.subject===a.subject,canAssign:open(l)&&manager(a),canResolve:open(l)&&l.reviewer===a.subject&&await this.reviewer(tx,a,a.subject,c.conflicts),overdue:open(l)&&!!l.dueAt&&Date.parse(l.dueAt)<+this.now()};}
- async read(p:Principal,raw:unknown){const q=appealQuery.parse(raw);return this.tx(p,async(tx,a)=>{
-  if(q.action==='basis')return {basis:(await this.context(tx,a,q.periodId,q.factId,a.subject)).basis};
-  if(q.action==='list'){
-   const period=await this.period(tx,a,q.periodId);if(q.scope==='team')ensure(manager(a)||a.permissions.includes('review'),'APPEAL_TEAM_FORBIDDEN',403);else ensure(period.snapshot!.results.some(r=>r.subject===a.subject),'PERIOD_NOT_FOUND',404);
-   const where="enterprise_id=$1 AND team_id=$2 AND period_id=$3 AND ($4='all' OR status=$4) AND ($5::boolean OR subject=$6 OR $7::boolean AND document->>'reviewer'=$6)",args=[a.enterpriseId,a.teamId,q.periodId,q.state,q.scope==='team'&&manager(a),a.subject,q.scope==='team'&&a.permissions.includes('review')];
-   const total=Number((await tx.query('SELECT count(*) n FROM enterprise_workflow.performance_appeals WHERE '+where,args)).rows[0].n),rows=(await tx.query('SELECT document FROM enterprise_workflow.performance_appeals WHERE '+where+' ORDER BY updated_at DESC,id DESC LIMIT 30 OFFSET $8',[...args,(q.page-1)*30])).rows;
-   return {items:rows.map(r=>{const l=r.document as Appeal;return {id:l.id,subject:l.subject,taskTitle:l.basis.taskTitle,status:l.status,version:l.version,reviewer:l.reviewer,dueAt:l.dueAt,updatedAt:l.updatedAt,overdue:open(l)&&!!l.dueAt&&Date.parse(l.dueAt)<+this.now()};}),total,page:q.page,canManage:manager(a)};
-  }
-  const l=await this.row(tx,a,q.id);ensure(l&&this.visible(a,l),'APPEAL_NOT_FOUND',404);
-  if(q.action==='detail')return this.projection(tx,a,l);
-  if(q.action==='history')return {events:(await tx.query('SELECT revision,actor,action,reason,document,created_at FROM enterprise_workflow.appeal_revisions WHERE enterprise_id=$1 AND appeal_id=$2 ORDER BY revision DESC LIMIT 30 OFFSET $3',[a.enterpriseId,l.id,(q.page-1)*30])).rows,total:l.version,page:q.page};
-  ensure(manager(a),'APPEAL_ASSIGN_FORBIDDEN',403);const c=await this.context(tx,a,l.periodId,l.factId,l.subject);
-  const where="m.enterprise_id=$1 AND m.team_id=$2 AND m.enabled AND a.enabled AND t.enabled AND (m.expires_at IS NULL OR m.expires_at>now()) AND (a.expires_at IS NULL OR a.expires_at>now()) AND m.permissions ? 'review' AND NOT(m.subject=ANY($3::text[]))",args=[a.enterpriseId,a.teamId,[...c.conflicts]],from=' FROM enterprise_workflow.team_members m JOIN enterprise_workflow.accounts a USING(enterprise_id,subject) JOIN enterprise_workflow.teams t USING(enterprise_id,team_id) WHERE '+where;
-  return {members:(await tx.query('SELECT m.subject'+from+' ORDER BY m.subject LIMIT 30 OFFSET $4',[...args,(q.page-1)*30])).rows,total:Number((await tx.query('SELECT count(*) n'+from,args)).rows[0].n),page:q.page};
- },true);}
+ private async reviewer(tx:PoolClient,a:Actor,subject:string,conflicts:Set<string>,snapshot=false){const lookup=snapshot?this.resolveActor.readSnapshot!:this.resolveActor,r=await lookup(tx,{enterpriseId:a.enterpriseId,teamId:a.teamId,subject});return !!r?.permissions.includes('review')&&!conflicts.has(subject);}
+ private async projection(tx:PoolClient,a:Actor,l:Appeal,snapshot=false){ensure(this.visible(a,l),'APPEAL_NOT_FOUND',404);const c=await this.context(tx,a,l.periodId,l.factId,l.subject);return {appeal:l,currentBasis:c.basis,canSupplement:open(l)&&l.subject===a.subject,canAssign:open(l)&&manager(a),canResolve:open(l)&&l.reviewer===a.subject&&await this.reviewer(tx,a,a.subject,c.conflicts,snapshot),overdue:open(l)&&!!l.dueAt&&Date.parse(l.dueAt)<+this.now()};}
+ async read(p:Principal,raw:unknown,signal?:AbortSignal){const q=appealQuery.parse(raw);
+  const result=await readWorkflowSnapshot(this.pool,this.resolveActor,p,async(tx,a,snapshot)=>{
+   await this.available(tx,a);
+   if(q.action==='basis')return {data:{basis:(await this.context(tx,a,q.periodId,q.factId,a.subject)).basis}};
+   if(q.action==='list'){
+    const team=q.scope==='team';
+    ensure((await tx.query(`SELECT 1 FROM enterprise_workflow.performance_periods WHERE enterprise_id=$1 AND team_id=$2 AND id=$3 AND ${confirmed}
+      AND ($4::boolean OR document#>'{snapshot,results}' @> jsonb_build_array(jsonb_build_object('subject',$5::text)))`,[a.enterpriseId,a.teamId,q.periodId,team,a.subject])).rowCount,'PERIOD_NOT_FOUND',404);
+    if(team)ensure(manager(a)||a.permissions.includes('review'),'APPEAL_TEAM_FORBIDDEN',403);
+    const includeAll=team&&manager(a),includeAssigned=team&&a.permissions.includes('review'),offset=(q.page-1)*30;
+    const where="enterprise_id=$1 AND team_id=$2 AND period_id=$3 AND ($4='all' OR status=$4) AND ($5::boolean OR subject=$6 OR $7::boolean AND document->>'reviewer'=$6)",args=[a.enterpriseId,a.teamId,q.periodId,q.state,includeAll,a.subject,includeAssigned];
+    const total=Number((await tx.query('SELECT count(*) n FROM enterprise_workflow.performance_appeals WHERE '+where,args)).rows[0].n);
+    const {rows:items}=offset<total?await tx.query<Pick<Appeal,'id'|'subject'|'status'|'version'|'reviewer'|'dueAt'|'updatedAt'>&{taskTitle:string}>(`SELECT id,subject,status,version,document#>>'{basis,taskTitle}' "taskTitle",document->>'reviewer' reviewer,document->>'dueAt' "dueAt",document->>'updatedAt' "updatedAt"
+     FROM enterprise_workflow.performance_appeals WHERE ${where} ORDER BY updated_at DESC,id DESC LIMIT 30 OFFSET $8`,[...args,offset]):{rows:[]};
+    return {data:{items:items.map(l=>({...l,overdue:(l.status==='submitted'||l.status==='in_review')&&!!l.dueAt&&Date.parse(l.dueAt)<+this.now()})),total,page:q.page,canManage:manager(a)},scope:{ids:items.map(l=>l.id),includeAll,includeAssigned}};
+   }
+   const l=await this.row(tx,a,q.id);ensure(l&&this.visible(a,l),'APPEAL_NOT_FOUND',404);
+   const scope:AppealReadScope={ids:[l.id],includeAll:manager(a),includeAssigned:a.permissions.includes('review')};
+   if(q.action==='detail')return {data:await this.projection(tx,a,l,snapshot),scope};
+   const offset=(q.page-1)*30;
+   if(q.action==='history')return {data:{events:offset<l.version?(await tx.query('SELECT revision,actor,action,reason,document,created_at FROM enterprise_workflow.appeal_revisions WHERE enterprise_id=$1 AND appeal_id=$2 ORDER BY revision DESC LIMIT 30 OFFSET $3',[a.enterpriseId,l.id,offset])).rows:[],total:l.version,page:q.page},scope};
+   ensure(manager(a),'APPEAL_ASSIGN_FORBIDDEN',403);const c=await this.context(tx,a,l.periodId,l.factId,l.subject);
+   const where="m.enterprise_id=$1 AND m.team_id=$2 AND m.enabled AND a.enabled AND t.enabled AND (m.expires_at IS NULL OR m.expires_at>now()) AND (a.expires_at IS NULL OR a.expires_at>now()) AND m.permissions ? 'review' AND NOT(m.subject=ANY($3::text[]))",args=[a.enterpriseId,a.teamId,[...c.conflicts]],from=' FROM enterprise_workflow.team_members m JOIN enterprise_workflow.accounts a USING(enterprise_id,subject) JOIN enterprise_workflow.teams t USING(enterprise_id,team_id) WHERE '+where;
+   const total=Number((await tx.query('SELECT count(*) n'+from,args)).rows[0].n);
+   const members=offset<total?(await tx.query('SELECT m.subject'+from+' ORDER BY m.subject LIMIT 30 OFFSET $4',[...args,offset])).rows:[];
+   return {data:{members,total,page:q.page},scope};
+  },{legacyRepeatable:true,statementTimeoutMs:15000,signal,checkCurrent:async(tx,a,{scope})=>{
+   if(!scope?.ids.length)return;
+   const {rowCount}=await tx.query("SELECT id FROM enterprise_workflow.performance_appeals WHERE enterprise_id=$1 AND team_id=$2 AND id=ANY($3::uuid[]) AND ($4::boolean OR subject=$5 OR $6::boolean AND document->>'reviewer'=$5)",[a.enterpriseId,a.teamId,scope.ids,scope.includeAll,a.subject,scope.includeAssigned]);
+   ensure(rowCount===scope.ids.length,q.action==='list'?'APPEAL_SCOPE_CHANGED':'APPEAL_NOT_FOUND',q.action==='list'?409:404);
+  }});
+  return result.data;
+ }
  async execute(p:Principal,raw:unknown){const c=appealCommand.parse(raw);return this.tx(p,async(tx,a)=>{
   await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`appeal-command:${a.enterpriseId}:${c.commandId}`]);
   await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`performance:${a.enterpriseId}:${a.teamId}`]);
