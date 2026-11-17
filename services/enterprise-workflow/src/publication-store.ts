@@ -12,6 +12,8 @@ import {publicationCommand,publicationPreview,publicationQuery,type Publication,
 const operator=(a:Actor)=>a.permissions.includes('request')||a.permissions.includes('manage'),reviewer=(a:Actor)=>a.permissions.includes('manage')&&a.permissions.includes('review');
 const active=['draft','approved','executing','unknown','manual_published','recall_requested','recall_unknown'];
 const key=(shopId:string,externalObjectId:string,slot:string,locale:string)=>digest({shopId,externalObjectId,slot,locale});
+const scopeArgs=(a:Actor)=>[a.enterpriseId,a.teamId,a.permissions.some(p=>['manage','dispatch','review'].includes(p)),a.subject,a.permissions.includes('execute'),a.workKinds,a.permissions.some(p=>['manage','dispatch'].includes(p))];
+const listScope=`FROM enterprise_workflow.publications p JOIN enterprise_workflow.orders o ON o.enterprise_id=p.enterprise_id AND o.id=p.order_id JOIN enterprise_workflow.catalog_entities s ON s.enterprise_id=p.enterprise_id AND s.id=p.shop_id WHERE p.enterprise_id=$1 AND p.team_id=$2 AND ${readScope('o.document','$7')} AND s.document->'teamIds' ? $2::text`;
 export class PublicationStore{
  private verifyingReads=0;
  constructor(readonly pool:Pool,private resolveActor:ResolveActor,private validateAssets:ValidateAssets,private catalog:CatalogStore,private guidelines:GuidelineStore,readonly enabled=true,private now=()=>new Date()){}
@@ -34,7 +36,8 @@ export class PublicationStore{
  private async tx<T>(p:Principal,fn:(tx:PoolClient,a:Actor)=>Promise<T>,read=false){const tx=await this.pool.connect();try{await tx.query(read?'BEGIN ISOLATION LEVEL REPEATABLE READ':'BEGIN');await tx.query("SET LOCAL lock_timeout='3s';SET LOCAL statement_timeout='20s'");const a=await this.resolveActor(tx,p);ensure(a&&a.enterpriseId===p.enterpriseId&&a.subject===p.subject&&a.teamId===p.teamId,'MEMBERSHIP_REQUIRED',403);await this.requireReady(tx,a);const r=await fn(tx,a);await tx.query('COMMIT');return r;}catch(e){await tx.query('ROLLBACK');throw e;}finally{tx.release();}}
  private async row(tx:PoolClient,a:Actor,id:string){return(await tx.query('SELECT document FROM enterprise_workflow.publications WHERE enterprise_id=$1 AND id=$2',[a.enterpriseId,id])).rows[0]?.document as Publication|undefined;}
  private async order(tx:PoolClient,a:Actor,id:string){const o=(await tx.query('SELECT document FROM enterprise_workflow.orders WHERE enterprise_id=$1 AND id=$2',[a.enterpriseId,id])).rows[0]?.document as WorkOrder|undefined;ensure(o&&canRead(a,o),'PUBLICATION_SOURCE_UNAVAILABLE',404);return o;}
- private async access(tx:PoolClient,a:Actor,n:Publication,lock=true){ensure(n.enterpriseId===a.enterpriseId&&n.teamId===a.teamId,'PUBLICATION_NOT_FOUND',404);await this.order(tx,a,n.source.orderId);const s=(await tx.query(`SELECT document FROM enterprise_workflow.catalog_entities WHERE enterprise_id=$1 AND id=$2 AND kind='shop'${lock?' FOR SHARE':''}`,[a.enterpriseId,n.target.shop.id])).rows[0]?.document;ensure(s?.teamIds.includes(a.teamId),'PUBLICATION_SHOP_FORBIDDEN',403);}
+ private async readableOrder(tx:PoolClient,a:Actor,orderId:string){ensure((await tx.query(`SELECT 1 FROM enterprise_workflow.orders WHERE enterprise_id=$1 AND document->>'enterpriseId'=$1::uuid::text AND id=$8 AND ${readScope('document','$7')}`,[...scopeArgs(a),orderId])).rowCount,'PUBLICATION_SOURCE_UNAVAILABLE',404);}
+ private async access(tx:PoolClient,a:Actor,n:Publication,lock=true){ensure(n.enterpriseId===a.enterpriseId&&n.teamId===a.teamId,'PUBLICATION_NOT_FOUND',404);if(lock)await this.order(tx,a,n.source.orderId);else await this.readableOrder(tx,a,n.source.orderId);const s=(await tx.query(`SELECT 1 FROM enterprise_workflow.catalog_entities WHERE enterprise_id=$1 AND id=$2 AND kind='shop' AND document->'teamIds' ? $3::text${lock?' FOR SHARE':''}`,[a.enterpriseId,n.target.shop.id,a.teamId])).rowCount;ensure(s,'PUBLICATION_SHOP_FORBIDDEN',403);}
  private async source(tx:PoolClient,a:Actor,orderId:string,taskId:string){const o=await this.order(tx,a,orderId),t=o.tasks.find(t=>t.id===taskId);ensure(t?.status==='accepted'&&t.acceptedAt&&!o.cancellations?.some(c=>c.status==='applied')&&(['active','completed'].includes(o.status)||o.status==='archived'&&o.tasks.every(t=>t.status==='accepted')),'PUBLICATION_NOT_ACCEPTED');const accepted=(await tx.query("SELECT id,event FROM enterprise_workflow.events WHERE enterprise_id=$1 AND order_id=$2 AND event->>'type'='workflow.task.accepted.v1' AND event->'data'->>'taskId'=$3 ORDER BY aggregate_version DESC LIMIT 1",[a.enterpriseId,o.id,t.id])).rows[0];ensure(accepted&&accepted.event.data.acceptedAt===t.acceptedAt&&digest(accepted.event.data.assetIds)===digest(t.assetIds),'PUBLICATION_ACCEPTANCE_MISMATCH');
   const files=(await tx.query('SELECT id,revision,name,bytes,sha256 FROM enterprise_workflow.delivery_assets WHERE enterprise_id=$1 AND order_id=$2 AND task_id=$3 AND id=ANY($4::uuid[]) ORDER BY id',[a.enterpriseId,o.id,t.id,t.assetIds])).rows.map(f=>({...f,bytes:Number(f.bytes)}));ensure(files.length===t.assetIds.length&&files.length>0,'PUBLICATION_FILES_UNAVAILABLE');
   const source:PublicationSource={orderId:o.id,taskId:t.id,orderTitle:o.title,taskTitle:t.title,acceptanceId:accepted.id,acceptedAt:t.acceptedAt,participants:participants(t),guideline:o.guideline??null,files};return {o,t,source};
@@ -81,8 +84,42 @@ export class PublicationStore{
   const tk=key(n.target.shop.id,n.externalObjectId,n.slot,n.locale);if(active.includes(n.status)){await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`publication-target:${a.enterpriseId}:${tk}`]);ensure(!(await tx.query('SELECT 1 FROM enterprise_workflow.publications WHERE enterprise_id=$1 AND target_key=$2 AND id<>$3 AND status=ANY($4::text[])',[a.enterpriseId,tk,n.id,active])).rowCount,'PUBLICATION_TARGET_OCCUPIED');}
   await tx.query('INSERT INTO enterprise_workflow.publication_commands(enterprise_id,id,publication_id,subject,fingerprint,applied_version)VALUES($1,$2,$3,$4,$5,$6)',[a.enterpriseId,c.commandId,n.id,a.subject,fp,n.version]);await tx.query('INSERT INTO enterprise_workflow.publications(enterprise_id,id,team_id,order_id,task_id,shop_id,target_key,version,status,document)VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(enterprise_id,id)DO UPDATE SET version=EXCLUDED.version,status=EXCLUDED.status,document=EXCLUDED.document,updated_at=now()',[a.enterpriseId,n.id,n.teamId,n.source.orderId,n.source.taskId,n.target.shop.id,tk,n.version,n.status,n]);await tx.query('INSERT INTO enterprise_workflow.publication_revisions(enterprise_id,publication_id,revision,command_id,actor,reason,action,document)VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[a.enterpriseId,n.id,n.version,c.commandId,a.subject,c.reason,action.type,n]);return {...this.projection(a,n),replayed:false,appliedVersion:n.version};
  });}
+ private async list(tx:PoolClient,a:Actor,q:Extract<ReturnType<typeof publicationQuery.parse>,{action:'list'}>){
+  const args:unknown[]=scopeArgs(a),filters:string[]=[];
+  for(const [column,value] of [['status',q.status],['order_id',q.orderId],['shop_id',q.shopId]] as const){if(value)filters.push(` AND p.${column}=$${args.push(value)}`);}
+  const from=listScope+filters.join(''),offset=(q.page-1)*30;
+  const total=Number((await tx.query('SELECT count(*) n '+from,args)).rows[0].n);
+  const items=offset>=total?[]:(await tx.query(`WITH page AS MATERIALIZED (
+    SELECT p.id,p.updated_at ${from} ORDER BY p.updated_at DESC,p.id DESC LIMIT 30 OFFSET $${args.length+1}
+   ) SELECT p.id,p.version,p.status,p.document #>> '{source,taskTitle}' AS "taskTitle",p.document #>> '{target,shop,document,name}' AS shop,
+     p.document->>'externalObjectId' AS "externalObjectId",p.document->>'slot' AS slot,p.document->>'locale' AS locale,
+     p.document->>'scheduleAt' AS "scheduleAt",p.document->>'updatedAt' AS "updatedAt"
+   FROM page JOIN enterprise_workflow.publications p ON p.enterprise_id=$1 AND p.id=page.id
+   ORDER BY page.updated_at DESC,page.id DESC`,[...args,offset])).rows.map(r=>({...r,verification:'manual_report_not_platform_verified'}));
+  return {items,total,page:q.page,canCreate:operator(a)};
+ }
  async read(p:Principal,raw:unknown,signal?:AbortSignal){const q=publicationQuery.parse(raw);
- if(q.action==='detail'&&this.detachedReads()){
+ if(q.action==='list')return readWorkflowSnapshot(this.pool,this.resolveActor,p,async(tx,a)=>{
+  await this.requireReady(tx,a);return this.list(tx,a,q);
+ },{legacyRepeatable:true,statementTimeoutMs:20000,signal,checkCurrent:async(tx,a,{items})=>{
+  if(!items.length)return;
+  ensure((await tx.query(`SELECT p.id ${listScope} AND p.id=ANY($8::uuid[])`,[...scopeArgs(a),items.map(i=>i.id)])).rowCount===items.length,'READ_SCOPE_CHANGED');
+ }});
+ if(q.action==='source')return readWorkflowSnapshot(this.pool,this.resolveActor,p,async(tx,a)=>{
+  await this.requireReady(tx,a);const c=await this.source(tx,a,q.orderId,q.taskId);return {source:c.source,catalog:c.o.catalog??null,canCreate:operator(a)};
+ },{legacyRepeatable:true,statementTimeoutMs:20000,signal,checkCurrent:(tx,a)=>this.readableOrder(tx,a,q.orderId)});
+ if(q.action==='history'){
+  const current=async(tx:PoolClient,a:Actor,lock:boolean)=>{const n=await this.row(tx,a,q.id);ensure(n,'PUBLICATION_NOT_FOUND',404);await this.access(tx,a,n,lock);return n;};
+  return readWorkflowSnapshot(this.pool,this.resolveActor,p,async(tx,a,snapshot)=>{
+   await this.requireReady(tx,a);const n=await current(tx,a,!snapshot),offset=(q.page-1)*30;
+   const events=offset>=n.version?[]:(await tx.query(`WITH page AS MATERIALIZED (
+     SELECT revision FROM enterprise_workflow.publication_revisions WHERE enterprise_id=$1 AND publication_id=$2 ORDER BY revision DESC LIMIT 30 OFFSET $3
+    ) SELECT r.revision,r.actor,r.reason,r.action,r.document,r.created_at FROM page JOIN enterprise_workflow.publication_revisions r
+      ON r.enterprise_id=$1 AND r.publication_id=$2 AND r.revision=page.revision ORDER BY r.revision DESC`,[a.enterpriseId,n.id,offset])).rows;
+   return {events,total:n.version,page:q.page};
+  },{legacyRepeatable:true,statementTimeoutMs:20000,signal,checkCurrent:async(tx,a)=>{await current(tx,a,false);}});
+ }
+ if(this.detachedReads()){
   const current=async(tx:PoolClient,a:Actor)=>{const n=await this.row(tx,a,q.id);ensure(n,'PUBLICATION_NOT_FOUND',404);await this.access(tx,a,n,false);return n;};
   return readWorkflowSnapshot(this.pool,this.resolveActor,p,async(tx,a)=>{
    await this.requireReady(tx,a);const n=await current(tx,a);return {...this.projection(a,n),availability:await this.currentAvailability(tx,a,n,true)};
@@ -96,8 +133,6 @@ export class PublicationStore{
   }});
  }
  return this.tx(p,async(tx,a)=>{
-  if(q.action==='source'){const c=await this.source(tx,a,q.orderId,q.taskId);return {source:c.source,catalog:c.o.catalog??null,canCreate:operator(a)};}
-  if(q.action==='list'){const where=`p.enterprise_id=$1 AND p.team_id=$2 AND ${readScope('o.document','$7')} AND s.document->'teamIds' ? $2::text AND ($8='' OR p.status=$8) AND ($9='' OR p.order_id::text=$9) AND ($10='' OR p.shop_id::text=$10)`,args=[a.enterpriseId,a.teamId,a.permissions.some(p=>['manage','dispatch','review'].includes(p)),a.subject,a.permissions.includes('execute'),a.workKinds,a.permissions.some(p=>['manage','dispatch'].includes(p)),q.status,q.orderId??'',q.shopId??''],from=' FROM enterprise_workflow.publications p JOIN enterprise_workflow.orders o ON o.enterprise_id=p.enterprise_id AND o.id=p.order_id JOIN enterprise_workflow.catalog_entities s ON s.enterprise_id=p.enterprise_id AND s.id=p.shop_id WHERE '+where;return {items:(await tx.query('SELECT p.document'+from+' ORDER BY p.updated_at DESC,p.id DESC LIMIT 30 OFFSET $11',[...args,(q.page-1)*30])).rows.map(r=>{const n=r.document as Publication;return {id:n.id,version:n.version,status:n.status,taskTitle:n.source.taskTitle,shop:n.target.shop.document.name,externalObjectId:n.externalObjectId,slot:n.slot,locale:n.locale,scheduleAt:n.scheduleAt,updatedAt:n.updatedAt,verification:'manual_report_not_platform_verified'};}),total:Number((await tx.query('SELECT count(*) n'+from,args)).rows[0].n),page:q.page,canCreate:operator(a)};}
-  const n=await this.row(tx,a,q.id);ensure(n,'PUBLICATION_NOT_FOUND',404);if(q.action==='detail')await this.catalog.lock(tx,a.enterpriseId);await this.access(tx,a,n);if(q.action==='detail')return {...this.projection(a,n),availability:await this.currentAvailability(tx,a,n)};return {events:(await tx.query('SELECT revision,actor,reason,action,document,created_at FROM enterprise_workflow.publication_revisions WHERE enterprise_id=$1 AND publication_id=$2 ORDER BY revision DESC LIMIT 30 OFFSET $3',[a.enterpriseId,n.id,(q.page-1)*30])).rows,total:n.version,page:q.page};
+  const n=await this.row(tx,a,q.id);ensure(n,'PUBLICATION_NOT_FOUND',404);await this.catalog.lock(tx,a.enterpriseId);await this.access(tx,a,n);return {...this.projection(a,n),availability:await this.currentAvailability(tx,a,n)};
  },true);}
 }
