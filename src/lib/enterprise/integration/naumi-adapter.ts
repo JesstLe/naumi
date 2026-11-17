@@ -1,7 +1,7 @@
 import 'server-only';
 import type { TeamActor } from '@/lib/teams/grants';
 import { TeamError } from "@/lib/teams/errors";
-import { enterpriseList,enterpriseSnapshot,enterpriseRead } from '../server';
+import { enterpriseList,enterpriseSnapshot,enterpriseReportRead } from '../server';
 import { enterpriseAnalytics,analyticsQuerySchema } from '../analytics';
 import {queryBi,queryEnterpriseOperations} from "@/lib/bi/repository";
 import {ensureBiSchema} from "@/lib/bi/schema";
@@ -30,7 +30,7 @@ export class NaumiEnterpriseAdapter implements EnterpriseDataPort {
       rows=analytics.details.rows as unknown as BiRow[];total=analytics.details.total;size=analytics.details.size;page=analytics.details.page;generatedAt=analytics.generatedAt;
     }else{
       await ensureBiSchema();
-      const data=await enterpriseRead(this.actor,input.enterpriseId,async(tx,scope)=>{
+      const data=await enterpriseReportRead(this.actor,input.enterpriseId,async(tx,scope)=>{
         if(query.email&&!scope.visible.has(query.email))throw new TeamError('没有该成员内容的查看权限');
         const access={client:tx,allowedEmails:[...scope.visible]};
         return input.kind==='generations'?queryEnterpriseOperations(query,access):queryBi(query,access);

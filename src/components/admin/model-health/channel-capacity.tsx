@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { authHeader } from '@/lib/supabase';
+import { scheduleVisibleRefresh } from '@/lib/visible-refresh';
 import styles from './model-health.module.css';
 
 type Lease = { token: string; expiresAt: string };
@@ -39,9 +40,15 @@ export function ChannelCapacityPanel() {
       if (!response.ok) { setData(null); setError(payload.error || '通道与容量数据暂不可用'); return; }
       setData(payload); setError('');
     } catch { if (!controller.signal.aborted && sequence.current === id) setError('通道与容量数据暂不可用'); }
-    finally { if (!controller.signal.aborted && sequence.current === id) setBusy(false); }
+    finally {
+      if (request.current === controller) request.current = null;
+      if (!controller.signal.aborted && sequence.current === id) setBusy(false);
+    }
   }, []);
-  useEffect(() => { void load(); const timer = window.setInterval(() => void load(), 60_000); return () => { sequence.current++; request.current?.abort(); window.clearInterval(timer); }; }, [load]);
+  useEffect(() => {
+    const stop = scheduleVisibleRefresh(async () => { if (!request.current) await load(); }, 60_000, true);
+    return () => { sequence.current++; request.current?.abort(); request.current = null; stop(); };
+  }, [load]);
   async function submitReset(providerId: string) {
     if (reason.trim().length < 3) { setNotice('请填写至少 3 个字符的操作原因'); return; }
     setBusy(true); setNotice('');

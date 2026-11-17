@@ -5,6 +5,7 @@ import {usePathname,useSearchParams} from 'next/navigation';
 import {ArrowLeft,LogOut,Menu,X} from 'lucide-react';
 import type {BiSection} from '@/lib/bi/contracts';
 import {SiteVersion} from '@/components/site-version';
+import {scheduleVisibleRefresh} from '@/lib/visible-refresh';
 import {adminCategory,adminEntries,adminLinkActive,adminModuleLinks,type AdminSection} from './navigation';
 import {AdminPageSearch} from './page-search';
 import styles from './center-shell.module.css';
@@ -19,7 +20,18 @@ function AdminShell({active,children,deploymentsOnly=false,moduleNavigation=true
  useEffect(()=>{const abort=new AbortController();void fetch('/api/admin/fleet/status',{cache:'no-store',signal:abort.signal}).then(async response=>{if(response.ok){const data=await response.json();if(!abort.signal.aborted)setFleetEnabled(data.enabled===true);}}).catch(()=>{});return()=>abort.abort();},[]);
  // Billing backlog badge: passive read-only summary (no exposure write); a
  // failed poll simply keeps the previous count instead of surfacing errors.
- useEffect(()=>{if(deploymentsOnly)return;const abort=new AbortController();const load=()=>{void fetch('/api/admin/billing/pending?view=summary',{cache:'no-store',signal:abort.signal}).then(async response=>{if(!response.ok||abort.signal.aborted)return;const data=await response.json();if(!abort.signal.aborted&&typeof data.total==='number')setPendingTotal(data.total);}).catch(()=>{});};load();const timer=window.setInterval(load,60_000);return()=>{abort.abort();window.clearInterval(timer);};},[deploymentsOnly]);
+ const refreshPendingBadge=!deploymentsOnly&&active!=='pending-review';
+ useEffect(()=>{
+   if(!refreshPendingBadge)return;
+   const abort=new AbortController();
+   const stop=scheduleVisibleRefresh(async()=>{
+     const response=await fetch('/api/admin/billing/pending?view=summary',{cache:'no-store',signal:abort.signal});
+     if(!response.ok||abort.signal.aborted)return;
+     const data=await response.json();
+     if(!abort.signal.aborted&&typeof data.total==='number')setPendingTotal(data.total);
+   },60_000,true);
+   return()=>{abort.abort();stop();};
+ },[refreshPendingBadge]);
  useEffect(()=>{mobile.current?.close();},[pathname,search]);
  useEffect(()=>{const media=window.matchMedia('(min-width: 801px)');const close=()=>{if(media.matches)mobile.current?.close();};media.addEventListener('change',close);return()=>media.removeEventListener('change',close);},[]);
  async function logout(){try{const response=await fetch('/api/admin/login',{method:'DELETE',cache:'no-store'});if(!response.ok)throw Error();window.location.replace('/admin');}catch{setLogoutError('退出失败，请重试');}}

@@ -3,6 +3,7 @@
 import {WORKFLOW_PERMISSIONS,DEFAULT_WORKFLOW_PERMISSIONS,WORKFLOW_PERMISSION_LABELS,type WorkflowPermission} from '@/lib/enterprise/workflow-permissions';
 import {USER_POSITIONS,matchesUserPosition} from '@/lib/accounts/positions';
 import { useSiteProfile } from '@/lib/site-control/client';
+import { scheduleVisibleRefresh } from '@/lib/visible-refresh';
 import { UserUsage } from '@/components/admin/bi/user-usage';
 import { EnterpriseMemberManager } from './member-manager';
 import { EnterpriseHealthPanel } from './enterprise-health';
@@ -49,8 +50,8 @@ export function EnterpriseConsole({ initialQuery = {} }: { initialQuery?: Initia
       try { const result = await json<{ enterprises: EnterpriseIdentity[] }>('/api/enterprise', { signal: controller.signal }); if (!controller.signal.aborted && n === sequence) setEntry({ email, enterprises: result.enterprises }); }
       catch (reason) { if (!controller.signal.aborted && n === sequence) { setEntry({ email, enterprises: [] }); setError((reason as Error).message); } }
     };
-    void check(); const timer = window.setInterval(check, 30_000); window.addEventListener('focus', check);
-    return () => { controller.abort(); window.clearInterval(timer); window.removeEventListener('focus', check); };
+    const stop = scheduleVisibleRefresh(check, 30_000, true);
+    return () => { controller.abort(); stop(); };
   }, [email, ready]);
   if (!entry || entry.email !== email) return <main className={styles.page}><div className={styles.empty} role='status'>{dedicated?'正在加载…':'加载企业身份…'}</div></main>;
   if (!entry.enterprises.length) return <main className={styles.page}><section className={styles.empty}><Building2 size={28} /><p>{error || (dedicated?'当前账号没有管理权限':'当前账号没有企业管理权限')}</p>{!user?.email&&<a href={`/sign-in?redirect=${encodeURIComponent(typeof window==='undefined'?'/enterprise':window.location.pathname+window.location.search+window.location.hash)}`}>登录</a>}<a href='/dashboard'>返回创作工作台</a></section></main>;
@@ -121,14 +122,19 @@ function Workspace({ enterprises, initialQuery, email }: { enterprises: Enterpri
       if (n !== sequence.current || controller.signal.aborted || activeEnterprise.current !== enterpriseId) return;
       setData(result); setSelected(old => result.actor.owner && old === result.enterprise.owner_email || result.members.some(m => m.email === old) ? old : '');
     } catch (reason) { if (n === sequence.current && !controller.signal.aborted) { setError((reason as Error).message); setData(null); setMeta(null); setEditor(null); } }
-    finally { if (n === sequence.current && !controller.signal.aborted) setLoading(false); }
+    finally {
+      if (scopeAbort.current === controller) scopeAbort.current = null;
+      if (n === sequence.current && !controller.signal.aborted) setLoading(false);
+    }
   }, [enterpriseId]);
   useEffect(() => {
     setData(null); setMeta(null); setEditor(null); setPending(false); command.current = null; mutationAbort.current?.abort();
     if (loadedEnterprise.current !== enterpriseId) setSelected(''); loadedEnterprise.current = enterpriseId;
     void load(); return () => { sequence.current++; scopeAbort.current?.abort(); mutationAbort.current?.abort(); };
   }, [load]);
-  useEffect(() => { const check = () => void load(); const timer = window.setInterval(check, 30_000); window.addEventListener('focus', check); return () => { window.clearInterval(timer); window.removeEventListener('focus', check); }; }, [load]);
+  useEffect(() => scheduleVisibleRefresh(async () => {
+    if (!scopeAbort.current) await load();
+  }, 30_000), [load]);
   useEffect(() => { if (!enterprises.some(t => t.id === enterpriseId)) { setData(null); setMeta(null); setEnterpriseId(enterprises[0].id); setView('overview'); } }, [enterprises, enterpriseId]);
   const scopeKey = data ? JSON.stringify([data.enterprise, data.actor, data.members.map(m => [m.email, m.version, m.membership_status, m.membership_expires_at, m.banned, m.account_expires_at]), data.roles]) : '';
   const needsOverviewMeta = view === 'settings' || view === 'overview' && !dedicated;

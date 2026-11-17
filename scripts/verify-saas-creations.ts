@@ -12,9 +12,14 @@ async function main(){
  const batches=await import('../src/lib/imagegen/batch-repository');await batches.ensureImagegenBatches();
  const batchIdType=(await pool.query("SELECT format_type(a.atttypid,a.atttypmod) AS type FROM pg_attribute a WHERE a.attrelid='app_imagegen_batches'::regclass AND a.attname='id' AND NOT a.attisdropped")).rows[0].type;assert.equal(batchIdType,'uuid');
  const emails=['admin','ownerA','ownerB','manager','member','departed'].map(s=>`${s.toLowerCase()}@creation.fixture`),[admin,ownerA,ownerB,manager,member,departed]=emails;
- for(const email of emails)await db.getOrCreateUser(email,email);await pool.query("UPDATE app_users SET role='admin' WHERE email=$1",[admin]);
+ for(const email of emails){
+  await db.getOrCreateUser(email,email);
+  await pool.query("INSERT INTO app_feature_access(email,mode,allowed)VALUES($1,'custom','[\"team\"]') ON CONFLICT(email) DO UPDATE SET mode=excluded.mode,allowed=excluded.allowed",[email]);
+ }
+ await pool.query("UPDATE app_users SET role='admin' WHERE email=$1",[admin]);
  const actor={email:admin,admin:true,consoleAdmin:true};const create=(ownerEmail:string)=>tenants.createTenant(actor,{commandId:randomUUID(),name:`Fixture ${ownerEmail}`,ownerEmail,validUntil:null,seatLimit:10,entitlementName:null,featurePolicy:{video:false}});
  const a=await create(ownerA),b=await create(ownerB),role=randomUUID();await pool.query("INSERT INTO app_enterprise_roles(enterprise_id,id,name,level,manage_members,view_records) VALUES($1,$2,'Manager',10,true,true)",[a.tenantId,role]);
+ await pool.query("UPDATE app_team_access_grants SET starts_at=now()-interval '1 day' WHERE email=ANY($1::text[])",[[ownerA,ownerB]]);
  await pool.query("INSERT INTO app_enterprise_members(enterprise_id,email,supervisor_email,role_id,employment) VALUES($1,$2,$3,$4,'permanent'),($1,$5,$2,NULL,'permanent'),($1,$6,$3,NULL,'permanent')",[a.tenantId,manager,ownerA,role,member,departed]);
  const root=`cr-${randomUUID()}`,child=`cr-${randomUUID()}`,foreign=`cr-${randomUUID()}`,unknown=`cr-${randomUUID()}`,archived=`cr-${randomUUID()}`;
  const record=async(id:string,email:string,tenant:string,parent:string|null=null,status='succeeded')=>pool.query(`INSERT INTO app_creation_records(id,actor_email,scope_kind,tenant_id,payer_account_id,source_kind,source_id,parent_id,status,request_snapshot,parameters_snapshot,model_snapshot) VALUES($1,$2,'tenant',$3,$2,'fixture',$1,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb)`,[id,email,tenant,parent,status,JSON.stringify({state:'recorded',text:'真实输入 fixture'}),JSON.stringify({state:'recorded',values:{ratio:'1:1',count:0,moderation:false,providerId:'INTERNAL_PROVIDER',modelId:'INTERNAL_MODEL',nested:{apiKey:'INTERNAL_SECRET'}}}),JSON.stringify({state:'recorded',label:'客户显示名fixture'})]);

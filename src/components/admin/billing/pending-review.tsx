@@ -38,27 +38,35 @@ function needsReconcile(item: PendingItem) {
 
 export function PendingReviewConsole() {
     const [data, setData] = useState<PendingOverview | null>(null), [error, setError] = useState(""), [busy, setBusy] = useState(false);
-    const timer = useRef<number | null>(null);
+    const request = useRef<AbortController | null>(null);
     const load = useCallback(async () => {
+        if (request.current) return;
+        const controller = new AbortController();
+        request.current = controller;
         setBusy(true);
         try {
-            const response = await fetch("/api/admin/billing/pending", { cache: "no-store", headers: await authHeader() });
+            const headers = await authHeader();
+            if (controller.signal.aborted) return;
+            const response = await fetch("/api/admin/billing/pending", { cache: "no-store", headers, signal: controller.signal });
             const payload = await response.json();
+            if (controller.signal.aborted) return;
             if (!response.ok) throw new Error(payload.error || "读取失败");
             setData(payload);
             setError("");
         }
         catch (e) {
-            setError((e as Error).message);
+            if (!controller.signal.aborted) setError((e as Error).message);
         }
         finally {
-            setBusy(false);
+            if (request.current === controller) {
+                request.current = null;
+                setBusy(false);
+            }
         }
     }, []);
     useEffect(() => {
         void load();
-        timer.current = window.setInterval(() => void load(), 60_000);
-        return () => { if (timer.current) window.clearInterval(timer.current); };
+        return () => { request.current?.abort(); request.current = null; };
     }, [load]);
     const summary = data?.summary;
     return <section className="space-y-4">

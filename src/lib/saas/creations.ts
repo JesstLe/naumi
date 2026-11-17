@@ -1,7 +1,7 @@
 import 'server-only';
 import type {PoolClient} from 'pg';
 import {getPool} from "@/platform/db/pool";
-import {enterpriseRead} from '@/lib/enterprise/server';
+import {enterpriseRead,enterpriseReportRead} from '@/lib/enterprise/server';
 import { TeamError } from "@/lib/teams/errors";
 import type {TeamActor} from '@/lib/teams/grants';
 import {ensureCreationSchema} from './creation-schema';
@@ -17,9 +17,9 @@ import {workflowOutcomeStagesSql} from '../video/workflow-outcome';
 
 export type CreationDetailReader={platform:true;boundTenantId?:string}|{platform:false;tenantId:string;historyEmails?:readonly string[]};
 export type CreationReader={platform:true;boundTenantId?:string}|{platform:false;actor:TeamActor;tenantId:string};
-async function scoped<T>(reader:CreationReader,run:(tx:PoolClient,visible:string[]|null,historyVisible:readonly string[]|null)=>Promise<T>){
+async function scoped<T>(reader:CreationReader,run:(tx:PoolClient,visible:string[]|null,historyVisible:readonly string[]|null)=>Promise<T>,kind:'report'|'asset'='report'){
  await ensureCreationSchema();
- if(!reader.platform)return enterpriseRead(reader.actor,reader.tenantId,(tx,s)=>run(tx,s.owner?null:[...s.visible],[...new Set([...s.visible,...(s.owner?[s.team.owner_email]:[])])]));
+ if(!reader.platform)return (kind==='asset'?enterpriseRead:enterpriseReportRead)(reader.actor,reader.tenantId,(tx,s)=>run(tx,s.owner?null:[...s.visible],[...new Set([...s.visible,...(s.owner?[s.team.owner_email]:[])])]));
  const tx=await getPool().connect();try{await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');await tx.query("SET LOCAL statement_timeout='20s'");const result=await run(tx,null,null);await tx.query('COMMIT');return result;}catch(e){await tx.query('ROLLBACK');throw e;}finally{tx.release();}
 }
 const fromDate=(s:string)=>`${s}T00:00:00+08:00`;
@@ -205,7 +205,7 @@ export async function creationDetailInTransaction(tx:PoolClient,reader:CreationD
  state:ops.length?settled?'settled':'pending':noCharge?'not_applicable':'not_recorded',operations:ops.map(o=>({id:o.id,state:o.state,charged:['settled','released'].includes(o.state)?Number(o.charged_credits):null}))},
  ...(reader.platform?{technical:{sourceKind:row.source_kind,sourceId:row.source_id,parentId:row.parent_id,schemaVersion:row.schema_version,links:links.rows}}:{})};
 }
-export async function creationAsset(reader:CreationReader,id:string,assetId:string){return scoped(reader,(tx,visible,historyEmails)=>creationAssetInTransaction(tx,reader.platform?reader:{...reader,historyEmails:historyEmails||[]},id,assetId,visible));}
+export async function creationAsset(reader:CreationReader,id:string,assetId:string){return scoped(reader,(tx,visible,historyEmails)=>creationAssetInTransaction(tx,reader.platform?reader:{...reader,historyEmails:historyEmails||[]},id,assetId,visible),'asset');}
 export async function creationAssetInTransaction(tx:PoolClient,reader:CreationDetailReader,id:string,assetId:string,visible:readonly string[]|null){
  await authorizedRecord(tx,reader,id,visible);let a=(await tx.query(`${familySql} SELECT a.* FROM app_creation_assets a JOIN family f ON f.id=a.creation_id WHERE a.id=$2`,[id,assetId])).rows[0];
  if(!a&&assetId.startsWith('recovered-'))a=(await creationSourceEvidence(tx,id)).assets.find(asset=>asset.id===assetId);
