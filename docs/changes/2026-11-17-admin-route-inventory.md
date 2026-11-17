@@ -298,7 +298,7 @@
 | `页面 /admin` | `src/app/admin/page.tsx` | 待核查 |
 | `页面 /admin/bi` | `src/app/admin/bi/page.tsx` | 待核查 |
 | `页面 /admin/bi/models` | `src/app/admin/bi/models/page.tsx` | 待核查 |
-| `页面 /admin/billing` | `src/app/admin/billing/page.tsx` | 待核查 |
+| `页面 /admin/billing` | `src/app/admin/billing/page.tsx` | 部分：人工核对列表和详情请求取消、去重、原提交身份已核查；父页面等待计费配置及其他分区另核 |
 | `页面 /admin/billing/price-table` | `src/app/admin/billing/price-table/page.tsx` | 待核查 |
 | `页面 /admin/billing/supplier-cost` | `src/app/admin/billing/supplier-cost/page.tsx` | 待核查 |
 | `页面 /admin/center` | `src/app/admin/center/page.tsx` | 部分：默认双概览分口径，旧 URL 重复 BI GET 已在真实浏览器复现及修复；导航和各面板仍待复查 |
@@ -313,7 +313,7 @@
 | `页面 /admin/model-management/library` | `src/app/admin/model-management/library/page.tsx` | 部分核查：列表、详情、历史与单页导出已核；同步写操作另验 |
 | `页面 /admin/mvp` | `src/app/admin/mvp/page.tsx` | 待核查 |
 | `页面 /admin/mvp/library` | `src/app/admin/mvp/library/page.tsx` | 部分核查：旧入口 GET 与单页导出已核；同步写操作另验 |
-| `页面 /admin/pending-review` | `src/app/admin/pending-review/page.tsx` | 待核查 |
+| `页面 /admin/pending-review` | `src/app/admin/pending-review/page.tsx` | 部分：四类清单、计数和核对资格由已验证接口提供；页面本体未单独做浏览器回归 |
 | `页面 /admin/pricing` | `src/app/admin/pricing/page.tsx` | 待核查 |
 | `页面 /admin/supplier-balances` | `src/app/admin/supplier-balances/page.tsx` | 待核查 |
 | `页面 /admin/team-access` | `src/app/admin/team-access/page.tsx` | 待核查 |

@@ -39,6 +39,7 @@ export const refactorCases=[
  ts('media-metadata-ownership','canvas','scripts/verify-media-metadata-ownership.ts','MEDIA_METADATA_OWNERSHIP=MODIFIED PASS'),
  ts('billing-task-ownership','pricing','scripts/verify-billing-task-ownership.ts','BILLING_TASK_OWNERSHIP=MODIFIED PASS'),
  ts('billing-review-route','pricing','scripts/verify-billing-review-route-lock.ts','BILLING_REVIEW_ROUTE=PASS'),
+ node('billing-review-client','pricing','scripts/verify-billing-review-client.mjs','BILLING_REVIEW_CLIENT=PASS'),
  node('native-fixture-lifecycle','runtime','scripts/verify-native-fixture-lifecycle.cjs','NATIVE_FIXTURE_LIFECYCLE=PASS'),
  node('native-fixture-memory','runtime','scripts/verify-native-fixture-memory.cjs','NATIVE_FIXTURE_MEMORY=PASS'),
  node('native-parent-database','runtime','scripts/verify-native-parent-database.cjs','NATIVE_PARENT_DATABASE=PASS'),
