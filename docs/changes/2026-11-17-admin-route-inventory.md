@@ -8,16 +8,16 @@
 | --- | --- | --- |
 | `DELETE /api/admin/login` | `src/app/api/admin/login/route.ts` | 待核查 |
 | `GET /api/admin/artworks` | `src/app/api/admin/artworks/route.ts` | 待核查 |
-| `GET /api/admin/bi` | `src/app/api/admin/bi/route.ts` | 部分：overview 去重复扫描、作品深页先排序键、越界只计数；全分类 145 项新旧结果对照；作品计数、模型调用证据、概览断开后的 SQL 与连接释放见 `verify-bi-read-cancellation.ts`。鉴权/审计阶段、其他路由、长窗背压及真实网关待核 |
+| `GET /api/admin/bi` | `src/app/api/admin/bi/route.ts` | 部分：overview 去重复扫描、作品深页先排序键、越界只计数；全分类 145 项新旧结果对照；查询取消；数据快照与其它报表共用池前排队。鉴权/审计、长窗 SQL 成本及真实网关待核 |
 | `GET /api/admin/bi/channel-capacity` | `src/app/api/admin/bi/channel-capacity/route.ts` | 待核查 |
-| `GET /api/admin/bi/conversation` | `src/app/api/admin/bi/conversation/route.ts` | 部分：按账号和会话取文字、保持 20 条分页；回环 HTTP 断开后 PostgreSQL 在解锁前退出。会话正文大样本结果对照；真实网关与长窗并发待核 |
+| `GET /api/admin/bi/conversation` | `src/app/api/admin/bi/conversation/route.ts` | 部分：按账号和会话取文字、保持 20 条分页；回环 HTTP 断开后 PostgreSQL 在解锁前退出；共享报表连接排队。会话正文大样本结果对照；真实网关与高并发待核 |
 | `GET /api/admin/bi/media` | `src/app/api/admin/bi/media/route.ts` | 待核查 |
 | `GET /api/admin/bi/model-config` | `src/app/api/admin/bi/model-config/route.ts` | 待核查 |
 | `GET /api/admin/bi/model-config/catalog` | `src/app/api/admin/bi/model-config/catalog/route.ts` | 待核查 |
 | `GET /api/admin/bi/model-config/versions` | `src/app/api/admin/bi/model-config/versions/route.ts` | 待核查 |
 | `GET /api/admin/bi/provider-ops` | `src/app/api/admin/bi/provider-ops/route.ts` | 待核查 |
 | `GET /api/admin/bi/trace` | `src/app/api/admin/bi/trace/route.ts` | 部分：外部追踪的总时限、在途上限及部分结果，`verify-bi-trace-deadline.ts` |
-| `GET /api/admin/bi/usage` | `src/app/api/admin/bi/usage/route.ts` | 部分：读事务断开释放；CSV 只取同权限的当页账号和精确总数，隔离真实 SQL、浏览器新旧响应兼容；每页总数依旧需要全范围统计，长窗并发和真实网关待核 |
+| `GET /api/admin/bi/usage` | `src/app/api/admin/bi/usage/route.ts` | 部分：隔离断开、CSV 精简、新旧浏览器兼容；混合企业报表并发占满场景复现与连接保留见 `verify-admin-report-contention.ts`。每页精确统计成本和真实网关待核 |
 | `GET /api/admin/billing` | `src/app/api/admin/billing/route.ts` | 待核查 |
 | `GET /api/admin/billing/image25-prices` | `src/app/api/admin/billing/image25-prices/route.ts` | 待核查 |
 | `GET /api/admin/billing/models/stages` | `src/app/api/admin/billing/models/stages/route.ts` | 待核查 |
@@ -59,8 +59,8 @@
 | `GET /api/admin/usage` | `src/app/api/admin/usage/route.ts` | 待核查 |
 | `GET /api/admin/users` | `src/app/api/admin/users/route.ts` | 待核查 |
 | `GET /api/enterprise` | `src/app/api/enterprise/route.ts` | 部分：目录与站点范围、仅成员管理避开账务/素材表、停用成员指标隔离；超大成员目录和浏览器切换待复核 |
-| `GET /api/enterprise/analytics` | `src/app/api/enterprise/analytics/route.ts` | 部分：账务/现行权限复验；CSV 一次分类，5 万/超限边界及原字节对照，HTTP 断开后隔离库释放。`verify-enterprise-analytics.ts`、`verify-bi-read-cancellation.ts`；长窗口高并发与真实网关待核 |
-| `GET /api/enterprise/artworks` | `src/app/api/enterprise/artworks/route.ts` | 部分：真实受权范围、回收站、跨企业和撤权、深页键排序及私有素材；CSV 只读当页、不精确计数/取源图输入，隔离 HTTP 断开释放，`verify-enterprise-artworks.ts`、`verify-bi-history-pages.ts`；浏览器连续切换/真实网关待核 |
+| `GET /api/enterprise/analytics` | `src/app/api/enterprise/analytics/route.ts` | 部分：账务权限复验、CSV 一次分类、5 万边界／字节对照及断开；八年窗口导出与平台报表共用有界排队，`verify-admin-report-contention.ts`。长窗汇总计算和真实网关待核 |
+| `GET /api/enterprise/artworks` | `src/app/api/enterprise/artworks/route.ts` | 部分：真实授权范围、回收站、跨企业和撤权、深页/素材、CSV 只读当页；隔离 HTTP 断开释放、数据快照共享报表排队；浏览器连续切换/真实网关待核 |
 | `GET /api/enterprise/content` | `src/app/api/enterprise/content/route.ts` | 待核查 |
 | `GET /api/enterprise/creations` | `src/app/api/enterprise/creations/route.ts` | 部分：企业近期固定 5 条、历史归属与统一列表；混合归档深页待核 |
 | `GET /api/enterprise/creations/[id]` | `src/app/api/enterprise/creations/[id]/route.ts` | 部分：共用详情查询经大任务 SQL 对照；企业鉴权、证据和费用分页、脱敏、撤权、来源定位已验证 |
@@ -71,7 +71,7 @@
 | `GET /api/enterprise/media` | `src/app/api/enterprise/media/route.ts` | 部分：共用渲染器的并发、过载、取消与镜像回退经本地 HTTP 验证；此入口自身的授权组合待核 |
 | `GET /api/enterprise/saas-overview` | `src/app/api/enterprise/saas-overview/route.ts` | 待核查 |
 | `GET /api/enterprise/tenant-usage` | `src/app/api/enterprise/tenant-usage/route.ts` | 待核查 |
-| `GET /api/enterprise/usage` | `src/app/api/enterprise/usage/route.ts` | 部分：报表账户行锁及撤权；CSV 精简投影不扩大成员权限，回环 HTTP 断开后数据事务释放。`verify-enterprise-analytics.ts`、`verify-bi-read-cancellation.ts`；真实网关和长窗并发待核 |
+| `GET /api/enterprise/usage` | `src/app/api/enterprise/usage/route.ts` | 部分：报表账户行锁、撤权；CSV 精简投影不扩大成员权限；关闭 HTTP 后事务释放，与 BI 共用报表排队。长窗 SQL 成本和真实网关待核 |
 | `GET /api/enterprise/workflow` | `src/app/api/enterprise/workflow/route.ts` | 部分：工作流代理的取消和流限制；动态 action 按工作流直连条目继续追踪 |
 | `GET /api/enterprise/workflow/appeals` | `src/app/api/enterprise/workflow/appeals/route.ts` | 部分：实际登录 Cookie 和签名代理专项回归，通过跨企业、跨团队和撤权边界；直连断开实测，真实网关待核 |
 | `GET /api/enterprise/workflow/capacity` | `src/app/api/enterprise/workflow/capacity/route.ts` | 待核查 |

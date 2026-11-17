@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { biAuthorize, biJson } from "@/lib/bi/access";
+import { biAuthorize, biJson, biReadFailure } from "@/lib/bi/access";
 import { biConversation, logBiAccess } from "@/lib/bi/repository";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,8 +28,7 @@ export async function GET(request: Request) {
     return biJson(
       await biConversation(id, email, kind as "agent" | "genchat", page, request.signal),
     );
-  } catch {
-    if (request.signal.aborted) return biJson({ error: "查询已取消" }, 499);
-    return biJson({ error: "对话内容读取失败" }, 500);
+  } catch (error) {
+    return biReadFailure(error, request.signal, "对话内容读取失败");
   }
 }

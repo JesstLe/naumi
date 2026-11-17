@@ -3,6 +3,7 @@ import { isSameOriginRequest } from "@/lib/request-origin";
 import { NextResponse } from "next/server";
 import { requireAdmin, resolveUserEmail, adminPasswordState } from "@/lib/admin-auth";
 import { dbEnabled } from "@/platform/db/pool";
+import { ReportReadBusy } from "@/platform/db/owned-read-client";
 import {checkRateLimit,rateLimitFailureResponse} from "@/lib/rate-limit-http";
 import { clientIp } from "@/lib/ip";
 import { teamEntryAccess } from "./grants";
@@ -31,6 +32,11 @@ export async function teamAuthorize(request: Request, adminOnly = false) {
 }
 export function teamMutationOrigin(request: Request) { return isSameOriginRequest(request); }
 export function teamFailure(error: unknown) {
+  if (error instanceof ReportReadBusy) {
+    const response = teamJson({ error: error.message }, 503);
+    response.headers.set("Retry-After", "1");
+    return response;
+  }
   const unavailable = rateLimitFailureResponse(error);
   if (unavailable) return unavailable;
   return error instanceof TeamError ? teamJson({ error: error.message }, error.status) : teamJson({ error: "操作结果暂未确认，请刷新后使用同一请求重试", uncertain: true }, 500);

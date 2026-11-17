@@ -7,7 +7,7 @@ import {randomUUID} from "node:crypto";
 import type {PoolClient} from "pg";
 
 import {getPool} from "@/platform/db/pool";
-import {checkReadClientSocket, withOwnedReadClient} from "@/platform/db/owned-read-client";
+import {checkReadClientSocket, withOwnedReportClient} from "@/platform/db/owned-read-client";
 import type {BiOverview,BiQuery,BiResponse,BiRow} from "./contracts";
 import {ARTWORK_INPUT_COLUMNS,ARTWORK_INPUT_JOINS,artworkInputPresentation} from "./artwork-inputs";
 import {artworkBiPresentation} from "@/lib/artwork-provenance";
@@ -224,7 +224,7 @@ async function snapshot<T>(
   run: (client: PoolClient) => Promise<T>,
   signal?: AbortSignal,
 ): Promise<T> {
-  return withOwnedReadClient(getPool(), async client => {
+  return withOwnedReportClient(getPool(), async client => {
     await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
     await client.query("SET LOCAL statement_timeout='20s'; SET LOCAL lock_timeout='5s'" + (signal ? checkReadClientSocket : ""));
     const result = await run(client);

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { biAuthorize, biJson } from "@/lib/bi/access";
+import { biAuthorize, biJson, biReadFailure } from "@/lib/bi/access";
 import { logBiAccess } from "@/lib/bi/repository";
 import { parseUsageQuery } from "@/lib/bi/usage-contracts";
 import { queryUserUsage } from "@/lib/bi/usage-repository";
@@ -16,8 +16,7 @@ export async function GET(request: Request) {
     request.signal.throwIfAborted();
     await logBiAccess(auth.actor, "view", "usage", query.email);
     return biJson(await queryUserUsage(query, request.signal, view));
-  } catch {
-    if (request.signal.aborted) return biJson({ error: "查询已取消" }, 499);
-    return biJson({ error: "用户用量读取失败，请稍后重试" }, 500);
+  } catch (error) {
+    return biReadFailure(error, request.signal, "用户用量读取失败，请稍后重试");
   }
 }

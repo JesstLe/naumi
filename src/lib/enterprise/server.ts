@@ -12,7 +12,7 @@ import { TeamError } from "@/lib/teams/errors";
 
 import {activeTeamGrant,requireTeamGrant,type TeamActor} from '@/lib/teams/grants';
 import {getPool} from "@/platform/db/pool";
-import {checkReadClientSocket, withOwnedReadClient} from "@/platform/db/owned-read-client";
+import {checkReadClientSocket, withOwnedReadClient, withOwnedReportClient} from "@/platform/db/owned-read-client";
 import {settingsSecret} from '@/lib/settings-secret';
 import type {ContentPage} from '@/lib/teams/contracts';
 import type {EnterpriseIdentity,EnterpriseMember,EnterpriseRole,EnterpriseSnapshot} from './contracts';
@@ -143,11 +143,11 @@ function projectionScopeKey(s: Scope) {
  * aggregating. Authorize the data snapshot first, then check a fresh scope in a
  * short transaction before any result leaves the server.
  */
-async function enterpriseProjectionRead<T>(actor:TeamActor,id:string,run:(tx:PoolClient,s:Scope)=>Promise<T>,requireRecords:boolean,allowSelf=false,signal?:AbortSignal) {
+async function enterpriseProjectionRead<T>(actor:TeamActor,id:string,run:(tx:PoolClient,s:Scope)=>Promise<T>,requireRecords:boolean,allowSelf=false,signal?:AbortSignal,checkout=withOwnedReadClient) {
   signal?.throwIfAborted();
   await ensureEnterpriseSchema();
   try {
-    return await withOwnedReadClient(getPool(), async tx=>{
+    return await checkout(getPool(), async tx=>{
       const cancellation=signal?checkReadClientSocket:'';
       await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
       await tx.query("SET LOCAL statement_timeout='5s'; SET LOCAL lock_timeout='1s'"+cancellation);
@@ -176,6 +176,10 @@ async function enterpriseProjectionRead<T>(actor:TeamActor,id:string,run:(tx:Poo
 
 export function enterpriseReportRead<T>(actor:TeamActor,id:string,run:(tx:PoolClient,s:Scope)=>Promise<T>,signal?:AbortSignal) {
   return enterpriseProjectionRead(actor,id,run,true,false,signal);
+}
+
+export function enterpriseHeavyReportRead<T>(actor:TeamActor,id:string,run:(tx:PoolClient,s:Scope)=>Promise<T>,signal?:AbortSignal) {
+  return enterpriseProjectionRead(actor,id,run,true,false,signal,withOwnedReportClient);
 }
 
 /** A workflow evidence picker grants self visibility to ordinary employees,

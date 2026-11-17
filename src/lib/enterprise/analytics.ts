@@ -4,7 +4,7 @@ import type { TeamActor } from '@/lib/teams/grants';
 import { TeamError } from "@/lib/teams/errors";
 import { CATEGORY_FEATURES } from '@/lib/billing/feature-map';
 import { excludeImportedHistory } from '@/lib/staging-history';
-import { enterpriseReportRead } from './server';
+import { enterpriseHeavyReportRead, enterpriseReportRead } from './server';
 import { EVENT_LABELS, PURPOSES, shiftDate, type AnalyticsFilter, type EnterpriseAnalytics, type LedgerEntry } from './analytics-contracts';
 
 const date=z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(v=>{const n=Date.parse(v+'T00:00:00Z');return Number.isFinite(n)&&new Date(n).toISOString().slice(0,10)===v},'日期无效');
@@ -78,7 +78,7 @@ function scopedEmails(s:Parameters<Parameters<typeof enterpriseReportRead>[2]>[1
 const ledgerDetailColumns=`l.id,l.email,u.name,l.created_at AS "createdAt",l.event_kind AS kind,l.purpose,l.delta,l.operation_id AS "operationId",l.source`;
 const detailSQL=`SELECT ${ledgerDetailColumns} FROM ledger l JOIN app_users u ON u.email=l.email WHERE ($6::text='' OR event_kind=$6) ORDER BY l.created_at DESC,l.id DESC`;
 export async function enterpriseAnalytics(actor:TeamActor,q:AnalyticsFilter,signal?:AbortSignal):Promise<EnterpriseAnalytics>{
- return enterpriseReportRead(actor,q.enterpriseId,async(tx,s)=>{
+ return enterpriseHeavyReportRead(actor,q.enterpriseId,async(tx,s)=>{
   const emails=scopedEmails(s,q),p=range(q,emails);
   const choices=(await tx.query(`SELECT u.email,u.name,COALESCE(m.supervisor_email,'') AS supervisor FROM app_users u LEFT JOIN app_enterprise_members m ON m.email=u.email AND m.enterprise_id=$2 WHERE u.email=ANY($1::text[]) ORDER BY u.name,u.email`,[emails,q.enterpriseId])).rows;
   // Materialize the filtered ledger once for the six views of the current range.
@@ -145,7 +145,7 @@ const ledgerCsvTime=new Intl.DateTimeFormat('zh-CN',{
  timeZone:'Asia/Shanghai',hour12:false,year:'numeric',month:'numeric',day:'numeric',hour:'numeric',minute:'numeric',second:'numeric',
 });
 export async function enterpriseLedgerCsv(actor:TeamActor,q:AnalyticsFilter,signal?:AbortSignal){
- const rows=await enterpriseReportRead(actor,q.enterpriseId,async(tx,s)=>{
+ const rows=await enterpriseHeavyReportRead(actor,q.enterpriseId,async(tx,s)=>{
   const p=range(q,scopedEmails(s,q));
   // Keep the original limit before joining account metadata. A single bounded
   // set serves both the overflow check and the CSV, with no rows on overflow.

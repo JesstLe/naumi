@@ -178,6 +178,7 @@ export const refactorCases=[
  node('admin-user-usage-routes','foundation','scripts/verify-admin-usage-routes.cjs','ADMIN_USAGE_ROUTES=PASS'),
  {id:'admin-user-usage-pg',group:'foundation',file:'scripts/verify-admin-usage-pg.cjs',args:[],expect:'ADMIN_USAGE_PG=PASS',pg:true,tsx:false},
  ts('admin-bi-read-cancellation','foundation','scripts/verify-bi-read-cancellation.ts','BI_READ_CANCELLATION=PASS'),
+ ts('admin-report-contention','foundation','scripts/verify-admin-report-contention.ts','ADMIN_REPORT_CONTENTION=PASS'),
  ts('admin-member-history-pg','foundation','scripts/verify-admin-crud-history.ts','ADMIN_CRUD_HISTORY=PASS'),
  node('supplier-library','foundation','scripts/verify-supplier-library-refactor.mjs','SUPPLIER_LIBRARY_REFACTOR=PASS',['--static']),
  node('model-management','foundation','scripts/verify-model-management-refactor.mjs','MODEL_MANAGEMENT_REFACTOR=PASS',['--static']),

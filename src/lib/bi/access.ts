@@ -2,6 +2,7 @@ import "server-only";
 import { NextResponse } from "next/server";
 import { requireAdmin, resolveUserEmail } from "@/lib/admin-auth";
 import { dbEnabled } from "@/platform/db/pool";
+import { ReportReadBusy } from "@/platform/db/owned-read-client";
 import { clientIp } from "@/lib/ip";
 import { checkRateLimit } from "@/lib/rate-limit-http";
 import { isSameOriginRequest } from "@/lib/request-origin";
@@ -14,6 +15,15 @@ export const BI_PRIVATE_HEADERS = {
 };
 export function biJson(data: unknown, status = 200) {
   return NextResponse.json(data, { status, headers: BI_PRIVATE_HEADERS });
+}
+export function biReadFailure(error: unknown, signal: AbortSignal, fallback: string) {
+  if (signal.aborted) return biJson({ error: "查询已取消" }, 499);
+  if (error instanceof ReportReadBusy) {
+    const response = biJson({ error: error.message }, 503);
+    response.headers.set("Retry-After", "1");
+    return response;
+  }
+  return biJson({ error: fallback }, 500);
 }
 export async function biAuthorize(
   request: Request,

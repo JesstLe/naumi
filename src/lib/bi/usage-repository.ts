@@ -1,7 +1,7 @@
 import "server-only";
 import type { PoolClient } from "pg";
 import { getPool } from "@/platform/db/pool";
-import { checkReadClientSocket, withOwnedReadClient } from "@/platform/db/owned-read-client";
+import { checkReadClientSocket, withOwnedReportClient } from "@/platform/db/owned-read-client";
 import { ensureBiSchema } from "./schema";
 import { USAGE_DEFINITIONS, type UsageExportPage, type UsageMetrics, type UsageQuery, type UsageResponse, type UsageUser } from "./usage-contracts";
 
@@ -173,7 +173,7 @@ export async function readUserUsage(tx: ReadClient, query: UsageQuery, scope?: U
 export async function queryUserUsage(query: UsageQuery, signal: AbortSignal, view?: "export"): Promise<UsageResponse | UsageExportPage> {
   signal.throwIfAborted();
   await ensureBiSchema();
-  return withOwnedReadClient(getPool(), async tx => {
+  return withOwnedReportClient(getPool(), async tx => {
     await tx.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
     await tx.query("SET LOCAL statement_timeout='15s'" + checkReadClientSocket);
     const result = await readUserUsage(tx, query, undefined, view);
