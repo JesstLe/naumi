@@ -27,29 +27,36 @@ export type ProviderCapacityDetail = {
 /** Operations visibility for budgets and leases: a budget below the published
  * limit (historic ratchet or disabled-provider residue) stalls claims silently;
  * in-flight leases show who occupies the slots until which expiry. */
-export async function providerCapacityDetail(pool: Pool, config: ModelConfig): Promise<ProviderCapacityDetail[]> {
+export async function providerCapacityDetail(db: Pick<Pool,'query'>, config: ModelConfig): Promise<ProviderCapacityDetail[]> {
   const identities = config.providers.map(p => capacityIdentity(p.id, p.baseUrl));
-  const [aliasRows, leaseRows] = await Promise.all([
-    pool.query("SELECT alias,identity FROM app_model_capacity_accounts WHERE alias=ANY($1)", [identities]),
-    pool.query("SELECT identity,token,expires_at FROM app_model_provider_leases WHERE expires_at>now() ORDER BY expires_at ASC LIMIT 200"),
-  ]);
-  const identityByAlias = new Map(aliasRows.rows.map(row => [row.alias, row.identity] as const));
-  const resolved = new Map(config.providers.map((p, i) => [p.id, identityByAlias.get(identities[i]) || identities[i]] as const));
-  const usedIdentities = Array.from(new Set(resolved.values()));
-  const [budgetRows, inFlightRows] = await Promise.all([
-    pool.query("SELECT identity,max_concurrent FROM app_model_provider_budgets WHERE identity=ANY($1)", [usedIdentities]),
-    pool.query("SELECT identity,count(*)::int AS n FROM app_model_provider_leases WHERE identity=ANY($1) AND expires_at>now() GROUP BY identity", [usedIdentities]),
-  ]);
-  const budgets = new Map(budgetRows.rows.map(row => [row.identity, Number(row.max_concurrent)]));
-  const inFlight = new Map(inFlightRows.rows.map(row => [row.identity, Number(row.n)]));
-  return config.providers.map(p => {
-    const alias = capacityIdentity(p.id, p.baseUrl), identity = resolved.get(p.id)!;
+  if(!identities.length)return [];
+  const {rows}=await db.query<{
+    alias:string;identity:string;max_concurrent:number|null;in_flight:number|null;leases:ProviderCapacityLease[]|null;
+  }>(`WITH aliases AS MATERIALIZED (
+     SELECT w.alias,COALESCE(c.identity,w.alias) AS identity
+     FROM unnest($1::text[]) w(alias) LEFT JOIN app_model_capacity_accounts c ON c.alias=w.alias
+   ), active_leases AS MATERIALIZED (
+     SELECT l.identity,l.token,l.expires_at FROM (SELECT DISTINCT identity FROM aliases) a
+     JOIN app_model_provider_leases l ON l.identity=a.identity AND l.expires_at>now()
+   ), counts AS (
+     SELECT identity,count(*)::int AS in_flight FROM active_leases GROUP BY identity
+   ), samples AS (
+     SELECT identity,jsonb_agg(jsonb_build_object('token',token,'expiresAt',expires_at) ORDER BY expires_at,token) AS leases
+     FROM (SELECT identity,token,expires_at FROM active_leases ORDER BY expires_at,token LIMIT 200) recent
+     GROUP BY identity
+   )
+   SELECT a.alias,a.identity,b.max_concurrent,c.in_flight,s.leases FROM aliases a
+   LEFT JOIN app_model_provider_budgets b ON b.identity=a.identity
+   LEFT JOIN counts c ON c.identity=a.identity LEFT JOIN samples s ON s.identity=a.identity`,[identities]);
+  const byAlias=new Map(rows.map(row=>[row.alias,row]));
+  return config.providers.map((p,index) => {
+    const alias=identities[index],row=byAlias.get(alias)!;
     return {
       id: p.id, name: p.name, enabled: p.enabled,
-      merged: identity !== alias,
-      configuredMaxConcurrent: p.maxConcurrent, budgetMaxConcurrent: budgets.get(identity) ?? null,
-      inFlight: inFlight.get(identity) ?? 0,
-      leases: leaseRows.rows.filter(row => row.identity === identity).map(row => ({ token: row.token, expiresAt: row.expires_at.toISOString() })),
+      merged: row.identity !== alias,
+      configuredMaxConcurrent: p.maxConcurrent, budgetMaxConcurrent: row.max_concurrent ?? null,
+      inFlight: row.in_flight ?? 0,
+      leases: (row.leases??[]).map(lease=>({token:lease.token,expiresAt:new Date(lease.expiresAt).toISOString()})),
     };
   });
 }

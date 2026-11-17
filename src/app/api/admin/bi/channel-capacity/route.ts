@@ -2,42 +2,23 @@ import { z } from "zod";
 import { biAuthorize, biJson, sameSiteBiMutation } from "@/lib/bi/access";
 import { appendManagementLogAfterChange } from "@/lib/bi/management-log";
 import { getModelAdministration } from "@/lib/model-config/server";
-import { providerCapacityDetail, resetProviderBudget, type ProviderCapacityDetail } from "@/lib/model-config/capacity";
-import { channelHealthSummary, resetChannelProbes } from "@/lib/model-config/channel-scheduler";
+import { resetProviderBudget } from "@/lib/model-config/capacity";
+import { resetChannelProbes } from "@/lib/model-config/channel-scheduler";
+import { readChannelCapacity } from "@/lib/model-config/capacity-read";
+import { ReportReadBusy } from "@/platform/db/owned-read-client";
 export const runtime = "nodejs", dynamic = "force-dynamic";
-
-type ChannelRow = {
-    upstreamId: string; providerId: string; providerName: string; wireModel: string; enabled: boolean;
-    state: string; failures: number; retryAt: string | null; lastStatus: number | null; failureKind: string | null;
-};
-export type ChannelCapacityOverview = {
-    configVersion: number; generatedAt: string;
-    providers: ProviderCapacityDetail[]; channels: ChannelRow[];
-};
 
 export async function GET(request: Request) {
     const auth = await biAuthorize(request);
     if (auth instanceof Response) return auth;
     try {
-        const admin = await getModelAdministration(), snapshot = await admin.repo.current();
-        const [providers, health] = await Promise.all([
-            providerCapacityDetail(admin.pool, snapshot.config),
-            channelHealthSummary(admin.pool, snapshot.config),
-        ]);
-        const channels: ChannelRow[] = snapshot.config.upstreamModels.map(u => {
-            const observed = health[u.id], provider = snapshot.config.providers.find(p => p.id === u.providerId);
-            return {
-                upstreamId: u.id, providerId: u.providerId, providerName: provider?.name || u.providerId,
-                wireModel: u.model, enabled: provider?.enabled ?? false,
-                state: observed?.state || "unobserved", failures: observed?.failures || 0,
-                retryAt: observed?.retryAt || null, lastStatus: observed?.lastStatus ?? null,
-                failureKind: observed?.failureKind || null,
-            };
-        });
-        return biJson({ configVersion: snapshot.version, generatedAt: new Date().toISOString(), providers, channels } satisfies ChannelCapacityOverview);
+        return biJson(await readChannelCapacity(request.signal));
     }
-    catch {
-        return biJson({ error: "通道与容量数据暂不可用", code: "CHANNEL_CAPACITY_UNAVAILABLE" }, 503);
+    catch (error) {
+        if(request.signal.aborted)return biJson({error:"查询已取消"},499);
+        const response=biJson({error:"通道与容量数据暂不可用",code:"CHANNEL_CAPACITY_UNAVAILABLE"},503);
+        if(error instanceof ReportReadBusy)response.headers.set("Retry-After","1");
+        return response;
     }
 }
 

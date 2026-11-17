@@ -9,13 +9,13 @@
 | `DELETE /api/admin/login` | `src/app/api/admin/login/route.ts` | 待核查 |
 | `GET /api/admin/artworks` | `src/app/api/admin/artworks/route.ts` | 部分：旧客户端列表字段、软删除、导入/封禁标记保留；隔离库 4 万行深页、越界、同时间排序、管理员验证、排队超时和真实 HTTP 断开通过。当前导航未挂载旧作品组件；生产网关和更长历史待核 |
 | `GET /api/admin/bi` | `src/app/api/admin/bi/route.ts` | 部分：overview 去重复扫描、作品深页先排序键、越界只计数；全分类 145 项新旧结果对照；查询取消；数据快照与其它报表共用池前排队。鉴权/审计、长窗 SQL 成本及真实网关待核 |
-| `GET /api/admin/bi/channel-capacity` | `src/app/api/admin/bi/channel-capacity/route.ts` | 待核查 |
+| `GET /api/admin/bi/channel-capacity` | `src/app/api/admin/bi/channel-capacity/route.ts` | 部分：同一只读快照内核对发布版、合并预算、租约和通道；隔离库验证五连接压力、断开取消、旧租约不占展示限额、无 Router 调用。真实网关待核 |
 | `GET /api/admin/bi/conversation` | `src/app/api/admin/bi/conversation/route.ts` | 部分：按账号和会话取文字、保持 20 条分页；回环 HTTP 断开后 PostgreSQL 在解锁前退出；共享报表连接排队。会话正文大样本结果对照；真实网关与高并发待核 |
 | `GET /api/admin/bi/media` | `src/app/api/admin/bi/media/route.ts` | 部分：私有素材只取一次正文、本人原图授权、审计、与企业共用并发槽、断开停止存储和 SQL、实际 Chromium 切换/延迟加载。`verify-platform-bi-preview-pressure.ts`、`verify-bi-preview-browser.cjs`；真实网关待核 |
 | `GET /api/admin/bi/model-config` | `src/app/api/admin/bi/model-config/route.ts` | 待核查 |
 | `GET /api/admin/bi/model-config/catalog` | `src/app/api/admin/bi/model-config/catalog/route.ts` | 待核查 |
 | `GET /api/admin/bi/model-config/versions` | `src/app/api/admin/bi/model-config/versions/route.ts` | 待核查 |
-| `GET /api/admin/bi/provider-ops` | `src/app/api/admin/bi/provider-ops/route.ts` | 待核查 |
+| `GET /api/admin/bi/provider-ops` | `src/app/api/admin/bi/provider-ops/route.ts` | 部分：现有隔离回归验证发布凭据、同账户上游去重、缓存、版本变动拒绝、管理员边界和活动统计；HTTP 断开后的分支取消及长窗活动的池占用待核 |
 | `GET /api/admin/bi/trace` | `src/app/api/admin/bi/trace/route.ts` | 部分：外部追踪的总时限、在途上限及部分结果，`verify-bi-trace-deadline.ts` |
 | `GET /api/admin/bi/usage` | `src/app/api/admin/bi/usage/route.ts` | 部分：隔离断开、CSV 精简、新旧浏览器兼容；混合企业报表并发占满场景复现与连接保留见 `verify-admin-report-contention.ts`。每页精确统计成本和真实网关待核 |
 | `GET /api/admin/billing` | `src/app/api/admin/billing/route.ts` | 待核查 |
@@ -108,7 +108,7 @@
 | `PATCH /api/admin/tenants/[id]` | `src/app/api/admin/tenants/[id]/route.ts` | 待核查 |
 | `PATCH /api/enterprise/saas-overview` | `src/app/api/enterprise/saas-overview/route.ts` | 待核查 |
 | `POST /api/admin/artworks` | `src/app/api/admin/artworks/route.ts` | 部分：封禁分支与成员管理共享权限，阻止自封、其他管理员和跨站请求，成功记录操作日志（`verify-admin-route-hardening.ts`）；导入和删除的完整读写链路待核 |
-| `POST /api/admin/bi/channel-capacity` | `src/app/api/admin/bi/channel-capacity/route.ts` | 待核查 |
+| `POST /api/admin/bi/channel-capacity` | `src/app/api/admin/bi/channel-capacity/route.ts` | 部分：隔离模块回归验证预算复位、通道探测状态清理、未知目标拒绝与审计字段；现网管理员入口未验，未在生产复位 |
 | `POST /api/admin/bi/model-config` | `src/app/api/admin/bi/model-config/route.ts` | 待核查 |
 | `POST /api/admin/bi/model-config/catalog` | `src/app/api/admin/bi/model-config/catalog/route.ts` | 待核查 |
 | `POST /api/admin/bi/model-config/credentials` | `src/app/api/admin/bi/model-config/credentials/route.ts` | 待核查 |

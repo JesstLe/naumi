@@ -20,7 +20,24 @@ export function supplierChannelKey(c: {
     wireModel: string;
 }) { return createHash("sha256").update(JSON.stringify([c.providerId, c.baseUrl, imageModelDisplayId(c.wireModel)])).digest("hex"); }
 export function channelHealthKey(c: ChannelTarget) { return supplierChannelKey(c.scope.connection); }
-export async function channelHealthSummary(pool: Pool, config: import("./types").ModelConfig) { const keys = config.upstreamModels.map(u => { const p = config.providers.find(p => p.id === u.providerId)!; return { id: u.id, key: supplierChannelKey({ providerId: p.id, baseUrl: p.baseUrl, wireModel: u.model }) }; }); const rows = (await pool.query("SELECT key,failures,last_status,last_failure_kind,last_success_at,open_until,open_until>now() opened,probe_until>now() probing FROM app_model_channel_health WHERE key=ANY($1)", [keys.map(k => k.key)])).rows; return Object.fromEntries(keys.map(k => { const r = rows.find(r => r.key === k.key); return [k.id, { state: r?.opened ? "cooldown" : r?.probing ? "recovering" : r?.failures > 0 ? "failed" : r?.last_success_at ? "available" : "unobserved", failures: r?.failures || 0, retryAt: r?.open_until?.toISOString() || null, lastStatus: r?.last_status || null, failureKind: r?.last_failure_kind || null }]; })); }
+export async function channelHealthSummary(db:Pick<Pool,"query">, config: import("./types").ModelConfig) {
+    const providers=new Map(config.providers.map(provider=>[provider.id,provider]));
+    const keys=config.upstreamModels.map(upstream=>{
+        const provider=providers.get(upstream.providerId)!;
+        return {id:upstream.id,key:supplierChannelKey({providerId:provider.id,baseUrl:provider.baseUrl,wireModel:upstream.model})};
+    });
+    if(!keys.length)return {};
+    const {rows}=await db.query("SELECT key,failures,last_status,last_failure_kind,last_success_at,open_until,open_until>now() opened,probe_until>now() probing FROM app_model_channel_health WHERE key=ANY($1)",[[...new Set(keys.map(item=>item.key))]]);
+    const byKey=new Map(rows.map(row=>[row.key,row]));
+    return Object.fromEntries(keys.map(item=>{
+        const row=byKey.get(item.key);
+        return [item.id,{
+            state:row?.opened?"cooldown":row?.probing?"recovering":row?.failures>0?"failed":row?.last_success_at?"available":"unobserved",
+            failures:row?.failures||0,retryAt:row?.open_until?.toISOString()||null,
+            lastStatus:row?.last_status||null,failureKind:row?.last_failure_kind||null,
+        }];
+    }));
+}
 export type ChannelProbeReset = {
     upstreamId: string; providerId: string; wireModel: string;
     previous: { failures: number; cooldownUntil: string | null; probeUntil: string | null } | null;
