@@ -1,10 +1,10 @@
 import 'server-only';
 import type {TeamActor} from '@/lib/teams/grants';
 import {TeamError} from '@/lib/teams/server';
-import {enterpriseRead} from './server';
+import {enterpriseReportRead} from './server';
 
 export async function enterpriseHealth(actor:TeamActor,id:string){
-  return enterpriseRead({...actor,admin:false,consoleAdmin:false},id,async(tx,scope)=>{
+  return enterpriseReportRead({...actor,admin:false,consoleAdmin:false},id,async(tx,scope)=>{
     if(!scope.owner&&!scope.manageMembers)throw new TeamError('当前岗位没有运行健康查看权限',403);
     const emails=[...scope.visible,...(scope.owner?[scope.team.owner_email]:[])];
     const {rows:[tasks]}=await tx.query(`WITH tasks AS (

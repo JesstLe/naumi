@@ -120,12 +120,17 @@ export async function enterpriseRead<T>(actor:TeamActor,id:string,run:(tx:PoolCl
   }catch(e){await tx.query('ROLLBACK');throw e}finally{tx.release()}
 }
 
-// Analytics can narrow scope by a subtree. Include the hierarchy edges as well
-// as visible membership so a same-size move can't authorize an old projection.
-function reportScopeKey(s: Scope) {
+// Compare both read and management scope: the workspace also lists paused
+// members, exposes private account fields to owners and renders role controls.
+function projectionScopeKey(s: Scope) {
+  const byId = (a: string, b: string) => a < b ? -1 : a === b ? 0 : 1;
   return JSON.stringify([
-    s.team.id,s.team.owner_email,s.owner,[...s.visible].sort(),
-    s.nodes.map(n=>[n.email,n.supervisor_email]).sort(([a],[b])=>a.localeCompare(b)),
+    s.team.id,s.team.owner_email,s.owner,s.level,s.manageMembers,s.viewRecords,
+    [...s.visible].sort(),[...s.manageable].sort(),
+    s.nodes.slice().sort((a,b)=>byId(a.email,b.email)).map(n=>[
+      n.email,n.supervisor_email,n.role_id,n.version,n.membership_status,n.membership_expires_at,n.global_active,
+    ]),
+    s.roles.slice().sort((a,b)=>byId(a.id,b.id)).map(r=>[r.id,r.level,r.version,r.manage_members,r.view_records]),
   ]);
 }
 
@@ -134,32 +139,36 @@ function reportScopeKey(s: Scope) {
  * aggregating. Authorize the data snapshot first, then check a fresh scope in a
  * short transaction before any result leaves the server.
  */
-export async function enterpriseReportRead<T>(actor:TeamActor,id:string,run:(tx:PoolClient,s:Scope)=>Promise<T>) {
+async function enterpriseProjectionRead<T>(actor:TeamActor,id:string,run:(tx:PoolClient,s:Scope)=>Promise<T>,requireRecords:boolean) {
   await ensureEnterpriseSchema();
   const tx=await getPool().connect();
   try {
     await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
     await tx.query("SET LOCAL statement_timeout='5s'; SET LOCAL lock_timeout='1s'");
     const s=await scope(tx,actor,id,false,'snapshot');
-    if(!s.viewRecords)throw new TeamError('当前岗位没有经营数据查看权限');
-    const key=reportScopeKey(s);
+    if(requireRecords&&!s.viewRecords)throw new TeamError('当前岗位没有经营数据查看权限');
+    const key=projectionScopeKey(s);
     const result=await run(tx,s);
     await tx.query('COMMIT');
     await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
     await tx.query("SET LOCAL statement_timeout='3s'; SET LOCAL lock_timeout='1s'");
     const current=await scope(tx,actor,id);
-    if(!current.viewRecords)throw new TeamError('当前岗位没有经营数据查看权限');
-    if(key!==reportScopeKey(current))throw new TeamError('企业成员范围已变化，请刷新后重试',409);
+    if(requireRecords&&!current.viewRecords)throw new TeamError('当前岗位没有经营数据查看权限');
+    if(key!==projectionScopeKey(current))throw new TeamError('企业成员范围已变化，请刷新后重试',409);
     await tx.query('COMMIT');
     return result;
   } catch(error) {
     await tx.query('ROLLBACK').catch(()=>{});
     const code=(error as {code?:string})?.code;
     if(code==='57014'||code==='55P03'||code==='40001'||code==='40P01') {
-      throw new TeamError('用量暂不可读取，请稍后重试或缩小日期范围',503);
+      throw new TeamError('企业数据暂不可读取，请稍后重试',503);
     }
     throw error;
   } finally { tx.release(); }
+}
+
+export function enterpriseReportRead<T>(actor:TeamActor,id:string,run:(tx:PoolClient,s:Scope)=>Promise<T>) {
+  return enterpriseProjectionRead(actor,id,run,true);
 }
 export async function enterpriseList(actor:TeamActor,allowSelf=false):Promise<EnterpriseIdentity[]> {
   return transaction(async tx=>{
@@ -187,10 +196,10 @@ async function memberRows(tx:PoolClient,s:Scope):Promise<EnterpriseMember[]> {
   return rows.map(m=>({...m,canManage:m.account_role==='user'&&s.manageMembers&&m.email!==s.team.owner_email&&m.email!==undefined&&m.level>s.level}));
 }
 export async function enterpriseSnapshot(actor:TeamActor,id:string):Promise<EnterpriseSnapshot> {
-  return transaction(async tx=>{const s=await scope(tx,actor,id);const members=await memberRows(tx,s);
+  return enterpriseProjectionRead(actor,id,async(tx,s)=>{const members=await memberRows(tx,s);
     const ownerAvailable=s.owner?Number((await tx.query(`SELECT GREATEST(0,COALESCE((SELECT sum(remaining) FROM app_credit_batches WHERE email=u.email AND expires_at>now() AND remaining>0),0)-u.credits_used)::int AS n FROM app_users u WHERE email=$1`,[s.team.owner_email])).rows[0]?.n||0):null;
     return {enterprise:s.team,members,roles:s.owner?s.roles:[],actor:{owner:s.owner,manageMembers:s.manageMembers,viewRecords:s.viewRecords,level:s.level,scopeLabel:s.owner?'本企业':'当前下级'},ownerAvailable,entitlement:s.entitlement};
-  });
+  },false);
 }
 const common={id:z.string().uuid(),enterpriseId:z.string().uuid()};
 const target={...common,email:z.string().trim().min(1).max(254).transform(s=>s.toLowerCase()),expectedVersion:z.number().int().nonnegative(),expectedUserVersion:z.number().int().nonnegative()};
@@ -269,18 +278,16 @@ export async function mutateEnterprise(actor:TeamActor,command:z.infer<typeof en
     return result;
   });
 }
-async function contentScope(tx:PoolClient,actor:TeamActor,id:string,email:string) {
-  const s=await scope(tx,actor,id);
+function assertContentScope(s:Scope,email:string) {
   const node=s.nodes.find(n=>n.email===email);
   if(node&&!activeMembership(node))throw new TeamError('该成员的历史企业归属未确认，企业身份失效后不再允许读取',404);
   if(!s.viewRecords||!(s.visible.has(email)||s.owner&&email===s.team.owner_email))throw new TeamError('没有该成员内容的查看权限');
-  return s;
 }
 const sources={artworks:'SELECT id,title,status,image_url,created_at FROM app_artworks WHERE email=$1 AND deleted_at IS NULL',tasks:`SELECT id,kind,COALESCE(snapshot->>'status','unknown') AS status,COALESCE(payload->'p'->>'userPrompt',payload->'p'->>'prompt',payload->>'prompt','') AS prompt,cost,created_at FROM app_image_jobs WHERE email=$1
   UNION ALL SELECT id,'canvas-'||kind,status,COALESCE(parameters->>'prompt',parameters->>'newText',''),cost,created_at FROM app_canvas_image_tasks WHERE email=$1
   UNION ALL SELECT id,'video',status,prompt,cost,created_at FROM app_video_tasks WHERE email=$1`};
 export async function enterpriseContent(actor:TeamActor,id:string,email:string,section:keyof typeof sources,page:number):Promise<ContentPage> {
-  return transaction(async tx=>{await contentScope(tx,actor,id,email);const source=sources[section];
+  return enterpriseReportRead(actor,id,async(tx,s)=>{assertContentScope(s,email);const source=sources[section];
     const total=Number((await tx.query(`SELECT count(*)::int AS n FROM (${source}) s`,[email])).rows[0].n);
     const rows=(await tx.query(`SELECT * FROM (${source}) s ORDER BY created_at DESC,id DESC LIMIT 20 OFFSET $2`,[email,(page-1)*20])).rows;
     return {rows,total,page,size:20};

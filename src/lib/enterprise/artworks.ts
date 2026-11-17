@@ -7,7 +7,7 @@ import { ARTWORK_COLUMNS, artworkValue } from "@/lib/bi/artwork-view";
 import {queryBi} from "@/lib/bi/repository";
 import {ensureBiSchema} from "@/lib/bi/schema";
 
-import { enterpriseRead } from "./server";
+import { enterpriseReportRead } from "./server";
 
 export function parseEnterpriseArtworks(params: URLSearchParams) {
   const enterpriseId = z.string().uuid().parse(params.get("enterpriseId"));
@@ -24,7 +24,7 @@ export function parseEnterpriseArtworks(params: URLSearchParams) {
 export async function enterpriseArtworks(actor: TeamActor, enterpriseId: string, query: BiQuery): Promise<BiResponse> {
   if (query.section !== "artworks") throw new TeamError("仅支持图片与操作内容", 400);
   await ensureBiSchema();
-  return enterpriseRead(actor, enterpriseId, async (client, scope) => {
+  return enterpriseReportRead(actor, enterpriseId, async (client, scope) => {
     // Owners see their enterprise's employees, not the site's users or other owners.
     const allowedEmails = [...scope.visible];
     if (query.email && !scope.visible.has(query.email)) throw new TeamError("没有该成员内容的查看权限");

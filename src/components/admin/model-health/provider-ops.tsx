@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { RefreshCw, Wallet } from 'lucide-react';
 import { authHeader } from '@/lib/supabase';
+import { scheduleVisibleRefresh } from '@/lib/visible-refresh';
 import { balanceErrorMessages, type BalanceErrorCode, type BalanceMeasurement, type ProviderBalanceOverview } from '@/lib/model-config/provider-balance-contracts';
 import { activityErrorMessages, type AcceptanceWindow, type ProviderActivityOverview } from '@/lib/model-config/provider-activity-contracts';
 import styles from './provider-ops.module.css';
@@ -40,9 +41,15 @@ export function ProviderOps({ showActivity = true }: { showActivity?: boolean } 
       if (!response.ok) { setData(null); setError(Object.hasOwn(balanceErrorMessages, payload.code) ? balanceErrorMessages[payload.code as BalanceErrorCode] : balanceErrorMessages.PROVIDER_OPS_UNAVAILABLE); return; }
       setData(payload);
     } catch { if (!controller.signal.aborted && sequence.current === id) { setData(null); setError(balanceErrorMessages.PROVIDER_OPS_UNAVAILABLE); } }
-    finally { if (!controller.signal.aborted && sequence.current === id) setBusy(false); }
+    finally {
+      if (request.current === controller) request.current = null;
+      if (!controller.signal.aborted && sequence.current === id) setBusy(false);
+    }
   }, [showActivity]);
-  useEffect(() => { void load(); const timer = window.setInterval(() => void load(), 60_000); const focus = () => void load(); window.addEventListener('focus', focus); return () => { sequence.current++; request.current?.abort(); window.clearInterval(timer); window.removeEventListener('focus', focus); }; }, [load]);
+  useEffect(() => {
+    const stop = scheduleVisibleRefresh(async () => { if (!request.current) await load(); }, 60_000, true);
+    return () => { sequence.current++; request.current?.abort(); request.current = null; stop(); };
+  }, [load]);
   return <section className={styles.card} aria-label='供应商账户余额与额度' aria-busy={busy}>
     <header className={styles.header}><h2 className={styles.title}><Wallet size={17} aria-hidden />供应商账户余额与额度</h2><div className={styles.headerMeta}>{data && <span className={styles.meta}>发布版本 {data.configVersion} · 读取于 {clock(data.generatedAt)}</span>}<button className={styles.refresh} type='button' disabled={busy} onClick={() => void load(true)}><RefreshCw size={14} aria-hidden />{busy ? '刷新中…' : '刷新余额'}</button></div></header>
     <p className={styles.method}>按已发布凭据区分账户；同一密钥的供应商通道合并显示。额度不等于账户资金，单位未确认时不换算货币。</p>
