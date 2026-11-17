@@ -379,12 +379,38 @@ export async function enterpriseContent(actor:TeamActor,id:string,email:string,s
     return {rows,total,page,size:20};
   });
 }
-export async function enterpriseArtwork(actor:TeamActor,enterpriseId:string,email:string,id:string) {
-  return enterpriseRead(actor,enterpriseId,async(tx,s)=>{
+export async function enterpriseArtwork(actor:TeamActor,enterpriseId:string,email:string,id:string,signal?:AbortSignal) {
+  const lookup=async(tx:PoolClient,s:Scope)=>{
     if(!s.visible.has(email))throw new TeamError('没有该成员内容的查看权限');
     const row=(await tx.query('SELECT image_url FROM app_artworks WHERE email=$1 AND id=$2',[email,id])).rows[0];
     if(!row)throw new TeamError('作品不存在',404);return row;
-  });
+  };
+  if(!signal)return enterpriseRead(actor,enterpriseId,lookup);
+  signal.throwIfAborted();await ensureEnterpriseSchema();
+  return withOwnedReadClient(getPool(),async tx=>{
+    await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
+    await tx.query("SET LOCAL statement_timeout='5s'; SET LOCAL lock_timeout='1s'"+checkReadClientSocket);
+    const s=await scope(tx,actor,enterpriseId);
+    if(!s.viewRecords)throw new TeamError('当前岗位没有经营数据查看权限');
+    const row=await lookup(tx,s);signal.throwIfAborted();await tx.query('COMMIT');return row;
+  },signal);
+}
+
+export async function enterpriseArtworkPreviewSources(actor:TeamActor,enterpriseId:string,refs:readonly {email:string;id:string}[],signal:AbortSignal) {
+  if(!refs.length)return new Map<number,string|null>();
+  if(refs.length>64)throw new TeamError('素材数量过多',400);
+  return enterpriseReportRead(actor,enterpriseId,async(tx,s)=>{
+    const visible=refs.map((ref,index)=>({...ref,index})).filter(ref=>s.visible.has(ref.email));
+    if(!visible.length)return new Map<number,string|null>();
+    // Keep the batch narrow even when legacy artworks contain inline images.
+    // A null value is an authorized reference that needs the single-item read.
+    const limit=4096;
+    const {rows}=await tx.query<{index:number;prefix:string}>(`SELECT wanted.index,left(a.image_url,$4) AS prefix
+      FROM unnest($1::text[],$2::text[],$3::int[]) wanted(email,id,index)
+      JOIN app_artworks a ON a.id=wanted.id AND a.email=wanted.email`,
+    [visible.map(ref=>ref.email),visible.map(ref=>ref.id),visible.map(ref=>ref.index),limit+1]);
+    return new Map(rows.map(row=>[row.index,row.prefix.length>limit?null:row.prefix]));
+  },signal);
 }
 
 /** One-time explicit, transactional activation of existing identities. Never recreates users/media/credits. */

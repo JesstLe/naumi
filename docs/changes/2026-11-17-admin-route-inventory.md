@@ -68,7 +68,7 @@
 | `GET /api/enterprise/creations/[id]/events` | `src/app/api/enterprise/creations/[id]/events/route.ts` | 部分：事件分页、规范与归档脱敏、跨租户、撤权和锁竞争，`verify-saas-creations.ts`；大任务族待核 |
 | `GET /api/enterprise/health` | `src/app/api/enterprise/health/route.ts` | 部分：健康统计权限、账户行锁及隔离，`verify-enterprise-analytics.ts` |
 | `GET /api/enterprise/integration` | `src/app/api/enterprise/integration/route.ts` | 部分：实际登录、独立站、下级范围、流水精确分页及配置缺失拒绝；作品/生成历史深页、越界和具体记录读范围通过隔离库验证；真实网关待核 |
-| `GET /api/enterprise/media` | `src/app/api/enterprise/media/route.ts` | 部分：与平台共用渲染队列，隔离 HTTP 验证并发、过载、取消与镜像回退；企业作品的私有素材权限有隔离回归，入口授权阶段的断开及真实网关待核 |
+| `GET /api/enterprise/media` | `src/app/api/enterprise/media/route.ts` | 部分：隔离 HTTP 验证共用渲染队列并发、过载、取消、镜像回退；单图的作品授权查询在断开时释放，私有权限和缓存版本回归。外围入口鉴权和真实网关待核 |
 | `GET /api/enterprise/saas-overview` | `src/app/api/enterprise/saas-overview/route.ts` | 待核查 |
 | `GET /api/enterprise/tenant-usage` | `src/app/api/enterprise/tenant-usage/route.ts` | 待核查 |
 | `GET /api/enterprise/usage` | `src/app/api/enterprise/usage/route.ts` | 部分：报表账户行锁、撤权；CSV 精简投影不扩大成员权限；关闭 HTTP 后事务释放，与 BI 共用报表排队。长窗 SQL 成本和真实网关待核 |
@@ -182,7 +182,7 @@
 | `入口 /admin` | `src/middleware.ts` | 待核查 |
 | `入口 /enterprise（站点模式）` | `src/middleware.ts` | 待核查 |
 | `共享素材 GET /media/[...path]` | `src/app/media/[...path]/route.ts` | 部分：旧冷预览占满业务池已复现并修复；隔离 PG、真实处理器与回环 NAS 验证挂起读取/写入、租户归属、版本竞争、恢复回执及旧历史；生产 Range、峰值和网关仍待验收 |
-| `共享素材 POST /api/media/image-cache` | `src/app/api/media/image-cache/route.ts` | 部分：与字节路由一致的原件和两种预览描述、缺预览回退、私有授权与旧版本冲突已在隔离处理器验证；全批次、取消与线上请求分布待核查 |
+| `共享素材 POST /api/media/image-cache` | `src/app/api/media/image-cache/route.ts` | 部分：原件/两种预览、私有权限、旧版本冲突；企业批量按属主/作品组读取并在断开后释放，16 件＋历史/跨企业隔离见 `verify-enterprise-media-manifest.ts`；64 项直接素材回归。旧团队批量路径、本地慢盘和真实网关待核 |
 | `工作流 GET /healthz` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 GET /readyz` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 GET /v1/appeals` | `services/enterprise-workflow/src/server.ts` | 隔离已核查：依据与旧指纹、列表、详情、修订历史、审核人回避、成员撤权与改派、断开归还连接；长历史数据库提取成本待量化 |
