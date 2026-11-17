@@ -2,7 +2,6 @@ import type {CanvasVideoNode} from "../canvas/video-node-schema";
 import type {VideoModelCapability} from "./capabilities";
 import type {ResolvedVideoCapability,VideoMode} from "./capability-schema";
 import type {OrderedInput} from "./references";
-import type {VideoReference} from "./types";
 import {compileVideoPrompt} from "./prompt";
 import {videoByocOverridesSchema} from "./byoc-settings";
 import {videoWorkflowManifestSchema} from "./workflow-schema";
@@ -40,10 +39,7 @@ export function videoNodeCreationDefaults(catalog:{models:readonly VideoCatalogM
   if(!model?.modelId?.trim()||!model.providerId?.trim())return undefined;
   return {model,config:videoUiCreationDefaults(model)};
 }
-export function inputReference(input:OrderedInput):VideoReference|null{
-  if(input.kind==="text")return null;
-  return {id:input.id,kind:input.kind,role:input.role as VideoReference["role"],artworkId:input.nodeId.replace(/^(image|video|audio):/,""),url:input.value};
-}
+export {inputReference} from './references';
 export function validateVideoSettings(config:VideoNodeConfig,inputs:OrderedInput[],_cap:ResolvedVideoCapability,choices:readonly VideoInputChoice[]=[],_execution?:VideoUiContract){
   try{
     const preview=previewCanvasInputs(inputs,config.prompt||"",choices);

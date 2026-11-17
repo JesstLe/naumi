@@ -4,18 +4,21 @@ import type {ValidationOptions} from "./schema";
 import {decodeModelSnapshot} from "./snapshot-value";
 import {ModelConfigError,type ModelSnapshot} from "./types";
 
+/** A caller may keep a published read on its existing transaction. */
+export async function readPublishedModelSnapshot(sql:Pick<Pool,'query'>,options:ValidationOptions={}):Promise<ModelSnapshot|null>{
+  const {rows}=await sql.query(`SELECT v.* FROM app_model_config_state s
+    LEFT JOIN app_model_config_versions v ON v.version=s.active_version WHERE singleton=true`);
+  if(!rows.length)return null;
+  if(rows[0].version===null)throw new ModelConfigError("CONFIG_UNAVAILABLE","模型配置版本不存在",503);
+  return decodeModelSnapshot(rows[0],options);
+}
+
 /** Released reads only: no ensure, draft, publish or discovery. Current is always
  * read from its pointer; only immutable versions have a bounded private cache. */
 export function createPublishedModelReader(input:ValidationOptions & {pool:Pool}) {
   const versions=new Map<number,Promise<ModelSnapshot>>();
   return {
-    async current():Promise<ModelSnapshot|null> {
-      const {rows}=await input.pool.query(`SELECT v.* FROM app_model_config_state s
-        LEFT JOIN app_model_config_versions v ON v.version=s.active_version WHERE singleton=true`);
-      if(!rows.length)return null;
-      if(rows[0].version===null)throw new ModelConfigError("CONFIG_UNAVAILABLE","模型配置版本不存在",503);
-      return decodeModelSnapshot(rows[0],input);
-    },
+    current:()=>readPublishedModelSnapshot(input.pool,input),
     async byVersion(version:number):Promise<ModelSnapshot> {
       if(!Number.isSafeInteger(version)||version<1)throw new ModelConfigError("INVALID_CONFIG","配置版本无效");
       let pending=versions.get(version);
