@@ -31,3 +31,5 @@
 - 本机 next dev 的 sharp/middleware 编译问题独立排查（影响 verify-browser-image-cache.ts、verify-image-cache-scoped-media.ts 的完整浏览器步骤）。
 - descriptor null 的负结果无记忆化：真正不存在的 key 每次授权会尝试一次 legacy import（与变体分支既有行为一致）；若线上日志显示异常放大再收敛。
 - 观测：发布后关注 `/api/media/image-cache` 中原图 descriptor null 是否清零、用户侧破图反馈是否消失。
+
+2026-11-17 补核：坏缓存被清除后，如果下载成功且返回的 Blob 仍无法解码，`CachedImage` 会发出一次普通图片错误，不再按网络异常重取，也不会把坏字节标成未授权。超时、5xx、授权边界和直读超大图片的有界恢复保持不变。真实 Edge/IndexedDB 回归 14 项通过，新增精确核对只有一次媒体修复请求；原先的瞬时故障回归也通过 5 项。无生产请求或供应商调用；尚未上线。
