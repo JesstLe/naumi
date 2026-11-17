@@ -10,6 +10,7 @@ import {creationStatus,type CreationDetail,type CreationFilters,type CreationPag
 import { TeamError } from "@/lib/teams/errors";
 import {legacyCreationFailures,hasCreationFailure} from './creation-failures';
 import {readImagegenInputAssetReference} from '@/lib/imagegen/input-asset-reference';
+import {ensureMediaSchema} from '@/lib/media-assets-schema';
 import {legacyCreationId,parseLegacyCreationId as parseId,type LegacySource as Source} from './creation-history-identity';
 export {legacyCreationId} from './creation-history-identity';
 import {linkedCreation,assertLegacySourceTenant} from './creation-history-link';
@@ -71,6 +72,7 @@ export async function legacyCreationAsset(id:string,assetId:string,access?:Legac
  if(!assetId.startsWith('legacy-')&&(!access||access.tenantId)){
   if(!access)await ensureBiSchema();const linked=await linkedCreation(pool as PoolClient,ref,access?.tenantId);
   if(linked){if(access)return creationAssetInTransaction(access.client,{platform:false,tenantId:access.tenantId!,historyEmails:access.allowedEmails},linked.id,assetId,access.allowedEmails);
+   await ensureMediaSchema();
    const tx=await getPool().connect();try{await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');const result=await creationAssetInTransaction(tx,{platform:true},linked.id,assetId,null);await tx.query('COMMIT');return result;}catch(error){await tx.query('ROLLBACK');throw error;}finally{tx.release();}
   }
  }

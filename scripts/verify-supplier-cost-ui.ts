@@ -7,11 +7,15 @@ async function main(){
   const browser=await chromium.launch({channel:process.platform==='win32'?'msedge':undefined,headless:true}),admin=await browser.newContext({viewport:{width:1440,height:960}}),member=await browser.newContext();
   try{
     const login=await admin.request.post(origin+'/api/admin/login',{data:{password:'SupplierFixture2026!'}});assert.equal(login.status(),200);
-    const page=await admin.newPage();page.setDefaultTimeout(30000);const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+    const page=await admin.newPage();page.setDefaultTimeout(30000);const errors:string[]=[],views:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+    page.on('request',request=>{const url=new URL(request.url());if(url.pathname==='/api/admin/supplier-cost')views.push(url.searchParams.get('view')||'legacy');});
     await page.goto(origin+'/admin/billing/supplier-cost');await page.getByText('灵动2.5 fixture').first().waitFor();assert.ok(await page.getByText('待确认',{exact:true}).count()>0);assert.ok((await page.getByTestId('supplier-cost-manager').innerText()).includes('$0'));
+    assert.deepEqual(views,['calls'],'initial load waits on the selected projection only');
     await page.getByRole('button',{name:'展开',exact:true}).first().click();await page.getByRole('dialog').waitFor();assert.ok((await page.getByRole('dialog').innerText()).includes('供应商任务'));await page.getByRole('button',{name:'关闭',exact:true}).click();
     await page.getByLabel('用户邮箱',{exact:true}).fill('none@example.test');await page.getByRole('button',{name:'查询',exact:true}).click();await page.getByText('没有符合条件的调用').waitFor();await page.getByLabel('用户邮箱',{exact:true}).fill('');await page.getByRole('button',{name:'查询',exact:true}).click();await page.getByText('灵动2.5 fixture').first().waitFor();
     await page.getByRole('button',{name:'成本统计',exact:true}).click();await page.getByText('暂估／数据未齐',{exact:true}).first().waitFor();assert.ok(!(await page.getByTestId('supplier-cost-manager').innerText()).includes('最终利润'));
+    assert.deepEqual(views,['calls','calls','calls','stats']);
+    await page.getByRole('button',{name:'对账异常',exact:true}).click();await page.getByText('尚无对账异常',{exact:false}).waitFor();assert.equal(views.at(-1),'reconcile');
     await page.getByRole('button',{name:'账户与折算',exact:true}).click();await page.getByRole('button',{name:/APIMart 验收 fixture/}).click();await page.getByLabel('美元折算人民币').fill('7.25');await page.getByLabel('凭据 / 来源').fill('fixture：管理员汇率凭据');await page.getByRole('button',{name:'保存配置',exact:true}).click();await page.getByRole('status').waitFor();
     await page.reload();await page.getByRole('button',{name:'账户与折算',exact:true}).click();await page.getByRole('button',{name:/APIMart 验收 fixture/}).click();assert.equal(await page.getByLabel('美元折算人民币').inputValue(),'7.25');
     await page.screenshot({path:folder+'/supplier-accounts-desktop.png',fullPage:true});await page.getByRole('button',{name:'调用成本明细',exact:true}).click();await page.screenshot({path:folder+'/supplier-calls-desktop.png',fullPage:true});
