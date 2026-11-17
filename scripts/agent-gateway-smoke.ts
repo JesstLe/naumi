@@ -165,19 +165,26 @@ async function main() {
     const browser = await chromium.launch({ channel: "chrome", headless: true, args: ["--disable-gpu"] });
     try {
       const accountJourneys = [
-        { viewport: { width: 1440, height: 960 }, locale: "zh-CN", accessLink: /Agent 接入/ },
-        { viewport: { width: 390, height: 844 }, locale: "en-US", accessLink: /Agent access/ },
+        { viewport: { width: 1440, height: 960 }, locale: "en-US", preference: "zh", documentLang: "zh-CN", accessLink: /Agent 接入/ },
+        { viewport: { width: 390, height: 844 }, locale: "zh-CN", preference: "en", documentLang: "en", accessLink: /Agent access/ },
       ];
-      for (const { viewport, locale, accessLink } of accountJourneys) {
+      for (const { viewport, locale, preference, documentLang, accessLink } of accountJourneys) {
         const context = await browser.newContext({ viewport, locale });
-        await context.addCookies([{ name: "nv_user", value: cookieA.slice("nv_user=".length), url: base }]);
+        // A saved account-center language preference takes precedence over browser language.
+        // Seed it like an existing user: Chrome's implicit Accept-Language varies across runners.
+        await context.addCookies([
+          { name: "nv_user", value: cookieA.slice("nv_user=".length), url: base },
+          { name: "naumi_locale", value: preference, url: base },
+        ]);
         const page = await context.newPage();
         const pageErrors: string[] = [], consoleErrors: string[] = [];
         // `next dev` compiles chunks on demand; its own chunk-load timeouts are not page defects.
         page.on("pageerror", error => { if (!/^Loading chunk [\w/[\]-]+ failed\.\n\(timeout: /.test(error.message)) pageErrors.push(error.message); });
         page.on("console", message => { if (message.type() === "error") consoleErrors.push(message.text()); });
         try {
-          await page.goto(`${base}/account`, { waitUntil: "load", timeout: 300_000 });
+          const account = await page.goto(`${base}/account`, { waitUntil: "load", timeout: 300_000 });
+          assert.equal(account?.status(), 200, "account center document must load");
+          assert.equal(await page.locator("html").getAttribute("lang"), documentLang, "saved locale must win");
           const link = page.getByRole("link", { name: accessLink });
           await link.waitFor({ timeout: 180_000 });
           assert.equal(await link.getAttribute("href"), "/account/agent");
@@ -206,7 +213,7 @@ async function main() {
         await context.close();
       }
     } finally { await browser.close(); }
-    pass("account center: zh-CN desktop and en-US mobile both navigate to /account/agent and create a token (shown once, usable immediately), with no overflow or page errors");
+    pass("account center: saved Chinese desktop and English mobile locales override browser language; both reach /account/agent and create a usable token shown once, with no overflow or page errors");
     }
     if (process.env.NAUMI_SMOKE_UI_ONLY === "1") { console.log("\nAGENT_GATEWAY_SMOKE=UI_ONLY_PASS"); return; }
 
