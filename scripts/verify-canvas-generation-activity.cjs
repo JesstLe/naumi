@@ -47,6 +47,19 @@ async function main(){
   if(scenario==='project-switch')eq(f.state.positions.length,0,'late result does not write another project');
   eq(f.state.intervals.size,0,'edit timer is disposed');eq(f.state.timeouts.size,0,'body and poll timers are disposed');rows.push({name:kind+'-'+scenario,posts:f.state.posts,supplier:f.state.supplier,history:f.state.history.length});
  }
+ if(!baseline){
+  const f=detail.setup('detail-blank','done',db);
+  if(typeof f.c.rewirePendingBranchSources==='function'){
+  f.c.setPendNodes([{id:'pend-child',inputs:['pend-A','source'],parentId:'pend-A',linked:true}]);
+  await f.run();await Promise.resolve();
+  eq(f.state.pendingHistory,[
+   {kind:'pending-link',id:'pend-child',from:{inputs:['pend-A','source'],parentId:'pend-A',linked:true},to:{inputs:['result-1','source'],parentId:'result-1',linked:true}},
+   {kind:'consume',id:'pend-A'},
+  ],'attachment rewires the blank child before consuming its source');
+  eq(f.state.posts,1,'rewiring does not submit another paid task');
+  rows.push({name:'detail-blank-rewire-before-consume',posts:f.state.posts});
+  }
+ }
  const source=fs.readFileSync(path.join(root,'src/components/canvas/canvas-client.tsx'),'utf8'),ast=ts.createSourceFile('canvas.tsx',source,99,true,4),callers={};
  (function walk(n){if(ts.isFunctionDeclaration(n)&&n.name&&['runGen','generatePend','generateDetailSequence','landEditResult','runComfyWorkflow'].includes(n.name.text))callers[n.name.text]=n.getText(ast);ts.forEachChild(n,walk);})(ast);
  eq(Object.keys(callers).length,5,'all production paths found');

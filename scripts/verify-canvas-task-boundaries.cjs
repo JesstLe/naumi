@@ -3,7 +3,7 @@ const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),asse
 const root=path.resolve(process.env.TASK_SOURCE_ROOT||process.cwd()),out=path.resolve(process.env.TASK_EVIDENCE||'output/refactor-r3b4-20261024'),baseline=process.argv.includes('--baseline');fs.mkdirSync(out,{recursive:true});
 const source=fs.readFileSync(path.join(root,'src/components/canvas/canvas-client.tsx'),'utf8'),ast=ts.createSourceFile('canvas.tsx',source,99,true,4),functions={};
 function walk(node){if(ts.isFunctionDeclaration(node)&&node.name)functions[node.name.text]=node.getText(ast);ts.forEachChild(node,walk);}walk(ast);
-const names=['canvasGenerationRunContext','privateFetch','landEditResult','generateDetailSequence','runCutout','onExpand','submitAnnotations','restoreEditTasks','rememberGenerationDrag','onPendRemove','appendComposerReferences','artworkNodeSize','artworkImageSize','imageToolState'];
+const names=['canvasGenerationRunContext','privateFetch','landEditResult','generateDetailSequence','runCutout','onExpand','submitAnnotations','restoreEditTasks','rememberGenerationDrag','onPendRemove','appendComposerReferences','artworkNodeSize','artworkImageSize','imageToolState','rewirePendingBranchSources'];
 const compile=text=>ts.transpileModule(text,{compilerOptions:{target:9,module:1}}).outputText;
 const billingSource=fs.readFileSync(path.join(root,'src/lib/billing/client.tsx'),'utf8'),billingAst=ts.createSourceFile('client.tsx',billingSource,99,true,4),callbacks={};
 (function walk(n){if(ts.isVariableDeclaration(n)&&['submit','quoteAndSubmit'].includes(n.name.getText(billingAst))&&n.initializer)callbacks[n.name.getText(billingAst)]=n.initializer.getText(billingAst);ts.forEachChild(n,walk);})(billingAst);
@@ -36,7 +36,7 @@ function setup(kind,scenario,built){
   readOnly:false,user:{email:'fixture@example.test'},active:{key:'tree:source',members:[art]},activeKey:'tree:source',source:art,selected:art,annotateArtwork:art,expandAnchor:'center',genModel:'fixture-model',genQuality:'medium',canvasToolQualities:{},genRatio:'3:4',genCount:2,generationTasks:[],pendNodes:kind==='detail-blank'?[pend]:[],rfNodes:[],
   canvasAccountRef:{current:'fixture-account'},canvasContextEpochRef:{current:0},batchRunMountedRef:{current:true},activeProjectRef:{current:{key:'tree:source'}},selectedIdRef:{current:'source'},selectedPendIdRef:{current:pend.id},generationOperationRef:{current:new Set()},generationTaskPosRef:{current:{}},generationTaskSizeRef:{current:{}},pendNodesRef:{current:[]},editTaskStateRef:{current:new Map()},
   rfRef:{current:{getNode:()=>({position:{x:100,y:200}}),getNodes:()=>[]}},flowNodeSize:()=>({width:320,height:320}),X_GAP:40,NODE_W:320,NODE_LABEL_H:36,MAX_GENERATION_COUNT:8,MAX_TOTAL_IMAGES:6,DETAIL_MODULE_ORDER:['hero','selling','scene','angles','ingredients','usage','specs','assurance'],
-  t:k=>k,fmt:(s,vars)=>s+JSON.stringify(vars),flashTip:s=>state.notices.push(s),setGenError:s=>{state.error=s},setExpandOpen(){},canFeature:()=>true,isNodeLocked:()=>false,cutoutCatalog:{available:true},cutoutCatalogError:null,
+  t:k=>k,fmt:(s,vars)=>s+JSON.stringify(vars),flashTip:s=>state.notices.push(s),setGenError:s=>{state.error=s},setExpandOpen(){},canFeature:()=>true,isNodeLocked:()=>false,cutoutReady:true,cutoutCatalog:{available:true},cutoutCatalogError:null,
   browserRandomUUID:()=>`12345678-1234-4234-a234-${String(++state.uuid).padStart(12,'0')}`,authHeader:ports.auth,currentWorkspace:()=>ports.workspace,readBrowserImage:ports.image,
   adminConfiguredFeature:()=>true,featureModelManaged:()=>false,chosenFeatureModel:()=>undefined,frameChoice:{chooseFrame:()=>{}},resolveCanvasLegacyFrame:async()=>{},resolveCanvasDetailFrame:async()=>{state.frames++;if(scenario==='cancelled')throw new c.ImagegenPreparationCancelled();},
   readJsonSafe:r=>r.json(),expectJsonOk:async(r,fallback)=>{const data=await r.json();if(!r.ok)throw Error(data.error||fallback);return data;},applyServerUser:()=>{state.user++},
@@ -45,6 +45,12 @@ function setup(kind,scenario,built){
   useCallback:f=>f,catalog:null,refresh:async()=>{},toast(){},invalidateBrowserData(){},MODEL_CATALOG_REFRESH:'fixture',intents:{current:state.intents},
  };
  c.setGenerationTasks=f=>{c.generationTasks=typeof f==='function'?f(c.generationTasks):f};c.setPendNodes=f=>{c.pendNodes=typeof f==='function'?f(c.pendNodes):f;c.pendNodesRef.current=c.pendNodes};c.setSelectedPendId=f=>{c.selectedPendIdRef.current=typeof f==='function'?f(c.selectedPendIdRef.current):f};
+ state.pendingHistory=[];
+ c.canvasHistory={async submit(scope,command){assert.equal(scope.viewCurrent(),true);state.pendingHistory.push(command());},consumePending(id){state.pendingHistory.push({kind:'consume',id});}};
+ c.canvasArtworkDocument={get scope(){
+  const epoch=c.canvasContextEpochRef.current,project=c.activeProjectRef.current?.key,workspace=ports.workspace,revision=ports.revision;
+  return {viewCurrent:()=>c.batchRunMountedRef.current&&epoch===c.canvasContextEpochRef.current&&project===c.activeProjectRef.current?.key&&workspace===ports.workspace&&revision===ports.revision};
+ }};
  c.mergeWorks=async(ids,current=()=>true)=>{state.merges++;if(scenario==='sync-missing'&&!state.retried)throw Error('fixture merge failed');return current()?images.filter(r=>ids.includes(r.id)):[];};
  c.taskDocumentRef={current:{merge:c.mergeWorks,history:c.pushAddUndoMany}};
  const serialize=async body=>typeof body==='string'?JSON.parse(body):await Promise.all([...body.entries()].map(async([k,v])=>[k,typeof v==='string'?v:{name:v.name,type:v.type,bytes:await v.text()}]));
