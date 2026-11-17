@@ -37,11 +37,11 @@ export function createBffAuthenticator(options: {
 
 const member = z.strictObject({ permissions: z.array(permission).min(1), work_kinds: z.array(z.enum(['design', 'artwork'])) });
 /** Each request resolves exactly one team. No union of roles across teams; no permission cache. */
-export const resolveDatabaseActor: ResolveActor = async (tx, principal): Promise<Actor | null> => {
+async function databaseActor(tx: Parameters<ResolveActor>[0], principal: Principal, lock: boolean): Promise<Actor | null> {
   if (!id.safeParse(principal.teamId).success) return null;
   if(principal.sourceBinding){
     const s=principal.sourceBinding;
-    const current=await tx.query(`SELECT 1 FROM enterprise_workflow.source_identities i JOIN enterprise_workflow.source_enterprises e USING(source_instance,source_enterprise,enterprise_id) WHERE i.source_instance=$1 AND i.source_enterprise=$2 AND i.source_subject=$3 AND i.enterprise_id=$4 AND i.subject=$5 AND i.enabled AND e.enabled FOR SHARE OF i,e`,[s.sourceInstance,s.sourceEnterprise,s.sourceSubject,principal.enterpriseId,principal.subject]);
+    const current=await tx.query(`SELECT 1 FROM enterprise_workflow.source_identities i JOIN enterprise_workflow.source_enterprises e USING(source_instance,source_enterprise,enterprise_id) WHERE i.source_instance=$1 AND i.source_enterprise=$2 AND i.source_subject=$3 AND i.enterprise_id=$4 AND i.subject=$5 AND i.enabled AND e.enabled${lock?' FOR SHARE OF i,e':''}`,[s.sourceInstance,s.sourceEnterprise,s.sourceSubject,principal.enterpriseId,principal.subject]);
     if(current.rowCount!==1)return null;
   }
   const result = await tx.query(`SELECT m.permissions,m.work_kinds FROM enterprise_workflow.team_members m
@@ -50,10 +50,15 @@ export const resolveDatabaseActor: ResolveActor = async (tx, principal): Promise
     WHERE m.enterprise_id=$1 AND m.team_id=$2 AND m.subject=$3
       AND a.enabled AND t.enabled AND m.enabled
       AND (a.expires_at IS NULL OR a.expires_at>now())
-      AND (m.expires_at IS NULL OR m.expires_at>now()) FOR SHARE OF m,a,t`,
+      AND (m.expires_at IS NULL OR m.expires_at>now())${lock?' FOR SHARE OF m,a,t':''}`,
   [principal.enterpriseId, principal.teamId, principal.subject]);
   const parsed = member.safeParse(result.rows[0]);
   if(!parsed.success)return null;
   const permissions=principal.sourcePermissions===undefined?parsed.data.permissions:parsed.data.permissions.filter(value=>principal.sourcePermissions!.includes(value));
   return permissions.length?{...principal,permissions,workKinds:permissions.includes('execute')?parsed.data.work_kinds:[]}:null;
-};
+}
+
+export const resolveDatabaseActor: ResolveActor = Object.assign(
+  (tx: Parameters<ResolveActor>[0], p: Principal) => databaseActor(tx, p, true),
+  {readSnapshot: (tx: Parameters<ResolveActor>[0], p: Principal) => databaseActor(tx, p, false)},
+);

@@ -24,6 +24,7 @@ import {moveInput,previewMove} from './plan-move';
 import {AvailabilityStore,loadAvailability,availabilityKey,capacityMinutes} from './availability-store';
 import {readScope} from './read-scope';
 import {readDashboard} from './dashboard';
+import {readWithCurrentScope} from './read-transaction';
 import {sourceAssetSchema,sourceDigest,type SourceAsset} from './source-files';
 import {CalendarStore,loadCalendars} from './calendar-store';
 import {allocateHours,dayMinutes,legacyCalendar} from './calendar';
@@ -45,7 +46,8 @@ const assigneeSchema=z.strictObject({query:z.string().max(120).default(''),kind:
 export {readScope} from './read-scope';
 // Must check live membership, enabled/expiry, entry grant, feature policy and business permissions.
 // It is also called for an assignment target; role display names and client headers are not authority.
-export type ResolveActor = (tx: PoolClient, principal: Principal) => Promise<Actor | null>;
+type ActorLookup = (tx: PoolClient, principal: Principal) => Promise<Actor | null>;
+export type ResolveActor = ActorLookup & {readSnapshot?: ActorLookup};
 // Must verify tenant ownership and usability of each immutable deliverable revision.
 export type ValidateAssets = (tx: PoolClient, actor: Actor, assetIds: string[], context?:{orderId:string;taskId:string}) => Promise<boolean>;
 function stable(value: unknown): string {
@@ -111,15 +113,13 @@ export class WorkflowStore {
     });
   }
   async detail(principal:Principal,orderId:string) {
-    return this.transaction(async tx=>{
-      const actor=await this.actor(tx,principal);
-      // Prevent mutation between document and its event snapshot.
-      const order=(await tx.query('SELECT document FROM enterprise_workflow.orders WHERE enterprise_id=$1 AND id=$2 FOR SHARE',[principal.enterpriseId,orderId])).rows[0]?.document as WorkOrder|undefined;
+    return readWithCurrentScope(this.pool,this.resolveActor,principal,async(tx,actor,snapshot)=>{
+      const order=(await tx.query(`SELECT document FROM enterprise_workflow.orders WHERE enterprise_id=$1 AND id=$2${snapshot?'':' FOR SHARE'}`,[principal.enterpriseId,orderId])).rows[0]?.document as WorkOrder|undefined;
       if(!order||!canRead(actor,order))throw new WorkflowError(404,'NOT_FOUND');
       const events=(await tx.query('SELECT event FROM enterprise_workflow.events WHERE enterprise_id=$1 AND order_id=$2 ORDER BY aggregate_version DESC LIMIT 100',[principal.enterpriseId,orderId])).rows.map(r=>r.event);
       const source=(await tx.query('SELECT source_hash AS "sourceHash",row_number AS row,source_version AS "sourceVersion",snapshot FROM enterprise_workflow.order_sources WHERE enterprise_id=$1 AND order_id=$2',[principal.enterpriseId,orderId])).rows[0]??null;
       return {order,events,source,pauseControl:pauseControls(actor,order,this.pausesEnabled),cancellationControl:cancellationControls(actor,order,this.cancellationsEnabled),handoverPackages:{enabled:this.handoverPackagesEnabled},changeControl:changeControls(actor,order,this.changesEnabled)};
-    });
+    },()=>[orderId],{missing:'NOT_FOUND',legacyRepeatable:false});
   }
   async tasks(principal:Principal,raw:unknown={}){
     const q=tasksSchema.parse(raw);

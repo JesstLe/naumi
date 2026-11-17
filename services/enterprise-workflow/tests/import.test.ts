@@ -20,6 +20,7 @@ import {moveChecks} from './plan-move.test';
 import {availabilityChecks} from './availability.test';
 import {deliveryLibraryChecks} from './delivery-library.test';
 import {dashboardChecks} from './dashboard.test';
+import {readTransactionChecks} from './read-transaction.test';
 import {multipartChecks} from './multipart.test';
 import {deliveryScanChecks} from './delivery-scan.test';
 import {clamdProtocolChecks} from './clamd-protocol.test';
@@ -103,7 +104,7 @@ test('import persistence, exact source data, isolation, replay, CAS, rollback an
   assert.equal((await fetch(api+'action=command',{method:'POST',headers,body:JSON.stringify({action:{type:'accept-delivery'}})})).status,403);
   const rosterEntry={personId:randomUUID(),expectedVersion:0,realName:'本机批量验收',nickname:'占位花名',source:null,enabled:true},rosterBody={entries:[rosterEntry],reason:'local proxy check'};assert.equal((await fetch(api+'action=people-roster-preview',{method:'POST',headers:{cookie,origin:base,'content-type':'application/json'},body:JSON.stringify(rosterBody)})).status,403);const rosterResult=await fetch(api+'action=people-roster-preview',{method:'POST',headers,body:JSON.stringify(rosterBody)});assert.equal(rosterResult.status,200);const rosterPreview=await rosterResult.json() as any;assert(rosterPreview.valid);assert.equal((await pool.query('SELECT count(*) n FROM enterprise_workflow.person_profiles WHERE person_id=$1',[rosterEntry.personId])).rows[0].n,'0');
   await intakeChecks(pool,tenant,source);
-  await tasksChecks(pool);await dashboardChecks(pool);
+  await tasksChecks(pool);await dashboardChecks(pool);await readTransactionChecks(pool);
   await deliveryChecks(pool);await deliveryLibraryChecks(pool);await deliveryScanChecks(pool);await multipartChecks(pool);await clamdProtocolChecks();
   await planChecks(pool);await calendarChecks(pool);await availabilityChecks(pool);await moveChecks(pool);await catalogChecks(pool);await formsChecks(pool);await demandBatchChecks(pool);await demandAssetsChecks(pool);await worklogChecks(pool);await reviewChecks(pool);await slaChecks(pool);await capacityChecks(pool);
   await handoverBatchChecks(pool);await batchRecoveryChecks(pool);
