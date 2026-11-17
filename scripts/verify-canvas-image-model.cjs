@@ -24,7 +24,8 @@ const a={id:'model-a',label:'Model A',supportsEdit:true,creditHint:'6',generatio
  run('managed-undefined-unconfigured',{previous:'old',previousModels:[a]}, {model:'old',models:[a]});
  for(const[previous,saved,def,expected]of [['model-a','model-b','model-b','model-a'],['absent','model-b','model-a','model-b'],['absent','absent','model-b','model-b'],['','','absent','model-a']])run('legacy:'+previous+':'+saved+':'+def,{catalog:{managed:false,models:[]},config:{...config,defaultImageModel:def,modelVersion:10},previous,saved},{model:expected});
  run('legacy-no-version',{config,saved:'model-b'},{model:'model-b'});
- for(const model of ['gpt-image-2','other-image'])run('legacy-fallback:'+model,{catalog:{managed:false,models:[]},config:{defaultImageModel:model}},{model,models:[{id:model,label:model,supportsEdit:model.startsWith('gpt-image')}]});
+ for(const model of ['gpt-image-2','other-image'])run('legacy-fallback:'+model,{catalog:{managed:false,models:[]},config:{defaultImageModel:model}},{model,models:[{id:model,label:model,supportsEdit:!baseline||model.startsWith('gpt-image')}]});
+ if(!baseline&&!arg('--compare'))run('managed-explicit-edit-disabled',{catalog:{managed:true,models:[b],defaultModelId:b.id},selected:b.id},{model:b.id,models:[b]});
  run('legacy-empty',{catalog:{managed:false,models:[]},config:{}},{model:'',models:[]});
  run('legacy-invalid-entries',{catalog:{managed:false,models:[]},config:{imageModels:[{id:'',label:'bad',supportsEdit:false},{id:'bad',label:'',supportsEdit:false},a],defaultImageModel:'bad'}},{model:'model-a'});
  run('direction-family',{catalog:{managed:false,models:[]},config:{imageModels:[{id:'flow-square',label:'flow-square',supportsEdit:true},{id:'flow-portrait',label:'flow-portrait',supportsEdit:true}],defaultImageModel:'flow-square'},saved:'flow-portrait'},{model:'flow-square'});
