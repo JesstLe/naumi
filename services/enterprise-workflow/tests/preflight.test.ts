@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
-import {mkdtemp} from 'node:fs/promises';
+import {mkdtemp,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import type {Pool} from 'pg';
@@ -12,6 +12,7 @@ import {inspectPublicationImage,imageIssues} from '../src/image-inspector';
 import {imageSpecification} from '../src/preflight-contracts';
 import {resolveDatabaseActor} from '../src/identity';
 import {seedPublicationSource} from './publications-fixture';
+import {whileReadWaits} from './read-transaction.test';
 export const fixtureImageSpec=()=>({label:'合成渠道主图标准',versionLabel:'fixture-v1',sourceNote:'仅供自动验收，不代表公司或平台标准',formats:['png' as const],minFiles:1,maxFiles:1,minWidth:40,maxWidth:40,minHeight:20,maxHeight:20,maxBytes:100000,alpha:'forbid' as const,aspect:{width:2,height:1,toleranceBps:0}});
 export async function preflightChecks(pool:Pool){
  const png=await sharp({create:{width:40,height:20,channels:4,background:{r:20,g:90,b:170,alpha:1}}}).png().toBuffer(),transparent=await sharp({create:{width:40,height:20,channels:4,background:{r:0,g:0,b:0,alpha:0.5}}}).png().toBuffer(),jpeg=await sharp(png).jpeg().withMetadata({orientation:6}).toBuffer(),spec=fixtureImageSpec();
@@ -21,6 +22,25 @@ export async function preflightChecks(pool:Pool){
  const delivery=new DeliveryStore(pool,resolveDatabaseActor,root),wf=new WorkflowStore(pool,resolveDatabaseActor,delivery.validate),store=new PreflightStore(wf.publications,delivery),prev=process.env.NAUMI_VERIFY_ISOLATED_DB;process.env.NAUMI_VERIFY_ISOLATED_DB='1';let f;try{f=await seedPublicationSource(pool,enterpriseId,teamId,root,'lead','worker','reviewer',delivery,{name:'misleading.jpg',bytes:png});}finally{if(prev===undefined)delete process.env.NAUMI_VERIFY_ISOLATED_DB;else process.env.NAUMI_VERIFY_ISOLATED_DB=prev;}
  const id=randomUUID(),draft={orderId:f.orderId,taskId:f.taskId,selection:f.selection,externalObjectId:'PREFLIGHT-ITEM',slot:'主图',locale:'zh-CN',scheduleAt:null},plan=await wf.publications.preview(p(),{id,draft});await wf.publications.execute(p(),{commandId:randomUUID(),id,expectedVersion:0,reason:'explicit test plan',action:{type:'create',draft,previewHash:plan.previewHash}});const original=JSON.stringify((await pool.query('SELECT document FROM enterprise_workflow.orders WHERE enterprise_id=$1',[enterpriseId])).rows),c={id:randomUUID(),publicationId:id,expectedVersion:1,spec};const pass=await store.execute(p(),c);assert.equal(pass.report.status,'pass');assert.equal(pass.report.files[0].inspection.measurement.format,'png');assert.equal(pass.report.verification,'technical_advisory_not_platform_or_company_approval');assert.equal((await store.execute(p(),c)).replayed,true);await assert.rejects(store.execute(p(),{...c,spec:{...spec,label:'changed'}}),/IDEMPOTENCY_CONFLICT/);await assert.rejects(store.execute(p('worker'),{...c,id:randomUUID()}),/PREFLIGHT_OPERATOR_REQUIRED/);await assert.rejects(store.read(p('outsider'),{action:'detail',publicationId:id,id:c.id}),/PUBLICATION_SOURCE_UNAVAILABLE/);await assert.rejects(store.execute(p(),{...c,id:randomUUID(),expectedVersion:2}),/PUBLICATION_VERSION_CONFLICT/);
  const failed=await store.execute(p(),{...c,id:randomUUID(),spec:{...spec,formats:['jpeg'],minFiles:2,maxFiles:2,minWidth:100,maxWidth:100,maxBytes:1,alpha:'require',aspect:{width:1,height:1,toleranceBps:0}}});assert.equal(failed.report.status,'fail');assert(failed.report.issues.some((x:any)=>x.code==='FILE_COUNT'));for(const code of ['FORMAT','WIDTH','FILE_BYTES','TRANSPARENCY','ASPECT_RATIO'])assert(failed.report.files[0].issues.some((i:any)=>i.code===code));
+ const legacyWorkflow=new WorkflowStore(pool,(tx,principal)=>resolveDatabaseActor(tx,principal),delivery.validate),legacyRead=new PreflightStore(legacyWorkflow.publications,delivery);
+ const query={action:'list',publicationId:id},reportLock=(tx:import('pg').PoolClient)=>tx.query('LOCK TABLE enterprise_workflow.publication_preflights IN ACCESS EXCLUSIVE MODE');
+ const heldLocks=async()=>Promise.all([`publication:${enterpriseId}:${id}`,`catalog:${enterpriseId}`].map(async key=>!(await pool.query('SELECT pg_try_advisory_xact_lock(hashtextextended($1,0)) AS acquired',[key])).rows[0].acquired));
+ const locked=await whileReadWaits(pool,reportLock,()=>legacyRead.read(p(),query),async()=>{assert.deepEqual(await heldLocks(),[true,true]);});
+ const unlocked=await whileReadWaits(pool,reportLock,()=>store.read(p(),query),async()=>{assert.deepEqual(await heldLocks(),[false,false]);});
+ assert.equal(locked.status,'fulfilled');assert.equal(unlocked.status,'fulfilled');assert.deepEqual(locked.value,unlocked.value);
+ const checkDetail=()=>store.read(p(),{action:'detail',publicationId:id,id:c.id});
+ const verify=delivery.verifyAcceptedFiles.bind(delivery);let verified=0;
+ delivery.verifyAcceptedFiles=async(...args)=>{
+  assert.equal(pool.totalCount,pool.idleCount,'all PostgreSQL connections must be released during file verification');assert.deepEqual(await heldLocks(),[false,false]);verified++;
+  await verify(...args);
+  await pool.query("UPDATE enterprise_workflow.team_members SET enabled=false WHERE enterprise_id=$1 AND subject='lead'",[enterpriseId]);
+ };
+ try{await assert.rejects(checkDetail(),/MEMBERSHIP_REQUIRED/);assert.equal(verified,1);}finally{delivery.verifyAcceptedFiles=verify;await pool.query("UPDATE enterprise_workflow.team_members SET enabled=true WHERE enterprise_id=$1 AND subject='lead'",[enterpriseId]);}
+ assert.equal((await checkDetail() as any).currentAvailability.status,'available');
+ const blob=join(root,enterpriseId,pass.report.source.files[0].sha256),afterDecode={...c,id:randomUUID()};
+ const corrupt=new PreflightStore(wf.publications,delivery,async bytes=>{const image=await inspectPublicationImage(bytes);await writeFile(blob,Buffer.alloc(png.length));return image;});
+ try{await assert.rejects(corrupt.execute(p(),afterDecode),/ASSET_CORRUPT/);assert.equal((await pool.query('SELECT 1 FROM enterprise_workflow.publication_preflights WHERE enterprise_id=$1 AND id=$2',[enterpriseId,afterDecode.id])).rowCount,0);}finally{await writeFile(blob,png);}
+ console.log('PREFLIGHT_READ_SNAPSHOT_PASS: prev_publication_and_catalog_locks=1 snapshot_no_locks=1 same_list_projection=1 no_client_during_file_verification=1 post_file_revocation_denied=1 post_decode_corruption_denied=1');
  const same={...c,id:randomUUID()},race=await Promise.all([store.execute(p(),same),store.execute(p(),same)]);assert.equal(race.filter(r=>r.replayed).length,1);
  const revoke=new PreflightStore(wf.publications,delivery,async b=>{const r=await inspectPublicationImage(b);await pool.query("UPDATE enterprise_workflow.team_members SET enabled=false WHERE enterprise_id=$1 AND subject='lead'",[enterpriseId]);return r;});await assert.rejects(revoke.execute(p(),{...c,id:randomUUID()}),/MEMBERSHIP_REQUIRED/);await pool.query("UPDATE enterprise_workflow.team_members SET enabled=true WHERE enterprise_id=$1 AND subject='lead'",[enterpriseId]);
  await pool.query("CREATE FUNCTION enterprise_workflow.preflight_audit_fail() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.operation='preflight' THEN RAISE EXCEPTION 'preflight audit failed'; END IF; RETURN NEW; END $$;CREATE TRIGGER preflight_audit_fail BEFORE INSERT ON enterprise_workflow.publication_file_audit FOR EACH ROW EXECUTE FUNCTION enterprise_workflow.preflight_audit_fail()");const bad={...c,id:randomUUID()};await assert.rejects(store.execute(p(),bad),/preflight audit failed/);assert.equal((await pool.query('SELECT count(*) n FROM enterprise_workflow.publication_preflights WHERE enterprise_id=$1 AND id=$2',[enterpriseId,bad.id])).rows[0].n,'0');await pool.query('DROP TRIGGER preflight_audit_fail ON enterprise_workflow.publication_file_audit;DROP FUNCTION enterprise_workflow.preflight_audit_fail()');

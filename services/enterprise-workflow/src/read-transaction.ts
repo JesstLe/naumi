@@ -22,9 +22,9 @@ export async function readWorkflowSnapshot<T>(
   resolve: ResolveActor,
   principal: Principal,
   project: (tx: PoolClient, actor: Actor, snapshot: boolean) => Promise<T>,
-  options: {legacyRepeatable?: boolean; statementTimeoutMs?: 10000 | 15000 | 20000; checkCurrent?: (tx: PoolClient, actor: Actor, result: T) => Promise<void>} = {},
+  options: {legacyRepeatable?: boolean; statementTimeoutMs?: 10000 | 15000 | 20000; betweenSnapshots?: (result: T) => Promise<void>; checkCurrent?: (tx: PoolClient, actor: Actor, result: T) => Promise<void>} = {},
 ): Promise<T> {
-  const tx = await pool.connect();
+  let tx = await pool.connect(), ownsClient = true;
   const snapshot = resolve.readSnapshot;
   const {legacyRepeatable = false, statementTimeoutMs = 10000, checkCurrent} = options;
   const begin = snapshot ? 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY' : legacyRepeatable ? 'BEGIN ISOLATION LEVEL REPEATABLE READ' : 'BEGIN';
@@ -47,6 +47,11 @@ export async function readWorkflowSnapshot<T>(
       return {actor, result: await project(tx, actor, !!snapshot)};
     });
     // Custom resolvers without snapshot support retain their existing locked authorization path.
+    if (snapshot && options.betweenSnapshots) {
+      tx.release(discard); ownsClient = false;
+      await options.betweenSnapshots(result);
+      tx = await pool.connect(); ownsClient = true; discard = false;
+    }
     if (snapshot) await run(async () => {
       const current = await requireActor(tx, snapshot, principal);
       if (!equalSet(actor.permissions, current.permissions) || !equalSet(actor.workKinds, current.workKinds)) {
@@ -56,7 +61,7 @@ export async function readWorkflowSnapshot<T>(
     });
     return result;
   } finally {
-    tx.release(discard);
+    if (ownsClient) tx.release(discard);
   }
 }
 
