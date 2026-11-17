@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { authHeader } from "@/lib/supabase";
 import { priceTableConversion, type Image25TablePayload, type Image25Quality, type Image25Tier } from "@/lib/model-config/image25-price-table";
 
@@ -11,26 +11,31 @@ export function Image25PriceTable() {
   const [model, setModel] = useState("gpt-image-2.5-flare"), [tier, setTier] = useState<Image25Tier>("gold"),
     [resolution, setResolution] = useState("all"), [ratio, setRatio] = useState("all"),
     [quality, setQuality] = useState<Image25Quality | "all">("all"), [currency, setCurrency] = useState("CNY");
+  const inFlight=useRef<AbortController|null>(null);
   const load = useCallback(async () => {
+    if(inFlight.current)return;
+    const controller=new AbortController();inFlight.current=controller;
+    const current=()=>inFlight.current===controller&&!controller.signal.aborted;
     setLoading(true); setError(""); setData(null);
     try {
-      const response = await fetch("/api/admin/billing/image25-prices", { headers: await authHeader(), cache: "no-store" });
+      const headers=await authHeader();controller.signal.throwIfAborted();
+      const response = await fetch("/api/admin/billing/image25-prices", { headers, cache: "no-store", signal:controller.signal });
       if (!response.ok) throw new Error(response.status === 404 ? "当前账号没有查看价格表的权限。" : "价格表读取失败，请重试。");
-      setData(await response.json());
-    } catch (e) { setError(e instanceof Error ? e.message : "价格表读取失败。"); }
-    finally { setLoading(false); }
+      const result=await response.json();if(current())setData(result);
+    } catch (e) { if(current())setError(e instanceof Error ? e.message : "价格表读取失败。"); }
+    finally { if(current()){inFlight.current=null;setLoading(false);} }
   }, []);
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void load();return()=>{inFlight.current?.abort();inFlight.current=null;}; }, [load]);
   const rows = data?.rows.filter(row => (resolution === "all" || row.resolution === resolution) && (ratio === "all" || row.ratio === ratio)) || [];
   const qualities = data?.qualities.filter(q => quality === "all" || q === quality) || [];
   const converted = currency === "CNY" && !!data?.conversion;
-  const displayPrice = (usd: string) => converted ? `¥${priceTableConversion(usd, data!.conversion).cny}` : `$${usd}`;
+  const displayPrice = (usd: string,cny:string|null) => converted ? `¥${cny??priceTableConversion(usd,data!.conversion).cny}` : `$${usd}`;
   const download = () => {
     if (!data) return;
     const content = { ...data, selectedModel: model, selectedTier: tier, selectedCurrency: converted ? "CNY" : "USD", rows,
       selectedPrices: rows.flatMap(row => qualities.map(q => ({ model, ratio: row.ratio, resolution: row.resolution, quality: q, tier,
-        ...row.prices[q][tier], outputCny: priceTableConversion(row.prices[q][tier].outputUsd, data.conversion).cny,
-        saleCny: priceTableConversion(row.prices[q][tier].saleUsd, data.conversion).cny }))) };
+        ...row.prices[q][tier], outputCny: row.prices[q][tier].outputCny??priceTableConversion(row.prices[q][tier].outputUsd,data.conversion).cny,
+        saleCny: row.prices[q][tier].saleCny??priceTableConversion(row.prices[q][tier].saleUsd,data.conversion).cny }))) };
     const url = URL.createObjectURL(new Blob([JSON.stringify(content, null, 2)], { type: "application/json;charset=utf-8" }));
     const a = document.createElement("a"); a.href = url; a.download = `apimart-image25-output-x3-${tier}.json`; a.click(); URL.revokeObjectURL(url);
   };
@@ -63,9 +68,9 @@ export function Image25PriceTable() {
           </tr><tr>{qualities.flatMap(q => [<th key={`${q}-output`} className="whitespace-nowrap border-b border-l border-slate-300 px-3 py-2 font-normal">输出参考价</th>, <th key={`${q}-sale`} className="whitespace-nowrap border-b border-slate-300 px-3 py-2">售价 ×3</th>])}</tr></thead>
           <tbody>{rows.map(row => <tr key={`${row.resolution}:${row.ratio}`} data-testid={`price-row-${row.resolution}-${row.ratio}`} className="border-b border-slate-200 even:bg-slate-50 hover:bg-slate-100">
             <th scope="row" className="whitespace-nowrap px-3 py-3 text-left font-medium">{row.ratio}</th><td className="whitespace-nowrap px-3 py-3 text-left">{row.resolution.toUpperCase()}</td><td className="whitespace-nowrap px-3 py-3 text-left text-slate-600">{row.pixels.replace("x", "×")}</td>
-            {qualities.flatMap(q => { const cell = row.prices[q][tier]; const points = converted ? priceTableConversion(cell.saleUsd, data.conversion).credits : null; return [
-              <td key={`${q}-output`} title={`输出 ${cell.outputTokens} tokens；不含输入`} className="whitespace-nowrap border-l border-slate-200 px-3 py-3 text-slate-600">{displayPrice(cell.outputUsd)}</td>,
-              <td key={`${q}-sale`} title={`$${cell.outputUsd} × 3 = $${cell.saleUsd}`} className="whitespace-nowrap px-3 py-3 font-semibold">{displayPrice(cell.saleUsd)}{points !== null && <span className="mt-1 block font-normal text-slate-500">{points} 积分 / 张（参考）</span>}</td>,
+            {qualities.flatMap(q => { const cell = row.prices[q][tier]; const points = converted&&data.conversion?.creditsPerCnyMicros&&data.conversion.rounding ? priceTableConversion(cell.saleUsd, data.conversion).credits : null; return [
+              <td key={`${q}-output`} title={`输出 ${cell.outputTokens} tokens；不含输入`} className="whitespace-nowrap border-l border-slate-200 px-3 py-3 text-slate-600">{displayPrice(cell.outputUsd,cell.outputCny)}</td>,
+              <td key={`${q}-sale`} title={`$${cell.outputUsd} × 3 = $${cell.saleUsd}`} className="whitespace-nowrap px-3 py-3 font-semibold">{displayPrice(cell.saleUsd,cell.saleCny)}{points !== null && <span className="mt-1 block font-normal text-slate-500">{points} 积分 / 张（参考）</span>}</td>,
             ]; })}
           </tr>)}</tbody>
         </table>

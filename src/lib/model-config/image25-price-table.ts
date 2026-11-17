@@ -48,7 +48,7 @@ export const IMAGE25_BUDGET_FX: TableConversion = {
   referenceOnly: true,
 };
 export function validTableConversion(value: TableConversion | null | undefined): TableConversion | null {
-  if (!value || !value.evidence.trim() || !Number.isSafeInteger(value.modelVersion) || value.modelVersion < 1 || !Number.isFinite(Date.parse(value.updatedAt))) return null;
+  if (!value || typeof value.evidence!=="string" || !value.evidence.trim() || !Number.isSafeInteger(value.modelVersion) || value.modelVersion < 1 || !Number.isFinite(Date.parse(value.updatedAt))) return null;
   try { positiveMicros(value.rateMicros); } catch { return null; }
   if (!["recharge", "admin-rate", "budget"].includes(value.basis)) return null;
   const result = { ...value };
@@ -59,14 +59,20 @@ export function validTableConversion(value: TableConversion | null | undefined):
 /** Convert and finally round once. A six-place display must not feed points. */
 export function priceTableConversion(usd: string, conversion?: TableConversion | null, quantity = 1) {
   if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 10000) throw new Error("数量无效");
-  const c = validTableConversion(conversion);
-  if (!c) return { cny: null, credits: null };
-  const n = usdNanos(usd) * positiveMicros(c.rateMicros) * BigInt(quantity);
+  return convertPrice(usd,prepareConversion(validTableConversion(conversion)),quantity);
+}
+function prepareConversion(c:TableConversion|null,includeCredits=true){
+  if(!c)return null;
+  return {rate:positiveMicros(c.rateMicros),credits:includeCredits&&c.creditsPerCnyMicros&&c.rounding?{rate:positiveMicros(c.creditsPerCnyMicros),rounding:c.rounding}:null};
+}
+function convertPrice(usd:string,conversion:ReturnType<typeof prepareConversion>,quantity=1){
+  if (!conversion) return { cny: null, credits: null };
+  const n = usdNanos(usd) * conversion.rate * BigInt(quantity);
   const den = NANO * MICRO;
   const displayMicros = round(n * MICRO, den, "nearest");
   const cny = `${displayMicros / MICRO}.${(displayMicros % MICRO).toString().padStart(6, "0")}`;
-  const credits = c.creditsPerCnyMicros && c.rounding
-    ? round(n * positiveMicros(c.creditsPerCnyMicros), den * MICRO, c.rounding).toString()
+  const credits = conversion.credits
+    ? round(n * conversion.credits.rate, den * MICRO, conversion.credits.rounding).toString()
     : null;
   return { cny, credits };
 }
@@ -102,12 +108,14 @@ export function buildImage25PriceTable(): Image25PriceRow[] {
     return { ratio: row.size, resolution: row.resolution as Image25PriceRow["resolution"], pixels: row.pixels, prices };
   });
 }
+let staticRows:Image25PriceRow[]|undefined;
 export function image25TablePayload(conversion: TableConversion | null = null, conversionNotice = "") {
   const validated = validTableConversion(conversion);
-  const rows = buildImage25PriceTable().map(row => ({ ...row,
+  const prepared=prepareConversion(validated,false);
+  const rows = (staticRows??=buildImage25PriceTable()).map(row => ({ ...row,
     prices: Object.fromEntries(IMAGE25_QUALITIES.map(q => [q, Object.fromEntries(IMAGE25_TIERS.map(tier => {
       const cell = row.prices[q][tier];
-      return [tier, { ...cell, outputCny: priceTableConversion(cell.outputUsd, validated).cny, saleCny: priceTableConversion(cell.saleUsd, validated).cny }];
+      return [tier, { ...cell, outputCny: convertPrice(cell.outputUsd,prepared).cny, saleCny: convertPrice(cell.saleUsd,prepared).cny }];
     }))])) as Record<Image25Quality, Record<Image25Tier, Image25PriceCell & { outputCny: string | null; saleCny: string | null }>>,
   }));
   return {

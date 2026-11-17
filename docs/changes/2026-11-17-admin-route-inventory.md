@@ -19,7 +19,7 @@
 | `GET /api/admin/bi/trace` | `src/app/api/admin/bi/trace/route.ts` | 部分：外部追踪的总时限、在途上限及部分结果，`verify-bi-trace-deadline.ts` |
 | `GET /api/admin/bi/usage` | `src/app/api/admin/bi/usage/route.ts` | 部分：隔离断开、CSV 精简、新旧浏览器兼容；混合企业报表并发占满场景复现与连接保留见 `verify-admin-report-contention.ts`。每页精确统计成本和真实网关待核 |
 | `GET /api/admin/billing` | `src/app/api/admin/billing/route.ts` | 已核查：隔离 PG 证实不初始化、不等发布锁、活动版本只读一次，同快照计算开关，断开释放查询；权限与私有响应头保留 |
-| `GET /api/admin/billing/image25-prices` | `src/app/api/admin/billing/image25-prices/route.ts` | 待核查 |
+| `GET /api/admin/billing/image25-prices` | `src/app/api/admin/billing/image25-prices/route.ts` | 已核查：只读发布版本的换算字段，零 Router 发现；预算降级、精确金额、鉴权、私有头及真实 HTTP 断开释放通过 |
 | `GET /api/admin/billing/models/stages` | `src/app/api/admin/billing/models/stages/route.ts` | 待核查 |
 | `GET /api/admin/billing/operations` | `src/app/api/admin/billing/operations/route.ts` | 已核查：列表和详情不等待账务行锁，不写状态；可取消，旧字段和人工核对资格保持 |
 | `GET /api/admin/billing/pending` | `src/app/api/admin/billing/pending/route.ts` | 已核查：汇总和四类列表同一只读快照；角标继续只计已记录的状态及待核查任务 |
@@ -299,7 +299,7 @@
 | `页面 /admin/bi` | `src/app/admin/bi/page.tsx` | 待核查 |
 | `页面 /admin/bi/models` | `src/app/admin/bi/models/page.tsx` | 待核查 |
 | `页面 /admin/billing` | `src/app/admin/billing/page.tsx` | 部分：人工核对新旧深链不读现价；列表、详情及当前配置读取取消去重，切换保留草稿和原提交身份；历史翻页、预览防乱序、基线更新保留冻结目标和恢复重试已核。其他分区另核 |
-| `页面 /admin/billing/price-table` | `src/app/admin/billing/price-table/page.tsx` | 待核查 |
+| `页面 /admin/billing/price-table` | `src/app/admin/billing/price-table/page.tsx` | 已核查：实际浏览器验证筛选和导出零请求、下载与显示同一版本、连点刷新去重、离开取消；隔离验证，非生产 |
 | `页面 /admin/billing/supplier-cost` | `src/app/admin/billing/supplier-cost/page.tsx` | 部分：调用链切换、去重、取消、分页及账务按需展开，旧服务器返回完整数据时本地分页；长窗口和深页已隔离核查。写操作与真实容量另核 |
 | `页面 /admin/center` | `src/app/admin/center/page.tsx` | 部分：默认双概览分口径，旧 URL 重复 BI GET 已在真实浏览器复现及修复；导航和各面板仍待复查 |
 | `页面 /admin/creations` | `src/app/admin/creations/page.tsx` | 部分：实测可见性、重试、会话取消、预览解码、24 张图请求峰值和切换时清理；真实导航组合待核 |
