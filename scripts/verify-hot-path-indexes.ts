@@ -41,8 +41,11 @@ async function main() {
     // ---- production-shaped volume ----
     await pool.query(`INSERT INTO app_release_activities(id,instance_id,boot_id,runtime_id,activity_kind,state,started_at,heartbeat_at,finished_at,work_scope,work_key,admission_key)
       SELECT gen_random_uuid(),'i-current','00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000002','accepted-work','finished',now()-interval '1 day',now(),now()-(g||' seconds')::interval,'scope-'||(g%5),'k'||g,'k'||g FROM generate_series(1,150000) g`);
+    // With only a few open peers the wider status index is legitimately
+    // cheaper. Seed many live keys in the same scope to test the pressured
+    // admission path rather than requiring one index for every cardinality.
     await pool.query(`INSERT INTO app_release_activities(id,instance_id,boot_id,runtime_id,activity_kind,state,work_scope,work_key,admission_key)
-      SELECT gen_random_uuid(),'i-current','00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000002','accepted-work','active','scope-1','k-live'||g,'k-live'||g FROM generate_series(1,3) g`);
+      SELECT gen_random_uuid(),'i-current','00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000002','accepted-work',CASE WHEN g%2=0 THEN 'active' ELSE 'unknown' END,'scope-1','k-live'||g,'k-live'||g FROM generate_series(1,800) g`);
     await pool.query(`INSERT INTO app_ledger(id,email,delta,reason,kind,created_at) SELECT 'led-'||g,'u'||(g%40)||'@x.test',-(g%9)-1,'fixture',CASE WHEN g%2=0 THEN 'consume' ELSE 'grant' END,now()-(g||' minutes')::interval FROM generate_series(1,30000) g`);
     await pool.query(`INSERT INTO app_creation_records(id,actor_email,scope_kind,source_kind,source_id) SELECT 'cr-'||g,'u'||(g%40)||'@x.test','personal','image','s'||g FROM generate_series(1,20000) g`);
     await pool.query(`INSERT INTO app_creation_links(creation_id,target_type,target_id,actor_email) SELECT 'cr-'||(g%20000+1),(ARRAY['image:generate','video','billing'])[g%3+1],'t-'||g,'u'||((g%20000+1)%40)||'@x.test' FROM generate_series(1,110000) g`);
@@ -71,6 +74,7 @@ async function main() {
     for (const [name, q] of Object.entries(HOT)) {
       const plan = await explain(q.sql, !("explainOnly" in q));
       ok(plan.includes(q.index), `${name} uses ${q.index}:\n${plan}`);
+      if (name === 'claim') ok(/Index Cond:[^\n]*admission_key/.test(plan), `claim should seek by key, not filter the whole open scope:\n${plan}`);
       if (!("explainOnly" in q)) timings[name] = `${ms(before[name]).toFixed(2)}ms -> ${ms(plan).toFixed(2)}ms`;
     }
     // ---- keyed UNION == former OR ----
