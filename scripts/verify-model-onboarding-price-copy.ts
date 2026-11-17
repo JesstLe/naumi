@@ -12,7 +12,7 @@ async function main(){
  const billing=JSON.parse(await readFile(join(evidence,'LIVE_BILLING_SNAPSHOT.json'),'utf8'));billing.version=Number(billing.version);
  const snapshot=live.current;snapshot.version=Number(snapshot.version);
  const entries=GPT26_PROFILES.map(p=>({publicId:p.publicId,label:p.label,source:{upstream:gpt26Upstream(p.id,'apib-image')},features:['image.generate','canvas.image'] as ('image.generate'|'canvas.image')[],price:{mode:'copy' as const,sourceModelId:'gpt-image-2'}}));
- const result=planModelOnboarding(snapshot,billing,{entries,enabled:true,capabilityConfirmed:true},[{providerId:'apib-image',status:'ok',stale:false,models:live.matches} as any]);
+ const result=planModelOnboarding(snapshot,billing,{entries,enabled:true,capabilityConfirmed:true});
  validateModelConfig(result.config);const after={version:snapshot.version+1,digest:'fixture-derived',config:result.config};const matrix=[];
  for(const feature of ['image.generate','canvas.image'] as const){
   const original=publicModelCatalog(snapshot,'image',feature,true),current=publicModelCatalog(after,'image',feature,true);

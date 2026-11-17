@@ -9,7 +9,7 @@ import {ReportReadBusy} from "@/platform/db/owned-read-client";
 import { biAuthorize, biJson, sameSiteBiMutation } from "../bi/access";
 import { readBounded } from "../supplier-cost/io";
 import { getModelAdministration } from "./server";
-import { refreshProviderCatalog } from "./catalog-store";
+import { readProviderCatalogFrom,refreshProviderCatalog,type CatalogEntry } from "./catalog-store";
 import { FEATURE_IDS } from "../billing/rules/registry";
 import { BillingError } from "../billing/types";
 import { editManagedModelCredits, modelCreditGrid } from "./management-pricing";
@@ -22,7 +22,7 @@ import { modelConfigurationEnabled } from "./availability";
 import {identifier,managementInput as input,type ManagementAdministration} from "./management-input";
 import {acquireManagementMutationTurn,acquireManagementLock} from "./management-locks";
 import {injectedManagementRead,managementRows as rows,managementReadSnapshot,publishedManagementRead,readManagementView,type ManagementReadPorts} from "./management-read";
-import {applyManagementConfigAction} from "./management-actions";
+import {applyManagementConfigAction,registrationProvider,registrationCatalogIncludes} from "./management-actions";
 type Administration = ManagementAdministration;
 // Persisted provider IDs, actor markers and locks retain their original namespace.
 // Reasons also participate in historical publication fingerprints; keep their wire format.
@@ -93,6 +93,12 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
         const owner=(await admin.pool.query("SELECT actor FROM app_model_config_versions WHERE version=$1 AND operation_id=$2",[publication.version,body.id])).rows[0];
         if(owner?.actor!==actor)throw new ModelConfigError("OPERATION_CONFLICT","该操作编号已用于不同发布",409);
       };
+      // Dedicated operation drafts and receipts keep their existing actor fingerprint.
+      const fingerprint=createHash("sha256").update(canonicalConfig(body)).digest("hex").slice(0,20);
+      const actor=`${auth.actor.slice(0,150)}#mvp:${body.id}:${fingerprint}`;
+      const needsRegistrationCatalog=async()=>Number((await admin.pool.query<{revision:string}>(
+        'SELECT revision FROM app_model_drafts WHERE actor=$1',[actor])).rows[0]?.revision??1)===1;
+      let catalogRefreshing=false;
       if(body.action!=="pricing"){
         // A finalized receipt is a read, not a mutation. Do not hold a pool
         // connection while acquiring another for its immutable identity lookup.
@@ -102,12 +108,21 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
         staged=!!receipt;
         if(receipt?.phase==="applied"){
           staged=true;
-          const actor=`${auth.actor.slice(0,150)}#mvp:${body.id}:${createHash("sha256").update(canonicalConfig(body)).digest("hex").slice(0,20)}`;
           await assertReceiptOwner(receipt,actor);return await publicationResponse(receipt);
         }
         // New deprecated operations must not create an operation draft. A
         // previously staged/ambiguous publication still owns its old receipt.
         if(body.action==='video-capability-upgrade'&&!receipt)throw new ModelConfigError('VIDEO_CAPABILITY_UPGRADE_RETIRED','旧能力升级操作已退出，请刷新后迁移执行绑定',410);
+        if(body.action==='register'&&!receipt){
+          if(snapshot.version!==body.expectedVersion)throw new ModelConfigError("CONFIG_CONFLICT", "配置已被其他管理员更新，请刷新后重试", 409);
+          if(await needsRegistrationCatalog()){
+            const provider=registrationProvider(snapshot,body.providerId);
+            discovering=true;
+            const fetched=await refreshProviderCatalog(admin.pool,provider,admin.credentials,admin.trustedOrigins,deps.fetcher,false,request.signal);
+            catalogRefreshing=fetched.refreshing===true;
+            discovering=false;
+          }
+        }
       }
       // Model publication already has one global pending version/CAS owner.
       // Serialize only this management mutation orchestration per actual pool;
@@ -127,9 +142,6 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
         const published=await admin.billing.publish({id:body.id,expectedVersion:body.expectedBillingVersion,expectedModelVersion:body.expectedVersion,config,actor,reason});
         return biJson({publication:{id:body.id,version:published.version,phase:"applied"},billingVersion:published.version});
       }
-      // Dedicated operation drafts preserve unfinished work in the full administration UI.
-      const fingerprint = createHash("sha256").update(canonicalConfig(body)).digest("hex").slice(0, 20);
-      const actor = `${auth.actor.slice(0, 150)}#mvp:${body.id}:${fingerprint}`;
       let previous;
       try { previous = await admin.repo.publication(body.id); } catch (e) { if (!(e instanceof ModelConfigError) || e.code !== "PUBLICATION_UNAVAILABLE") throw e; }
       staged = !!previous;
@@ -144,9 +156,22 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
       let publication = previous;
       if(previous?.phase!=="applied"){
       if (!previous && snapshot.version !== body.expectedVersion) throw new ModelConfigError("CONFIG_CONFLICT", "配置已被其他管理员更新，请刷新后重试", 409);
+      let registrationCatalog:CatalogEntry|undefined;
+      if(!previous&&body.action==='register'){
+        // Refresh may have waited on the network. No draft or publication may
+        // be prepared from a superseded model snapshot or directory cache.
+        const latest=await admin.repo.current();
+        if(latest.version!==snapshot.version||latest.digest!==snapshot.digest)throw new ModelConfigError("CONFIG_CONFLICT", "配置已被其他管理员更新，请刷新后重试", 409);
+        if(await needsRegistrationCatalog()){
+          const provider=registrationProvider(latest,body.providerId);
+          [registrationCatalog]=await readProviderCatalogFrom(admin.pool,[provider]);
+          if(catalogRefreshing&&!registrationCatalogIncludes(registrationCatalog,body.model))
+            throw new ModelConfigError('PUBLICATION_LOCK_PENDING','上游目录正在刷新，请使用同一操作稍后重试',409);
+        }
+      }
       let draft = await admin.repo.draft(actor);
       if (!previous && draft.revision === 1) {
-        let config = await applyManagementConfigAction({ admin, snapshot, body, fetcher: deps.fetcher });
+        let config = await applyManagementConfigAction({ admin, snapshot, body, registrationCatalog });
         config = validateModelConfig(config, { trustedOrigins: admin.trustedOrigins });
         compileRouterProjection({ version: snapshot.version + 1, digest: "", config }, await admin.billing.current(), { trustedOrigins: admin.trustedOrigins });
         draft = await admin.repo.saveDraft({ id: draft.id, expectedRevision: draft.revision, config, actor });

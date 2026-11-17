@@ -8,7 +8,6 @@ import {imageModelDisplayId} from '../image-model-routing';
 import {FEATURE_BINDINGS,featureDefaultModel,upstreamSupportsFeature} from './feature-model-policy';
 import {modelCreditView} from './management-pricing';
 import {compileImageParameterPlan} from './image-parameter-plan';
-import type {CatalogEntry} from './catalog-store';
 import {publicModelCatalog} from './public-catalog';
 
 const fail=(code:string,message:string):never=>{throw new ModelConfigError(code,message,422);};
@@ -26,8 +25,10 @@ function copiedPrice(billing:ConfigSnapshot,snapshot:ModelSnapshot,sourceId:stri
 
 /** One additive publication: public identity, executable source, parameters and price.
  * Never updates an old source, old price, purpose binding, or feature default. */
-export function planModelOnboarding(snapshot:ModelSnapshot,billing:ConfigSnapshot,input:OnboardingInput,catalogs:CatalogEntry[]=[]){
+export function planModelOnboarding(snapshot:ModelSnapshot,billing:ConfigSnapshot,input:OnboardingInput){
  const config=structuredClone(snapshot.config),changes:{publicId:string;upstreamId:string;wireModel:string;features:FeatureId[];priceSource:string;enabled:boolean}[]=[];
+ for(const {source} of input.entries)if('upstream'in source&&!config.providers.some(p=>p.id===source.upstream.providerId))
+  throw new ModelConfigError('PROVIDER_UNAVAILABLE','供应商不存在',404);
  const ids=new Set<string>();
  for(const entry of input.entries){
   if(ids.has(entry.publicId)||config.publicModels.some(m=>m.id===entry.publicId||m.previousIds?.includes(entry.publicId)))fail('PUBLIC_ID_CONFLICT','公开模型ID已被使用或保留为历史兼容ID');

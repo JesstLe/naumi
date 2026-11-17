@@ -11,7 +11,7 @@ import { applyVideoParameters } from "./video-policy";
 import {applyReviewedVideoExecutionMigration} from './video-execution-migration';
 import { applyChannelPolicy } from "./channel-policy";
 import { readQualityDefaults } from "../supplier-models/quality-access";
-import { refreshProviderCatalog } from "./catalog-store";
+import type { CatalogEntry } from "./catalog-store";
 import { publicModelCatalog } from "@/lib/model-config/public-catalog";
 import { FEATURE_BINDINGS } from "./feature-model-policy";
 import { MODEL_BINDINGS } from "./bindings";
@@ -22,21 +22,22 @@ import type { ModelConfig, ModelSnapshot } from "./types";
 import type { ManagementAdministration, ManagementInput } from "./management-input";
 import { managementRows as rows } from "./management-read";
 type ConfigAction = Exclude<ManagementInput, { action: "credential" | "discover" | "pricing" }>;
+export function registrationProvider(snapshot:ModelSnapshot,providerId:string){
+  const provider=snapshot.config.providers.find(p=>p.id===providerId);
+  if(!provider?.enabled||!provider.credentialRef||!MODEL_MANAGEMENT_PROTOCOLS.includes(provider.protocol as typeof MODEL_MANAGEMENT_PROTOCOLS[number]))
+    throw new ModelConfigError("MODEL_INCOMPATIBLE", "该来源尚未启用或协议未支持快捷接入");
+  return provider;
+}
+export const registrationCatalogIncludes=(catalog:CatalogEntry|undefined,model:string)=>
+  catalog?.status==='ok'&&!catalog.stale&&catalog.models.some(m=>m.id===model);
 /** Business rules that turn one management operation into the next model config.
  * The caller owns receipts, locks, validation, projection and publication. */
-export async function applyManagementConfigAction({ admin, snapshot, body, fetcher }: { admin: ManagementAdministration; snapshot: ModelSnapshot; body: ConfigAction; fetcher?: typeof fetch }): Promise<ModelConfig> {
-  const deps = { fetcher };
+export async function applyManagementConfigAction({ admin, snapshot, body, registrationCatalog }: { admin: ManagementAdministration; snapshot: ModelSnapshot; body: ConfigAction; registrationCatalog?: CatalogEntry }): Promise<ModelConfig> {
         let config = structuredClone(snapshot.config);
         if(body.action==='create-models'){
           const billing=await admin.billing.current();
           if(billing.version!==body.expectedBillingVersion)throw new ModelConfigError('CONFIG_CONFLICT','计费版本已变化，请重新核对售价',409);
-          const catalogs=[];
-          for(const providerId of [...new Set(body.entries.flatMap(e=>'upstream'in e.source?[e.source.upstream.providerId]:[]))]){
-            const provider=config.providers.find(p=>p.id===providerId);
-            if(!provider)throw new ModelConfigError('PROVIDER_UNAVAILABLE','供应商不存在',404);
-            catalogs.push(await refreshProviderCatalog(admin.pool,provider,admin.credentials,admin.trustedOrigins,deps.fetcher));
-          }
-          config=planModelOnboarding(snapshot,billing,body,catalogs).config;
+          config=planModelOnboarding(snapshot,billing,body).config;
         } else if(body.action==='video-execution-migration') {
           config=applyReviewedVideoExecutionMigration(config,snapshot.version,body.reviewDigest,body.publicIds).config;
         } else if(body.action === "video-capability-upgrade") {
@@ -83,10 +84,8 @@ export async function applyManagementConfigAction({ admin, snapshot, body, fetch
           await admin.credentials.read(body.credentialRef, providerId);
           config.providers.push({ id: providerId, name: body.name, baseUrl: endpoint, protocol: body.protocol, credentialRef: body.credentialRef, enabled: true, timeoutMs: 120000, maxConcurrent: 4,...(body.parameterCatalogPath?{options:{parameterCatalogPath:body.parameterCatalogPath}}:{}) });
         } else {
-          const p = config.providers.find(p => p.id === body.providerId);
-          if (!p?.enabled || !p.credentialRef || !MODEL_MANAGEMENT_PROTOCOLS.includes(p.protocol as typeof MODEL_MANAGEMENT_PROTOCOLS[number])) throw new ModelConfigError("MODEL_INCOMPATIBLE", "该来源尚未启用或协议未支持快捷接入");
-          const catalog = await refreshProviderCatalog(admin.pool, p, admin.credentials, admin.trustedOrigins, deps.fetcher);
-          if (catalog.status !== "ok" || catalog.stale || !catalog.models.some(m => m.id === body.model)) throw new ModelConfigError("CATALOG_UNAVAILABLE", "请先成功刷新该来源的模型目录，再添加目录中的模型");
+          const p = registrationProvider(snapshot,body.providerId);
+          if (!registrationCatalogIncludes(registrationCatalog,body.model)) throw new ModelConfigError("CATALOG_UNAVAILABLE", "请先成功刷新该来源的模型目录，再添加目录中的模型");
           if (config.upstreamModels.some(m => m.providerId === p.id && m.model === body.model)) throw new ModelConfigError("MODEL_EXISTS", "该模型已接入，可直接在切换列表中选择");
           if (body.resolutions.some(r => r !== "1K") && p.protocol === "openai-images") throw new ModelConfigError("MODEL_INCOMPATIBLE", "OpenAI 图片 2K/4K 需要专用尺寸参数映射，请在完整配置中心配置");
           const modality = p.protocol === "openai-chat" ? "text" : ["openai-images","new-api-flow","apimart-images","fal-images"].includes(p.protocol) ? "image" : "video";

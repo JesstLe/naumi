@@ -5,7 +5,6 @@ import {biAuthorize,biJson,sameSiteBiMutation} from '../bi/access';
 import {getModelAdministration} from './server';
 import {onboardingFields} from './onboarding-schema';
 import {onboardingDraftEntries,planModelOnboarding} from './onboarding';
-import {readProviderCatalog,refreshProviderCatalog} from './catalog-store';
 import {validateModelConfig} from './schema';
 import {ModelConfigError} from './types';
 import {readBounded} from '../supplier-cost/io';
@@ -34,16 +33,7 @@ export function createOnboardingHandler(deps:{authorize:typeof biAuthorize;admin
    }
    const body=input.parse(JSON.parse(await readBounded(new Response(request.body),96000)));
    if(body.expectedVersion!==snapshot.version||body.expectedBillingVersion!==billing.version)throw new ModelConfigError('CONFIG_CONFLICT','模型或计费版本已变化，请刷新核对后继续',409);
-   const catalogs=await readProviderCatalog(admin.pool,snapshot.config.providers);
-   for(const providerId of [...new Set(body.entries.flatMap(e=>'upstream'in e.source?[e.source.upstream.providerId]:[]))]){
-    const index=catalogs.findIndex(c=>c.providerId===providerId);
-    if(index<0||catalogs[index].stale||catalogs[index].status!=='ok'){
-     const provider=snapshot.config.providers.find(p=>p.id===providerId);if(!provider)throw new ModelConfigError('PROVIDER_UNAVAILABLE','供应商不存在',404);
-     const fresh=await refreshProviderCatalog(admin.pool,provider,admin.credentials,admin.trustedOrigins);
-     if(index<0)catalogs.push(fresh);else catalogs[index]=fresh;
-    }
-   }
-   const plan=planModelOnboarding(snapshot,billing,{...body,...(body.action==='save'?{enabled:false}:{})},catalogs);
+   const plan=planModelOnboarding(snapshot,billing,{...body,...(body.action==='save'?{enabled:false}:{})});
    validateModelConfig(plan.config,{trustedOrigins:admin.trustedOrigins});
    if(body.action==='preview')return biJson({version:snapshot.version,billingVersion:billing.version,changes:plan.changes});
    const draft=await admin.repo.draft(actor);

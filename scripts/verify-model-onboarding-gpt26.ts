@@ -84,9 +84,8 @@ async function main(){
   const savedResponse=await drafts(request({...operation,action:'save',id:undefined,expectedRevision:firstDraft.revision}));assert.equal(savedResponse.status,200,await savedResponse.clone().text());
   assert.equal((await f.repo.current()).version,baseline.version);const saved=(await savedResponse.json()).draft;assert.equal(saved.entries.length,4);checks++;
   const preview=await drafts(request({...operation,action:'preview',id:undefined}));assert.equal(preview.status,200,await preview.clone().text());assert.equal((await preview.json()).changes.length,4);checks++;
-  const catalog=(await discover.clone().json());
-  const reject=(input:any,code:string)=>{assert.throws(()=>planModelOnboarding(baseline,billing,input,[catalog]),(e:any)=>e.code===code);checks++;};
-  const unverifiedPlan=planModelOnboarding(baseline,billing,{...operation,capabilityConfirmed:false},[catalog]);
+  const reject=(input:any,code:string)=>{assert.throws(()=>planModelOnboarding(baseline,billing,input),(e:any)=>e.code===code);checks++;};
+  const unverifiedPlan=planModelOnboarding(baseline,billing,{...operation,capabilityConfirmed:false});
   assert.ok(unverifiedPlan.config.upstreamModels.some(u=>!u.capabilities.verified));checks++;
   reject({...operation,entries:[entries[0],entries[0]]},'PUBLIC_ID_CONFLICT');
   reject({...operation,entries:[{...entries[0],publicId:old.id}]},'PUBLIC_ID_CONFLICT');

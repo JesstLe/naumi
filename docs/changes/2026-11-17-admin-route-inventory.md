@@ -128,10 +128,10 @@
 | `POST /api/admin/fleet/releases` | `src/app/api/admin/fleet/releases/route.ts` | 待核查 |
 | `POST /api/admin/login` | `src/app/api/admin/login/route.ts` | 待核查 |
 | `POST /api/admin/model-health` | `src/app/api/admin/model-health/route.ts` | 待核查 |
-| `POST /api/admin/model-management` | `src/app/api/admin/model-management/route.ts` | 部分：隔离回归覆盖发布、积分、旧任务、未知收据及手动发现；接入已发布后补读目录释放发布锁，发布前注册、新增模型和 Router 执行另核 |
+| `POST /api/admin/model-management` | `src/app/api/admin/model-management/route.ts` | 部分：接入后的补读及发布前注册目录均不持发布锁等待供应商；显式新增模型不再刷新目录；Router 执行另核 |
 | `POST /api/admin/model-management/library` | `src/app/api/admin/model-management/library/route.ts` | 待核查 |
-| `POST /api/admin/model-management/onboarding` | `src/app/api/admin/model-management/onboarding/route.ts` | 待核查 |
-| `POST /api/admin/mvp` | `src/app/api/admin/mvp/route.ts` | 部分：与模型管理共用发布入口；接入后的目录补读已核，发布前路径待深查 |
+| `POST /api/admin/model-management/onboarding` | `src/app/api/admin/model-management/onboarding/route.ts` | 已核查：预览与保存按显式定义校验，不访问供应商；计费版本、草稿冲突和权限回归通过 |
+| `POST /api/admin/mvp` | `src/app/api/admin/mvp/route.ts` | 部分：与模型管理共用发布入口；接入补读和注册网络读取已移出发布锁，Router 执行待核 |
 | `POST /api/admin/mvp/library` | `src/app/api/admin/mvp/library/route.ts` | 待核查 |
 | `POST /api/admin/owner-account` | `src/app/api/admin/owner-account/route.ts` | 待核查 |
 | `POST /api/admin/prompts` | `src/app/api/admin/prompts/route.ts` | 待核查 |
