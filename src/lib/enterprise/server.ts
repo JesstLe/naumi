@@ -33,7 +33,7 @@ async function transaction<T>(run: (tx: PoolClient)=>Promise<T>,readOnly=false) 
   catch(e){await tx.query('ROLLBACK');throw e}finally{tx.release()}
 }
 type Node = { email: string; supervisor_email: string; role_id: string|null; employment: 'permanent'|'intern'; version:number; membership_status?:'active'|'suspended';membership_expires_at?:string|null; global_active?:boolean };
-type Scope = { team: EnterpriseIdentity; owner:boolean; level:number; manageMembers:boolean; viewRecords:boolean; roles:EnterpriseRole[]; nodes:Node[]; visible:Set<string>; manageable:Set<string>; entitlement:{name:string|null;seatLimit:number|null;featurePolicy:Record<string,boolean>} };
+type Scope = { team: EnterpriseIdentity; teamVersion:number; owner:boolean; level:number; manageMembers:boolean; viewRecords:boolean; roles:EnterpriseRole[]; nodes:Node[]; visible:Set<string>; manageable:Set<string>; entitlement:{name:string|null;seatLimit:number|null;featurePolicy:Record<string,boolean>} };
 const activeMembership=(node:Node)=>node.global_active!==false&&node.membership_status!=='suspended'&&(!node.membership_expires_at||new Date(node.membership_expires_at).getTime()>Date.now());
 type HierarchyNode=Pick<Node,'email'|'supervisor_email'|'role_id'>;
 type HierarchyRole=Pick<EnterpriseRole,'id'|'level'|'manage_members'|'view_records'>;
@@ -54,7 +54,7 @@ async function scope(tx:PoolClient,actor:TeamActor,id:string,allowSelf=false,loc
   const share=(of?:string)=>lock==='snapshot'?'':of?' FOR SHARE OF '+of:' FOR SHARE';
   try {const pinned=pinnedEnterpriseIds();if(pinned.length&&!pinned.includes(id))throw new TeamError('企业不存在',404);}
   catch(e){if(e instanceof IntegrationError)throw new TeamError('企业部署范围尚未配置',503);throw e;}
-  const team=(await tx.query(`SELECT t.id,t.name,t.owner_email,t.authorized_until,t.enabled,s.enabled AS enterprise_enabled
+  const team=(await tx.query(`SELECT t.id,t.name,t.version,t.owner_email,t.authorized_until,t.enabled,s.enabled AS enterprise_enabled
     FROM app_enterprise_settings s JOIN app_account_teams t ON t.id=s.team_id WHERE s.team_id=$1${share('s,t')}`,[id])).rows[0];
   if(!team)throw new TeamError('企业不存在',404);
   // Activated enterprises use the entry lifecycle grant as the single source of
@@ -92,7 +92,7 @@ async function scope(tx:PoolClient,actor:TeamActor,id:string,allowSelf=false,loc
   if(owner){const administrators=await siteAdministrators(tx,id,lock);if(administrators.length){for(const email of administrators)visible.add(email);visible.add(team.owner_email);}}
   const manageable=new Set<string>(owner?nodes.map(n=>n.email):[actor.email]);
   if(!owner&&role?.manage_members){let changed=true;while(changed){changed=false;for(const m of nodes)if(manageable.has(m.supervisor_email)&&!manageable.has(m.email)){manageable.add(m.email);changed=true;}}}
-  return {team:{id:team.id,name:team.name,owner_email:team.owner_email,authorized_until:accessExpiry,owner},owner,level:owner?0:role?.level??999,manageMembers:owner||!!role?.manage_members,viewRecords:owner||!!role?.view_records,roles,nodes,visible,manageable,entitlement};
+  return {team:{id:team.id,name:team.name,owner_email:team.owner_email,authorized_until:accessExpiry,owner},teamVersion:team.version,owner,level:owner?0:role?.level??999,manageMembers:owner||!!role?.manage_members,viewRecords:owner||!!role?.view_records,roles,nodes,visible,manageable,entitlement};
 }
 /** Workflow creation picker: ordinary employees get self only; never elevates existing analytics routes. */
 /** Read-only snapshot: membership rows are share-locked under REPEATABLE READ, so a

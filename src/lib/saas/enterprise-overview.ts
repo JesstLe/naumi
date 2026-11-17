@@ -1,7 +1,7 @@
 import 'server-only';
 import { createHmac } from 'node:crypto';
 import { z } from 'zod';
-import { enterpriseRead, enterpriseReportRead } from '@/lib/enterprise/server';
+import { enterpriseHeavyReportRead, enterpriseRead } from '@/lib/enterprise/server';
 import { settingsSecret } from '@/lib/settings-secret';
 import { TeamError } from "@/lib/teams/errors";
 import type { TeamActor } from '@/lib/teams/grants';
@@ -11,25 +11,23 @@ const instant = (value: unknown): string | null => value == null ? null : value 
 const actions: Record<string, string> = { role: '更新岗位权限', organization: '更新岗位与上级', status: '更新企业成员状态', expiry: '更新企业身份期限', profile: '更新企业名称' };
 
 /** Returns only enterprise-safe fields. No account wallets, raw audit payloads or supplier data. */
-export async function enterpriseOverviewMeta(actor: TeamActor, tenantId: string): Promise<EnterpriseOverviewMeta> {
-  return enterpriseReportRead(actor, tenantId, async (tx, scope) => {
-    const team = (await tx.query('SELECT name,version FROM app_account_teams WHERE id=$1', [tenantId])).rows[0];
-    const members = (await tx.query(`SELECT m.email FROM app_enterprise_members m JOIN app_users u ON u.email=m.email
-      WHERE m.enterprise_id=$1 AND m.email=ANY($2::text[]) AND NOT u.banned
-      AND (u.account_expires_at IS NULL OR u.account_expires_at>now())
-      AND m.membership_status='active' AND (m.membership_expires_at IS NULL OR m.membership_expires_at>now())`, [tenantId, [...scope.visible]])).rows;
-    const visible = [...scope.visible, ...(scope.owner ? [scope.team.owner_email] : [])];
+export async function enterpriseOverviewMeta(actor: TeamActor, tenantId: string, signal?: AbortSignal): Promise<EnterpriseOverviewMeta> {
+  return enterpriseHeavyReportRead(actor, tenantId, async (tx, scope) => {
+    const members = (await tx.query<{ effective: number; expiring: number }>(`SELECT
+      count(*) FILTER(WHERE NOT u.banned AND (u.account_expires_at IS NULL OR u.account_expires_at>now())
+        AND (m.membership_expires_at IS NULL OR m.membership_expires_at>now()))::int AS effective,
+      count(*) FILTER(WHERE m.membership_expires_at>now() AND m.membership_expires_at<=now()+interval '7 days')::int AS expiring
+      FROM app_enterprise_members m LEFT JOIN app_users u ON u.email=m.email
+      WHERE m.enterprise_id=$1 AND m.email=ANY($2::text[]) AND m.membership_status='active'`, [tenantId, [...scope.visible]])).rows[0];
+    const visible = new Set(scope.visible);
+    if (scope.owner) visible.add(scope.team.owner_email);
     const activities = (await tx.query(`SELECT id,action,actor,target,created_at FROM app_enterprise_audit
       WHERE enterprise_id=$1 AND action=ANY($3::text[]) AND ($4 OR target=ANY($2::text[]) OR actor=$5)
-      ORDER BY created_at DESC,id DESC LIMIT 8`, [tenantId, visible, Object.keys(actions), scope.owner, actor.email])).rows;
-    const effective = members.length + (scope.owner ? 1 : 0);
-    const expiring = Number((await tx.query(`SELECT count(*) AS n FROM app_enterprise_members
-      WHERE enterprise_id=$1 AND email=ANY($2::text[]) AND membership_status='active'
-      AND membership_expires_at>now() AND membership_expires_at<=now()+interval '7 days'`, [tenantId, [...scope.visible]])).rows[0].n);
-    return { tenantId, name: team.name, version: team.version, scope: scope.owner ? 'tenant' : 'current_subordinates',
-      members: { visible: visible.length, effective, expiring },
+      ORDER BY created_at DESC,id DESC LIMIT 8`, [tenantId, [...visible], Object.keys(actions), scope.owner, actor.email])).rows;
+    return { tenantId, name: scope.team.name, version: scope.teamVersion, scope: scope.owner ? 'tenant' : 'current_subordinates',
+      members: { visible: visible.size, effective: members.effective + (scope.owner ? 1 : 0), expiring: members.expiring },
       activities: activities.map(r => ({ id: r.id, action: actions[r.action], actor: r.actor, target: r.target, createdAt: instant(r.created_at)! })), generatedAt: new Date().toISOString() };
-  });
+  }, signal);
 }
 
 export const enterpriseProfileCommand = z.object({ tenantId: z.string().uuid(), commandId: z.string().uuid(), expectedVersion: z.number().int().nonnegative(), name: z.string().trim().min(2).max(80) }).strict();

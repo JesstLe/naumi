@@ -1,7 +1,8 @@
 import 'server-only';
 import type { Pool, PoolClient } from 'pg';
 import { getPool } from "@/platform/db/pool";
-import { enterpriseReportRead } from '@/lib/enterprise/server';
+import { checkReadClientSocket, withOwnedReportClient } from '@/platform/db/owned-read-client';
+import { enterpriseHeavyReportRead } from '@/lib/enterprise/server';
 import { TeamError } from "@/lib/teams/errors";
 import type { TeamActor } from '@/lib/teams/grants';
 import { tenantDates } from './tenants';
@@ -64,17 +65,16 @@ export async function readTenantUsage(tx: PoolClient, query: TenantUsageQuery, v
     pendingOperations: result.pending, unrecordedCreations: result.unrecorded };
 }
 
-export async function platformTenantUsage(query: TenantUsageQuery, pool: Pool = getPool()) {
-  const tx = await pool.connect();
-  try {
+export async function platformTenantUsage(query: TenantUsageQuery, pool: Pool = getPool(), signal?: AbortSignal) {
+  return withOwnedReportClient(pool, async tx => {
     await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
-    await tx.query("SET LOCAL statement_timeout='8s'");
+    await tx.query("SET LOCAL statement_timeout='8s'; SET LOCAL lock_timeout='1s'" + (signal ? checkReadClientSocket : ''));
     const tenant = (await tx.query(`SELECT 1 FROM app_account_teams t JOIN app_enterprise_settings e ON e.team_id=t.id WHERE t.id=$1`, [query.tenantId])).rows[0];
     if (!tenant) throw new TeamError('企业不存在', 404);
     const result = await readTenantUsage(tx, query, null); await tx.query('COMMIT'); return result;
-  } catch (error) { await tx.query('ROLLBACK'); throw error; } finally { tx.release(); }
+  }, signal);
 }
-export async function enterpriseTenantUsage(actor: TeamActor, query: TenantUsageQuery) {
-  return enterpriseReportRead({ ...actor, admin: false, consoleAdmin: false }, query.tenantId,
-    (tx, scope) => readTenantUsage(tx, query, scope.owner ? null : [...scope.visible]));
+export async function enterpriseTenantUsage(actor: TeamActor, query: TenantUsageQuery, signal?: AbortSignal) {
+  return enterpriseHeavyReportRead({ ...actor, admin: false, consoleAdmin: false }, query.tenantId,
+    (tx, scope) => readTenantUsage(tx, query, scope.owner ? null : [...scope.visible]), signal);
 }

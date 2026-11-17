@@ -16,8 +16,10 @@ export async function tenantUsageRoute(request: Request, enterprise = false) {
   const parsed = tenantUsageQuery.safeParse(Object.fromEntries(search));
   if (!parsed.success || [...search.keys()].some(key => search.getAll(key).length !== 1)) return biJson({ error: '用量筛选参数无效' }, 400);
   try {
-    return biJson(enterprise ? await enterpriseTenantUsage(auth as TeamActor, parsed.data) : await platformTenantUsage(parsed.data));
+    return biJson(enterprise ? await enterpriseTenantUsage(auth as TeamActor, parsed.data, request.signal) :
+      await platformTenantUsage(parsed.data, undefined, request.signal));
   } catch (error) {
+    if (request.signal.aborted) return biJson({ error: '查询已取消' }, 499);
     return error instanceof TeamError ? biJson({ error: error.message }, error.status) : biJson({ error: '企业用量暂不可用，请重试' }, 503);
   }
 }

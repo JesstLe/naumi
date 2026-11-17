@@ -12,7 +12,11 @@ export async function GET(request: Request) {
   const actor = await enterpriseAuthorize(request); if (actor instanceof NextResponse) return actor;
   const id = z.string().uuid().safeParse(new URL(request.url).searchParams.get('tenantId'));
   if (!id.success) return teamJson({ error: '企业参数无效' }, 400);
-  try { return teamJson(await enterpriseOverviewMeta(actor, id.data)); } catch (error) { return failure(error); }
+  try { return teamJson(await enterpriseOverviewMeta(actor, id.data, request.signal)); }
+  catch (error) {
+    if (request.signal.aborted) return teamJson({ error: '查询已取消' }, 499);
+    return failure(error);
+  }
 }
 export async function PATCH(request: Request) {
   const actor = await enterpriseAuthorize(request); if (actor instanceof NextResponse) return actor;
