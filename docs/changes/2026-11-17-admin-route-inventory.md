@@ -310,9 +310,9 @@
 | `页面 /admin/health` | `src/app/admin/health/page.tsx` | 待核查 |
 | `页面 /admin/model-health` | `src/app/admin/model-health/page.tsx` | 待核查 |
 | `页面 /admin/model-management` | `src/app/admin/model-management/page.tsx` | 待核查 |
-| `页面 /admin/model-management/library` | `src/app/admin/model-management/library/page.tsx` | 部分核查：列表、详情和历史 GET 已核；多页导出和同步写操作另验 |
+| `页面 /admin/model-management/library` | `src/app/admin/model-management/library/page.tsx` | 部分核查：列表、详情和历史 GET 已核；单页导出仍走通用列表查询，同步写操作另验 |
 | `页面 /admin/mvp` | `src/app/admin/mvp/page.tsx` | 待核查 |
-| `页面 /admin/mvp/library` | `src/app/admin/mvp/library/page.tsx` | 部分核查：旧入口 GET 已核；多页导出和同步写操作另验 |
+| `页面 /admin/mvp/library` | `src/app/admin/mvp/library/page.tsx` | 部分核查：旧入口 GET 已核；单页导出仍走通用列表查询，同步写操作另验 |
 | `页面 /admin/pending-review` | `src/app/admin/pending-review/page.tsx` | 待核查 |
 | `页面 /admin/pricing` | `src/app/admin/pricing/page.tsx` | 待核查 |
 | `页面 /admin/supplier-balances` | `src/app/admin/supplier-balances/page.tsx` | 待核查 |
