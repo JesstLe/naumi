@@ -1,8 +1,9 @@
 import {z} from 'zod';
 import type {Pool} from 'pg';
-import {WorkflowError,type Principal,type WorkOrder,type Task} from './contracts';
+import type {Principal,WorkOrder,Task} from './contracts';
 import type {ResolveActor} from './store';
 import {readScope} from './read-scope';
+import {readWithCurrentScope} from './read-transaction';
 
 export const dashboardQuery=z.strictObject({scope:z.enum(['all','mine']).default('all'),queue:z.enum(['all','pending','running','review','accepted','overdue','today']).default('all'),todoPage:z.coerce.number().int().min(1).max(10000).default(1)});
 type DashboardData={
@@ -14,9 +15,8 @@ type DashboardData={
 };
 // No task mutation, cached permission, source table or historical-import status here.
 export async function readDashboard(pool:Pool,resolveActor:ResolveActor,p:Principal,raw:unknown,now:()=>Date){
- const q=dashboardQuery.parse(raw),tx=await pool.connect();try{
-  await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ');await tx.query("SET LOCAL lock_timeout='3s';SET LOCAL statement_timeout='10s'");
-  const a=await resolveActor(tx,p);if(!a||a.enterpriseId!==p.enterpriseId||a.subject!==p.subject||a.teamId!==p.teamId)throw new WorkflowError(403,'MEMBERSHIP_REQUIRED');
+ const q=dashboardQuery.parse(raw);
+ return readWithCurrentScope(pool,resolveActor,p,async(tx,a)=>{
   const at=now(),asOf=at.toISOString(),day=new Date(+at+8*3600000).toISOString().slice(0,10),todayStart=new Date(day+'T00:00:00+08:00').toISOString(),todayEnd=new Date(Date.parse(todayStart)+86400000).toISOString();
   const has=(s:typeof a.permissions[number])=>a.permissions.includes(s);
   const values=[a.enterpriseId,a.teamId??null,has('manage')||has('dispatch')||has('review'),a.subject,has('execute'),a.workKinds,has('manage')||has('dispatch'),q.scope,q.queue,asOf,todayStart,todayEnd,has('dispatch'),has('review'),has('request'),has('manage'),(q.todoPage-1)*30];
@@ -79,6 +79,6 @@ export async function readDashboard(pool:Pool,resolveActor:ResolveActor,p:Princi
     'activity',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',id,'orderId',order_id,'orderTitle',d->>'title','type',event#>>'{data,action,type}','actor',event->>'actor','at',event->>'occurredAt','version',(event->>'aggregateVersion')::int,
        'taskId',CASE WHEN EXISTS(SELECT 1 FROM flat f WHERE f.order_id=recent.order_id AND f.t->>'id'=event#>>'{data,action,taskId}') THEN event#>>'{data,action,taskId}' ELSE NULL END) ORDER BY (event->>'occurredAt')::timestamptz DESC,order_id,(event->>'aggregateVersion')::int DESC) FROM recent),'[]'::jsonb)
    ) data`,values)).rows[0].data as DashboardData;
-  await tx.query('COMMIT');return {...data,asOf,timezone:'Asia/Shanghai',day,scope:q.scope,queue:q.queue,todoPage:q.todoPage,todoPageSize:30,taskLimit:8,activityLimit:10,viewer:{subject:a.subject,teamId:a.teamId??null,permissions:a.permissions}};
- }catch(e){await tx.query('ROLLBACK');throw e;}finally{tx.release();}
+  return {...data,asOf,timezone:'Asia/Shanghai',day,scope:q.scope,queue:q.queue,todoPage:q.todoPage,todoPageSize:30,taskLimit:8,activityLimit:10,viewer:{subject:a.subject,teamId:a.teamId??null,permissions:a.permissions}};
+ },result=>[...result.tasks.map(row=>row.order.id),...result.todos.map(row=>row.orderId),...result.activity.map(row=>row.orderId)]);
 }

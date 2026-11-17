@@ -13,19 +13,25 @@ const prefix=(table:string)=>`'legacy:${table}:'||`;
 type Key={id:string;actor_email:string;source_id:string;legacy_table:LegacySource['table']|null;accepted_at:string};
 type Bookmark={id:string;accepted_at:string};
 
-function seek(after:Bookmark) {
+function seek(after:Bookmark, materializeArchive=false) {
  const ranked=legacy.map(({table,kind})=>{
   const key=prefix(table)+'r.id';
   return `(SELECT ${key} AS id,r.email AS actor_email,r.created_at AS accepted_at,r.id AS source_id,'${table}'::text AS legacy_table
    FROM ${table} r
    WHERE (r.created_at,(${key}))<($1::timestamptz,$2::text)
-   AND NOT EXISTS(SELECT 1 FROM app_creation_records known WHERE known.actor_email=r.email AND known.source_kind=${kind} AND known.source_id=r.id)
+   ${materializeArchive?`AND NOT EXISTS(SELECT 1 FROM archived a WHERE a.actor_email=r.email AND a.source_kind=${kind} AND a.source_id=r.id)`:`AND NOT EXISTS(SELECT 1 FROM app_creation_records known WHERE known.actor_email=r.email AND known.source_kind=${kind} AND known.source_id=r.id)
    AND NOT EXISTS(SELECT 1 FROM app_creation_links l JOIN app_creation_records known ON known.id=l.creation_id AND known.actor_email=l.actor_email
-    WHERE l.actor_email=r.email AND l.target_id=r.id AND l.target_type=${kind})
+    WHERE l.actor_email=r.email AND l.target_id=r.id AND l.target_type=${kind})`}
    ${table==='app_image_jobs'?`AND NOT EXISTS(SELECT 1 FROM children c WHERE c.email=r.email AND c.child_id=r.id)`:''}
    ORDER BY r.created_at DESC,(${key}) DESC LIMIT $3)`;
  });
- return {sql:`WITH children AS MATERIALIZED (
+ const archive=materializeArchive?`archived AS MATERIALIZED (
+  SELECT actor_email,source_kind,source_id FROM app_creation_records
+  UNION ALL
+  SELECT l.actor_email,l.target_type,l.target_id FROM app_creation_links l
+   JOIN app_creation_records known ON known.id=l.creation_id AND known.actor_email=l.actor_email
+ ), `:'';
+ return {sql:`WITH ${archive}children AS MATERIALIZED (
    SELECT p.email,c.value->>'jobId' AS child_id FROM app_image_jobs p
    CROSS JOIN LATERAL jsonb_each(CASE WHEN jsonb_typeof(p.snapshot->'children')='object' THEN p.snapshot->'children' ELSE '{}'::jsonb END)c
    WHERE p.kind='imagegen' AND jsonb_typeof(p.snapshot->'children')='object'
@@ -136,6 +142,11 @@ async function main() {
   const deeper=seek(deepCursor);
   await logPlan('seek-page-1901-with-candidate-indexes',pool,deeper.sql,deeper.args);
   assert.deepEqual((await execute(deepCursor)).map(rowId),deepControl.items.map(r=>r.id));
+  for(const [page,bookmark,expected] of [[40,cursor,control],[1901,deepCursor,deepControl]] as const){
+   const batch=seek(bookmark,true);
+   await logPlan(`seek-page-${page}-with-materialized-archive`,pool,batch.sql,batch.args);
+   assert.deepEqual((await pool.query<Key>(batch.sql,batch.args)).rows.map(rowId),expected.items.map(r=>r.id));
+  }
   console.log('CREATION_KEYSET_PROBE_PASS exact_ids_and_order=1 mixed_sources=1 canonical_link_dedup=1 child_excluded=1 microsecond_ties=1 production_changes=0');
  }finally{await pool.end();}
 }
