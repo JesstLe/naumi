@@ -20,12 +20,11 @@ export function EnterpriseAnalyticsPanel({snapshot,onMember}:{snapshot:Enterpris
  const query=useMemo(()=>new URLSearchParams({...filter,page:String(filter.page)}).toString(),[filter]);
  const load=useCallback(async()=>{
   const n=++seq.current;abort.current?.abort();const c=new AbortController();abort.current=c;setLoading(true);setError('');
-  try{const r=await fetch(`/api/enterprise/analytics?${query}`,{cache:'no-store',headers:await authHeader(),signal:c.signal});const body=await r.json();if(!r.ok)throw new Error(body.error||'经营数据读取失败');if(n===seq.current&&!c.signal.aborted)setData(body)}
+  try{const headers=await authHeader();if(c.signal.aborted)return;const r=await fetch(`/api/enterprise/analytics?${query}`,{cache:'no-store',headers,signal:c.signal});const body=await r.json();if(!r.ok)throw new Error(body.error||'经营数据读取失败');if(n===seq.current&&!c.signal.aborted)setData(body)}
   catch(e){if(n===seq.current&&!c.signal.aborted){setError((e as Error).message);setData(null)}}
   finally{if(n===seq.current&&!c.signal.aborted)setLoading(false)}
  },[query]);
  useEffect(()=>{setData(null);void load();return()=>{seq.current++;abort.current?.abort();exportAbort.current?.abort()}},[load]);
- useEffect(()=>{const timer=window.setInterval(()=>void load(),60_000);return()=>window.clearInterval(timer)},[load]);
  const update=(patch:Partial<AnalyticsFilter>)=>{exportAbort.current?.abort();setFilter(old=>({...old,...patch,page:patch.page||1}))};
  const members=[...(snapshot.actor.owner?[{email:snapshot.enterprise.owner_email,name:data?.choices.find(m=>m.email===snapshot.enterprise.owner_email)?.name||snapshot.enterprise.owner_email.split('@')[0],supervisor_email:''}]:[]),...snapshot.members];
  const teamChoices=members.filter(m=>snapshot.members.some(c=>c.supervisor_email===m.email));

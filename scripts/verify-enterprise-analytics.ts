@@ -9,7 +9,7 @@ async function main(){
  const root=randomUUID(),sub=randomUUID(),cap=new Date(Date.now()+30*86400000).toISOString();
  for(const e of [owner,director,lead,employee,intern,other])await db.getOrCreateUser(e,e);
  await pool.query("UPDATE app_users SET name='=FORMULA()' WHERE email=$1",[intern]);
- for(const e of [owner,lead])await pool.query("INSERT INTO app_team_access_grants(email,scope,created_by,updated_by)VALUES($1,'owned','fixture','fixture')",[e]);
+ for(const e of [owner,lead])await pool.query("INSERT INTO app_team_access_grants(email,scope,starts_at,created_by,updated_by)VALUES($1,'owned',now()-interval '1 day','fixture','fixture')",[e]);
  for(const [id,email]of [[root,owner],[sub,lead]])await pool.query("INSERT INTO app_account_teams(id,name,owner_email,authorized_until)VALUES($1,'Analytics fixture',$2,$3)",[id,email,cap]);
  for(const e of [director,lead,employee])await pool.query('INSERT INTO app_account_team_members(email,team_id)VALUES($1,$2)',[e,root]);
  await pool.query('INSERT INTO app_account_team_members(email,team_id)VALUES($1,$2)',[intern,sub]);await pool.query('UPDATE app_users SET account_expires_at=now()+interval \'3 days\' WHERE email=$1',[intern]);
@@ -50,11 +50,13 @@ async function main(){
  assert.equal(data.summary.reserved,25);assert.equal(data.summary.available,980);assert.equal(data.summary.expiring,1000);
  assert.equal(data.trend.length,1);assert.equal(data.trend[0].net,195);assert.equal(data.summary.previousNet,999);
  assert.equal(data.details.total,39);assert.equal(data.details.rows.length,25);
+ assert(data.details.rows.every(row=>/^\d{4}-\d{2}-\d{2}T.*Z$/.test(row.createdAt)));
  const page=await analytics.enterpriseAnalytics(actor,{...q,page:2});assert.equal(page.details.rows.length,14);assert.equal(new Set([...data.details.rows,...page.details.rows].map(r=>r.id)).size,39);
  const leadData=await analytics.enterpriseAnalytics({email:lead,admin:false},q);assert.equal(leadData.summary.scopeMembers,2);assert.equal(leadData.summary.net,60);assert(!JSON.stringify(leadData).includes(employee));assert(!JSON.stringify(leadData).includes(owner));
  const branch=await analytics.enterpriseAnalytics(actor,{...q,team:lead});assert.equal(branch.summary.net,60);assert.equal(branch.members.length,2);
  const generate=await analytics.enterpriseAnalytics(actor,{...q,purpose:'image.generate'});assert.equal(generate.summary.net,98);assert.equal(generate.summary.artworks,0);assert.equal(generate.summary.creditsPerArtwork,null);
  const refund=await analytics.enterpriseAnalytics(actor,{...q,kind:'refund'});assert.equal(refund.details.total,2);assert.equal(refund.summary.net,195);
+ assert.equal(refund.details.rows.find(row=>row.id==='led-api-refund-test')?.operationId,'image-start');
  const week=await analytics.enterpriseAnalytics(actor,{...q,group:'week'});assert.equal(week.trend[0].date,'2026-10-12');const month=await analytics.enterpriseAnalytics(actor,{...q,group:'month'});assert.equal(month.trend[0].date,'2026-10-01');
  const empty=await analytics.enterpriseAnalytics(actor,{...q,from:'2020-01-01',to:'2020-01-02',page:2});assert.equal(empty.details.total,0);assert.equal(empty.summary.net,0);assert.equal(empty.trend.length,2);assert.equal(empty.summary.successRate,null);
  assert(data.risks.find(r=>r.code==='intern-expiry')?.count===1);assert.equal(data.risks.find(r=>r.code==='settlement-review')?.count,1);
@@ -67,11 +69,25 @@ async function main(){
  await pool.query('UPDATE app_team_access_grants SET enabled=false WHERE email=$1',[owner]);assert.equal((await api.GET(request(director))).status,403);await pool.query('UPDATE app_team_access_grants SET enabled=true WHERE email=$1',[owner]);
  const roles=(await server.enterpriseSnapshot(actor,root)).roles;const directRole=roles.find(r=>r.name==='设计美工总监')!;await pool.query('UPDATE app_enterprise_roles SET view_records=false WHERE id=$1',[directRole.id]);assert.equal((await api.GET(request(director))).status,403);await pool.query('UPDATE app_enterprise_roles SET view_records=true WHERE id=$1',[directRole.id]);
  assert.equal(await fingerprint(),before);
+ // Ledger IDs may be reused by multiple operations. Keep the original first-by-time/id
+ // tie break, and never join another member's operation to this member's ledger entry.
+ await pool.query(`INSERT INTO app_billing_operations(id,email,feature,quote,request_fingerprint,state,ledger_id,created_at) VALUES
+   ('later-op',$1,'canvas.ocr','{}','fixture','settled','dedup-ledger','2026-10-15T01:00:00Z'),
+   ('b-same-time',$1,'canvas.ocr','{}','fixture','settled','dedup-ledger','2026-10-14T01:00:00Z'),
+   ('a-same-time',$1,'image.generate','{}','fixture','settled','dedup-ledger','2026-10-14T01:00:00Z'),
+   ('foreign-earlier',$2,'canvas.ocr','{}','fixture','settled','dedup-ledger','2026-10-13T01:00:00Z')`,[owner,other]);
+ await ledger('dedup-ledger',owner,-6,'consume','fixture','2026-10-15T01:00:00Z');
+ const dedup=await analytics.enterpriseAnalytics(actor,{...q,from:'2026-10-15',to:'2026-10-15',purpose:'image.generate'});
+ assert.equal(dedup.details.total,1);assert.equal(dedup.summary.net,6);assert.equal(dedup.details.rows[0]?.operationId,'a-same-time');
+ const single=await server.enterpriseRead(actor,root,tx=>analytics.creationLedger(tx,[owner],{
+  start:'2026-10-13T00:00:00+08:00',end:'2026-10-14T00:00:00+08:00',email:'',page:1,size:25,recordId:'dedup-ledger',
+ }));
+ assert.equal(single.total,1);assert.equal(single.rows[0]?.operationId,'a-same-time');
  console.log('ANALYTICS=PASS CONSUMED=210 REFUNDED=15 NET=195 ADJUSTMENT=-30 ISSUED=500 UNKNOWN_USAGE=2');
  console.log('DATES=PASS SHANGHAI_START_END_INCLUSIVE=PASS DAILY_WEEKLY_MONTHLY_ZERO_FILL=PASS PREVIOUS=999 INVALID_RANGE=400');
  console.log('SCOPE=PASS BOSS=5 LEAD=2 SUBTEAM=2 CROSS_MEMBER=403 CROSS_TEAM=403 ROLE_REVOKE=403 ROOT_GRANT_PAUSE=403 ANONYMOUS=401');
  console.log('PRODUCTIVITY=PASS TASKS=6 SUCCESS=3 FAILED=1 PENDING=1 UNKNOWN=1 SUCCESS_RATE=75 ARTWORKS=1 ASYNC_BILLING_DEDUP=PASS');
- console.log('LEDGER=PASS TOTAL=39 PAGE1=25 PAGE2=14 CSV_ROWS=39 FORMULA_ESCAPE=PASS SENSITIVE_FIELDS=ABSENT');
+ console.log('LEDGER=PASS TOTAL=39 PAGE1=25 PAGE2=14 CSV_ROWS=39 FORMULA_ESCAPE=PASS SENSITIVE_FIELDS=ABSENT FIRST_OPERATION_AND_EMAIL_BINDING=PASS');
  console.log('WALLET=PASS AVAILABLE=980 RESERVED=25 EXPIRING=1000 RISK=PASS DATABASE_FINGERPRINT=UNCHANGED PROVIDER_CALLS=0');
  await pool.end();
 }
