@@ -161,12 +161,30 @@ async function main() {
     const {createNaumiTools,describeNaumiTools}=await import("../src/lib/agent/naumi-tools");
     const original="替换瓶子，保留补水卖点，蓝色排版，1:1单图";
     const tools=createNaumiTools(new Request(fixture.origin,{headers:{cookie}}),owner,undefined,undefined,undefined,undefined,()=>({request:original,references:[fixture.origin+"/media/product.png",fixture.origin+"/media/layout.png"]}));
-    const verify=tools.find(t=>t.name==="verify_image_output")!;
-    mode="failed-check";const review=await verify.execute("fixture-review",{image_url:fixture.origin+"/media/output.png",goal:"好看，不要文字"},undefined);
-    const body=modelRequests.at(-1);assert.ok(body,JSON.stringify(review));const content=body.messages.at(-1).content;
+    const verify=tools.find(t=>t.name==="verify_image_output");
+    const manualReview=(goal:string)=>{
+      const form=new FormData();
+      const file=(name:string)=>new File([new Uint8Array(png)],name+".png",{type:"image/png"});
+      form.set("image",file("output"));form.set("original_request",original);form.set("goal",goal);
+      for(const name of ["product","layout"])form.append("reference",file(name));
+      return fetch(fixture.origin+"/api/agent/verify-image",{method:"POST",headers:{cookie},body:form});
+    };
+    mode="failed-check";
+    if(baseline){
+      assert.ok(verify,"historical built-in review tool");
+      const review=await verify.execute("fixture-review",{image_url:fixture.origin+"/media/output.png",goal:"好看，不要文字"},undefined);
+      eq((review.details as any).verificationStatus,"passed","historical behavior");
+    }else{
+      eq(verify,undefined,"runtime cannot automatically review or retry a result");
+      const review=await manualReview("好看，不要文字");
+      eq(review.status,200,"explicit authenticated review remains available");
+      const result=await review.json();
+      eq(result.passed,false,"high score cannot hide unmet mandatory requirement");
+      eq(result.score,95,"failure rule does not silently rewrite the supplier score");
+    }
+    const body=modelRequests.at(-1);assert.ok(body,"review did not reach the loopback model");const content=body.messages.at(-1).content;
     eq(content.filter((p:any)=>p.type==="image_url").length,baseline?1:3,"one output plus original product and layout references");
     eq(JSON.stringify(body).includes(original),!baseline,"server original requirement reaches reviewer");
-    eq((review.details as any).verificationStatus,baseline?"passed":"failed","high score cannot hide unmet mandatory requirement");
     eq(!!tools.find(t=>t.name==="inspect_images"),!baseline,"dedicated inspection tool");
     if(!baseline){
       mode="inspect";const inspect=tools.find(t=>t.name==="inspect_images")!;
@@ -174,9 +192,13 @@ async function main() {
       const inspected=await inspect.execute("inspect",{image_urls:[fixture.origin+"/media/product.png",fixture.origin+"/media/layout.png"],question:"读取卖点"},undefined);
       eq((inspected.details as any).inspectionStatus,"completed","actual multipart inspect endpoint");
       eq(modelRequests.at(-1).messages.at(-1).content.filter((p:any)=>p.type==="image_url").length,2,"all reference images transmitted");
-      mode="missing-checks";eq(((await verify.execute("missing-checks",{image_url:fixture.origin+"/media/output.png",goal:"检查"},undefined)).details as any).verificationStatus,"unavailable","missing requirement checks is unverified");
+      mode="missing-checks";const incomplete=await manualReview("检查");
+      eq(incomplete.status,502,"missing requirement checks is unverified");
+      eq((await incomplete.json()).code,"VISION_RESPONSE_INVALID","explicit malformed response");
       mode="unavailable";const count=modelRequests.length;
-      eq(((await verify.execute("unavailable",{image_url:fixture.origin+"/media/output.png",goal:"检查"},undefined)).details as any).verificationStatus,"unavailable","upstream failure does not report quality failure");
+      const unavailable=await manualReview("检查");
+      eq(unavailable.status,502,"upstream failure does not report quality failure");
+      eq((await unavailable.json()).code,"VISION_UPSTREAM_UNAVAILABLE","explicit upstream failure");
       eq(modelRequests.length-count,1,"no automatic model retry");
       const cancelled=new AbortController();cancelled.abort();await assert.rejects(()=>inspect.execute("cancelled",{image_urls:[fixture.origin+"/media/product.png"],question:"读取"},cancelled.signal));checks++;
     }
