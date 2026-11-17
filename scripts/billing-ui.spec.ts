@@ -1,11 +1,12 @@
 import {chooseVideoModel} from "./video-fusion/browser-model.mjs";
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { readFileSync,writeFileSync } from "node:fs";
 import { randomUUID, randomBytes, scryptSync, createHash } from "node:crypto";
 import { Pool } from "pg";
 import { CAP_RICH } from "./video-fusion/profiles";
 import { captureBillingResponseBody } from "./billing-response-body";
 const navigationDiagnostics=new WeakMap<object,unknown[]>();
+const publicationNotice=(page:Page)=>page.getByRole("status").filter({hasText:/^已发布版本 \d+，新任务开始使用该配置。$/});
 async function fixtureVideoCatalog(page:any){
     // Billing-client fault regression only; full supplier E2E uses the video harness.
     const model={providerId:"managed-video",modelId:"fixture-video",label:"Fixture video",modes:["text","image"],durations:[4],aspectRatios:["16:9"],resolutions:["720p"],maxReferenceImages:1,supportsFirstFrame:true,supportsLastFrame:false,supportsNegativePrompt:false,isDefault:true,
@@ -130,7 +131,7 @@ test("publish preserves the user's frozen price, conflict draft and restore", as
         await a.getByLabel("发布说明").fill("UI acceptance eight credits");
         await a.getByRole("button", { name: "查看改动", exact: true }).click();
         await a.getByRole("button", { name: "发布配置", exact: true }).click();
-        await expect(a.getByRole("status")).toContainText("已发布版本");
+        await expect(publicationNotice(a)).toBeVisible();
         const published=await (await admin.request.get("/api/admin/billing")).json();expect(published.snapshot.config.features["image.generate"].pricing.quality.medium).toBe(8);
         // Retain and consume the original browser body before click/navigation
         // completes; status diagnostics and JSON parsing share the same text.
@@ -171,7 +172,7 @@ test("publish preserves the user's frozen price, conflict draft and restore", as
         const row = a.getByRole("row").filter({ hasText: "UI acceptance setup" }).first();
         await row.getByRole("button", { name: "预览恢复" }).click();
         await a.getByRole("button", { name: "发布配置", exact: true }).click();
-        await expect(a.getByRole("status")).toContainText("已发布版本");
+        await expect(publicationNotice(a)).toBeVisible();
         const restored = await (await admin.request.get("/api/admin/billing")).json();
         expect(restored.snapshot.version).toBeGreaterThan(initial.snapshot.version);
         expect(restored.snapshot.config.features["image.generate"].pricing.quality.medium).toBe(6);
@@ -275,7 +276,7 @@ test("recharge prices use yuan and preserve exact stored fen",async({page})=>{
  const fixture=JSON.parse(readFileSync("output/billing-20261003/ui-fixture.json","utf8"));await page.context().addCookies([{name:"nv_admin",value:fixture.adminCookie,domain:"127.0.0.1",path:"/"}]);const original=(await (await page.request.get("/api/admin/billing")).json()).snapshot;
  try {await page.goto("/admin/billing?section=wallet");await page.getByRole("button",{name:"充值套餐",exact:true}).click();const product=Object.values(original.config.products).find((p:any)=>p.kind==="pack") as any;
  await page.locator("summary").filter({hasText:product.title}).click();const amount=page.getByLabel(`${product.id} · 售价（元）`);await amount.fill("19.999");await expect(amount).toHaveAttribute("aria-invalid","true");await amount.fill("19.99");await expect(amount).toHaveValue("19.99");
- await page.getByLabel("发布说明").fill("Exact yuan price UI fixture");await page.getByRole("button",{name:"查看改动",exact:true}).click();await page.getByRole("button",{name:"发布配置",exact:true}).click();await expect(page.getByRole("status")).toContainText("已发布版本");const current=(await (await page.request.get("/api/admin/billing")).json()).snapshot;expect(current.config.products[product.id].amountFen).toBe(1999);
+ await page.getByLabel("发布说明").fill("Exact yuan price UI fixture");await page.getByRole("button",{name:"查看改动",exact:true}).click();await page.getByRole("button",{name:"发布配置",exact:true}).click();await expect(publicationNotice(page)).toBeVisible();const current=(await (await page.request.get("/api/admin/billing")).json()).snapshot;expect(current.config.products[product.id].amountFen).toBe(1999);
  }finally {const current=(await (await page.request.get("/api/admin/billing")).json()).snapshot;expect((await page.request.post("/api/admin/billing",{data:{id:randomUUID(),expectedVersion:current.version,config:original.config,reason:"Restore yuan UI fixture"}})).status()).toBe(200);}
 });
 
