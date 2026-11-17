@@ -32,7 +32,7 @@ if(url.startsWith('/fixture-image'))return Promise.resolve(new Response(f.imageB
 return new Promise(resolve=>{call.resolve=(value,status=200)=>resolve(Response.json(value,{status}))})};
 function Library(){const lib=useSupplierLibrary();return <><button onClick={()=>lib.change('q','second')}>second</button><button onClick={()=>lib.change('q','third')}>third</button><output id="library">{lib.listing?.total}</output></>}
 function Query(){const [value,set]=useState('');window.externalQuery=set;return <><AdminQueryInput aria-label="query" value={value} onCommit={v=>{f.commits.push(v);window.pendingQuery=v}}/><button onClick={()=>set(window.pendingQuery)}>acknowledge</button></>}
-function DirectoryRace(){const read=useUsageQuery('local',30);window.commitDirectory=read.setUsersData;return <><output id="directory-state">{JSON.stringify(read.usersData)}</output><button onClick={read.refresh}>directory-refresh</button><button onClick={()=>read.setPage(2)}>directory-next</button></>}
+function DirectoryRace(){const read=useUsageQuery('local',30);window.commitDirectory=read.patchMember;return <><output id="directory-state">{JSON.stringify(read.usersData)}</output><button onClick={read.refresh}>directory-refresh</button><button onClick={()=>read.setPage(2)}>directory-next</button></>}
 const media={id:'image',direction:'output',role:'result',mediaType:'image',availability:'recorded',position:0};
 function App(){const [view,setView]=useState('bi'),[days,setDays]=useState(30);window.setView=setView;window.setDays=setDays;const params=useSearchParams();return view==='bi'?<BiDashboard embedded initialSection={params.get('section')||'users'}/>:view==='library'?<Library/>:view==='query'?<Query/>:view==='directory'?<DirectoryRace/>:view==='media'?<><div style={{height:1800}}>Scroll to media</div><CreationMedia asset={media} api="/fixture-image"/></>:view==='fleet'?<FleetManager/>:view==='health'?<ModelHealthPanel/>:view==='usage'?<AdminUsagePanel token="local" usageDays={days} setUsageDays={setDays} onManageUsers={()=>{}}/>:<p>Unmounted</p>}
 createRoot(document.getElementById('root')).render(<App/>);`;
@@ -89,12 +89,12 @@ try{
  await view('directory');await resolve('/api/admin/usage?',usageIndex,{...usage,users:[users[0]]});await waitCount('/api/admin/users?view=members',directoryIndex+1);
  await resolve('/api/admin/users?view=members',directoryIndex,{users:[memberRows[0]]});await page.waitForTimeout(60);
  await page.getByRole('button',{name:'directory-refresh'}).click();await waitCount('/api/admin/usage?',usageIndex+2);await resolve('/api/admin/usage?',usageIndex+1,{...usage,users:[users[0]]});await waitCount('/api/admin/users?view=members',directoryIndex+2);
- await page.evaluate(row=>commitDirectory({users:[{...row,banned:true}]}),memberRows[0]);await resolve('/api/admin/users?view=members',directoryIndex+1,{users:[memberRows[0]]});await page.waitForTimeout(60);
+ await page.evaluate(email=>commitDirectory(email,{banned:true}),memberRows[0].email);await resolve('/api/admin/users?view=members',directoryIndex+1,{users:[memberRows[0]]});await page.waitForTimeout(60);
  check('Directory GET cannot undo a confirmed member mutation',JSON.parse(await page.locator('#directory-state').textContent()).users[0].banned,true);
  await page.evaluate(()=>window.previousDirectorySetter=commitDirectory);await page.getByRole('button',{name:'directory-next'}).click();await waitCount('/api/admin/usage?',usageIndex+3);
  await resolve('/api/admin/usage?',usageIndex+2,{...usage,users:[users[1]],pagination:{page:2,size:30,total:100}});await waitCount('/api/admin/users?view=members',directoryIndex+3);await resolve('/api/admin/users?view=members',directoryIndex+2,{users:[memberRows[1]]});await page.waitForTimeout(60);
- await page.evaluate(row=>previousDirectorySetter({users:[row]}),memberRows[0]);await page.waitForTimeout(60);
- check('A previous page mutation cannot replace current directory',JSON.parse(await page.locator('#directory-state').textContent()).users[0].email,memberRows[1].email);
+ await page.evaluate(email=>previousDirectorySetter(email,{banned:true}),memberRows[1].email);await page.waitForTimeout(60);
+ check('A previous page mutation cannot update current directory',JSON.parse(await page.locator('#directory-state').textContent()).users[0].banned,memberRows[1].banned);
 
  await page.evaluate(()=>fixture.imageBad=true);await view('media');await page.evaluate(()=>window.scrollTo(0,document.body.scrollHeight));await waitCount('/fixture-image',1);await page.waitForTimeout(180);
  const retry=page.getByRole('button',{name:'重试读取',exact:true});check('Undecodable image offers retry',await retry.count(),1);

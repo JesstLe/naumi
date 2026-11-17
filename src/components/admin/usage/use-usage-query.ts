@@ -1,6 +1,6 @@
 "use client";
 import {useCallback,useEffect,useRef,useState} from "react";
-import type {UsageData,UsersData} from "./contracts";
+import type {AdminUser,UsageData,UsersData} from "./contracts";
 
 type Directory=Pick<UsersData,"users">;
 type Snapshot<T>={key:string;data:T};
@@ -46,12 +46,13 @@ export function useUsageQuery(token:string|null,days:number){
     })();
     return()=>abort.abort();
   },[token,days,page,key,revision]);
-  const setUsersData=useCallback((data:Directory)=>{
+  const patchMember=useCallback((email:string,patch:Partial<Pick<AdminUser,'banned'|'note'>>)=>{
     if(activeKey.current!==key)return;
-    directoryRevision.current++;setDirectory({key,data});
+    directoryRevision.current++;
+    setDirectory(current=>current?.key===key?{key,data:{users:current.data.users.map(row=>row.email===email?{...row,...patch}:row)}}:current);
   },[key]);
   return {
-    usageData:token&&usage?.key===key?usage.data:null,usersData:token&&directory?.key===key?directory.data:null,setUsersData,
+    usageData:token&&usage?.key===key?usage.data:null,usersData:token&&directory?.key===key?directory.data:null,patchMember,
     usageLoading:!!token&&(request?.key!==key||request.loading),usageError:request?.key===key?request.error:null,
     page,setPage:(next:number)=>setSelection({token,days,page:next}),refresh:()=>setRevision(value=>value+1),
   };

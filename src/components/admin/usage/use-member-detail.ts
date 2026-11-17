@@ -3,7 +3,8 @@ import {useCallback,useEffect,useMemo,useRef,useState} from "react";
 import type {AdminUser,MemberArtwork,MemberDetail,UserActionPayload,UsersData} from "./contracts";
 /** A selected member and its pending read live together. Closing/switching the
  * drawer invalidates that read; a late response cannot reopen or replace it. */
-export function useMemberDetail(token:string|null,usersData:Pick<UsersData,"users">|null,setUsersData:(data:Pick<UsersData,"users">)=>void){
+type MemberPatch=Partial<Pick<AdminUser,'banned'|'note'>>;
+export function useMemberDetail(token:string|null,usersData:Pick<UsersData,"users">|null,patchMember:(email:string,patch:MemberPatch)=>void){
  const [detail,setDetail]=useState<MemberDetail|null>(null),[detailRow,setDetailRow]=useState<AdminUser|null>(null),[detailLoading,setDetailLoading]=useState(false),[noteDraft,setNoteDraft]=useState(""),[lightbox,setLightbox]=useState<{src:string;alt:string}|null>(null),[busy,setBusy]=useState(false),[msg,setMsg]=useState<{ok:boolean;text:string}|null>(null);
  const generation=useRef(0),pending=useRef<AbortController|null>(null),owner=useRef(token),mounted=useRef(true),actorEpoch=useRef(0);owner.current=token;
  const closeDetail=useCallback(()=>{generation.current++;pending.current?.abort();setDetail(null);setDetailRow(null);setDetailLoading(false);setLightbox(null);},[]);
@@ -50,7 +51,7 @@ export function useMemberDetail(token:string|null,usersData:Pick<UsersData,"user
     setBusy(true);
     setMsg(null);
     try {
-      const res = await fetch("/api/admin/users", {
+      const res = await fetch("/api/admin/users?view=command", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -61,7 +62,12 @@ export function useMemberDetail(token:string|null,usersData:Pick<UsersData,"user
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "操作失败");
       if(!mounted.current||owner.current!==actor||actorEpoch.current!==epoch)return;
-      setUsersData(data as UsersData);
+      const patch:MemberPatch|null=payload.action==='note'?{note:(payload.note??'').slice(0,1000)}
+        :payload.action==='ban'?{banned:payload.banned===true}:null;
+      if(payload.email&&patch){
+        patchMember(payload.email,patch);
+        setDetailRow(row=>row&&row.email===payload.email?{...row,...patch}:row);
+      }
       setMsg({ ok: true, text: "已更新" });
     } catch (e) {
       if(mounted.current&&owner.current===actor&&actorEpoch.current===epoch)setMsg({ ok: false, text: e instanceof Error ? e.message : "操作失败" });

@@ -10,7 +10,7 @@ import {z} from 'zod';
 import { TeamError } from "@/lib/teams/errors";
 
 
-import {requireTeamGrant,type TeamActor} from '@/lib/teams/grants';
+import {activeTeamGrant,requireTeamGrant,type TeamActor} from '@/lib/teams/grants';
 import {getPool} from "@/platform/db/pool";
 import {settingsSecret} from '@/lib/settings-secret';
 import type {ContentPage} from '@/lib/teams/contracts';
@@ -26,15 +26,18 @@ export async function enterpriseManaged(email: string) {
   return !!(await getPool().query(`SELECT 1 FROM app_enterprise_settings s JOIN app_account_teams t ON t.id=s.team_id
     WHERE t.owner_email=$1 OR EXISTS(SELECT 1 FROM app_enterprise_members m WHERE m.enterprise_id=s.team_id AND m.email=$1)`,[email])).rowCount;
 }
-async function transaction<T>(run: (tx: PoolClient)=>Promise<T>) {
+async function transaction<T>(run: (tx: PoolClient)=>Promise<T>,readOnly=false) {
   await ensureEnterpriseSchema();const tx=await getPool().connect();
-  try {await tx.query('BEGIN');const result=await run(tx);await tx.query('COMMIT');return result}
+  try {await tx.query(readOnly?'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY':'BEGIN');if(readOnly)await tx.query("SET LOCAL statement_timeout='5s'; SET LOCAL lock_timeout='1s'");const result=await run(tx);await tx.query('COMMIT');return result}
   catch(e){await tx.query('ROLLBACK');throw e}finally{tx.release()}
 }
 type Node = { email: string; supervisor_email: string; role_id: string|null; employment: 'permanent'|'intern'; version:number; membership_status?:'active'|'suspended';membership_expires_at?:string|null; global_active?:boolean };
 type Scope = { team: EnterpriseIdentity; owner:boolean; level:number; manageMembers:boolean; viewRecords:boolean; roles:EnterpriseRole[]; nodes:Node[]; visible:Set<string>; manageable:Set<string>; entitlement:{name:string|null;seatLimit:number|null;featurePolicy:Record<string,boolean>} };
 const activeMembership=(node:Node)=>node.global_active!==false&&node.membership_status!=='suspended'&&(!node.membership_expires_at||new Date(node.membership_expires_at).getTime()>Date.now());
-export function validateHierarchy(owner:string,nodes:Node[],roles:EnterpriseRole[]) {
+type HierarchyNode=Pick<Node,'email'|'supervisor_email'|'role_id'>;
+type HierarchyRole=Pick<EnterpriseRole,'id'|'level'|'manage_members'|'view_records'>;
+const canManageWorkspace=(role:HierarchyRole|undefined)=>!!role&&(role.manage_members||role.view_records);
+export function validateHierarchy(owner:string,nodes:HierarchyNode[],roles:HierarchyRole[]) {
   const map=new Map(nodes.map(n=>[n.email,n])),r=new Map(roles.map(x=>[x.id,x]));
   if(map.has(owner))throw new TeamError('老板不能同时作为企业成员',409);
   for(const node of nodes){
@@ -77,7 +80,7 @@ async function scope(tx:PoolClient,actor:TeamActor,id:string,allowSelf=false,loc
   const siteAdmin=(await administeredSite(tx,actor.email,lock))===id;
   const owner=actor.admin||team.owner_email===actor.email||siteAdmin;
   const node=nodes.find(m=>m.email===actor.email),role=roles.find(r=>r.id===node?.role_id);
-  if(!owner&&(!node||!activeMembership(node)||!allowSelf&&(!role||!role.manage_members&&!role.view_records)))throw new TeamError('当前企业身份已停用、到期或岗位没有管理权限');
+  if(!owner&&(!node||!activeMembership(node)||!allowSelf&&!canManageWorkspace(role)))throw new TeamError('当前企业身份已停用、到期或岗位没有管理权限');
   const entitlementRow=(await tx.query('SELECT entitlement_name,seat_limit,feature_policy FROM app_tenant_entitlements WHERE tenant_id=$1'+share(),[id])).rows[0];
   const entitlement={name:entitlementRow?.entitlement_name??null,seatLimit:entitlementRow?.seat_limit??null,featurePolicy:entitlementRow?.feature_policy??{}};
   if(!actor.admin&&entitlement.featurePolicy.team===false)throw new TeamError('企业管理功能已停用');
@@ -170,15 +173,67 @@ async function enterpriseProjectionRead<T>(actor:TeamActor,id:string,run:(tx:Poo
 export function enterpriseReportRead<T>(actor:TeamActor,id:string,run:(tx:PoolClient,s:Scope)=>Promise<T>) {
   return enterpriseProjectionRead(actor,id,run,true);
 }
+
+type PickerRow=Omit<EnterpriseIdentity,'owner'>&{
+  enabled:boolean;enterprise_enabled:boolean;actor_active:boolean;team_policy:unknown;
+  sponsor_email:string|null;sponsor_enabled:boolean|null;starts_at:string|null;expires_at:string|null;
+  revoked_at:string|null;sponsor_banned:boolean|null;sponsor_account_expires_at:string|null;
+  member_email:string|null;membership_status:Node['membership_status']|null;membership_expires_at:string|null;role_id:string|null;
+};
 export async function enterpriseList(actor:TeamActor,allowSelf=false):Promise<EnterpriseIdentity[]> {
   return transaction(async tx=>{
     let pinned:string[];try{pinned=pinnedEnterpriseIds()}catch{throw new TeamError('企业部署范围尚未配置',503)}
-    const siteId=await administeredSite(tx,actor.email);
-    const rows=(await tx.query(`SELECT t.id,t.name,t.owner_email,t.authorized_until FROM app_enterprise_settings s JOIN app_account_teams t ON t.id=s.team_id
-      WHERE $2 OR t.id=$3::uuid OR t.owner_email=$1 OR EXISTS(SELECT 1 FROM app_enterprise_members m WHERE m.enterprise_id=s.team_id AND m.email=$1) ORDER BY t.name`,[actor.email,actor.admin,siteId])).rows;
+    const siteId=await administeredSite(tx,actor.email,'snapshot');
+    // The picker returns tenant identities only. Batch its authorization facts,
+    // without calculating each tenant's record visibility or locking accounts.
+    const rows=(await tx.query<PickerRow>(`SELECT t.id,t.name,t.owner_email,t.authorized_until,t.enabled,s.enabled AS enterprise_enabled,
+      g.email AS sponsor_email,g.enabled AS sponsor_enabled,g.starts_at,g.expires_at,g.revoked_at,
+      sponsor.banned AS sponsor_banned,sponsor.account_expires_at AS sponsor_account_expires_at,
+      (actor.email IS NOT NULL AND NOT actor.banned AND (actor.account_expires_at IS NULL OR actor.account_expires_at>now())) AS actor_active,
+      m.email AS member_email,m.membership_status,m.membership_expires_at,m.role_id,
+      e.feature_policy->'team' AS team_policy
+      FROM app_enterprise_settings s JOIN app_account_teams t ON t.id=s.team_id
+      LEFT JOIN app_enterprise_members m ON m.enterprise_id=t.id AND m.email=$1
+      LEFT JOIN app_users actor ON actor.email=$1
+      LEFT JOIN app_team_access_grants g ON g.email=t.owner_email
+      LEFT JOIN app_users sponsor ON sponsor.email=t.owner_email
+      LEFT JOIN app_tenant_entitlements e ON e.tenant_id=t.id
+      WHERE ($4::uuid[] IS NULL OR t.id=ANY($4)) AND ($2 OR t.id=$3::uuid OR t.owner_email=$1 OR m.email IS NOT NULL)
+      ORDER BY t.name,t.id`,[actor.email,actor.admin,siteId,pinned.length?pinned:null])).rows;
+    const isOwner=(t:PickerRow)=>actor.admin||t.owner_email===actor.email||siteId===t.id;
+    const now=Date.now();
+    const eligible=rows.filter(t=>actor.admin||(
+      t.actor_active&&t.enabled&&t.enterprise_enabled&&t.team_policy!==false&&
+      (!t.authorized_until||new Date(t.authorized_until).getTime()>now)&&
+      activeTeamGrant(t.starts_at&&t.sponsor_banned!==null?{
+        enabled:t.sponsor_enabled===true,starts_at:t.starts_at,expires_at:t.expires_at,revoked_at:t.revoked_at,
+        banned:t.sponsor_banned,account_expires_at:t.sponsor_account_expires_at,
+      }:undefined,now)&&(isOwner(t)||(t.member_email&&t.membership_status!=='suspended'&&
+        (!t.membership_expires_at||new Date(t.membership_expires_at).getTime()>now)))));
+    if(!eligible.length)return [];
+    const ids=eligible.map(t=>t.id);
+    const roleRows=(await tx.query<HierarchyRole&{enterprise_id:string}>(
+      'SELECT enterprise_id,id,level,manage_members,view_records FROM app_enterprise_roles WHERE enterprise_id=ANY($1::uuid[])',[ids])).rows;
+    const nodeRows=(await tx.query<HierarchyNode&{enterprise_id:string}>(
+      'SELECT m.enterprise_id,m.email,m.supervisor_email,m.role_id FROM app_enterprise_members m JOIN app_users u ON u.email=m.email WHERE m.enterprise_id=ANY($1::uuid[])',[ids])).rows;
+    const group=<T extends {enterprise_id:string}>(items:T[])=>{
+      const byTenant=new Map<string,T[]>();
+      for(const item of items){const group=byTenant.get(item.enterprise_id);if(group)group.push(item);else byTenant.set(item.enterprise_id,[item]);}
+      return byTenant;
+    };
+    const roles=group(roleRows),nodes=group(nodeRows);
     const result:EnterpriseIdentity[]=[];
-    for(const t of rows){if(pinned.length&&!pinned.includes(t.id))continue;try{result.push((await scope(tx,actor,t.id,allowSelf)).team)}catch(e){if(!(e instanceof TeamError)||actor.admin)throw e}}
+    for(const t of eligible){
+      const owner=isOwner(t),tenantRoles=roles.get(t.id)??[];
+      if(!owner&&!allowSelf&&!canManageWorkspace(tenantRoles.find(r=>r.id===t.role_id)))continue;
+      try{validateHierarchy(t.owner_email,nodes.get(t.id)??[],tenantRoles);}
+      catch(e){if(!(e instanceof TeamError)||actor.admin)throw e;continue;}
+      result.push({id:t.id,name:t.name,owner_email:t.owner_email,authorized_until:t.sponsor_email?t.expires_at:t.authorized_until,owner});
+    }
     return result;
+  },true).catch(error=>{
+    if(['57014','55P03'].includes((error as {code?:string})?.code??''))throw new TeamError('企业列表暂不可读取，请稍后重试',503);
+    throw error;
   });
 }
 async function memberRows(tx:PoolClient,s:Scope):Promise<EnterpriseMember[]> {

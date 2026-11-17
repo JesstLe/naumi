@@ -56,7 +56,7 @@ export function EnterpriseSaasOverview({ snapshot, from, to, meta, metaError, on
     const controller = new AbortController(); setData(null); setError(''); setLoading(true);
     void (async () => {
       try {
-        const query = new URLSearchParams({ tenantId, from, to, user: email, page: '1', size: '20' });
+        const query = new URLSearchParams({ tenantId, from, to, user: email, page: '1', size: '5' });
         const response = await fetch(`/api/enterprise/creations?${query}`, { signal: controller.signal, cache: 'no-store', headers: await authHeader() });
         const body = await response.json(); if (!response.ok) throw new Error(body.error || '创作记录读取失败');
         if (!controller.signal.aborted) setData(body);
@@ -68,15 +68,16 @@ export function EnterpriseSaasOverview({ snapshot, from, to, meta, metaError, on
   useEffect(() => {
     setFilteredRows(null); setTabError(''); setTabLoading(false); if (!tab) return;
     const controller = new AbortController(); setTabLoading(true);
-    // Fetch each exact state in a bounded page; do not filter only the first page
-    // and claim that older matching records do not exist.
-    const states = tab === 'pending' ? ['queued', 'running', 'cancel_requested'] : [tab];
-    void Promise.all(states.map(async status => {
-      const query = new URLSearchParams({ tenantId, from, to, user: email, status, page: '1', size: '5' });
-      const response = await fetch(`/api/enterprise/creations?${query}`, { signal: controller.signal, cache: 'no-store', headers: await authHeader() });
-      const body = await response.json(); if (!response.ok) throw new Error(body.error || '创作记录读取失败'); return (body as EnterpriseCreationSummary).items;
-    })).then(groups => { if (!controller.signal.aborted) setFilteredRows(groups.flat().sort((a, b) => b.acceptedAt.localeCompare(a.acceptedAt) || b.id.localeCompare(a.id)).slice(0, 5)); })
-      .catch(reason => { if (!controller.signal.aborted) setTabError(reason.message); }).finally(() => { if (!controller.signal.aborted) setTabLoading(false); });
+    void (async () => {
+      try {
+        const query = new URLSearchParams({ tenantId, from, to, user: email, projection: 'recent', size: '5' });
+        query.set(tab === 'pending' ? 'statusGroup' : 'status', tab);
+        const response = await fetch(`/api/enterprise/creations?${query}`, { signal: controller.signal, cache: 'no-store', headers: await authHeader() });
+        const body = await response.json(); if (!response.ok) throw new Error(body.error || '创作记录读取失败');
+        if (!controller.signal.aborted) setFilteredRows(body.items);
+      } catch (reason) { if (!controller.signal.aborted) setTabError(reason instanceof Error ? reason.message : '创作记录读取失败'); }
+      finally { if (!controller.signal.aborted) setTabLoading(false); }
+    })();
     return () => controller.abort();
   }, [tenantId, from, to, email, tab, reload, refreshRevision]);
   const rows = (tab ? filteredRows : data?.items)?.slice(0, 5) || [];

@@ -9,6 +9,12 @@ import {ensureSchema} from "@/lib/persistence/schema";
 // Live principal/expiry projection. Reservation and settlement remain in service/repository.
 // Keep the user-first lock and read principal only after acquiring it.
 
+/** SQL fragment for live principal. The argument is an internal SQL reference. */
+export function liveWalletPrincipalSql(emailRef:'$1'|'u.email') {
+  return `SELECT COALESCE(SUM(remaining),0)::int FROM app_credit_batches
+    WHERE email=${emailRef} AND expires_at>now() AND remaining>0`;
+}
+
 /** 过期处理:已过期(expires_at<=now)且未记过期流水的批次,记一条「积分过期」
  *  流水(delta=-remaining)并标记 expired。单条 SQL 原子完成,可重复调用(expired
  *  守护 + led-exp-<id> 主键防重)。remaining 不清零(留作记录),余额靠 expires_at 过滤。 */
@@ -36,10 +42,8 @@ export async function refreshBalance(emailRaw: string): Promise<number> {
     // Read principal after the wallet lock has been acquired. A value read before
     // waiting can otherwise overwrite a settlement that committed while waiting.
     await tx.query("SELECT email FROM app_users WHERE email=$1 FOR UPDATE",[email]);
-    const {rows}=await tx.query(`UPDATE app_users SET credits_total=(
-      SELECT COALESCE(SUM(remaining),0) FROM app_credit_batches
-      WHERE email=$1 AND expires_at>now() AND remaining>0
-    ) WHERE email=$1 RETURNING credits_total`,[email]);
+    const {rows}=await tx.query(`UPDATE app_users SET credits_total=(${liveWalletPrincipalSql('$1')})
+      WHERE email=$1 RETURNING credits_total`,[email]);
     return Number(rows[0]?.credits_total??0);
   });
 }

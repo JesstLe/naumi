@@ -92,7 +92,36 @@ async function main() {
     assert.equal((await db.getUserRole(C)), "admin");
     for (const body of [{ action: "ban", email: actor, banned: true }, { action: "reset-password", email: actor, password: "pw-654321" }, { action: "delete", email: actor }])
       assert.equal((await post(body)).status, 403, `self ${body.action}`);
-    assert.equal((await post({ action: "note", email: B, note: "fixture note" })).status, 200);
+    const command=(body:unknown)=>users.POST(request("/api/admin/users?view=command",{cookie,body})).then(json);
+    // Hold the table scanned by the legacy snapshot. Command acknowledgements
+    // must still succeed without reading all users' artwork counts.
+    const blocker=await pool.connect();
+    try{
+      await blocker.query('BEGIN');await blocker.query('LOCK TABLE app_artworks IN ACCESS EXCLUSIVE MODE');
+      let timeout:ReturnType<typeof setTimeout>|undefined;
+      try{
+        const note=await Promise.race([command({action:"note",email:B,note:"fixture note"}),new Promise<never>((_,reject)=>{timeout=setTimeout(()=>reject(Error('Command read the legacy snapshot')),2500);})]);
+        assert.deepEqual(note.body,{ok:true});assert.equal(note.status,200);
+      }finally{clearTimeout(timeout);}
+    }finally{await blocker.query('ROLLBACK');blocker.release();}
+    assert.equal((await pool.query('SELECT note FROM app_users WHERE email=$1',[B])).rows[0].note,'fixture note');
+    assert.equal((await command({action:"ban",email:actor,banned:true})).status,403);
+    const legacy=await json(await users.GET(request("/api/admin/users",{cookie})));
+    assert.equal(legacy.status,200);assert.deepEqual(Object.keys(legacy.body).sort(),["bannedIps","ledger","stats","users"]);
+    const walletWriter=await pool.connect();
+    try{
+      await walletWriter.query('BEGIN');await walletWriter.query('SELECT email FROM app_users WHERE email=$1 FOR UPDATE',[B]);
+      let timeout:ReturnType<typeof setTimeout>|undefined;
+      try{
+        const detail=await Promise.race([
+          users.GET(request(`/api/admin/users?email=${encodeURIComponent(B)}`,{cookie})).then(json),
+          new Promise<never>((_,reject)=>{timeout=setTimeout(()=>reject(Error('Admin detail waited for wallet write lock')),2500);}),
+        ]);
+        assert.equal(detail.status,200);assert.equal(detail.body.detail.user.email,B);
+        const principal=await pool.query('SELECT COALESCE(sum(remaining),0)::int AS total FROM app_credit_batches WHERE email=$1 AND expires_at>now() AND remaining>0',[B]);
+        assert.equal(detail.body.detail.user.creditsTotal,principal.rows[0].total);
+      }finally{clearTimeout(timeout);}
+    }finally{await walletWriter.query('ROLLBACK');walletWriter.release();}
     assert.equal((await post({ action: "reset-password", email: B, password: "pw-654321" })).status, 200);
     assert.equal((await post({ action: "ban-ip", ip: "203.0.113.7", reason: "fixture" })).status, 200);
     assert.equal((await post({ action: "unban-ip", ip: "203.0.113.7" })).status, 200);
