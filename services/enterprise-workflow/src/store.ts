@@ -24,7 +24,7 @@ import {moveInput,previewMove} from './plan-move';
 import {AvailabilityStore,loadAvailability,availabilityKey,capacityMinutes} from './availability-store';
 import {readScope} from './read-scope';
 import {readDashboard} from './dashboard';
-import {readWithCurrentScope} from './read-transaction';
+import {readWithCurrentScope,readWorkflowSnapshot} from './read-transaction';
 import {sourceAssetSchema,sourceDigest,type SourceAsset} from './source-files';
 import {CalendarStore,loadCalendars} from './calendar-store';
 import {allocateHours,dayMinutes,legacyCalendar} from './calendar';
@@ -101,8 +101,7 @@ export class WorkflowStore {
   }
   async list(principal:Principal,raw:unknown={}) {
     const q=listSchema.parse(raw);
-    return this.transaction(async tx=>{
-      const actor=await this.actor(tx,principal);
+    return readWithCurrentScope(this.pool,this.resolveActor,principal,async(tx,actor)=>{
       // Mirror canRead in SQL so authorization precedes pagination/counting.
       const values=[principal.enterpriseId,actor.teamId??null,actor.permissions.some(p=>['manage','dispatch','review'].includes(p)),actor.subject,actor.permissions.includes('execute'),actor.workKinds,q.status,q.query,actor.permissions.some(p=>['manage','dispatch'].includes(p))];
       const where=`enterprise_id=$1 AND ${readScope('document','$9')}
@@ -110,7 +109,7 @@ export class WorkflowStore {
       const rows=await tx.query(`SELECT document,count(*) OVER() AS total FROM enterprise_workflow.orders WHERE ${where} ORDER BY updated_at DESC,id LIMIT 30 OFFSET $10`,[...values,(q.page-1)*30]);
       const total=rows.rows.length?Number(rows.rows[0].total):Number((await tx.query(`SELECT count(*) AS n FROM enterprise_workflow.orders WHERE ${where}`,values)).rows[0].n);
       return {orders:rows.rows.map(r=>r.document as WorkOrder).filter(o=>canRead(actor,o)),total,page:q.page,pageSize:30,viewer:{subject:actor.subject,permissions:actor.permissions,teamId:actor.teamId??null}};
-    });
+    },result=>result.orders.map(order=>order.id),{legacyRepeatable:false});
   }
   async detail(principal:Principal,orderId:string) {
     return readWithCurrentScope(this.pool,this.resolveActor,principal,async(tx,actor,snapshot)=>{
@@ -123,8 +122,8 @@ export class WorkflowStore {
   }
   async tasks(principal:Principal,raw:unknown={}){
     const q=tasksSchema.parse(raw);
-    return this.transaction(async tx=>{
-      const a=await this.actor(tx,principal),v=[a.enterpriseId,a.teamId??null,a.permissions.some(p=>['manage','dispatch','review'].includes(p)),a.subject,a.permissions.includes('execute'),a.workKinds,q.status,q.scope,q.query,q.assignee,a.permissions.some(p=>['manage','dispatch'].includes(p))];
+    return readWithCurrentScope(this.pool,this.resolveActor,principal,async(tx,a)=>{
+      const v=[a.enterpriseId,a.teamId??null,a.permissions.some(p=>['manage','dispatch','review'].includes(p)),a.subject,a.permissions.includes('execute'),a.workKinds,q.status,q.scope,q.query,q.assignee,a.permissions.some(p=>['manage','dispatch'].includes(p))];
       const where=`o.enterprise_id=$1 AND ${readScope('o.document','$11')}
        AND ($7='' OR t->>'status'=$7) AND ($8='all' OR $8='mine' AND (t->>'assignee'=$4 OR t->'pendingHandover'->>'to'=$4) OR $8='handover' AND o.document->>'status'='active' AND t->'pendingHandover'->>'to'=$4 OR $8='claimable' AND (o.document->>'teamId') IS NOT DISTINCT FROM $2::text AND $5::boolean AND o.document->>'status'='active' AND t->>'status'='open' AND t->>'kind'=ANY($6::text[]) AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements_text(t->'dependencyIds') d WHERE NOT EXISTS(SELECT 1 FROM jsonb_array_elements(o.document->'tasks') x WHERE x->>'id'=d AND x->>'status'='accepted')))
        AND ($9='' OR strpos(lower((o.document->>'title')||' '||(t->>'title')),lower($9))>0) AND ($10='' OR t->>'assignee'=$10)`;
@@ -132,13 +131,13 @@ export class WorkflowStore {
       const result=await tx.query(`SELECT o.document,t AS task,count(*) OVER() AS total ${from} WHERE ${where} ORDER BY (t->>'dueAt')::timestamptz,o.id,t->>'id' LIMIT 30 OFFSET $12`,[...v,(q.page-1)*30]);
       const total=result.rows.length?Number(result.rows[0].total):Number((await tx.query(`SELECT count(*) AS n ${from} WHERE ${where}`,v)).rows[0].n);
       return {tasks:result.rows.filter(r=>canRead(a,r.document)).map(r=>{const o=r.document as WorkOrder;return {order:{id:o.id,teamId:o.teamId,requestTeamId:o.requestTeamId,title:o.title,status:o.status,version:o.version,requester:o.requester,brief:o.brief},task:r.task};}),total,page:q.page,pageSize:30,viewer:{subject:a.subject,permissions:a.permissions,workKinds:a.workKinds}};
-    });
+    },result=>result.tasks.map(row=>row.order.id),{legacyRepeatable:false});
   }
   async movePreview(principal:Principal,raw:unknown){const input=moveInput.parse(raw);return this.transaction(async tx=>previewMove(tx,await this.actor(tx,principal),input,this.availabilityEnabled,this.capacity.enabled),true);}
   async week(principal:Principal,raw:unknown){
     const q=z.strictObject({start:calendarDate,assignee:z.string().max(254).default('')}).parse(raw),end=new Date(Date.parse(q.start)+6*86400000).toISOString().slice(0,10);
     if(!calendarDate.safeParse(end).success)throw new WorkflowError(400,'INVALID_WEEK_RANGE');
-    return this.transaction(async tx=>{const a=await this.actor(tx,principal),values=[a.enterpriseId,a.teamId??null,a.permissions.some(p=>['manage','dispatch','review'].includes(p)),a.subject,a.permissions.includes('execute'),a.workKinds,q.assignee,q.start,end,a.permissions.some(p=>['manage','dispatch'].includes(p))];
+    return readWithCurrentScope(this.pool,this.resolveActor,principal,async(tx,a)=>{const values=[a.enterpriseId,a.teamId??null,a.permissions.some(p=>['manage','dispatch','review'].includes(p)),a.subject,a.permissions.includes('execute'),a.workKinds,q.assignee,q.start,end,a.permissions.some(p=>['manage','dispatch'].includes(p))];
       const where=`o.enterprise_id=$1 AND ${readScope('o.document','$10')}
        AND o.document->>'status' IN ('approved','active','paused','completed') AND ($7='' OR t->>'assignee'=$7)`;
       const from="FROM enterprise_workflow.orders o CROSS JOIN LATERAL jsonb_array_elements(o.document->'tasks') t";
@@ -158,11 +157,11 @@ export class WorkflowStore {
         for(const day of days){const hours=allocation.byDay[day]||0;loads[who][day]=(loads[who][day]||0)+hours;group.loads[day]=(group.loads[day]||0)+hours;}
         return {order:{id:o.id,teamId:o.teamId,requestTeamId:o.requestTeamId,title:o.title,status:o.status,version:o.version,requester:o.requester},task:t,loadGroup:key,calendarRevision:calendar.revision,noWorkingDay:allocation.noWorkingDay};});
       return {tasks,days,loads,workloads:[...groups.values()],noWorkingDayTasks,unplanned,timezone:'Asia/Shanghai',distribution:[...groups.values()].some(g=>g.configured)?'team-working-minutes':'calendar-day-even',referenceDailyHours:8,availabilityEnabled:personalEnabled,capacityScope:'execution-team-person'};
-    },true);
+    },result=>result.tasks.map(row=>row.order.id));
   }
   async facts(principal:Principal,raw:unknown={}){
     const q=z.strictObject({page:z.coerce.number().int().min(1).max(10000).default(1)}).parse(raw);
-    return this.transaction(async tx=>{const a=await this.actor(tx,principal),manager=a.permissions.some(p=>['manage','dispatch','review'].includes(p));
+    return readWorkflowSnapshot(this.pool,this.resolveActor,principal,async(tx,a)=>{const manager=a.permissions.some(p=>['manage','dispatch','review'].includes(p));
       const where="e.enterprise_id=$1 AND (e.event->>'teamId') IS NOT DISTINCT FROM $2::text AND e.event->>'type'='workflow.task.accepted.v1' AND ($3::boolean OR e.event->'data'->>'contributor'=$4 OR e.event->'data'->'participants' ? $4)";
       const values=[a.enterpriseId,a.teamId??null,manager,a.subject];const rows=(await tx.query(`SELECT e.event,count(*) OVER() AS total FROM enterprise_workflow.events e WHERE ${where} ORDER BY e.created_at DESC,e.id LIMIT 30 OFFSET $5`,[...values,(q.page-1)*30])).rows;const total=rows.length?Number(rows[0].total):Number((await tx.query(`SELECT count(*) AS n FROM enterprise_workflow.events e WHERE ${where}`,values)).rows[0].n);
       return {facts:rows.map(r=>r.event),total,page:q.page,pageSize:30,finalScore:false};
