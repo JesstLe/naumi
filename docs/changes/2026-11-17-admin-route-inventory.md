@@ -196,10 +196,10 @@
 | `工作流 GET /v1/capacity` | `services/enterprise-workflow/src/server.ts` | 部分：成员、摘要、历史已走只读快照，跨团队负荷及授权测试见 `capacity.test.ts` |
 | `工作流 GET /v1/catalog` | `services/enterprise-workflow/src/server.ts` | 部分：上下文、SKU、选择、管理列表与历史进入可取消快照；历史无目录锁、撤权和分页回归，高基数浏览待量化 |
 | `工作流 GET /v1/dashboard` | `services/enterprise-workflow/src/server.ts` | 已核查：一致汇总、分页、团队权限以及撤权并发，`dashboard.test.ts`、`read-transaction.test.ts` |
-| `工作流 GET /v1/delivery-reviews` | `services/enterprise-workflow/src/server.ts` | 待核查 |
+| `工作流 GET /v1/delivery-reviews` | `services/enterprise-workflow/src/server.ts` | 待复现：静态确认评审读取持订单行锁后继续查提交及规范；候选与历史成本待核 |
 | `工作流 GET /v1/delivery/assets` | `services/enterprise-workflow/src/server.ts` | 部分：列表快照、任务复核、共享扫描查询，回归通过；高峰待量化 |
 | `工作流 GET /v1/delivery/download` | `services/enterprise-workflow/src/server.ts` | 部分：直连断开关闭哈希、同句柄字节/审计/撤权回归；真实大文件并发待核 |
-| `工作流 GET /v1/delivery/library` | `services/enterprise-workflow/src/server.ts` | 待复现：逐素材关联提交和验收事件后计数分页，高基数计划和取消待验证 |
+| `工作流 GET /v1/delivery/library` | `services/enterprise-workflow/src/server.ts` | 部分：按订单一次查事件、24 项详情；两组合成负载十组返回与旧版一致，HTTP 断开和途中撤权回归、旧库兼容；生产高峰待核 |
 | `工作流 GET /v1/delivery/preview` | `services/enterprise-workflow/src/server.ts` | 部分：共用受限预校验、HTTP 代理断开，直连同源下载已证实取消；真实预览高峰待核 |
 | `工作流 GET /v1/delivery/scan-history` | `services/enterprise-workflow/src/server.ts` | 部分：快照扫描历史，34 项完整翻页、跨团队拒绝与隔离语义回归；大量失败事件待量化 |
 | `工作流 GET /v1/demand-batches` | `services/enterprise-workflow/src/server.ts` | 部分：回执 20 项 2 次订单查询含范围复核，途中失去授权拒绝、不可见项遮蔽、断开和深空页回归；真实高峰待核 |
