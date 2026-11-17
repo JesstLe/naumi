@@ -181,7 +181,7 @@ export function createWorkflowServer(store: WorkflowStore, authenticate: Authent
       if(url.pathname==='/v1/guidelines'&&req.method==='POST')return json(res,200,await store.guidelines.execute(principal,await body(req)));
       if(url.pathname==='/v1/projects'&&req.method==='GET')return json(res,200,await readUntilDisconnect(req,res,signal=>store.projects.read(principal,Object.fromEntries(url.searchParams),signal)));
       if(url.pathname==='/v1/projects'&&req.method==='POST'){const {operation,...c}=await body(req);if(operation!=='preview'&&operation!=='apply')throw new WorkflowError(400,'INVALID_PROJECT_OPERATION');return json(res,200,operation==='preview'?await readUntilDisconnect(req,res,signal=>store.projects.preview(principal,c,signal)):await store.projects.execute(principal,c));}
-      if(url.pathname==='/v1/appeals'&&req.method==='GET')return json(res,200,await store.appeals.read(principal,Object.fromEntries(url.searchParams)));
+      if(url.pathname==='/v1/appeals'&&req.method==='GET')return json(res,200,await readUntilDisconnect(req,res,signal=>store.appeals.read(principal,Object.fromEntries(url.searchParams),signal)));
       if(url.pathname==='/v1/appeals'&&req.method==='POST')return json(res,200,await store.appeals.execute(principal,await body(req)));
       if(url.pathname==='/v1/worklogs'&&req.method==='GET')return json(res,200,await store.worklogs.read(principal,Object.fromEntries(url.searchParams)));
       if(url.pathname==='/v1/worklogs'&&req.method==='POST')return json(res,200,await store.worklogs.execute(principal,await body(req)));

@@ -3,11 +3,17 @@ import {randomUUID} from 'node:crypto';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {once} from 'node:events';
+import {setTimeout as delay} from 'node:timers/promises';
 import type {Pool} from 'pg';
 import {AppealStore} from '../src/appeal-store';
 import {CorrectionStore} from '../src/correction-store';
 import {resolveDatabaseActor} from '../src/identity';
 import {seedCorrectionAcceptance} from './seed-correction-acceptance';
+import {WorkflowStore} from '../src/store';
+import {createWorkflowServer} from '../src/server';
+import {digest} from '../src/performance-domain';
+import {whileReadWaits} from './read-transaction.test';
 export async function appealChecks(pool:Pool){
  const enterpriseId=randomUUID(),teamId=randomUUID(),otherTeam=randomUUID(),dir=await mkdtemp(join(tmpdir(),'appeal-test-')),oldEnv=process.env.NAUMI_VERIFY_ISOLATED_DB;process.env.NAUMI_VERIFY_ISOLATED_DB='1';
  try{
@@ -23,6 +29,27 @@ export async function appealChecks(pool:Pool){
  const eligible=await store.read(p('lead'),{action:'reviewers',id:l.id}) as any;assert.deepEqual(eligible.members.map((x:any)=>x.subject),['appeal-reviewer','replacement']);await assert.rejects(store.read(p('worker'),{action:'reviewers',id:l.id}),/APPEAL_ASSIGN_FORBIDDEN/);
  await assert.rejects(execute('lead',update(2,{type:'assign',reviewer:'original',dueAt:null})),/APPEAL_INDEPENDENT_REVIEW_REQUIRED/);
  const assigned=await execute('lead',update(2,{type:'assign',reviewer:'appeal-reviewer',dueAt:'2020-01-01T00:00:00Z'}));assert.equal(assigned.overdue,true);assert.equal((await detail('appeal-reviewer',l.id)).canResolve,true);await assert.rejects(detail('replacement',randomUUID()),/APPEAL_NOT_FOUND/);
+ const readDetail={action:'detail',id:l.id},reviewer=p('appeal-reviewer'),legacy=new AppealStore(pool,(tx,who)=>resolveDatabaseActor(tx,who));
+ const lockPeriod=(tx:import('pg').PoolClient)=>tx.query('LOCK TABLE enterprise_workflow.performance_periods IN ACCESS EXCLUSIVE MODE');
+ const lockMember=()=>pool.query("SELECT subject FROM enterprise_workflow.team_members WHERE enterprise_id=$1 AND team_id=$2 AND subject='appeal-reviewer' FOR UPDATE NOWAIT",[enterpriseId,teamId]);
+ const previous=await whileReadWaits(pool,lockPeriod,()=>legacy.read(reviewer,readDetail),async()=>{await assert.rejects(lockMember(),{code:'55P03'});});
+ const current=await whileReadWaits(pool,lockPeriod,()=>store.read(reviewer,readDetail),async()=>{assert.equal((await lockMember()).rowCount,1);});
+ assert.equal(previous.status,'fulfilled');assert.deepEqual(current,previous);
+ const member=(enabled:boolean)=>pool.query("UPDATE enterprise_workflow.team_members SET enabled=$3 WHERE enterprise_id=$1 AND team_id=$2 AND subject='appeal-reviewer'",[enterpriseId,teamId,enabled]);
+ const revoked=await whileReadWaits(pool,lockPeriod,()=>store.read(reviewer,readDetail),async()=>{await member(false);});
+ assert.equal(revoked.status,'rejected');assert.equal(revoked.reason.code,'MEMBERSHIP_REQUIRED');await member(true);
+ const reassign=(subject:string)=>pool.query("UPDATE enterprise_workflow.performance_appeals SET document=jsonb_set(document,'{reviewer}',to_jsonb($3::text)) WHERE enterprise_id=$1 AND id=$2",[enterpriseId,l.id,subject]);
+ const reassigned=await whileReadWaits(pool,lockPeriod,()=>store.read(reviewer,readDetail),async()=>{await reassign('replacement');});
+ assert.equal(reassigned.status,'rejected');assert.equal(reassigned.reason.code,'APPEAL_NOT_FOUND');await reassign('appeal-reviewer');
+ const server=createWorkflowServer(new WorkflowStore(pool,resolveDatabaseActor,async()=>false),async()=>reviewer);server.listen(0,'127.0.0.1');await once(server,'listening');
+ try{const address=server.address();assert(address&&typeof address!=='string');const url=`http://127.0.0.1:${address.port}/v1/appeals?action=detail&id=${l.id}`;
+  const abort=new AbortController(),stopped=await whileReadWaits(pool,lockPeriod,()=>fetch(url,{signal:abort.signal}),async()=>{
+   abort.abort();for(let i=0;i<50&&pool.totalCount-pool.idleCount>1;i++)await delay(10);
+   assert.equal(pool.totalCount-pool.idleCount,1,'disconnected appeal must release its slot before the blocker clears');
+  });
+  assert.equal(stopped.status,'rejected');assert.equal(stopped.reason.name,'AbortError');const retry=await fetch(url);assert.equal(retry.status,200);assert.equal((await retry.json() as {canResolve:boolean}).canResolve,true);
+ }finally{server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));}
+ console.log('APPEAL_READ_SNAPSHOT_PASS: legacy_blocks_member_write=1 detached_read_leaves_member_unlocked=1 previous_response_equal=1 mid_read_revocation403=1 live_reassignment404=1 abort_releases_slot=1');
  const staleBasis=initial.basisHash,proposal={periodId,factId,baseRevision:0,shares:[{subject:'lead',bps:5000},{subject:'worker',bps:5000}],reason:'有依据的分摊更正'},plan=await corr.preview(p('lead'),{operation:'preview',...proposal}),correctionId=randomUUID();await corr.execute(p('lead'),{operation:'propose',commandId:randomUUID(),id:correctionId,...proposal,previewHash:plan.previewHash});await corr.execute(p('original'),{operation:'review',commandId:randomUUID(),id:correctionId,expectedVersion:1,approve:true,reason:'独立更正批准'});
  await assert.rejects(execute('appeal-reviewer',update(3,{type:'resolve',outcome:'corrected',correctionId,basisHash:staleBasis})),/APPEAL_BASIS_CHANGED/);
  await pool.query("UPDATE enterprise_workflow.team_members SET enabled=false WHERE enterprise_id=$1 AND team_id=$2 AND subject='appeal-reviewer'",[enterpriseId,teamId]);await assert.rejects(execute('appeal-reviewer',update(3,{type:'resolve',outcome:'upheld',basisHash:(await basis()).basisHash})),/MEMBERSHIP_REQUIRED/);
@@ -38,6 +65,24 @@ export async function appealChecks(pool:Pool){
  for(let i=0;i<29;i++){const c=await create(),a=(await execute('worker',c)).appeal;await execute('worker',{commandId:randomUUID(),id:a.id,expectedVersion:1,reason:'重复历史分页验收',action:{type:'withdraw'}});}
  const page=await store.read(p('worker'),{action:'list',periodId,page:2}) as any;assert.equal(page.total,32);assert.equal(page.items.length,2);const empty=await store.read(p('worker'),{action:'list',periodId,page:99}) as any;assert.equal(empty.total,32);assert.equal(empty.items.length,0);await assert.rejects(store.read(p('worker'),{action:'list',periodId,scope:'team'}),/APPEAL_TEAM_FORBIDDEN/);
  assert.equal((await store.read(p('original'),{action:'list',periodId,scope:'team'}) as any).total,32);await assert.rejects(new AppealStore(pool,resolveDatabaseActor,false).read(p('worker'),{action:'detail',id:l.id}),/APPEALS_NOT_ENABLED/);
+ const rawPeriod=JSON.parse(before)[0].document,rawRow=rawPeriod.snapshot.rows.find((r:{fact:{id:string}})=>r.fact.id===factId),rawLatest=(await pool.query('SELECT document FROM enterprise_workflow.performance_corrections WHERE enterprise_id=$1 AND id=$2',[enterpriseId,correctionId])).rows[0].document;
+ assert.equal((await basis()).basisHash,digest({periodId,version:rawPeriod.version,rule:rawPeriod.snapshot.rule,row:rawRow,latest:rawLatest,subject:'worker'}));
+ const originalAppeal=(await pool.query('SELECT document FROM enterprise_workflow.performance_appeals WHERE enterprise_id=$1 AND id=$2',[enterpriseId,l.id])).rows[0].document;
+ const listRow=(await store.read(p('worker'),{action:'list',periodId,state:'resolved'}) as any).items[0];
+ assert.deepEqual(listRow,{id:l.id,subject:originalAppeal.subject,taskTitle:originalAppeal.basis.taskTitle,status:originalAppeal.status,version:originalAppeal.version,reviewer:originalAppeal.reviewer,dueAt:originalAppeal.dueAt,updatedAt:originalAppeal.updatedAt,overdue:false});
+ const revisions=await pool.connect();try{
+  await revisions.query('BEGIN');await revisions.query('LOCK TABLE enterprise_workflow.appeal_revisions IN ACCESS EXCLUSIVE MODE');
+  const emptyHistory=await store.read(p('worker'),{action:'history',id:second.id,page:100});assert.deepEqual(emptyHistory,{events:[],total:33,page:100});
+ }finally{await revisions.query('ROLLBACK');revisions.release();}
+ // Clone real fixture revisions with synthetic history payloads (no commands or external calls).
+ await pool.query(`INSERT INTO enterprise_workflow.performance_corrections(enterprise_id,team_id,id,period_id,fact_id,version,state,applied_revision,document)
+  SELECT $1,$2,x.id,$3,$4,($5::jsonb->>'version')::int,'approved',x.n,$5::jsonb||jsonb_build_object('id',x.id,'appliedRevision',x.n,'proposedBy',CASE WHEN x.n=2 THEN 'stranger' ELSE 'lead' END,'reviewedBy','original','reason',repeat('review history evidence ',180))
+  FROM (SELECT gen_random_uuid() id,n FROM generate_series(2,240) n) x`,[enterpriseId,teamId,periodId,factId,rawLatest]);
+ await pool.query(`UPDATE enterprise_workflow.team_members SET permissions='["review"]' WHERE enterprise_id=$1 AND team_id=$2 AND subject='stranger'`,[enterpriseId,teamId]);
+ const fullHistory=(await pool.query('SELECT document FROM enterprise_workflow.performance_corrections WHERE enterprise_id=$1 AND team_id=$2 AND period_id=$3 AND fact_id=$4 ORDER BY applied_revision DESC',[enterpriseId,teamId,periodId,factId])).rows.map(r=>r.document);
+ const heavyBasis=await basis();assert.equal(fullHistory.length,240);assert.equal(heavyBasis.basisHash,digest({periodId,version:rawPeriod.version,rule:rawPeriod.snapshot.rule,row:rawRow,latest:fullHistory[0],subject:'worker'}));assert.equal(heavyBasis.correctionRevision,240);
+ const heavyReviewers=await store.read(p('lead'),{action:'reviewers',id:l.id}) as any;assert.deepEqual(heavyReviewers.members,[{subject:'replacement'}]);
+ console.log('APPEAL_PROJECTION_PASS: frozen_basis_digest_equal=1 latest_revision240=1 historical_actor_excluded=1 list_fields_unchanged=1 empty_history_skips_blocked_table=1');
  await pool.query("UPDATE enterprise_workflow.accounts SET enabled=false WHERE enterprise_id=$1 AND subject='worker'",[enterpriseId]);await assert.rejects(execute('worker',c),/MEMBERSHIP_REQUIRED/);await pool.query("UPDATE enterprise_workflow.accounts SET enabled=true WHERE enterprise_id=$1 AND subject='worker'",[enterpriseId]);assert.equal(await frozen(),before);
  console.log('APPEAL_SERVICE_PASS: actual_frozen_fact=1 own_basis=1 submitted_replay=1 duplicate_open=1 concurrent_create1=1 append_only=1 independent_exclusions=1 departed_reviewer_replace=1 same_due=1 stale_basis=1 approved_correction_link=1 wrong_correction_denied=1 audit_atomic=1 resolution_race1=1 original_snapshot_unchanged=1 withdrawal_keeps_score=1 history32=1 list32=1 empty_total=1 team_scope=1 revoked_replay=1 disabled503=1');
  }finally{if(oldEnv===undefined)delete process.env.NAUMI_VERIFY_ISOLATED_DB;else process.env.NAUMI_VERIFY_ISOLATED_DB=oldEnv;await rm(dir,{recursive:true,force:true});}
