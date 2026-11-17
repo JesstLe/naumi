@@ -1,13 +1,18 @@
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
-import type {Pool} from 'pg';
+import {once} from 'node:events';
+import {setTimeout as delay} from 'node:timers/promises';
+import type {Pool,PoolClient} from 'pg';
 import {WorkflowStore} from '../src/store';
 import {NotificationStore} from '../src/notification-store';
 import {SlaStore} from '../src/sla-store';
-import {slaClocks} from '../src/sla-domain';
+import {slaClocks,type SlaEvent} from '../src/sla-domain';
 import {resolveDatabaseActor} from '../src/identity';
 import type {Action,Principal,Actor,WorkOrder} from '../src/contracts';
 import type {SlaConfig} from '../src/sla-contracts';
+import {createWorkflowServer} from '../src/server';
+import {whileReadWaits} from './read-transaction.test';
+import {loadSlaInputs} from '../src/sla-inputs';
 export async function slaChecks(pool:Pool){
  const enterpriseId=randomUUID(),teamId=randomUUID(),other=randomUUID(),source=randomUUID(),p=(subject:string,team=teamId):Principal=>({enterpriseId,teamId:team,subject});await pool.query('INSERT INTO enterprise_workflow.teams(enterprise_id,team_id)VALUES($1,$2),($1,$3)',[enterpriseId,teamId,other]);await pool.query("INSERT INTO enterprise_workflow.source_enterprises(source_instance,source_enterprise,enterprise_id)VALUES('sla-fixture',$1,$2)",[source,enterpriseId]);
  for(const [subject,permissions] of [['manager',['manage','request','dispatch','review']],['worker',['execute']],['reviewer',['review']],['second',['execute']]] as const){await pool.query('INSERT INTO enterprise_workflow.accounts(enterprise_id,subject)VALUES($1,$2)',[enterpriseId,subject]);for(const team of [teamId,other])await pool.query('INSERT INTO enterprise_workflow.team_members(enterprise_id,team_id,subject,permissions,work_kinds)VALUES($1,$2,$3,$4,\'["design"]\')',[enterpriseId,team,subject,JSON.stringify(permissions)]);await pool.query("INSERT INTO enterprise_workflow.source_identities(source_instance,source_enterprise,enterprise_id,source_subject,subject)VALUES('sla-fixture',$1,$2,$3,$3)",[source,enterpriseId,subject]);}
@@ -17,6 +22,45 @@ export async function slaChecks(pool:Pool){
  const rules:SlaConfig['rules']=['due','requirement','unclaimed','blocked','review','handover'].map(kind=>({kind:kind as any,enabled:true,minutes:kind==='due'?60:1,escalateMinutes:120})),config={enabled:true,rules};let version=0;
  const save=async(c:SlaConfig=config,team=teamId)=>{const current=await sla.read(p('manager',team),{action:'settings'}) as any,input={expectedVersion:current.version,config:c,reason:'明确开启测试团队'},plan=await sla.preview(p('manager',team),input),command={...input,commandId:randomUUID(),asOf:plan.asOf,previewHash:plan.previewHash},r=await sla.save(p('manager',team),command);if(team===teamId)version=r.version;return {command,r};};
  await assert.rejects(sla.read(p('worker'),{action:'settings'}),/SLA_MANAGER_REQUIRED/);await assert.rejects(sla.read({...p('manager'),enterpriseId:randomUUID()},{action:'settings'}),/SLA_MANAGER_REQUIRED/);const preview=await sla.preview(p('manager'),{expectedVersion:0,config,reason:'只预览'});assert.equal(preview.totalOrders,6);assert.equal((await pool.query('SELECT count(*) n FROM enterprise_workflow.sla_occurrences WHERE enterprise_id=$1',[enterpriseId])).rows[0].n,'0');await assert.rejects(sla.save(p('manager'),{expectedVersion:0,config,reason:'只预览',commandId:randomUUID(),asOf:preview.asOf,previewHash:'f'.repeat(64)}),/SLA_PREVIEW_CHANGED/);
+ const manager=p('manager'),readInput={expectedVersion:0,config,reason:'只预览',asOf:preview.asOf};
+ const sample=[due.o,waiting.o,unclaimed.o,blocked.o,review.o,handover.o],reader=await pool.connect();
+ try{
+  let reads=0;
+  const count=new Proxy(reader,{get(target,key){if(key==='query')return (...args:unknown[])=>{reads++;return Reflect.apply(target.query,target,args);};const value=Reflect.get(target,key);return typeof value==='function'?value.bind(target):value;}});
+  const previousInputs=sla as unknown as {inputs(tx:PoolClient,o:WorkOrder):Promise<{events:SlaEvent[];panels:Record<string,string[]>}>};
+  const members=await resolveDatabaseActor.readTeamMembers!(reader,manager,['manager','worker','reviewer','second']),oldGroups=[];
+  for(const o of sample){const r=await previousInputs.inputs(count,o);oldGroups.push(slaClocks(o,r.events,members,r.panels,config,new Date(preview.asOf)));}
+  assert.equal(reads,12);reads=0;
+  const batched=await loadSlaInputs(count,enterpriseId,sample.map(o=>o.id));assert.equal(reads,2);
+  assert.deepEqual(sample.map(o=>{const r=batched.get(o.id)!;return slaClocks(o,r.events,members,r.panels,config,new Date(preview.asOf));}),oldGroups);
+ }finally{reader.release();}
+ const legacy=new SlaStore(pool,resolveDatabaseActor.bind(null),n,true,()=>now);
+ const memberLock=()=>pool.query("SELECT subject FROM enterprise_workflow.team_members WHERE enterprise_id=$1 AND team_id=$2 AND subject='worker' FOR UPDATE NOWAIT",[enterpriseId,teamId]);
+ const legacyRead=await whileReadWaits(pool,'events',()=>legacy.preview(manager,readInput),async()=>{await assert.rejects(memberLock(),{code:'55P03'});});
+ assert.deepEqual(legacyRead,{status:'fulfilled',value:preview});
+ const fastRead=await whileReadWaits(pool,'events',()=>sla.preview(manager,readInput),async()=>{assert.equal((await memberLock()).rowCount,1);});
+ assert.deepEqual(fastRead,legacyRead);
+ const member=(enabled:boolean)=>pool.query("UPDATE enterprise_workflow.team_members SET enabled=$3 WHERE enterprise_id=$1 AND team_id=$2 AND subject='manager'",[enterpriseId,teamId,enabled]);
+ try{
+  const revoked=await whileReadWaits(pool,'events',()=>sla.preview(manager,readInput),async()=>{await member(false);});
+  assert.equal(revoked.status,'rejected');assert.equal(revoked.reason.code,'SLA_MANAGER_REQUIRED');
+ }finally{await member(true);}
+ try{
+  const moved=await whileReadWaits(pool,'events',()=>sla.preview(manager,readInput),async()=>{await pool.query("UPDATE enterprise_workflow.orders SET document=jsonb_set(document,'{teamId}',to_jsonb($3::text)) WHERE enterprise_id=$1 AND id=$2",[enterpriseId,due.o.id,other]);});
+  assert.equal(moved.status,'rejected');assert.equal(moved.reason.code,'SLA_PREVIEW_CHANGED');
+ }finally{await pool.query('UPDATE enterprise_workflow.orders SET document=$3 WHERE enterprise_id=$1 AND id=$2',[enterpriseId,due.o.id,due.o]);}
+ const server=createWorkflowServer(wf,async()=>manager);server.listen(0,'127.0.0.1');await once(server,'listening');
+ try{
+  const address=server.address();assert(address&&typeof address!=='string');const url=`http://127.0.0.1:${address.port}/v1/sla`;
+  const request=(signal?:AbortSignal)=>fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({operation:'preview',input:readInput}),signal});
+  const abort=new AbortController(),stopped=await whileReadWaits(pool,'events',()=>request(abort.signal),async()=>{
+   abort.abort();for(let i=0;i<50&&pool.totalCount-pool.idleCount>1;i++)await delay(10);
+   assert.equal(pool.totalCount-pool.idleCount,1,'disconnected SLA preview must release the slot while events are still locked');
+  });
+  assert.equal(stopped.status,'rejected');assert.equal(stopped.reason.name,'AbortError');
+  const retry=await request();assert.equal(retry.status,200);assert.deepEqual(await retry.json(),preview);
+ }finally{server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));}
+ console.log('SLA_READ_ISOLATION_PASS MEMBER_LOCK_LEGACY=HELD SNAPSHOT=FREE HASH=EXACT INPUT_QUERIES=12_TO_2 REVOKE=403 TEAM_TRANSFER=409 HTTP_ABORT=POOL_RELEASED');
  const first=await save();assert.equal((await sla.save(p('manager'),first.command)).replayed,true);await assert.rejects(sla.save(p('manager'),{...first.command,reason:'different'}),/IDEMPOTENCY_CONFLICT/);await assert.rejects(sla.preview(p('manager'),{expectedVersion:0,config,reason:'old'}),/SLA_VERSION_CONFLICT/);await assert.rejects(sla.preview(p('manager'),{expectedVersion:version,config,reason:'expired',asOf:new Date(+now-300001).toISOString()}),/SLA_PREVIEW_EXPIRED/);
  const sweep=async(s=sla,steps=100)=>{await pool.query('UPDATE enterprise_workflow.sla_policies SET next_scan_at=$2 WHERE enterprise_id=$1',[enterpriseId,now]);for(let i=0;i<steps;i++){const x=await s.tick();if(!x.processed)break;}};
  now=new Date(+now+61000);await Promise.all([sweep(),sweep()]);const count=async()=>Number((await pool.query('SELECT count(*) n FROM enterprise_workflow.sla_occurrences WHERE enterprise_id=$1',[enterpriseId])).rows[0].n),firstCount=await count();assert(firstCount>=6);const kinds=(await pool.query('SELECT DISTINCT document->>\'kind\' kind FROM enterprise_workflow.sla_occurrences WHERE enterprise_id=$1',[enterpriseId])).rows.map(x=>x.kind).sort();assert.deepEqual(kinds,['blocked','due','handover','requirement','review','unclaimed']);await sweep(new SlaStore(pool,resolveDatabaseActor,n,true,()=>now));assert.equal(await count(),firstCount);assert.equal(JSON.stringify((await pool.query('SELECT document FROM enterprise_workflow.orders WHERE enterprise_id=$1 ORDER BY id',[enterpriseId])).rows),before);

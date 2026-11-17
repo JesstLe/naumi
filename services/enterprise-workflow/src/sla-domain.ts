@@ -2,10 +2,11 @@ import type {Actor,WorkOrder,WorkflowEvent,Task} from './contracts';
 import {canRead,participants} from './domain';
 import {sourceDigest} from './source-files';
 import {slaNames,type SlaConfig,type SlaClock,type SlaRule} from './sla-contracts';
-export function slaClocks(o:WorkOrder,events:WorkflowEvent[],members:Actor[],panels:Record<string,string[]>,config:SlaConfig,now:Date):SlaClock[]{
+export type SlaEvent=Pick<WorkflowEvent,'id'|'occurredAt'|'aggregateVersion'>&{data:{action?:{type:string;taskId?:string;taskIds?:string[];operation?:{type?:string}}}};
+export function slaClocks(o:WorkOrder,events:SlaEvent[],members:Actor[],panels:Record<string,string[]>,config:SlaConfig,now:Date):SlaClock[]{
  if(!config.enabled||!o.teamId||!['active','submitted'].includes(o.status))return [];
  const result:SlaClock[]=[],team=members.filter(a=>a.enterpriseId===o.enterpriseId&&a.teamId===o.teamId&&canRead(a,o)),managers=team.filter(a=>a.permissions.some(p=>p==='manage'||p==='dispatch'));
- const event=(types:string[],t?:Task)=>events.filter(e=>{const a=e.data.action as any;return a&&types.includes(a.type)&&(!t||a.taskId===t.id||a.type==='publish'||a.type==='batch-tasks'&&a.operation?.type==='assign'&&a.taskIds?.includes(t.id));}).sort((a,b)=>b.aggregateVersion-a.aggregateVersion)[0];
+ const event=(types:string[],t?:Task)=>events.filter(e=>{const a=e.data.action;return a&&types.includes(a.type)&&(!t||a.taskId===t.id||a.type==='publish'||a.type==='batch-tasks'&&a.operation?.type==='assign'&&a.taskIds?.includes(t.id));}).sort((a,b)=>b.aggregateVersion-a.aggregateVersion)[0];
  const executor=(t:Task,subject=t.assignee)=>team.filter(a=>a.subject===subject&&a.permissions.includes('execute')&&a.workKinds.includes(t.kind));
  const add=(r:SlaRule,t:Task|undefined,anchor:string|undefined,date:string|undefined,recipients:Actor[])=>{if(!anchor||!date||!Number.isFinite(Date.parse(date)))return;const base=Date.parse(date),first=base+(r.kind==='due'?-r.minutes:r.minutes)*60000,late=base+(r.kind==='due'?0:r.minutes)*60000,escalate=late+r.escalateMinutes*60000;let stage:0|1|2;if(+now>=escalate)stage=2;else if(+now>=late)stage=1;else if(r.kind==='due'&&+now>=first)stage=0;else return;const chosen=stage===2?managers:recipients,key=sourceDigest([o.enterpriseId,o.teamId,o.id,t?.id??null,r.kind,anchor]);result.push({key,kind:r.kind,orderId:o.id,taskId:t?.id??null,anchor,at:new Date(stage===2?escalate:stage===1?late:first).toISOString(),stage,title:slaNames[r.kind]+(stage===2?' · 超时升级':stage===0?' · 即将到期':' · 已超时'),recipients:[...new Set(chosen.map(a=>a.subject))].sort()});};
  for(const r of config.rules.filter(r=>r.enabled)){

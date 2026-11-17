@@ -109,7 +109,7 @@ async function main(){
   output.setHeader('content-type','application/json');output.end('{"ok":true}');
   assert.deepEqual(await(await until(write)).json(),{ok:true});
 
-  for(const [route,operation] of [['projects','apply'],['publications','command'],['catalog','apply'],['demand-batches','apply']] as const){
+  for(const [route,operation] of [['projects','apply'],['publications','command'],['catalog','apply'],['demand-batches','apply'],['sla','save']] as const){
    const {POST:post}:{POST:(request:Request)=>Promise<Response>}=await import(`../src/app/api/enterprise/workflow/${route}/route`);
    const inQuery=route==='catalog'||route==='demand-batches';
    const call=(action:string,signal:AbortSignal)=>post(new Request(req().url.replace('/worklogs?','/'+route+'?')+(inQuery?'&action='+action:''),{method:'POST',signal,headers:req().headers,body:JSON.stringify(inQuery?{}:{operation:action})}));
@@ -120,7 +120,7 @@ async function main(){
    const [commandSocket]=await until(commandSeen);command.abort();commandSocket.setHeader('content-type','application/json');commandSocket.end('{"ok":true}');
    assert.deepEqual(await(await until(commandResult)).json(),{ok:true});
   }
-  console.log('WORKFLOW_PREVIEW_PROXY_ABORT_PASS: project_publication_catalog_demand_preview_cancelled=1 command_response_after_disconnect=1');
+  console.log('WORKFLOW_PREVIEW_PROXY_ABORT_PASS: project_publication_catalog_demand_sla_preview_cancelled=1 command_response_after_disconnect=1');
 
   const make=(subject:string)=>new CreationAdapter(subject,deploymentPolicy());
   const self=(await make(employee).records({enterpriseId:id,kind:'artworks',size:20})).rows;
