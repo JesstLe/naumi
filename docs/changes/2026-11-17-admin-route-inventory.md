@@ -78,8 +78,8 @@
 | `GET /api/enterprise/workflow/catalog` | `src/app/api/enterprise/workflow/catalog/route.ts` | 部分：隔离代理身份/读契约，直连无目录锁、撤权和分页；真实网关待核 |
 | `GET /api/enterprise/workflow/corrections` | `src/app/api/enterprise/workflow/corrections/route.ts` | 待核查 |
 | `GET /api/enterprise/workflow/demand-batches` | `src/app/api/enterprise/workflow/demand-batches/route.ts` | 部分：代理身份/有界读，直连列表分页、回执批量读取、范围复核和断开已回归，真实网关待核 |
-| `GET /api/enterprise/workflow/demand-files` | `src/app/api/enterprise/workflow/demand-files/route.ts` | 待核查 |
-| `GET /api/enterprise/workflow/files` | `src/app/api/enterprise/workflow/files/route.ts` | 待核查 |
+| `GET /api/enterprise/workflow/demand-files` | `src/app/api/enterprise/workflow/demand-files/route.ts` | 部分：预览代理断开传递、直连取消文件校验、扫描历史和已选附件撤权回归；真实网关待核 |
+| `GET /api/enterprise/workflow/files` | `src/app/api/enterprise/workflow/files/route.ts` | 部分：预览代理断开传递、直连原件取消与审计、扫描历史和字节复验；真实网关待核 |
 | `GET /api/enterprise/workflow/forms` | `src/app/api/enterprise/workflow/forms/route.ts` | 部分：代理身份/有界读、直连只读快照、表单可见性和列表查询计数；真实网关待核 |
 | `GET /api/enterprise/workflow/guidelines` | `src/app/api/enterprise/workflow/guidelines/route.ts` | 待核查 |
 | `GET /api/enterprise/workflow/imports` | `src/app/api/enterprise/workflow/imports/route.ts` | 部分：代码确认 source/worksheet 流式代理及客户端断开传递；工作流直连两份 64 MiB 已核查，代理实流复查保留 |
@@ -197,16 +197,16 @@
 | `工作流 GET /v1/catalog` | `services/enterprise-workflow/src/server.ts` | 部分：上下文、SKU、选择、管理列表与历史进入可取消快照；历史无目录锁、撤权和分页回归，高基数浏览待量化 |
 | `工作流 GET /v1/dashboard` | `services/enterprise-workflow/src/server.ts` | 已核查：一致汇总、分页、团队权限以及撤权并发，`dashboard.test.ts`、`read-transaction.test.ts` |
 | `工作流 GET /v1/delivery-reviews` | `services/enterprise-workflow/src/server.ts` | 待核查 |
-| `工作流 GET /v1/delivery/assets` | `services/enterprise-workflow/src/server.ts` | 待核查 |
-| `工作流 GET /v1/delivery/download` | `services/enterprise-workflow/src/server.ts` | 待核查 |
-| `工作流 GET /v1/delivery/library` | `services/enterprise-workflow/src/server.ts` | 待核查 |
-| `工作流 GET /v1/delivery/preview` | `services/enterprise-workflow/src/server.ts` | 待核查 |
-| `工作流 GET /v1/delivery/scan-history` | `services/enterprise-workflow/src/server.ts` | 待核查 |
+| `工作流 GET /v1/delivery/assets` | `services/enterprise-workflow/src/server.ts` | 部分：列表快照、任务复核、共享扫描查询，回归通过；高峰待量化 |
+| `工作流 GET /v1/delivery/download` | `services/enterprise-workflow/src/server.ts` | 部分：直连断开关闭哈希、同句柄字节/审计/撤权回归；真实大文件并发待核 |
+| `工作流 GET /v1/delivery/library` | `services/enterprise-workflow/src/server.ts` | 待复现：逐素材关联提交和验收事件后计数分页，高基数计划和取消待验证 |
+| `工作流 GET /v1/delivery/preview` | `services/enterprise-workflow/src/server.ts` | 部分：共用受限预校验、HTTP 代理断开，直连同源下载已证实取消；真实预览高峰待核 |
+| `工作流 GET /v1/delivery/scan-history` | `services/enterprise-workflow/src/server.ts` | 部分：快照扫描历史，34 项完整翻页、跨团队拒绝与隔离语义回归；大量失败事件待量化 |
 | `工作流 GET /v1/demand-batches` | `services/enterprise-workflow/src/server.ts` | 部分：回执 20 项 2 次订单查询含范围复核，途中失去授权拒绝、不可见项遮蔽、断开和深空页回归；真实高峰待核 |
-| `工作流 GET /v1/demand-files/assets` | `services/enterprise-workflow/src/server.ts` | 待核查 |
-| `工作流 GET /v1/demand-files/download` | `services/enterprise-workflow/src/server.ts` | 待核查 |
-| `工作流 GET /v1/demand-files/preview` | `services/enterprise-workflow/src/server.ts` | 待核查 |
-| `工作流 GET /v1/demand-files/scan-history` | `services/enterprise-workflow/src/server.ts` | 待复现：静态确认两次读取附件与持订单行锁；待查询计数与并发核验 |
+| `工作流 GET /v1/demand-files/assets` | `services/enterprise-workflow/src/server.ts` | 部分：快照复核已选范围、扫描态单次查询、文件权限回归；高峰待量化 |
+| `工作流 GET /v1/demand-files/download` | `services/enterprise-workflow/src/server.ts` | 部分：共享预校验/审计路径，真实文件字节和校验后撤权回归，生产并发待核 |
+| `工作流 GET /v1/demand-files/preview` | `services/enterprise-workflow/src/server.ts` | 部分：直连断开关闭哈希、4 活跃/24 等待限制和过载恢复、原图字节回归；多进程和网关待核 |
+| `工作流 GET /v1/demand-files/scan-history` | `services/enterprise-workflow/src/server.ts` | 部分：无订单行锁、撤选择拒绝、越界只计数，深历史高峰待量化 |
 | `工作流 GET /v1/demand-forms` | `services/enterprise-workflow/src/server.ts` | 部分：四种读走快照，历史无团队锁，禁用复核、30 项 1 次查修订、草稿标题权限通过；深历史高峰待核 |
 | `工作流 GET /v1/facts` | `services/enterprise-workflow/src/server.ts` | 部分：团队及参与人范围、撤权，`performance.test.ts`、`read-transaction.test.ts` |
 | `工作流 GET /v1/guidelines` | `services/enterprise-workflow/src/server.ts` | 待核查 |

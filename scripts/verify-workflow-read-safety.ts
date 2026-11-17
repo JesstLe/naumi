@@ -31,6 +31,7 @@ async function main(){
  await pool.query("INSERT INTO app_team_access_grants(email,scope,starts_at,created_by,updated_by) VALUES($1,'owned',now()-interval '1 day','fixture','fixture')",[email]);
  await pool.query("INSERT INTO app_artworks(id,email,title,category,prompt,image_url,gradient) VALUES($1,$2,'Fixture','test','','',''),($3,$4,'Member fixture','test','','','')",[`owner-${id}`,email,`employee-${id}`,employee]);
 
+ const hangingAsset=randomUUID();
  const srv=createServer((request,response)=>{
   const url=new URL(request.url!,'http://fixture.invalid'),q=url.searchParams;
   if(request.method==='POST'){
@@ -41,6 +42,7 @@ async function main(){
   if(url.pathname==='/v1/imports/asset'){
    response.setHeader('content-type','application/octet-stream');response.end('binary fixture');return;
   }
+  if(['/v1/delivery/preview','/v1/demand-files/preview'].includes(url.pathname)&&q.get('id')===hangingAsset){srv.emit('fixture-media-wait',response);return;}
   response.setHeader('content-type','application/json');
   if(q.get('probe')==='cancel'){
    response.write('{"unfinished":');srv.emit('fixture-stream',response);
@@ -85,6 +87,14 @@ async function main(){
   await until(disconnected);
   const oversized=await until(GET(req('GET','oversize')));
   assert.equal(oversized.status,502);assert.equal((await oversized.json()).error,'WORKFLOW_RESPONSE_TOO_LARGE');
+  for(const route of ['files','demand-files'] as const){
+   const {GET:media}:{GET:(request:Request)=>Promise<Response>}=await import(`../src/app/api/enterprise/workflow/${route}/route`);
+   const abort=new AbortController(),seen=once(srv,'fixture-media-wait');
+   const pending=media(new Request(req().url.replace('/worklogs?','/'+route+'?')+`&action=preview&id=${hangingAsset}`,{headers:req().headers,signal:abort.signal}));
+   const [upstream]=await until(seen),closed=once(upstream,'close');abort.abort();const result=await until(pending);
+   assert.equal(result.status,503);assert.equal((await result.json()).error,'FILE_SERVICE_UNAVAILABLE');await until(closed);
+  }
+  console.log('WORKFLOW_MEDIA_PROXY_ABORT_PASS: demand_and_delivery_preview_close_upstream_before_headers=1');
 
   let canceled=false;
   const chunked=new Response(new ReadableStream({pull(c){c.enqueue(new Uint8Array(1024*1024));},cancel(){canceled=true;}}),{headers:{'content-type':'application/json'}});
