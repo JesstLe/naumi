@@ -43,6 +43,11 @@ try{
  report=await run('marker',[{...spec('one'),expect:'UNSEEN_MARKER'}]);eq(report.status,'FAIL');eq(report.cases[0].exit,0);eq(report.cases[0].marker,false);cases++;
  report=await run('wrong-sha',[spec('one')],{expectedSha:'f'.repeat(40)});eq(report.error,'SOURCE_SHA_MISMATCH');eq(report.notRun,1);cases++;
  report=await run('db',[spec('one','ok.mjs',true)]);eq(report.error,'ISOLATED_FIXTURE_DATABASE_REQUIRED');eq(report.notRun,1);cases++;
+ report=await run('published-video-media',[spec('video-parameter-regression-published','evidence.mjs',true)],{
+  env:{...process.env,NAUMI_VERIFY_ISOLATED_DB:'1',DATABASE_URL:'postgresql://fixture:fixture@127.0.0.1/refactor_fixture',STORAGE_DRIVER:'external',MEDIA_DIR:path.join(dir,'unused-media')},
+  commandFor:c=>[process.execPath,c.file,'MEDIA_DIR'],
+ });
+ eq(report.passed,1);eq(JSON.parse(await fs.readFile(path.join(dir,'output','published-video-media','video-parameter-regression-published','media','EVIDENCE_PORT.json'),'utf8')).out,path.join(dir,'output','published-video-media','video-parameter-regression-published','media'));cases++;
  await fs.writeFile(path.join(dir,'local.txt'),'draft');report=await run('dirty',[spec('one')]);eq(report.error,'DIRTY_SOURCE_NOT_ACCEPTED');await fs.unlink(path.join(dir,'local.txt'));cases++;
  report=await run('mutation',[spec('one','mutate.mjs'),spec('two')]);eq(report.error,'SOURCE_CHANGED_DURING_VERIFICATION');eq(report.cases[1].status,'NOT_RUN');await fs.unlink(path.join(dir,'marker.txt'));cases++;
  report=await run('reused',[spec('one')],{resume:path.join(dir,'output/pass/REPORT.json')});eq(report.cases[0].reused,true);eq(report.passed,1);cases++;
