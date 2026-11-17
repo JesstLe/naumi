@@ -15,7 +15,7 @@ import {deliveryDirectory,verifiedDeliveryFile,verifiedPath} from './delivery-fi
 import {scanVerdictSchema,type ScanPolicy,type ScanVerdict} from './file-scanner';
 import {deliveryUsage,directAssetId} from './delivery-quota';
 import {MAX_MULTIPART_BYTES} from './multipart-contracts';
-import {readWorkflowSnapshot} from './read-transaction';
+import {readWorkflowSnapshot,readWithCurrentScope} from './read-transaction';
 import {assetScanHistory,latestAssetScans} from './asset-scan-reads';
 import {openWorkflowMedia} from './workflow-media-read';
 // Server-only hooks; never parsed from the browser upload body.
@@ -56,7 +56,14 @@ export class DeliveryStore{
    return {assets:rows.map(r=>dto(r,states.get(r.id))),limit:200,maxBytes:this.maxBytes,scanRequired:this.scanPolicy.mode==='required'};
   },{signal,checkCurrent:(tx,a)=>check(tx,a,false)});
  }
- async library(p:Principal,raw:unknown={}){const q=deliveryLibraryQuery.parse(raw);return this.tx(p,async(tx,a)=>{const data=await deliveryLibraryRows(tx,a,q),states=await this.scanStates(tx,a.enterpriseId,data.rows);return {summary:data.summary,total:data.total,page:q.page,pageSize:24,scope:q.scope,state:q.state,query:q.query,scanRequired:this.scanPolicy.mode==='required',assets:data.rows.map(r=>({...dto(r,states.get(r.id)),order:{id:r.order_id as string,title:r.order_title as string,status:r.order_status as string,version:r.order_version as number},task:r.task_title?{id:r.task_id as string,title:r.task_title as string,status:r.task_status as string}:null,relation:r.relation}))};},true);}
+ async library(p:Principal,raw:unknown={},signal?:AbortSignal){const q=deliveryLibraryQuery.parse(raw);
+  return readWithCurrentScope(this.pool,this.resolveActor,p,async(tx,a)=>{
+   const data=await deliveryLibraryRows(tx,a,q),states=await this.scanStates(tx,a.enterpriseId,data.rows);
+   return {summary:data.summary,total:data.total,page:q.page,pageSize:24,scope:q.scope,state:q.state,query:q.query,scanRequired:this.scanPolicy.mode==='required',
+    assets:data.rows.map(r=>({...dto(r,states.get(r.id)),order:{id:r.order_id,title:r.order_title,status:r.order_status,version:r.order_version},
+     task:r.task_title?{id:r.task_id,title:r.task_title,status:r.task_status}:null,relation:r.relation}))};
+  },result=>result.assets.map(a=>a.orderId),{signal});
+ }
  async upload(p:Principal,raw:unknown,input:AsyncIterable<Uint8Array>|Iterable<Uint8Array>){return this.ingest(p,raw,input);}
  async uploadMultipart(p:Principal,raw:unknown,input:AsyncIterable<Uint8Array>|Iterable<Uint8Array>,context:MultipartIngestion){return this.ingest(p,raw,input,context);}
  async multipartReplay(p:Principal,raw:unknown,authorize:MultipartIngestion['authorize']){const c=deliveryUploadSchema.parse(raw);return this.tx(p,async(tx,a)=>{await this.order(tx,a,c.orderId);await authorize(tx,a,false);const row=(await tx.query('SELECT * FROM enterprise_workflow.delivery_assets WHERE enterprise_id=$1 AND id=$2',[a.enterpriseId,c.assetId])).rows[0];ensure(row&&row.uploader===a.subject&&row.order_id===c.orderId&&row.task_id===c.taskId&&row.name===c.name,'UPLOAD_RESULT_MISSING');await this.verifyFile(a.enterpriseId,row.sha256,Number(row.bytes));return {asset:dto(row,(await this.scanStates(tx,a.enterpriseId,[row])).get(row.id)),replayed:true};});}

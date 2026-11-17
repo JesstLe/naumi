@@ -2,6 +2,8 @@ import {DemandAssetStore} from '../src/demand-asset-store';
 import {CorrectionStore} from '../src/correction-store';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
+import {once} from 'node:events';
+import {setTimeout as delay} from 'node:timers/promises';
 import {mkdtemp,readFile,writeFile,rename,unlink} from 'node:fs/promises';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
@@ -10,16 +12,42 @@ import {DeliveryStore} from '../src/delivery-store';
 import {WorkflowStore} from '../src/store';
 import {resolveDatabaseActor} from '../src/identity';
 import type {Action,Principal} from '../src/contracts';
+import {createWorkflowServer} from '../src/server';
+import {whileReadWaits} from './read-transaction.test';
 export async function deliveryLibraryChecks(pool:Pool){
  const enterpriseId=randomUUID(),teamId=randomUUID(),otherTeam=randomUUID(),root=await mkdtemp(join(tmpdir(),'delivery-library-')),p=(subject:string,team=teamId):Principal=>({enterpriseId,teamId:team,subject});
  await pool.query('INSERT INTO enterprise_workflow.teams(enterprise_id,team_id)VALUES($1,$2),($1,$3)',[enterpriseId,teamId,otherTeam]);
  for(const [subject,permissions]of [['lead',['manage','request','dispatch','review']],['worker',['execute']],['next',['execute']],['unrelated',['request']],['outsider',['manage']]] as const){await pool.query('INSERT INTO enterprise_workflow.accounts(enterprise_id,subject)VALUES($1,$2)',[enterpriseId,subject]);await pool.query('INSERT INTO enterprise_workflow.team_members(enterprise_id,team_id,subject,permissions,work_kinds)VALUES($1,$2,$3,$4,\'["design"]\')',[enterpriseId,subject==='outsider'?otherTeam:teamId,subject,JSON.stringify(permissions)]);}
  const files=new DeliveryStore(pool,resolveDatabaseActor,root),store=new WorkflowStore(pool,resolveDatabaseActor,files.validate),orderId=randomUUID(),taskId=randomUUID();let o=(await store.execute(p('lead'),{commandId:randomUUID(),orderId,expectedVersion:0,action:{type:'create',title:'library demand',brief:'synthetic',acceptance:'immutable versions'}})).order;
  const act=async(subject:string,action:Action)=>{o=(await store.execute(p(subject),{commandId:randomUUID(),orderId,expectedVersion:o.version,action})).order;};await act('lead',{type:'submit-requirement'});await act('lead',{type:'approve-requirement'});await act('lead',{type:'plan-tasks',tasks:[{id:taskId,title:'library task',kind:'design',points:1,dueAt:new Date(Date.now()+86400000).toISOString(),dependencyIds:[]}]});await act('lead',{type:'publish'});await act('worker',{type:'claim',taskId});await act('worker',{type:'start',taskId});
- const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jZQAAAABJRU5ErkJggg==','base64'),upload=async(bytes=png,name='same-name.png')=>(await files.upload(p('worker'),{assetId:randomUUID(),orderId,taskId,expectedVersion:o.version,name},[bytes])).asset,assets=[];
+ const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jZQAAAABJRU5ErkJggg==','base64'),upload=async(bytes=png,name='same-name.png')=>(await files.upload(p('worker'),{assetId:randomUUID(),orderId,taskId,expectedVersion:o.version,name},[bytes])).asset;
+ const assets:Awaited<ReturnType<typeof upload>>[]=[];
  for(let i=0;i<27;i++)assets.push(await upload());
  const first=await files.library(p('worker')),second=await files.library(p('worker'),{page:2}),empty=await files.library(p('worker'),{page:100});assert.equal(first.total,27);assert.equal(first.assets.length,24);assert.equal(second.assets.length,3);assert.equal(empty.total,27);assert.equal(empty.assets.length,0);assert.equal(new Set([...first.assets,...second.assets].map(a=>a.id)).size,27);assert.equal(new Set(first.assets.map(a=>a.sha256)).size,1);assert.deepEqual(first.summary,{total:27,candidate:27,submitted:0,historical:0,accepted:0});assert.equal((await files.library(p('lead'),{scope:'mine'})).total,0);assert.equal((await files.library(p('worker'),{scope:'mine'})).total,27);assert.equal((await files.library(p('worker'),{query:'LIBRARY TASK'})).total,27);assert.equal((await files.library(p('worker'),{query:'nothing'})).total,0);
  assert.equal((await files.library(p('unrelated'))).total,0);assert.equal((await files.library(p('outsider',otherTeam))).total,0);await assert.rejects(files.library({...p('worker'),enterpriseId:randomUUID()}),/MEMBERSHIP_REQUIRED/);await assert.rejects(files.library(p('worker'),{page:0}));await assert.rejects(files.library(p('worker'),{query:'a'.repeat(121)}));assert(!JSON.stringify(first).includes('fingerprint'));assert(!JSON.stringify(first).includes(root));
+ const legacy=new DeliveryStore(pool,(tx,principal)=>resolveDatabaseActor(tx,principal),root);
+ const lockMember=()=>pool.query("SELECT subject FROM enterprise_workflow.team_members WHERE enterprise_id=$1 AND team_id=$2 AND subject='worker' FOR UPDATE NOWAIT",[enterpriseId,teamId]);
+ const oldWaiting=await whileReadWaits(pool,'events',()=>legacy.library(p('worker')),async()=>{await assert.rejects(lockMember(),{code:'55P03'});});
+ const newWaiting=await whileReadWaits(pool,'events',()=>files.library(p('worker')),async()=>{assert.equal((await lockMember()).rowCount,1);});
+ assert.equal(oldWaiting.status,'fulfilled');assert.deepEqual(newWaiting,oldWaiting);
+ const member=(enabled:boolean)=>pool.query("UPDATE enterprise_workflow.team_members SET enabled=$3 WHERE enterprise_id=$1 AND team_id=$2 AND subject='worker'",[enterpriseId,teamId,enabled]);
+ const revoked=await whileReadWaits(pool,'events',()=>files.library(p('worker')),async()=>{await member(false);});
+ assert.equal(revoked.status,'rejected');assert.equal(revoked.reason.code,'MEMBERSHIP_REQUIRED');await member(true);
+ const move=(team:string)=>pool.query("UPDATE enterprise_workflow.orders SET document=jsonb_set(jsonb_set(document,'{teamId}',to_jsonb($3::text)),'{requestTeamId}',to_jsonb($3::text)) WHERE enterprise_id=$1 AND id=$2",[enterpriseId,orderId,team]);
+ const changed=await whileReadWaits(pool,'events',()=>files.library(p('worker')),async()=>{await move(otherTeam);});
+ assert.equal(changed.status,'rejected');assert.equal(changed.reason.code,'READ_SCOPE_CHANGED');
+ await pool.query('UPDATE enterprise_workflow.orders SET document=$3 WHERE enterprise_id=$1 AND id=$2',[enterpriseId,orderId,o]);
+ const server=createWorkflowServer(store,async()=>p('worker'),undefined,undefined,undefined,files);server.listen(0,'127.0.0.1');await once(server,'listening');
+ try{
+  const address=server.address();assert(address&&typeof address!=='string');const url=`http://127.0.0.1:${address.port}/v1/delivery/library`;
+  const abort=new AbortController(),stopped=await whileReadWaits(pool,'events',()=>fetch(url,{signal:abort.signal}),async()=>{
+   assert.equal(pool.totalCount-pool.idleCount,2);abort.abort();
+   for(let i=0;i<50&&pool.totalCount-pool.idleCount>1;i++)await delay(10);
+   assert.equal(pool.totalCount-pool.idleCount,1,'disconnected library must return its slot while events are still locked');
+  });
+  assert.equal(stopped.status,'rejected');assert.equal(stopped.reason.name,'AbortError');const retry=await fetch(url);assert.equal(retry.status,200);assert.equal((await retry.json() as {total:number}).total,27);
+ }finally{server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));}
+ console.log('DELIVERY_LIBRARY_READ_SAFETY_PASS: legacy_locks_membership=1 snapshot_allows_write=1 member_and_order_scope_revocation_denied=2 http_abort_releases_pool_slot_before_lock=1 retry_27=1');
  const bytes=async(stream:AsyncIterable<Buffer>)=>{const c=[];for await(const b of stream)c.push(b);return Buffer.concat(c);};const image=await files.preview(p('lead'),assets[0].id);assert.equal(image.mime,'image/png');assert(image.inline);assert.deepEqual(await bytes(image.stream),png);
  const fake=await upload(Buffer.from('<svg onload="alert(1)"></svg>'),'fake.png');await assert.rejects(files.preview(p('worker'),fake.id),/ASSET_PREVIEW_NOT_SUPPORTED/);
  const large=Buffer.from(png);large.writeUInt32BE(8193,16);const tooWide=await upload(large);await assert.rejects(files.preview(p('worker'),tooWide.id),/ASSET_PREVIEW_UNAVAILABLE/);large.writeUInt32BE(5000,16);large.writeUInt32BE(5000,20);const tooMany=await upload(large);await assert.rejects(files.preview(p('worker'),tooMany.id),/ASSET_PREVIEW_UNAVAILABLE/);
@@ -34,6 +62,13 @@ export async function deliveryLibraryChecks(pool:Pool){
  const infected=new DeliveryStore(pool,resolveDatabaseActor,root,32*1024*1024,2*1024**3,{mode:'required',key:'d'.repeat(64),label:'synthetic library scan',maxAgeMs:3600000,scan:async input=>{for await(const b of input)assert(b.length);return {status:'infected',engine:'fixture',signature:'fixture',reason:null};}});await infected.rescan(p('lead'),assets[1].id);assert.equal((await files.library(p('worker'),{state:'accepted'})).assets[0].scan?.usable,false);await assert.rejects(files.preview(p('worker'),assets[1].id),/ASSET_QUARANTINED/);await assert.rejects(files.download(p('worker'),assets[1].id),/ASSET_QUARANTINED/);await act('lead',{type:'archive'});assert.equal((await files.library(p('worker'),{state:'accepted'})).assets[0].order.status,'archived');
  const cancelledOrder=randomUUID(),cancelledTask=randomUUID();let cv=0;const ca=async(action:Action,subject='lead')=>{const r=await store.execute(p(subject),{commandId:randomUUID(),orderId:cancelledOrder,expectedVersion:cv,action});cv=r.order.version;};await ca({type:'create',title:'cancel history',brief:'synthetic',acceptance:'retained'});await ca({type:'submit-requirement'});await ca({type:'approve-requirement'});await ca({type:'plan-tasks',tasks:[{id:cancelledTask,title:'cancel task',kind:'design',points:1,dueAt:new Date(Date.now()+86400000).toISOString(),dependencyIds:[]}]});await ca({type:'publish'});await ca({type:'claim',taskId:cancelledTask},'worker');await ca({type:'start',taskId:cancelledTask},'worker');const cf=(await files.upload(p('worker'),{assetId:randomUUID(),orderId:cancelledOrder,taskId:cancelledTask,expectedVersion:cv,name:'cancelled.png'},[png])).asset;await ca({type:'submit-delivery',taskId:cancelledTask,assetIds:[cf.id],note:'before cancel'},'worker');await ca({type:'cancel',reason:'explicit cancellation'});const cancelled=(await files.library(p('worker'),{query:'cancelled.png'})).assets[0];assert.equal(cancelled.relation.state,'historical');assert.equal(cancelled.order.status,'cancelled');
  const audit=(await pool.query("SELECT detail FROM enterprise_workflow.delivery_asset_audit WHERE enterprise_id=$1 AND asset_id=$2 AND operation='download'",[enterpriseId,assets[0].id])).rows;assert(audit.length>=2&&audit.every(x=>x.detail.deliveryMode==='preview'));
+ // Preserve the old JSONB ? reference semantics and never attribute another task/order's evidence.
+ const insertEvidence=(id:string,order:string,version:number,task:string,assetIds:unknown)=>pool.query('INSERT INTO enterprise_workflow.events(enterprise_id,id,order_id,aggregate_version,event) VALUES($1,$2,$3,$4,$5)',[enterpriseId,id,order,version,{actor:'legacy-evidence',occurredAt:'2030-01-01T00:00:00Z',data:{action:{type:'submit-delivery',taskId:task,assetIds}}}]);
+ const latest=randomUUID();await insertEvidence(latest,orderId,o.version+10,taskId,{[assets[0].id]:true});
+ await insertEvidence(randomUUID(),orderId,o.version+11,randomUUID(),[assets[0].id]);
+ await insertEvidence(randomUUID(),cancelledOrder,cv+12,taskId,[assets[0].id]);
+ const legacyEvidence=(await files.library(p('worker'),{state:'historical'})).assets.find(a=>a.id===assets[0].id);
+ assert.equal(legacyEvidence?.relation.submission?.id,latest);assert.equal(legacyEvidence?.relation.submission?.version,o.version+10);
  await pool.query("UPDATE enterprise_workflow.team_members SET enabled=false WHERE enterprise_id=$1 AND subject='worker'",[enterpriseId]);await assert.rejects(files.library(p('worker')),/MEMBERSHIP_REQUIRED/);await assert.rejects(files.preview(p('worker'),assets[0].id),/MEMBERSHIP_REQUIRED/);
  // A second newly-created database carries exactly migrations 1..8, not a newer schema with a forged version.
  const legacyName='library_legacy_'+randomUUID().replaceAll('-',''),connection=new URL(process.env.WORKFLOW_IMPORT_TEST_DATABASE_URL!);assert.equal(connection.hostname,'127.0.0.1');await pool.query('CREATE DATABASE '+legacyName);connection.pathname='/'+legacyName;const old=new pg.Pool({connectionString:connection.toString()});

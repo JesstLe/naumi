@@ -96,10 +96,10 @@ export function readWithCurrentScope<T>(
   principal: Principal,
   project: (tx: PoolClient, actor: Actor, snapshot: boolean) => Promise<T>,
   orderIds: (result: T) => readonly string[],
-  options: {missing?: 'NOT_FOUND' | 'READ_SCOPE_CHANGED'; legacyRepeatable?: boolean} = {},
+  options: {missing?: 'NOT_FOUND' | 'READ_SCOPE_CHANGED'; legacyRepeatable?: boolean; signal?: AbortSignal} = {},
 ): Promise<T> {
   const {missing = 'READ_SCOPE_CHANGED', legacyRepeatable = true} = options;
-  return readWorkflowSnapshot(pool, resolve, principal, project, {legacyRepeatable, checkCurrent: async (tx, actor, result) => {
+  return readWorkflowSnapshot(pool, resolve, principal, project, {legacyRepeatable, signal:options.signal, checkCurrent: async (tx, actor, result) => {
     const ids = [...new Set(orderIds(result))];
     if (!ids.length) return;
     const values = [actor.enterpriseId, actor.teamId ?? null, actor.permissions.some(p => ['manage','dispatch','review'].includes(p)), actor.subject,
