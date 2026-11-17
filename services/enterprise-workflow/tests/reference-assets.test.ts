@@ -3,7 +3,7 @@ import {randomUUID,createHash} from 'node:crypto';
 import {mkdtemp,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import type {Pool} from 'pg';
+import type {Pool,PoolClient} from 'pg';
 import {ImportStore} from '../src/import-store';
 import {ReferenceStore} from '../src/reference-store';
 import {FormalImportStore} from '../src/formal-import-store';
@@ -11,6 +11,7 @@ import {WorkflowStore} from '../src/store';
 import {resolveDatabaseActor} from '../src/identity';
 import {sourceDigest,openSourceFile} from '../src/source-files';
 import type {Action,Principal} from '../src/contracts';
+import {whileReadWaits} from './read-transaction.test';
 export async function referenceAssetChecks(pool:Pool){
  const enterpriseId=randomUUID(),teamId=randomUUID(),otherTeam=randomUUID(),root=await mkdtemp(join(tmpdir(),'naumi-reference-')),source='8'.repeat(64),p=(subject:string,team=teamId):Principal=>({enterpriseId,teamId:team,subject});
  await pool.query('INSERT INTO enterprise_workflow.teams(enterprise_id,team_id)VALUES($1,$2),($1,$3)',[enterpriseId,teamId,otherTeam]);for(const [subject,permissions,kinds,team]of [['lead',['manage','request','dispatch','review'],[],teamId],['worker',['execute'],['design'],teamId],['artist',['execute'],['artwork'],teamId],['other',['execute'],['design'],otherTeam]] as const){await pool.query('INSERT INTO enterprise_workflow.accounts(enterprise_id,subject)VALUES($1,$2)',[enterpriseId,subject]);await pool.query('INSERT INTO enterprise_workflow.team_members(enterprise_id,team_id,subject,permissions,work_kinds)VALUES($1,$2,$3,$4,$5)',[enterpriseId,team,subject,JSON.stringify(permissions),JSON.stringify(kinds)]);}await pool.query("INSERT INTO enterprise_workflow.person_directory_admins(enterprise_id,subject)VALUES($1,'lead')",[enterpriseId]);
@@ -35,6 +36,17 @@ export async function referenceAssetChecks(pool:Pool){
  for(let i=0;i<25;i++){const id=randomUUID(),copy={...order,id,title:'reference-copy-'+i},rowNumber=100+i,sourceRow={...payload.rows[0],excelRow:rowNumber};await pool.query('INSERT INTO enterprise_workflow.import_rows(enterprise_id,source_hash,row_number,document)VALUES($1,$2,$3,$4)',[enterpriseId,source,rowNumber,sourceRow]);await pool.query('INSERT INTO enterprise_workflow.orders(enterprise_id,id,version,document)VALUES($1,$2,$3,$4)',[enterpriseId,id,copy.version,copy]);await pool.query("INSERT INTO enterprise_workflow.order_sources(enterprise_id,order_id,source_hash,row_number,source_version,snapshot)SELECT enterprise_id,$3,source_hash,$4,source_version,jsonb_set(snapshot,'{referenceRowHash}',to_jsonb($5::text)) FROM enterprise_workflow.order_sources WHERE enterprise_id=$1 AND order_id=$2",[enterpriseId,orderId,id,rowNumber,sourceDigest(sourceRow)]);}
 
  const lp1=await refs.library(p('lead')),lp2=await refs.library(p('lead'),{page:2});assert.equal(lp1.total,26);assert.equal(lp1.assets.length,24);assert.equal(lp2.assets.length,2);assert.equal(new Set([...lp1.assets,...lp2.assets].map(a=>a.order.id)).size,26);assert.equal(new Set([...lp1.assets,...lp2.assets].map(a=>a.id)).size,1);
+ let selectCount=0;const counted={connect:async()=>{const c=await pool.connect();return {query:(sql:string,values?:unknown[])=>{if(/^(SELECT|WITH)\b/.test(sql))selectCount++;return c.query(sql,values);},release:c.release.bind(c)};}} as unknown as Pool;
+ const countedPage=await new ReferenceStore(counted,resolveDatabaseActor,{[enterpriseId]:root}).library(p('lead'));
+ assert.deepEqual(countedPage,lp1);assert.equal(selectCount,7);
+ const holdAssets=(c:PoolClient)=>c.query('LOCK TABLE enterprise_workflow.import_assets IN ACCESS EXCLUSIVE MODE');
+ const update=async(sql:string,params:unknown[])=>{const c=await pool.connect();try{await c.query('BEGIN');await c.query("SET LOCAL lock_timeout='400ms'");assert.equal((await c.query(sql,params)).rowCount,1);await c.query('COMMIT');}finally{try{await c.query('ROLLBACK');}finally{c.release();}}};
+ const revoked=await whileReadWaits(pool,holdAssets,()=>refs.library(p('lead')),()=>update("UPDATE enterprise_workflow.team_members SET enabled=false WHERE enterprise_id=$1 AND team_id=$2 AND subject='lead'",[enterpriseId,teamId]));
+ assert.equal(revoked.status,'rejected');assert.match(String(revoked.reason),/MEMBERSHIP_REQUIRED/);
+ await update("UPDATE enterprise_workflow.team_members SET enabled=true WHERE enterprise_id=$1 AND team_id=$2 AND subject='lead'",[enterpriseId,teamId]);
+ const changed=await whileReadWaits(pool,holdAssets,()=>refs.library(p('lead')),()=>update('UPDATE enterprise_workflow.import_batches SET active=false WHERE enterprise_id=$1 AND source_hash=$2',[enterpriseId,source]));
+ assert.equal(changed.status,'rejected');assert.match(String(changed.reason),/REFERENCE_CHANGED/);await local.active(source,true,'fixture');
+ console.log(`REFERENCE_BATCH_READ_PASS: page24=1 total_selects=${selectCount} member_revocation_no_lock=1 source_revocation_no_lock=1 stale_projection_denied=1`);
  await local.active(source,false,'fixture');assert((await refs.library(p('lead'))).assets.every(a=>a.reason==='SOURCE_INACTIVE'));await local.active(source,true,'fixture');assert((await new ReferenceStore(pool,resolveDatabaseActor).library(p('lead'))).assets.every(a=>a.reason==='SOURCE_STORAGE_NOT_CONFIGURED'));
  console.log('REFERENCE_LIBRARY_PASS: selected_only=1 legacy_empty=1 pagination26=1 hash_multiple_orders=1 scope_mine=1 empty_total=1 search=1 source_inactive=1 storage_missing=1 minimal_dto=1');
  console.log('REFERENCE_ASSETS_PASS: explicit_selection=1 sibling_denied=1 legacy_empty=1 snapshot=1 normal_worker_read=1 whole_source_denied=1 tenant_team_scope=1 original_png_bytes=1 inactive_denied=1 changed_metadata_denied=1 corrupt_file_denied=1 post_hash_revoke=1 preview_bounds=1 delivery_not_forged=1 source_unchanged=1');

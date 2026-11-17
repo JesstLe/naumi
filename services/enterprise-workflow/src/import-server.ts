@@ -1,3 +1,4 @@
+import {sendWorksheetDownload} from './source-worksheet-download';
 import {SourceWorksheetStore,type SheetAuthorize} from './source-worksheet-store';
 import {ReferenceStore} from './reference-store';
 import { createServer,type IncomingMessage } from 'node:http';
@@ -36,7 +37,7 @@ export function createImportServer(store:ImportStore,secret:string,options:{sour
    if(url.pathname.startsWith('/v1/import/worksheet')){
     if(req.method==='GET'&&url.pathname==='/v1/import/worksheet')return json(200,await worksheet.read(local,source));
     if(req.method==='GET'&&url.pathname==='/v1/import/worksheet-audit')return json(200,await worksheet.history(local,source,Number(url.searchParams.get('before')||2147483647)));
-    if(req.method==='GET'&&url.pathname==='/v1/import/worksheet-file'){const f=await worksheet.file(local,source,url.searchParams.get('id')||'');const inline=url.searchParams.get('download')!=='1'&&['image/png','image/jpeg'].includes(f.mime);res.writeHead(200,{'content-type':inline?f.mime:'application/octet-stream','content-length':f.bytes,'content-disposition':(inline?'inline':'attachment')+"; filename*=UTF-8''"+encodeURIComponent(f.name).replaceAll("'",'%27'),'cache-control':'private, no-store','x-content-type-options':'nosniff','content-security-policy':"default-src 'none'; sandbox",'x-content-sha256':f.id});res.end(f.content);return;}
+    if(req.method==='GET'&&url.pathname==='/v1/import/worksheet-file'){await sendWorksheetDownload(req,res,url.searchParams.get('download')==='1',signal=>worksheet.file(local,source,url.searchParams.get('id')||'',signal));return;}
     if(req.method==='POST'&&['/v1/import/worksheet-command','/v1/import/worksheet-upload'].includes(url.pathname)){
      if(!req.headers['content-type']?.startsWith('application/json'))throw new WorkflowError(415,'JSON_REQUIRED');const chunks:Buffer[]=[];let size=0;for await(const b of req){size+=b.length;if(size>(url.pathname.endsWith('upload')?6*1024*1024:128*1024))throw new WorkflowError(413,'BODY_TOO_LARGE');chunks.push(b);}let input;try{input=JSON.parse(Buffer.concat(chunks).toString());}catch{throw new WorkflowError(400,'INVALID_JSON');}return json(200,url.pathname.endsWith('upload')?await worksheet.upload(local,source,input):await worksheet.execute(local,source,input));
     }

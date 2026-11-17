@@ -1,4 +1,5 @@
 import type {ReferenceStore} from './reference-store';
+import {sendWorksheetDownload} from './source-worksheet-download';
 import {PreflightStore} from './preflight-store';
 import {PublicationFiles,publicationFileQuery,publicationFileId} from './publication-files';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
@@ -108,7 +109,7 @@ export function createWorkflowServer(store: WorkflowStore, authenticate: Authent
         if(req.method==='GET'&&url.pathname==='/v1/imports/worksheet-audit')return json(res,200,await sheet.history(principal,source,Number(url.searchParams.get('before')||2147483647)));
         if(req.method==='POST'&&url.pathname==='/v1/imports/worksheet-command')return json(res,200,await sheet.execute(principal,source,await body(req)));
         if(req.method==='POST'&&url.pathname==='/v1/imports/worksheet-upload')return json(res,200,await sheet.upload(principal,source,await body(req,6*1024*1024)));
-        if(req.method==='GET'&&url.pathname==='/v1/imports/worksheet-file'){const f=await sheet.file(principal,source,url.searchParams.get('id')||'');const inline=url.searchParams.get('download')!=='1'&&['image/png','image/jpeg'].includes(f.mime);res.writeHead(200,{'Content-Type':inline?f.mime:'application/octet-stream','Content-Length':f.bytes,'Content-Disposition':(inline?'inline':'attachment')+"; filename*=UTF-8''"+encodeURIComponent(f.name).replaceAll("'",'%27'),'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; sandbox",'X-Content-SHA256':f.id});res.end(f.content);return;}
+        if(req.method==='GET'&&url.pathname==='/v1/imports/worksheet-file'){await sendWorksheetDownload(req,res,url.searchParams.get('download')==='1',signal=>sheet.file(principal,source,url.searchParams.get('id')||'',signal));return;}
         throw new WorkflowError(405,'METHOD_NOT_ALLOWED');
       }
       if(imports&&req.method==='GET'&&url.pathname==='/v1/imports/context')return json(res,200,await imports.context(principal));

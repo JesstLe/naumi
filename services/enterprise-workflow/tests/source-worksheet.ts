@@ -34,6 +34,7 @@ try{
  const original=await snapshot();const initial=await store.read(p,source);ok(initial.version===0&&!initial.persisted&&initial.document.rows.length===3);ok((await pool.query('SELECT count(*) FROM enterprise_workflow.source_worksheets')).rows[0].count==='0');
  await assert.rejects(()=>store.read({...p,subject:'fixture-employee'},source),(e:any)=>e.code==='FORBIDDEN');checks++;
  await assert.rejects(()=>store.read(foreign,source),(e:any)=>e.code==='FORBIDDEN');checks++;
+ const download=async(id:string)=>{const file=await store.file(p,source,id),parts=[];for await(const part of file.stream)parts.push(part);return Buffer.concat(parts);};
  const sheetRow=async(id:string)=>{const row=(await store.read(p,source)).document.rows.find(item=>item.id===id);assert(row);return row;};
  const sheetColumn=async(id:string)=>{const column=(await store.read(p,source)).document.columns.find(item=>item.id===id);assert(column);return column;};
  const sheetRefs=async(id:string,field:string)=>{const refs=(await sheetRow(id)).cells[field];assert(Array.isArray(refs));return refs;};
@@ -54,8 +55,8 @@ try{
  await run({type:'delete-column',column:'custom_score'});await run({type:'restore-column',column:'custom_score'});ok((await sheetRow('new-row')).cells.custom_score==='2.5');
  await assert.rejects(()=>run({type:'delete-column',column:'title'}),(e:any)=>e.code==='TITLE_REQUIRED');checks++;
  await assert.rejects(()=>run({type:'add-column',column:{...c,id:'__proto__'}}));checks++;
- const image=await store.upload(p,source,{name:'sample.png',data:png.toString('base64')});ok(image.mime==='image/png');await run({type:'set-cells',row:'new-row',cells:{image:[{kind:image.kind,id:image.id,name:image.name}]}});const file=await store.file(p,source,image.id);ok(file.content.equals(png));
- await run({type:'set-cells',row:'new-row',cells:{image:[]}});ok((await sheetRow('new-row')).cells.image.length===0);ok((await store.file(p,source,image.id)).content.equals(png));
+ const image=await store.upload(p,source,{name:'sample.png',data:png.toString('base64')});ok(image.mime==='image/png');await run({type:'set-cells',row:'new-row',cells:{image:[{kind:image.kind,id:image.id,name:image.name}]}});ok((await download(image.id)).equals(png));
+ await run({type:'set-cells',row:'new-row',cells:{image:[]}});ok((await sheetRow('new-row')).cells.image.length===0);ok((await download(image.id)).equals(png));
  await assert.rejects(()=>store.upload(p,source,{name:'broken.png',data:Buffer.from('not image').toString('base64')}),(e:any)=>e.code==='INVALID_IMAGE');checks++;
  await assert.rejects(()=>store.upload(p,source,{name:'../unsafe.png',data:png.toString('base64')}));checks++;
  const pdf=await store.upload(p,source,{name:'brief.pdf',data:Buffer.from('%PDF-fixture').toString('base64')});await run({type:'set-cells',row:'new-row',cells:{files:[{kind:pdf.kind,id:pdf.id,name:pdf.name}]}});
@@ -71,7 +72,7 @@ try{
  const invalid=await store.upload(p,source,{name:'invalid-revision.json',data:Buffer.from(JSON.stringify({...manifest,patches:[{sheet:'Sheet1',cell:'__proto__',type:'text',value:'bad'}]})).toString('base64')});
  await assert.rejects(()=>run({type:'set-cells',row:'new-row',cells:{files:[{...manifest.base,excelRevision:invalid.id}]}}),(e:any)=>e.code==='EXCEL_REVISION_INVALID');checks++;
  await assert.rejects(()=>run({type:'set-cells',row:'new-row',cells:{image:[{kind:image.kind,id:image.id,name:image.name,excelRevision:revision.id}]}}),(e:any)=>e.code==='EXCEL_REVISION_INVALID');checks++;
- ok((await store.file(p,source,excel.id)).content.equals(Buffer.from('PK-excel-source-fixture')));
+ ok((await download(excel.id)).equals(Buffer.from('PK-excel-source-fixture')));
  // G63: dedicated full-workbook saves stay atomic, CAS-bound and isolated from 4MiB generic uploads.
  const officeZip=new JSZip();officeZip.file('[Content_Types].xml','<Types/>');officeZip.file('xl/workbook.xml','<workbook/>');officeZip.file('xl/media/large.bin',Buffer.alloc(4*1024*1024+1024,1));const officeBytes=await officeZip.generateAsync({type:'nodebuffer',compression:'STORE'});
  const officeRefs=await sheetRefs('new-row','files');
@@ -79,7 +80,7 @@ try{
  await assert.rejects(()=>store.officeSave(foreign,source,officeInput,officeBytes));checks++;
  await assert.rejects(()=>store.officeSave(p,source,officeInput,Buffer.from('bad zip')),(e:any)=>e.code==='INVALID_OFFICE_FILE');checks++;
  await run({type:'set-cells',row:'e4',cells:{title:'其他任务并行修改'}});
- const full=await store.officeSave(p,source,officeInput,officeBytes);version=full.version;ok((await sheetRow('e4')).cells.title==='其他任务并行修改');ok((await store.file(p,source,full.ref.id)).bytes>4*1024*1024);ok((await sheetRefs('new-row','files'))[0].id===full.ref.id);
+ const full=await store.officeSave(p,source,officeInput,officeBytes);version=full.version;ok((await sheetRow('e4')).cells.title==='其他任务并行修改');ok((await download(full.ref.id)).equals(officeBytes));ok((await sheetRefs('new-row','files'))[0].id===full.ref.id);
  ok((await store.officeSave(p,source,officeInput,officeBytes)).replayed===true);
  const quotaBefore=(await pool.query('SELECT count(*)::int AS n FROM enterprise_workflow.source_worksheet_files')).rows[0].n;officeZip.file('xl/another.xml','<changed/>');const different=await officeZip.generateAsync({type:'nodebuffer',compression:'STORE'});
  await assert.rejects(()=>store.officeSave(p,source,{...officeInput,commandId:randomUUID()},different),(e:any)=>e.code==='VERSION_CONFLICT');checks++;ok((await pool.query('SELECT count(*)::int AS n FROM enterprise_workflow.source_worksheet_files')).rows[0].n===quotaBefore);

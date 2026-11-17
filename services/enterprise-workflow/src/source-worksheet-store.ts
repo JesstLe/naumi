@@ -8,6 +8,7 @@ import {WorkflowError,type Principal} from './contracts';
 import {sourceDigest} from './source-files';
 import {importRead,requireActiveImportBatch} from './import-read';
 import {projectImportedWorksheet,type WorksheetSeed} from './source-worksheet-seed';
+import {prepareWorksheetDownload,type WorksheetDownload} from './source-worksheet-download';
 
 const hash=z.string().regex(/^[a-f0-9]{64}$/),key=z.string().regex(/^[A-Za-z0-9_-]{1,80}$/).refine(v=>!['__proto__','constructor','prototype'].includes(v));
 const fileRef=z.strictObject({kind:z.enum(['source','worksheet']),id:hash,name:z.string().min(1).max(500),excelRevision:hash.optional()});
@@ -119,13 +120,16 @@ export class SourceWorksheetStore{
   const id=createHash('sha256').update(data).digest('hex');return this.tx(p,source,true,async c=>{await c.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`worksheet:${p.enterpriseId}:${source}`]);const existing=(await c.query('SELECT name,mime FROM enterprise_workflow.source_worksheet_files WHERE enterprise_id=$1 AND source_hash=$2 AND id=$3',[p.enterpriseId,source,id])).rows[0];if(existing)return {kind:'worksheet' as const,id,name:existing.name,mime:existing.mime};need((await c.query('SELECT count(*)::int AS n,COALESCE(sum(bytes) FILTER (WHERE mime <> \'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\'),0)::bigint AS bytes FROM enterprise_workflow.source_worksheet_files WHERE enterprise_id=$1 AND source_hash=$2',[p.enterpriseId,source])).rows.every(r=>r.n<1000&&Number(r.bytes)+data.length<=128*1024*1024),'FILE_QUOTA',413);
    await c.query('INSERT INTO enterprise_workflow.source_worksheet_files(enterprise_id,source_hash,id,name,mime,bytes,content,subject)VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING',[p.enterpriseId,source,id,q.name,mime,data.length,data,p.subject]);return {kind:'worksheet' as const,id,name:q.name,mime};});
  }
- async file(p:Principal,source:string,id:string){
+ async file(p:Principal,source:string,id:string,signal?:AbortSignal):Promise<WorksheetDownload>{
   hash.parse(id);
-  const file=await this.readSession(p,source,async c=>(await c.query<{name:string;mime:string;bytes:number;content:Buffer;revision:string}>(
-   'SELECT name,mime,bytes,content,xmin::text AS revision FROM enterprise_workflow.source_worksheet_files WHERE enterprise_id=$1 AND source_hash=$2 AND id=$3',[p.enterpriseId,source,id])).rows[0]);
-  need(file,'ASSET_NOT_FOUND',404);const {revision,...asset}=file;
-  need(asset.content.length===asset.bytes&&createHash('sha256').update(asset.content).digest('hex')===id,'FILE_HASH_MISMATCH',503);
-  await this.readSession(p,source,async c=>{need((await c.query('SELECT 1 FROM enterprise_workflow.source_worksheet_files WHERE enterprise_id=$1 AND source_hash=$2 AND id=$3 AND xmin::text=$4',[p.enterpriseId,source,id,revision])).rowCount,'ASSET_NOT_FOUND',404);});
-  return {...asset,id};
+  const file=await this.readSession(p,source,async c=>(await c.query<{name:string;mime:string;bytes:number;stored_bytes:number;revision:string}>(
+   'SELECT name,mime,bytes,octet_length(content) AS stored_bytes,xmin::text AS revision FROM enterprise_workflow.source_worksheet_files WHERE enterprise_id=$1 AND source_hash=$2 AND id=$3',[p.enterpriseId,source,id])).rows[0]);
+  need(file,'ASSET_NOT_FOUND',404);need(file.stored_bytes===file.bytes,'FILE_HASH_MISMATCH',503);
+  const keys=[p.enterpriseId,source,id,file.revision];
+  const stream=await prepareWorksheetDownload(file.bytes,id,(offset,length)=>importRead(this.pool,true,async c=>{
+   const chunk=(await c.query<{chunk:Buffer}>('SELECT substring(content FROM $5::int FOR $6::int) AS chunk FROM enterprise_workflow.source_worksheet_files WHERE enterprise_id=$1 AND source_hash=$2 AND id=$3 AND xmin::text=$4',[...keys,offset+1,length])).rows[0];
+   need(chunk,'ASSET_NOT_FOUND',404);return chunk.chunk;
+  },15000),()=>this.readSession(p,source,async c=>{need((await c.query('SELECT 1 FROM enterprise_workflow.source_worksheet_files WHERE enterprise_id=$1 AND source_hash=$2 AND id=$3 AND xmin::text=$4',keys)).rowCount,'ASSET_NOT_FOUND',404);}),signal);
+  return {name:file.name,mime:file.mime,bytes:file.bytes,id,stream};
  }
 }
