@@ -29,7 +29,14 @@ try{
  await reset();await mount();await ready('model-a');assert.equal(await page.evaluate(()=>window.requests.length),1);await capture('two actual React subscribers share one initial read and full metadata');
  await page.evaluate(()=>window.views.one.setSelected('model-b'));await ready('model-b');await capture('published explicit selection updates every subscriber');
  await page.evaluate(data=>{window.payload=data;window.refresh()},catalog('model-a',12));await page.waitForFunction(()=>window.views.one.catalog?.version===12&&window.views.two.catalog?.version===12);assert.equal(await page.evaluate(()=>window.requests.length),2);await capture('refresh preserves shared Canvas preference and delivers same catalogue');
- await page.evaluate(()=>window.feature('tool.cutout'));await page.waitForFunction(()=>window.views.one.catalog&&window.views.one.selected==='');assert.equal(await page.evaluate(()=>window.ensure()),undefined);await capture('configured processor ignores selectable preference');
+ const cutout={...catalog('cutout-a',12),feature:'tool.cutout',models:[model('cutout-a'),model('cutout-b')]};
+ await page.evaluate(data=>{window.payload=data;window.feature('tool.cutout')},cutout);await ready(baseline?'':'cutout-a');
+ assert.equal((await read()).one.catalog.feature,'tool.cutout');assert.equal(await page.evaluate(()=>window.ensure()),baseline?undefined:'cutout-a');
+ if(!baseline){
+  await page.evaluate(()=>window.views.one.setSelected('cutout-b'));await ready('cutout-b');assert.equal(await page.evaluate(()=>window.ensure()),'cutout-b');
+  await page.evaluate(data=>{window.payload=data;window.feature('canvas.image')},catalog('model-a',12));await ready('model-b');assert.equal((await read()).one.catalog.feature,'canvas.image');
+ }
+ pass(baseline?'configured processor ignores selectable preference':'tool catalogue accepts only its own published choices and preserves Canvas preference');
  await reset();await mount();await ready('model-a');await page.evaluate(()=>{window.status=503;window.payload={error:'fixture catalogue unavailable'};window.refresh()});await page.waitForFunction(()=>window.views.one.error&&window.views.two.error);issues.failedReadSelection=await page.evaluate(()=>window.direct().chosen?1:0);assert.equal(issues.failedReadSelection,baseline?1:0);assert.equal((await read()).one.catalog,null);pass('failed catalogue remains an error,not successful empty data or a usable old selection');
  for(const dimension of ['actor','workspace']){
   await reset();await mount();await ready('model-a');await page.evaluate(d=>{window.auto=false;d==='actor'?window.actor('actor-b@fixture.invalid'):window.workspace('enterprise:b')},dimension);await tick();issues[dimension+'Retained']=await page.evaluate(()=>window.views.one.catalog?1:0);assert.equal(issues[dimension+'Retained'],baseline?1:0);assert.equal(await page.evaluate(()=>window.requests.length),baseline?1:2);if(!baseline){await page.evaluate(data=>window.requests[1].reply(data),catalog('model-b',22));await ready('model-b')}pass('actual '+dimension+' transition retires cached catalogue and starts one identity-bound read');
