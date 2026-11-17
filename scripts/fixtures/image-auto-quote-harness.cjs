@@ -52,7 +52,7 @@ function createHarness(sourceRoot=process.cwd()){
   declarations('src/lib/billing/request.ts',['billingErrorResponse']),
   declarations('src/lib/model-config/billing-model.ts',['managedBillingModel','managedBillingSelection']),
   declarations('src/lib/billing/image-quotes.ts',['scopeKey','issueImageBillingQuote','imageBillingQuoteForRequest','assertImageBillingSelection']),
-  declarations('src/lib/model-config/business-billing.ts',['freezeImagePresetQuote','originalBusinessBillingSnapshot','businessBillingSnapshot','freezeBusinessQuote','freezeBusinessQuoteForModel']),
+  declarations('src/lib/model-config/business-billing.ts',['freezeImagePresetQuote','configuredBusinessPricing','originalBusinessBillingSnapshot','businessBillingSnapshot','freezeBusinessQuote','freezeBusinessQuoteForModel']),
   declarations('src/lib/billing/quotation.ts',['compatibleQuote','billingFactsForSelection','quoteForImagegenStep','prepareActorQuote']),
   declarations('src/lib/billing/server.ts',['requestSelection','resolveBillingFacts','quoteForRequest']),
   declarations('src/app/api/billing/quote/route.ts',['handlePost','POST']),

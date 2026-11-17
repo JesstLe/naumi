@@ -10,7 +10,7 @@ async function load(files){
 }
 const files=['src/lib/canvas/history-contract.ts','src/lib/canvas/history-model.ts','src/lib/canvas/history-controller.ts','src/lib/canvas/node-commands.ts','src/lib/canvas/project-catalog.ts','src/lib/canvas/scene-projection.ts','src/lib/canvas/selection.ts','src/lib/canvas/link-command.ts','src/lib/canvas/document-scope.ts'];
 async function main(){
- const lib=await load([...files,...(baseline?[]:['src/lib/canvas/audio-actions.ts','src/lib/audio/project.ts'])]);
+ const lib=await load([...files,...(baseline?[]:['src/lib/canvas/audio-actions.ts','src/lib/audio/project.ts','src/lib/canvas/native-document-lifecycle.ts'])]);
  if(baseline){
   eq(fs.existsSync(path.join(root,'src/lib/canvas/audio-actions.ts')),false);eq(fs.existsSync(path.join(root,'src/lib/canvas/audio-node-schema.ts')),false);
   eq(lib.historyRequest.safeParse({operationId:'11111111-1111-4111-8111-111111111111',operations:[{type:'audio-visibility',id:'audio-one',visible:true}]}).success,false);
@@ -78,7 +78,11 @@ async function main(){
  const other=context.render('fixture@example.test','tree:other');ok(other.viewCurrent());await reject(()=>commands.patch(record.id,{title:'Stale'}),/切换/);cases++;
  // Canvas and startup wiring are checked in addition to exercising real owners.
  const canvas=fs.readFileSync(path.join(root,'src/components/canvas/canvas-client.tsx'),'utf8'),sql=fs.readFileSync(path.join(root,'src/lib/canvas/storage-schema.ts'),'utf8');
- ok(canvas.startsWith('"use client";'));ok(canvas.includes('audioActionsOwner.bind(canvasHistory.scope'));ok(canvas.includes('useAudioResultAdoption('));ok(!canvas.includes('audioRenderAttempts'));ok(!canvas.includes('audioAdopting'));ok(canvas.includes('audios:audioNodesStore.nodes.map'));ok(canvas.includes('kinds:nativeDocuments.settingsKinds')&&fs.readFileSync(path.join(root,'src/lib/canvas/native-document-lifecycle.ts'),'utf8').includes('CANVAS_NATIVE_NODE_KINDS.map(({kind,records})=>[kind,!!stores[records].getNode(id)])')&&fs.readFileSync(path.join(root,'src/lib/canvas/native-node-records.ts'),'utf8').includes('{kind:"audio",records:"audioNodes"'),'audio settings classification uses actual native registry');ok(canvas.includes('audio:audioNodesStore.getNode'));eq((sql.match(/CREATE TABLE IF NOT EXISTS app_canvas_audio_/g)||[]).length,2);ok(sql.includes('databaseSchemaReadiness(getPool(),"canvas-audio-nodes")'));cases++;
+ ok(canvas.startsWith('"use client";'));ok(canvas.includes('audioActionsOwner.bind(canvasHistory.scope'));ok(canvas.includes('useAudioResultAdoption('));ok(!canvas.includes('audioRenderAttempts'));ok(!canvas.includes('audioAdopting'));
+ ok(/audios:audioNodesStore\.(?:nodes|getSnapshot\(\)\.nodes)\.(?:map|filter)\(/.test(canvas));ok(canvas.includes('kinds:nativeDocuments.settingsKinds'));
+ const kinds=lib.canvasNativeDocuments({audioNodes:{getNode:get}}).settingsKinds;
+ eq(kinds(record.id).audio,true);eq(kinds(record.id).timeline,false);eq(kinds('missing').audio,false);
+ ok(canvas.includes('audio:audioNodesStore.getNode'));eq((sql.match(/CREATE TABLE IF NOT EXISTS app_canvas_audio_/g)||[]).length,2);ok(sql.includes('databaseSchemaReadiness(getPool(),"canvas-audio-nodes")'));cases++;
  fs.mkdirSync(out,{recursive:true});fs.writeFileSync(path.join(out,'RESULT.json'),JSON.stringify({status:'PASS',cases,checks,actualOwners:true,browserPorts:'fixture',db:false,supplier:0},null,2)+'\n');
  console.log(`CANVAS_AUDIO_INTEGRATION=PASS MODE=MODIFIED CASES=${cases} CHECKS=${checks} GRAPH_HISTORY_NODE_ACTIONS=ACTUAL UNKNOWN_RENDER=SAME_OPERATION ADOPTION=CAS SCOPE=CAPTURED NETWORK=FIXTURE DB=0 SUPPLIER=0`);
 }
