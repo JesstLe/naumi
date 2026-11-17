@@ -164,8 +164,12 @@ async function main() {
     if(process.env.NAUMI_SMOKE_SKIP_UI!=='1') {
     const browser = await chromium.launch({ channel: "chrome", headless: true, args: ["--disable-gpu"] });
     try {
-      for (const viewport of [{ width: 1440, height: 960 }, { width: 390, height: 844 }]) {
-        const context = await browser.newContext({ viewport });
+      const accountJourneys = [
+        { viewport: { width: 1440, height: 960 }, locale: "zh-CN", accessLink: /Agent 接入/ },
+        { viewport: { width: 390, height: 844 }, locale: "en-US", accessLink: /Agent access/ },
+      ];
+      for (const { viewport, locale, accessLink } of accountJourneys) {
+        const context = await browser.newContext({ viewport, locale });
         await context.addCookies([{ name: "nv_user", value: cookieA.slice("nv_user=".length), url: base }]);
         const page = await context.newPage();
         const pageErrors: string[] = [], consoleErrors: string[] = [];
@@ -173,7 +177,12 @@ async function main() {
         page.on("pageerror", error => { if (!/^Loading chunk [\w/[\]-]+ failed\.\n\(timeout: /.test(error.message)) pageErrors.push(error.message); });
         page.on("console", message => { if (message.type() === "error") consoleErrors.push(message.text()); });
         try {
-          await page.goto(`${base}/account/agent`, { waitUntil: "load", timeout: 300_000 });
+          await page.goto(`${base}/account`, { waitUntil: "load", timeout: 300_000 });
+          const link = page.getByRole("link", { name: accessLink });
+          await link.waitFor({ timeout: 180_000 });
+          assert.equal(await link.getAttribute("href"), "/account/agent");
+          await link.click();
+          await page.waitForURL(`${base}/account/agent`, { timeout: 180_000 });
           await page.getByRole("heading", { name: "Agent 接入" }).waitFor({ timeout: 180_000 });
           await page.getByText("smoke write").waitFor({ timeout: 60_000 });
           const label = `UI 令牌 ${viewport.width}`;
@@ -188,8 +197,6 @@ async function main() {
           const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
           assert(overflow <= 1, `horizontal overflow ${overflow}px at ${viewport.width}`);
           await page.screenshot({ path: path.join(output, `ui-agent-access-${viewport.width}.png`), fullPage: true });
-          await page.goto(`${base}/account`, { waitUntil: "load", timeout: 300_000 });
-          await page.getByRole("link", { name: /Agent 接入/ }).waitFor({ timeout: 180_000 });
           assert.deepEqual(pageErrors, []);
         } catch (error) {
           await page.screenshot({ path: path.join(output, `ui-failure-${viewport.width}.png`), fullPage: true }).catch(() => undefined);
@@ -199,7 +206,7 @@ async function main() {
         await context.close();
       }
     } finally { await browser.close(); }
-    pass("account center: /account/agent creates a token in the UI (shown once, usable immediately) and /account links to it, at 1440 and 390 wide, no overflow or page errors");
+    pass("account center: zh-CN desktop and en-US mobile both navigate to /account/agent and create a token (shown once, usable immediately), with no overflow or page errors");
     }
     if (process.env.NAUMI_SMOKE_UI_ONLY === "1") { console.log("\nAGENT_GATEWAY_SMOKE=UI_ONLY_PASS"); return; }
 
