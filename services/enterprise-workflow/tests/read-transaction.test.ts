@@ -1,20 +1,21 @@
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {setTimeout as delay} from 'node:timers/promises';
-import type {Pool} from 'pg';
+import type {Pool,PoolClient} from 'pg';
 import {WorkflowError} from '../src/contracts';
 import {resolveDatabaseActor} from '../src/identity';
 import {WorkflowStore} from '../src/store';
 import {NotificationStore} from '../src/notification-store';
 
 // Wait for an actual blocked relation read before attempting the write on another connection.
-export async function whileReadWaits<T>(pool: Pool, table: 'orders' | 'events' | 'notifications' | 'performance_claims', read: () => Promise<T>, write: () => Promise<void>) {
+export async function whileReadWaits<T>(pool: Pool, lock: 'orders' | 'events' | 'notifications' | 'performance_claims' | ((client: PoolClient) => Promise<unknown>), read: () => Promise<T>, write: () => Promise<void>) {
   const blocker = await pool.connect();
   let result: Promise<PromiseSettledResult<T>> | undefined;
   try {
     const pid = Number((await blocker.query('SELECT pg_backend_pid() AS pid')).rows[0].pid);
     await blocker.query('BEGIN');
-    await blocker.query(`LOCK TABLE enterprise_workflow.${table} IN ACCESS EXCLUSIVE MODE`);
+    if(typeof lock==='string')await blocker.query(`LOCK TABLE enterprise_workflow.${lock} IN ACCESS EXCLUSIVE MODE`);
+    else await lock(blocker);
     result = read().then(value => ({status: 'fulfilled', value}), reason => ({status: 'rejected', reason}));
     let waiting = false;
     for (let i = 0; i < 60; i++) {
@@ -22,7 +23,7 @@ export async function whileReadWaits<T>(pool: Pool, table: 'orders' | 'events' |
       if (waiting) break;
       await delay(15);
     }
-    assert.ok(waiting, `read must reach its blocked ${table} query`);
+    assert.ok(waiting, 'read must reach its blocked query');
     await write();
   } finally {
     try { await blocker.query('ROLLBACK'); } finally { blocker.release(); await result; }

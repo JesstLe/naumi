@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
-import type {Pool} from 'pg';
+import type {Pool,PoolClient} from 'pg';
 import {WorkflowStore} from '../src/store';
 import {SchedulingStore} from '../src/scheduling-store';
 import {resolveDatabaseActor} from '../src/identity';
 import {allocateHours,calendarDays,calendarConfigSchema,type CalendarConfig} from '../src/calendar';
 import type {Action,Principal,WorkOrder} from '../src/contracts';
+import {CalendarStore} from '../src/calendar-store';
+import {whileReadWaits} from './read-transaction.test';
 export async function calendarChecks(pool:Pool){
  const config:CalendarConfig={timezone:'Asia/Shanghai',weeklyMinutes:[480,480,480,480,480,0,0],overrides:[]};
  assert.equal(calendarDays('2024-02-28','2024-03-01').length,3);assert.equal(calendarDays('2024-01-01','2024-12-31').length,366);assert.throws(()=>calendarDays('2024-01-01','2025-01-01'),/INVALID_PLAN_RANGE/);
@@ -21,6 +23,11 @@ export async function calendarChecks(pool:Pool){
  const eventCount=async()=>Number((await pool.query('SELECT count(*) n FROM enterprise_workflow.events WHERE enterprise_id=$1',[enterpriseId])).rows[0].n);
  assert.equal((await store.get(lead)).calendar.configured,false);const old=await workflow.week(lead,{start:'2026-10-19'});assert.equal(old.loads.worker['2026-10-19'],40/7);assert.equal(old.workloads[0].configured,false);await assert.rejects(workflow.week(lead,{start:'9999-12-31'}),/INVALID_WEEK_RANGE/);
  const input={expectedRevision:0,config,reason:'explicit weekly policy'},events=await eventCount(),preview=await store.preview(lead,input);assert.equal(preview.impact.plannedTasks,2);assert.equal(preview.impact.noWorkingDayTasks,1);assert.equal((await store.get(lead)).calendar.revision,0);assert.equal(await eventCount(),events);await assert.rejects(store.preview(p('worker'),input),/CALENDAR_MANAGER_REQUIRED/);
+ const legacy=new CalendarStore(pool,(tx,p)=>resolveDatabaseActor(tx,p));
+ const lockOrder=(tx:PoolClient)=>tx.query('SELECT id FROM enterprise_workflow.orders WHERE enterprise_id=$1 AND id=$2 FOR UPDATE',[enterpriseId,o.id]);
+ assert.equal((await whileReadWaits(pool,lockOrder,()=>legacy.preview(lead,input),async()=>{})).status,'fulfilled');
+ const writer=await pool.connect();try{await writer.query('BEGIN');await lockOrder(writer);assert.deepEqual(await store.preview(lead,input),preview);}finally{try{await writer.query('ROLLBACK');}finally{writer.release();}}
+ console.log('CALENDAR_PREVIEW_CONCURRENCY_PASS: old_waits_for_order_write=1 snapshot_no_row_lock=1 same_hash_and_impact=1');
  const command={...input,commandId:randomUUID(),previewHash:preview.previewHash};assert.equal((await store.save(lead,command)).calendar.revision,1);assert.equal((await store.save(lead,command)).replayed,true);await assert.rejects(store.save(lead,{...command,reason:'changed'}),/IDEMPOTENCY_CONFLICT/);assert.equal((await store.get(p('worker'))).calendar.revision,1);await assert.rejects(store.history(p('worker')),/CALENDAR_MANAGER_REQUIRED/);await assert.rejects(store.get(p('reader',otherTeam)),/MEMBERSHIP_REQUIRED/);
  const week=await workflow.week(lead,{start:'2026-10-19'});assert.equal(week.loads.worker['2026-10-19'],8);assert.equal(week.loads.worker['2026-10-24'],0);assert.equal(week.workloads[0].capacities['2026-10-24'],0);assert.equal(week.distribution,'team-working-minutes');assert.equal((await workflow.week(lead,{start:'2026-10-26'})).noWorkingDayTasks[0].taskId,noDays.tasks[0].id);assert.equal((await workflow.get(lead,o.id)).version,o.version);assert.equal(await eventCount(),events);
  const nextConfig:CalendarConfig={...config,overrides:[{date:'2026-10-23',minutes:0,label:'团队休息'},{date:'2026-10-24',minutes:240,label:'半天调休'}]},input2={expectedRevision:1,config:nextConfig,reason:'date exceptions'},plan2=await store.preview(lead,input2);
