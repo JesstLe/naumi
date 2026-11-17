@@ -15,6 +15,7 @@ const source=fs.readFileSync(client,'utf8'),ast=ts.createSourceFile(client,sourc
 function extract(name){const found=[];function visit(n){if(ts.isFunctionDeclaration(n)&&n.name?.text===name)found.push(n.getText(ast));ts.forEachChild(n,visit);}visit(ast);assert.equal(found.length,1,name);return found[0];}
 const alertStart=source.indexOf('      {(unsavedTextCount>0||videoNodesStore.unsavedCount>0)');
 const alert=alertStart<0?'':source.slice(alertStart,source.indexOf('</div>}',alertStart)+7);
+const saveBinding=require('./verification/canvas-save-browser-binding.cjs').canvasSaveBrowserBinding(source,alert);
 const evidence={mode,hook,client,checks:[],observations:[],failures:[],tier:'Actual React hook and extracted production caller/alert, headless Chromium, loopback HTTP fixture. No PG or full Canvas/browser acceptance.'};
 let nodes,receipts,requests,failStatus,holds,dropAfter,reads;
 const clone=x=>JSON.parse(JSON.stringify(x));
@@ -23,7 +24,7 @@ function resetData(){nodes=new Map(['vnode-a','vnode-b'].map(id=>[id,seed(id)]))
 function remote(id,patch){const n=nodes.get(id);nodes.set(id,{...n,...patch,revision:n.revision+1});}
 function json(res,status,data){res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(data));}
 async function main(){
- const bundle=await build({stdin:{contents:`import React,{useRef,useSyncExternalStore} from 'react';import {createCanvasDocumentContext} from './src/lib/canvas/document-scope';import {createCanvasVideoNodeActions} from './src/lib/canvas/video-node-actions';window.__fixtureActor='a@example.test';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {useVideoNodes} from ${JSON.stringify(hook.replaceAll('\\','/'))};import {selectWorkspace,currentWorkspaceRevision,WORKSPACE_SELECTION} from './src/lib/saas/workspace-client';
+ const bundle=await build({stdin:{contents:`import React,{useRef,useSyncExternalStore} from 'react';${saveBinding.imports}import {createCanvasDocumentContext} from './src/lib/canvas/document-scope';import {createCanvasVideoNodeActions} from './src/lib/canvas/video-node-actions';window.__fixtureActor='a@example.test';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {useVideoNodes} from ${JSON.stringify(hook.replaceAll('\\','/'))};import {selectWorkspace,currentWorkspaceRevision,WORKSPACE_SELECTION} from './src/lib/saas/workspace-client';
  let options={email:'a@example.test',readOnly:false};
  const authHeader=async()=>({'x-fixture-actor':options.email});
  ${extract('privateFetchRaw')}
@@ -32,6 +33,7 @@ async function main(){
  const pushUndo=x=>window.undo.push(x);const videoNodeActions=createCanvasVideoNodeActions().bind(scope,{store:videoNodesStore,history:pushUndo});${extract('patchVideoNode')}
  ${extract('saveVideoDraft')}window.patchVideoNode=patchVideoNode;window.saveVideoDraft=saveVideoDraft;
  const canvasTextDocument={retry:async()=>{}},unsavedTextCount=0,unsavedTextRef={current:new Map()},persistTextNode=async n=>n,t=k=>k,flashTip=s=>{window.tip=s;};
+ ${saveBinding.setup}
  return <><output data-testid="nodes">{JSON.stringify(videoNodesStore.nodes)}</output>${alert}</>;}
  window.mount=(next={},strict=false)=>{options={...options,...next};flushSync(()=>root.render(strict?<React.StrictMode><App/></React.StrictMode>:<App/>));};
  window.detach=()=>flushSync(()=>root.render(null));window.mount();`,resolveDir:root,loader:'tsx'},bundle:true,write:false,platform:'browser',nodePaths:[deps],tsconfig:path.join(root,'tsconfig.json'),define:{'process.env.NODE_ENV':'"development"'},plugins:[{name:'exact-queue-copy',setup(b){b.onResolve({filter:/supabase$/},()=>({path:'auth',namespace:'fixture-auth'}));b.onLoad({filter:/.*/,namespace:'fixture-auth'},()=>({contents:"export const authHeader=async()=>({'x-fixture-actor':window.__fixtureActor});",loader:'js'}));b.onResolve({filter:/^@\/lib\/canvas\/video-node-save-queue$/},()=>({path:path.resolve(path.dirname(hook),'../../../lib/canvas/video-node-save-queue.ts')}));}}]});
@@ -85,7 +87,8 @@ async function main(){
    await reset();remote('vnode-a',{title:'remote'});await settle(()=>window.patchVideoNode('vnode-a',{title:'local'}).catch(()=>{}));await page.waitForFunction(()=>window.store.getNode('vnode-a')?.revision===2);
    failStatus.set('vnode-b',503);await settle(()=>window.patchVideoNode('vnode-b',{title:'recoverable-b'}).catch(()=>{}));failStatus.clear();
    const before=await ui(),start=requests.length;
-   for(let i=0;i<2;i++){await page.evaluate(()=>window.tip='');await page.getByRole('button',{name:'canvas.retrySave'}).click();await page.waitForFunction(()=>window.tip.includes('视频节点已更新'));}
+   const pendingTip=saveBinding.setup?'仍有修改未保存':'视频节点已更新';
+   for(let i=0;i<2;i++){await page.evaluate(()=>window.tip='');await page.getByRole('button',{name:'canvas.retrySave'}).click();await page.waitForFunction(message=>window.tip.includes(message),pendingTip);}
    const after=await ui();const result={beforeDirty:before.unsaved,afterDirty:after.unsaved,retryIds:requests.slice(start).map(r=>r.input.id),bServerTitle:nodes.get('vnode-b').title,bDraftPreserved:after.journal.some(x=>x.value.includes('recoverable-b')),flush:after.flush,alert:after.alert};observe('R2',result);
    assert.deepEqual(result.retryIds,fixed?['vnode-a','vnode-b','vnode-a']:['vnode-a','vnode-a']);assert.equal(result.bServerTitle,fixed?'recoverable-b':'seed-vnode-b');assert.equal(result.afterDirty,fixed?1:2);assert.equal(result.bDraftPreserved,!fixed);assert.equal(result.flush,false);
   });
