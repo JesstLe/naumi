@@ -34,25 +34,28 @@ try{
  const original=await snapshot();const initial=await store.read(p,source);ok(initial.version===0&&!initial.persisted&&initial.document.rows.length===3);ok((await pool.query('SELECT count(*) FROM enterprise_workflow.source_worksheets')).rows[0].count==='0');
  await assert.rejects(()=>store.read({...p,subject:'fixture-employee'},source),(e:any)=>e.code==='FORBIDDEN');checks++;
  await assert.rejects(()=>store.read(foreign,source),(e:any)=>e.code==='FORBIDDEN');checks++;
+ const sheetRow=async(id:string)=>{const row=(await store.read(p,source)).document.rows.find(item=>item.id===id);assert(row);return row;};
+ const sheetColumn=async(id:string)=>{const column=(await store.read(p,source)).document.columns.find(item=>item.id===id);assert(column);return column;};
+ const sheetRefs=async(id:string,field:string)=>{const refs=(await sheetRow(id)).cells[field];assert(Array.isArray(refs));return refs;};
  let version=0;const run=async(action:unknown)=>{const r=await store.execute(p,source,{commandId:randomUUID(),expectedVersion:version,action});version=r.version;return r;};
  const command={commandId:randomUUID(),expectedVersion:0,action:{type:'set-cells',row:'e4',cells:{title:'空格填入',status:'处理中'}}};
  const saved=await store.execute(p,source,command);version=saved.version;ok(version===1);ok((await store.execute(p,source,command)).replayed);ok((await store.history(p,source)).events.length===1);
  await assert.rejects(()=>store.execute(p,source,{...command,action:{...command.action,cells:{title:'不同输入'}}}),(e:any)=>e.code==='IDEMPOTENCY_CONFLICT');checks++;
  const races=await Promise.allSettled(['一','二'].map(text=>store.execute(p,source,{commandId:randomUUID(),expectedVersion:version,action:{type:'set-cells',row:'e4',cells:{status:text}}})));ok(races.filter(x=>x.status==='fulfilled').length===1);ok(races.some(x=>x.status==='rejected'&&x.reason.code==='VERSION_CONFLICT'));version=(await store.read(p,source)).version;
- await run({type:'set-cells',row:'e4',cells:{status:''}});ok((await store.read(p,source)).document.rows.find((r:any)=>r.id==='e4').cells.status==='');
+ await run({type:'set-cells',row:'e4',cells:{status:''}});ok((await sheetRow('e4')).cells.status==='');
  await assert.rejects(()=>run({type:'set-cells',row:'e4',cells:{started:'2026-02-30'}}),(e:any)=>e.code==='DATE_INVALID');checks++;
- await run({type:'set-cells',row:'e4',cells:{started:'2026-10-19'}});ok((await store.read(p,source)).document.rows.find((r:any)=>r.id==='e4').cells.started==='2026-10-19');
+ await run({type:'set-cells',row:'e4',cells:{started:'2026-10-19'}});ok((await sheetRow('e4')).cells.started==='2026-10-19');
  await run({type:'add-row',id:'new-row',cells:{title:'新增需求'},parentId:'e2'});ok((await store.read(p,source)).document.rows.length===4);
  await assert.rejects(()=>run({type:'parent',row:'e2',parentId:'new-row'}),(e:any)=>e.code==='PARENT_CYCLE');checks++;
- await run({type:'delete-row',row:'e2'});ok((await store.read(p,source)).document.rows.find((r:any)=>r.id==='e2').archived);await run({type:'restore-row',row:'e2'});ok(!(await store.read(p,source)).document.rows.find((r:any)=>r.id==='e2').archived);
+ await run({type:'delete-row',row:'e2'});ok((await sheetRow('e2')).archived);await run({type:'restore-row',row:'e2'});ok(!(await sheetRow('e2')).archived);
  const c={id:'custom_score',label:'数量评分',type:'number',width:140,visible:true,archived:false};await run({type:'add-column',column:c});await run({type:'set-cells',row:'new-row',cells:{custom_score:'2.5'}});
  await assert.rejects(()=>run({type:'set-cells',row:'new-row',cells:{custom_score:'不是数字'}}),(e:any)=>e.code==='NUMBER_INVALID');checks++;
- await run({type:'update-column',column:{...c,label:'评分',width:180,visible:false}});ok((await store.read(p,source)).document.columns.find((c:any)=>c.id==='custom_score').label==='评分');
- await run({type:'delete-column',column:'custom_score'});await run({type:'restore-column',column:'custom_score'});ok((await store.read(p,source)).document.rows.find((r:any)=>r.id==='new-row').cells.custom_score==='2.5');
+ await run({type:'update-column',column:{...c,label:'评分',width:180,visible:false}});ok((await sheetColumn('custom_score')).label==='评分');
+ await run({type:'delete-column',column:'custom_score'});await run({type:'restore-column',column:'custom_score'});ok((await sheetRow('new-row')).cells.custom_score==='2.5');
  await assert.rejects(()=>run({type:'delete-column',column:'title'}),(e:any)=>e.code==='TITLE_REQUIRED');checks++;
  await assert.rejects(()=>run({type:'add-column',column:{...c,id:'__proto__'}}));checks++;
  const image=await store.upload(p,source,{name:'sample.png',data:png.toString('base64')});ok(image.mime==='image/png');await run({type:'set-cells',row:'new-row',cells:{image:[{kind:image.kind,id:image.id,name:image.name}]}});const file=await store.file(p,source,image.id);ok(file.content.equals(png));
- await run({type:'set-cells',row:'new-row',cells:{image:[]}});ok((await store.read(p,source)).document.rows.find((r:any)=>r.id==='new-row').cells.image.length===0);ok((await store.file(p,source,image.id)).content.equals(png));
+ await run({type:'set-cells',row:'new-row',cells:{image:[]}});ok((await sheetRow('new-row')).cells.image.length===0);ok((await store.file(p,source,image.id)).content.equals(png));
  await assert.rejects(()=>store.upload(p,source,{name:'broken.png',data:Buffer.from('not image').toString('base64')}),(e:any)=>e.code==='INVALID_IMAGE');checks++;
  await assert.rejects(()=>store.upload(p,source,{name:'../unsafe.png',data:png.toString('base64')}));checks++;
  const pdf=await store.upload(p,source,{name:'brief.pdf',data:Buffer.from('%PDF-fixture').toString('base64')});await run({type:'set-cells',row:'new-row',cells:{files:[{kind:pdf.kind,id:pdf.id,name:pdf.name}]}});
@@ -61,7 +64,7 @@ try{
  const excel=await store.upload(p,source,{name:'book.xlsx',data:Buffer.from('PK-excel-source-fixture').toString('base64')});
  const manifest={schema:1,kind:'excel-cell-revision',base:{kind:excel.kind,id:excel.id,name:excel.name},parentRevision:null,createdAt:new Date().toISOString(),patches:[{sheet:'Sheet1',cell:'A1',type:'text',value:'修改副本'}]};
  const revision=await store.upload(p,source,{name:'revision.json',data:Buffer.from(JSON.stringify(manifest)).toString('base64')});
- await run({type:'set-cells',row:'new-row',cells:{files:[{...manifest.base,excelRevision:revision.id}]}});ok((await store.read(p,source)).document.rows.find((r:any)=>r.id==='new-row')!.cells.files instanceof Array);ok((await store.read(p,source)).document.rows.find((r:any)=>r.id==='new-row')!.cells.files[0].excelRevision===revision.id);
+ await run({type:'set-cells',row:'new-row',cells:{files:[{...manifest.base,excelRevision:revision.id}]}});ok((await sheetRow('new-row')).cells.files instanceof Array);ok((await sheetRefs('new-row','files'))[0].excelRevision===revision.id);
  await assert.rejects(()=>run({type:'set-cells',row:'new-row',cells:{files:[{...manifest.base,excelRevision:'e'.repeat(64)}]}}),(e:any)=>e.code==='EXCEL_REVISION_NOT_FOUND');checks++;
  const bad=await store.upload(p,source,{name:'bad-revision.json',data:Buffer.from(JSON.stringify({...manifest,base:{...manifest.base,id:'c'.repeat(64)}})).toString('base64')});
  await assert.rejects(()=>run({type:'set-cells',row:'new-row',cells:{files:[{...manifest.base,excelRevision:bad.id}]}}),(e:any)=>e.code==='EXCEL_REVISION_BASE_MISMATCH');checks++;
@@ -71,12 +74,12 @@ try{
  ok((await store.file(p,source,excel.id)).content.equals(Buffer.from('PK-excel-source-fixture')));
  // G63: dedicated full-workbook saves stay atomic, CAS-bound and isolated from 4MiB generic uploads.
  const officeZip=new JSZip();officeZip.file('[Content_Types].xml','<Types/>');officeZip.file('xl/workbook.xml','<workbook/>');officeZip.file('xl/media/large.bin',Buffer.alloc(4*1024*1024+1024,1));const officeBytes=await officeZip.generateAsync({type:'nodebuffer',compression:'STORE'});
- const officeRefs=(await store.read(p,source)).document.rows.find((r:any)=>r.id==='new-row')!.cells.files as any[];
+ const officeRefs=await sheetRefs('new-row','files');
  const officeInput={commandId:randomUUID(),expectedVersion:version,row:'new-row',column:'files',refs:officeRefs,ref:officeRefs[0],name:'Office工作副本.xlsx'};
  await assert.rejects(()=>store.officeSave(foreign,source,officeInput,officeBytes));checks++;
  await assert.rejects(()=>store.officeSave(p,source,officeInput,Buffer.from('bad zip')),(e:any)=>e.code==='INVALID_OFFICE_FILE');checks++;
  await run({type:'set-cells',row:'e4',cells:{title:'其他任务并行修改'}});
- const full=await store.officeSave(p,source,officeInput,officeBytes);version=full.version;ok((await store.read(p,source)).document.rows.find((r:any)=>r.id==='e4')!.cells.title==='其他任务并行修改');ok((await store.file(p,source,full.ref.id)).bytes>4*1024*1024);ok((await store.read(p,source)).document.rows.find((r:any)=>r.id==='new-row')!.cells.files[0].id===full.ref.id);
+ const full=await store.officeSave(p,source,officeInput,officeBytes);version=full.version;ok((await sheetRow('e4')).cells.title==='其他任务并行修改');ok((await store.file(p,source,full.ref.id)).bytes>4*1024*1024);ok((await sheetRefs('new-row','files'))[0].id===full.ref.id);
  ok((await store.officeSave(p,source,officeInput,officeBytes)).replayed===true);
  const quotaBefore=(await pool.query('SELECT count(*)::int AS n FROM enterprise_workflow.source_worksheet_files')).rows[0].n;officeZip.file('xl/another.xml','<changed/>');const different=await officeZip.generateAsync({type:'nodebuffer',compression:'STORE'});
  await assert.rejects(()=>store.officeSave(p,source,{...officeInput,commandId:randomUUID()},different),(e:any)=>e.code==='VERSION_CONFLICT');checks++;ok((await pool.query('SELECT count(*)::int AS n FROM enterprise_workflow.source_worksheet_files')).rows[0].n===quotaBefore);
@@ -87,7 +90,7 @@ try{
  const request=async(path:string,body?:unknown,auth=true)=>fetch(base+path,{method:body?'POST':'GET',headers:{...(auth?{authorization:'Bearer fixture-manager'}:{}),'content-type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});
  ok((await request('worksheet?source='+source)).status===200);ok((await request('worksheet?source='+source,undefined,false)).status===401);ok((await request('worksheet-file?source='+source+'&id='+image.id)).headers.get('content-type')==='image/png');
  const cmdHttp={commandId:randomUUID(),expectedVersion:version,action:{type:'set-cells',row:'e4',cells:{title:'HTTP保存'}}};const http=await request('worksheet-command?source='+source,cmdHttp);ok(http.status===200);version=((await http.json()) as any).version;
- const beforeFailure=version;const failed=await request('worksheet-command?source='+source,{commandId:randomUUID(),expectedVersion:version,action:{type:'set-cells',row:'new-row',cells:{title:'应回滚',unknown:'bad'}}});ok(failed.status===404);ok((await store.read(p,source)).version===beforeFailure);ok((await store.read(p,source)).document.rows.find((r:any)=>r.id==='new-row').cells.title==='新增需求');
+ const beforeFailure=version;const failed=await request('worksheet-command?source='+source,{commandId:randomUUID(),expectedVersion:version,action:{type:'set-cells',row:'new-row',cells:{title:'应回滚',unknown:'bad'}}});ok(failed.status===404);ok((await store.read(p,source)).version===beforeFailure);ok((await sheetRow('new-row')).cells.title==='新增需求');
  ok(await snapshot()===original);ok((await pool.query('SELECT count(*) FROM enterprise_workflow.orders')).rows[0].count==='0');
  console.log(`SOURCE_WORKSHEET_PASS: checks=${checks} source_unchanged=1 formal_auth=1 cas=1 replay=1 soft_delete_restore=1 file_hash=1 restart=1 no_workflow_facts=1`);
 }finally{server?.closeAllConnections();await new Promise<void>(r=>server?server.close(()=>r()):r());await pool.end();}

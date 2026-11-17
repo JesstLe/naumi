@@ -4,11 +4,12 @@ import {mkdtemp,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {once} from 'node:events';
-import type {Pool} from 'pg';
+import type {Pool,PoolClient} from 'pg';
 import {ImportStore} from '../src/import-store';
 import {FormalImportStore} from '../src/formal-import-store';
 import {resolveDatabaseActor} from '../src/identity';
 import {createWorkflowServer,WorkflowStore} from '../src/server';
+import {whileReadWaits} from './read-transaction.test';
 export async function formalImportChecks(pool:Pool){
  const enterpriseId=randomUUID(),teamId=randomUUID(),p={enterpriseId,teamId,subject:'formal-import-admin'},root=await mkdtemp(join(tmpdir(),'naumi-formal-import-'));
  const data=Buffer.from('original synthetic source bytes'),h=createHash('sha256').update(data).digest('hex'),source='1'.repeat(64);await writeFile(join(root,h),data);
@@ -20,6 +21,25 @@ export async function formalImportChecks(pool:Pool){
  const local=new ImportStore(pool,enterpriseId,root);await local.ingest(raw,'test');await local.ingest({...raw,sourceHash:'3'.repeat(64),sheet:'正式来源合成表二'},'test');
  const imports=new FormalImportStore(pool,resolveDatabaseActor,{[enterpriseId]:root});
  assert.equal((await imports.context(p)).batches.length,2);assert.equal((await imports.rows(p,source)).rows[1].raw['任务完成情况'],'已完成');assert(!('path' in (await imports.rows(p,source)).assets[0]));
+ const uploaded=await imports.worksheet.upload(p,source,{name:'worksheet.txt',data:data.toString('base64')});
+ assert.equal(uploaded.id,h);assert.equal((await imports.worksheet.read(p,source)).persisted,false);assert((await imports.worksheet.file(p,source,h)).content.equals(data));
+ const legacy=new FormalImportStore(pool,(c,actor)=>resolveDatabaseActor(c,actor));
+ const holdRows=(c:PoolClient)=>c.query('LOCK TABLE enterprise_workflow.import_rows IN ACCESS EXCLUSIVE MODE');
+ const holdFiles=(c:PoolClient)=>c.query('LOCK TABLE enterprise_workflow.source_worksheet_files IN ACCESS EXCLUSIVE MODE');
+ const mutation=async(sql:string,params:unknown[])=>{const c=await pool.connect();try{await c.query('BEGIN');await c.query("SET LOCAL lock_timeout='400ms'");assert.equal((await c.query(sql,params)).rowCount,1);await c.query('COMMIT');}finally{try{await c.query('ROLLBACK');}finally{c.release();}}};
+ const disableSource=()=>mutation('UPDATE enterprise_workflow.import_batches SET active=false WHERE enterprise_id=$1 AND source_hash=$2',[enterpriseId,source]);
+ const restoreSource=()=>local.active(source,true,'fixture');
+ for(const [lock,former,current] of [[holdRows,()=>legacy.worksheet.read(p,source),()=>imports.worksheet.read(p,source)],[holdRows,()=>legacy.rows(p,source),()=>imports.rows(p,source)],[holdFiles,()=>legacy.worksheet.file(p,source,h),()=>imports.worksheet.file(p,source,h)]] as const){
+  const old=await whileReadWaits<unknown>(pool,lock,former,async()=>{await assert.rejects(disableSource,{code:'55P03'});});assert.equal(old.status,'fulfilled');
+  const result=await whileReadWaits<unknown>(pool,lock,current,disableSource);assert.equal(result.status,'rejected');assert.match(String(result.reason),/SOURCE_NOT_FOUND/);await restoreSource();
+ }
+ const revoked=await whileReadWaits(pool,holdFiles,()=>imports.worksheet.file(p,source,h),()=>mutation('UPDATE enterprise_workflow.person_directory_admins SET enabled=false WHERE enterprise_id=$1 AND subject=$2',[enterpriseId,p.subject]));
+ assert.equal(revoked.status,'rejected');assert.match(String(revoked.reason),/DIRECTORY_ADMIN_REQUIRED/);
+ await mutation('UPDATE enterprise_workflow.person_directory_admins SET enabled=true WHERE enterprise_id=$1 AND subject=$2',[enterpriseId,p.subject]);
+ await mutation("UPDATE enterprise_workflow.source_worksheet_files SET content=decode(repeat('00',bytes),'hex') WHERE enterprise_id=$1 AND source_hash=$2 AND id=$3",[enterpriseId,source,h]);
+ await assert.rejects(imports.worksheet.file(p,source,h),/FILE_HASH_MISMATCH/);
+ await mutation('UPDATE enterprise_workflow.source_worksheet_files SET content=$4 WHERE enterprise_id=$1 AND source_hash=$2 AND id=$3',[enterpriseId,source,h,data]);
+ console.log('FORMAL_IMPORT_READ_CONCURRENCY_PASS: legacy_blocks_batch_deactivation=1 rows_seed_file_allow_deactivation=1 fresh_batch_and_directory_denial=1 invalid_bytea_hash_denied=1');
  for(const who of [{...p,subject:'worker'},{...p,subject:'team-manager'},{...p,teamId:randomUUID()},{...p,enterpriseId:randomUUID()}]){await assert.rejects(imports.context(who));await assert.rejects(imports.rows(who,source));await assert.rejects(imports.asset(who,source,h,true));await assert.rejects(imports.confirm(who,source,{row:3,parentRow:2,expectedVersion:1,reason:'denied'}));}
  await assert.rejects(new FormalImportStore(pool,resolveDatabaseActor).asset(p,source,h,true),/SOURCE_STORAGE_NOT_CONFIGURED/);
  const command={row:3,parentRow:2,expectedVersion:1,reason:'explicit parent confirmation'},out=await imports.confirm(p,source,command);assert.equal(out.version,2);await assert.rejects(imports.confirm(p,source,command),/VERSION_CONFLICT/);await assert.rejects(imports.confirm(p,source,{...command,expectedVersion:2,parentRow:999}),/PARENT_NOT_CANDIDATE/);

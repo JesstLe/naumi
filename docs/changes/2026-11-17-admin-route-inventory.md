@@ -82,7 +82,7 @@
 | `GET /api/enterprise/workflow/files` | `src/app/api/enterprise/workflow/files/route.ts` | 待核查 |
 | `GET /api/enterprise/workflow/forms` | `src/app/api/enterprise/workflow/forms/route.ts` | 待核查 |
 | `GET /api/enterprise/workflow/guidelines` | `src/app/api/enterprise/workflow/guidelines/route.ts` | 待核查 |
-| `GET /api/enterprise/workflow/imports` | `src/app/api/enterprise/workflow/imports/route.ts` | 待核查 |
+| `GET /api/enterprise/workflow/imports` | `src/app/api/enterprise/workflow/imports/route.ts` | 部分：代码确认 source/worksheet 流式代理、客户端断开传递；大文件并发内存待测 |
 | `GET /api/enterprise/workflow/notifications` | `src/app/api/enterprise/workflow/notifications/route.ts` | 部分：JSON 上限、取消和浏览器角标，`verify-workflow-read-safety.ts`、`verify-workflow-polling.mjs` |
 | `GET /api/enterprise/workflow/performance` | `src/app/api/enterprise/workflow/performance/route.ts` | 待核查 |
 | `GET /api/enterprise/workflow/projects` | `src/app/api/enterprise/workflow/projects/route.ts` | 待核查 |
@@ -207,12 +207,12 @@
 | `工作流 GET /v1/guidelines` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 GET /v1/handover-candidates` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 GET /v1/identity/workspaces` | `services/enterprise-workflow/src/server.ts` | 待核查 |
-| `工作流 GET /v1/imports/asset` | `services/enterprise-workflow/src/server.ts` | 待核查 |
-| `工作流 GET /v1/imports/context` | `services/enterprise-workflow/src/server.ts` | 待核查 |
-| `工作流 GET /v1/imports/rows` | `services/enterprise-workflow/src/server.ts` | 待核查 |
-| `工作流 GET /v1/imports/worksheet` | `services/enterprise-workflow/src/server.ts` | 待核查：首次展开在导入批次锁内遍历行与附件，先复核实际成本 |
-| `工作流 GET /v1/imports/worksheet-audit` | `services/enterprise-workflow/src/server.ts` | 待核查 |
-| `工作流 GET /v1/imports/worksheet-file` | `services/enterprise-workflow/src/server.ts` | 待核查：等待库内文件和校验哈希期间持导入批次锁 |
+| `工作流 GET /v1/imports/asset` | `services/enterprise-workflow/src/server.ts` | 部分：事务外文件校验、现行权限和批次复核，`formal-import.test.ts`；多下载并发待测 |
+| `工作流 GET /v1/imports/context` | `services/enterprise-workflow/src/server.ts` | 部分：只取批次目录字段，复核管理权限及启用状态，`formal-import.test.ts` |
+| `工作流 GET /v1/imports/rows` | `services/enterprise-workflow/src/server.ts` | 部分：并发停用、只读投影、原路径隐私，`formal-import.test.ts`；整表网络负载待测 |
+| `工作流 GET /v1/imports/worksheet` | `services/enterprise-workflow/src/server.ts` | 部分：首次展开解除批次锁、索引附件、排序兼容；整表网络负载待测 |
+| `工作流 GET /v1/imports/worksheet-audit` | `services/enterprise-workflow/src/server.ts` | 已核查：目录管理员与批次范围、定长审计分页及重开，`source-worksheet.ts` |
+| `工作流 GET /v1/imports/worksheet-file` | `services/enterprise-workflow/src/server.ts` | 部分：并发停用、撤权与损坏哈希、图片响应及大附件；多下载峰值内存待测 |
 | `工作流 GET /v1/notifications` | `services/enterprise-workflow/src/server.ts` | 部分：角标、收件箱、投递、设置与审计改用只读快照，`notifications.test.ts`、`read-transaction.test.ts` |
 | `工作流 GET /v1/orders` | `services/enterprise-workflow/src/server.ts` | 部分：分页、可见性及撤权竞争，`read-transaction.test.ts`；大范围扫描待量化 |
 | `工作流 GET /v1/orders/[orderId]` | `services/enterprise-workflow/src/server.ts` | 待核查 |
@@ -228,7 +228,7 @@
 | `工作流 GET /v1/publications` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 GET /v1/references` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 GET /v1/references/file` | `services/enterprise-workflow/src/server.ts` | 待核查 |
-| `工作流 GET /v1/references/library` | `services/enterprise-workflow/src/server.ts` | 待核查 |
+| `工作流 GET /v1/references/library` | `services/enterprise-workflow/src/server.ts` | 待核查：页面逐订单重复读多组数据与持锁；下一轮复现 |
 | `工作流 GET /v1/routing` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 GET /v1/sla` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 GET /v1/tasks` | `services/enterprise-workflow/src/server.ts` | 部分：分页、执行人范围、撤权竞争，`tasks.test.ts`、`read-transaction.test.ts` |
@@ -263,8 +263,8 @@
 | `工作流 POST /v1/demand-forms` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 POST /v1/guidelines` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 POST /v1/imports/resolve` | `services/enterprise-workflow/src/server.ts` | 待核查 |
-| `工作流 POST /v1/imports/worksheet-command` | `services/enterprise-workflow/src/server.ts` | 待核查 |
-| `工作流 POST /v1/imports/worksheet-upload` | `services/enterprise-workflow/src/server.ts` | 待核查 |
+| `工作流 POST /v1/imports/worksheet-command` | `services/enterprise-workflow/src/server.ts` | 部分：工作表命令保留版本、幂等、并发和回滚，`source-worksheet.ts` |
+| `工作流 POST /v1/imports/worksheet-upload` | `services/enterprise-workflow/src/server.ts` | 部分：通用附件额度、类型和哈希，`source-worksheet.ts` |
 | `工作流 POST /v1/intake` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 POST /v1/notifications` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 POST /v1/pause-preview` | `services/enterprise-workflow/src/server.ts` | 待核查 |
