@@ -51,9 +51,10 @@ async function checkNotificationReads(pool:Pool,n:NotificationStore,store:Workfl
  assert.deepEqual(await observed.read(lead,{action:'inbox',page:'100',unread:'1'}),{notifications:[],total:1,unread:1,page:100,pageSize:30});
  assert.deepEqual(await observed.read(lead,{action:'deliveries',page:'100'}),{deliveries:[],total:0,page:100,pageSize:30});
  assert.equal(pageQueries(),0);
+ assert.equal(queries.filter(sql=>sql.includes('WITH eligible AS MATERIALIZED')).length,1);
  const first=await observed.read(lead,{action:'inbox',page:'1'});
  assert.equal(first.notifications?.length,1);assert.equal(pageQueries(),1);
- console.log('NOTIFICATION_READ_ISOLATION_PASS HTTP_ABORT=POOL_RELEASED RETRY=200 LIVE_REVOKE=403 OUT_OF_RANGE_PAGE_QUERIES=0 FIRST_PAGE=1');
+ console.log('NOTIFICATION_READ_ISOLATION_PASS HTTP_ABORT=POOL_RELEASED RETRY=200 LIVE_REVOKE=403 OUT_OF_RANGE_INBOX_PAGE_QUERIES=0 DELIVERY_PAGE_AND_TOTAL=1 FIRST_PAGE=1');
 }
 export async function notificationChecks(pool:Pool){
  const enterpriseId=randomUUID(),teamId=randomUUID(),other=randomUUID(),source=randomUUID(),p=(subject:string,team=teamId)=>({enterpriseId,teamId:team,subject});

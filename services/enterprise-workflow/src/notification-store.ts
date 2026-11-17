@@ -41,9 +41,19 @@ export class NotificationStore{
    return {unread:Number(rows[0].unread)};
   }
   if(q.action==='inbox'){
-   const from=`FROM enterprise_workflow.notifications n JOIN enterprise_workflow.orders o ON o.enterprise_id=n.enterprise_id AND o.id=n.order_id`,where=`${visible} AND n.subject=$4`,count=(await tx.query(`SELECT count(*) AS total,count(*) FILTER(WHERE n.read_at IS NULL) AS unread ${from} WHERE ${where}`,v)).rows[0];
-   const unread=Number(count.unread),total=q.unread?unread:Number(count.total),offset=(q.page-1)*30;
-   const rows=offset>=total?[]:(await tx.query(`SELECT n.id,n.order_id AS "orderId",n.task_id AS "taskId",n.title,n.action,n.actor,n.aggregate_version AS "orderVersion",n.created_at AS "createdAt",n.read_at AS "readAt",o.document->>'title' AS "orderTitle" ${from} WHERE ${where} AND ($8='' OR n.read_at IS NULL) ORDER BY n.created_at DESC,n.id LIMIT 30 OFFSET $9`,[...v,q.unread,offset])).rows;
+   const from=`FROM enterprise_workflow.notifications n JOIN enterprise_workflow.orders o ON o.enterprise_id=n.enterprise_id AND o.id=n.order_id`;
+   const where=`${visible} AND n.subject=$4${q.unread?' AND n.read_at IS NULL':''}`;
+   const unreadColumn=q.unread?'':',count(*) FILTER(WHERE n.read_at IS NULL) AS unread';
+   const count=(await tx.query(`SELECT count(*) AS total${unreadColumn} ${from} WHERE ${where}`,v)).rows[0];
+   const total=Number(count.total),unread=q.unread?total:Number(count.unread),offset=(q.page-1)*30;
+   const rows=offset>=total?[]:(await tx.query(`WITH page AS MATERIALIZED (
+    SELECT n.id,n.created_at ${from} WHERE ${where} ORDER BY n.created_at DESC,n.id LIMIT 30 OFFSET $8
+   )
+   SELECT n.id,n.order_id AS "orderId",n.task_id AS "taskId",n.title,n.action,n.actor,n.aggregate_version AS "orderVersion",
+    n.created_at AS "createdAt",n.read_at AS "readAt",o.document->>'title' AS "orderTitle"
+   FROM page JOIN enterprise_workflow.notifications n ON n.id=page.id
+   JOIN enterprise_workflow.orders o ON o.enterprise_id=n.enterprise_id AND o.id=n.order_id
+   ORDER BY page.created_at DESC,page.id`,[...v,offset])).rows;
    return {notifications:rows,total,unread,page:q.page,pageSize:30};
   }
   need(a.permissions.includes('manage'),'NOTIFICATION_ADMIN_REQUIRED',403);
@@ -52,10 +62,28 @@ export class NotificationStore{
    return {policy:(await tx.query('SELECT version,enabled,connector_id AS "connectorId" FROM enterprise_workflow.notification_policies WHERE enterprise_id=$1 AND team_id=$2',[a.enterpriseId,a.teamId])).rows[0]??{version:0,enabled:false,connectorId:''},connectors:this.connectors(a.enterpriseId).map(({id,label})=>({id,label})),members,bindings:(await tx.query('SELECT subject,version,enabled,userid FROM enterprise_workflow.notification_bindings WHERE enterprise_id=$1 AND team_id=$2 ORDER BY subject',[a.enterpriseId,a.teamId])).rows};
   }
   if(q.action==='audit'){const events=(await tx.query('SELECT seq,subject,operation,detail,created_at FROM enterprise_workflow.notification_audit WHERE enterprise_id=$1 AND team_id=$2 AND seq<$3 ORDER BY seq DESC LIMIT 50',[a.enterpriseId,a.teamId,q.before])).rows;return {events,nextBefore:events.length===50?Number(events.at(-1).seq):null};}
-  const from=`FROM enterprise_workflow.notification_deliveries d JOIN enterprise_workflow.notifications n ON n.id=d.notification_id JOIN enterprise_workflow.orders o ON o.enterprise_id=n.enterprise_id AND o.id=n.order_id`,where=`${visible} AND ($8='' OR d.state=$8)`,params=[...v,q.state];
-  const total=Number((await tx.query(`SELECT count(*) AS n ${from} WHERE ${where}`,params)).rows[0].n),offset=(q.page-1)*30;
-  const rows=offset>=total?[]:(await tx.query(`SELECT d.id,d.subject,d.version,d.connector_id AS "connectorId",d.state,d.attempts,d.polls,d.receipt,d.receipt_source AS "receiptSource",d.provider_read AS "providerRead",d.error_code AS "errorCode",d.created_at AS "createdAt",d.updated_at AS "updatedAt",n.title,n.order_id AS "orderId",o.document->>'title' AS "orderTitle" ${from} WHERE ${where} ORDER BY d.created_at DESC,d.id LIMIT 30 OFFSET $9`,[...params,offset])).rows;
-  return {deliveries:rows,total,page:q.page,pageSize:30};
+  // Determine visibility once, and sort only the keys. The nullable result row
+  // carries the exact total for empty pages without reading delivery payloads.
+  const {rows}=await tx.query(`WITH eligible AS MATERIALIZED (
+   SELECT d.id,d.created_at FROM enterprise_workflow.notification_deliveries d
+   JOIN enterprise_workflow.notifications n ON n.id=d.notification_id
+   JOIN enterprise_workflow.orders o ON o.enterprise_id=n.enterprise_id AND o.id=n.order_id
+   WHERE ${visible} AND ($8='' OR d.state=$8)
+  ), totals AS (SELECT count(*) AS total FROM eligible)
+  SELECT totals.total,detail.* FROM totals LEFT JOIN LATERAL (
+   SELECT page.id,payload.subject,payload.version,payload.connector_id AS "connectorId",payload.state,payload.attempts,payload.polls,
+    payload.receipt,payload.receipt_source AS "receiptSource",payload.provider_read AS "providerRead",payload.error_code AS "errorCode",
+    page.created_at AS "createdAt",payload.updated_at AS "updatedAt",notice.title,notice.order_id AS "orderId",doc.document->>'title' AS "orderTitle"
+   FROM (
+    SELECT id,created_at FROM eligible ORDER BY created_at DESC,id
+    LIMIT (CASE WHEN totals.total>$9 THEN 30 ELSE 0 END) OFFSET $9
+   ) page JOIN enterprise_workflow.notification_deliveries payload ON payload.id=page.id
+   JOIN enterprise_workflow.notifications notice ON notice.id=payload.notification_id
+   JOIN enterprise_workflow.orders doc ON doc.enterprise_id=notice.enterprise_id AND doc.id=notice.order_id
+  ) detail ON true
+  ORDER BY detail."createdAt" DESC,detail.id`,[...v,q.state,(q.page-1)*30]);
+  const deliveries=rows.flatMap(({total,...row})=>row.id===null?[]:[row]);
+  return {deliveries,total:Number(rows[0].total),page:q.page,pageSize:30};
  },result=>(result.notifications??result.deliveries??[]).map(row=>row.orderId as string),{legacyRepeatable:false,signal});}
  async execute(p:Principal,raw:unknown){const c=notificationCommand.parse(raw);return this.tx(p,async(tx,actor)=>{const a=actor!,act=c.action;need(act.type==='read'||a.permissions.includes('manage'),'NOTIFICATION_ADMIN_REQUIRED',403);
   await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`notification-command:${a.enterpriseId}:${c.commandId}`]);
