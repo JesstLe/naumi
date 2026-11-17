@@ -5,9 +5,9 @@ import type { BillingQuote } from "@/lib/billing/types";
 import { settlementFor } from "@/lib/billing/quote";
 import { FEATURE_LABELS } from "@/lib/billing/labels";
 import { Field, NumberField, Choice, control } from "./fields";
-export function OperationReconciliation() {
+export function OperationReconciliation({active=true}:{active?:boolean}={}) {
     const [rows, setRows] = useState<any[]>([]), [selected, setSelected] = useState<any>(null), [success, setSuccess] = useState(0), [quality, setQuality] = useState("medium"), [reason, setReason] = useState(""), [proof, setProof] = useState(""), [error, setError] = useState(""), [message, setMessage] = useState(""), [busy, setBusy] = useState(false), [commandId, setCommandId] = useState<string | null>(null);
-    const mounted=useRef(false),submitting=useRef(false),listRequest=useRef<AbortController|null>(null);
+    const mounted=useRef(false),visible=useRef(false),submitting=useRef(false),listRequest=useRef<AbortController|null>(null);
     const detailRequest=useRef<{id:string;controller:AbortController}|null>(null);
     const request=useCallback(async(path:string,body?:unknown,signal?:AbortSignal)=>{
         const headers={"content-type":"application/json",...await authHeader()};signal?.throwIfAborted();
@@ -15,17 +15,21 @@ export function OperationReconciliation() {
         const data=await response.json();if(!response.ok)throw new Error(data.error||"操作失败");return data;
     },[]);
     const load=useCallback(async(replace=false)=>{
-        if(!mounted.current||(listRequest.current&&!replace))return;
+        if(!visible.current||(listRequest.current&&!replace))return;
         listRequest.current?.abort();const controller=new AbortController();listRequest.current=controller;
-        const current=()=>mounted.current&&listRequest.current===controller&&!controller.signal.aborted;
+        const current=()=>visible.current&&listRequest.current===controller&&!controller.signal.aborted;
         try{const value=await request('/api/admin/billing/operations',undefined,controller.signal);if(current())setRows(value);}
         catch(error){if(current())setError((error as Error).message);}
         finally{if(listRequest.current===controller)listRequest.current=null;}
     },[request]);
     useEffect(()=>{
-        mounted.current=true;void load();
-        return()=>{mounted.current=false;listRequest.current?.abort();listRequest.current=null;detailRequest.current?.controller.abort();detailRequest.current=null;};
-    },[load]);
+        mounted.current=true;return()=>{mounted.current=false;};
+    },[]);
+    useEffect(()=>{
+        if(!active)return;
+        visible.current=true;void load();
+        return()=>{visible.current=false;listRequest.current?.abort();listRequest.current=null;detailRequest.current?.controller.abort();detailRequest.current=null;};
+    },[active,load]);
     const [splitQuality,setSplitQuality]=useState(false),[qualityCounts,setQualityCounts]=useState<Record<string,number>>({});
     const quote = selected?.quote as BillingQuote | undefined;
     const qualities=splitQuality?Object.entries(qualityCounts).flatMap(([q,n])=>Array.from({length:n},()=>q)):Array.from({length:success},()=>quality);
@@ -38,15 +42,15 @@ export function OperationReconciliation() {
     }
     catch { }
     async function open(operationId:string){
-        if(submitting.current||detailRequest.current?.id===operationId)return;
+        if(!visible.current||submitting.current||detailRequest.current?.id===operationId)return;
         detailRequest.current?.controller.abort();const controller=new AbortController(),task={id:operationId,controller};detailRequest.current=task;
-        const current=()=>mounted.current&&detailRequest.current===task&&!controller.signal.aborted;
+        const current=()=>visible.current&&detailRequest.current===task&&!controller.signal.aborted;
         setSelected(null);setError("");setSplitQuality(false);setQualityCounts({});setSuccess(0);setReason("");setProof("");setCommandId(null);
         try{const value=await request(`/api/admin/billing/operations?id=${encodeURIComponent(operationId)}`,undefined,controller.signal);if(current())setSelected(value);}
         catch(error){if(current())setError((error as Error).message);}
         finally{if(detailRequest.current===task)detailRequest.current=null;}
     }
-    async function settle() { if (!quote||submitting.current)
+    async function settle() { if (!quote||!visible.current||submitting.current)
         return; submitting.current=true;setBusy(true); setError(""); const id = commandId ?? crypto.randomUUID(); setCommandId(id); try {
         const data = await request("/api/admin/billing/operations", { id, operationId: selected.id, reason, proof, result });
         if(!mounted.current)return;

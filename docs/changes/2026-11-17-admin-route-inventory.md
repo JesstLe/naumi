@@ -298,7 +298,7 @@
 | `页面 /admin` | `src/app/admin/page.tsx` | 待核查 |
 | `页面 /admin/bi` | `src/app/admin/bi/page.tsx` | 待核查 |
 | `页面 /admin/bi/models` | `src/app/admin/bi/models/page.tsx` | 待核查 |
-| `页面 /admin/billing` | `src/app/admin/billing/page.tsx` | 部分：人工核对列表和详情请求取消、去重、原提交身份已核查；父页面等待计费配置及其他分区另核 |
+| `页面 /admin/billing` | `src/app/admin/billing/page.tsx` | 部分：人工核对新旧深链不读现价；列表、详情及当前配置读取取消去重，切换保留草稿和原提交身份。计费历史、恢复与其他分区另核 |
 | `页面 /admin/billing/price-table` | `src/app/admin/billing/price-table/page.tsx` | 待核查 |
 | `页面 /admin/billing/supplier-cost` | `src/app/admin/billing/supplier-cost/page.tsx` | 待核查 |
 | `页面 /admin/center` | `src/app/admin/center/page.tsx` | 部分：默认双概览分口径，旧 URL 重复 BI GET 已在真实浏览器复现及修复；导航和各面板仍待复查 |
