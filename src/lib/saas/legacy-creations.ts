@@ -1,6 +1,7 @@
 import 'server-only';
 import type {PoolClient} from 'pg';
 import {getPool} from "@/platform/db/pool";
+import {checkReadClientSocket,withOwnedReadClient,withOwnedReportClient} from '@/platform/db/owned-read-client';
 import {queryBi} from "@/lib/bi/repository";
 import {ensureBiSchema} from "@/lib/bi/schema";
 
@@ -28,9 +29,15 @@ export async function listLegacyCreations(f:CreationFilters,access?:LegacyReadSc
   return {items,pagination:{total:rows.total,page:rows.page,size:rows.size},appliedFilters:f,generatedAt:rows.generatedAt,scope:'platform',availability:'available',summary:{total:rows.total,activeMembers:0,settledCredits:null,pending:0,failed:0,needsReview:0},memberUsage:[]};
 }
 type LegacyMedia={asset:CreationAsset;storageRef:string;actorEmail:string};
-async function platformLegacyRead<T>(run:(tx:PoolClient)=>Promise<T>):Promise<T>{
+async function platformLegacyRead<T>(run:(tx:PoolClient)=>Promise<T>,asset?:{signal?:AbortSignal}):Promise<T>{
+ const signal=asset?.signal;signal?.throwIfAborted();
  await ensureBiSchema();
- const tx=await getPool().connect();try{await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');await tx.query("SET LOCAL statement_timeout='20s'");const result=await run(tx);await tx.query('COMMIT');return result;}catch(error){await tx.query('ROLLBACK');throw error;}finally{tx.release();}
+ return (asset?withOwnedReportClient:withOwnedReadClient)(getPool(),async tx=>{
+  await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+  await tx.query((asset?"SET LOCAL statement_timeout='5s'; SET LOCAL lock_timeout='1s'":"SET LOCAL statement_timeout='20s'")+
+   (signal?checkReadClientSocket:''));
+  const result=await run(tx);await tx.query('COMMIT');return result;
+ },signal);
 }
 function legacyInputMedia(ref:Source,row:Record<string,any>):LegacyMedia[]{
  const request=row.payload?.plan?.request||row.payload?.p?.imagegen?.request;
@@ -87,7 +94,8 @@ export async function legacyCreationDetail(id:string,pages:DetailPages&{diagnost
   if(!access&&pages.diagnostics!==false&&hasCreationFailure(root.status))detail.failure=(await legacyCreationFailures(getPool(),[{root:id,table_name:ref.table,id:ref.id,email:ref.email}])).get(id);
   return {detail,media};
 }
-export async function legacyCreationAsset(id:string,assetId:string,access?:LegacyReadScope){
+export async function legacyCreationAsset(id:string,assetId:string,access?:LegacyReadScope,signal?:AbortSignal){
+ signal?.throwIfAborted();
  const ref=parseId(id);if(access&&!access.allowedEmails.includes(ref.email))throw new TeamError('记录不存在或无权访问',404);
  const run=async(tx:PoolClient)=>{
   if(access)await assertLegacySourceTenant(tx,ref,access.tenantId);
@@ -118,5 +126,5 @@ export async function legacyCreationAsset(id:string,assetId:string,access?:Legac
   if(!isManagedImageUrl(url)&&!url.startsWith('data:image/'))throw new TeamError('素材不在受控存储中',422);return {url,mediaType,mime:null};
  };
  if(access)return run(access.client);
- await ensureMediaSchema();return platformLegacyRead(run);
+ await ensureMediaSchema();return platformLegacyRead(run,{signal});
 }

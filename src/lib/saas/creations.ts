@@ -1,7 +1,8 @@
 import 'server-only';
 import type {PoolClient} from 'pg';
 import {getPool} from "@/platform/db/pool";
-import {enterpriseRead,enterpriseReportRead} from '@/lib/enterprise/server';
+import {checkReadClientSocket,withOwnedReadClient,withOwnedReportClient} from '@/platform/db/owned-read-client';
+import {enterpriseHeavyReportRead,enterpriseReportRead} from '@/lib/enterprise/server';
 import { TeamError } from "@/lib/teams/errors";
 import type {TeamActor} from '@/lib/teams/grants';
 import {ensureCreationSchema} from './creation-schema';
@@ -19,10 +20,18 @@ import {readImagegenInputAssetReference} from '@/lib/imagegen/input-asset-refere
 
 export type CreationDetailReader={platform:true;boundTenantId?:string}|{platform:false;tenantId:string;historyEmails?:readonly string[]};
 export type CreationReader={platform:true;boundTenantId?:string}|{platform:false;actor:TeamActor;tenantId:string};
-async function scoped<T>(reader:CreationReader,run:(tx:PoolClient,visible:string[]|null,historyVisible:readonly string[]|null)=>Promise<T>,kind:'report'|'asset'='report'){
+async function scoped<T>(reader:CreationReader,run:(tx:PoolClient,visible:string[]|null,historyVisible:readonly string[]|null)=>Promise<T>,kind:'report'|'asset'='report',signal?:AbortSignal){
+ signal?.throwIfAborted();
  await ensureCreationSchema();
- if(!reader.platform)return (kind==='asset'?enterpriseRead:enterpriseReportRead)(reader.actor,reader.tenantId,(tx,s)=>run(tx,s.owner?null:[...s.visible],[...new Set([...s.visible,...(s.owner?[s.team.owner_email]:[])])]));
- const tx=await getPool().connect();try{await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');await tx.query("SET LOCAL statement_timeout='20s'");const result=await run(tx,null,null);await tx.query('COMMIT');return result;}catch(e){await tx.query('ROLLBACK');throw e;}finally{tx.release();}
+ if(!reader.platform)return (kind==='asset'?enterpriseHeavyReportRead:enterpriseReportRead)(reader.actor,reader.tenantId,
+  (tx,s)=>run(tx,s.owner?null:[...s.visible],[...new Set([...s.visible,...(s.owner?[s.team.owner_email]:[])])]),signal);
+ const checkout=kind==='asset'?withOwnedReportClient:withOwnedReadClient;
+ return checkout(getPool(),async tx=>{
+  await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+  const limits=kind==='asset'?"SET LOCAL statement_timeout='5s'; SET LOCAL lock_timeout='1s'":"SET LOCAL statement_timeout='20s'";
+  await tx.query(limits+(signal?checkReadClientSocket:''));
+  const result=await run(tx,null,null);await tx.query('COMMIT');return result;
+ },signal);
 }
 const fromDate=(s:string)=>`${s}T00:00:00+08:00`;
 const normalizedLiveStatus=`CASE WHEN live_status IN ('done','completed','success') THEN 'succeeded' WHEN live_status IN ('error','rejected') THEN 'failed' WHEN live_status IN ('pending','reviewing') THEN 'queued' WHEN live_status IN ('processing','generating') THEN 'running' WHEN live_status IN ('queued','running','succeeded','partial','failed','cancel_requested','cancelled','needs_review') THEN live_status ELSE 'needs_review' END`;
@@ -236,9 +245,10 @@ export async function creationDetailInTransaction(tx:PoolClient,reader:CreationD
  state:ops.length?settled?'settled':'pending':noCharge?'not_applicable':'not_recorded',operations:ops.map(o=>({id:o.id,state:o.state,charged:['settled','released'].includes(o.state)?Number(o.charged_credits):null}))},
  ...(reader.platform?{technical:{sourceKind:row.source_kind,sourceId:row.source_id,parentId:row.parent_id,schemaVersion:row.schema_version,links:links.rows}}:{})};
 }
-export async function creationAsset(reader:CreationReader,id:string,assetId:string,evidenceRecord?:string){
+export async function creationAsset(reader:CreationReader,id:string,assetId:string,evidenceRecord?:string,signal?:AbortSignal){
+ signal?.throwIfAborted();
  await ensureMediaSchema();
- return scoped(reader,(tx,visible,historyEmails)=>creationAssetInTransaction(tx,reader.platform?reader:{...reader,historyEmails:historyEmails||[]},id,assetId,visible,evidenceRecord),'asset');
+ return scoped(reader,(tx,visible,historyEmails)=>creationAssetInTransaction(tx,reader.platform?reader:{...reader,historyEmails:historyEmails||[]},id,assetId,visible,evidenceRecord),'asset',signal);
 }
 const creationAncestors=(anchor:string)=>`WITH RECURSIVE ancestors AS(
   SELECT c.id,c.parent_id,c.actor_email,c.tenant_id FROM ${anchor}

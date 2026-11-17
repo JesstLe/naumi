@@ -1,7 +1,7 @@
 import 'server-only';
 import type {TeamActor} from '@/lib/teams/grants';
 import {TeamError} from '@/lib/teams/server';
-import {enterpriseRead,enterpriseReportRead} from './server';
+import {enterpriseHeavyReportRead,enterpriseReportRead} from './server';
 import {ensureBiSchema} from '@/lib/bi/repository';
 import {ensureMediaSchema} from '@/lib/media-assets-schema';
 import {listLegacyCreations,legacyCreationDetail,legacyCreationAsset,legacyCreationEvents,type LegacyReadScope} from '@/lib/saas/legacy-creations';
@@ -11,12 +11,13 @@ import type {CreationFilters,CreationPage} from '@/lib/saas/creation-contracts';
 
 /** Same live hierarchy as member history, including the owner's own records.
  * Reading history does not change its original tenant/payer/asset ownership. */
-async function read<T>(actor:TeamActor,enterpriseId:string,run:(access:LegacyReadScope)=>Promise<T>,kind:'report'|'asset'='report'){
+async function read<T>(actor:TeamActor,enterpriseId:string,run:(access:LegacyReadScope)=>Promise<T>,kind:'report'|'asset'='report',signal?:AbortSignal){
+  signal?.throwIfAborted();
   await ensureBiSchema();
-  return (kind==='asset'?enterpriseRead:enterpriseReportRead)({...actor,admin:false,consoleAdmin:false},enterpriseId,async(client,scope)=>{
+  return (kind==='asset'?enterpriseHeavyReportRead:enterpriseReportRead)({...actor,admin:false,consoleAdmin:false},enterpriseId,async(client,scope)=>{
     const allowed=new Set(scope.visible);if(scope.owner)allowed.add(scope.team.owner_email);
     return run({client,allowedEmails:[...allowed],tenantId:enterpriseId});
-  });
+  },signal);
 }
 export async function enterpriseHistory(actor:TeamActor,id:string,filters:CreationFilters):Promise<CreationPage>{
   return read(actor,id,async access=>{
@@ -35,9 +36,9 @@ export async function enterpriseHistoryDetail(actor:TeamActor,id:string,creation
 export function enterpriseHistoryEvents(actor:TeamActor,id:string,creationId:string,page:number){
   return read(actor,id,access=>legacyCreationEvents(creationId,page,access));
 }
-export async function enterpriseHistoryAsset(actor:TeamActor,id:string,creationId:string,assetId:string){
-  // Schema initialization may borrow the business pool, so finish it before
-  // The original per-asset authorization reserves a connection and locks scope.
+export async function enterpriseHistoryAsset(actor:TeamActor,id:string,creationId:string,assetId:string,signal?:AbortSignal){
+  // Finish schema initialization before taking a report connection.
+  signal?.throwIfAborted();
   await ensureMediaSchema();
-  return read(actor,id,access=>legacyCreationAsset(creationId,assetId,access),'asset');
+  return read(actor,id,access=>legacyCreationAsset(creationId,assetId,access,signal),'asset',signal);
 }

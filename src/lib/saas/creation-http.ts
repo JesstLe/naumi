@@ -54,6 +54,7 @@ export async function creationEventsRoute(request:Request,id:string,enterprise=f
  return teamJson({items,generatedAt:new Date().toISOString()});
  }catch(e){return creationFailure(e);}}
 export async function creationAssetRoute(request:Request,id:string,assetId:string,enterprise=false){try{
+ const signal=request.signal;signal.throwIfAborted();
  const query=new URL(request.url).searchParams,token=query.get('mediaToken');
  const grant=token?readCreationPlaybackToken(token,id,assetId,query.get('tenantId')):null;
  if(token&&!grant)return teamJson({error:'播放授权已失效，请重新读取素材'},401);
@@ -62,9 +63,12 @@ export async function creationAssetRoute(request:Request,id:string,assetId:strin
  if(grant?.mode==='platform'&&!await platformPlaybackAllowed(grant))return teamJson({error:'平台播放授权已失效'},403);
  const reader:CreationReader|NextResponse=grant?grant.mode==='platform'?{platform:true}:{platform:false,actor:{email:grant.email,admin:false,consoleAdmin:false},tenantId:grant.tenantId}:await creationReader(request,enterprise);if(reader instanceof NextResponse)return reader;
  const locator=query.get('evidenceRecord');
- const media=id.startsWith('legacy-')?(reader.platform?await legacyCreationAsset(id,assetId):await enterpriseHistoryAsset(reader.actor,reader.tenantId,id,assetId)):await creationAsset(reader,id,assetId,locator&&isCreationId(locator)?locator:undefined);
+ const media=id.startsWith('legacy-')?(reader.platform?await legacyCreationAsset(id,assetId,undefined,signal):
+  await enterpriseHistoryAsset(reader.actor,reader.tenantId,id,assetId,signal)):
+  await creationAsset(reader,id,assetId,locator&&isCreationId(locator)?locator:undefined,signal);
+ signal.throwIfAborted();
  if(media.mediaType==='image')return enterpriseMediaResponse(request,media.url);
  if(!['video','audio'].includes(media.mediaType))return teamJson({error:'仅支持查看受控媒体'},422);
  if(query.get('playback')==='1'&&!grant){const url=new URL(request.url);url.searchParams.delete('playback');url.searchParams.set('mediaToken',reader.platform?await platformPlaybackToken(request,id,assetId):creationPlaybackToken(reader.actor.email,reader.tenantId,id,assetId));return teamJson({url:url.pathname+url.search});}
  return streamManagedMedia(request,media.url,media.mime||'application/octet-stream');
- }catch(e){return creationFailure(e);}}
+ }catch(e){return request.signal.aborted?teamJson({error:'请求已取消'},499):creationFailure(e);}}
