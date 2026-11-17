@@ -17,6 +17,8 @@ import {settingsSecret} from '@/lib/settings-secret';
 import type {ContentPage} from '@/lib/teams/contracts';
 import type {EnterpriseIdentity,EnterpriseMember,EnterpriseRole,EnterpriseSnapshot} from './contracts';
 import {pinnedEnterpriseIds,IntegrationError} from './integration/policy';
+import {descendantScope,validateHierarchy,type HierarchyNode,type HierarchyRole} from './hierarchy';
+export {validateHierarchy} from './hierarchy';
 
 
 
@@ -35,21 +37,7 @@ async function transaction<T>(run: (tx: PoolClient)=>Promise<T>,readOnly=false) 
 type Node = { email: string; supervisor_email: string; role_id: string|null; employment: 'permanent'|'intern'; version:number; membership_status?:'active'|'suspended';membership_expires_at?:string|null; global_active?:boolean };
 type Scope = { team: EnterpriseIdentity; teamVersion:number; owner:boolean; level:number; manageMembers:boolean; viewRecords:boolean; roles:EnterpriseRole[]; nodes:Node[]; visible:Set<string>; manageable:Set<string>; entitlement:{name:string|null;seatLimit:number|null;featurePolicy:Record<string,boolean>} };
 const activeMembership=(node:Node)=>node.global_active!==false&&node.membership_status!=='suspended'&&(!node.membership_expires_at||new Date(node.membership_expires_at).getTime()>Date.now());
-type HierarchyNode=Pick<Node,'email'|'supervisor_email'|'role_id'>;
-type HierarchyRole=Pick<EnterpriseRole,'id'|'level'|'manage_members'|'view_records'>;
 const canManageWorkspace=(role:HierarchyRole|undefined)=>!!role&&(role.manage_members||role.view_records);
-export function validateHierarchy(owner:string,nodes:HierarchyNode[],roles:HierarchyRole[]) {
-  const map=new Map(nodes.map(n=>[n.email,n])),r=new Map(roles.map(x=>[x.id,x]));
-  if(map.has(owner))throw new TeamError('老板不能同时作为企业成员',409);
-  for(const node of nodes){
-    const level=node.role_id?r.get(node.role_id)?.level:999;
-    if(level===undefined)throw new TeamError('岗位不属于当前企业',409);
-    let at=node.supervisor_email;const seen=new Set([node.email]);
-    while(at!==owner){if(seen.has(at)||seen.size>100)throw new TeamError('组织关系存在循环或层级过深',409);seen.add(at);const parent=map.get(at);if(!parent)throw new TeamError('上级不属于当前企业',409);at=parent.supervisor_email}
-    if(node.supervisor_email!==owner){const parent=map.get(node.supervisor_email)!;const pr=parent.role_id?r.get(parent.role_id):null;
-      if(!pr?.manage_members||pr.level>=level)throw new TeamError('上级必须具有管理权限且等级高于成员',409)}
-  }
-}
 async function scope(tx:PoolClient,actor:TeamActor,id:string,allowSelf=false,lock:'share'|'snapshot'='share'):Promise<Scope> {
   const share=(of?:string)=>lock==='snapshot'?'':of?' FOR SHARE OF '+of:' FOR SHARE';
   try {const pinned=pinnedEnterpriseIds();if(pinned.length&&!pinned.includes(id))throw new TeamError('企业不存在',404);}
@@ -85,13 +73,11 @@ async function scope(tx:PoolClient,actor:TeamActor,id:string,allowSelf=false,loc
   const entitlementRow=(await tx.query('SELECT entitlement_name,seat_limit,feature_policy FROM app_tenant_entitlements WHERE tenant_id=$1'+share(),[id])).rows[0];
   const entitlement={name:entitlementRow?.entitlement_name??null,seatLimit:entitlementRow?.seat_limit??null,featurePolicy:entitlementRow?.feature_policy??{}};
   if(!actor.admin&&entitlement.featurePolicy.team===false)throw new TeamError('企业管理功能已停用');
-  const visible=new Set<string>();if(owner){for(const m of nodes)if(activeMembership(m))visible.add(m.email);}
-  else {visible.add(actor.email);let changed=!allowSelf||!!role?.view_records;while(changed){changed=false;for(const m of nodes)if(activeMembership(m)&&visible.has(m.supervisor_email)&&!visible.has(m.email)){visible.add(m.email);changed=true}}}
-  // Membership management needs paused descendants so they can be restored;
-  // content readers retain the separate effective-membership set above.
+  const {visible,manageable}=owner?{
+    visible:new Set(nodes.filter(activeMembership).map(m=>m.email)),
+    manageable:new Set(nodes.map(m=>m.email)),
+  }:descendantScope(nodes,actor.email,!allowSelf||!!role?.view_records,!!role?.manage_members,activeMembership);
   if(owner){const administrators=await siteAdministrators(tx,id,lock);if(administrators.length){for(const email of administrators)visible.add(email);visible.add(team.owner_email);}}
-  const manageable=new Set<string>(owner?nodes.map(n=>n.email):[actor.email]);
-  if(!owner&&role?.manage_members){let changed=true;while(changed){changed=false;for(const m of nodes)if(manageable.has(m.supervisor_email)&&!manageable.has(m.email)){manageable.add(m.email);changed=true;}}}
   return {team:{id:team.id,name:team.name,owner_email:team.owner_email,authorized_until:accessExpiry,owner},teamVersion:team.version,owner,level:owner?0:role?.level??999,manageMembers:owner||!!role?.manage_members,viewRecords:owner||!!role?.view_records,roles,nodes,visible,manageable,entitlement};
 }
 /** Workflow creation picker: ordinary employees get self only; never elevates existing analytics routes. */
