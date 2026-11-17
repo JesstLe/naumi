@@ -81,13 +81,16 @@ async function generate() {
 function fixture() {
   const uploads = new Map(), assets = new Map(), artworks = new Map(), objects = new Map();
   const state = {reads: 0, writes: 0, clients: 0, transactions: 0, locks: new Set(), responses: [],
-    failWrite: false, failRead: false, failArtwork: false, streams: 0};
+    failWrite: false, failRead: false, failArtwork: false, streams: 0, unhandled: []};
   const result = rows => ({rows, rowCount: rows.length});
   async function query(sql, a = []) {
     sql = sql.replace(/\s+/g, ' ').trim();
     if (sql.startsWith('CREATE TABLE')) return result([]);
     if (['BEGIN', 'COMMIT', 'ROLLBACK'].includes(sql)) {
       state.transactions += sql === 'BEGIN' ? 1 : -1; return result([]);
+    }
+    if (sql === "SET LOCAL lock_timeout='750ms'") {
+      assert.ok(state.transactions > 0); return result([]);
     }
     if (sql.startsWith('SELECT pg_try_advisory_lock')) {
       const acquired = !state.locks.has(a[0]); if (acquired) state.locks.add(a[0]);
@@ -110,8 +113,20 @@ function fixture() {
       if (sql.includes('asset_key=')) r.asset_key ||= a[2]; else r.committed_id = a[2];
       return result([{...r}]);
     }
-    if (/^SELECT (\*|owner,sha256) FROM app_media_assets/.test(sql)) {
+    if (/^SELECT (\*|owner,sha256|key,owner,public,remote_ready,content_type,sha256,bytes,width,height,thumbnail_key,preview_key) FROM app_media_assets/.test(sql)) {
       return result(assets.has(a[0]) ? [{...assets.get(a[0])}] : []);
+    }
+    if (sql.startsWith('WITH candidate AS MATERIALIZED ( SELECT key FROM app_media_assets') && sql.includes('SET variant_claim_id=$5')) {
+      const row=assets.get(a[0]);
+      if(!row||row.sha256!==a[1]||row.owner!==a[2]||row.public!==a[3]||
+        row.thumbnail_key&&row.preview_key||row.variant_claim_until>Date.now()||state.locks.has('media-variants:'+a[0]))return result([]);
+      row.variant_claim_id=a[4];row.variant_claim_until=Date.now()+60_000*a[5];
+      return result([{key:a[0]}]);
+    }
+    if (sql.startsWith('WITH candidate AS ( SELECT key FROM app_media_assets') && sql.includes('SET variant_claim_id=NULL')) {
+      const row=assets.get(a[0]);
+      if(row?.variant_claim_id===a[1]){row.variant_claim_id=null;row.variant_claim_until=null;}
+      return result([]);
     }
     if (sql.startsWith('INSERT INTO app_media_assets')) {
       const old = assets.get(a[0]);
@@ -121,16 +136,29 @@ function fixture() {
       if (sql.includes("false,$3")) row = {key: a[0], owner: a[1], public: false, driver: a[2], remote_ready: a[3], content_type: a[4], sha256: a[5], bytes: a[6], width: a[7], height: a[8]};
       else if (sql.includes("'image/webp'")) row = {key: a[0], owner: a[1], public: a[2], driver: a[3], remote_ready: a[4], content_type: 'image/webp', sha256: a[5], bytes: a[6], width: a[7], height: a[8]};
       else row = {key: a[0], owner: old?.owner || a[1], public: a[2], driver: a[3], remote_ready: a[4], content_type: a[5], sha256: a[6], bytes: a[7], width: old?.width ?? null, height: old?.height ?? null};
+      if(sql.includes('app_media_assets.bytes=EXCLUDED.bytes')&&old&&
+        (old.owner!==row.owner||old.public!==row.public||old.sha256!==row.sha256||old.bytes!==row.bytes))return result([]);
+      if(sql.includes('variant_claim_id=CASE')&&old&&(old.sha256!==row.sha256||old.owner==null&&row.owner!=null)){
+        row.variant_claim_id=null;row.variant_claim_until=null;
+        if(old.sha256!==row.sha256){row.thumbnail_key=null;row.preview_key=null;}
+      }
       assets.set(a[0], {...old, ...row}); return result([{key: a[0]}]);
     }
     if (sql.startsWith('UPDATE app_media_assets SET thumbnail_key')) {
       const row = assets.get(a[0]); if (!row) return result([]);
+      if(a.length===9){
+        if(row.sha256!==a[1]||row.owner!==a[2]||row.public!==a[3]||row.variant_claim_id!==a[4]||
+          !(row.variant_claim_until>Date.now())||row.thumbnail_key&&row.preview_key)return result([]);
+        Object.assign(row,{thumbnail_key:a[5],preview_key:a[6],width:a[7],height:a[8],variant_claim_id:null,variant_claim_until:null});
+        return result([{key:a[0]}]);
+      }
       if (a.length === 6 && row.sha256 !== a[5] || a.length === 4 && row.owner !== a[3]) return result([]);
+      if (a.length === 5 && (row.owner !== a[3] || row.sha256 !== a[4])) return result([]);
       row.thumbnail_key = a[1]; row.preview_key = a[2];
       if (a.length === 6) { row.width = a[3]; row.height = a[4]; }
       return result([{key: a[0]}]);
     }
-    throw Error('UNHANDLED_FIXTURE_SQL: ' + sql);
+    state.unhandled.push(sql);throw Error('UNHANDLED_FIXTURE_SQL: ' + sql);
   }
   const pool = {query, connect: async () => {
     state.clients++; let released = false;
@@ -148,6 +176,7 @@ function fixture() {
       presign: async (_method, key) => 'https://fixture.invalid/' + key,
       put: async (key, bytes, mime) => { if (state.failWrite) throw Error('FIXTURE_WRITE_FAILURE');
         assert.equal(state.transactions, 0, 'No object I/O inside transaction'); state.writes++;
+        if(key.startsWith('media-variants/v2/'))assert.equal(state.clients,0,'variant storage I/O must not hold a checked-out connection');
         objects.set(key, {bytes: Buffer.from(bytes), mime}); },
       get: async key => {
         state.reads++; const item = objects.get(key); assert.ok(item, 'FIXTURE_OBJECT_EXISTS');
@@ -226,6 +255,7 @@ function record(name, extra = {}) { records.push({name, ...extra}); console.log(
 async function success(name, bytes, mime, previews) {
   const f = fixture(), row = f.seed(bytes, mime, name); calls = [];
   const result = await f.post({action: 'complete', id: row.id}, previews);
+  assert.deepEqual(f.state.unhandled,[],name+': unsupported fixture statements');
   assert.equal(result.status, 200, name + ': ' + JSON.stringify(result));
   const asset = f.assets.get(row.asset_key), saved = f.objects.get(row.asset_key);
   assert.equal(sha(saved.bytes), sha(bytes)); assert.equal(asset.sha256, sha(bytes));
