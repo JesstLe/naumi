@@ -3,7 +3,7 @@
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),assert=require('node:assert/strict'),ts=require('typescript'),{build}=require('esbuild');
 const root=path.resolve(process.env.CANVAS_IMAGE_SOURCE_ROOT||process.cwd()),baseline=process.argv.includes('--baseline'),out=path.resolve(process.env.R3_EVIDENCE||'output/refactor-r3a-20261024');fs.mkdirSync(out,{recursive:true});
 const source=fs.readFileSync(path.join(root,'src/components/canvas/canvas-client.tsx'),'utf8'),ast=ts.createSourceFile('canvas.tsx',source,99,true,4),fns={};
-function walk(node){if(ts.isFunctionDeclaration(node)&&['runGen','generatePend','generatePreparedPend','prepareImageText','canvasImageRunContext','appendComposerReferences','generatePendingImage','imageToolState'].includes(node.name?.text))fns[node.name.text]=node.getText(ast);ts.forEachChild(node,walk);}walk(ast);
+function walk(node){if(ts.isFunctionDeclaration(node)&&['runGen','generatePend','generatePreparedPend','prepareImageText','canvasImageRunContext','appendComposerReferences','generatePendingImage','rewirePendingBranchSources','imageToolState'].includes(node.name?.text))fns[node.name.text]=node.getText(ast);ts.forEachChild(node,walk);}walk(ast);
 const declarations=ts.transpileModule(Object.values(fns).join('\n'),{compilerOptions:{target:9,module:1}}).outputText;
 const boundedReceipt=fs.existsSync(path.join(root,'src/lib/canvas/generation-receipt.ts'));
 const shared=fs.existsSync(path.join(root,'src/lib/canvas/image-task-controller.ts'));assert.equal(shared,!baseline,'mode must match whole source tree');

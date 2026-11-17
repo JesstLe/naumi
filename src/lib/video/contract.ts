@@ -16,6 +16,8 @@ export function resolveVideoCapability(input:{manual?:VideoModelDefinition;vendo
   for(const key of Object.keys(videoDefinitionSchema.shape)){
     if(key==="limits")continue;
     const index=definitions.findIndex(def=>def?.[key as keyof VideoModelDefinition]!==undefined);
+    // Unlike the legacy capability fields, this schema accepts absence but never null.
+    if(index<0&&key==="parameterContract"){sources[key]="unknown";continue;}
     out[key]=index<0?null:definitions[index]![key as keyof VideoModelDefinition];sources[key]=index<0?"unknown":labels[index];
   }
   const limitOut:Record<string,number|null>={};
