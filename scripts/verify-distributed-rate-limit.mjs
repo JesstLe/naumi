@@ -27,13 +27,14 @@ const log = text => console.log(text);
 
 // Real route modules, isolated non-limiter I/O. No broad application bootstrap.
 const routeFiles = new Set(['auth/forgot','admin/login','agent','canvas/workflow-import/asset'].map(p => path.resolve('src/app/api/' + p + '/route.ts')));
+const realRouteImports = new Set(['@/lib/rate-limit-http', '@/lib/agent/event-buffer', '@/lib/agent/stream-recovery']);
 const constants = { dbEnabled: 'true', supabaseEnabled: 'false', ADMIN_COOKIE: '"a15-admin"', SESSION_TTL_MS: '60000', MODEL_ID: '"fixture"' };
 const routeMocks = { name: 'route-fixture-io', setup(b) {
   if(storeSource)b.onLoad({filter:/rate-limit-store\.ts$/}, args => path.resolve(args.path)===path.resolve('src/lib/rate-limit-store.ts') ? {contents:fs.readFileSync(storeSource,'utf8'),loader:'ts'} : undefined);
   b.onResolve({ filter: /^server-only$/ }, () => ({ path: 'empty', namespace: 'empty' }));
   b.onLoad({ filter: /.*/, namespace: 'empty' }, () => ({ contents: '' }));
   b.onResolve({ filter: /^@\// }, args => {
-    if (!routeFiles.has(path.resolve(args.importer)) || args.path === '@/lib/rate-limit-http') return;
+    if (!routeFiles.has(path.resolve(args.importer)) || realRouteImports.has(args.path)) return;
     const source = ts.createSourceFile(args.importer, fs.readFileSync(args.importer, 'utf8'), ts.ScriptTarget.Latest, true);
     const imp = source.statements.find(n => ts.isImportDeclaration(n) && n.moduleSpecifier.text === args.path);
     const names = imp.importClause.namedBindings.elements.filter(e => !e.isTypeOnly).map(e => (e.propertyName || e.name).text);
@@ -172,7 +173,9 @@ try {
   await sql.query('TRUNCATE a15.app_rate_limit_buckets');
   const sse=await rpc(a,{op:'route',route:'agent',method:'PUT'}); assert.equal(sse.status,200); assert.match(sse.contentType,/text\/event-stream/); assert.match(sse.text,/event: final/);
   await calls(b,'agent:fixture@example.test',20,600000,19);
+  const effectsBeforeSseRejection=await rpc(a,{op:'effects'});
   assert.equal((await rpc(a,{op:'route',route:'agent',method:'PUT'})).status,429);
+  assert.deepEqual(await rpc(a,{op:'effects'}),effectsBeforeSseRejection);
   for(const route of ['agent','canvas'])assert.equal((await rpc(a,{op:'route',route,user:null})).status,401);
   assert.equal((await rpc(a,{op:'route',route:'admin',crossSite:true})).status,403);
   log('MODIFIED REAL_ROUTE agent_PUT normal=200/SSE excess=429 auth_agent_canvas=401 admin_CSRF=403');
