@@ -1,6 +1,6 @@
 import {administeredSite} from './site-administrator';
 import {WORKFLOW_PERMISSIONS,DEFAULT_WORKFLOW_PERMISSIONS,workflowPermissionsSchema,type WorkflowPermission} from './workflow-permissions';
-import { assertWorkflowSiteAccess } from '@/lib/site-control/workflow-access';
+import { assertWorkflowProfileAccess,assertWorkflowSiteAccess } from '@/lib/site-control/workflow-access';
 import { siteProfile } from '@/lib/site-control/store';
 import 'server-only';
 import { createPrivateKey,randomUUID,sign } from 'node:crypto';
@@ -8,7 +8,7 @@ import { enterpriseUserEmail } from './access';
 import { getPool } from "@/platform/db/pool";
 import {ensureEnterpriseSchema} from "@/lib/enterprise/schema";
 
-import { requireTeamGrant } from '@/lib/teams/grants';
+import { activeTeamGrant,requireTeamGrant } from '@/lib/teams/grants';
 import { TeamError } from "@/lib/teams/errors";
 import {userFeaturePolicy} from "@/lib/feature-access/repository";
 import { allows } from '@/lib/feature-access/catalog';
@@ -46,14 +46,35 @@ export async function workflowDiscovery(request:Request){
  const policy=deploymentPolicy();await ensureEnterpriseSchema();
  const user=(await getPool().query('SELECT name,banned,account_expires_at FROM app_users WHERE email=$1',[email])).rows[0];
  if(!user||user.banned||user.account_expires_at&&new Date(user.account_expires_at).getTime()<=Date.now())throw new TeamError('账号已停用或到期',403);
- const siteId=await administeredSite(getPool(),email);
- const rows=(await getPool().query(`SELECT t.id,t.name FROM app_account_teams t JOIN app_enterprise_settings s ON s.team_id=t.id
-  WHERE t.enabled AND s.enabled AND (t.authorized_until IS NULL OR t.authorized_until>now()) AND (t.id=$3::uuid OR t.owner_email=$1 OR EXISTS(SELECT 1 FROM app_enterprise_members m WHERE m.enterprise_id=t.id AND m.email=$1 AND m.membership_status='active' AND (m.membership_expires_at IS NULL OR m.membership_expires_at>now())))
-  AND (cardinality($2::uuid[])=0 OR t.id=ANY($2::uuid[])) ORDER BY t.name,t.id LIMIT 101`,[email,policy.allowedEnterpriseIds,siteId])).rows;
- if(rows.length>100)throw new IntegrationError('WORKSPACE_DIRECTORY_TOO_LARGE');
- const enterprises=[];
- for(const row of rows){try{const identity=await workflowSourceIdentity(request,row.id);if(identity.sourceSubject!==email)throw new IntegrationError('ACCOUNT_CHANGED',409);enterprises.push({id:row.id,name:row.name});}catch(e){if(!(e instanceof TeamError&&e.status===403))throw e;}}
  const site=await siteProfile();
+ let siteOpen=true;
+ try{assertWorkflowProfileAccess(site,request);}catch(error){if(!(error instanceof TeamError&&error.status===403))throw error;siteOpen=false;}
+ const enterprises:{id:string;name:string}[]=[];
+ if(siteOpen){
+  // Directory reads return identities only. Qualify all allowed memberships
+  // at once; switching into a workspace still uses live scoped authorization.
+  const rows=(await getPool().query(`SELECT t.id,t.name,(t.owner_email=$1 OR (t.id=$3::uuid AND viewer.role='admin')) AS manager,
+    r.workflow_permissions,g.enabled,g.starts_at,g.expires_at,g.revoked_at,owner.banned,owner.account_expires_at
+   FROM app_account_teams t JOIN app_enterprise_settings s ON s.team_id=t.id
+   JOIN app_users viewer ON viewer.email=$1
+   JOIN app_users owner ON owner.email=t.owner_email JOIN app_team_access_grants g ON g.email=t.owner_email
+   LEFT JOIN app_tenant_entitlements e ON e.tenant_id=t.id
+   LEFT JOIN app_enterprise_members m ON m.enterprise_id=t.id AND m.email=$1 AND m.membership_status='active'
+    AND (m.membership_expires_at IS NULL OR m.membership_expires_at>now())
+   LEFT JOIN app_enterprise_roles r ON r.enterprise_id=t.id AND r.id=m.role_id
+   WHERE NOT viewer.banned AND (viewer.account_expires_at IS NULL OR viewer.account_expires_at>now()) AND t.enabled AND s.enabled
+   AND (t.authorized_until IS NULL OR t.authorized_until>now()) AND (e.feature_policy->'team') IS DISTINCT FROM 'false'::jsonb
+   AND (t.owner_email=$1 OR (t.id=$3::uuid AND viewer.role='admin') OR m.email IS NOT NULL)
+   AND (cardinality($2::uuid[])=0 OR t.id=ANY($2::uuid[])) ORDER BY t.name,t.id LIMIT 101`,
+   [email,policy.allowedEnterpriseIds,site.mode==='enterprise'?site.policy.enterpriseId:null])).rows;
+  if(rows.length>100)throw new IntegrationError('WORKSPACE_DIRECTORY_TOO_LARGE');
+  const expected=request.headers.get('x-workflow-viewer');
+  if(rows.length&&expected&&expected!==email)throw new IntegrationError('ACCOUNT_CHANGED',409);
+  for(const row of rows)if(activeTeamGrant(row)){
+   if(!row.manager)workflowPermissionsSchema.parse(row.workflow_permissions??DEFAULT_WORKFLOW_PERMISSIONS);
+   enterprises.push({id:row.id,name:row.name});
+  }
+ }
  return {version:1,instanceId:policy.sourceInstanceId,mode:policy.mode,viewer:{email,name:user.name||email},enterprises,...(site.mode==='enterprise'?{sitePolicy:{brand:site.policy.brand,revision:site.policy.revision,workspaceModules:site.policy.workspaceModules}}:{})};
 }
 export function workflowBridgeConfig(env:NodeJS.ProcessEnv=process.env){

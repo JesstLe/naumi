@@ -33,6 +33,12 @@ export class NotificationStore{
   }
  }
  async read(p:Principal,raw:unknown){const q=notificationQuery.parse(raw);return this.tx(p,async(tx,actor)=>{const a=actor!,v=values(a);
+  if(q.action==='badge'){
+   const {rows}=await tx.query(`SELECT count(*) AS unread
+    FROM enterprise_workflow.notifications n JOIN enterprise_workflow.orders o ON o.enterprise_id=n.enterprise_id AND o.id=n.order_id
+    WHERE ${visible} AND n.subject=$4 AND n.read_at IS NULL`,v);
+   return {unread:Number(rows[0].unread)};
+  }
   if(q.action==='inbox'){
    const from=`FROM enterprise_workflow.notifications n JOIN enterprise_workflow.orders o ON o.enterprise_id=n.enterprise_id AND o.id=n.order_id`,where=`${visible} AND n.subject=$4`,count=(await tx.query(`SELECT count(*) AS total,count(*) FILTER(WHERE n.read_at IS NULL) AS unread ${from} WHERE ${where}`,v)).rows[0];
    const rows=(await tx.query(`SELECT n.id,n.order_id AS "orderId",n.task_id AS "taskId",n.title,n.action,n.actor,n.aggregate_version AS "orderVersion",n.created_at AS "createdAt",n.read_at AS "readAt",o.document->>'title' AS "orderTitle" ${from} WHERE ${where} AND ($8='' OR n.read_at IS NULL) ORDER BY n.created_at DESC,n.id LIMIT 30 OFFSET $9`,[...v,q.unread,(q.page-1)*30])).rows;
