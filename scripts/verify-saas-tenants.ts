@@ -22,8 +22,17 @@ async function main() {
   const command={commandId:randomUUID(),name:'Fixture 企业 A',ownerEmail:owner,validUntil:null,seatLimit:3,entitlementName:null,featurePolicy:{generate:true,video:false}};
   assert.equal((await tenants.POST(req('/api/admin/tenants','POST',{...command,featurePolicy:{creation:true}}))).status,400);
   assert.equal((await tenants.GET(req('/api/admin/tenants','GET',undefined,''))).status,403);
+  const ownerPath=(value:string)=>'/api/admin/tenants?ownerEmail='+encodeURIComponent(value);
+  assert.equal((await tenants.GET(req(ownerPath(owner),'GET',undefined,''))).status,403);
+  assert.equal((await tenants.GET(req(ownerPath('invalid')))).status,400);
+  assert.deepEqual(await(await tenants.GET(req(ownerPath(outsider)))).json(),{email:outsider,team:null,activeTenant:null});
+  const oldTeam=randomUUID();
+  await pool.query("INSERT INTO app_account_teams(id,name,owner_email,authorized_until) VALUES($1,'Fixture legacy',$2,now()+interval '1 day')",[oldTeam,outsider]);
+  assert.deepEqual(await(await tenants.GET(req(ownerPath(outsider)))).json(),{email:outsider,team:{id:oldTeam,name:'Fixture legacy'},activeTenant:null});
+  await pool.query('DELETE FROM app_account_teams WHERE id=$1',[oldTeam]);
   assert.equal((await tenants.POST(req('/api/admin/tenants','POST',command,adminCookie,'https://evil.test'))).status,403);
   const created=await tenants.POST(req('/api/admin/tenants','POST',command));assert.equal(created.status,200);const a=await created.json();
+  assert.deepEqual(await(await tenants.GET(req(ownerPath(owner.toUpperCase())))).json(),{email:owner,team:{id:a.tenantId,name:command.name},activeTenant:a.tenantId});
   const replay=await (await tenants.POST(req('/api/admin/tenants','POST',command))).json();assert.equal(replay.tenantId,a.tenantId);assert.equal(replay.replayed,true);
   assert.equal((await tenants.POST(req('/api/admin/tenants','POST',{...command,name:'different'}))).status,409);
   assert.equal((await tenants.POST(req('/api/admin/tenants','POST',{...command,commandId:randomUUID()}))).status,409);

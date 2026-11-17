@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { biAuthorize, biJson } from "@/lib/bi/access";
 import { biJobTrace, logBiAccess } from "@/lib/bi/repository";
-import { readRouterTrace } from "@/lib/bi/router-trace";
+import { readRouterTraces } from "@/lib/bi/router-trace";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
@@ -16,17 +16,8 @@ export async function GET(request: Request) {
     const attempts = await biJobTrace(id, email);
     await logBiAccess(auth.actor, "view-trace", "operations", email);
     // Bound concurrent read-only lookups. BI never starts or resumes paid work.
-    const rows = [];
-    for (let i = 0; i < attempts.length; i += 4)
-      rows.push(
-        ...(await Promise.all(
-          attempts.slice(i, i + 4).map(async (a) => ({
-            ...a,
-            router: a.gateway ? await readRouterTrace(a.operationId) : null,
-          })),
-        )),
-      );
-    return biJson({ attempts: rows });
+    const router=await readRouterTraces(attempts.filter(a=>a.gateway).map(a=>a.operationId),request.signal);
+    return biJson({ attempts: attempts.map(a=>({...a,router:a.gateway?router.get(a.operationId):null})) });
   } catch {
     return biJson({ error: "执行证据读取失败" }, 500);
   }

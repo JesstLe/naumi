@@ -1,20 +1,10 @@
 import "server-only";
-import {getSetting} from "@/lib/settings/repository";
+import {getSettings} from "@/lib/settings/repository";
 import { decryptAtRest } from "@/lib/settings";
 
 /** Only server configuration selects the Router address; never a browser URL. */
-export async function readRouterTrace(operationId: string) {
-  if (!/^[A-Za-z0-9._:-]{8,160}$/.test(operationId))
-    return { status: "invalid-id", attempts: [] };
-  const url =
-    process.env.NAUMI_BI_ROUTER_URL ||
-    (await getSetting("bi_router_url")) ||
-    "";
-  const encrypted = await getSetting("bi_router_key_enc");
-  const key =
-    process.env.NAUMI_BI_ROUTER_TOKEN ||
-    (encrypted ? decryptAtRest(encrypted) : "");
-  if (!url || !key) return { status: "not-configured", attempts: [] };
+const unavailable=()=>({status:"unavailable",attempts:[]});
+async function readTrace(operationId:string,url:string,key:string,signal:AbortSignal) {
   try {
     const response = await fetch(
       `${url.replace(/\/$/, "")}/internal/operations/${encodeURIComponent(operationId)}`,
@@ -22,7 +12,7 @@ export async function readRouterTrace(operationId: string) {
         headers: { Authorization: `Bearer ${key}` },
         cache: "no-store",
         redirect: "error",
-        signal: AbortSignal.timeout(4000),
+        signal,
       },
     );
     if (!response.ok)
@@ -53,6 +43,31 @@ export async function readRouterTrace(operationId: string) {
         })),
     };
   } catch {
-    return { status: "unavailable", attempts: [] };
+    return unavailable();
   }
+}
+
+/** A single deadline covers the entire external phase, independent of the
+ * number of attempts. Omitted lookups stay explicitly unavailable. */
+export async function readRouterTraces(operationIds:readonly string[],requestSignal?:AbortSignal) {
+  const results=new Map<string,Awaited<ReturnType<typeof readTrace>>>();
+  const valid=[...new Set(operationIds)].filter(id=>{
+    if(/^[A-Za-z0-9._:-]{8,160}$/.test(id))return true;
+    results.set(id,{status:"invalid-id",attempts:[]});return false;
+  });
+  if(!valid.length)return results;
+  const deadline=AbortSignal.timeout(5000);
+  const signal=requestSignal?AbortSignal.any([requestSignal,deadline]):deadline;
+  const keys:string[]=[];
+  if(!process.env.NAUMI_BI_ROUTER_URL)keys.push("bi_router_url");
+  if(!process.env.NAUMI_BI_ROUTER_TOKEN)keys.push("bi_router_key_enc");
+  const settings:Record<string,string|null>=signal.aborted?{}:await getSettings(keys);
+  const url=process.env.NAUMI_BI_ROUTER_URL||settings.bi_router_url||"";
+  const key=process.env.NAUMI_BI_ROUTER_TOKEN||(settings.bi_router_key_enc?decryptAtRest(settings.bi_router_key_enc):"");
+  const configured=Boolean(url&&key);
+  for(const id of valid)results.set(id,signal.aborted||configured?unavailable():{status:"not-configured",attempts:[]});
+  if(!url||!key)return results;
+  for(let i=0;i<valid.length&&!signal.aborted;i+=4)
+    await Promise.all(valid.slice(i,i+4).map(async id=>{results.set(id,await readTrace(id,url,key,signal));}));
+  return results;
 }
