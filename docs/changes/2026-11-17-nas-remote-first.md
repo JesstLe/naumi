@@ -12,4 +12,7 @@
 
 - `node --conditions=react-server --import tsx scripts/verify-nas-remote-first.ts`：真实隔离 HTTP 和文件；NAS 成功无本地副本，即使本地无可用缓冲也成功。远端 503 后有余量才写本地；低于保留空间拒绝且没有本地文件。
 - `node scripts/ops/verify_nas47_storage_probe.cjs`：9 项通过，用隔离替身验证候选的真实发布探针契约；不当作真实 NAS 上线证据。`wsl -e python3 -B -m unittest discover ... -p test_release47_host.py`：Linux 14 项通过，候选环境写入 mode 0、现有实例不变。Windows 的非变更退役测试依赖 Linux `O_DIRECTORY`，已用原生 Linux 运行结果核验。
-- 状态：代码与候选发布参数已准备，未部署、未开放公网 NAS。数据一次性补传和老副本回收属于独立任务，以 `nas-media-move47-20261117` 私有回执为准。待其锁释放及 47 发布授权明确后，另行按固定 `main` 镜像蓝绿发布，凭真实受控现场的上传/生成结果持久化、原件与预览不落本地、故障补传、权限、Range、连续性和回滚证据通过后启用。无需改存储凭据，不重复付费生成。
+- 隔离端到端：`node --conditions=react-server --import tsx scripts/verify-nas-remote-first-recovery.ts`，需本机 PostgreSQL 数据库 `naumi_nas_fixture` 和 `NAUMI_VERIFY_ISOLATED_DB=1`。真实应用媒体接口、PostgreSQL 和 HTTP 对象存储替身验证：原件与两种预览正常直写、没有本地副本；远端 503 后三份媒体保留本地，经恢复队列补传、哈希读回及本地回收；回收后仍可鉴权读取，其他账号不可访问。低于 4 GiB 保护线时无文件和目录行。未接入真实 NAS、生产数据库或付费上游。原本地优先模式的隔离 PostgreSQL 回归也通过。
+- 47 尚未启用。公网仍为 `96a2393da654e26b67d1e32139bc223354bd257b`，Web/Worker 保持本地优先；本次无生产切流。已获 NAS 优先发布授权，接续仍需先完成媒体搬迁锁和上轮实际收尾：`release47-canvas-fixes-20261116-r2` 为 `ONLINE_OLD_MEDIA_CLEANUP_PENDING`，旧进程已停止不足以证明旧媒体工作排空，不能将未知结果作为成功或重放。恢复监督器另外记录 `RECOVERY_GATEWAY_CHANGED`，需核明确切网关差异后按真实在线绑定恢复。
+- 发布固定源码以最新 `main` 和通过的 CI 镜像为准。前一基线 `f1f37ac9` 的画布与图像网关回归未通过，未产出可发布镜像；`e92bedbb` 已包含同事的回归调整，但 GitHub 图像网关回归仍未通过。数据一次性补传与旧副本回收继续由独立任务 `nas-media-move47-20261117` 执行。
+- 上述门禁解除后，在 47 旁路候选一次性验证真实受控上传和生成产物持久化、原件与预览不落本地、故障补传、权限、Range、在线连续性及回滚；配套 NAS 凭据及非目标站点保持原状。
