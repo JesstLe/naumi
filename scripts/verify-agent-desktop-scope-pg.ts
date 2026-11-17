@@ -21,7 +21,7 @@ async function main(){
   await db.getPool().query("INSERT INTO app_team_access_grants(email,scope,created_by,updated_by) VALUES($1,'owned','fixture','fixture')",[actor]);
   const issued=await createAgentToken(actor,{name:'desktop fixture',scopes:['read','write'],dailyCreditLimit:5,expiresInDays:1}),token=issued.token;
   const route=await import('../src/app/api/agent-gateway/v1/tools/route');
-  const http=(secret=issued.secret,workspace=team)=>route.GET(new Request(f.origin+'/api/agent-gateway/v1/tools',{headers:{authorization:'Bearer '+secret,...(workspace?{'x-naumi-workspace':workspace}:{})}}));
+  const http=(secret=issued.secret,workspace:string=team)=>route.GET(new Request(f.origin+'/api/agent-gateway/v1/tools',{headers:{authorization:'Bearer '+secret,...(workspace?{'x-naumi-workspace':workspace}:{})}}));
   const caller={email:actor,token,origin:f.origin,internalOrigin:f.origin,origins:[f.origin]};
   const personal=()=>withFrozenCreation({actorEmail:actor,scopeKind:'personal',tenantId:null},()=>listGatewayTools(caller));
   const scoped=()=>withFrozenCreation({actorEmail:actor,scopeKind:'tenant',tenantId:team},()=>listGatewayTools(caller));
