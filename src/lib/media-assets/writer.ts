@@ -13,6 +13,8 @@ export async function registerMediaMetadata(db:Pick<Pool,"query">,input:{key:str
  owner=COALESCE(app_media_assets.owner,EXCLUDED.owner),remote_ready=EXCLUDED.remote_ready,local_evict_after=NULL,
  thumbnail_key=CASE WHEN app_media_assets.sha256=EXCLUDED.sha256 THEN app_media_assets.thumbnail_key ELSE NULL END,
  preview_key=CASE WHEN app_media_assets.sha256=EXCLUDED.sha256 THEN app_media_assets.preview_key ELSE NULL END,
+ variant_claim_id=CASE WHEN app_media_assets.sha256=EXCLUDED.sha256 AND (app_media_assets.owner IS NOT NULL OR EXCLUDED.owner IS NULL) THEN app_media_assets.variant_claim_id END,
+ variant_claim_until=CASE WHEN app_media_assets.sha256=EXCLUDED.sha256 AND (app_media_assets.owner IS NOT NULL OR EXCLUDED.owner IS NULL) THEN app_media_assets.variant_claim_until END,
  sha256=EXCLUDED.sha256,bytes=EXCLUDED.bytes,content_type=EXCLUDED.content_type`,
  [input.key,input.owner,input.public,input.driver,input.remoteReady,input.contentType,input.sha256,input.bytes]);
 }
