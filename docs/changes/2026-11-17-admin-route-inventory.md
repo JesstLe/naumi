@@ -220,7 +220,7 @@
 | `工作流 GET /v1/imports/worksheet` | `services/enterprise-workflow/src/server.ts` | 部分：首次展开解除批次锁、索引附件、排序兼容；整表网络负载待测 |
 | `工作流 GET /v1/imports/worksheet-audit` | `services/enterprise-workflow/src/server.ts` | 已核查：目录管理员与批次范围、定长审计分页及重开，`source-worksheet.ts` |
 | `工作流 GET /v1/imports/worksheet-file` | `services/enterprise-workflow/src/server.ts` | 已核查：并发停用、撤权、损坏哈希、图片响应、两个 64 MiB 流、取消与进程上限，`formal-import.test.ts`、`worksheet-download.test.ts` |
-| `工作流 GET /v1/notifications` | `services/enterprise-workflow/src/server.ts` | 部分：角标、收件箱、投递、设置与审计的快照；实际断开归还连接、撤权和订单范围复核、越界跳过数据查询通过，`notifications.test.ts`、`read-transaction.test.ts`；大通知箱执行计划待核 |
+| `工作流 GET /v1/notifications` | `services/enterprise-workflow/src/server.ts` | 部分：角标、收件箱、投递、设置与审计的快照；隔离验证断开、撤权、越界跳过列表及 8 万行角标索引计划，`notifications.test.ts`、`verify-notification-badge-plan.ts`；精确全量统计和投递深页计划待核 |
 | `工作流 GET /v1/orders` | `services/enterprise-workflow/src/server.ts` | 部分：分页、可见性及撤权竞争，`read-transaction.test.ts`；大范围扫描待量化 |
 | `工作流 GET /v1/orders/[orderId]` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 GET /v1/orders/[orderId]/detail` | `services/enterprise-workflow/src/server.ts` | 已核查：事件一致性及并发移出权限返回 404，`read-transaction.test.ts` |

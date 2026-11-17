@@ -64,6 +64,18 @@ export async function bootstrap(
 
 迁移脚本 `migrations/001-workflow.sql` 仅在独立工作流库执行。生产账号不应有修改原Naumi库的权限。身份服务暂时失联时拒绝命令，不返回永久缓存授权。
 
+通知历史较大时，可在既有站点维护锁下，对独立工作流数据库单独应用
+[`maintenance/notification-unread-index.sql`](maintenance/notification-unread-index.sql)。它只索引未读行，不改变通知内容、可见范围或运行所需 schema 版本。常规迁移器将版本迁移放在事务中，此索引需要在事务之外并发构建；不要加 `--single-transaction` 或由请求处理器执行。
+
+```bash
+# 由受保护的连接资料选中该站点的工作流数据库；不使用 Naumi 主库。
+PGOPTIONS='-c lock_timeout=3s -c statement_timeout=15min' \
+  psql -X -v ON_ERROR_STOP=1 -f services/enterprise-workflow/maintenance/notification-unread-index.sql
+psql -X -v ON_ERROR_STOP=1 -c "SELECT indisready, indisvalid, pg_get_indexdef(indexrelid) FROM pg_index WHERE indexrelid=to_regclass('enterprise_workflow.notification_inbox_unread')"
+```
+
+两项状态必须都为真，且定义应匹配上述 SQL。中断留下的无效索引不能算完成；复核同名索引和当前执行状态后，再并发移除无效索引并重建。程序回退可保留有效索引。
+
 ## 命令格式
 
 ```json
