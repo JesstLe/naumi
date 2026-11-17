@@ -13,7 +13,10 @@ function load(file,bindings={}){const module={exports:{}};const code=transformSy
   const port=run('docker',['port',container,'5432/tcp']).split(':').at(-1),pool=new Pool({connectionString:`postgresql://postgres:${password}@127.0.0.1:${port}/tick_health_fixture`,max:2});
   try{
    await pool.query('CREATE TABLE app_image_jobs(email text,created_at timestamptz,snapshot jsonb); CREATE TABLE app_canvas_image_tasks(email text,created_at timestamptz,status text); CREATE TABLE app_video_tasks(email text,created_at timestamptz,status text)');
-   const health=load('src/lib/enterprise/health.ts',{'../platform/db/pool':{dbEnabled:true,getPool:()=>pool},'@/platform/db/pool':{dbEnabled:true,getPool:()=>pool},'@/lib/teams/server':{TeamError:Error},'./server':{enterpriseRead:async(_a,_id,cb)=>cb(pool,{owner:true,manageMembers:true,visible:[],team:{owner_email:'fixture@local.test'}})}});
+   const withFixtureScope=async(_actor,_id,cb)=>{
+    const client=await pool.connect();try{return await cb(client,{owner:true,manageMembers:true,visible:[],team:{owner_email:'fixture@local.test'}});}finally{client.release();}
+   };
+   const health=load('src/lib/enterprise/health.ts',{'../platform/db/pool':{dbEnabled:true,getPool:()=>pool},'@/platform/db/pool':{dbEnabled:true,getPool:()=>pool},'@/lib/teams/server':{TeamError:Error},'./server':baseline?{enterpriseRead:withFixtureScope}:{enterpriseReportRead:withFixtureScope}});
    const current=process.cwd();const receiptFile=path.join(current,'src/lib/release-runtime/worker-tick-receipts.ts');
    const receiptSource=transformSync(fs.readFileSync(receiptFile,'utf8'),{loader:'ts',format:'cjs'}).code,module={exports:{}};
    vm.runInThisContext('(function(require,module,exports){'+receiptSource+'\n})')(s=>s==='server-only'?{}:require(s),module,module.exports);
