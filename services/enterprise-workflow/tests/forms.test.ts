@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
-import type {Pool} from 'pg';
+import type {Pool,PoolClient} from 'pg';
 import {WorkflowStore} from '../src/store';
 import {resolveDatabaseActor} from '../src/identity';
 import {formDefinition,formValues,type FormDefinition} from '../src/form-contracts';
 import {checkFormValues,visibleFields} from '../src/form-validation';
 import {sampleForm} from './forms-http';
 import type {Principal,Action} from '../src/contracts';
+import {whileReadWaits} from './read-transaction.test';
 export async function formsChecks(pool:Pool){
  const d=formDefinition.parse(sampleForm()),field=d.fields[0];
  assert.deepEqual(checkFormValues(d,{f_urgent:false,f_count:0},true),[]);
@@ -30,6 +31,20 @@ export async function formsChecks(pool:Pool){
  const draft=cmd({type:'save-draft',definition:d});await forms.execute(author,draft);v=1;assert.equal((await forms.execute(author,draft)).replayed,true);await assert.rejects(forms.execute(author,{...draft,reason:'changed'}),/IDEMPOTENCY_CONFLICT/);
  await assert.rejects(forms.execute(p('worker'),draft),/FORM_MANAGER_REQUIRED/);await assert.rejects(act({type:'publish'}),/FORM_SELF_PUBLISH_FORBIDDEN/);await assert.rejects(forms.read(ops,{action:'detail',id}),/FORM_MANAGER_REQUIRED/);assert.equal((await forms.read(ops,{action:'list'}) as any).total,0);
  await act({type:'publish'},reviewer);assert.equal((await forms.read(ops,{action:'list'}) as any).total,1);await assert.rejects(forms.read(p('author',other),{action:'detail',id}),/FORM_NOT_FOUND/);await assert.rejects(forms.read({...ops,enterpriseId:randomUUID()},{action:'list'}),/MEMBERSHIP_REQUIRED/);
+ const legacy=new WorkflowStore(pool,(tx,principal)=>resolveDatabaseActor(tx,principal),async()=>true).forms;
+ const lockHistory=(tx:PoolClient)=>tx.query('LOCK TABLE enterprise_workflow.form_commands IN ACCESS EXCLUSIVE MODE');
+ const formsLock=async()=>((await pool.query('SELECT pg_try_advisory_xact_lock(hashtextextended($1,0)) acquired',[`forms:${enterpriseId}:${teamId}`])).rows[0].acquired as boolean);
+ const history={action:'history',id};
+ const oldHistory=await whileReadWaits(pool,lockHistory,()=>legacy.read(author,history),async()=>{assert.equal(await formsLock(),false);});
+ const newHistory=await whileReadWaits(pool,lockHistory,()=>forms.read(author,history),async()=>{assert.equal(await formsLock(),true);});
+ assert.equal(oldHistory.status,'fulfilled');assert.deepEqual(newHistory,oldHistory);
+ const lockRevisions=(tx:PoolClient)=>tx.query('LOCK TABLE enterprise_workflow.form_revisions IN ACCESS EXCLUSIVE MODE');
+ const enable=(enabled:boolean)=>pool.query("UPDATE enterprise_workflow.form_templates SET document=jsonb_set(document,'{enabled}',to_jsonb($4::boolean)) WHERE enterprise_id=$1 AND team_id=$2 AND id=$3",[enterpriseId,teamId,id,enabled]);
+ const inaccessible=await whileReadWaits(pool,lockRevisions,()=>forms.read(ops,{action:'version',id,revision:1}),async()=>{await enable(false);});
+ assert.equal(inaccessible.status,'rejected');assert.equal(inaccessible.reason.code,'FORM_DISABLED');await enable(true);
+ const listRevoked=await whileReadWaits(pool,lockRevisions,()=>forms.read(ops,{action:'list'}),async()=>{await enable(false);});
+ assert.equal(listRevoked.status,'rejected');assert.equal(listRevoked.reason.code,'READ_SCOPE_CHANGED');await enable(true);
+ assert.equal((await forms.read(ops,{action:'list',query:d.title}) as any).total,1);
  let o=(await wf.execute(ops,{commandId:randomUUID(),orderId:randomUUID(),expectedVersion:0,action:{type:'create',title:'动态需求',brief:'fixture',acceptance:'frozen'}})).order;
  const run=async(action:Action,who=ops)=>o=(await wf.execute(who,{commandId:randomUUID(),orderId:o.id,expectedVersion:o.version,action})).order;
  await run({type:'set-demand-form',selection:{templateId:id,revision:1,values:{f_urgent:true,f_count:0}},reason:'draft'});await assert.rejects(run({type:'submit-requirement'}),/FORM_VALUES_INVALID/);const before=o.version;
@@ -42,7 +57,12 @@ export async function formsChecks(pool:Pool){
  await act({type:'save-draft',definition:d});const fault=cmd({type:'publish'});
  await pool.query("CREATE FUNCTION enterprise_workflow.fail_form() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'form revision failure'; END $$;CREATE TRIGGER fail_form BEFORE INSERT ON enterprise_workflow.form_revisions FOR EACH ROW EXECUTE FUNCTION enterprise_workflow.fail_form()");await assert.rejects(forms.execute(reviewer,fault),/form revision failure/);assert.equal((await pool.query('SELECT count(*) n FROM enterprise_workflow.form_commands WHERE id=$1',[fault.commandId])).rows[0].n,'0');assert.equal((await forms.read(author,{action:'detail',id}) as any).book.version,v);await pool.query('DROP TRIGGER fail_form ON enterprise_workflow.form_revisions;DROP FUNCTION enterprise_workflow.fail_form()');
  const racing=[fault,{...fault,commandId:randomUUID()}],race=await Promise.allSettled(racing.map(c=>forms.execute(reviewer,c)));assert.equal(race.filter(x=>x.status==='fulfilled').length,1);const winner=racing[race.findIndex(x=>x.status==='fulfilled')];assert.equal((await forms.execute(reviewer,winner)).replayed,true);
+ for(let i=0;i<31;i++){const templateId=randomUUID();await forms.execute(author,{commandId:randomUUID(),templateId,expectedVersion:0,reason:'page fixture',action:{type:'save-draft',definition:d}});if(i<30)await forms.execute(reviewer,{commandId:randomUUID(),templateId,expectedVersion:1,reason:'page fixture',action:{type:'publish'}});}
  await pool.query("UPDATE enterprise_workflow.team_members SET enabled=false WHERE enterprise_id=$1 AND subject='reviewer'",[enterpriseId]);await assert.rejects(forms.execute(reviewer,winner),/MEMBERSHIP_REQUIRED/);
- for(let i=0;i<31;i++)await forms.execute(author,{commandId:randomUUID(),templateId:randomUUID(),expectedVersion:0,reason:'page fixture',action:{type:'save-draft',definition:d}});const paged=await forms.read(author,{action:'list',manage:'1',page:2}) as any;assert.equal(paged.total,32);assert.equal(paged.templates.length,2);assert.equal((await forms.read(author,{action:'list',manage:'1',page:99}) as any).total,32);
+ const paged=await forms.read(author,{action:'list',manage:'1',page:2}) as any;assert.equal(paged.total,32);assert.equal(paged.templates.length,2);assert.equal((await forms.read(author,{action:'list',manage:'1',page:99}) as any).total,32);
+ let versionReads=0;const observed={connect:async()=>{const tx=await pool.connect();return {query:(sql:string,values?:unknown[])=>{if(sql.includes('enterprise_workflow.form_revisions'))versionReads++;return tx.query(sql,values);},release:tx.release.bind(tx)};}} as unknown as Pool;
+ const batched=new WorkflowStore(observed,resolveDatabaseActor,async()=>true).forms,visible=await batched.read(ops,{action:'list'});
+ assert.ok('templates' in visible&&visible.templates);assert.equal(visible.total,31);assert.equal(visible.templates.length,30);assert.equal(versionReads,1);assert.deepEqual(visible,await forms.read(ops,{action:'list'}));
+ console.log('FORM_READ_SNAPSHOT_PASS: history_team_lock_released=1 version_and_list_revocation_denied=2 published_page_30=1 version_queries=1');
  console.log('FORMS_SERVICE_PASS: fields6=1 zero_false=1 hidden_chain=1 unknown_type_date_range=1 independent_publish=1 scope=1 draft_title_private=1 replay=1 cas=1 atomic=1 frozen_revision=1 disabled_blocks_submit=1 catalog_required=1 clear_explicit=1 revoked=1 pagination=1');
 }

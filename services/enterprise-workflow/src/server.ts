@@ -185,10 +185,10 @@ export function createWorkflowServer(store: WorkflowStore, authenticate: Authent
       if(url.pathname==='/v1/appeals'&&req.method==='POST')return json(res,200,await store.appeals.execute(principal,await body(req)));
       if(url.pathname==='/v1/worklogs'&&req.method==='GET')return json(res,200,await store.worklogs.read(principal,Object.fromEntries(url.searchParams)));
       if(url.pathname==='/v1/worklogs'&&req.method==='POST')return json(res,200,await store.worklogs.execute(principal,await body(req)));
-      if(url.pathname==='/v1/demand-batches'&&req.method==='GET')return json(res,200,await store.demandBatches.read(principal,Object.fromEntries(url.searchParams)));
-      if(url.pathname==='/v1/demand-batches/preview'&&req.method==='POST')return json(res,200,await store.demandBatches.preview(principal,await body(req,512*1024)));
+      if(url.pathname==='/v1/demand-batches'&&req.method==='GET')return json(res,200,await readUntilDisconnect(req,res,signal=>store.demandBatches.read(principal,Object.fromEntries(url.searchParams),signal)));
+      if(url.pathname==='/v1/demand-batches/preview'&&req.method==='POST'){const input=await body(req,512*1024);return json(res,200,await readUntilDisconnect(req,res,signal=>store.demandBatches.preview(principal,input,signal)));}
       if(url.pathname==='/v1/demand-batches/apply'&&req.method==='POST')return json(res,200,await store.demandBatches.apply(principal,await body(req,512*1024)));
-      if(url.pathname==='/v1/demand-forms'&&req.method==='GET')return json(res,200,await store.forms.read(principal,Object.fromEntries(url.searchParams)));
+      if(url.pathname==='/v1/demand-forms'&&req.method==='GET')return json(res,200,await readUntilDisconnect(req,res,signal=>store.forms.read(principal,Object.fromEntries(url.searchParams),signal)));
       if(url.pathname==='/v1/demand-forms'&&req.method==='POST')return json(res,200,await store.forms.execute(principal,await body(req)));
       if(url.pathname==='/v1/catalog'&&req.method==='GET')return json(res,200,await readUntilDisconnect(req,res,signal=>store.catalog.read(principal,Object.fromEntries(url.searchParams),signal)));
       if(url.pathname==='/v1/catalog/preview'&&req.method==='POST'){const input=await body(req);return json(res,200,await readUntilDisconnect(req,res,signal=>store.catalog.preview(principal,input,signal)));}
