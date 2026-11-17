@@ -24,9 +24,9 @@ const historical=`CASE
  WHEN l.reason ~ '^画布标注编辑( · (low|medium|high))?$' THEN 'canvas.annotate'
  WHEN l.reason='画布在线改字' THEN 'canvas.text-edit'
  ELSE NULL END`;
-const ledgerSourceCTE=(window="l.created_at >= $2::timestamptz AND l.created_at < $3::timestamptz")=>`WITH ledger_input AS MATERIALIZED (
- SELECT l.id,l.email,l.created_at,l.delta,l.kind,l.reason FROM app_ledger l
- WHERE l.email=ANY($1::text[]) AND ${window} AND ($4::text='' OR l.email=$4)
+const ledgerColumns='l.id,l.email,l.created_at,l.delta,l.kind,l.reason';
+const ledgerMappingCTE=(input:string)=>`WITH ledger_input AS MATERIALIZED (
+ ${input}
 ), operation_keys AS (
  SELECT DISTINCT ON (o.email,o.ledger_id) o.email,o.ledger_id,o.id,o.feature
  FROM app_billing_operations o JOIN ledger_input l ON l.id=o.ledger_id AND l.email=o.email
@@ -44,8 +44,10 @@ const ledgerSourceCTE=(window="l.created_at >= $2::timestamptz AND l.created_at 
  LEFT JOIN operation_keys o ON o.email=l.email AND o.ledger_id=l.id
  LEFT JOIN app_billing_api_cost_reviews r ON starts_with(l.id,'led-api-refund-') AND r.id=substring(l.id from 16)
  LEFT JOIN app_billing_operations ro ON ro.id=r.operation_id AND ro.email=l.email
-), ledger AS (SELECT * FROM mapped WHERE $5::text='' OR purpose=$5)`;
-const ledgerCTE=ledgerSourceCTE();
+)`;
+const ledgerCTE=`${ledgerMappingCTE(`SELECT ${ledgerColumns} FROM app_ledger l
+ WHERE l.email=ANY($1::text[]) AND l.created_at >= $2::timestamptz AND l.created_at < $3::timestamptz AND ($4::text='' OR l.email=$4)`)},
+ ledger AS (SELECT * FROM mapped WHERE $5::text='' OR purpose=$5)`;
 const sums=`COALESCE(sum(-delta) FILTER(WHERE event_kind='consume'),0)::float8 AS consumed,COALESCE(sum(delta) FILTER(WHERE event_kind='refund'),0)::float8 AS refunded,
  COALESCE(sum(CASE WHEN event_kind='consume' THEN -delta WHEN event_kind='refund' THEN -delta ELSE 0 END),0)::float8 AS net,count(*)::int AS events`;
 const jobStatus=(expr:string)=>`CASE WHEN ${expr} IN('done','completed','succeeded','success') THEN 'succeeded' WHEN ${expr} IN('error','failed','cancelled','canceled') THEN 'failed' WHEN ${expr} IN('queued','running','pending','processing','reserved','prepared') THEN 'pending' ELSE 'unknown' END`;
@@ -148,10 +150,26 @@ export async function enterpriseLedgerCsv(actor:TeamActor,q:AnalyticsFilter){
  });
 }
 
+/** Integration record lists need only ledger details, using the report's scope and 25-row contract. */
+export function enterpriseLedgerPage(actor:TeamActor,q:AnalyticsFilter){
+ return enterpriseReportRead(actor,q.enterpriseId,async(tx,s)=>{
+  const emails=scopedEmails(s,q);
+  if(q.kind||q.purpose)throw new Error('Unfiltered ledger page required');
+  return {...await creationLedger(tx,emails,{start:q.from+'T00:00:00+08:00',end:shiftDate(q.to,1)+'T00:00:00+08:00',email:q.email,page:q.page,size:25}),generatedAt:new Date().toISOString()};
+ });
+}
+
 /** Narrow read-only ledger list for an already authorized creation scope. Reuses authoritative classification. */
 export async function creationLedger(tx:import('pg').PoolClient,emails:string[],q:{start:string;end:string;email:string;page:number;size:number;recordId?:string}){
- const cte=ledgerSourceCTE("(($6::text<>'' AND l.id=$6) OR ($6='' AND l.created_at >= $2::timestamptz AND l.created_at < $3::timestamptz))"),p=[emails,q.start,q.end,q.email,'',q.recordId??''];
- const total=Number((await tx.query(`${cte} SELECT count(*) AS n FROM ledger`,p)).rows[0].n);
- const rows=(await tx.query(`${cte} SELECT l.id,l.email,u.name,l.created_at AS "createdAt",l.event_kind AS kind,l.purpose,l.delta,l.operation_id AS "operationId",l.source FROM ledger l JOIN app_users u ON u.email=l.email ORDER BY l.created_at DESC,l.id DESC LIMIT $7 OFFSET $8`,[...p,q.size,(q.page-1)*q.size])).rows;
+ const byId=!!q.recordId,p=byId?[emails,q.email,q.recordId]:[emails,q.email,q.start,q.end];
+ const where=`l.email=ANY($1::text[]) AND ($2::text='' OR l.email=$2) AND ${byId?'l.id=$3':'l.created_at >= $3::timestamptz AND l.created_at < $4::timestamptz'}`;
+ // Exact total includes matching historical rows even if the account no longer
+ // exists. As before, only rows with account metadata can be returned.
+ const total=Number((await tx.query(`SELECT count(*) AS n FROM app_ledger l WHERE ${where}`,p)).rows[0].n),offset=(q.page-1)*q.size;
+ if(offset>=total)return {rows:[],total,page:q.page,size:q.size};
+ const cte=ledgerMappingCTE(`SELECT ${ledgerColumns} FROM app_ledger l JOIN app_users u ON u.email=l.email WHERE ${where}
+  ORDER BY l.created_at DESC,l.id DESC LIMIT $${p.length+1} OFFSET $${p.length+2}`);
+ const rows=(await tx.query(`${cte} SELECT l.id,l.email,u.name,l.created_at AS "createdAt",l.event_kind AS kind,l.purpose,l.delta,l.operation_id AS "operationId",l.source
+  FROM mapped l JOIN app_users u ON u.email=l.email ORDER BY l.created_at DESC,l.id DESC`,[...p,q.size,offset])).rows;
  return {rows:rows.map(r=>({...r,createdAt:r.createdAt instanceof Date?r.createdAt.toISOString():r.createdAt})),total,page:q.page,size:q.size};
 }

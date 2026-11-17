@@ -53,6 +53,43 @@ async function main(){
  assert(data.details.rows.every(row=>/^\d{4}-\d{2}-\d{2}T.*Z$/.test(row.createdAt)));
  const page=await analytics.enterpriseAnalytics(actor,{...q,page:2});assert.equal(page.details.rows.length,14);assert.equal(new Set([...data.details.rows,...page.details.rows].map(r=>r.id)).size,39);
  const leadData=await analytics.enterpriseAnalytics({email:lead,admin:false},q);assert.equal(leadData.summary.scopeMembers,2);assert.equal(leadData.summary.net,60);assert(!JSON.stringify(leadData).includes(employee));assert(!JSON.stringify(leadData).includes(owner));
+ const narrow=async(who:typeof actor,filter=q)=>{const {generatedAt,...details}=await analytics.enterpriseLedgerPage(who,filter);assert(Number.isFinite(Date.parse(generatedAt)));return details;};
+ assert.deepEqual(await narrow(actor),data.details);
+ assert.deepEqual(await narrow(actor,{...q,page:2}),page.details);
+ assert.deepEqual(await narrow({email:lead,admin:false}),leadData.details);
+ await assert.rejects(narrow({email:lead,admin:false},{...q,email:employee}),{status:403});
+ const held=await pool.connect();
+ try{
+  await held.query('BEGIN');await held.query('LOCK TABLE app_artworks IN ACCESS EXCLUSIVE MODE');
+  await assert.rejects(analytics.enterpriseAnalytics(actor,q),{status:503});
+  assert.deepEqual(await narrow(actor),data.details);
+  await held.query('ROLLBACK');
+  await held.query('BEGIN');await held.query('LOCK TABLE app_billing_operations IN ACCESS EXCLUSIVE MODE');
+  assert.deepEqual(await narrow(actor,{...q,page:3}),{total:39,page:3,size:25,rows:[]});
+ }finally{await held.query('ROLLBACK');held.release();}
+ console.log('ENTERPRISE_LEDGER_PAGE_PASS exact_report_details=1 unrelated_artworks_lock_avoided=1 past_end_no_classification=1 private_scope=1');
+ const manager={email:lead,admin:false},leadRole=(await pool.query('SELECT role_id FROM app_enterprise_members WHERE enterprise_id=$1 AND email=$2',[root,lead])).rows[0].role_id;
+ const initialDirectory=await server.enterpriseSnapshot(manager,root);
+ assert(initialDirectory.members.some(m=>m.email===intern&&m.legacy_metrics_state==='recorded'));
+ await pool.query("UPDATE app_enterprise_members SET membership_status='suspended' WHERE enterprise_id=$1 AND email=$2",[root,intern]);
+ try{
+  const paused=(await server.enterpriseSnapshot(manager,root)).members.find(m=>m.email===intern);
+  assert.deepEqual([paused?.legacy_metrics_state,paused?.available,paused?.consumed,paused?.artworks],['restricted',null,null,null]);
+ }finally{await pool.query("UPDATE app_enterprise_members SET membership_status='active' WHERE enterprise_id=$1 AND email=$2",[root,intern]);}
+ await pool.query('UPDATE app_enterprise_roles SET view_records=false WHERE id=$1',[leadRole]);
+ const rosterLock=await pool.connect();
+ try{
+  await rosterLock.query('BEGIN');await rosterLock.query('LOCK TABLE app_credit_batches,app_ledger,app_artworks IN ACCESS EXCLUSIVE MODE');
+  await assert.rejects(server.enterpriseSnapshot(actor,root),{status:503});
+  const directory=await server.enterpriseSnapshot(manager,root);
+  assert.equal(directory.actor.manageMembers,true);assert.equal(directory.actor.viewRecords,false);
+  assert.deepEqual(directory.members.map(m=>m.email),initialDirectory.members.map(m=>m.email));
+  assert(directory.members.every(m=>m.legacy_metrics_state==='restricted'&&m.available===null&&m.consumed===null&&m.artworks===null));
+ }finally{
+  await rosterLock.query('ROLLBACK');rosterLock.release();
+  await pool.query('UPDATE app_enterprise_roles SET view_records=true WHERE id=$1',[leadRole]);
+ }
+ console.log('ENTERPRISE_MEMBER_METRICS_PASS directory_without_metrics_locks=1 authorized_owner_still_loads_metrics=1 suspended_no_metrics=1');
  const branch=await analytics.enterpriseAnalytics(actor,{...q,team:lead});assert.equal(branch.summary.net,60);assert.equal(branch.members.length,2);
  const generate=await analytics.enterpriseAnalytics(actor,{...q,purpose:'image.generate'});assert.equal(generate.summary.net,98);assert.equal(generate.summary.artworks,0);assert.equal(generate.summary.creditsPerArtwork,null);
  const refund=await analytics.enterpriseAnalytics(actor,{...q,kind:'refund'});assert.equal(refund.details.total,2);assert.equal(refund.summary.net,195);

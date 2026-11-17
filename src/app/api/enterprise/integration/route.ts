@@ -14,11 +14,11 @@ const query=z.discriminatedUnion('action',[
 ]);
 /** Enterprise viewer, NOT a platform-admin proxy. Source authorization is independent of the demo role picker. */
 export async function GET(request:Request){
-  const actor=await enterpriseAuthorize(request);if(actor instanceof NextResponse)return actor;
-  const params=new URL(request.url).searchParams,parsed=query.safeParse(Object.fromEntries(params));
-  if(!parsed.success)return teamJson({error:'数据源查询参数无效'},400);
-  if(parsed.data.action==='records')try{parseBiQuery(new URLSearchParams({...Object.fromEntries(params),section:'artworks'}));}catch{return teamJson({error:'日期或分页参数无效'},400);}
   try{
+    const actor=await enterpriseAuthorize(request);if(actor instanceof NextResponse)return actor;
+    const params=new URL(request.url).searchParams,parsed=query.safeParse(Object.fromEntries(params));
+    if(!parsed.success)return teamJson({error:'数据源查询参数无效'},400);
+    if(parsed.data.action==='records')try{parseBiQuery(new URLSearchParams({...Object.fromEntries(params),section:'artworks'}));}catch{return teamJson({error:'日期或分页参数无效'},400);}
     const policy=deploymentPolicy(),adapter=new NaumiEnterpriseAdapter(actor,policy),q=parsed.data;
     if(q.action==='context')return teamJson({version:1,source:'naumi',transport:adapter.transport,instanceId:policy.sourceInstanceId,mode:policy.mode,viewer:{email:actor.email},enterprises:await adapter.list()});
     if(q.action==='members')return teamJson(await adapter.members(q.enterpriseId));

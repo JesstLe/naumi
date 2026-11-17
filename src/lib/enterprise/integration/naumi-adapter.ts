@@ -2,7 +2,7 @@ import 'server-only';
 import type { TeamActor } from '@/lib/teams/grants';
 import { TeamError } from "@/lib/teams/errors";
 import { enterpriseList,enterpriseSnapshot,enterpriseReportRead } from '../server';
-import { enterpriseAnalytics,analyticsQuerySchema } from '../analytics';
+import { enterpriseLedgerPage,analyticsQuerySchema } from '../analytics';
 import {queryBi,queryEnterpriseOperations} from "@/lib/bi/repository";
 import {ensureBiSchema} from "@/lib/bi/schema";
 
@@ -16,7 +16,7 @@ import { normalizeRecord } from './normalize';
 export class NaumiEnterpriseAdapter implements EnterpriseDataPort {
   readonly transport='in-process' as const;
   constructor(private actor:TeamActor,readonly policy:DeploymentPolicy){}
-  async list(){return (await enterpriseList(this.actor)).filter(t=>!this.policy.allowedEnterpriseIds.length||this.policy.allowedEnterpriseIds.includes(t.id));}
+  async list(){return enterpriseList(this.actor,false,this.policy.allowedEnterpriseIds);}
   async members(id:string){assertEnterpriseAllowed(this.policy,id);return enterpriseSnapshot(this.actor,id);}
   async records(input:RecordQuery):Promise<IntegrationPage>{
     assertEnterpriseAllowed(this.policy,input.enterpriseId);
@@ -26,8 +26,8 @@ export class NaumiEnterpriseAdapter implements EnterpriseDataPort {
     let rows:BiRow[],total:number,size:number,page:number,generatedAt:string;
     if(input.kind==='ledger'){
       // Reuse the enterprise ledger's authoritative delta/purpose/refund classification, not raw reason text.
-      const analytics=await enterpriseAnalytics(this.actor,analyticsQuerySchema.parse({enterpriseId:input.enterpriseId,from:query.from,to:query.to,email:query.email,page:query.page}));
-      rows=analytics.details.rows as unknown as BiRow[];total=analytics.details.total;size=analytics.details.size;page=analytics.details.page;generatedAt=analytics.generatedAt;
+      const data=await enterpriseLedgerPage(this.actor,analyticsQuerySchema.parse({enterpriseId:input.enterpriseId,from:query.from,to:query.to,email:query.email,page:query.page}));
+      ({rows,total,size,page,generatedAt}=data);
     }else{
       await ensureBiSchema();
       const data=await enterpriseReportRead(this.actor,input.enterpriseId,async(tx,scope)=>{

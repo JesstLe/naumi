@@ -189,9 +189,12 @@ type PickerRow=Omit<EnterpriseIdentity,'owner'>&{
   revoked_at:string|null;sponsor_banned:boolean|null;sponsor_account_expires_at:string|null;
   member_email:string|null;membership_status:Node['membership_status']|null;membership_expires_at:string|null;role_id:string|null;
 };
-export async function enterpriseList(actor:TeamActor,allowSelf=false):Promise<EnterpriseIdentity[]> {
+export async function enterpriseList(actor:TeamActor,allowSelf=false,allowedIds?:readonly string[]):Promise<EnterpriseIdentity[]> {
   return transaction(async tx=>{
     let pinned:string[];try{pinned=pinnedEnterpriseIds()}catch{throw new TeamError('企业部署范围尚未配置',503)}
+    const requested=allowedIds?.length?allowedIds:null;
+    const tenantIds=pinned.length?pinned.filter(id=>!requested||requested.includes(id)):requested;
+    if(tenantIds?.length===0)return [];
     const siteId=await administeredSite(tx,actor.email,'snapshot');
     // The picker returns tenant identities only. Batch its authorization facts,
     // without calculating each tenant's record visibility or locking accounts.
@@ -208,7 +211,7 @@ export async function enterpriseList(actor:TeamActor,allowSelf=false):Promise<En
       LEFT JOIN app_users sponsor ON sponsor.email=t.owner_email
       LEFT JOIN app_tenant_entitlements e ON e.tenant_id=t.id
       WHERE ($4::uuid[] IS NULL OR t.id=ANY($4)) AND ($2 OR t.id=$3::uuid OR t.owner_email=$1 OR m.email IS NOT NULL)
-      ORDER BY t.name,t.id`,[actor.email,actor.admin,siteId,pinned.length?pinned:null])).rows;
+      ORDER BY t.name,t.id`,[actor.email,actor.admin,siteId,tenantIds])).rows;
     const isOwner=(t:PickerRow)=>actor.admin||t.owner_email===actor.email||siteId===t.id;
     const now=Date.now();
     const eligible=rows.filter(t=>actor.admin||(
@@ -246,17 +249,28 @@ export async function enterpriseList(actor:TeamActor,allowSelf=false):Promise<En
   });
 }
 async function memberRows(tx:PoolClient,s:Scope):Promise<EnterpriseMember[]> {
-  const rows=(await tx.query(`SELECT m.email,u.name,u.role AS account_role,CASE WHEN $5::boolean THEN u.position ELSE NULL END AS position,CASE WHEN $4::boolean THEN u.phone ELSE NULL END AS phone,CASE WHEN $4::boolean THEN u.note ELSE NULL END AS note,m.supervisor_email,m.role_id,m.employment,m.version,m.membership_status,m.membership_expires_at,m.joined_at,m.left_at,u.management_version,u.banned,u.account_expires_at,
+  const selected=[...(s.manageMembers?s.manageable:s.visible)];
+  const metrics=s.viewRecords?selected.filter(email=>s.visible.has(email)):[];
+  const site=enterpriseSiteIdentity()?.enterpriseId===s.team.id;
+  // Users allowed to manage the directory may still have no records access.
+  // Their member query must not open billing or media relations at all.
+  const metricFields=metrics.length?`
+    CASE WHEN m.email=ANY($5::text[]) THEN GREATEST(0,COALESCE(b.principal,0)-u.credits_used)::int ELSE NULL END AS available,
+    CASE WHEN m.email=ANY($5::text[]) THEN COALESCE(l.consumed,0)::int ELSE NULL END AS consumed,
+    CASE WHEN m.email=ANY($5::text[]) THEN COALESCE(a.n,0)::int ELSE NULL END AS artworks,
+    CASE WHEN m.email=ANY($5::text[]) THEN 'recorded' ELSE 'restricted' END AS legacy_metrics_state`:
+    "NULL::int AS available,NULL::int AS consumed,NULL::int AS artworks,'restricted' AS legacy_metrics_state";
+  const metricJoins=metrics.length?`
+    LEFT JOIN LATERAL(SELECT sum(remaining) AS principal FROM app_credit_batches WHERE email=u.email AND u.email=ANY($5::text[]) AND expires_at>now() AND remaining>0)b ON true
+    LEFT JOIN LATERAL(SELECT -sum(delta) AS consumed FROM app_ledger WHERE email=u.email AND u.email=ANY($5::text[]) AND kind='consume' AND delta<0)l ON true
+    LEFT JOIN LATERAL(SELECT count(*) AS n FROM app_artworks WHERE email=u.email AND u.email=ANY($5::text[]) AND deleted_at IS NULL)a ON true`:'';
+  const rows=(await tx.query(`SELECT m.email,u.name,u.role AS account_role,CASE WHEN $4::boolean THEN u.position ELSE NULL END AS position,CASE WHEN $3::boolean THEN u.phone ELSE NULL END AS phone,CASE WHEN $3::boolean THEN u.note ELSE NULL END AS note,m.supervisor_email,m.role_id,m.employment,m.version,m.membership_status,m.membership_expires_at,m.joined_at,m.left_at,u.management_version,u.banned,u.account_expires_at,
     COALESCE(r.name,'员工') AS role_name,COALESCE(r.level,999)::int AS level,
-    CASE WHEN m.email=ANY($3::text[]) THEN GREATEST(0,COALESCE(b.principal,0)-u.credits_used)::int ELSE NULL END AS available,
-    CASE WHEN m.email=ANY($3::text[]) THEN COALESCE(l.consumed,0)::int ELSE NULL END AS consumed,
-    CASE WHEN m.email=ANY($3::text[]) THEN COALESCE(a.n,0)::int ELSE NULL END AS artworks,
-    CASE WHEN m.email=ANY($3::text[]) THEN 'recorded' ELSE 'restricted' END AS legacy_metrics_state
+    ${metricFields}
     FROM app_enterprise_members m JOIN app_users u ON u.email=m.email LEFT JOIN app_enterprise_roles r ON r.enterprise_id=m.enterprise_id AND r.id=m.role_id
-    LEFT JOIN LATERAL(SELECT sum(remaining) AS principal FROM app_credit_batches WHERE email=u.email AND expires_at>now() AND remaining>0)b ON true
-    LEFT JOIN LATERAL(SELECT -sum(delta) AS consumed FROM app_ledger WHERE email=u.email AND kind='consume' AND delta<0)l ON true
-    LEFT JOIN LATERAL(SELECT count(*) AS n FROM app_artworks WHERE email=u.email AND deleted_at IS NULL)a ON true
-    WHERE m.enterprise_id=$1 AND m.email=ANY($2::text[]) ORDER BY COALESCE(r.level,999),u.name,u.email`,[s.team.id,s.manageMembers?[...s.manageable]:[...s.visible],s.viewRecords?[...s.visible]:[],s.owner&&enterpriseSiteIdentity()?.enterpriseId===s.team.id,enterpriseSiteIdentity()?.enterpriseId===s.team.id])).rows;
+    ${metricJoins}
+    WHERE m.enterprise_id=$1 AND m.email=ANY($2::text[]) ORDER BY COALESCE(r.level,999),u.name,u.email`,
+    [s.team.id,selected,s.owner&&site,site,...(metrics.length?[metrics]:[])])).rows;
   return rows.map(m=>({...m,canManage:m.account_role==='user'&&s.manageMembers&&m.email!==s.team.owner_email&&m.email!==undefined&&m.level>s.level}));
 }
 export async function enterpriseSnapshot(actor:TeamActor,id:string):Promise<EnterpriseSnapshot> {

@@ -69,14 +69,31 @@ async function main(){
   assert.equal((await GET(req('',{action:'list'}))).status,401);
   assert.equal((await GET(req(owner,{action:'list'}))).status,401);
   let response=await GET(req(admin,{action:'list'}));assert.equal(response.status,200);assert.equal((await response.json()).enterprises.length,2);
+  // An unrelated tenant's invalid hierarchy must not be traversed by a restricted integration.
+  await pool.query('UPDATE app_enterprise_members SET supervisor_email=$3 WHERE enterprise_id=$1 AND email=$2',[foreign,outsider,staff]);
+  try{
+   await assert.rejects(adapter.list(),{status:409});
+   process.env.NAUMI_ENTERPRISE_ALLOWED_IDS=root;
+   const limited=await GET(req(admin,{action:'list'}));assert.equal(limited.status,200);
+   assert.deepEqual((await limited.json()).enterprises.map((e:{id:string})=>e.id),[root]);
+  }finally{
+   process.env.NAUMI_ENTERPRISE_ALLOWED_IDS='';
+   await pool.query('UPDATE app_enterprise_members SET supervisor_email=$3 WHERE enterprise_id=$1 AND email=$2',[foreign,outsider,otherOwner]);
+  }
   response=await GET(req(admin,{action:'records',...q,kind:'generations'}));assert.equal(response.status,200);assert.equal((await response.json()).rows.length,2);
+  response=await GET(req(admin,{action:'records',...q,kind:'ledger',size:'1'}));assert.equal(response.status,200);const routeLedger=await response.json();assert.equal(routeLedger.size,25);assert.deepEqual(routeLedger.rows,ledger.rows);
   assert.equal((await GET(req(admin,{action:'records',...q,kind:'generations',from:'bad'}))).status,400);
   assert.equal((await GET(req(admin,{action:'list',baseUrl:'https://attacker.invalid'}))).status,400);
   process.env.NAUMI_ENTERPRISE_DEPLOYMENT_MODE='dedicated';process.env.NAUMI_ENTERPRISE_ALLOWED_IDS=root;
   assert.equal((await erp.enterpriseList({email:admin,admin:true,consoleAdmin:true})).length,1);
+  assert.deepEqual(await erp.enterpriseList({email:admin,admin:true,consoleAdmin:true},false,[foreign]),[]);
   await assert.rejects(erp.enterpriseSnapshot({email:admin,admin:true,consoleAdmin:true},foreign),/企业不存在/);
-  assert.equal((await GET(req(admin,{action:'records',enterpriseId:foreign,kind:'artworks'}))).status,404);
-  process.env.NAUMI_ENTERPRISE_ALLOWED_IDS='';assert.equal((await GET(req(admin,{action:'list'}))).status,503);
+  // A dedicated workspace deliberately denies even an account with the global
+  // admin role. The customer endpoint, tested below, still checks foreign IDs.
+  assert.equal((await GET(req(admin,{action:'records',enterpriseId:root,kind:'artworks'}))).status,401);
+  assert.equal((await GET(req(admin,{action:'records',enterpriseId:foreign,kind:'artworks'}))).status,401);
+  process.env.NAUMI_ENTERPRISE_ALLOWED_IDS='';const unconfigured=await GET(req(admin,{action:'list'}));
+  assert.equal(unconfigured.status,503);assert.deepEqual(await unconfigured.json(),{error:'ENTERPRISE_INTEGRATION_NOT_CONFIGURED'});
   process.env.NAUMI_ENTERPRISE_ALLOWED_IDS=root;await pool.query('UPDATE app_account_teams SET enabled=false WHERE id=$1',[root]);
   await assert.rejects(scoped.records({...q,kind:'artworks'}),/企业授权已关闭/);
   await pool.query('UPDATE app_account_teams SET enabled=true WHERE id=$1',[root]);
@@ -89,6 +106,7 @@ async function main(){
   response=await sourceGET(sourceReq(owner,{action:'context'}));assert.equal(response.status,200,await response.clone().text());
   const context=await response.json();assert.equal(context.viewer.email,owner);assert.equal(context.enterprises.length,1);
   response=await sourceGET(sourceReq(owner,{action:'records',...q,kind:'generations'}));assert.equal(response.status,200);assert.equal((await response.json()).rows.length,2);
+  response=await sourceGET(sourceReq(owner,{action:'records',...q,kind:'ledger',size:'100'}));assert.equal(response.status,200);const sourceLedger=await response.json();assert.equal(sourceLedger.size,25);assert.deepEqual(sourceLedger.rows,ledger.rows);
   response=await sourceGET(sourceReq(manager,{action:'records',...q,kind:'artworks'}));assert.equal(response.status,200);assert.equal((await response.json()).rows.length,1);
   assert.equal((await sourceGET(sourceReq(owner,{action:'records',enterpriseId:foreign,kind:'artworks'}))).status,404);
   assert.equal((await sourceGET(sourceReq(ordinary,{action:'records',...q,kind:'artworks'}))).status,403);
@@ -98,8 +116,11 @@ async function main(){
   assert.equal((await sourceGET(sourceReq(owner,{action:'records',...q,kind:'artworks'}))).status,403);
   await pool.query('UPDATE app_account_teams SET enabled=true WHERE id=$1',[root]);
   const navigation=readFileSync(resolve('src/components/admin/center-shell.tsx'),'utf8');assert.ok(!navigation.includes('href:"/admin/enterprise-workbench"'));
-  console.log('NAUMI_INTEGRATION_PASS: shared_enterprises=2 dedicated_enterprises=1 ordinary_denied=1 cross_enterprise_denied=1 hierarchy_scope=1 prompts=1 linked_charge=6 missing_charge=null refund_delta=2 source_writes=0 raw_secrets=0 source_admin_not_product=1 deployment_not_configured=503');
+  console.log('NAUMI_INTEGRATION_PASS: shared_enterprises=2 dedicated_enterprises=1 allowlist_before_hierarchy=1 disjoint_pin_empty=1 ordinary_denied=1 cross_enterprise_denied=1 hierarchy_scope=1 prompts=1 linked_charge=6 missing_charge=null refund_delta=2 source_writes=0 raw_secrets=0 source_admin_not_product=1 deployment_not_configured=503');
   console.log('ENTERPRISE_SOURCE_ROUTE_PASS: enterprise_owner=200 subtree=1 anonymous=401 personal=403 foreign=404 revoked=403 role_injection=400 platform_admin_required=0');
+  // The following fixture verifies the shared workspace shell and signed
+  // bridge separately from the dedicated-site HTTP access assertions above.
+  Object.assign(process.env,{NAUMI_ENTERPRISE_DEPLOYMENT_MODE:'shared',NAUMI_ENTERPRISE_ALLOWED_IDS:root});
   const {verifyWorkflowIdentity}=await import('./verify-workflow-identity');await verifyWorkflowIdentity(pool,{root,foreign,ordinary,owner});
   await pool.end();
 }
