@@ -437,9 +437,9 @@ export function BiDashboard({ initialSection = "overview", embedded = false }: {
   const sourceRead = useRef<AbortController | null>(null), selectedOwner = useRef(selected);
   const [sourceLoading, setSourceLoading] = useState(false);
   selectedOwner.current = selected;
-  // URL synchronization creates new filter objects; only a changed query should
-  // start a read. Navigation previously sent the same expensive request twice.
-  const requestQuery = new URLSearchParams({ ...filter, section, page: String(page), size: "30" }).toString();
+  // The overview API always uses a date range. Canonicalize before the first
+  // fetch so an old period=all link and its normalized form share one query.
+  const requestQuery = new URLSearchParams({ ...filter, period: section==='overview'?'range':filter.period, section, page: String(page), size: "30" }).toString();
   useEffect(() => {
     setSourceLoading(false);
     return () => sourceRead.current?.abort();

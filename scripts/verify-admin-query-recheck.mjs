@@ -36,7 +36,8 @@ function DirectoryRace(){const read=useUsageQuery('local',30);window.commitDirec
 const media={id:'image',direction:'output',role:'result',mediaType:'image',availability:'recorded',position:0};
 function App(){const [view,setView]=useState('bi'),[days,setDays]=useState(30);window.setView=setView;window.setDays=setDays;const params=useSearchParams();return view==='bi'?<BiDashboard embedded initialSection={params.get('section')||'users'}/>:view==='library'?<Library/>:view==='query'?<Query/>:view==='directory'?<DirectoryRace/>:view==='creations'?<CreationBrowser/>:view==='media'?<><div style={{height:1800}}>Scroll to media</div><CreationMedia asset={media} api="/fixture-image"/></>:view==='fleet'?<FleetManager/>:view==='health'?<ModelHealthPanel/>:view==='usage'?<AdminUsagePanel token="local" usageDays={days} setUsageDays={setDays} onManageUsers={()=>{}}/>:<p>Unmounted</p>}
 createRoot(document.getElementById('root')).render(<App/>);`;
-await build({stdin:{contents:entry,resolveDir:process.cwd(),loader:'tsx'},outfile:path.join(out,'app.js'),bundle:true,jsx:'automatic',platform:'browser',minify:true,define:{'process.env.NODE_ENV':'"production"','process.env':'{}'},plugins:[{name:'ports',setup(b){
+if(process.argv.includes('--reuse-bundle'))await fs.access(path.join(out,'app.js'));
+else await build({stdin:{contents:entry,resolveDir:process.cwd(),loader:'tsx'},outfile:path.join(out,'app.js'),bundle:true,jsx:'automatic',platform:'browser',minify:true,define:{'process.env.NODE_ENV':'"production"','process.env':'{}'},plugins:[{name:'ports',setup(b){
  b.onResolve({filter:/^(next\/navigation|next\/link|@\/lib\/supabase|@\/lib\/auth-context)$/},a=>({path:a.path,namespace:'port'}));
  b.onLoad({filter:/.*/,namespace:'port'},a=>({loader:'jsx',resolveDir:process.cwd(),contents:a.path==='next/navigation'?navigation:a.path==='next/link'?`import React from 'react';export default ({prefetch,...props})=><a {...props}/>`:a.path.endsWith('auth-context')?`export const useAuth=()=>({user:{email:'fixture@test'},ready:true});`:`export const authHeader=async()=>({});export const browserSupabase=()=>null;`}));
 }}]});
@@ -52,6 +53,16 @@ try{
  const waitCount=(prefix,n)=>page.waitForFunction(({prefix,n})=>fixture.calls.filter(c=>c.url.startsWith(prefix)).length>=n,{prefix,n});
  const view=async name=>{await page.evaluate(name=>setView(name),name);await page.waitForTimeout(70)};
  await page.goto(`http://127.0.0.1:${server.address().port}/?section=users`);
+ const overviewPage=await browser.newPage();
+ try{
+  overviewPage.on('pageerror',e=>errors.push(e.message));
+  await overviewPage.goto(`http://127.0.0.1:${server.address().port}/?section=overview&period=all&from=2026-11-01&to=2026-11-07`);
+  await overviewPage.waitForFunction(()=>fixture.calls.some(c=>c.url.startsWith('/api/admin/bi?')));
+  await overviewPage.waitForTimeout(120);
+  const periods=await overviewPage.evaluate(()=>fixture.calls.filter(c=>c.url.startsWith('/api/admin/bi?')).map(c=>new URL(c.url,location.origin).searchParams.get('period')));
+  check('Overview canonicalizes a legacy all-history URL before its first GET',periods,['range']);
+ }finally{await overviewPage.close();}
+ if(!process.argv.includes('--overview-only')){
  await view('query');const query=page.getByLabel('query');
  await query.dispatchEvent('compositionstart');await query.fill('zhong');await page.waitForTimeout(350);
  check('IME does not query uncommitted composition',await page.evaluate(()=>fixture.commits.length),0);
@@ -153,7 +164,9 @@ try{
   check('Silent authorization failure is visible',await page.getByRole('alert').count(),1);
   const stopped=await count('/api/admin/model-health');await page.waitForTimeout(5300);check('Authorization failure stops automatic polling',await count('/api/admin/model-health'),stopped);
  }
- await view('none');assert.deepEqual(errors,[]);
+ await view('none');
+ }
+ assert.deepEqual(errors,[]);
  const failed=checks.filter(c=>!c.pass);await fs.writeFile(path.join(out,'RESULT.json'),JSON.stringify({checks,errors,failed:failed.length,actualReact:true},null,2));
  console.log(JSON.stringify(checks,null,2));if(expectDefects)assert.ok(failed.length>0,'Baseline must reproduce defects');else assert.deepEqual(failed,[]);
 }finally{await browser?.close();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}

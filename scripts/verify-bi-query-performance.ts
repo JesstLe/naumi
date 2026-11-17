@@ -46,19 +46,100 @@ async function main() {
     await pool.query(`INSERT INTO app_canvas_image_tasks(id,email,source_artwork_id,status,created_at) VALUES('canvas-perf','alpha@example.test','source','completed','2026-10-20T08:00:00Z');
       INSERT INTO app_video_tasks(id,email,upstream_id,status,created_at) VALUES('video-perf','beta@example.test','fixture','failed','2026-10-20T08:01:00Z');
       INSERT INTO app_ledger(id,email,delta,kind,reason) VALUES('led-image-perf-8000','alpha@example.test',-6,'consume','fixture'); ANALYZE`);
+    // Overview equivalence needs real mixed facts, spanning an Asia/Shanghai day boundary.
+    await pool.query(`INSERT INTO app_ledger(id,email,delta,kind,reason,created_at) VALUES
+       ('first','alpha@example.test',-23,'consume','fixture','2026-10-19T16:00:00Z'),
+       ('next','alpha@example.test',-31,'consume','fixture','2026-10-20T16:00:00Z'),
+       ('adjust','beta@example.test',-100,'consume','管理员调整积分','2026-10-20T01:00:00Z'),
+       ('refund-only','beta@example.test',7,'refund','fixture','2026-10-20T02:00:00Z'),
+       ('orphan','orphan@example.test',-3,'consume','fixture','2026-10-20T03:00:00Z'),
+       ('outside','alpha@example.test',-99,'consume','fixture','2026-10-21T16:00:00Z');
+      INSERT INTO app_artworks(id,email,title,category,prompt,image_url,gradient,created_at,deleted_at) VALUES
+       ('live','alpha@example.test','fixture','','','','','2026-10-20T09:00:00Z',NULL),
+       ('trashed','beta@example.test','fixture','','','','','2026-10-20T09:00:00Z','2026-10-29T00:00Z'),
+       ('orphan','orphan@example.test','fixture','','','','','2026-10-20T16:00:00Z',NULL);
+      INSERT INTO app_orders(id,email,kind,item_id,amount,status,provider,paid_at) VALUES
+       ('wechat','alpha@example.test','pack','fixture',123,'paid','wechat','2026-10-19T16:00:00Z'),
+       ('mock','beta@example.test','pack','fixture',777,'paid','mock','2026-10-20T16:00:00Z'),
+       ('alipay','orphan@example.test','pack','fixture',456,'paid','alipay','2026-10-20T16:00:00Z'),
+       ('unpaid','alpha@example.test','pack','fixture',999,'pending','alipay',NULL)`);
     const clean = (v: any) => { const { generatedAt, ...rest } = v; return rest; };
     const cases: Record<string,string>[] = [
       {}, {email:"alpha@example.test"}, {email:"orphan@example.test"}, {q:"Alpha"}, {q:"Perf Company"}, {q:"orphan"},
       {accountType:"enterprise"}, {accountType:"unknown"}, {status:"review"}, {status:"error"}, {page:"2"}, {page:"10000"},
       {from:"2026-10-21",to:"2026-10-21"}, {section:"users",q:"Alpha"}, {section:"calls",email:"beta@example.test"},
+      {section:'overview',to:'2026-10-21'}, {section:'overview',to:'2026-10-21',email:'alpha@example.test'},
+      {section:'overview',to:'2026-10-21',q:'orphan',accountType:'unknown'}, {section:'overview',accountType:'enterprise'},
+      {section:'overview',from:'2026-10-22',to:'2026-10-22'},
     ];
     const results = [];
+    const overviewStatements: string[] = [];
+    const counted = new WeakSet();
+    pool.on('acquire',client=>{
+      if(counted.has(client))return;counted.add(client);
+      const query=client.query.bind(client);
+      (client as any).query=(...args:any[])=>{
+        if(typeof args[0]==='string'&&args[0].startsWith('WITH query_window'))overviewStatements.push(args[0]);
+        return (query as any)(...args);
+      };
+    });
     for (const filters of cases) {
       const q = parseBiQuery(new URLSearchParams({section:"operations",from:"2026-10-20",to:"2026-10-20",size:"30",...filters}));
+      overviewStatements.length=0;
       const start = performance.now(); const old = await baseline.queryBi(q); const oldMs = performance.now()-start;
+      const legacySql=overviewStatements.splice(0);
       const next = performance.now(); const current = await modified.queryBi(q); const newMs = performance.now()-next;
       assert.deepEqual(clean(current), clean(old), JSON.stringify(filters));
-      results.push({filters, total:current.total, rows:current.rows.length, baselineMs:Math.round(oldMs),modifiedMs:Math.round(newMs)});
+      if(filters.section==='overview'&&!filters.email&&!filters.q&&!filters.accountType&&filters.to==='2026-10-21'){
+        const v=current.overview!;
+        assert.deepEqual([v.consumed,v.refunded,v.activeUsers,v.artworks,v.deletedArtworks,v.receivedCents,v.mockCents],[57,7,2,2,1,579,777]);
+        assert.deepEqual(v.daily.map(d=>[d.date,d.consumed,d.artworks,d.receivedCents]),[['2026-10-20',26,1,123],['2026-10-21',31,1,456]]);
+      }
+      const queries=q.section==='overview'?{baseline:legacySql.length,modified:overviewStatements.length}:undefined;
+      if(queries&&base=== 'dbdbc2ed96a890668da5c037cc9f67218f3cc1e3'){
+        assert.deepEqual(queries,{baseline:9,modified:6});
+        for(const table of ['app_ledger','app_artworks','app_orders']){
+          assert.equal(legacySql.filter(sql=>sql.includes(`FROM ${table} `)).length,2);
+          assert.equal(overviewStatements.filter(sql=>sql.includes(`FROM ${table} `)).length,1);
+        }
+      }
+      results.push({filters, total:current.total, rows:current.rows.length, baselineMs:Math.round(oldMs),modifiedMs:Math.round(newMs),queries});
+    }
+    // Scale the three activity fact tables independently so a reduction in
+    // round trips is not mistaken for a reduction in underlying row scans.
+    let overviewPlans:unknown;
+    if(base==='dbdbc2ed96a890668da5c037cc9f67218f3cc1e3'){
+      await pool.query(`INSERT INTO app_ledger(id,email,delta,kind,reason,created_at)
+        SELECT 'ledger-scale-'||g,'ledger-'||(g%4096)||'@fixture.test',CASE WHEN g%9=0 THEN 2 ELSE -3 END,
+          CASE WHEN g%9=0 THEN 'refund' ELSE 'consume' END,'fixture','2026-10-19T16:00Z'::timestamptz+(g%2)*interval '1 day'+(g%3600)*interval '1 second'
+        FROM generate_series(1,100000) g;
+        INSERT INTO app_artworks(id,email,title,category,prompt,image_url,gradient,created_at,deleted_at)
+        SELECT 'art-scale-'||g,'ledger-'||(g%4096)||'@fixture.test','fixture','','','','',
+          '2026-10-19T16:00Z'::timestamptz+(g%2)*interval '1 day',CASE WHEN g%7=0 THEN '2026-11-01T00:00Z'::timestamptz END
+        FROM generate_series(1,100000) g;
+        INSERT INTO app_orders(id,email,kind,item_id,amount,status,provider,paid_at)
+        SELECT 'order-scale-'||g,'ledger-'||(g%4096)||'@fixture.test','pack','fixture',g%100+1,'paid',CASE WHEN g%5=0 THEN 'mock' ELSE 'wechat' END,
+          '2026-10-19T16:00Z'::timestamptz+(g%2)*interval '1 day'
+        FROM generate_series(1,100000) g;
+        ANALYZE app_ledger; ANALYZE app_artworks; ANALYZE app_orders;`);
+      const q=parseBiQuery(new URLSearchParams({section:'overview',from:'2026-10-20',to:'2026-10-21'}));
+      const args=[q.start,q.end,q.email,q.q,q.accountType],selected=(sql:string)=>/FROM app_(ledger|artworks|orders) /.test(sql);
+      overviewStatements.length=0;const old=await baseline.queryBi(q),legacySql=overviewStatements.splice(0).filter(selected);
+      const next=await modified.queryBi(q),currentSql=overviewStatements.splice(0).filter(selected);
+      assert.deepEqual(clean(next),clean(old));assert.equal(legacySql.length,4);assert.equal(currentSql.length,1);
+      const measure=async(sql:string[])=>{
+        let buffers=0,ms=0;
+        for(const statement of sql){
+          const plan=(await pool.query('EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) '+statement,args)).rows[0]['QUERY PLAN'][0];
+          buffers+=(plan.Plan['Shared Hit Blocks']??0)+(plan.Plan['Shared Read Blocks']??0);
+          ms+=plan['Execution Time'];
+        }
+        return {buffers,ms};
+      };
+      const baselinePlan=await measure(legacySql),currentPlan=await measure(currentSql);
+      assert(currentPlan.buffers<baselinePlan.buffers);
+      overviewPlans={rows:300000,baseline:baselinePlan,modified:currentPlan};
+      console.log('BI_OVERVIEW_FACT_PLANS',JSON.stringify(overviewPlans));
     }
     // Capture the actual generated SQL for bounded read-only production EXPLAIN.
     const captured: {sql:string;values:any[]}[]=[];
@@ -75,6 +156,7 @@ async function main() {
     await modified.queryBi(parseBiQuery(new URLSearchParams({section:"operations",from:"2026-09-22",to:"2026-10-21"})));
     writeFileSync(resolve(out,"performance.json"),JSON.stringify(results,null,2));
     writeFileSync(resolve(out,"page-query.json"),JSON.stringify(captured[0],null,2));
+    if(overviewPlans)writeFileSync(resolve(out,'overview-activity-plans.json'),JSON.stringify(overviewPlans,null,2));
     console.log(`BI_PERFORMANCE=PASS cases=${results.length} jobs=8000 calls=8000 equivalent=true supplierCalls=0`);
     console.log(JSON.stringify(results));
   } finally {

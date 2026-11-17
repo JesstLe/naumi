@@ -92,6 +92,10 @@ async function main() {
   await pool.query("INSERT INTO app_creation_links VALUES('a1','billing','saas-fixture-billing',$1),('a2','billing','saas-fixture-billing',$1)",[member]);
   const known=await(await overview.GET(req('/api/admin/saas-overview'))).json();
   assert.equal(known.metrics.creations,3);assert.equal(known.metrics.activeTenants,1);assert.equal(known.metrics.failed,1);assert.equal(known.trend.length,7);
+  assert.equal(known.trend.reduce((sum:number,day:{count:number})=>sum+day.count,0),3);
+  const filtered=await(await overview.GET(req('/api/admin/saas-overview?q=missing-tenant&size=1'))).json();
+  assert.equal(filtered.tenants.total,0);assert.equal(filtered.tenants.size,10);assert.deepEqual(filtered.metrics,known.metrics);assert.deepEqual(filtered.trend,known.trend);
+  assert.equal((await overview.GET(req('/api/admin/saas-overview','GET',undefined,''))).status,403);
   const billed=await(await detail.GET(req('/api/admin/tenants/'+a.tenantId),ctx)).json();
   assert.equal(billed.usage.confirmedCreations,2);assert.equal(billed.usage.consumedCredits,5);
   assert.match(success.headers.get('cache-control')||'',/private.*no-store/);
