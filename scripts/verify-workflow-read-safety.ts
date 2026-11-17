@@ -15,6 +15,7 @@ async function main(){
  const {signUserSession}=await import('../src/lib/native-auth');
  const {GET,POST}=await import('../src/app/api/enterprise/workflow/worklogs/route');
  const imports=await import('../src/app/api/enterprise/workflow/imports/route');
+ const notifications=await import('../src/app/api/enterprise/workflow/notifications/route');
  const {readWorkflowJson,WORKFLOW_JSON_MAX_BYTES}=await import('../src/lib/enterprise/workflow-read');
  const {CreationAdapter}=await import('../src/lib/enterprise/integration/creation-adapter');
  const {deploymentPolicy}=await import('../src/lib/enterprise/integration/policy');
@@ -43,6 +44,7 @@ async function main(){
    response.setHeader('content-type','application/octet-stream');response.end('binary fixture');return;
   }
   if(['/v1/delivery/preview','/v1/demand-files/preview'].includes(url.pathname)&&q.get('id')===hangingAsset){srv.emit('fixture-media-wait',response);return;}
+  if(url.pathname==='/v1/notifications'&&q.get('action')==='inbox'&&q.get('page')==='100'){srv.emit('fixture-notification-wait',response);return;}
   response.setHeader('content-type','application/json');
   if(q.get('probe')==='cancel'){
    response.write('{"unfinished":');srv.emit('fixture-stream',response);
@@ -87,6 +89,18 @@ async function main(){
   await until(disconnected);
   const oversized=await until(GET(req('GET','oversize')));
   assert.equal(oversized.status,502);assert.equal((await oversized.json()).error,'WORKFLOW_RESPONSE_TOO_LARGE');
+  const notificationUrl=req().url.replace('/worklogs?','/notifications?');
+  const noticeRead=new AbortController(),noticeSeen=once(srv,'fixture-notification-wait');
+  const inbox=notifications.GET(new Request(notificationUrl+'&action=inbox&page=100',{headers:req().headers,signal:noticeRead.signal}));
+  const [noticeSocket]=await until(noticeSeen),noticeClosed=once(noticeSocket,'close');noticeRead.abort();
+  const noticeResult=await until(inbox);assert.equal(noticeResult.status,503);
+  assert.equal((await noticeResult.json()).error,'WORKFLOW_SERVICE_UNAVAILABLE');await until(noticeClosed);
+  const noticeWrite=new AbortController(),noticeWriteSeen=once(srv,'fixture-write');
+  const command=notifications.POST(new Request(notificationUrl+'&action=command',{method:'POST',headers:req().headers,body:'{}',signal:noticeWrite.signal}));
+  const [commandSocket]=await until(noticeWriteSeen);noticeWrite.abort();
+  commandSocket.setHeader('content-type','application/json');commandSocket.end('{"ok":true}');
+  assert.deepEqual(await(await until(command)).json(),{ok:true});
+  console.log('WORKFLOW_NOTIFICATION_PROXY_PASS: inbox_disconnect_closes_upstream=1 submitted_command_preserved=1');
   for(const route of ['files','demand-files'] as const){
    const {GET:media}:{GET:(request:Request)=>Promise<Response>}=await import(`../src/app/api/enterprise/workflow/${route}/route`);
    const abort=new AbortController(),seen=once(srv,'fixture-media-wait');

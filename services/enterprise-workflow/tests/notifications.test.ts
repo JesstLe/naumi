@@ -4,6 +4,8 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
+import {once} from 'node:events';
+import {setTimeout as delay} from 'node:timers/promises';
 import type {Pool} from 'pg';
 import {NotificationStore} from '../src/notification-store';
 import {WorkflowStore} from '../src/store';
@@ -12,6 +14,47 @@ import {createDingTalkNotificationAdapter} from '../src/dingtalk-notification-ad
 import type {Action,WorkOrder} from '../src/contracts';
 import type {DeliveryOutcome} from '../src/notification-contracts';
 import {notificationRecipients} from '../src/notification-recipients';
+import {createWorkflowServer} from '../src/server';
+import {whileReadWaits} from './read-transaction.test';
+
+async function checkNotificationReads(pool:Pool,n:NotificationStore,store:WorkflowStore,lead:{enterpriseId:string;teamId:string;subject:string}){
+ const api=createWorkflowServer(store,async()=>lead,undefined,undefined,undefined,undefined,undefined,undefined,n);
+ api.listen(0,'127.0.0.1');await once(api,'listening');
+ try{
+  const address=api.address();assert(address&&typeof address!=='string');
+  const url=`http://127.0.0.1:${address.port}/v1/notifications`,get=(action:string,signal?:AbortSignal)=>fetch(`${url}?action=${action}`,{signal});
+  const abort=new AbortController(),stopped=await whileReadWaits(pool,'notifications',()=>get('inbox',abort.signal),async()=>{
+   abort.abort();
+   for(let i=0;i<50&&pool.totalCount-pool.idleCount>1;i++)await delay(10);
+   assert.equal(pool.totalCount-pool.idleCount,1,'disconnected inbox must return its slot before releasing the lock');
+  });
+  assert.equal(stopped.status,'rejected');assert.equal(stopped.reason.name,'AbortError');
+  const retry=await get('inbox');assert.equal(retry.status,200);
+  const visible=await retry.json() as {total:number;unread:number};assert.equal(visible.total,1);assert.equal(visible.unread,1);
+  const membership=(enabled:boolean)=>pool.query('UPDATE enterprise_workflow.team_members SET enabled=$4 WHERE enterprise_id=$1 AND team_id=$2 AND subject=$3',[lead.enterpriseId,lead.teamId,lead.subject,enabled]);
+  try{
+   const changed=await whileReadWaits(pool,'notifications',()=>get('badge'),async()=>{await membership(false);});
+   assert.equal(changed.status,'fulfilled');assert.equal(changed.value.status,403);
+   const denial=await changed.value.json() as {error:{code:string}};assert.equal(denial.error.code,'MEMBERSHIP_REQUIRED');
+  }finally{await membership(true);}
+ }finally{api.closeAllConnections();await new Promise<void>(resolve=>api.close(()=>resolve()));}
+
+ const queries:string[]=[];
+ const measured=new Proxy(pool,{get(target,key){
+  if(key==='connect')return async()=>new Proxy(await target.connect(),{get(client,prop){
+   if(prop==='query')return (...args:unknown[])=>{if(typeof args[0]==='string')queries.push(args[0]);return Reflect.apply(client.query,client,args);};
+   const value=Reflect.get(client,prop);return typeof value==='function'?value.bind(client):value;
+  }});
+  const value=Reflect.get(target,key);return typeof value==='function'?value.bind(target):value;
+ }});
+ const observed=new NotificationStore(measured,resolveDatabaseActor),pageQueries=()=>queries.filter(sql=>sql.includes('LIMIT 30 OFFSET')).length;
+ assert.deepEqual(await observed.read(lead,{action:'inbox',page:'100',unread:'1'}),{notifications:[],total:1,unread:1,page:100,pageSize:30});
+ assert.deepEqual(await observed.read(lead,{action:'deliveries',page:'100'}),{deliveries:[],total:0,page:100,pageSize:30});
+ assert.equal(pageQueries(),0);
+ const first=await observed.read(lead,{action:'inbox',page:'1'});
+ assert.equal(first.notifications?.length,1);assert.equal(pageQueries(),1);
+ console.log('NOTIFICATION_READ_ISOLATION_PASS HTTP_ABORT=POOL_RELEASED RETRY=200 LIVE_REVOKE=403 OUT_OF_RANGE_PAGE_QUERIES=0 FIRST_PAGE=1');
+}
 export async function notificationChecks(pool:Pool){
  const enterpriseId=randomUUID(),teamId=randomUUID(),other=randomUUID(),source=randomUUID(),p=(subject:string,team=teamId)=>({enterpriseId,teamId:team,subject});
  await pool.query("INSERT INTO enterprise_workflow.teams(enterprise_id,team_id,name)VALUES($1,$2,'通知测试'),($1,$3,'其他团队')",[enterpriseId,teamId,other]);
@@ -28,6 +71,7 @@ export async function notificationChecks(pool:Pool){
  await make();assert.equal(await count(),0);const original=o.id;
  await pool.query("CREATE FUNCTION enterprise_workflow.fail_notification() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'notification failure'; END $$;CREATE TRIGGER fail_notification BEFORE INSERT ON enterprise_workflow.notifications FOR EACH ROW EXECUTE FUNCTION enterprise_workflow.fail_notification()");await assert.rejects(act('ops',{type:'submit-requirement'}),/notification failure/);assert.equal((await store.get(p('ops'),o.id)).status,'draft');assert.equal(await count(),0);await pool.query('DROP TRIGGER fail_notification ON enterprise_workflow.notifications;DROP FUNCTION enterprise_workflow.fail_notification()');
  const submit={commandId:randomUUID(),orderId:o.id,expectedVersion:o.version,action:{type:'submit-requirement' as const}};o=(await store.execute(p('ops'),submit)).order;const first=await count();assert.equal(first,1);assert.equal((await store.execute(p('ops'),submit)).replayed,true);assert.equal(await count(),first);assert.equal((await n.read(p('lead'),{action:'inbox'}) as any).unread,1);assert.equal((await n.read(p('ops'),{action:'inbox'}) as any).total,0);await assert.rejects(n.read(p('worker'),{action:'settings'}),/NOTIFICATION_ADMIN_REQUIRED/);await assert.rejects(n.read(p('lead',other),{action:'inbox'}),/MEMBERSHIP_REQUIRED/);
+ await checkNotificationReads(pool,n,store,p('lead'));
  await act('lead',{type:'approve-requirement'});const task=randomUUID();await act('lead',{type:'plan-tasks',tasks:[{id:task,title:'设计通知',kind:'design',points:1,dueAt:new Date(Date.now()+86400000).toISOString(),dependencyIds:[]}]});await act('lead',{type:'publish'});assert.equal((await n.read(p('worker'),{action:'inbox'}) as any).total,1);assert.equal((await n.read(p('artist'),{action:'inbox'}) as any).total,0);assert.equal((await jobs()).length,0);
  await assert.rejects(settings('worker',0,{type:'policy',connectorId:'fixture-app',enabled:true}),/NOTIFICATION_ADMIN_REQUIRED/);await assert.rejects(settings('lead',0,{type:'policy',connectorId:'foreign-app',enabled:true}),/CHANNEL_NOT_CONFIGURED/);await settings('lead',0,{type:'policy',connectorId:'fixture-app',enabled:true});await act('lead',{type:'assign',taskId:task,assignee:'worker'});let d=(await jobs())[0];assert.equal(d.state,'blocked');assert.equal(d.error_code,'RECIPIENT_NOT_BOUND');await settings('lead',0,{type:'binding',subject:'worker',userid:'ding_worker',enabled:true});await settings('lead',d.version,{type:'retry',id:d.id});
  await Promise.all([n.tick(),n.tick()]);d=(await jobs())[0];assert.equal(sends,1);assert.equal(d.state,'accepted');assert.equal(d.delivered_at,null);const changedConnector=new NotificationStore(pool,resolveDatabaseActor,()=>[{id:'fixture-app',revision:'fixture-v2',label:'changed app',adapter:{send:async()=>{throw Error('must not send');},poll:async()=>{throw Error('must not poll');}}}]);await pool.query('UPDATE enterprise_workflow.notification_deliveries SET next_at=now() WHERE id=$1',[d.id]);await changedConnector.tick();d=(await jobs())[0];assert.equal(d.error_code,'CHANNEL_CONFIG_CHANGED');await settings('lead',d.version,{type:'retry',id:d.id});assert.equal(sends,1);await pool.query('UPDATE enterprise_workflow.notification_deliveries SET next_at=now() WHERE id=$1',[d.id]);await n.tick();d=(await jobs())[0];assert.equal(d.state,'delivered');assert.equal(d.provider_read,true);assert.equal(d.receipt_source,'provider');assert.equal(polls,1);assert.equal((await n.read(p('worker'),{action:'inbox'}) as any).unread,2);

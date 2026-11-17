@@ -33,7 +33,7 @@ export class NotificationStore{
    await this.queue(tx,a,nid);
   }
  }
- async read(p:Principal,raw:unknown){const q=notificationQuery.parse(raw);return readWithCurrentScope(this.pool,this.resolveActor,p,async(tx,a)=>{need(a.teamId,'MEMBERSHIP_REQUIRED',403);const v=values(a);
+ async read(p:Principal,raw:unknown,signal?:AbortSignal){const q=notificationQuery.parse(raw);return readWithCurrentScope(this.pool,this.resolveActor,p,async(tx,a)=>{need(a.teamId,'MEMBERSHIP_REQUIRED',403);need((await tx.query('SELECT 1 FROM enterprise_workflow.schema_version WHERE version=11')).rowCount===1,'NOTIFICATION_MIGRATION_REQUIRED',503);const v=values(a);
   if(q.action==='badge'){
    const {rows}=await tx.query(`SELECT count(*) AS unread
     FROM enterprise_workflow.notifications n JOIN enterprise_workflow.orders o ON o.enterprise_id=n.enterprise_id AND o.id=n.order_id
@@ -42,8 +42,9 @@ export class NotificationStore{
   }
   if(q.action==='inbox'){
    const from=`FROM enterprise_workflow.notifications n JOIN enterprise_workflow.orders o ON o.enterprise_id=n.enterprise_id AND o.id=n.order_id`,where=`${visible} AND n.subject=$4`,count=(await tx.query(`SELECT count(*) AS total,count(*) FILTER(WHERE n.read_at IS NULL) AS unread ${from} WHERE ${where}`,v)).rows[0];
-   const rows=(await tx.query(`SELECT n.id,n.order_id AS "orderId",n.task_id AS "taskId",n.title,n.action,n.actor,n.aggregate_version AS "orderVersion",n.created_at AS "createdAt",n.read_at AS "readAt",o.document->>'title' AS "orderTitle" ${from} WHERE ${where} AND ($8='' OR n.read_at IS NULL) ORDER BY n.created_at DESC,n.id LIMIT 30 OFFSET $9`,[...v,q.unread,(q.page-1)*30])).rows;
-   return {notifications:rows,total:Number(q.unread?count.unread:count.total),unread:Number(count.unread),page:q.page,pageSize:30};
+   const unread=Number(count.unread),total=q.unread?unread:Number(count.total),offset=(q.page-1)*30;
+   const rows=offset>=total?[]:(await tx.query(`SELECT n.id,n.order_id AS "orderId",n.task_id AS "taskId",n.title,n.action,n.actor,n.aggregate_version AS "orderVersion",n.created_at AS "createdAt",n.read_at AS "readAt",o.document->>'title' AS "orderTitle" ${from} WHERE ${where} AND ($8='' OR n.read_at IS NULL) ORDER BY n.created_at DESC,n.id LIMIT 30 OFFSET $9`,[...v,q.unread,offset])).rows;
+   return {notifications:rows,total,unread,page:q.page,pageSize:30};
   }
   need(a.permissions.includes('manage'),'NOTIFICATION_ADMIN_REQUIRED',403);
   if(q.action==='settings'){
@@ -52,9 +53,10 @@ export class NotificationStore{
   }
   if(q.action==='audit'){const events=(await tx.query('SELECT seq,subject,operation,detail,created_at FROM enterprise_workflow.notification_audit WHERE enterprise_id=$1 AND team_id=$2 AND seq<$3 ORDER BY seq DESC LIMIT 50',[a.enterpriseId,a.teamId,q.before])).rows;return {events,nextBefore:events.length===50?Number(events.at(-1).seq):null};}
   const from=`FROM enterprise_workflow.notification_deliveries d JOIN enterprise_workflow.notifications n ON n.id=d.notification_id JOIN enterprise_workflow.orders o ON o.enterprise_id=n.enterprise_id AND o.id=n.order_id`,where=`${visible} AND ($8='' OR d.state=$8)`,params=[...v,q.state];
-  const total=Number((await tx.query(`SELECT count(*) AS n ${from} WHERE ${where}`,params)).rows[0].n),rows=(await tx.query(`SELECT d.id,d.subject,d.version,d.connector_id AS "connectorId",d.state,d.attempts,d.polls,d.receipt,d.receipt_source AS "receiptSource",d.provider_read AS "providerRead",d.error_code AS "errorCode",d.created_at AS "createdAt",d.updated_at AS "updatedAt",n.title,n.order_id AS "orderId",o.document->>'title' AS "orderTitle" ${from} WHERE ${where} ORDER BY d.created_at DESC,d.id LIMIT 30 OFFSET $9`,[...params,(q.page-1)*30])).rows;
+  const total=Number((await tx.query(`SELECT count(*) AS n ${from} WHERE ${where}`,params)).rows[0].n),offset=(q.page-1)*30;
+  const rows=offset>=total?[]:(await tx.query(`SELECT d.id,d.subject,d.version,d.connector_id AS "connectorId",d.state,d.attempts,d.polls,d.receipt,d.receipt_source AS "receiptSource",d.provider_read AS "providerRead",d.error_code AS "errorCode",d.created_at AS "createdAt",d.updated_at AS "updatedAt",n.title,n.order_id AS "orderId",o.document->>'title' AS "orderTitle" ${from} WHERE ${where} ORDER BY d.created_at DESC,d.id LIMIT 30 OFFSET $9`,[...params,offset])).rows;
   return {deliveries:rows,total,page:q.page,pageSize:30};
- },result=>(result.notifications??result.deliveries??[]).map(row=>row.orderId as string),{legacyRepeatable:false});}
+ },result=>(result.notifications??result.deliveries??[]).map(row=>row.orderId as string),{legacyRepeatable:false,signal});}
  async execute(p:Principal,raw:unknown){const c=notificationCommand.parse(raw);return this.tx(p,async(tx,actor)=>{const a=actor!,act=c.action;need(act.type==='read'||a.permissions.includes('manage'),'NOTIFICATION_ADMIN_REQUIRED',403);
   await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`notification-command:${a.enterpriseId}:${c.commandId}`]);
   const fingerprint=createHash('sha256').update(JSON.stringify({p,c})).digest('hex'),prior=(await tx.query('SELECT fingerprint,result FROM enterprise_workflow.notification_commands WHERE enterprise_id=$1 AND id=$2',[a.enterpriseId,c.commandId])).rows[0];if(prior){need(prior.fingerprint===fingerprint,'IDEMPOTENCY_CONFLICT');return {...prior.result,replayed:true};}
