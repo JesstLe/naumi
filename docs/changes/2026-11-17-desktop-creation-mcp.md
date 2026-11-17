@@ -50,7 +50,8 @@ Desktop共享checkout没有内置注册本轮bundle；账号授权UI、OS密钥�
 - Desktop链固定外层UUID，供应商收到原任务后断开MCP进程，重连只查原status，再同号同参数回读：供应商fixture请求增量1、作品增量1、账本增量1、实际扣8与quote一致。结果6270B、SHA与供应商PNG完全相同；无生产供应商调用。
 - 使用Desktop已安装`@deepseek-ai/dsh-tool-present`真实实现及官方MCP Config，原present工具body在隔离host/session中产生真实形状`deliverables/presented`事件；不是手写替代卡片，不声称正式Desktop UI已接通。
 - 账号中心原UI真实Chrome1440/390通过，无溢出/页面错误；没有产品UI变更。原测试第一次已完成19项旧行为+Desktop链，末尾fixture误用官方schemastery Config.parse失败，修正为Config(...)后集中重跑23项通过，原失败现场保留。
-- 客户端保护14项真实MCP/HTTP fixture通过：稳定外层/内层编号、断连、只读计费也不走随机编号、实时目录、账号错配/吊销、workspace透传、文件边界/防覆盖/hash、外部manifest pin、固定干净bundle门槛与原present callback。
+- 客户端保护15项真实MCP/HTTP fixture通过：稳定外层/内层编号、断连、只读计费也不走随机编号、实时目录、账号错配/吊销、workspace透传、文件边界/防覆盖/hash、外部manifest pin、固定干净bundle门槛、按账号换号disposer正确释放原Harness Fiber及原present callback。
 - 企业权限10项真实PG/实际Route通过：原账号allow、企业deny相交、个人不受污染、禁用企业拒绝、跨账号拒绝、只读token不发现写工具。初版fixture用了计费feature id而不是权限id，原失败保留；后按实际catalog `generate`核验，不改产品断言。
 - 独立Reviewer实际复跑14项客户端测试、检查全部diff及真实链证据，指出tools Route未传creation:true导致HTTP目录漏企业约束，已修正并补真实Route负例。既有status/media授权边界明确记入契约，不以header透传掩盖。
 - 最终完整SHA、runner命令/退出码、源码摘要、打包hash在忽略目录证据报告中记录。非core runner按既有规则PARTIAL/exit2；所选子命令必须全部exit0。源码类型检查、diff检查与固定提交回归共同验收，不伪称全仓或生产验收。
+- 固定SHA首轮发现测试自己假设checkout永远脏，导致干净固定提交未触发“拒绝脏包”断言；已改成显式构造dirty manifest负例。不是放宽干净包门槛。原固定失败报告保留，修正后再集中复跑。

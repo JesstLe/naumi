@@ -46,8 +46,9 @@ export async function presentNaumiDownload({receipt,fileRoot,present,signal,desc
  * Dependencies are the Desktop's existing official MCP/Skill plugins. */
 export async function installNaumiCreation(ctx,options,{mcpClient,filesystemSkills}) {
   const config=await naumiCreationConfig(options);
-  return ctx.inject(['tools','skills'],scope=>{
+  const registration=ctx.inject(['tools','skills'],scope=>{
     scope.plugin(mcpClient,config.mcp);
     scope.plugin(filesystemSkills,config.skills);
   });
+  return async()=>{await registration.dispose();};
 }

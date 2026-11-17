@@ -7,7 +7,7 @@ import path from 'node:path';
 import {execFileSync,spawn} from 'node:child_process';
 import {Client} from '@modelcontextprotocol/sdk/client/index.js';
 import {StdioClientTransport} from '@modelcontextprotocol/sdk/client/stdio.js';
-import {naumiCreationConfig,presentNaumiDownload} from '../integrations/desktop/naumi-creation.mjs';
+import {naumiCreationConfig,presentNaumiDownload,installNaumiCreation} from '../integrations/desktop/naumi-creation.mjs';
 
 const out=path.resolve('output/desktop-creation/client-'+(process.argv.includes('--baseline')?'baseline':'modified')+'-'+randomUUID());
 await fs.mkdir(out,{recursive:true});const files=path.join(out,'files');await fs.mkdir(files,{recursive:true});
@@ -69,7 +69,12 @@ try{
  const config=await naumiCreationConfig(opts);assert.equal(config.mcp.serverName,'naumi_creation');assert(!JSON.stringify(config).includes(secret));
  await assert.rejects(naumiCreationConfig({...opts,expectedManifestSha256:'0'.repeat(64)}),/MANIFEST_PIN/);pass('external manifest pin rejects replaced self-manifest');
  await assert.rejects(naumiCreationConfig({...opts,allowFixtureBundle:false}),/EXTERNAL_MANIFEST_PIN/);
- const manifestPin=createHash('sha256').update(await fs.readFile(path.join(bundle,'manifest.json'))).digest('hex');
+ let disposed=0,plugins=0;
+ const dispose=await installNaumiCreation({inject:(dependencies,fn)=>{assert.deepEqual(dependencies,['tools','skills']);fn({plugin:()=>{plugins++;}});return {dispose:async()=>{disposed++;}};}},opts,{mcpClient:{},filesystemSkills:{}});
+ await dispose();assert.equal(disposed,1);assert.equal(plugins,2);pass('account switch disposer closes the owned Harness registration Fiber');
+ // Explicit dirty fixture: a clean fixed test checkout must not be assumed dirty.
+ const manifestPath=path.join(bundle,'manifest.json'),dirtyManifest=JSON.parse(await fs.readFile(manifestPath,'utf8'));dirtyManifest.dirty=true;await fs.writeFile(manifestPath,JSON.stringify(dirtyManifest));
+ const manifestPin=createHash('sha256').update(await fs.readFile(manifestPath)).digest('hex');
  await assert.rejects(naumiCreationConfig({...opts,allowFixtureBundle:false,expectedManifestSha256:manifestPin}),/CLEAN/);pass('bundle integrity, no secret in config, dirty fixture not release');
  await fs.writeFile(path.join(bundle,'naumi.mjs'),'tampered');await assert.rejects(naumiCreationConfig(opts),/HASH/);pass('tampered client bundle rejected');
  let presented=0;const receipt={...saved.structuredContent,path:src};await presentNaumiDownload({receipt,fileRoot:files,present:async a=>{presented++;assert.equal(a.files[0].path,src);}});assert.equal(presented,1);

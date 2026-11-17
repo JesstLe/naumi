@@ -403,7 +403,7 @@ async function main() {
         }
         const savedCall=(await f.sql.query('SELECT operation_id,state,credits FROM app_agent_gateway_calls WHERE token_id=$1 AND operation_id=$2',[writeToken.token.id,operationId])).rows;
         assert.equal(savedCall.length,1);
-        await writeFile(path.join(output,'DESKTOP_CHAIN.json'),JSON.stringify({outerOperationId:operationId,call:savedCall[0],supplierRequests:1,ledgerDelta:1,artworkDelta:1,charged:beforeBalance-afterBalance,download:downloaded.structuredContent,nativeDelivery,realPg:true,realNext:true,realSupplier:false,paidProductionCalls:0},null,2));
+        await writeFile(path.join(output,'DESKTOP_CHAIN.json'),JSON.stringify({outerOperationId:operationId,call:savedCall[0],domainReceipt:recovered.structuredContent.output.details,supplierRequests:1,ledgerDelta:1,artworkDelta:1,charged:beforeBalance-afterBalance,download:downloaded.structuredContent,nativeDelivery,realPg:true,realNext:true,realSupplier:false,paidProductionCalls:0},null,2));
         pass('Desktop MCP reference upload → same-ID interrupted call/status/replay → one artwork/ledger → hash download → native present adapter');
       } finally {await desktop.client.close();await rm(secretFile,{force:true});}
     }

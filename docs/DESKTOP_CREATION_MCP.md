@@ -19,7 +19,8 @@ const dispose = await installNaumiCreation(accountSessionScope, {
   fileRoot: actualSessionWorkspace,
   node: bundledNodeExecutable,
 }, {mcpClient, filesystemSkills});
-// 换号/登出：先dispose当前scope、关闭旧MCP进程，再接下一账号。
+// 换号/登出：await dispose()；它dispose原Harness Fiber，关闭旧MCP再接下一账号。
+// 安装返回不代表注册/授权就绪；检查namespace并调用naumi_connection确认。
 // 完成下载后，以同一Agent Session经原工具执行器调用present，不直接写事件。
 await presentNaumiDownload({receipt: downloaded.structuredContent,
   fileRoot: actualSessionWorkspace, signal,
