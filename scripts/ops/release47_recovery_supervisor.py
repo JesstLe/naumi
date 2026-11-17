@@ -45,6 +45,22 @@ def static_pin(row):
     return sha(encoded(value))
 
 
+def matches_static_pin(row, expected):
+    if static_pin(row) == expected:
+        return True
+    # Docker can reload default DNS search/options as empty lists instead of null.
+    # Manifests pin the enrollment representation, so check only equivalent
+    # representations of fields that are explicitly present and empty. Every
+    # candidate still has to match the entire enrolled digest.
+    host = row['HostConfig']
+    alternatives = [host]
+    for field in ('DnsOptions', 'DnsSearch'):
+        if field in host and (host[field] is None or host[field] == []):
+            other = [] if host[field] is None else None
+            alternatives += [{**variant, field: other} for variant in alternatives]
+    return any(static_pin({**row, 'HostConfig': variant}) == expected for variant in alternatives[1:])
+
+
 def recovery_binding(state, manifest):
     require(state.get('target') == '47.105.59.142' and state.get('releaseId') == manifest['releaseId'] and
             state.get('planSha256') == manifest['originalPlanSha256'], 'RECOVERY_RELEASE_CHANGED')
@@ -77,7 +93,7 @@ class Adapter:
 
     def inspect(self, spec):
         row = self.tx.inspect(spec['id'])
-        require(static_pin(row) == spec['staticSha256'], 'CONTAINER_CONFIGURATION_CHANGED')
+        require(matches_static_pin(row, spec['staticSha256']), 'CONTAINER_CONFIGURATION_CHANGED')
         require(row['Image'] == self.manifest['image'], 'RECOVERY_IMAGE_CHANGED')
         return row
 
