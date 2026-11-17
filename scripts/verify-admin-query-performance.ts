@@ -122,7 +122,7 @@ async function main() {
     const userSource=oldDb.includes(listFunction)?oldDb:execFileSync("git",["show",`${base}:src/lib/accounts/administration.ts`],{encoding:"utf8"});
     const functionAt=userSource.indexOf(listFunction);assert(functionAt>=0,'baseline user list missing');
     const oldSql=/`(SELECT [^`]+)`/.exec(userSource.slice(functionAt))?.[1];
-    assert(oldSql?.includes('FROM app_users'),'baseline user list SQL missing');
+    assert(typeof oldSql==='string'&&oldSql.includes('FROM app_users'),'baseline user list SQL missing');
     const oldRows=(await pool.query(oldSql,/\$1\b/.test(oldSql)?[null]:[])).rows;
     const oldMapped=oldRows.map(r=>({email:r.email,name:r.name,plan:r.plan,role:r.role,creditsTotal:r.credits_total,creditsUsed:r.credits_used,artworks:Number(r.artworks),banned:r.banned===true,lastIp:r.last_ip??null,recent7:Number(r.consumed7d),note:r.note??""}));
     assert.deepEqual(await db.listAllUsers(),oldMapped);results.push({section:"legacy-users",total:oldRows.length,equivalent:true});
