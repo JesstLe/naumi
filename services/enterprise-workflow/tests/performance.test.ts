@@ -8,6 +8,7 @@ import {resolveDatabaseActor} from '../src/identity';
 import {calculate,distribute,scoreCsv} from '../src/performance-domain';
 import type {Action,WorkOrder} from '../src/contracts';
 import type {PublishedRule,AcceptedFact,Period} from '../src/performance-contracts';
+import {whileReadWaits} from './read-transaction.test';
 export async function performanceChecks(pool:Pool){
  const enterpriseId=randomUUID(),teamId=randomUUID(),otherTeam=randomUUID(),p=(subject:string,team=teamId)=>({enterpriseId,teamId:team,subject});await pool.query('INSERT INTO enterprise_workflow.teams(enterprise_id,team_id)VALUES($1,$2),($1,$3)',[enterpriseId,teamId,otherTeam]);
  for(const [subject,permissions] of [['lead',['manage','dispatch','request','review']],['reviewer',['manage','review']],['a',['execute']],['b',['execute']],['stranger',['execute']]] as const){await pool.query('INSERT INTO enterprise_workflow.accounts(enterprise_id,subject)VALUES($1,$2)',[enterpriseId,subject]);await pool.query('INSERT INTO enterprise_workflow.team_members(enterprise_id,team_id,subject,permissions,work_kinds)VALUES($1,$2,$3,$4,$5)',[enterpriseId,teamId,subject,JSON.stringify(permissions),'["design"]']);}await pool.query("INSERT INTO enterprise_workflow.team_members(enterprise_id,team_id,subject,permissions,work_kinds)VALUES($1,$2,'reviewer','[\"manage\",\"review\"]','[]')",[enterpriseId,otherTeam]);
@@ -18,6 +19,23 @@ export async function performanceChecks(pool:Pool){
  const send=async(subject:string,expectedVersion:number,action:any,reason='fixture')=>store.execute(p(subject),{commandId:randomUUID(),expectedVersion,reason,action}) as Promise<any>;
  const rule={title:'人工确认规则',qualityBps:[5000,7000,9000,11000,12000],lateBps:8000,reworkPenaltyBps:1000,maxReworkPenaltyBps:4000};await assert.rejects(send('a',0,{type:'save-rule',rule}),/PERFORMANCE_FORBIDDEN/);let draft=(await send('lead',0,{type:'save-rule',rule})).draft;assert.equal((await store.read(p('a'),{action:'rules'}) as any).draft,null);await assert.rejects(send('lead',draft.version,{type:'publish-rule'}),/INDEPENDENT_REVIEW_REQUIRED/);draft=(await send('reviewer',draft.version,{type:'publish-rule'})).draft;
  const periodId=randomUUID();let period:Period=(await send('lead',0,{type:'create-period',periodId,title:'首期',from:day,to:day,ruleVersion:1})).period;let preview=(await store.read(p('lead'),{action:'preview',id:periodId}) as any).snapshot;assert.equal(preview.blocked[0].code,'ALLOCATION_REVIEW_REQUIRED');await assert.rejects(send('reviewer',period.version,{type:'confirm-period',periodId,previewHash:preview.previewHash}),/PERIOD_BLOCKED/);
+ const previewQuery={action:'preview',id:periodId},legacy=new PerformanceStore(pool,(tx,principal)=>resolveDatabaseActor(tx,principal),()=>clock);
+ const teamLock=`performance:${enterpriseId}:${teamId}`;
+ const legacyResult=await whileReadWaits(pool,'events',()=>legacy.read(p('lead'),previewQuery),async()=>{
+  assert.equal((await pool.query('SELECT pg_try_advisory_xact_lock(hashtextextended($1,0)) AS acquired',[teamLock])).rows[0].acquired,false);
+ });
+ assert.equal(legacyResult.status,'fulfilled');
+ const concurrent=await whileReadWaits(pool,'events',()=>store.read(p('lead'),previewQuery),async()=>{
+  assert.equal((await pool.query('SELECT pg_try_advisory_xact_lock(hashtextextended($1,0)) AS acquired',[teamLock])).rows[0].acquired,true);
+  draft=(await send('reviewer',draft.version,{type:'save-rule',rule})).draft;
+ });
+ assert.equal(concurrent.status,'fulfilled');assert.equal(concurrent.value.snapshot?.previewHash,preview.previewHash);
+ const revoked=await whileReadWaits(pool,'events',()=>store.read(p('lead'),previewQuery),async()=>{
+  const tx=await pool.connect();try{await tx.query('BEGIN');await tx.query("SET LOCAL lock_timeout='400ms'");await tx.query("UPDATE enterprise_workflow.team_members SET enabled=false WHERE enterprise_id=$1 AND team_id=$2 AND subject='lead'",[enterpriseId,teamId]);await tx.query('COMMIT');}finally{try{await tx.query('ROLLBACK');}finally{tx.release();}}
+ });
+ assert.equal(revoked.status,'rejected');assert.match(String(revoked.reason),/MEMBERSHIP_REQUIRED/);
+ await pool.query("UPDATE enterprise_workflow.team_members SET enabled=true WHERE enterprise_id=$1 AND team_id=$2 AND subject='lead'",[enterpriseId,teamId]);
+ console.log('PERFORMANCE_PREVIEW_CONCURRENCY_PASS: legacy_blocks_team_rule_lock=1 rule_save_commits_during_read=1 published_rule_stays_frozen=1 revoked_preview_denied=1');
  await assert.rejects(send('lead',0,{type:'propose-allocation',factId,shares:[{subject:'a',bps:6000},{subject:'stranger',bps:4000}]}),/INVALID_CONTRIBUTOR/);await assert.rejects(send('lead',0,{type:'propose-allocation',factId,shares:[{subject:'a',bps:10000}]}),/INVALID_CONTRIBUTOR/);await assert.rejects(send('lead',0,{type:'propose-allocation',factId,shares:[{subject:'a',bps:5000},{subject:'b',bps:4000}]}));
  let allocation=(await send('lead',0,{type:'propose-allocation',factId,shares:[{subject:'a',bps:6000},{subject:'b',bps:4000}]})).allocation;await assert.rejects(send('lead',allocation.version,{type:'review-allocation',factId,approve:true}),/INDEPENDENT_REVIEW_REQUIRED/);
  allocation=(await send('reviewer',allocation.version,{type:'review-allocation',factId,approve:false})).allocation;assert.equal(allocation.status,'rejected');allocation=(await send('lead',allocation.version,{type:'propose-allocation',factId,shares:[{subject:'a',bps:6000},{subject:'b',bps:4000}]})).allocation;
@@ -30,6 +48,9 @@ export async function performanceChecks(pool:Pool){
  period=(await store.execute(p('reviewer'),confirm) as any).period;assert.equal(period.status,'confirmed');assert.equal((await store.read(p('a'),{action:'allocations',ids:factId}) as any).summaries[0].locked,true);assert.equal((await store.execute(p('reviewer'),confirm) as any).replayed,true);await assert.rejects(store.execute(p('reviewer'),{...confirm,reason:'changed'}),/IDEMPOTENCY_CONFLICT/);await assert.rejects(send('lead',allocation.version,{type:'propose-allocation',factId,shares:[{subject:'a',bps:5000},{subject:'b',bps:5000}]}),/FACT_ALLOCATION_LOCKED/);await assert.rejects(send('lead',period.version,{type:'discard-period',periodId}),/PERIOD_NOT_DRAFT/);
  await correctionChecks(pool,enterpriseId,teamId,otherTeam,periodId,factId);
  const ownPeriod=(await store.read(p('a'),{action:'period',id:periodId}) as any).period;assert.equal(ownPeriod.snapshot.results.length,1);assert.equal(ownPeriod.snapshot.rows[0].shares.length,1);assert.equal(ownPeriod.snapshot.rows[0].parts.length,1);assert.equal(ownPeriod.snapshot.rows[0].scoreMilli,1980);assert.equal((await store.read(p('stranger'),{action:'periods'}) as any).total,0);await assert.rejects(store.read(p('stranger'),{action:'period',id:periodId}),/PERIOD_NOT_FOUND/);
+ const ownPeriods=await store.read(p('a'),{action:'periods'}),managedPeriods=await store.read(p('lead'),{action:'periods'});
+ assert.deepEqual(ownPeriods.periods?.map(p=>p.id),[periodId]);assert.deepEqual(managedPeriods.periods?.map(p=>p.id),[periodId]);
+ assert(ownPeriods.periods?.every(p=>!('snapshot' in p)));assert(managedPeriods.periods?.every(p=>!('snapshot' in p)));
  const second=(await send('lead',0,{type:'create-period',periodId:randomUUID(),title:'重叠',from:day,to:day,ruleVersion:1})).period,overlap=(await store.read(p('lead'),{action:'preview',id:second.id}) as any).snapshot;assert.equal(overlap.blocked[0].code,'FACT_ALREADY_CONFIRMED');await assert.rejects(send('reviewer',1,{type:'confirm-period',periodId:second.id,previewHash:overlap.previewHash}),/PERIOD_BLOCKED/);
  const rule2=(await send('lead',draft.version,{type:'save-rule',rule:{...rule,qualityBps:[20000,20000,20000,20000,20000]}})).draft;await send('reviewer',rule2.version,{type:'publish-rule'});assert.equal((await store.read(p('a'),{action:'period',id:periodId}) as any).period.snapshot.results[0].scoreMilli,1980);
  const future=(await send('lead',0,{type:'create-period',periodId:randomUUID(),title:'future',from:'2099-01-01',to:'2099-01-02',ruleVersion:2})).period,futureSnapshot=(await store.read(p('lead'),{action:'preview',id:future.id}) as any).snapshot;await assert.rejects(send('reviewer',1,{type:'confirm-period',periodId:future.id,previewHash:futureSnapshot.previewHash}),/PERIOD_NOT_ENDED/);await send('lead',1,{type:'discard-period',periodId:future.id});

@@ -5,9 +5,10 @@ import type {Pool} from 'pg';
 import {WorkflowError} from '../src/contracts';
 import {resolveDatabaseActor} from '../src/identity';
 import {WorkflowStore} from '../src/store';
+import {NotificationStore} from '../src/notification-store';
 
 // Wait for an actual blocked relation read before attempting the write on another connection.
-async function whileReadWaits<T>(pool: Pool, table: 'orders' | 'events', read: () => Promise<T>, write: () => Promise<void>) {
+export async function whileReadWaits<T>(pool: Pool, table: 'orders' | 'events' | 'notifications' | 'performance_claims', read: () => Promise<T>, write: () => Promise<void>) {
   const blocker = await pool.connect();
   let result: Promise<PromiseSettledResult<T>> | undefined;
   try {
@@ -53,7 +54,9 @@ export async function readTransactionChecks(pool: Pool) {
     }
   };
   const revoke = () => write('UPDATE enterprise_workflow.team_members SET enabled=false WHERE enterprise_id=$1 AND team_id=$2 AND subject=$3', values);
+  const restore = () => write('UPDATE enterprise_workflow.team_members SET enabled=true WHERE enterprise_id=$1 AND team_id=$2 AND subject=$3', values);
   const reassign = () => write(`UPDATE enterprise_workflow.orders SET document=jsonb_set(document,'{requester}','"other-requester"') WHERE enterprise_id=$1 AND id=$2`, [p.enterpriseId,orderId]);
+  const restoreRequester = () => write(`UPDATE enterprise_workflow.orders SET document=jsonb_set(document,'{requester}',to_jsonb($3::text)) WHERE enterprise_id=$1 AND id=$2`, [p.enterpriseId,orderId,p.subject]);
   const locked = (error: unknown) => (error as {code?: string})?.code === '55P03';
   const denied = (result: PromiseSettledResult<unknown>, status: number) => {
     assert.equal(result.status,'rejected');
@@ -63,7 +66,12 @@ export async function readTransactionChecks(pool: Pool) {
 
   assert.equal((await whileReadWaits(pool,'orders', () => legacy.dashboard(p), async () => { await assert.rejects(revoke, locked); })).status,'fulfilled');
   denied(await whileReadWaits(pool,'orders', () => store.dashboard(p), revoke),403);
-  await write('UPDATE enterprise_workflow.team_members SET enabled=true WHERE enterprise_id=$1 AND team_id=$2 AND subject=$3',values);
+  await restore();
+  assert.equal((await whileReadWaits(pool,'orders', () => legacy.list(p), async () => { await assert.rejects(revoke, locked); })).status,'fulfilled');
+  for (const [table, read] of [['orders', () => store.list(p)], ['orders', () => store.tasks(p)], ['orders', () => store.week(p,{start:'2030-01-01'})], ['events', () => store.facts(p)]] as const) {
+    denied(await whileReadWaits<unknown>(pool, table, read, revoke),403);
+    await restore();
+  }
   const sourceBinding = {sourceInstance:'fixture', sourceEnterprise:randomUUID(), sourceSubject:'source-reader'};
   await pool.query('INSERT INTO enterprise_workflow.source_enterprises(source_instance,source_enterprise,enterprise_id) VALUES($1,$2,$3)', [sourceBinding.sourceInstance,sourceBinding.sourceEnterprise,p.enterpriseId]);
   await pool.query('INSERT INTO enterprise_workflow.source_identities(source_instance,source_enterprise,enterprise_id,source_subject,subject) VALUES($1,$2,$3,$4,$5)', [sourceBinding.sourceInstance,sourceBinding.sourceEnterprise,p.enterpriseId,sourceBinding.sourceSubject,p.subject]);
@@ -73,8 +81,18 @@ export async function readTransactionChecks(pool: Pool) {
 
   assert.equal((await whileReadWaits(pool,'events', () => legacy.detail(p,orderId), async () => { await assert.rejects(reassign, locked); })).status,'fulfilled');
   denied(await whileReadWaits(pool,'events', () => store.detail(p,orderId), reassign),404);
-  await write(`UPDATE enterprise_workflow.orders SET document=jsonb_set(document,'{requester}',to_jsonb($3::text)) WHERE enterprise_id=$1 AND id=$2`, [p.enterpriseId,orderId,p.subject]);
+  await restoreRequester();
   denied(await whileReadWaits(pool,'events', () => store.dashboard(p), reassign),409);
 
-  console.log('WORKFLOW_READ_TRANSACTION_PASS: legacy_membership_and_order_writes_block=1 snapshot_writes_commit=1 revoked_membership_and_binding_403=1 hidden_order_404=1 dashboard_scope_change_409=1');
+  await restoreRequester();
+  const notices = new NotificationStore(pool, resolveDatabaseActor);
+  const notificationId = randomUUID();
+  await pool.query(`INSERT INTO enterprise_workflow.notifications(id,enterprise_id,team_id,subject,event_id,order_id,action,actor,title,aggregate_version,created_at)
+    VALUES($1::uuid,$2,$3,$4,$1::uuid::text,$5,'fixture','fixture','Fixture notice',1,now())`, [notificationId,...values,orderId]);
+  const inbox = () => notices.read(p,{action:'inbox'});
+  assert.equal((await inbox()).notifications?.[0].id, notificationId);
+  denied(await whileReadWaits(pool,'notifications', inbox, reassign),409);
+  assert.equal((await inbox()).unread, 0);
+
+  console.log('WORKFLOW_READ_TRANSACTION_PASS: legacy_membership_and_order_writes_block=1 snapshot_writes_commit=1 revoked_membership_and_binding_403=1 hidden_order_404=1 dashboard_inbox_scope_change_409=1 list_tasks_week_facts_revocation=1');
 }

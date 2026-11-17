@@ -2,6 +2,7 @@ import {CorrectionStore} from './correction-store';
 import type {Pool,PoolClient} from 'pg';
 import {type Actor,type Principal} from './contracts';
 import type {ResolveActor} from './store';
+import {readWorkflowSnapshot} from './read-transaction';
 import {performanceCommandSchema,performanceQuerySchema,type AcceptedFact,type Allocation,type RuleDraft,type PublishedRule,type Period,type Snapshot} from './performance-contracts';
 import {ensure,digest,validateShares,calculate,rangeEnd} from './performance-domain';
 export class PerformanceStore{
@@ -25,14 +26,22 @@ export class PerformanceStore{
    WHERE e.enterprise_id=$1 AND e.event->>'teamId'=$2::text AND e.event->>'type'='workflow.task.accepted.v1' AND (e.event->>'occurredAt')::timestamptz >= $3 AND (e.event->>'occurredAt')::timestamptz < $4 ORDER BY e.event->>'occurredAt',e.id LIMIT 5001`,[a.enterpriseId,a.teamId,p.from+'T00:00:00+08:00',rangeEnd(p.to)])).rows;
   ensure(raw.length<=5000,'PERIOD_TOO_LARGE',422);const facts=raw.map(r=>this.fact(r)),allocations=new Map<string,Allocation>(),claimed=new Set<string>();for(const r of raw){if(r.allocation)allocations.set(r.event.id,r.allocation);if(r.period_id)claimed.add(r.event.id);}const result=calculate(facts,allocations,rule,claimed);return {...result,previewHash:digest({periodId:p.id,periodVersion:p.version,from:p.from,to:p.to,...result})};
  }
- async read(p:Principal,raw:unknown){const q=performanceQuerySchema.parse(raw);return this.tx(p,async(tx,a)=>{
+ async read(p:Principal,raw:unknown){const q=performanceQuerySchema.parse(raw);return readWorkflowSnapshot(this.pool,this.resolveActor,p,async(tx,a,snapshot)=>{
+  ensure(a.teamId,'MEMBERSHIP_REQUIRED',403);
   if(q.action==='allocations'){const rows=(await tx.query(`SELECT e.id,e.event->'data' AS fact,a.document,c.period_id FROM enterprise_workflow.events e LEFT JOIN enterprise_workflow.performance_allocations a ON a.enterprise_id=e.enterprise_id AND a.team_id=$2 AND a.fact_id=e.id LEFT JOIN enterprise_workflow.performance_claims c ON c.enterprise_id=e.enterprise_id AND c.team_id=$2 AND c.fact_id=e.id WHERE e.enterprise_id=$1 AND e.event->>'teamId'=$2::text AND e.event->>'type'='workflow.task.accepted.v1' AND e.id=ANY($3::text[]) AND ($4::boolean OR e.event->'data'->>'contributor'=$5 OR e.event->'data'->'participants' ? $5)`,[a.enterpriseId,a.teamId,q.ids.split(','),this.manager(a),a.subject])).rows;return {summaries:rows.map(r=>({factId:r.id,version:r.document?.version??0,status:r.fact.contributionBps===10000&&(r.fact.participants?.length??1)===1?'single':r.document?.status??'pending',locked:!!r.period_id}))};}
   if(q.action==='rules'){const rules=(await tx.query('SELECT document FROM enterprise_workflow.performance_rules WHERE enterprise_id=$1 AND team_id=$2 ORDER BY version DESC LIMIT 30',[a.enterpriseId,a.teamId])).rows.map(r=>r.document as PublishedRule);const draft=this.manager(a)?(await tx.query('SELECT document FROM enterprise_workflow.performance_rule_drafts WHERE enterprise_id=$1 AND team_id=$2',[a.enterpriseId,a.teamId])).rows[0]?.document??null:null;return {rules,draft};}
   if(q.action==='allocation'){const f=await this.readFact(tx,a,q.factId);ensure(this.manager(a)||f.participants.includes(a.subject),'FACT_NOT_FOUND',404);const allocation=await this.allocation(tx,a,q.factId),claim=(await tx.query('SELECT period_id FROM enterprise_workflow.performance_claims WHERE enterprise_id=$1 AND team_id=$2 AND fact_id=$3',[a.enterpriseId,a.teamId,q.factId])).rows[0];return {fact:f,allocation:allocation?(this.manager(a)?allocation:{...allocation,shares:allocation.shares.filter(s=>s.subject===a.subject)}):null,locked:!!claim,single:f.participants.length===1&&f.contributionBps===10000};}
-  if(q.action==='periods'){const where=`enterprise_id=$1 AND team_id=$2 AND ($3::boolean OR document->>'status'='confirmed' AND EXISTS(SELECT 1 FROM jsonb_array_elements(document->'snapshot'->'results') r WHERE r->>'subject'=$4))`,v=[a.enterpriseId,a.teamId,this.manager(a),a.subject];const rows=(await tx.query(`SELECT document FROM enterprise_workflow.performance_periods WHERE ${where} ORDER BY created_at DESC,id LIMIT 30 OFFSET $5`,[...v,(q.page-1)*30])).rows;const total=Number((await tx.query(`SELECT count(*) AS n FROM enterprise_workflow.performance_periods WHERE ${where}`,v)).rows[0].n);return {periods:rows.map(r=>{const p=this.periodFor(a,r.document);return {...p,snapshot:undefined};}),page:q.page,pageSize:30,total};}
+  if(q.action==='periods'){
+   const where=`enterprise_id=$1 AND team_id=$2 AND ($3::boolean OR document->>'status'='confirmed' AND EXISTS(SELECT 1 FROM jsonb_array_elements(document->'snapshot'->'results') r WHERE r->>'subject'=$4))`,v=[a.enterpriseId,a.teamId,this.manager(a),a.subject];
+   // Membership in confirmed results is checked in SQL. The list never needs the frozen calculation.
+   const rows=(await tx.query<{document:Omit<Period,'snapshot'>}>(`SELECT document - 'snapshot' AS document FROM enterprise_workflow.performance_periods WHERE ${where} ORDER BY created_at DESC,id LIMIT 30 OFFSET $5`,[...v,(q.page-1)*30])).rows;
+   const total=Number((await tx.query(`SELECT count(*) AS n FROM enterprise_workflow.performance_periods WHERE ${where}`,v)).rows[0].n);
+   return {periods:rows.map(r=>r.document),page:q.page,pageSize:30,total};
+  }
   if(q.action==='period')return {period:this.periodFor(a,await this.period(tx,a,q.id))};
   ensure(this.manager(a),'PERFORMANCE_FORBIDDEN',403);
-  if(q.action==='preview'){await this.lock(tx,a);const period=await this.period(tx,a,q.id);ensure(period.status==='draft','PERIOD_NOT_DRAFT');return {period,snapshot:await this.snapshot(tx,a,period)};}
+  // Confirmation locks, checks the draft version and recomputes the hash itself.
+  if(q.action==='preview'){if(!snapshot)await this.lock(tx,a);const period=await this.period(tx,a,q.id);ensure(period.status==='draft','PERIOD_NOT_DRAFT');return {period,snapshot:await this.snapshot(tx,a,period)};}
   const rows=(await tx.query('SELECT seq,subject,operation,detail,created_at FROM enterprise_workflow.performance_audit WHERE enterprise_id=$1 AND team_id=$2 AND seq<$3 ORDER BY seq DESC LIMIT 50',[a.enterpriseId,a.teamId,q.before])).rows;return {events:rows,nextBefore:rows.length===50?Number(rows.at(-1).seq):null};
  });}
  async execute(p:Principal,raw:unknown){const c=performanceCommandSchema.parse(raw);return this.tx(p,async(tx,a)=>{
