@@ -23,6 +23,7 @@ const output = path.resolve("output/agent-gateway-smoke");
 const distDir = `output/agent-gateway-smoke/.next-${process.pid}`;
 const CLI = path.resolve("public/agent/naumi.mjs");
 const report: string[] = [], appLog: string[] = [], imageRequests: { url: string; bytes: number }[] = [];
+let desktopSupplierDelay = 0;
 const pass = (message: string) => { report.push(`PASS ${message}`); console.log(report.at(-1)); };
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -81,6 +82,7 @@ async function main() {
     }
     if (req.url?.endsWith("/images/generations") || req.url?.endsWith("/images/edits")) {
       imageRequests.push({ url: req.url, bytes: raw.length });
+      if (desktopSupplierDelay) {const delay=desktopSupplierDelay;desktopSupplierDelay=0;await sleep(delay);}
       return void res.end(JSON.stringify({ data: [{ b64_json: supplierImage.toString("base64") }] }));
     }
     if (req.url?.endsWith("/chat/completions")) {
@@ -159,6 +161,7 @@ async function main() {
     assert.equal(crossSite.status, 403);
     pass("a token cannot manage tokens, and cross-site token creation is refused");
 
+    if(process.env.NAUMI_SMOKE_SKIP_UI!=='1') {
     const browser = await chromium.launch({ channel: "chrome", headless: true, args: ["--disable-gpu"] });
     try {
       for (const viewport of [{ width: 1440, height: 960 }, { width: 390, height: 844 }]) {
@@ -197,6 +200,7 @@ async function main() {
       }
     } finally { await browser.close(); }
     pass("account center: /account/agent creates a token in the UI (shown once, usable immediately) and /account links to it, at 1440 and 390 wide, no overflow or page errors");
+    }
     if (process.env.NAUMI_SMOKE_UI_ONLY === "1") { console.log("\nAGENT_GATEWAY_SMOKE=UI_ONLY_PASS"); return; }
 
     const cfg = (name: string) => path.join(output, `config-${name}.json`);
@@ -326,6 +330,83 @@ async function main() {
     assert.equal(saved.isError, false, JSON.stringify(saved));
     await mcp.close();
     pass(`MCP stdio server: ${mcpNames.length} tools, read + upload + billed generation + download`);
+
+    if(process.env.AGENT_DESKTOP_SMOKE==='1') {
+      const bundle=path.resolve('output/desktop-creation/smoke-bundle-'+process.pid);
+      execFileSync(process.execPath,['scripts/package-naumi-desktop.mjs',bundle,'--allow-dirty'],{stdio:'pipe',windowsHide:true});
+      const {pathToFileURL}=await import('node:url');
+      const {naumiCreationConfig,presentNaumiDownload}=await import(pathToFileURL(path.resolve('integrations/desktop/naumi-creation.mjs')).href);
+      const secretFile=path.resolve('output/desktop-creation/smoke-token.private');await writeFile(secretFile,writeToken.secret,{mode:0o600});
+      const configured=await naumiCreationConfig({bundle,site:base,account:emailA,tokenFile:secretFile,fileRoot:output,node:process.execPath,allowFixtureBundle:true});
+      const connectDesktop=async()=>{const c=new Client({name:'desktop-fixture',version:'1'});const t=new StdioClientTransport({...configured.mcp,env:configured.mcp.env,stderr:'pipe'});await c.connect(t);return {client:c,transport:t};};
+      let desktop=await connectDesktop();
+      try {
+        const list=await desktop.client.listTools();
+        assert(list.tools.some(t=>t.name==='naumi_call'));
+        assert(!list.tools.some(t=>t.name==='generate_image'),'Desktop must not expose random-ID write path');
+        const connection:any=await desktop.client.callTool({name:'naumi_connection',arguments:{}});
+        assert.equal(connection.structuredContent.account.email,emailA);
+        const catalog:any=await desktop.client.callTool({name:'naumi_tools',arguments:{}});
+        assert(catalog.structuredContent.tools.some((t:any)=>t.name==='generate_image'&&t.parameters&&typeof t.available==='boolean'));
+        await writeFile(path.join(output,'desktop-capabilities.json'),JSON.stringify(catalog.structuredContent,null,2));
+        const reference:any=await desktop.client.callTool({name:'naumi_upload_image',arguments:{path:localImage}});
+        assert(!reference.isError,JSON.stringify(reference));
+        const operationId=randomUUID();
+        const intent={tool:'generate_image',arguments:{prompt:'Desktop 保留参考商品的白底主图',image_urls:[reference.structuredContent.url],ratio:'1:1',resolution:'1K',count:1},operationId,request:'Desktop fixture reference chain'};
+        await writeFile(path.join(output,'desktop-intent.json'),JSON.stringify({account:emailA,tokenId:writeToken.token.id,site:base,workspace:null,...intent},null,2));
+        const beforeSupplier=imageRequests.length;
+        const beforeLedger=Number((await f.sql.query('SELECT count(*)::int n FROM app_ledger WHERE email=$1',[emailA])).rows[0].n);
+        const beforeArt=Number((await f.sql.query('SELECT count(*)::int n FROM app_artworks WHERE email=$1',[emailA])).rows[0].n);
+        const beforeBalance=(await cli(['whoami'],cfg('write'))).json.account.balance;
+        desktopSupplierDelay=1500;
+        const interrupted=desktop.client.callTool({name:'naumi_call',arguments:intent}).catch(()=>null);
+        for(let n=0;n<200&&imageRequests.length===beforeSupplier;n++)await sleep(100);
+        assert.equal(imageRequests.length,beforeSupplier+1,'supplier must accept original call before disconnect');
+        await desktop.client.close();await interrupted;
+        desktop=await connectDesktop();
+        let recovered:any;
+        for(let n=0;n<200;n++) {
+          recovered=await desktop.client.callTool({name:'naumi_call_status',arguments:{operationId}});
+          if(recovered.structuredContent?.state==='succeeded')break;
+          await sleep(150);
+        }
+        assert.equal(recovered.structuredContent.state,'succeeded',JSON.stringify(recovered));
+        assert.equal(recovered.structuredContent.operationId,operationId);
+        assert.equal(imageRequests.length,beforeSupplier+1);
+        const replayed:any=await desktop.client.callTool({name:'naumi_call',arguments:intent});
+        assert.equal(replayed.structuredContent.operationId,operationId);
+        assert.equal(imageRequests.length,beforeSupplier+1);
+        const afterBalance=(await cli(['whoami'],cfg('write'))).json.account.balance;
+        assert.equal(beforeBalance-afterBalance,recovered.structuredContent.credits);
+        assert.equal(Number((await f.sql.query('SELECT count(*)::int n FROM app_ledger WHERE email=$1',[emailA])).rows[0].n),beforeLedger+1);
+        assert.equal(Number((await f.sql.query('SELECT count(*)::int n FROM app_artworks WHERE email=$1',[emailA])).rows[0].n),beforeArt+1);
+        const mediaUrl=recovered.structuredContent.output.media[0];
+        const downloaded:any=await desktop.client.callTool({name:'naumi_download_media',arguments:{url:mediaUrl,out:path.join(output,'desktop-final.png')}});
+        assert.equal(downloaded.isError,false,JSON.stringify(downloaded));
+        const finalBytes=await readFile(downloaded.structuredContent.path);assert.deepEqual(finalBytes,supplierImage);
+        const {createHash}=await import('node:crypto');assert.equal(downloaded.structuredContent.sha256,createHash('sha256').update(finalBytes).digest('hex'));
+        // The native package implementation creates the actual event; host/session
+        // services here are isolated fixtures, not a running Desktop UI.
+        let nativeDelivery:any={status:'NOT TESTED',reason:'NAUMI_HARNESS_ROOT not specified'};
+        if(process.env.NAUMI_HARNESS_ROOT) {
+          const native=await import(pathToFileURL(path.join(process.env.NAUMI_HARNESS_ROOT,'node_modules/@deepseek-ai/dsh-tool-present/lib/index.js')).href);
+          const mcpPackage=await import(pathToFileURL(path.join(process.env.NAUMI_HARNESS_ROOT,'node_modules/@deepseek-ai/dsh-mcp-client/lib/index.js')).href);
+          mcpPackage.Config(configured.mcp);
+          const events:any[]=[],listeners:any={},session={append:(type:string,data:any)=>{events.push({type,data});return events.at(-1);}};
+          let definition:any;
+          const fs=await import('node:fs/promises');
+          native.apply({tools:{register:(d:any)=>{definition=d;}},agents:{turnBoundaryOf:()=>({openTurnStartSeq:1,lastTurn:1})},workingDirectory:{ensure:async()=>output},fs:{lstat:async(p:string)=>{const s=await fs.lstat(p);return {type:s.isFile()?'file':'other'};},resolve:async(p:string)=>path.resolve(p),stat:async(p:string)=>{const s=await fs.stat(p);return {type:s.isFile()?'file':'other'};},processPath:(p:string)=>p},on:(name:string,fn:any)=>{listeners[name]=fn;}},{maxFiles:8});
+          const exec={agent:{session},callId:'desktop-delivery-fixture',signal:new AbortController().signal};
+          await presentNaumiDownload({receipt:downloaded.structuredContent,fileRoot:output,present:async(args:any)=>{const value=await definition.execute(args,exec);listeners['tools/result'](exec,{isError:false,value});return value;}});
+          assert.equal(events.length,1);assert.equal(events[0].type,'deliverables/presented');assert.equal(events[0].data.files[0].path,downloaded.structuredContent.path);
+          nativeDelivery={status:'PASS',package:'@deepseek-ai/dsh-tool-present',events,scope:'actual native tool body with isolated host/session; Desktop UI NOT TESTED'};
+        }
+        const savedCall=(await f.sql.query('SELECT operation_id,state,credits FROM app_agent_gateway_calls WHERE token_id=$1 AND operation_id=$2',[writeToken.token.id,operationId])).rows;
+        assert.equal(savedCall.length,1);
+        await writeFile(path.join(output,'DESKTOP_CHAIN.json'),JSON.stringify({outerOperationId:operationId,call:savedCall[0],supplierRequests:1,ledgerDelta:1,artworkDelta:1,charged:beforeBalance-afterBalance,download:downloaded.structuredContent,nativeDelivery,realPg:true,realNext:true,realSupplier:false,paidProductionCalls:0},null,2));
+        pass('Desktop MCP reference upload → same-ID interrupted call/status/replay → one artwork/ledger → hash download → native present adapter');
+      } finally {await desktop.client.close();await rm(secretFile,{force:true});}
+    }
 
     const concurrent = await Promise.all([1, 2].map(() => fetch(`${base}/api/agent-gateway/v1/calls`, { method: "POST", headers: { authorization: `Bearer ${writeToken.secret}`, "content-type": "application/json" }, body: JSON.stringify({ tool: "generate_image", arguments: { prompt: "同令牌并发", ratio: "1:1", resolution: "1K", count: 1 }, operationId: randomUUID() }) }).then(async res => ({ status: res.status, lines: (await res.text()).trim().split("\n").map(line => JSON.parse(line)) }))));
     assert.deepEqual(concurrent.map(item => item.status), [200, 200], JSON.stringify(concurrent));

@@ -4,6 +4,9 @@ import path from "node:path";
 const ts=(id,group,file,expect,args=[])=>({id,group,file,args,expect,pg:true,tsx:true});
 const node=(id,group,file,expect,args=[])=>({id,group,file,args,expect,pg:false,tsx:false});
 export const refactorCases=[
+ node('agent-desktop-client','agent-desktop','scripts/verify-agent-desktop-client.mjs','AGENT_DESKTOP_CLIENT=PASS'),
+ ts('agent-desktop-scope-pg','agent-desktop','scripts/verify-agent-desktop-scope-pg.ts','AGENT_DESKTOP_SCOPE_PG=PASS'),
+ ts('agent-desktop-gateway','agent-desktop','scripts/agent-gateway-smoke.ts','AGENT_GATEWAY_SMOKE=PASS'),
  {...ts('video-parameter-discovery','video-parameter-discovery','scripts/verify-video-parameter-discovery.ts','VIDEO_PARAMETER_DISCOVERY=PASS'),pg:false},
  ts('video-parameter-discovery-pg','video-parameter-discovery','scripts/verify-video-parameter-discovery-pg.ts','VIDEO_PARAMETER_DISCOVERY_PG=PASS'),
  {...node('video-parameter-discovery-ui','video-parameter-discovery','scripts/verify-video-parameter-discovery-ui.cjs','VIDEO_PARAMETER_DISCOVERY_UI=PASS'),serverConditions:true},

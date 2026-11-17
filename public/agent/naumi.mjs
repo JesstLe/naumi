@@ -10,13 +10,13 @@
 // Exit codes: 0 ok, 1 tool failed, 2 usage error, 3 authentication/permission, 4 budget or credits,
 // 5 result unknown or network failure (query `status <operationId>` before retrying a billed call).
 
-import { randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile, chmod, stat } from "node:fs/promises";
+import { randomUUID, createHash } from "node:crypto";
+import { mkdir, readFile, writeFile, chmod, stat, lstat, realpath, open, link, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, dirname, extname, join, resolve } from "node:path";
+import { basename, dirname, extname, join, resolve, relative, isAbsolute, sep } from "node:path";
 import { createInterface } from "node:readline";
 
-const VERSION = "1.0.0";
+const VERSION = "1.1.0";
 const API = "/api/agent-gateway/v1";
 const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
 const IMAGE_TYPES = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp" };
@@ -44,12 +44,47 @@ function normalizeSite(raw) {
   return url.origin;
 }
 async function connection(options) {
+  const desktop = options.desktop || process.env.NAUMI_DESKTOP === "1";
   const config = await readConfig();
   const profile = config.profiles?.[options.profile || "default"] || {};
   const site = options.site || process.env.NAUMI_SITE || profile.site;
-  const token = options.token || process.env.NAUMI_TOKEN || profile.token;
+  const tokenFile = options["token-file"] || process.env.NAUMI_TOKEN_FILE;
+  const account = options.account || process.env.NAUMI_ACCOUNT;
+  const fileRoot = options["file-root"] || process.env.NAUMI_FILE_ROOT;
+  // Desktop never inherits a different user's default profile or ambient token.
+  if (desktop && (!tokenFile || !isAbsolute(tokenFile) || !account || !fileRoot || !isAbsolute(fileRoot) || !(options.site || process.env.NAUMI_SITE))) throw new CliError("Desktop 需要显式站点、账号、受保护令牌文件及文件工作目录", EXIT.auth);
+  const token = tokenFile ? (await readFile(tokenFile, "utf8")).trim() : options.token || process.env.NAUMI_TOKEN || profile.token;
   if (!site || !token) throw new CliError("尚未登录：先运行 naumi login --site <站点> --token <令牌>，或设置 NAUMI_SITE / NAUMI_TOKEN", EXIT.auth);
-  return { site: normalizeSite(site), token };
+  const workspace = options.workspace ?? process.env.NAUMI_WORKSPACE ?? (desktop ? "" : profile.workspace || "");
+  if (workspace && !/^[a-zA-Z0-9_-]{1,128}$/.test(workspace)) throw new CliError("workspace 必须是明确企业 ID", EXIT.usage);
+  const conn = { site: normalizeSite(site), token, workspace, desktop, account: account?.trim().toLowerCase(), fileRoot: fileRoot ? await realpath(fileRoot) : null };
+  if(desktop) {
+    const tokenRelative=relative(conn.fileRoot,await realpath(tokenFile));
+    if(tokenRelative!==".."&&!tokenRelative.startsWith(".."+sep)&&!isAbsolute(tokenRelative))throw new CliError("令牌文件必须位于 Agent 文件工作目录之外",EXIT.auth);
+  }
+  if (desktop) await checkAccount(conn);
+  return conn;
+}
+
+async function checkAccount(conn) {
+  const me = await getJson(conn, `${API}/me`);
+  if (conn.account && me.account?.email?.toLowerCase() !== conn.account) throw new CliError("授权账号与当前 Desktop 账号不一致", EXIT.auth, {code:"ACCOUNT_MISMATCH",submitted:false});
+  return me;
+}
+
+async function localPath(conn, path, output = false) {
+  const full = resolve(path);
+  if (!conn.desktop) return full;
+  if (!isAbsolute(path)) throw new CliError("Desktop 文件路径必须为绝对路径", EXIT.usage);
+  const inside = target => { const r = relative(conn.fileRoot, target); return r && r !== ".." && !r.startsWith(".." + sep) && !isAbsolute(r); };
+  if (!inside(full)) throw new CliError("文件不属于当前 Desktop 工作目录", EXIT.auth);
+  // Resolve existing ancestors before creating anything; reject symlink escapes.
+  let parent = output ? dirname(full) : full;
+  for (;;) {
+    try { if (!inside(await realpath(parent)) && await realpath(parent) !== conn.fileRoot) throw new CliError("文件路径越出工作目录", EXIT.auth); break; }
+    catch (error) { if (error.code !== "ENOENT") throw error; parent = dirname(parent); }
+  }
+  return full;
 }
 
 // ── HTTP ───────────────────────────────────────────────────────────────────
@@ -62,7 +97,7 @@ function failureExit(status, code) {
 async function request(conn, path, init = {}) {
   let res;
   try {
-    res = await fetch(conn.site + path, { ...init, headers: { authorization: `Bearer ${conn.token}`, "user-agent": `naumi-cli/${VERSION}`, ...(init.headers || {}) }, redirect: "error" });
+    res = await fetch(conn.site + path, { ...init, headers: { authorization: `Bearer ${conn.token}`, "user-agent": `naumi-cli/${VERSION}`, ...(conn.workspace ? {"x-naumi-workspace":conn.workspace} : {}), ...(init.headers || {}) }, redirect: "error" });
   } catch (error) {
     throw new CliError(`无法连接 ${conn.site}：${error?.cause?.code || error?.message || "网络错误"}`, EXIT.unknown);
   }
@@ -110,8 +145,7 @@ async function streamCall(conn, body, onEvent) {
 }
 
 // ── tool arguments ─────────────────────────────────────────────────────────
-let toolCache;
-async function tools(conn) { return toolCache ||= (await getJson(conn, `${API}/tools`)).tools; }
+async function tools(conn) { return (await getJson(conn, `${API}/tools`)).tools; }
 function schemaType(schema) {
   if (!schema || typeof schema !== "object") return "string";
   if (schema.type) return Array.isArray(schema.type) ? schema.type[0] : schema.type;
@@ -127,7 +161,7 @@ function coerce(value, type) {
 }
 function isImagePath(value) { return typeof value === "string" && value.startsWith("@") && value.length > 1; }
 async function uploadFile(conn, path) {
-  const full = resolve(path);
+  const full = await localPath(conn, path);
   const type = IMAGE_TYPES[extname(full).toLowerCase()];
   if (!type) throw new CliError(`仅支持 png/jpg/webp 图片：${path}`, EXIT.usage);
   const info = await stat(full).catch(() => null);
@@ -174,13 +208,35 @@ async function resolveUploads(conn, value) {
 
 // ── media ──────────────────────────────────────────────────────────────────
 async function download(conn, url, out) {
-  const res = await request(conn, `${API}/media?url=${encodeURIComponent(url)}`);
-  const bytes = Buffer.from(await res.arrayBuffer());
   let target = resolve(out || basename(new URL(url, conn.site).pathname) || "naumi-media");
   if (out && (out.endsWith("/") || out.endsWith("\\") || (await stat(target).catch(() => null))?.isDirectory())) target = join(target, basename(new URL(url, conn.site).pathname) || "naumi-media");
+  target = await localPath(conn, target, true);
+  const res = await request(conn, `${API}/media?url=${encodeURIComponent(url)}`);
   await mkdir(dirname(target), { recursive: true });
-  await writeFile(target, bytes);
-  return { url, path: target, bytes: bytes.length, contentType: res.headers.get("content-type") || "" };
+  const temporary = target + "." + randomUUID() + ".part";
+  let bytes = 0; const hash = createHash("sha256");
+  try {
+    const file = await open(temporary, "wx", 0o600);
+    try {
+      for await (const chunk of res.body) {
+        bytes += chunk.length;
+        if (conn.desktop && bytes > 256 * 1024 * 1024) throw new CliError("媒体超过 Desktop 单文件 256MiB 上限", EXIT.usage);
+        hash.update(chunk); await file.writeFile(chunk);
+      }
+      await file.sync();
+    } finally { await file.close(); }
+    const digest = hash.digest("hex");
+    if (conn.desktop) {
+      try { await link(temporary, target); }
+      catch (error) {
+        if (error.code !== "EEXIST") throw error;
+        if (!(await lstat(target)).isFile() || await realpath(target) !== target) throw new CliError("目标不是独立常规文件",EXIT.auth);
+        const old = await readFile(target);
+        if (old.length !== bytes || createHash("sha256").update(old).digest("hex") !== digest) throw new CliError("目标文件已存在且内容不同，请指定新文件名", EXIT.usage, {code:"FILE_CONFLICT",submitted:false});
+      }
+    } else { await writeFile(target, await readFile(temporary)); }
+    return { url, path: target, bytes, sha256: digest, contentType: res.headers.get("content-type") || "" };
+  } finally { await unlink(temporary).catch(() => undefined); await res.body?.cancel().catch(() => undefined); }
 }
 
 // ── commands ───────────────────────────────────────────────────────────────
@@ -229,11 +285,14 @@ const HELP = `Naumi CLI ${VERSION}: call Naumi creative tools from any agent.
   naumi mcp                                        以 MCP（stdio）方式提供同一套工具
 
 通用选项：--profile <名称>  --site <站点>  --token <令牌>；环境变量 NAUMI_SITE / NAUMI_TOKEN / NAUMI_CONFIG
+企业空间：--workspace <企业ID> / NAUMI_WORKSPACE；上传、报价、执行、查询和下载使用同一显式空间。
+Desktop：mcp --desktop，设置 NAUMI_SITE / NAUMI_ACCOUNT / NAUMI_TOKEN_FILE / NAUMI_FILE_ROOT。
+Desktop 写操作使用 naumi_call {tool,arguments,operationId,request?}，先持久化 UUID 再提交。
 退出码：0 成功，1 工具失败，2 参数错误，3 鉴权/权限，4 预算或余额不足，5 结果未知/网络中断`;
 
 async function main(argv) {
   const options = {}, positional = [];
-  const flags = new Set(["json", "help", "version"]);
+  const flags = new Set(["json", "help", "version", "desktop"]);
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--") { positional.push(...argv.slice(i + 1)); break; }
@@ -254,7 +313,7 @@ async function main(argv) {
       if (!token) throw new CliError("缺少 --token（可用 --token - 从标准输入读取）", EXIT.usage);
       const me = await getJson({ site, token }, `${API}/me`);
       const config = await readConfig();
-      config.profiles = { ...(config.profiles || {}), [options.profile || "default"]: { site, token } };
+      config.profiles = { ...(config.profiles || {}), [options.profile || "default"]: { site, token, ...(options.workspace ? {workspace:options.workspace} : {}) } };
       await writeConfig(config);
       print({ ok: true, site, profile: options.profile || "default", account: me.account, token: me.token });
       return EXIT.ok;
@@ -309,6 +368,10 @@ async function main(argv) {
 
 // ── MCP server (stdio, newline-delimited JSON-RPC 2.0) ─────────────────────
 const MCP_HELPERS = [
+  { name: "naumi_connection", description: "读取当前授权账号、令牌权限、预算及显式企业空间。不代表所有模型可用。", inputSchema: {type:"object",properties:{},additionalProperties:false}, annotations:{readOnlyHint:true,openWorldHint:false} },
+  { name: "naumi_tools", description: "实时读取当前账号工具完整 schema 和 available。未授权/不可用项不是可执行承诺。", inputSchema:{type:"object",properties:{},additionalProperties:false},annotations:{readOnlyHint:true,openWorldHint:false} },
+  { name: "naumi_quote", description: "按现有服务端规则只报价，不生成或锁价。", inputSchema:{type:"object",properties:{tool:{type:"string"},arguments:{type:"object"}},required:["tool","arguments"],additionalProperties:false},annotations:{readOnlyHint:true,openWorldHint:true} },
+  { name: "naumi_call", description: "使用已持久化的外层 operationId 执行工具。arguments 保持原schema，内层 operation_id 不变。断网仅查原编号，不换号重提。", inputSchema:{type:"object",properties:{tool:{type:"string"},arguments:{type:"object"},operationId:{type:"string",format:"uuid"},request:{type:"string",maxLength:4000}},required:["tool","arguments","operationId"],additionalProperties:false},annotations:{readOnlyHint:false,openWorldHint:true} },
   { name: "naumi_upload_image", description: "上传本机图片（png/jpg/webp，≤12MB），返回可传给 Naumi 工具图片参数的地址。", inputSchema: { type: "object", properties: { path: { type: "string", description: "本机图片的绝对路径" } }, required: ["path"], additionalProperties: false }, annotations: { readOnlyHint: false, openWorldHint: false } },
   { name: "naumi_download_media", description: "把 Naumi 结果媒体地址下载到本机文件或目录。", inputSchema: { type: "object", properties: { url: { type: "string" }, out: { type: "string", description: "保存路径或目录（绝对路径）" } }, required: ["url", "out"], additionalProperties: false }, annotations: { readOnlyHint: false, openWorldHint: false } },
   { name: "naumi_call_status", description: "按 operationId 查询 Naumi 任务状态与结果。结果未知时先查询，不要重复提交收费任务。", inputSchema: { type: "object", properties: { operationId: { type: "string" } }, required: ["operationId"], additionalProperties: false }, annotations: { readOnlyHint: true, openWorldHint: false } },
@@ -332,7 +395,9 @@ async function serveMcp(conn) {
 
   async function listTools() {
     const list = await tools(conn);
-    return [...list.map(tool => ({
+    // In Desktop, all writes go through the stable-ID envelope. Read-only tools
+    // retain their schemas; discovery still returns every available=false row.
+    return [...list.filter(tool => !conn.desktop || (!tool.write && !tool.billed && tool.available !== false)).map(tool => ({
       name: tool.name,
       description: `${tool.description}${tool.billed ? "（收费：按系统报价扣积分，令牌每日预算内自动确认）" : ""}`,
       inputSchema: tool.parameters && tool.parameters.type === "object" ? tool.parameters : { type: "object", properties: {} },
@@ -341,11 +406,26 @@ async function serveMcp(conn) {
   }
 
   async function callTool(name, args, progressToken) {
+    if (conn.desktop) await checkAccount(conn);
+    if (name === "naumi_connection") { const me = await checkAccount(conn); return toolResult("已授权连接", false, {...me,workspace:conn.workspace || null,clientVersion:VERSION,desktop:!!conn.desktop}); }
+    if (name === "naumi_tools") return toolResult("实时工具目录", false, {tools:await tools(conn)});
+    if (name === "naumi_quote") { const quote = await postJson(conn, `${API}/quote`, args); return toolResult(JSON.stringify(quote), false, quote); }
     if (name === "naumi_upload_image") { const uploaded = await uploadFile(conn, String(args.path || "")); return toolResult(`已上传：${uploaded.url}`, false, uploaded); }
     if (name === "naumi_download_media") { const saved = await download(conn, String(args.url || ""), String(args.out || "")); return toolResult(`已保存：${saved.path}（${saved.bytes} 字节）`, false, saved); }
     if (name === "naumi_call_status") { const call = await getJson(conn, `${API}/calls/${encodeURIComponent(String(args.operationId || ""))}`); return toolResult(callText(call), call.state !== "succeeded", call); }
+    let body;
+    if (name === "naumi_call") {
+      if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(args.operationId || "") || typeof args.tool !== "string" || !args.arguments || typeof args.arguments !== "object" || Array.isArray(args.arguments)) throw new CliError("需要原外层 UUID、工具名和 arguments 对象", EXIT.usage, {code:"ARGUMENT_INVALID",submitted:false});
+      body = {tool:args.tool, arguments:args.arguments,operationId:args.operationId,...(args.request !== undefined ? {request:args.request} : {})};
+    } else {
+      if (conn.desktop) {
+        const found = (await tools(conn)).find(tool => tool.name === name && !tool.write && !tool.billed && tool.available !== false);
+        if (!found) throw new CliError("Desktop 写操作请使用 naumi_call 并持久化 operationId", EXIT.usage, {code:"STABLE_OPERATION_REQUIRED",submitted:false});
+      }
+      body = {tool:name,arguments:args || {},operationId:randomUUID()};
+    }
     let progress = 0;
-    const call = await streamCall(conn, { tool: name, arguments: args || {}, operationId: randomUUID() }, event => {
+    const call = await streamCall(conn, body, event => {
       if (progressToken === undefined) return;
       if (event.type === "progress" || event.type === "accepted") send({ jsonrpc: "2.0", method: "notifications/progress", params: { progressToken, progress: ++progress, message: event.summary || (event.credits ? `已受理，报价 ${event.credits} 积分` : "已受理") } });
     });

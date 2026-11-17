@@ -74,6 +74,15 @@ Naumi 提供电商图片和视频创作工具。你通过 `node naumi.mjs`（或
 
 ## MCP 配置
 
+### Desktop 内置连接（客户端1.1）
+
+- Desktop使用固定bundle的`naumi.mjs mcp --desktop`，由宿主提供明确账号、企业空间、受保护令牌文件和本会话文件工作目录。登录网页不代表Agent授权；秘密通过受保护输入，不向模型/日志/回复传令牌。
+- 先`naumi_connection`核对当前账号/预算，再`naumi_tools`读取实时schema和available。只有当前权限可用才执行，不根据模型名字或工具数量推断供应商能力。Desktop写操作不使用会随机生成编号的直接工具名。
+- 写操作使用`naumi_call {tool, arguments, operationId, request?}`，**先保存外层UUID和完整原参数再提交**。内层`operation_id`/`request.operationId`保留原值。UNKNOWN/断网后`naumi_call_status`只查询原UUID；不要换号，也不要把原引用URL重新上传替换。
+- 图片先`naumi_upload_image {path}`，保留原id/url，后续调用只引用该URL。项目/节点/revision按工具真实schema显式填写，网关不认识网页当前选择。
+- 下载用`naumi_download_media {url,out}`。成功回执含绝对path、bytes、sha256；这不等于文件卡。最终文件核对后，必须在**当前Agent Session**调用Desktop原生`present`，不能只把路径写在聊天里。宿主可用Naumi交付适配器核验回执后调用原present。
+- `credits`为网关报价上限，不直接说成最终实扣；真正账务/任务/作品来自原领域回执。未授权就绪、报价、执行、下载、交付分别判断。
+
 `claude mcp add naumi -- node /绝对路径/naumi.mjs mcp`。MCP 模式提供与 CLI 相同的工具，另有三个辅助工具：
 
 - `naumi_upload_image`：上传本机图片，路径用绝对路径；
