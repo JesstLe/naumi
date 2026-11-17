@@ -125,8 +125,8 @@ try{
  check('Creation window focus does not refresh the list or detail',[await count(records),await count(record)],[1,1]);
  await page.getByRole('button',{name:'重试',exact:true}).click();await waitCount(record,2);
  check('Retrying only the failed creation detail does not requery history',await count(records),1);
- await resolve(record,1,{error:'fixture details unavailable'},503);
- await page.getByText('fixture details unavailable',{exact:false}).waitFor();
+ await resolve(record,1,{error:'fixture retry also failed'},503);
+ await page.getByText('fixture retry also failed',{exact:false}).waitFor();
  await blurAndReturn();await waitCount(records,2);await waitCount(record,3);await page.waitForTimeout(80);
  check('Returning to a hidden creation tab refreshes each data source once',[await count(records),await count(record)],[2,3]);
  await page.evaluate(()=>{delete document.visibilityState;window.dispatchEvent(new Event('naumi:cache-session-ended'));});

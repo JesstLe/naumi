@@ -7,6 +7,7 @@ async function main(){
  const name=`saas_creation_fixture_${Date.now()}`;const adminPool=new Pool({connectionString:base.toString()});await adminPool.query(`CREATE DATABASE ${name}`);await adminPool.end();base.pathname=`/${name}`;process.env.DATABASE_URL=base.toString();
  const db=await import('../src/lib/db'),tenants=await import('../src/lib/saas/tenants'),schema=await import('../src/lib/saas/creation-schema'),native=await import('../src/lib/native-auth');
  const adminRoutes=await import('../src/app/api/admin/creations/route'),adminDetail=await import('../src/app/api/admin/creations/[id]/route'),enterpriseRoutes=await import('../src/app/api/enterprise/creations/route'),enterpriseDetail=await import('../src/app/api/enterprise/creations/[id]/route'),mediaRoute=await import('../src/app/api/enterprise/creations/[id]/assets/[assetId]/route'),contracts=await import('../src/lib/saas/creation-contracts'),storage=await import('../src/lib/storage');
+ const adminEvents=await import('../src/app/api/admin/creations/[id]/events/route'),enterpriseEvents=await import('../src/app/api/enterprise/creations/[id]/events/route');
  await tenants.ensureTenantSchema();await schema.ensureCreationSchema();const pool=db.getPool();
  // Initialize the actual Worker-owned UUID schema before reading any creation.
  const batches=await import('../src/lib/imagegen/batch-repository');await batches.ensureImagegenBatches();
@@ -34,12 +35,50 @@ async function main(){
  const cookie=(email:string)=>`nv_user=${native.signUserSession(email,Date.now())}`;
  const request=(path:string,email?:string,headers:Record<string,string>={})=>new Request(`http://fixture.test${path}`,{headers:{...(email?{cookie:cookie(email)}:{}),...headers}});
  const detailCtx=(id:string)=>({params:Promise.resolve({id})});
+ // Prove that the old full-detail path really waits on the named dependency,
+ // then exercise the narrow route while the identical lock is still held.
+ const whileDetailWaits=async(table:'app_creation_assets'|'app_billing_operations',readDetail:()=>Promise<Response>,readProjection:()=>Promise<void>)=>{
+  const lock=await pool.connect();let pending:Promise<Response>|undefined;
+  try{
+   await lock.query('BEGIN');await lock.query(`LOCK TABLE ${table} IN ACCESS EXCLUSIVE MODE`);pending=readDetail();
+   const deadline=Date.now()+4000;
+   while(!(await lock.query('SELECT EXISTS(SELECT 1 FROM pg_locks WHERE relation=$1::regclass AND NOT granted) AS waiting',[table])).rows[0].waiting){
+    assert.ok(Date.now()<deadline,`Full detail did not reach the locked ${table} table`);await new Promise(resolve=>setTimeout(resolve,20));
+   }
+   let timer:ReturnType<typeof setTimeout>|undefined;
+   try{await Promise.race([readProjection(),new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(Error(`Projection waited on locked ${table}`)),2500);})]);}
+   finally{clearTimeout(timer);}
+  }finally{await lock.query('ROLLBACK');lock.release();}
+  assert.equal((await pending).status,200);
+ };
  assert.ok([401,403].includes((await adminRoutes.GET(request('/api/admin/creations'))).status));
  const list=await enterpriseRoutes.GET(request(`/api/enterprise/creations?tenantId=${a.tenantId}`,ownerA));assert.equal(list.status,200);assert.match(list.headers.get('cache-control')||'',/private.*no-store/);const listing=await list.json();assert.equal(listing.pagination.total,3);assert.equal(listing.items.find((x:any)=>x.id===root).settledCredits,0);assert.equal(listing.items.find((x:any)=>x.id===unknown).settledCredits,null);
  const detail=await enterpriseDetail.GET(request(`/api/enterprise/creations/${root}?tenantId=${a.tenantId}`,ownerA),detailCtx(root));assert.equal(detail.status,200);const full=await detail.json();assert.doesNotMatch(JSON.stringify(full),/INTERNAL_PROVIDER|INTERNAL_MODEL|INTERNAL_SECRET|providerId|modelId|apiKey|technical/);assert.equal(full.parameters.values.count,0);assert.equal(full.parameters.values.moderation,false);assert.equal(full.billing.quoted,0);assert.equal(full.billing.reserved,2);assert.equal(full.billing.released,2);assert.equal(full.billing.charged,0);assert.equal(full.billing.refunded,1);assert.equal(full.children.length,1);assert.equal(full.assetPagination.total,30);assert.equal(full.assets.length,24);assert.equal(full.eventPagination.total,31);
  const second=await(await enterpriseDetail.GET(request(`/api/enterprise/creations/${root}?tenantId=${a.tenantId}&assetPage=2&eventPage=2`,ownerA),detailCtx(root))).json();assert.equal(second.assets.length,6);assert.equal(second.events.length,7);
  const unknownDetail=await(await enterpriseDetail.GET(request(`/api/enterprise/creations/${unknown}?tenantId=${a.tenantId}`,ownerA),detailCtx(unknown))).json();for(const key of ['quoted','reserved','released','charged','refunded'])assert.equal(unknownDetail.billing[key],null);
  const adminFull=await(await adminDetail.GET(request(`/api/admin/creations/${root}`,admin),detailCtx(root))).json();assert.equal(adminFull.technical.sourceKind,'fixture');assert.equal(adminFull.parameters.values.providerId,'INTERNAL_PROVIDER');
+ const adminEventsPath=`/api/admin/creations/${root}/events`,enterpriseEventsPath=`/api/enterprise/creations/${root}/events?tenantId=${a.tenantId}`;
+ const readEvents=()=>enterpriseEvents.GET(request(enterpriseEventsPath+'&eventPage=2',ownerA),detailCtx(root));
+ const events=await readEvents();assert.equal(events.status,200);assert.match(events.headers.get('cache-control')||'',/private.*no-store/);
+ const eventBody=await events.json();assert.deepEqual(eventBody.items,second.events);assert.ok(Number.isFinite(Date.parse(eventBody.generatedAt)));assert.doesNotMatch(JSON.stringify(eventBody),/INTERNAL_PROVIDER|fixture-\d+/);
+ assert.deepEqual((await (await adminEvents.GET(request(adminEventsPath,admin),detailCtx(root))).json()).items,adminFull.events);
+ assert.ok([401,403].includes((await adminEvents.GET(request(adminEventsPath),detailCtx(root))).status));
+ assert.equal((await enterpriseEvents.GET(request(enterpriseEventsPath+'&assetPage=0',ownerA),detailCtx(root))).status,400);
+ assert.deepEqual((await (await enterpriseEvents.GET(request(enterpriseEventsPath+'&eventPage=3',ownerA),detailCtx(root))).json()).items,[]);
+ assert.equal((await enterpriseEvents.GET(request(enterpriseEventsPath,ownerA),detailCtx(foreign))).status,404);
+ await whileDetailWaits('app_creation_assets',()=>enterpriseDetail.GET(request(`/api/enterprise/creations/${root}?tenantId=${a.tenantId}&eventPage=2`,ownerA),detailCtx(root)),async()=>{
+  const eventResult=await readEvents();assert.equal(eventResult.status,200);assert.deepEqual((await eventResult.json()).items,second.events);
+ });
+ if(process.env.NAUMI_VERIFY_CREATION_QUERY_STATS==='1'){
+  await pool.query('CREATE EXTENSION IF NOT EXISTS pg_stat_statements');
+  const measure=async(run:()=>Promise<Response>)=>{
+   await pool.query('SELECT pg_stat_statements_reset()');const response=await run();assert.equal(response.status,200);await response.json();
+   const {rows}=await pool.query("SELECT COALESCE(sum(calls),0)::int AS total,COALESCE(sum(calls) FILTER(WHERE query ~ 'app_creation_assets|app_billing_operations'),0)::int AS irrelevant FROM pg_stat_statements WHERE dbid=(SELECT oid FROM pg_database WHERE datname=current_database()) AND query ~* '^(select|with)\\s' AND query NOT LIKE '%pg_stat_statements%'");return rows[0];
+  };
+  const detail=await measure(()=>enterpriseDetail.GET(request(`/api/enterprise/creations/${root}?tenantId=${a.tenantId}&eventPage=2`,ownerA),detailCtx(root)));
+  const events=await measure(readEvents);assert.ok(events.total<detail.total);assert.ok(detail.irrelevant>0);assert.equal(events.irrelevant,0);
+  console.log('CREATION_EVENT_QUERY_STATS',JSON.stringify({detail,events}));
+ }
  assert.equal((await enterpriseDetail.GET(request(`/api/enterprise/creations/${foreign}?tenantId=${a.tenantId}`,ownerA),detailCtx(foreign))).status,404);
  assert.equal((await enterpriseRoutes.GET(request(`/api/enterprise/creations?tenantId=${b.tenantId}`,ownerA))).status,403);
  const mediaCtx={params:Promise.resolve({id:root,assetId:mediaIds[0]})};const range=await mediaRoute.GET(request(`/api/enterprise/creations/${root}/assets/${mediaIds[0]}?tenantId=${a.tenantId}`,ownerA,{range:'bytes=0-6'}),mediaCtx);assert.equal(range.status,206);assert.equal(await range.text(),'fixture');assert.match(range.headers.get('cache-control')||'',/private.*no-store/);
@@ -84,6 +123,7 @@ async function main(){
  assert.equal((await mediaRoute.GET(request(playback.url,undefined,{range:'bytes=0-6'}),mediaCtx)).status,404);
  assert.equal((await enterpriseDetail.GET(request(`/api/enterprise/creations/${root}?tenantId=${a.tenantId}`,member),detailCtx(root))).status,403);
  assert.equal((await enterpriseDetail.GET(request(`/api/enterprise/creations/${root}?tenantId=${a.tenantId}`,manager),detailCtx(root))).status,404);
+ assert.equal((await enterpriseEvents.GET(request(enterpriseEventsPath,manager),detailCtx(root))).status,404);
  assert.equal((await enterpriseDetail.GET(request(`/api/enterprise/creations/${archived}?tenantId=${a.tenantId}`,ownerA),detailCtx(archived))).status,200);
  assert.equal((await mediaRoute.GET(request(`/api/enterprise/creations/${root}/assets/${mediaIds[0]}?tenantId=${a.tenantId}`,member),mediaCtx)).status,403);
  assert.equal(contracts.creationFiltersSchema.safeParse({from:'2026-02-30'}).success,false);assert.equal(contracts.creationFiltersSchema.safeParse({page:0}).success,false);
@@ -111,21 +151,59 @@ async function main(){
  assert.ok([401,403].includes((await adminRoutes.GET(request(historyRequest+'&period=all'))).status));
  console.log(`HISTORY_ENTRY_STATE=${historyVisible?'VISIBLE':'HIDDEN'} oldJobVisible=${historyHasOld} real_route=1 scope_preserved=1`);
  const legacyFull=await(await adminDetail.GET(request(`/api/admin/creations/${legacy.id}`,admin),detailCtx(legacy.id))).json();assert.equal(legacyFull.request.text,'旧图片原话 fixture');assert.equal(legacyFull.model.state,'not_recorded');assert.equal(legacyFull.billing.charged,0);assert.equal(legacyFull.events.length,0);
+ assert.deepEqual((await (await adminEvents.GET(request(`/api/admin/creations/${legacy.id}/events`,admin),detailCtx(legacy.id))).json()).items,[]);
+ assert.equal((await enterpriseEvents.GET(request(`/api/enterprise/creations/${legacy.id}/events?tenantId=${a.tenantId}`,ownerA),detailCtx(legacy.id))).status,404);
  assert.equal((await enterpriseDetail.GET(request(`/api/enterprise/creations/${legacy.id}?tenantId=${a.tenantId}`,ownerA),detailCtx(legacy.id))).status,404);
  await pool.query(`INSERT INTO app_artworks(id,email,title,category,prompt,image_url,gradient,batch_id)
   SELECT 'legacy-output-'||$1||'-'||n,$2,'fixture output','fixture','','/media/creation-fixture/video.mp4','',$1 FROM generate_series(1,107)n`,[legacyJob,departed]);
  const lastLegacy=await(await adminDetail.GET(request(`/api/admin/creations/${legacy.id}?assetPage=5`,admin),detailCtx(legacy.id))).json();assert.equal(lastLegacy.assetPagination.total,107);assert.equal(lastLegacy.assets.length,11);assert.equal(lastLegacy.assetPagination.page,5);
  const legacyReader=await import('../src/lib/saas/legacy-creations');assert.equal((await legacyReader.legacyCreationAsset(legacy.id,lastLegacy.assets[10].id)).url,'/media/creation-fixture/video.mp4');
+ const platformMedia=await import('../src/app/api/admin/creations/[id]/assets/[assetId]/route');
+ const lastLegacyAsset=lastLegacy.assets[10].id,ownedOutput=Buffer.from(lastLegacyAsset.slice('legacy-artwork-'.length),'base64url').toString();
+ await pool.query('UPDATE app_artworks SET video_url=image_url WHERE id=$1',[ownedOutput]);
+ const legacyAssetRoute=(assetId:string,email=admin)=>platformMedia.GET(request(`/api/admin/creations/${legacy.id}/assets/${assetId}`,email,{range:'bytes=0-6'}),{params:Promise.resolve({id:legacy.id,assetId})});
+ await whileDetailWaits('app_billing_operations',()=>adminDetail.GET(request(`/api/admin/creations/${legacy.id}?assetPage=5`,admin),detailCtx(legacy.id)),async()=>{
+  const image=await legacyAssetRoute(lastLegacyAsset);assert.equal(image.status,206);assert.equal(await image.text(),'fixture');
+ });
+ await pool.query('UPDATE app_artworks SET deleted_at=now() WHERE id=$1',[ownedOutput]);
+ assert.equal((await legacyAssetRoute(lastLegacyAsset)).status,404);
+ const unrelatedOutput=`unrelated-${randomUUID()}`;
+ await pool.query("INSERT INTO app_artworks(id,email,title,category,prompt,image_url,gradient) VALUES($1,$2,'Unrelated','fixture','','/media/creation-fixture/video.mp4','')",[unrelatedOutput,departed]);
+ assert.equal((await legacyAssetRoute(`legacy-artwork-${Buffer.from(unrelatedOutput).toString('base64url')}`)).status,404);
+ const historicInput='/media/creation-fixture/archived-input.png';await storage.writeStoredObject(png,'image/png','creation-fixture/archived-input.png');
+ await pool.query("UPDATE app_image_jobs SET payload=jsonb_set(payload,'{p,images}',$2::jsonb) WHERE id=$1",[legacyJob,JSON.stringify(Array.from({length:30},()=>({buf:{$imageJobBuffer:historicInput}})))]);
+ const inputPage=await(await adminDetail.GET(request(`/api/admin/creations/${legacy.id}?assetPage=2`,admin),detailCtx(legacy.id))).json();
+ assert.equal(inputPage.assets[1].id,'legacy-media-25');
+ const enterpriseLegacyInput=()=>mediaRoute.GET(request(`/api/enterprise/creations/${legacy.id}/assets/legacy-media-25?tenantId=${a.tenantId}`,ownerA),{params:Promise.resolve({id:legacy.id,assetId:'legacy-media-25'})});
+ assert.equal((await enterpriseLegacyInput()).status,404);
+ await pool.query("UPDATE app_enterprise_members SET membership_status='active' WHERE email=$1",[departed]);
+ try{
+  await whileDetailWaits('app_billing_operations',()=>adminDetail.GET(request(`/api/admin/creations/${legacy.id}?assetPage=2`,admin),detailCtx(legacy.id)),async()=>{
+   for(const read of [()=>legacyAssetRoute('legacy-media-25'),enterpriseLegacyInput]){const input=await read();assert.equal(input.status,200);assert.match(input.headers.get('content-type')||'',/^image\//);await input.arrayBuffer();}
+  });
+ }finally{await pool.query("UPDATE app_enterprise_members SET membership_status='suspended' WHERE email=$1",[departed]);}
+ assert.equal((await legacyAssetRoute('legacy-media-025')).status,404);
+ console.log('CREATION_PROJECTION_LOCK_PASS events_without_assets=1 deep_legacy_output_without_billing=1 platform_and_enterprise_input_without_billing=1');
  const pendingId=`cr-${randomUUID()}`,pendingJob=`pending-${randomUUID()}`,pendingWork=`work-${randomUUID()}`;
  await record(pendingId,departed,a.tenantId);await pool.query("INSERT INTO app_artworks(id,email,title,category,prompt,image_url,gradient) VALUES($1,$2,'fixture','fixture','','/media/creation-fixture/video.mp4','')",[pendingWork,departed]);
  await pool.query("INSERT INTO app_image_jobs(id,email,kind,snapshot,payload,metered) VALUES($1,$2,'generate',$3::jsonb,'{}',false)",[pendingJob,departed,JSON.stringify({status:'done',creationEvidencePending:true,images:[{id:pendingWork}]})]);
  await pool.query("INSERT INTO app_creation_links(creation_id,target_type,target_id,actor_email) VALUES($1,'image:generate',$2,$3)",[pendingId,pendingJob,departed]);
  const beforeCounts=(await pool.query("SELECT (SELECT count(*) FROM app_billing_operations)::int AS billing,(SELECT count(*) FROM app_creation_assets)::int AS assets,(SELECT count(*) FROM app_ledger)::int AS ledger")).rows[0];
  const recovered=await(await enterpriseDetail.GET(request(`/api/enterprise/creations/${pendingId}?tenantId=${a.tenantId}`,ownerA),detailCtx(pendingId))).json();assert.equal(recovered.evidencePending,true);assert.equal(recovered.status,'succeeded');assert.equal(recovered.assets.length,1);assert.match(recovered.assets[0].id,/^recovered-/);
+ const linkedHistory=legacyReader.legacyCreationId({table:'app_image_jobs',id:pendingJob,email:departed});
+ const linkedEvent=`ev-${randomUUID()}`;await pool.query("INSERT INTO app_creation_events(id,creation_id,event_key,type,status,summary) VALUES($1,$2,'linked-event','execution','succeeded','INTERNAL_PROVIDER historical')",[linkedEvent,pendingId]);
+ const linkedItems=(await (await adminEvents.GET(request(`/api/admin/creations/${linkedHistory}/events`,admin),detailCtx(linkedHistory))).json()).items;
+ assert.equal(linkedItems[0].id,linkedEvent);assert.equal(linkedItems[0].eventKey,'linked-event');
+ await pool.query("UPDATE app_enterprise_members SET membership_status='active' WHERE email=$1",[departed]);
+ try{
+  const linkedPath=`/api/enterprise/creations/${linkedHistory}`;
+  const linkedDetail=await (await enterpriseDetail.GET(request(`${linkedPath}?tenantId=${a.tenantId}`,ownerA),detailCtx(linkedHistory))).json();
+  const linkedResponse=await enterpriseEvents.GET(request(`${linkedPath}/events?tenantId=${a.tenantId}`,ownerA),detailCtx(linkedHistory));
+  assert.equal(linkedResponse.status,200);const body=await linkedResponse.json();assert.deepEqual(body.items,linkedDetail.events);assert.equal(body.items[0].id,linkedEvent);assert.doesNotMatch(JSON.stringify(body),/INTERNAL_PROVIDER|linked-event/);
+ }finally{await pool.query("UPDATE app_enterprise_members SET membership_status='suspended' WHERE email=$1",[departed]);}
  const recoveredMedia=await(await import('../src/lib/saas/creations')).creationAsset({platform:false,actor:{email:ownerA,admin:false},tenantId:a.tenantId},pendingId,recovered.assets[0].id);assert.equal(recoveredMedia.url,'/media/creation-fixture/video.mp4');
  assert.deepEqual((await pool.query("SELECT (SELECT count(*) FROM app_billing_operations)::int AS billing,(SELECT count(*) FROM app_creation_assets)::int AS assets,(SELECT count(*) FROM app_ledger)::int AS ledger")).rows[0],beforeCounts);
  const foreignChild=`cr-${randomUUID()}`;await record(foreignChild,ownerB,b.tenantId,root);const safeFamily=await(await enterpriseDetail.GET(request(`/api/enterprise/creations/${root}?tenantId=${a.tenantId}`,ownerA),detailCtx(root))).json();assert.equal(safeFamily.childPagination.total,1);assert.equal(safeFamily.children.some((x:any)=>x.id===foreignChild),false);
- const platformMedia=await import('../src/app/api/admin/creations/[id]/assets/[assetId]/route');
  const adminPlaybackResponse=await platformMedia.GET(request(`/api/admin/creations/${root}/assets/${mediaIds[0]}?playback=1`,admin),mediaCtx);assert.equal(adminPlaybackResponse.status,200);
  const adminPlayback=await adminPlaybackResponse.json();const adminRange=await platformMedia.GET(request(adminPlayback.url,undefined,{range:'bytes=0-6'}),mediaCtx);assert.equal(adminRange.status,206);assert.equal(await adminRange.text(),'fixture');
  assert.equal((await mediaRoute.GET(request(adminPlayback.url),mediaCtx)).status,403);

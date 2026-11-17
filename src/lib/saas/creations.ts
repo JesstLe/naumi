@@ -8,7 +8,7 @@ import {ensureCreationSchema} from './creation-schema';
 import {creationSourceEvidence,videoWorkflowEvidenceAvailable} from './creation-source-evidence';
 import {publicCreationParameters} from './creation-parameters';
 import {creationRequestEvidence} from './creation-request-evidence';
-import {creationStatus,type CreationFilters,type CreationPage,type CreationListPage,type CreationSummary,type CreationDetail,type CreationAsset} from './creation-contracts';
+import {creationStatus,type CreationFilters,type CreationPage,type CreationListPage,type CreationSummary,type CreationDetail,type CreationAsset,type CreationEvent} from './creation-contracts';
 import {legacyCreationId} from './creation-history-identity';
 import {legacyCreationCandidates} from './creation-unified-query';
 import {creationFailures,legacyCreationFailuresInTransaction,hasCreationFailure} from './creation-failures';
@@ -170,32 +170,51 @@ export async function listUnifiedCreationPage(reader:CreationReader,f:CreationFi
  return {items,pagination:{total:Number(result.total),page:f.page,size:f.size},appliedFilters:f,generatedAt:new Date().toISOString(),scope:reader.platform?'platform':visible?'member':'tenant',availability:'available'};
 });}
 
-async function authorizedRecord(tx:PoolClient,reader:CreationDetailReader,id:string,visible:readonly string[]|null){
+function authorizedRecordWhere(reader:CreationDetailReader,id:string){
  const tenant=reader.platform?reader.boundTenantId:reader.tenantId;
  // Match the existing member-history port, not arbitrary personal ledger data.
  // A personal image/video source can expose its recorded execution evidence to
  // that same live member scope without changing its original tenant or owner.
  const history=!reader.platform?reader.historyEmails||[]:[];
- const row=(await tx.query(`${await recordSelect(tx)} WHERE c.id=$1 ${tenant?`AND (c.tenant_id=$2 OR (c.tenant_id IS NULL AND c.scope_kind='personal' AND c.actor_email=ANY($3::text[]) AND (
+ const sql=`WHERE c.id=$1 ${tenant?`AND (c.tenant_id=$2 OR (c.tenant_id IS NULL AND c.scope_kind='personal' AND c.actor_email=ANY($3::text[]) AND (
   EXISTS(SELECT 1 FROM app_image_jobs j WHERE j.id=c.source_id AND j.email=c.actor_email AND c.source_kind='image:'||j.kind)
   OR c.source_kind IN ('canvas-image','canvas') AND EXISTS(SELECT 1 FROM app_canvas_image_tasks j WHERE j.id=c.source_id AND j.email=c.actor_email)
-  OR c.source_kind='video' AND EXISTS(SELECT 1 FROM app_video_tasks j WHERE j.id=c.source_id AND j.email=c.actor_email))))`:''}`,[id,...(tenant?[tenant,history]:[])])).rows[0];
+  OR c.source_kind='video' AND EXISTS(SELECT 1 FROM app_video_tasks j WHERE j.id=c.source_id AND j.email=c.actor_email))))`:''}`;
+ return {sql,values:[id,...(tenant?[tenant,history]:[])]};
+}
+async function authorizedRecord(tx:PoolClient,reader:CreationDetailReader,id:string,visible:readonly string[]|null,identityOnly=false){
+ const {sql,values}=authorizedRecordWhere(reader,id);
+ const select=identityOnly?'SELECT c.actor_email FROM app_creation_records c':await recordSelect(tx);
+ const row=(await tx.query(`${select} ${sql}`,values)).rows[0];
  if(!row||!reader.platform&&visible&&!visible.includes(row.actor_email))throw new TeamError('记录不存在或无权访问',404);return row;
 }
 const asset=(a:Record<string,any>):CreationAsset=>({id:a.id,direction:a.direction,role:a.role,...(Array.isArray(a.roles)?{roles:a.roles.filter((v:unknown)=>typeof v==='string')}:{}),position:a.position,...(Number.isInteger(a.input_position)?{inputPosition:a.input_position}:{}),...(a.execution_ref?{executionRef:a.execution_ref}:{}),variant:a.variant,mime:a.mime,bytes:a.byte_size===null?null:Number(a.byte_size),hash:a.hash,availability:a.availability,mediaType:a.media_type,...(a.text_content?{text:a.text_content}:{})});
 export type DetailPages={assetPage?:number;eventPage?:number;childPage?:number};
 const familySql=`WITH RECURSIVE family AS(SELECT id,actor_email,tenant_id FROM app_creation_records WHERE id=$1 UNION ALL SELECT c.id,c.actor_email,c.tenant_id FROM app_creation_records c JOIN family p ON c.parent_id=p.id AND c.actor_email=p.actor_email AND c.tenant_id IS NOT DISTINCT FROM p.tenant_id)`;
+const evidencePageSize=24;
+const publicEventSummary:Record<string,string>={accepted:'已接受创作请求',execution:'执行状态更新',settlement:'账务状态更新',delivered:'已交付结果','input-prepared':'模型输入已就绪','agent-tool':'工具执行',evidence:'资料核查'};
+async function eventPageItems(tx:PoolClient,reader:CreationDetailReader,id:string,page:number):Promise<CreationEvent[]>{
+ const {rows}=await tx.query(`${familySql} SELECT e.id,e.event_key,e.type,e.status,e.summary,e.occurred_at,e.observed_at FROM app_creation_events e JOIN family f ON f.id=e.creation_id ORDER BY e.occurred_at,e.id LIMIT $2 OFFSET $3`,[id,evidencePageSize,(page-1)*evidencePageSize]);
+ return rows.map(e=>({id:e.id,eventKey:reader.platform?e.event_key:e.type,type:e.type,status:e.status,summary:reader.platform?e.summary:publicEventSummary[e.type]||'创作事件',occurredAt:new Date(e.occurred_at).toISOString(),observedAt:new Date(e.observed_at).toISOString()}));
+}
+export function creationEvents(reader:CreationReader,id:string,page:number){
+ return scoped(reader,(tx,visible,historyEmails)=>creationEventsInTransaction(tx,reader.platform?reader:{...reader,historyEmails:historyEmails||[]},id,visible,page));
+}
+export async function creationEventsInTransaction(tx:PoolClient,reader:CreationDetailReader,id:string,visible:readonly string[]|null,page:number){
+ await authorizedRecord(tx,reader,id,visible,true);
+ return eventPageItems(tx,reader,id,page);
+}
 export async function creationDetail(reader:CreationReader,id:string,pages:DetailPages={}):Promise<CreationDetail>{return scoped(reader,(tx,visible,historyEmails)=>creationDetailInTransaction(tx,reader.platform?reader:{...reader,historyEmails:historyEmails||[]},id,visible,pages));}
 /** Reuse the caller's authorization snapshot; no nested pool checkout. */
 export async function creationDetailInTransaction(tx:PoolClient,reader:CreationDetailReader,id:string,visible:readonly string[]|null,pages:DetailPages={}):Promise<CreationDetail>{
- const row=await authorizedRecord(tx,reader,id,visible);const size=24,assetPage=pages.assetPage||1,eventPage=pages.eventPage||1,childPage=pages.childPage||1;
+ const row=await authorizedRecord(tx,reader,id,visible);const size=evidencePageSize,assetPage=pages.assetPage||1,eventPage=pages.eventPage||1,childPage=pages.childPage||1;
  const sourceEvidence=await creationSourceEvidence(tx,id);
  const assetSql=`${familySql}, asset_rows AS(SELECT to_jsonb(a) AS data,0 AS priority FROM app_creation_assets a JOIN family f ON f.id=a.creation_id
  UNION ALL SELECT value,1 FROM jsonb_array_elements($2::jsonb)),${creationAssetViewSql}`;
  const assetValues=[id,JSON.stringify(sourceEvidence.assets)];
  const assets=await tx.query(`${assetSql} SELECT data FROM dedup_assets ORDER BY ${creationAssetViewOrder} LIMIT $3 OFFSET $4`,[...assetValues,size,(assetPage-1)*size]);
  const assetCount=Number((await tx.query(`${assetSql} SELECT count(*)::int AS n FROM dedup_assets`,assetValues)).rows[0].n);
- const events=await tx.query(`${familySql} SELECT e.* FROM app_creation_events e JOIN family f ON f.id=e.creation_id ORDER BY occurred_at,e.id LIMIT $2 OFFSET $3`,[id,size,(eventPage-1)*size]);
+ const events=await eventPageItems(tx,reader,id,eventPage);
  const billing=await tx.query(`${familySql} SELECT o.id,o.state,o.charged_credits,o.reserved_credits,o.quote,max(l.reserved_credits) AS evidence_reserved,max(l.released_credits) AS evidence_released FROM family f JOIN app_creation_links l ON l.creation_id=f.id AND l.target_type='billing' JOIN app_billing_operations o ON o.id=l.target_id AND o.email=l.actor_email GROUP BY o.id`,[id]);
  const links=reader.platform?await tx.query('SELECT target_type,target_id,relation FROM app_creation_links WHERE creation_id=$1 ORDER BY target_type,target_id LIMIT 100',[id]):{rows:[]};
  const children=await tx.query(`${await recordSelect(tx)} WHERE c.parent_id=$1 AND c.actor_email=$4 AND c.tenant_id IS NOT DISTINCT FROM $5::uuid ORDER BY accepted_at,c.id LIMIT $2 OFFSET $3`,[id,size,(childPage-1)*size,row.actor_email,row.tenant_id]);
@@ -216,7 +235,7 @@ export async function creationDetailInTransaction(tx:PoolClient,reader:CreationD
  parameters:{state:Object.keys(projectedParams).length?'recorded':row.parameters_snapshot?.state||'not_recorded',values:projectedParams},
  model:{state:row.model_snapshot?.state||'not_recorded',label:row.model_snapshot?.label||null},
  assets:assets.rows.map(a=>asset(a.data)),
- events:events.rows.map(e=>({id:e.id,eventKey:reader.platform?e.event_key:e.type,type:e.type,status:e.status,summary:reader.platform?e.summary:({accepted:'已接受创作请求',execution:'执行状态更新',settlement:'账务状态更新',delivered:'已交付结果','input-prepared':'模型输入已就绪','agent-tool':'工具执行',evidence:'资料核查'} as Record<string,string>)[e.type]||'创作事件',occurredAt:new Date(e.occurred_at).toISOString(),observedAt:new Date(e.observed_at).toISOString()})),
+ events,
  children:children.rows.map(summary),assetPagination:{page:assetPage,size,total:assetCount},eventPagination:{page:eventPage,size,total:counts.rows[0].events},childPagination:{page:childPage,size,total:counts.rows[0].children},
  billing:{payerAccountId:row.payer_account_id,source:row.payer_account_id?'实际付款账户':'未记录',
  quoted:ops.length&&ops.every(o=>Number.isSafeInteger(o.quote?.requestedCredits))?ops.reduce((n,o)=>n+o.quote.requestedCredits,0):null,
@@ -229,7 +248,7 @@ export async function creationAsset(reader:CreationReader,id:string,assetId:stri
  return scoped(reader,(tx,visible,historyEmails)=>creationAssetInTransaction(tx,reader.platform?reader:{...reader,historyEmails:historyEmails||[]},id,assetId,visible),'asset');
 }
 export async function creationAssetInTransaction(tx:PoolClient,reader:CreationDetailReader,id:string,assetId:string,visible:readonly string[]|null){
- await authorizedRecord(tx,reader,id,visible);let a=(await tx.query(`${familySql} SELECT a.* FROM app_creation_assets a JOIN family f ON f.id=a.creation_id WHERE a.id=$2`,[id,assetId])).rows[0];
+ await authorizedRecord(tx,reader,id,visible,true);let a=(await tx.query(`${familySql} SELECT a.* FROM app_creation_assets a JOIN family f ON f.id=a.creation_id WHERE a.id=$2`,[id,assetId])).rows[0];
  if(!a&&assetId.startsWith('recovered-'))a=(await creationSourceEvidence(tx,id)).assets.find(asset=>asset.id===assetId);
  if(!a)throw new TeamError('素材不存在或无权访问',404);
  let url=(a.storage_snapshot||a.storage_ref) as string;
