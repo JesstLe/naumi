@@ -43,3 +43,17 @@
 - 清背景质量门槛为实际 alpha=0 像素至少占0.1%，向上取整，且仍有可见主体；覆盖阈值前后、alpha254主体、小尺寸和历史真实透明样本。它不是棋盘格语义识别或PNG格式标准。仅剩不足0.1%背景的紧裁切图片会被拒绝；不会侵蚀主体、猜色键或改写alpha以伪造通过。
 - 原有三项旧入口回归在未修改主线副本也失败，保留 `BASELINE FAIL`：cutout-execution-boundary 的并发状态断言；canvas-cutout-parameters 普通模式中的未知quality应400断言（当前主线已有质量回退）；canvas-image-task-refactor 的测试装配缺 rewirePendingBranchSources。未改这些业务断言换绿。该测试环境补齐本次新增cutoutReady事实，不代修其他测试装配。
 - 首轮浏览器390的one-submit失败来自等待命中已有同标题子结果；已改为等待本次真实POST回执ID对应新节点。最终视觉基线使用重置后的固定原图/项目/视口，并补齐 fixture 的提示词/工作流真实回执形状，去掉由假响应造成的无关警告；不是修改业务错误展示。
+
+
+## 最终本地验收（固定功能 SHA）
+
+- 功能固定源码：`cda11d225297330b903db1ee83fe99bda526af96`。独立 Reviewer `/root/review_cutout_final` 未发现新增阻断缺陷，通过本任务局部本地验收；该结论不是全仓或生产验收。
+- 原 runner 的两份 FAIL 报告完整保留；相同源码身份的后续选择性回归15项全部 PASS/exit0，含隐藏默认目录、真实透明输出与阈值、蒙版alpha、带报价执行、隔离PG计费回执、画布场景103检查、项目恢复、模型执行、图像契约/意图/能力/后处理、原始PNG/31图ZIP下载和类型。runner顶层为 PARTIAL，表示只选取本任务覆盖而非整个core，并非将它改写为全仓PASS。
+- 已增加两项同主线基线一致的旧测试失败，合计5项 BASELINE FAIL：feature-catalog-lifecycle:32 等待超时、verify-cutout-ui 缺 useToolReference mock。原失败/对照和未执行状态均留在证据目录；没有修改断言换绿。
+- 实际 Next Canvas 固定原图/项目、浅色、1440×960与390×960，两入口、一次提交、质量/父子归属、隐藏ID不显式传递、刷新恢复、禁用处理器、旧独立处理器、失败不采用结果/原图保持/无自动重提共26项通过。浏览器 pageErrors=[]；前后截图已实际打开核对，失败反馈在移动端完整页面可见。仅引用实际存在的完整PNG，不声称可选裁剪图已生成。
+- 真实 PostgreSQL/quote route/cutout route 与本地供应商协议验证通过：默认200、显式隐藏409、成功1次结算、重放0新增供应商、无效输出502/0新作品/0成功扣款、原操作hold且再次请求409不重提。hold可能仍有预留占用，不能写成没有任何余额占用。
+- 透明面积门槛的阈值前后、小图/空图、alpha254主体、原生透明PNG字节与一张已有真实透明结果均核验。旧蒙版输出原图RGB保持，alpha真实写入，40MP输入限制保持。
+- 完整本地 Next build exit0，97/97；Windows node_modules junction的standalone符号链接警告属于本机打包限制，不作为Linux镜像验收。源码没有部署，供应商外部调用0。
+- 源码副本回退18文件：原哈希恢复、新增文件移除，复测再次出现原隐藏目录不可用、alpha254错误接受及灰度蒙版alpha丢失；修改包与任务源码保持修复状态。运行中的测试浏览器、Next fixture和本任务PostgreSQL容器已停止。
+
+证据目录 `E:/Workspace/naumi/output/canvas-cutout-transparent-20261117/`：四件套、原始基线/失败日志、固定数据截图、隔离PG回执、独立审查以及选定回归的原始源码身份。main/GitHub整合与生产发布分开；本轮仅完成源码修复与本地验收，不修改生产配置、不调用收费模型、不覆盖历史用户图片。
