@@ -11,7 +11,7 @@
 | `GET /api/admin/bi` | `src/app/api/admin/bi/route.ts` | 部分：overview 去重复扫描、作品深页先排序键、越界只计数；全分类 145 项新旧结果对照；查询取消；数据快照与其它报表共用池前排队。鉴权/审计、长窗 SQL 成本及真实网关待核 |
 | `GET /api/admin/bi/channel-capacity` | `src/app/api/admin/bi/channel-capacity/route.ts` | 待核查 |
 | `GET /api/admin/bi/conversation` | `src/app/api/admin/bi/conversation/route.ts` | 部分：按账号和会话取文字、保持 20 条分页；回环 HTTP 断开后 PostgreSQL 在解锁前退出；共享报表连接排队。会话正文大样本结果对照；真实网关与高并发待核 |
-| `GET /api/admin/bi/media` | `src/app/api/admin/bi/media/route.ts` | 待核查 |
+| `GET /api/admin/bi/media` | `src/app/api/admin/bi/media/route.ts` | 部分：私有素材只取一次正文、本人原图授权、审计、与企业共用并发槽、断开停止存储和 SQL、实际 Chromium 切换/延迟加载。`verify-platform-bi-preview-pressure.ts`、`verify-bi-preview-browser.cjs`；真实网关待核 |
 | `GET /api/admin/bi/model-config` | `src/app/api/admin/bi/model-config/route.ts` | 待核查 |
 | `GET /api/admin/bi/model-config/catalog` | `src/app/api/admin/bi/model-config/catalog/route.ts` | 待核查 |
 | `GET /api/admin/bi/model-config/versions` | `src/app/api/admin/bi/model-config/versions/route.ts` | 待核查 |
@@ -68,7 +68,7 @@
 | `GET /api/enterprise/creations/[id]/events` | `src/app/api/enterprise/creations/[id]/events/route.ts` | 部分：事件分页、规范与归档脱敏、跨租户、撤权和锁竞争，`verify-saas-creations.ts`；大任务族待核 |
 | `GET /api/enterprise/health` | `src/app/api/enterprise/health/route.ts` | 部分：健康统计权限、账户行锁及隔离，`verify-enterprise-analytics.ts` |
 | `GET /api/enterprise/integration` | `src/app/api/enterprise/integration/route.ts` | 部分：实际登录、独立站、下级范围、流水精确分页及配置缺失拒绝；作品/生成历史深页、越界和具体记录读范围通过隔离库验证；真实网关待核 |
-| `GET /api/enterprise/media` | `src/app/api/enterprise/media/route.ts` | 部分：共用渲染器的并发、过载、取消与镜像回退经本地 HTTP 验证；此入口自身的授权组合待核 |
+| `GET /api/enterprise/media` | `src/app/api/enterprise/media/route.ts` | 部分：与平台共用渲染队列，隔离 HTTP 验证并发、过载、取消与镜像回退；企业作品的私有素材权限有隔离回归，入口授权阶段的断开及真实网关待核 |
 | `GET /api/enterprise/saas-overview` | `src/app/api/enterprise/saas-overview/route.ts` | 待核查 |
 | `GET /api/enterprise/tenant-usage` | `src/app/api/enterprise/tenant-usage/route.ts` | 待核查 |
 | `GET /api/enterprise/usage` | `src/app/api/enterprise/usage/route.ts` | 部分：报表账户行锁、撤权；CSV 精简投影不扩大成员权限；关闭 HTTP 后事务释放，与 BI 共用报表排队。长窗 SQL 成本和真实网关待核 |

@@ -1,15 +1,42 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { BiRow } from "@/lib/bi/contracts";
 import styles from "./artwork-media.module.css";
 
 function Picture({ src, label, detail, onOpen }: { src: string; label: string; detail: boolean; onOpen?: () => void }) {
-  const [failed, setFailed] = useState(false);
-  const image = failed ? <span className={styles.unavailable}>图片暂不可读</span> :
-    // Native image deliberately bypasses shared persistent image cache for private BI media.
+  const figure = useRef<HTMLElement>(null);
+  const [preview, setPreview] = useState<{ source: string; url?: string; failed?: boolean } | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    let objectUrl = "", started = false;
+    let observer: IntersectionObserver | undefined;
+    const load = () => {
+      if (started || controller.signal.aborted) return;
+      started = true;
+      observer?.disconnect();
+      // Private BI previews stay out of the shared persistent image cache.
+      void fetch(src, { cache: "no-store", signal: controller.signal }).then(response => {
+        if (!response.ok) throw new Error("Preview unavailable");
+        return response.blob();
+      }).then(blob => {
+        if (controller.signal.aborted) return;
+        objectUrl = URL.createObjectURL(blob);
+        setPreview({ source: src, url: objectUrl });
+      }).catch(() => {
+        if (!controller.signal.aborted) setPreview({ source: src, failed: true });
+      });
+    };
+    if (figure.current && typeof IntersectionObserver !== "undefined") {
+      observer = new IntersectionObserver(entries => { if (entries.some(entry => entry.isIntersecting)) load(); }, { rootMargin: "160px" });
+      observer.observe(figure.current);
+    } else load();
+    return () => { observer?.disconnect(); controller.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [src]);
+  const current = preview?.source === src ? preview : null;
+  const image = current?.failed ? <span className={styles.unavailable}>图片暂不可读</span> : current?.url ?
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={src} alt={label} loading="lazy" decoding="async" onError={() => setFailed(true)} />;
-  return <figure className={styles.figure}>
+    <img src={current.url} alt={label} decoding="async" onError={() => setPreview(value => value?.source === src ? { source: src, failed: true } : value)} /> : null;
+  return <figure className={styles.figure} ref={figure} aria-busy={!current}>
     {detail ? <a className={styles.image} href={`${src}&full=1`} target="_blank" rel="noreferrer">{image}</a> :
       <button type="button" className={styles.image} onClick={onOpen} aria-label={`查看${label}`}>{image}</button>}
     <figcaption>{label}</figcaption>

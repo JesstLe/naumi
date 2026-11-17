@@ -1,16 +1,20 @@
 import 'server-only';
 
 // Bound retained input buffers and concurrent libvips work in the Web process.
-// Authorization is already complete when a renderer joins this queue.
+// Callers must authenticate before joining the queue. Next route bundles and
+// development reloads share the same process budget.
 const parallel=4, backlog=24, maxWaitMs=5000;
-let active=0;
-const waiting:Array<()=>void>=[];
+const budgetKey=Symbol.for('naumi.media.preview.budget.v1');
+type Budget={active:number; waiting:Array<()=>void>};
+const holder=process as typeof process & {[budgetKey]?:Budget};
+const budget=holder[budgetKey]??={active:0,waiting:[]};
+const {waiting}=budget;
 
 export class MediaPreviewBusy extends Error {}
 
 async function claim(signal:AbortSignal){
  signal.throwIfAborted();
- if(active<parallel){active++;return;}
+ if(budget.active<parallel){budget.active++;return;}
  if(waiting.length>=backlog)throw new MediaPreviewBusy();
  await new Promise<void>((resolve,reject)=>{
   const detach=()=>{clearTimeout(timer);signal.removeEventListener('abort',abort);};
@@ -28,5 +32,5 @@ async function claim(signal:AbortSignal){
 export async function withMediaPreviewSlot<T>(signal:AbortSignal,render:()=>Promise<T>):Promise<T>{
  await claim(signal);
  try{signal.throwIfAborted();return await render();}
- finally{const next=waiting.shift();if(next)next();else active--;}
+ finally{const next=waiting.shift();if(next)next();else budget.active--;}
 }

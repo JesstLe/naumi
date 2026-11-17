@@ -30,10 +30,14 @@ const ui=fs.readFileSync('src/components/admin/bi/artwork-media.tsx','utf8');ass
  global.__biFixture={auth:()=>auth,row:()=>row,queries,reads,audits,fixture};
  const stubs={
  '@/lib/bi/access':`const {NextResponse}=require('next/server');export const BI_PRIVATE_HEADERS={'Cache-Control':'private, no-store','Vary':'Cookie, Authorization'};export const biJson=(data,status=200)=>NextResponse.json(data,{status,headers:BI_PRIVATE_HEADERS});export const biAuthorize=async()=>global.__biFixture.auth()?{actor:'admin@test'}:biJson({error:'not found'},404);`,
- '@/lib/db':`export const getPool=()=>({query:async(sql,args)=>{const f=global.__biFixture;f.queries.push([sql,args]);if(sql.startsWith('SELECT image_url FROM'))return {rows:args[1]==='owner@test'?[{image_url:f.row().image_url}]:[]};return {rows:[f.row()]}}});`,
+ '@/platform/db/pool':`export const getPool=()=>({connect:async()=>({release(){},query:async(sql,args)=>{const f=global.__biFixture;f.queries.push([sql,args]);if(sql.startsWith('SELECT image_url FROM'))return {rows:args[1]==='owner@test'?[{image_url:f.row().image_url}]:[]};return {rows:[f.row()]}}})});`,
  '@/lib/bi/repository':`export const logBiAccess=async(...a)=>global.__biFixture.audits.push(a);`,
- '@/lib/storage':`export const dataUrlToBytes=url=>url.startsWith('data:image/png;base64,')?{bytes:Buffer.from(url.split(',')[1],'base64'),contentType:'image/png'}:null;export const isManagedImageUrl=url=>url.startsWith('/media/');export const readManagedObject=async(url)=>{global.__biFixture.reads.push(url);return {bytes:global.__biFixture.fixture}};`,
- '@/lib/imagegen/input-assets':`export const readImagegenInputAsset=async(id,owner)=>{if(owner!=='owner@test')throw Error('wrong owner');return {url:'/media/'+id}};`,
+ '@/lib/object-storage/runtime':`export const dataUrlToBytes=url=>url.startsWith('data:image/png;base64,')?{bytes:Buffer.from(url.split(',')[1],'base64'),contentType:'image/png'}:null;export const isManagedImageUrl=url=>url.startsWith('/media/');`,
+ '@/lib/object-storage/managed-read':`export const readManagedObject=async(url)=>{global.__biFixture.reads.push(url);return {bytes:global.__biFixture.fixture}};`,
+ '@/lib/imagegen/input-asset-reference':`export const readImagegenInputAssetReference=async(id,owner,client)=>{if(owner!=='owner@test'||!client)throw Error('wrong owner or connection');return {url:'/media/'+id}};`,
+ '@/lib/media-cache-version':`export const mediaCacheVersion=async()=>null;`,
+ '@/lib/media-assets-schema':`export const ensureMediaSchema=async()=>{};`,
+ 'server-only':'',
  '@/lib/download-source':`export const parseDownloadSource=()=>{throw Error('Unexpected external request')};export const fetchDownloadSource=()=>{throw Error('Unexpected external request')};`
  };
  const built=await esbuild.build({entryPoints:['src/app/api/admin/bi/media/route.ts'],bundle:true,platform:'node',format:'cjs',write:false,external:['next/server','sharp'],plugins:[{name:'bi-isolated-fixture',setup(build){build.onResolve({filter:/.*/},args=>args.path in stubs?{path:args.path,namespace:'fixture'}:undefined);build.onLoad({filter:/.*/,namespace:'fixture'},args=>({contents:stubs[args.path],loader:'ts'}));}}]});
