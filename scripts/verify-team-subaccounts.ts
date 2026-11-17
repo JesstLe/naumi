@@ -11,7 +11,7 @@ async function main() {
   const owner = "owner@fixture.test", owner2 = "owner2@fixture.test", child = "child@fixture.test", child2 = "child2@fixture.test", admin = "admin@fixture.test", stranger = "stranger@fixture.test";
   for (const email of [owner, owner2, child, child2, admin, stranger]) { await db.getOrCreateUser(email, email); await db.setUserPassword(email, pw.hashPassword("fixture-password")); }
   await db.setUserRole(admin, "admin");
-  for(const e of [owner,owner2,admin]) await pool.query("INSERT INTO app_team_access_grants(email,scope,created_by,updated_by) VALUES($1,$2,'fixture','fixture')",[e,e===admin?"all":"owned"]);
+  for(const e of [owner,owner2,admin]) await pool.query("INSERT INTO app_team_access_grants(email,scope,starts_at,created_by,updated_by) VALUES($1,$2,now()-interval '1 day','fixture','fixture')",[e,e===admin?"all":"owned"]);
   const actor = { email: owner, admin: false }, siteAdmin = { email: admin, admin: true, consoleAdmin: true }, actor2 = { email: owner2, admin: false };
   const id = randomUUID(), id2 = randomUUID(), cutoff = new Date(Date.now() + 15 * 86400000).toISOString();
   const cookie = (email: string, now = Date.now()) => `nv_user=${native.signUserSession(email, now)}`;
@@ -32,6 +32,31 @@ async function main() {
   assert.equal((await api.GET(req(owner2, undefined, `/api/team/users?teamId=${id}&email=${child}`))).status, 403);
   assert.equal((await api.GET(req(owner, undefined, `/api/team/users?teamId=${id}&email=${child2}`))).status, 403);
   assert.equal((await snapshotApi.GET(req(stranger))).status, 403);
+
+  const blocker=await pool.connect(),wallet=await pool.connect();
+  let pending:ReturnType<typeof team.teamSnapshot>|undefined;
+  try{
+    await blocker.query('BEGIN');await blocker.query('LOCK TABLE app_artworks IN ACCESS EXCLUSIVE MODE');
+    pending=team.teamSnapshot(actor,id);
+    void pending.catch(()=>{});
+    let waiting=false;
+    for(let i=0;i<30&&!waiting;i++){
+      waiting=(await wallet.query("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%COALESCE(b.principal,0)-u.credits_used%') AS waiting")).rows[0].waiting;
+      if(!waiting)await new Promise(resolve=>setTimeout(resolve,20));
+    }
+    assert.equal(waiting,true,'fixture should pause the actual aggregation');
+    await wallet.query('BEGIN');await wallet.query("SET LOCAL lock_timeout='750ms'");
+    await wallet.query('UPDATE app_users SET credits_used=credits_used WHERE email=$1',[owner]);
+    await wallet.query('COMMIT');
+    // Authorization can change while an old snapshot is calculating. The
+    // report must never release that data after revocation in its final check.
+    await wallet.query('UPDATE app_team_access_grants SET enabled=false WHERE email=$1',[owner]);
+  }finally{await blocker.query('ROLLBACK');await wallet.query('ROLLBACK');blocker.release();wallet.release();}
+  await assert.rejects(pending!,/团队入口授权/);
+  await pool.query('UPDATE app_team_access_grants SET enabled=true WHERE email=$1',[owner]);
+  const audited=await team.teamSnapshot(actor,id);assert.equal(audited.members[0].email,child);
+  assert.equal((await pool.query("SELECT count(*)::int AS n FROM app_account_team_audit WHERE team_id=$1 AND action='view-members'",[id])).rows[0].n,1);
+  console.log('LEGACY_TEAM_REPORT_PASS wallet_update_while_blocked=1 live_revocation=1 only_success_audited=1');
 
   const old = new Request("http://fixture.test", { headers: { cookie: cookie(child, Date.now() - 10000) } });
   assert.equal(await native.activeNativeUserEmail(old), child);

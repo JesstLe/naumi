@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createTenantSchema, tenantQuerySchema } from '@/lib/saas/tenant-contracts';
-import { createTenant, listTenants, tenantAuthorize, tenantCommandResult, tenantFailure } from '@/lib/saas/tenants';
+import { createTenant, listTenants, tenantAuthorize, tenantCommandResult, tenantFailure, tenantOwnerLookup } from '@/lib/saas/tenants';
 import { teamJson, teamMutationOrigin } from '@/lib/teams/access';
 export const dynamic='force-dynamic';
 export const runtime='nodejs';
@@ -10,6 +10,10 @@ export async function GET(request:Request) {
   const search=new URL(request.url).searchParams;
   try {
     if(search.has('commandId')) {const id=z.string().uuid().safeParse(search.get('commandId'));return id.success?teamJson(await tenantCommandResult(actor,id.data)):teamJson({error:'操作编号无效'},400);}
+    if(search.has('ownerEmail')) {
+      const email=z.string().trim().email().max(254).transform(v=>v.toLowerCase()).safeParse(search.get('ownerEmail'));
+      return email.success?teamJson(await tenantOwnerLookup(email.data)):teamJson({error:'负责人邮箱无效'},400);
+    }
     const parsed=tenantQuerySchema.safeParse(Object.fromEntries(search));
     if(!parsed.success)return teamJson({error:'租户查询参数无效',code:'INVALID_FILTERS'},400);
     return teamJson(await listTenants(parsed.data));

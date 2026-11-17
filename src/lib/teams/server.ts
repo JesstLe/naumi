@@ -28,30 +28,50 @@ export const adminCommandSchema = z.discriminatedUnion("action", [
   z.object({ ...base, action: z.literal("detach"), email, expectedVersion: z.number().int().nonnegative() }).strict(),
 ]);
 type Actor = TeamActor;
-async function transaction<T>(run: (tx: PoolClient) => Promise<T>) {
+async function transaction<T>(run: (tx: PoolClient) => Promise<T>, mode:'write'|'snapshot'|'audit'='write') {
   await ensureTeamSchema(); const tx = await getPool().connect();
-  try { await tx.query("BEGIN"); const out = await run(tx); await tx.query("COMMIT"); return out; }
-  catch (error) { await tx.query("ROLLBACK"); throw error; } finally { tx.release(); }
+  try {
+    await tx.query(mode==='snapshot'?"BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY":"BEGIN");
+    if(mode!=='write')await tx.query(mode==='snapshot'?"SET LOCAL statement_timeout='5s'; SET LOCAL lock_timeout='3s'":"SET LOCAL statement_timeout='3s'; SET LOCAL lock_timeout='1s'");
+    const out = await run(tx); await tx.query("COMMIT"); return out;
+  }
+  catch (error) { await tx.query("ROLLBACK").catch(()=>{}); throw error; } finally { tx.release(); }
 }
-async function scopedTeam(tx: PoolClient, actor: Actor, id?: string) {
-  await requireTeamGrant(tx, actor);
-  const row = (await tx.query(`SELECT * FROM app_account_teams WHERE ${id ? "id=$1" : "owner_email=$1"} FOR SHARE`, [id || actor.email])).rows[0];
+type ReadLock='share'|'snapshot';
+async function scopedTeam(tx: PoolClient, actor: Actor, id?: string, lock:ReadLock='share') {
+  await requireTeamGrant(tx, actor,lock);
+  const row = (await tx.query(`SELECT * FROM app_account_teams WHERE ${id ? "id=$1" : "owner_email=$1"}${ lock==='share'?' FOR SHARE':''}`, [id || actor.email])).rows[0];
   if (!row || (!actor.admin && (row.owner_email !== actor.email || !row.enabled || new Date(row.authorized_until).getTime() <= Date.now()))) throw new TeamError("没有团队管理权限");
   return row;
 }
-async function scopedMember(tx: PoolClient, teamId: string, target: string) {
-  const member = (await tx.query("SELECT u.email,u.name,u.role,u.banned,u.account_expires_at,u.management_version FROM app_account_team_members m JOIN app_users u ON u.email=m.email WHERE m.team_id=$1 AND m.email=$2 FOR SHARE OF m,u", [teamId, target])).rows[0];
+async function scopedMember(tx: PoolClient, teamId: string, target: string, lock:ReadLock='share') {
+  const member = (await tx.query("SELECT u.email,u.name,u.role,u.banned,u.account_expires_at,u.management_version FROM app_account_team_members m JOIN app_users u ON u.email=m.email WHERE m.team_id=$1 AND m.email=$2"+(lock==='share'?' FOR SHARE OF m,u':''), [teamId, target])).rows[0];
   if (!member || member.role !== "user") throw new TeamError("子账号不属于当前团队"); return member;
 }
 async function audit(tx: PoolClient, actor: Actor, teamId: string, target: string, action: string, changes: unknown, id: string = randomUUID(), fingerprint = "") {
   await tx.query("INSERT INTO app_account_team_audit(id,actor,team_id,target_email,action,changes,fingerprint) VALUES($1,$2,$3,$4,$5,$6::jsonb,$7)", [id, actor.email, teamId, target, action, JSON.stringify(changes), fingerprint]);
 }
+type TeamProjection<T>={value:T; confirm?:(tx:PoolClient)=>Promise<void>};
+async function teamProjection<T>(read:(tx:PoolClient)=>Promise<TeamProjection<T>>):Promise<T>{
+  try{
+    const result=await transaction(read,'snapshot');
+    // Publish a projection only after checking the current scope and recording
+    // its existing audit event. Aggregation never holds those authorization locks.
+    if(result.confirm)await transaction(result.confirm,'audit');
+    return result.value;
+  }catch(error){
+    if(['57014','55P03','40001','40P01'].includes((error as {code?:string})?.code??''))throw new TeamError('团队资料暂不可读取，请稍后重试',503);
+    throw error;
+  }
+}
 export async function teamSnapshot(actor: Actor, id?: string): Promise<TeamSnapshot> {
-  return transaction(async tx => {
-    await requireTeamGrant(tx, actor);
-    if (actor.admin && !id) return { team: null, members: [], teams: (await tx.query("SELECT id,name,owner_email,authorized_until,enabled,version FROM app_account_teams ORDER BY created_at DESC")).rows };
-    if (!id && !(await tx.query("SELECT 1 FROM app_account_teams WHERE owner_email=$1", [actor.email])).rowCount) return { team: null, members: [] };
-    const team = await scopedTeam(tx, actor, id);
+  return teamProjection<TeamSnapshot>(async tx => {
+    if (!id) {
+      await requireTeamGrant(tx, actor,'snapshot');
+      if(actor.admin)return {value:{ team: null, members: [], teams: (await tx.query("SELECT id,name,owner_email,authorized_until,enabled,version FROM app_account_teams ORDER BY created_at DESC")).rows }};
+      if(!(await tx.query("SELECT 1 FROM app_account_teams WHERE owner_email=$1", [actor.email])).rowCount)return {value:{ team: null, members: [] }};
+    }
+    const team = await scopedTeam(tx, actor, id,'snapshot');
     const members = (await tx.query(`SELECT u.email,u.name,u.banned,u.account_expires_at,u.management_version,
       GREATEST(0,COALESCE(b.principal,0)-u.credits_used)::int AS available,
       COALESCE(l.consumed,0)::int AS consumed,COALESCE(a.n,0)::int AS artworks
@@ -60,8 +80,12 @@ export async function teamSnapshot(actor: Actor, id?: string): Promise<TeamSnaps
       LEFT JOIN LATERAL (SELECT -sum(delta) AS consumed FROM app_ledger WHERE email=u.email AND kind='consume' AND delta<0) l ON true
       LEFT JOIN LATERAL (SELECT count(*) AS n FROM app_artworks WHERE email=u.email AND deleted_at IS NULL) a ON true
       WHERE m.team_id=$1 AND u.role='user' ORDER BY u.name,u.email`, [team.id])).rows;
-    await audit(tx, actor, team.id, "", "view-members", {});
-    return { team, members };
+    return { value:{team,members},confirm:async fresh=>{
+      await scopedTeam(fresh,actor,team.id);
+      const ids=(await fresh.query("SELECT m.email FROM app_account_team_members m JOIN app_users u ON u.email=m.email WHERE m.team_id=$1 AND u.role='user' FOR SHARE OF m",[team.id])).rows.map(row=>row.email).sort();
+      if(JSON.stringify(ids)!==JSON.stringify(members.map(row=>row.email).sort()))throw new TeamError('团队成员范围已变化，请刷新后重试',409);
+      await audit(fresh,actor,team.id,"","view-members",{});
+    }};
   });
 }
 export async function mutateTeam(actor: Actor, command: z.infer<typeof memberCommandSchema> | z.infer<typeof adminCommandSchema>, adminCommand = false) {
@@ -142,18 +166,17 @@ const sources: Record<ContentSection, string> = {
   audit: "SELECT id,actor,action,changes::text AS changes,created_at FROM app_account_team_audit WHERE target_email=$1 AND team_id=$2",
 };
 export async function teamContent(actor: Actor, teamId: string, target: string, section: ContentSection, page: number) {
-  return transaction(async tx => {
-    const team = await scopedTeam(tx, actor, teamId); await scopedMember(tx, team.id, target);
+  return teamProjection(async tx => {
+    const team = await scopedTeam(tx, actor, teamId,'snapshot'); await scopedMember(tx, team.id, target,'snapshot');
     const binds: unknown[] = section === "audit" ? [target, team.id] : [target];
     const source = sources[section], total = (await tx.query(`SELECT count(*)::int AS n FROM (${source}) s`, binds)).rows[0].n;
     const rows = (await tx.query(`SELECT * FROM (${source}) s ORDER BY created_at DESC,id DESC LIMIT 20 OFFSET $${binds.length + 1}`, [...binds, (page - 1) * 20])).rows;
-    await audit(tx, actor, team.id, target, "view-" + section, { page });
-    return { rows, total, page, size: 20 };
+    return { value:{rows,total,page,size:20},confirm:fresh=>auditMemberRead(fresh,actor,team.id,target,"view-"+section,{page}) };
   });
 }
 export async function teamConversation(actor: Actor, teamId: string, target: string, id: string, kind: "agent" | "genchat", page: number) {
-  return transaction(async tx => {
-    const team = await scopedTeam(tx, actor, teamId); await scopedMember(tx, team.id, target);
+  return teamProjection(async tx => {
+    const team = await scopedTeam(tx, actor, teamId,'snapshot'); await scopedMember(tx, team.id, target,'snapshot');
     const source = kind === "agent" ? `SELECT m.ordinality AS ordinal,m.value->>'role' AS role,
       CASE WHEN jsonb_typeof(m.value->'content')='string' THEN m.value->>'content'
       WHEN jsonb_typeof(m.value->'content')='array' THEN (SELECT string_agg(p.value->>'text','' ORDER BY p.ordinality) FROM jsonb_array_elements(m.value->'content') WITH ORDINALITY p WHERE p.value->>'type'='text') ELSE '' END AS text
@@ -163,9 +186,13 @@ export async function teamConversation(actor: Actor, teamId: string, target: str
         UNION ALL SELECT m.ordinality*2+1,'assistant',m.value->>'line' FROM app_genchat_sessions s CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(s.turns)='array' THEN s.turns ELSE '[]'::jsonb END) WITH ORDINALITY m WHERE s.email=$1 AND s.id=$2`;
     const total = (await tx.query(`SELECT count(*)::int AS n FROM (${source}) s WHERE COALESCE(text,'')<>''`, [target, id])).rows[0].n;
     const messages = (await tx.query(`SELECT role,left(text,20000) AS text,(length(text)>20000) AS truncated FROM (${source}) s WHERE COALESCE(text,'')<>'' ORDER BY ordinal LIMIT 20 OFFSET $3`, [target, id, (page - 1) * 20])).rows;
-    const out = { total, messages, page, size: 20 };
-    await audit(tx, actor, team.id, target, "view-conversation", { id, kind, page }); return out;
+    return {value:{total,messages,page,size:20},confirm:fresh=>auditMemberRead(fresh,actor,team.id,target,"view-conversation",{id,kind,page})};
   });
+}
+async function auditMemberRead(tx:PoolClient,actor:Actor,teamId:string,target:string,action:string,changes:unknown){
+  await scopedTeam(tx,actor,teamId);
+  await scopedMember(tx,teamId,target);
+  await audit(tx,actor,teamId,target,action,changes);
 }
 export async function teamArtwork(actor: Actor, teamId: string, target: string, id: string) {
   return transaction(async tx => {
