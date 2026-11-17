@@ -19,7 +19,7 @@ import {useSearchParams} from 'next/navigation';
 import {BiDashboard} from './src/components/admin/bi/dashboard';
 import {useSupplierLibrary} from './src/components/admin/model-management/supplier-library/use-supplier-library';
 import {AdminQueryInput} from './src/components/admin/query-input';
-import {CreationMedia} from './src/components/saas/creation-browser';
+import {CreationBrowser,CreationMedia} from './src/components/saas/creation-browser';
 import {FleetManager} from './src/components/admin/fleet-manager';
 import {ModelHealthPanel} from './src/components/admin/model-health/model-health';
 import {AdminUsagePanel} from './src/components/admin/usage/usage-panel';
@@ -34,7 +34,7 @@ function Library(){const lib=useSupplierLibrary();return <><button onClick={()=>
 function Query(){const [value,set]=useState('');window.externalQuery=set;return <><AdminQueryInput aria-label="query" value={value} onCommit={v=>{f.commits.push(v);window.pendingQuery=v}}/><button onClick={()=>set(window.pendingQuery)}>acknowledge</button></>}
 function DirectoryRace(){const read=useUsageQuery('local',30);window.commitDirectory=read.patchMember;return <><output id="directory-state">{JSON.stringify(read.usersData)}</output><button onClick={read.refresh}>directory-refresh</button><button onClick={()=>read.setPage(2)}>directory-next</button></>}
 const media={id:'image',direction:'output',role:'result',mediaType:'image',availability:'recorded',position:0};
-function App(){const [view,setView]=useState('bi'),[days,setDays]=useState(30);window.setView=setView;window.setDays=setDays;const params=useSearchParams();return view==='bi'?<BiDashboard embedded initialSection={params.get('section')||'users'}/>:view==='library'?<Library/>:view==='query'?<Query/>:view==='directory'?<DirectoryRace/>:view==='media'?<><div style={{height:1800}}>Scroll to media</div><CreationMedia asset={media} api="/fixture-image"/></>:view==='fleet'?<FleetManager/>:view==='health'?<ModelHealthPanel/>:view==='usage'?<AdminUsagePanel token="local" usageDays={days} setUsageDays={setDays} onManageUsers={()=>{}}/>:<p>Unmounted</p>}
+function App(){const [view,setView]=useState('bi'),[days,setDays]=useState(30);window.setView=setView;window.setDays=setDays;const params=useSearchParams();return view==='bi'?<BiDashboard embedded initialSection={params.get('section')||'users'}/>:view==='library'?<Library/>:view==='query'?<Query/>:view==='directory'?<DirectoryRace/>:view==='creations'?<CreationBrowser/>:view==='media'?<><div style={{height:1800}}>Scroll to media</div><CreationMedia asset={media} api="/fixture-image"/></>:view==='fleet'?<FleetManager/>:view==='health'?<ModelHealthPanel/>:view==='usage'?<AdminUsagePanel token="local" usageDays={days} setUsageDays={setDays} onManageUsers={()=>{}}/>:<p>Unmounted</p>}
 createRoot(document.getElementById('root')).render(<App/>);`;
 await build({stdin:{contents:entry,resolveDir:process.cwd(),loader:'tsx'},outfile:path.join(out,'app.js'),bundle:true,jsx:'automatic',platform:'browser',minify:true,define:{'process.env.NODE_ENV':'"production"','process.env':'{}'},plugins:[{name:'ports',setup(b){
  b.onResolve({filter:/^(next\/navigation|next\/link|@\/lib\/supabase|@\/lib\/auth-context)$/},a=>({path:a.path,namespace:'port'}));
@@ -95,6 +95,32 @@ try{
  await resolve('/api/admin/usage?',usageIndex+2,{...usage,users:[users[1]],pagination:{page:2,size:30,total:100}});await waitCount('/api/admin/users?view=members',directoryIndex+3);await resolve('/api/admin/users?view=members',directoryIndex+2,{users:[memberRows[1]]});await page.waitForTimeout(60);
  await page.evaluate(email=>previousDirectorySetter(email,{banned:true}),memberRows[1].email);await page.waitForTimeout(60);
  check('A previous page mutation cannot update current directory',JSON.parse(await page.locator('#directory-state').textContent()).users[0].banned,memberRows[1].banned);
+
+ await page.evaluate(()=>history.replaceState(null,'','/?creationId=fixture-record'));
+ await view('creations');const records='/api/admin/creations?',record='/api/admin/creations/fixture-record?';
+ await waitCount(records,1);await waitCount(record,1);
+ const blurAndReturn=()=>page.evaluate(()=>{
+   for(const value of ['hidden','visible','visible']){
+     Object.defineProperty(document,'visibilityState',{configurable:true,value});
+     document.dispatchEvent(new Event('visibilitychange'));window.dispatchEvent(new Event('focus'));
+   }
+ });
+ await blurAndReturn();await page.waitForTimeout(80);
+ check('Creation reads in flight survive repeated visibility and focus events',[await count(records),await count(record)],[1,1]);
+ await resolve(records,0,{items:[],pagination:{page:1,size:20,total:0},appliedFilters:{}});
+ await resolve(record,0,{error:'fixture details unavailable'},503);
+ await page.getByText('fixture details unavailable',{exact:false}).waitFor();
+ await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await page.waitForTimeout(80);
+ check('Creation window focus does not refresh the list or detail',[await count(records),await count(record)],[1,1]);
+ await page.getByRole('button',{name:'重试',exact:true}).click();await waitCount(record,2);
+ check('Retrying only the failed creation detail does not requery history',await count(records),1);
+ await resolve(record,1,{error:'fixture details unavailable'},503);
+ await page.getByText('fixture details unavailable',{exact:false}).waitFor();
+ await blurAndReturn();await waitCount(records,2);await waitCount(record,3);await page.waitForTimeout(80);
+ check('Returning to a hidden creation tab refreshes each data source once',[await count(records),await count(record)],[2,3]);
+ await page.evaluate(()=>{delete document.visibilityState;window.dispatchEvent(new Event('naumi:cache-session-ended'));});
+ await page.getByText('请重新登录',{exact:false}).first().waitFor();
+ check('Session teardown aborts both active creation reads',await page.evaluate(()=>fixture.calls.filter(c=>c.url.startsWith('/api/admin/creations')).slice(-2).every(c=>c.aborted)),true);
 
  await page.evaluate(()=>fixture.imageBad=true);await view('media');await page.evaluate(()=>window.scrollTo(0,document.body.scrollHeight));await waitCount('/fixture-image',1);await page.waitForTimeout(180);
  const retry=page.getByRole('button',{name:'重试读取',exact:true});check('Undecodable image offers retry',await retry.count(),1);

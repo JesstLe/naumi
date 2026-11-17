@@ -1,3 +1,4 @@
+import {readWorkflowJson} from '@/lib/enterprise/workflow-read';
 import {z} from 'zod';
 import {workflowSameOrigin} from '@/lib/enterprise/workflow-origin';
 import {workflowSourceIdentity,workflowBridgeConfig,workflowIdentityToken} from '@/lib/enterprise/workflow-identity';
@@ -16,7 +17,9 @@ export async function GET(request:Request){const q=reads.safeParse(Object.fromEn
  const {enterpriseId,teamId,...query}=q.data,identity=await workflowSourceIdentity(request,enterpriseId);const rateLimitResult = await checkRateLimit('workflow-uploads-read:'+JSON.stringify(identity),120,60000);
   if (rateLimitResult instanceof Response) return rateLimitResult;
   if (!rateLimitResult) return teamJson({error:'RATE_LIMITED'},429);
- const c=workflowBridgeConfig(),params=new URLSearchParams(Object.entries(query).map(([k,v])=>[k,String(v)]));try{return await response(await fetch(c.origin+'/v1/uploads?'+params,{headers:{authorization:'Bearer '+workflowIdentityToken(identity,c,teamId)},cache:'no-store',redirect:'error',signal:AbortSignal.any([request.signal,AbortSignal.timeout(30000)])}));}catch{return teamJson({error:'UPLOAD_SERVICE_UNAVAILABLE'},503);}
+ const c=workflowBridgeConfig(),params=new URLSearchParams(Object.entries(query).map(([k,v])=>[k,String(v)]));let upstream:Response;
+ try{upstream=await fetch(c.origin+'/v1/uploads?'+params,{headers:{authorization:'Bearer '+workflowIdentityToken(identity,c,teamId)},cache:'no-store',redirect:'error',signal:AbortSignal.any([request.signal,AbortSignal.timeout(30000)])});}catch{return teamJson({error:'UPLOAD_SERVICE_UNAVAILABLE'},503);}
+ return teamJson(await readWorkflowJson(upstream,'UPLOAD_RESPONSE_INVALID'),upstream.status);
  }catch(e){return fail(e);}}
 export async function POST(request:Request){const q=z.strictObject(scope).safeParse(Object.fromEntries(new URL(request.url).searchParams));if(!q.success)return teamJson({error:'INVALID_UPLOAD_QUERY'},400);if(!workflowSameOrigin(request))return teamJson({error:'ORIGIN_REQUIRED'},403);if(!request.headers.get('content-type')?.startsWith('application/json'))return teamJson({error:'JSON_REQUIRED'},415);try{
  const identity=await workflowSourceIdentity(request,q.data.enterpriseId);const rateLimitResult2 = await checkRateLimit('workflow-uploads-command:'+JSON.stringify(identity),40,60000);

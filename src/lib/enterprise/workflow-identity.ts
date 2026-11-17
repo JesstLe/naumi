@@ -16,6 +16,7 @@ import { assertEnterpriseAllowed,deploymentPolicy,IntegrationError } from './int
 
 /** Login identity and membership only. Does NOT grant enterprise-records/admin visibility. */
 export async function workflowSourceIdentity(request:Request,enterpriseId:string){
+ if(request.method==='GET'&&request.signal.aborted)throw new IntegrationError('WORKFLOW_SERVICE_UNAVAILABLE');
  const email=await enterpriseUserEmail(request);if(!email)throw new TeamError('请先登录',401);
  await assertWorkflowSiteAccess(request);
  const expected=request.headers.get('x-workflow-viewer');if(expected&&expected!==email)throw new IntegrationError('ACCOUNT_CHANGED',409);
@@ -39,6 +40,7 @@ export async function workflowSourceIdentity(request:Request,enterpriseId:string
 }
 /** Current user's memberships, never an analytics/admin enterprise directory. */
 export async function workflowDiscovery(request:Request){
+ if(request.signal.aborted)throw new IntegrationError('WORKFLOW_SERVICE_UNAVAILABLE');
  const email=await enterpriseUserEmail(request);if(!email)throw new TeamError('请先登录',401);
  if(!allows(await userFeaturePolicy(email),'team'))throw new TeamError('企业协作功能尚未授权',403);
  const policy=deploymentPolicy();await ensureEnterpriseSchema();

@@ -1,5 +1,5 @@
 import 'server-only';
-import {enterpriseCreationRead} from '../server';
+import {enterpriseCreationProjectionRead,enterpriseCreationRead} from '../server';
 import {creationLedger} from '../analytics';
 import {queryBi,queryEnterpriseOperations} from "@/lib/bi/repository";
 import {ensureBiSchema} from "@/lib/bi/schema";
@@ -18,7 +18,7 @@ export class CreationAdapter{
  async records(input:RecordQuery,ref?:SourceRef){
   assertEnterpriseAllowed(this.policy,input.enterpriseId);if(ref){this.check(ref);if(ref.enterpriseId!==input.enterpriseId)throw new IntegrationError('SOURCE_REF_MISMATCH',400);}
   let q:ReturnType<typeof parseBiQuery>;try{q=parseBiQuery(new URLSearchParams({section:input.kind==='artworks'?'artworks':input.kind==='ledger'?'ledger':'operations',...(input.from?{from:input.from}:{}),...(input.to?{to:input.to}:{}),email:input.email||'',page:String(input.page||1),size:String(input.size||20)}));}catch{throw new IntegrationError('INVALID_SOURCE_QUERY',400);}
-  await ensureBiSchema();const data=await enterpriseCreationRead(this.email,input.enterpriseId,async(tx,s)=>{
+  await ensureBiSchema();const data=await enterpriseCreationProjectionRead(this.email,input.enterpriseId,async(tx,s)=>{
    if(q.email&&!s.visible.has(q.email))throw new IntegrationError('SOURCE_RECORD_NOT_VISIBLE',404);
    if(input.kind==='ledger')return creationLedger(tx,[...s.visible],{...q,...(ref?{recordId:ref.id}:{})});
    const access={client:tx,allowedEmails:[...s.visible]};

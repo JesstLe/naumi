@@ -1,3 +1,4 @@
+import {readWorkflowJson,workflowReadSignal} from '@/lib/enterprise/workflow-read';
 import {workflowSameOrigin} from '@/lib/enterprise/workflow-origin';
 import {z} from 'zod';
 import {teamJson,teamFailure} from '@/lib/teams/access';
@@ -12,8 +13,8 @@ export async function GET(request:Request){
  const input=Object.fromEntries(new URL(request.url).searchParams),{enterpriseId,teamId,format,...raw}=input,p=scope.safeParse({enterpriseId,teamId}),q=performanceQuerySchema.safeParse(raw);if(!p.success||!q.success||format!==undefined&&!(format==='csv'&&q.data.action==='period'))return teamJson({error:'INVALID_PERFORMANCE_QUERY'},400);
  try{const identity=await workflowSourceIdentity(request,p.data.enterpriseId);const rateLimitResult = await checkRateLimit('performance-read:'+JSON.stringify(identity),60,60000);
   if (rateLimitResult instanceof Response) return rateLimitResult;
-  if (!rateLimitResult) return teamJson({error:'RATE_LIMIT'},429);const config=workflowBridgeConfig();let r:Response;try{r=await fetch(config.origin+'/v1/performance?'+new URLSearchParams(raw),{headers:{authorization:'Bearer '+workflowIdentityToken(identity,config,p.data.teamId)},cache:'no-store',redirect:'error',signal:AbortSignal.timeout(15000)});}catch{return teamJson({error:'WORKFLOW_SERVICE_UNAVAILABLE'},503);}
-  if(!r.headers.get('content-type')?.includes('application/json'))return teamJson({error:'WORKFLOW_RESPONSE_INVALID'},502);const data=await r.json();if(format!=='csv'||!r.ok)return teamJson(data,r.status);if(data.period?.status!=='confirmed'||!Array.isArray(data.period.snapshot?.results))return teamJson({error:'PERIOD_NOT_CONFIRMED'},409);
+  if (!rateLimitResult) return teamJson({error:'RATE_LIMIT'},429);const config=workflowBridgeConfig();let r:Response;try{r=await fetch(config.origin+'/v1/performance?'+new URLSearchParams(raw),{headers:{authorization:'Bearer '+workflowIdentityToken(identity,config,p.data.teamId)},cache:'no-store',redirect:'error',signal:workflowReadSignal(request,15000)});}catch{return teamJson({error:'WORKFLOW_SERVICE_UNAVAILABLE'},503);}
+  const data=await readWorkflowJson(r,'WORKFLOW_RESPONSE_INVALID');if(format!=='csv'||!r.ok)return teamJson(data,r.status);if(data.period?.status!=='confirmed'||!Array.isArray(data.period.snapshot?.results))return teamJson({error:'PERIOD_NOT_CONFIRMED'},409);
   return new Response(scoreCsv(data.period.snapshot.results),{headers:{'content-type':'text/csv; charset=utf-8','content-disposition':'attachment; filename="performance.csv"','cache-control':'private, no-store','x-content-type-options':'nosniff'}});
  }catch(e){if(e instanceof IntegrationError)return teamJson({error:e.code},e.status);return teamFailure(e);}
 }
