@@ -3,13 +3,14 @@
 import { rateLimit } from '../src/lib/rate-limit';
 import { checkRateLimit } from '../src/lib/rate-limit-http';
 import { getPool, closeDatabasePools } from '../src/lib/db/connection';
+import { freezeCreationSettings } from '../src/lib/agent/creation-settings';
 import * as forgot from '../src/app/api/auth/forgot/route';
 import * as admin from '../src/app/api/admin/login/route';
 import * as agent from '../src/app/api/agent/route';
 import * as canvas from '../src/app/api/canvas/workflow-import/asset/route';
 import type { PoolClient } from 'pg';
 
-const effects: Record<string, number> = { mail: 0, password: 0, prompt: 0, canvas: 0, session: 0 };
+const effects: Record<string, number> = { mail: 0, password: 0, prompt: 0, canvas: 0, session: 0, creationSettings: 0 };
 const session = () => {
   effects.session++;
   return { running: false, events: [] as any[], harness: { sanitize: (v: unknown) => v, publicText: (v: unknown) => v },
@@ -36,10 +37,12 @@ class HarnessError extends Error { constructor(readonly code: string, readonly s
   withCreationRoute: (_r: Request, fn: () => unknown) => fn(),
   readHarnessBody: (req: Request) => req.json(), assertHarnessSessionId: () => {},
   harnessErrorResponse: (e: HarnessError) => Response.json({ error: e.code }, { status: e.status }),
+  resolveCreationSettings: async (value: unknown) => { effects.creationSettings++; return freezeCreationSettings(value); },
+  recordTurnCreationSettings: (s: any, settings: ReturnType<typeof freezeCreationSettings>) => { s.creationSettings = settings; },
   resolveImageSkill: async () => undefined, requestedTextModel: () => 'fixture', agentVisionEnabled: () => false,
   getOpenAISettings: async () => ({ apiKey: 'fixture' }), getOrCreateSession: async () => session(),
   primeAgentSystemPrompt: () => {}, persistAgentSession: async () => {},
-  appendSessionEvent: (s: any, type: string, data: unknown) => s.events.push({ type, data }), buildTaskPlan: () => [],
+  appendSessionEvent: (s: any, type: string, data: unknown) => s.events.push({ type, data }),
 };
 const held: PoolClient[] = [];
 const nativeNow = Date.now;
