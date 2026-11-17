@@ -47,12 +47,13 @@ async function main(){
   const waiting=async()=>{await guard.query('SELECT pg_stat_clear_snapshot()');return Number((await guard.query(`SELECT count(*) AS n FROM pg_stat_activity
    WHERE datname=current_database() AND wait_event_type='Lock' AND pid<>pg_backend_pid()
    AND query LIKE '%FROM app_supplier_calls%'`)).rows[0].n);};
-  for(const kind of (baseline?['list','chain']:['list','chain','mixed'])){
+  for(const kind of (baseline?['list','chain']:['list','chain','mixed','compact'])){
    await guard.query('BEGIN; LOCK TABLE app_supplier_calls IN ACCESS EXCLUSIVE MODE');locked=true;
    const ids=Array.from({length:5},(_,i)=>kind+i);
    for(const [i,id] of ids.entries()){
     const controller=new AbortController();controllers.push(controller);
-    const tail=kind==='chain'||kind==='mixed'&&i%2?'/operations/'+operation:'?view=calls';
+    const tail=kind==='compact'?'/operations/'+operation+'?view=calls'
+      :kind==='chain'||kind==='mixed'&&i%2?'/operations/'+operation:'?view=calls';
     pending.push(fetch(origin+base+tail,{signal:controller.signal,headers:{'x-fixture-id':id}}).catch(e=>e));
    }
    const max=baseline?5:2;
@@ -108,7 +109,7 @@ async function main(){
    assert.equal(next.outputs[0].call_id,call.id);assert.equal(next.outputs[0].state,'succeeded');
   }
   console.log(baseline?'SUPPLIER_COST_ADMIN_BASELINE=PASS LIST_WAITS=5 CHAIN_WAITS=5 DISCONNECT_RETAINS_SQL=2 REAL_PG=1':
-   'SUPPLIER_COST_ADMIN_READ=PASS LIST_WAITS=2 CHAIN_WAITS=2 MIXED_WAITS=2 DISCONNECT_RELEASE=3 BUSINESS_POOL_FREE=1 CHAIN_SNAPSHOT=1 ONE_CHAIN_CLIENT=1 REAL_PG=1');
+   'SUPPLIER_COST_ADMIN_READ=PASS LIST_WAITS=2 CHAIN_WAITS=2 MIXED_WAITS=2 COMPACT_WAITS=2 DISCONNECT_RELEASE=4 BUSINESS_POOL_FREE=1 CHAIN_SNAPSHOT=1 ONE_CHAIN_CLIENT=1 REAL_PG=1');
  }finally{
   for(const controller of controllers)controller.abort();
   if(locked)await guard.query('ROLLBACK');

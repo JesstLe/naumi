@@ -8,6 +8,8 @@ import { MICRO } from "./money";
 import type { Pool, PoolClient } from "pg";
 import { costWhere } from "./call-filter";
 import {checkReadClientSocket,withOwnedReportClient} from "@/platform/db/owned-read-client";
+import {readSupplierChainSlice} from "./chain-read";
+import type {SupplierChainRead} from "./chain-contract";
 
 type CostTotals={calls:number;confirmed:number;pending:number;estimated:number;incomplete:number;cny_micros:string|null};
 type CurrencyTotals={currency:string|null;reported_micros:string|null;estimated_micros:string|null;supplier_credits_micros:string|null};
@@ -108,8 +110,8 @@ export async function readSupplierAdmin(ledger:ReturnType<typeof createSupplierL
   });
 }
 
-export function readSupplierAdminChain(ledger:ReturnType<typeof createSupplierLedger>,operation:string,signal:AbortSignal){
-  return withSupplierCostRead(ledger.pool,signal,tx=>ledger.chain(operation,tx));
+export function readSupplierAdminChain(ledger:ReturnType<typeof createSupplierLedger>,operation:string,signal:AbortSignal,input?:SupplierChainRead){
+  return withSupplierCostRead(ledger.pool,signal,async tx=>input?await readSupplierChainSlice(tx,operation,input):await ledger.chain(operation,tx));
 }
 export async function updateAccount(ledger: ReturnType<typeof createSupplierLedger>, input: { id:string; fx:FxSnapshot|null; policy:unknown; usageEnabled:boolean }, actor:string) {
   const fx=input.fx==null?null:fxSchema.parse(input.fx),policy=policySchema.parse(input.policy);

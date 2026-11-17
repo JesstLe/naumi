@@ -5,6 +5,8 @@ import { authHeader } from "@/lib/supabase";
 import { fixed,decimalMicros } from "@/lib/supplier-cost/money";
 import { FEATURE_LABELS } from "@/lib/billing/labels";
 import type { SupplierAdminView } from "@/lib/supplier-cost/admin";
+import { supplierChainUrl,type SupplierChainPage,type SupplierChainLegacy } from "@/lib/supplier-cost/chain-contract";
+import { SupplierCostChainDialog } from "./supplier-cost-chain-dialog";
 
 const control="h-9 min-w-0 border border-c-border bg-white px-3 text-sm outline-none focus:border-c-text";
 const labels:Record<string,string>={pending:"待确认",estimated:"用量／价格估算",reported:"供应商报告",reconciled:"账单已核对",matched:"一致",unattributed:"未归属费用",mismatch:"账单差异","pending-local-costs":"本地费用待齐"};
@@ -20,10 +22,10 @@ export function SupplierCostManager(){
   if(tab==='calls'||tab==='stats')for(const [k,v] of Object.entries(applied))if(v)query.set(k,k==='from'||k==='to'?new Date(v).toISOString():v);
   const url='/api/admin/supplier-cost?'+query,key=JSON.stringify([url,revision]);
   const current=result?.key===key?result:null,data=current?.data,busy=acting||!current;
-  const [chainState,setChainState]=useState<{key:string;data?:any;pending?:string;error?:string}|null>(null);
+  const [chainState,setChainState]=useState<{key:string;loaded?:{operation:string;data:SupplierChainPage|SupplierChainLegacy};pending?:string;error?:string}|null>(null);
   const chainRequest=useRef<{key:string;id:string;controller:AbortController}|null>(null);
   const selectedChain=tab==='calls'&&chainState?.key===key?chainState:null;
-  const chain=selectedChain?.data;
+  const chain=selectedChain?.loaded;
   useEffect(()=>{
     setChainState(null);
     return()=>{chainRequest.current?.controller.abort();chainRequest.current=null;};
@@ -37,8 +39,9 @@ export function SupplierCostManager(){
     const controller=new AbortController(),task={key,id,controller};chainRequest.current=task;setChainState({key,pending:id});
     const latest=()=>chainRequest.current===task&&!controller.signal.aborted;
     try{
-      const value=await request('/api/admin/supplier-cost/operations/'+encodeURIComponent(id),undefined,controller.signal);
-      if(latest())setChainState({key,data:value});
+      const value=await request(supplierChainUrl(id,{view:"calls"}),undefined,controller.signal);
+      if(!Array.isArray(value?.rows)||("view"in value&&value.view!=="calls"))throw new Error("Invalid supplier chain response");
+      if(latest())setChainState({key,loaded:{operation:id,data:value}});
     }catch{if(latest())setChainState({key,error:'调用链读取失败'});}
     finally{if(latest())chainRequest.current=null;}
   }
@@ -61,6 +64,6 @@ export function SupplierCostManager(){
       {tab==='reconcile'&&<div className="space-y-6"><p className="text-xs text-c-muted">聚合账单按账户、模型、完成入账日核对；重叠窗口只展示最近一次结果，不重复累计。未归属差额不会分配给用户。</p><div className="overflow-auto border border-c-border"><table className="w-full bg-white text-left text-xs"><thead><tr>{['账户 / 日期','模型','供应商 USD / 额度','本地 USD / 额度','差额 USD / 额度','状态'].map(h=><th key={h} className="p-3">{h}</th>)}</tr></thead><tbody>{data.anomalies.map((b:any,i:number)=><tr key={i} className="border-t border-c-border"><td className="p-3">{data.accounts.find((a:any)=>a.id===b.account_id)?.label}<div>{b.date}</div></td><td className="p-3">{b.model}</td><td className="p-3">{money(b.remote_amount_micros,'USD')} / {fixed(b.remote_credits_micros)}</td><td className="p-3">{money(b.local_amount_micros,'USD')} / {fixed(b.local_credits_micros)}</td><td className="p-3">{money(b.amount_delta_micros,'USD')} / {fixed(b.credits_delta_micros)}</td><td className="p-3">{labels[b.status]}</td></tr>)}</tbody></table>{!data.anomalies.length&&<p className="p-6 text-sm text-c-muted">尚无对账异常；这不代表未查询账户已通过核对。</p>}</div><h2 className="text-sm font-semibold">补查任务</h2>{data.jobs.map((j:any)=><div key={j.key} className="flex justify-between border border-c-border bg-white p-4 text-xs"><div><div className="font-mono">{j.key}</div><div className="mt-2">{j.state} · 尝试 {j.attempts} · {j.last_error}</div></div><button disabled={busy} className={control} onClick={()=>void act({action:'retry',key:j.key})}>查询原任务</button></div>)}</div>}
       {tab==='accounts'&&<div className="grid gap-6 md:grid-cols-[300px_1fr]"><div className="border border-c-border bg-white">{data.accounts.map((a:any)=><button key={a.id} className="block w-full border-b border-c-border p-4 text-left text-sm" onClick={()=>{setAccount(a);setRate(a.fx?fixed(a.fx.rateMicros):'');setBasis(a.fx?.basis||'admin-rate');setProof(a.fx?.evidence||'');setPolicy(JSON.stringify(a.policy||{},null,2));setEnabled(a.usage_enabled)}}><span className="font-medium">{a.label}</span><span className="mt-1 block text-xs text-c-muted">{a.protocol} · {a.query_configured?'补查凭据已配置':'只有成本记录，待配置原凭据'}</span></button>)}</div>{account&&<form className="space-y-4 border border-c-border bg-white p-5" onSubmit={e=>{e.preventDefault();const m=rate?decimalMicros(rate):null;if(rate&&!m)return setError('汇率无效');try{void act({action:'account',id:account.id,fx:m?{currency:'USD',rateMicros:m,basis,evidence:proof,updatedAt:new Date().toISOString()}:null,policy:JSON.parse(policy),usageEnabled:enabled})}catch{setError('策略 JSON 无效')}}}><h2 className="font-medium">{account.label}</h2><p className="break-all font-mono text-xs">{account.id}</p><label className="block text-sm">1 USD 折合人民币<input aria-label="美元折算人民币" className={`${control} mt-2 block w-full min-w-0`} value={rate} onChange={e=>setRate(e.target.value)} placeholder="未配置时保留原币，人民币待确认"/></label><label className="block text-sm">换算依据<select className={`${control} mt-2 block w-full min-w-0`} value={basis} onChange={e=>setBasis(e.target.value)}><option value="admin-rate">管理员配置汇率</option><option value="recharge">有凭据的充值实际成本</option><option value="budget">预算汇率（折算估计）</option></select></label><label className="block text-sm">凭据 / 来源<input className={`${control} mt-2 block w-full min-w-0`} value={proof} onChange={e=>setProof(e.target.value)}/></label><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={enabled} onChange={e=>setEnabled(e.target.checked)}/>周期对账（仅已接通 APIMart）</label><label className="block text-sm">补查与对账策略<textarea className="mt-2 min-h-48 w-full border border-c-border p-3 font-mono text-xs" value={policy} onChange={e=>setPolicy(e.target.value)}/></label><p className="text-xs text-c-muted">新调用冻结换算快照；修改汇率不重算历史，不改变用户已确认收费。</p><button disabled={busy} className={control}>保存配置</button></form>}</div>}
     </>}
-    {chain&&<div className="fixed inset-0 z-50 overflow-auto bg-black/30 p-6" role="dialog" aria-modal="true" aria-label="完整调用链"><section className="mx-auto max-w-5xl border border-c-border bg-white p-6"><div className="mb-4 flex justify-between"><h2 className="font-semibold">完整调用链</h2><button className={control} onClick={closeChain}>关闭</button></div><pre className="mb-4 overflow-auto text-xs">{JSON.stringify({billing:chain.billing,feeReviews:chain.feeReviews},null,2)}</pre>{chain.rows.map((r:any)=><div key={r.id} className="border-t border-c-border py-4 text-xs"><div className="font-semibold">{r.phase} · {r.provider_id} / {r.actual_model||r.model} · {money(r.amount_micros,r.currency)} · {labels[r.cost_status]}</div><dl className="mt-3 grid gap-2 md:grid-cols-2">{[['业务操作',r.operation_id],['本次尝试',r.attempt_id],['供应商任务',r.task_id||'—'],['供应商 request_id',r.request_id||'—'],['开始',when(r.started_at)],['完成',when(r.completed_at)],['费用确认',when(r.cost_confirmed_at)],['配置版本',`${r.model_version||'—'} / ${r.billing_version||'—'}`],['人民币折算',money(r.cny_micros)],['命中规则',r.matched_rule_id||'默认']].map(([k,v])=><div key={k}><dt className="text-c-muted">{k}</dt><dd className="mt-1 break-all font-mono">{v}</dd></div>)}</dl><pre className="mt-3 overflow-auto border border-c-border p-3">{JSON.stringify({parameters:r.parameters,usage:r.usage,fx:r.fx,evidence:r.evidence,outputs:chain.outputs?.filter((o:any)=>o.call_id===r.id)},null,2)}</pre></div>)}<h3 className="mt-4 text-sm font-semibold">退款 / 费用修订</h3><pre className="mt-2 overflow-auto text-xs">{JSON.stringify(chain.adjustments,null,2)}</pre></section></div>}
+    {chain&&<SupplierCostChainDialog key={chain.operation} operation={chain.operation} initial={chain.data} request={request} close={closeChain} money={money} labels={labels}/>}
   </section>;
 }
