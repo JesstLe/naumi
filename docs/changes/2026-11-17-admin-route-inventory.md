@@ -128,10 +128,10 @@
 | `POST /api/admin/fleet/releases` | `src/app/api/admin/fleet/releases/route.ts` | 待核查 |
 | `POST /api/admin/login` | `src/app/api/admin/login/route.ts` | 待核查 |
 | `POST /api/admin/model-health` | `src/app/api/admin/model-health/route.ts` | 待核查 |
-| `POST /api/admin/model-management` | `src/app/api/admin/model-management/route.ts` | 部分：隔离回归验证发布、并发锁、积分、旧任务及未知收据；手动目录刷新共用已验证的短事务领取和网络取消。发布编排持会话锁期间的外部 I/O 待分支核查 |
+| `POST /api/admin/model-management` | `src/app/api/admin/model-management/route.ts` | 部分：隔离回归覆盖发布、积分、旧任务、未知收据及手动发现；接入已发布后补读目录释放发布锁，发布前注册、新增模型和 Router 执行另核 |
 | `POST /api/admin/model-management/library` | `src/app/api/admin/model-management/library/route.ts` | 待核查 |
 | `POST /api/admin/model-management/onboarding` | `src/app/api/admin/model-management/onboarding/route.ts` | 待核查 |
-| `POST /api/admin/mvp` | `src/app/api/admin/mvp/route.ts` | 待核查 |
+| `POST /api/admin/mvp` | `src/app/api/admin/mvp/route.ts` | 部分：与模型管理共用发布入口；接入后的目录补读已核，发布前路径待深查 |
 | `POST /api/admin/mvp/library` | `src/app/api/admin/mvp/library/route.ts` | 待核查 |
 | `POST /api/admin/owner-account` | `src/app/api/admin/owner-account/route.ts` | 待核查 |
 | `POST /api/admin/prompts` | `src/app/api/admin/prompts/route.ts` | 待核查 |

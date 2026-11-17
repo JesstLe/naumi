@@ -33,6 +33,17 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
     let staged = false,discovering=false;
     let lock: PoolClient | undefined, lockKey: string | undefined;
     let releaseMutationTurn:(()=>void)|undefined;
+    const releaseMutation=async()=>{
+      const held=lock,turn=releaseMutationTurn;
+      lock=undefined;releaseMutationTurn=undefined;
+      try{
+        if(held){
+          const released=await held.query<{released:boolean}>("SELECT pg_advisory_unlock(hashtextextended($1,0)) AS released",[lockKey])
+            .then(result=>result.rows[0]?.released===true,()=>false);
+          held.release(!released);
+        }
+      }finally{turn?.();}
+    };
     try {
       if(request.method==="GET"){
         const signal=request.signal,params=new URL(request.url).searchParams,view=params.get("view");
@@ -71,9 +82,9 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
       }
       const publicationResponse=async(publication:ModelPublication)=>{
         let discovery;
-        if(body.action==="connect"&&publication.phase==="applied"){
+        if(body.action==="connect"&&publication.phase==="applied"&&!request.signal.aborted){
           const provider=(await admin.repo.current()).config.providers.find(p=>p.id===`mvp-${body.id}`);
-          if(provider)discovery=await refreshProviderCatalog(admin.pool,provider,admin.credentials,admin.trustedOrigins,deps.fetcher)
+          if(provider)discovery=await refreshProviderCatalog(admin.pool,provider,admin.credentials,admin.trustedOrigins,deps.fetcher,false,request.signal)
             .then(r=>({status:r.status,metadataSaved:r.metadataSaved===true}),()=>({status:"error",metadataSaved:false}));
         }
         return biJson({publication,...(discovery?{discovery}:{})},publication.phase==="applied"?200:publication.phase==="failed"?422:202);
@@ -146,6 +157,9 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
       if(!publication)throw new ModelConfigError("PUBLICATION_UNAVAILABLE","发布记录不存在",404);
       // Bounded, best-effort retention: each applied operation clears older applied operation drafts.
       if(publication.phase==="applied")await pruneAppliedOperationDrafts(admin.pool).catch(()=>0);
+      // Optional receipt enrichment uses the already committed provider. Keep
+      // the publish lock and the mutation turn out of the supplier round trip.
+      if(body.action==='connect'&&publication.phase==='applied')await releaseMutation();
       return await publicationResponse(publication);
     } catch (e) {
       if(discovering&&request.signal.aborted)return biJson({error:"查询已取消"},499);
@@ -165,8 +179,7 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
       // An ambiguous transport failure must keep the operation ID for reconciliation.
       return biJson({ error: "操作结果待核对，请使用同一操作重试", operationNotStaged: false }, 503);
     } finally {
-      if (lock) { try { await lock.query("SELECT pg_advisory_unlock(hashtextextended($1,0))", [lockKey]); lock.release(); } catch { lock.release(true); } }
-      releaseMutationTurn?.();
+      await releaseMutation();
     }
   };
 }
