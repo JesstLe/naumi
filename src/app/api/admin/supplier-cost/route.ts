@@ -11,6 +11,9 @@ export async function GET(request: Request) {
   const query=filter.safeParse(Object.fromEntries(new URL(request.url).searchParams));
   if(!query.success)return billingJson({error:"成本筛选条件无效"},400);
   const {view,...q}=query.data;
-  try{return billingJson(await readSupplierAdmin(createSupplierLedger(getPool()),q,view));}
-  catch{return billingJson({error:"暂时无法读取成本数据，请稍后重试"},503);}
+  try{return billingJson(await readSupplierAdmin(createSupplierLedger(getPool()),q,view,request.signal));}
+  catch{
+    if(request.signal.aborted)return billingJson({error:"查询已取消"},499);
+    return billingJson({error:"暂时无法读取成本数据，请稍后重试"},503);
+  }
 }

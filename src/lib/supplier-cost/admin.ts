@@ -7,6 +7,7 @@ import { fxSchema, policySchema } from "./policy";
 import { MICRO } from "./money";
 import type { Pool, PoolClient } from "pg";
 import { costWhere } from "./call-filter";
+import {checkReadClientSocket,withOwnedReportClient} from "@/platform/db/owned-read-client";
 
 export async function costsSummary(ledger: ReturnType<typeof createSupplierLedger>, f: CostFilter, tx?:PoolClient) {
   if(!tx)await ensureSupplierSchema(ledger.pool);
@@ -53,13 +54,18 @@ async function reconciliation(tx:PoolClient) {
 }
 
 export type SupplierAdminView='calls'|'stats'|'reconcile'|'accounts';
-/** One read-only snapshot/client per request. Wait only for the selected view. */
-export async function readSupplierAdmin(ledger:ReturnType<typeof createSupplierLedger>,f:CostFilter,view?:SupplierAdminView) {
-  const pool:Pool=ledger.pool;await ensureSupplierSchema(pool);const tx=await pool.connect();
-  try {
+function withSupplierCostRead<T>(pool:Pool,signal:AbortSignal,read:(tx:PoolClient)=>Promise<T>){
+  // Startup prepares both ledgers; a dashboard GET must not run schema DDL.
+  return withOwnedReportClient(pool,async tx=>{
     await tx.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-    await tx.query("SET LOCAL statement_timeout='5s'; SET LOCAL lock_timeout='1s'");
-    const read=async()=>{
+    await tx.query("SET LOCAL statement_timeout='5s'; SET LOCAL lock_timeout='1s'"+checkReadClientSocket);
+    const result=await read(tx);await tx.query("COMMIT");return result;
+  },signal);
+}
+
+/** One read-only snapshot/client per request. Wait only for the selected view. */
+export async function readSupplierAdmin(ledger:ReturnType<typeof createSupplierLedger>,f:CostFilter,view:SupplierAdminView|undefined,signal:AbortSignal) {
+  return withSupplierCostRead(ledger.pool,signal,async tx=>{
       switch(view){
         case 'calls':return {...await ledger.list(f,tx,true),accounts:await accountLabels(tx)};
         case 'stats':return {stats:await costsSummary(ledger,f,tx),accounts:await accountLabels(tx)};
@@ -67,10 +73,11 @@ export async function readSupplierAdmin(ledger:ReturnType<typeof createSupplierL
         case 'accounts':return {accounts:await accountSettings(tx)};
         default:return {...await ledger.list(f,tx),stats:await costsSummary(ledger,f,tx),accounts:await accountSettings(tx),...await reconciliation(tx)};
       }
-    };
-    const result=await read();await tx.query("COMMIT");return result;
-  }catch(error){await tx.query("ROLLBACK").catch(()=>{});throw error;}
-  finally{tx.release();}
+  });
+}
+
+export function readSupplierAdminChain(ledger:ReturnType<typeof createSupplierLedger>,operation:string,signal:AbortSignal){
+  return withSupplierCostRead(ledger.pool,signal,tx=>ledger.chain(operation,tx));
 }
 export async function updateAccount(ledger: ReturnType<typeof createSupplierLedger>, input: { id:string; fx:FxSnapshot|null; policy:unknown; usageEnabled:boolean }, actor:string) {
   const fx=input.fx==null?null:fxSchema.parse(input.fx),policy=policySchema.parse(input.policy);
