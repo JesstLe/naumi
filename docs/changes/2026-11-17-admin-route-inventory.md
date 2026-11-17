@@ -59,7 +59,7 @@
 | `GET /api/admin/usage` | `src/app/api/admin/usage/route.ts` | 待核查 |
 | `GET /api/admin/users` | `src/app/api/admin/users/route.ts` | 待核查 |
 | `GET /api/enterprise` | `src/app/api/enterprise/route.ts` | 部分：目录与站点范围、仅成员管理避开账务/素材表、停用成员指标隔离；超大成员目录和浏览器切换待复核 |
-| `GET /api/enterprise/analytics` | `src/app/api/enterprise/analytics/route.ts` | 部分：账务权限复验、CSV 一次分类、5 万边界／字节对照及断开；八年窗口导出与平台报表共用有界排队，`verify-admin-report-contention.ts`。长窗汇总计算和真实网关待核 |
+| `GET /api/enterprise/analytics` | `src/app/api/enterprise/analytics/route.ts` | 部分：账务权限复验、CSV 一次分类/5 万边界、断开和并发排队；八年长窗聚合执行计划、8 组逐字段对照和用途筛选不等待作品表，见 `verify-enterprise-analytics-window.ts`。更多历史分布与真实网关待核 |
 | `GET /api/enterprise/artworks` | `src/app/api/enterprise/artworks/route.ts` | 部分：真实授权范围、回收站、跨企业和撤权、深页/素材、CSV 只读当页；隔离 HTTP 断开释放、数据快照共享报表排队；浏览器连续切换/真实网关待核 |
 | `GET /api/enterprise/content` | `src/app/api/enterprise/content/route.ts` | 待核查 |
 | `GET /api/enterprise/creations` | `src/app/api/enterprise/creations/route.ts` | 部分：企业近期固定 5 条、历史归属与统一列表；混合归档深页待核 |

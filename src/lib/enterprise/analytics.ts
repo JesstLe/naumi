@@ -47,7 +47,7 @@ const ledgerMappingCTE=(input:string)=>`WITH ledger_input AS MATERIALIZED (
 )`;
 const ledgerCTE=`${ledgerMappingCTE(`SELECT ${ledgerColumns} FROM app_ledger l
  WHERE l.email=ANY($1::text[]) AND l.created_at >= $2::timestamptz AND l.created_at < $3::timestamptz AND ($4::text='' OR l.email=$4)`)},
- ledger AS (SELECT * FROM mapped WHERE $5::text='' OR purpose=$5)`;
+ ledger AS (SELECT id,email,created_at,delta,operation_id,purpose,source,event_kind FROM mapped WHERE $5::text='' OR purpose=$5)`;
 const sums=`COALESCE(sum(-delta) FILTER(WHERE event_kind='consume'),0)::float8 AS consumed,COALESCE(sum(delta) FILTER(WHERE event_kind='refund'),0)::float8 AS refunded,
  COALESCE(sum(CASE WHEN event_kind='consume' THEN -delta WHEN event_kind='refund' THEN -delta ELSE 0 END),0)::float8 AS net,count(*)::int AS events`;
 const jobStatus=(expr:string)=>`CASE WHEN ${expr} IN('done','completed','succeeded','success') THEN 'succeeded' WHEN ${expr} IN('error','failed','cancelled','canceled') THEN 'failed' WHEN ${expr} IN('queued','running','pending','processing','reserved','prepared') THEN 'pending' ELSE 'unknown' END`;
@@ -81,25 +81,39 @@ export async function enterpriseAnalytics(actor:TeamActor,q:AnalyticsFilter,sign
  return enterpriseHeavyReportRead(actor,q.enterpriseId,async(tx,s)=>{
   const emails=scopedEmails(s,q),p=range(q,emails);
   const choices=(await tx.query(`SELECT u.email,u.name,COALESCE(m.supervisor_email,'') AS supervisor FROM app_users u LEFT JOIN app_enterprise_members m ON m.email=u.email AND m.enterprise_id=$2 WHERE u.email=ANY($1::text[]) ORDER BY u.name,u.email`,[emails,q.enterpriseId])).rows;
-  // Materialize the filtered ledger once for the six views of the current range.
   const bucket=(v:string)=>`date_trunc('${q.group}',${v} AT TIME ZONE 'Asia/Shanghai')::date`;
-  const {summary,purposes,usage,total,detailRows,trend}=(await tx.query(`${ledgerCTE},
-   summary AS (
-    SELECT ${sums},count(DISTINCT email) FILTER(WHERE event_kind='consume')::int AS "activeMembers",
+  const dateBucket=bucket('created_at');
+  // A purpose filter has no authoritative artwork attribution. In that case
+  // omit the relation from the statement altogether, including its read lock.
+  const artworkSql=q.purpose ? `SELECT NULL::text AS email,NULL::date AS date,0 AS by_date,0 AS n WHERE false`
+   : `SELECT email,${dateBucket} AS date,GROUPING(email) AS by_date,count(*)::int AS n
+        FROM app_artworks WHERE email=ANY($1::text[]) AND created_at >= $2 AND created_at < $3
+         AND deleted_at IS NULL AND ($4::text='' OR email=$4)
+        GROUP BY GROUPING SETS ((email),(${dateBucket}))`;
+  // A single raw ledger pass builds the overall/member/purpose/day rollups.
+  // GROUPING(email,purpose,date) masks: member=3, purpose=5, date=6, overall=7.
+  const {summary,purposes,usage,total,detailRows,trend,artworks}=(await tx.query(`${ledgerCTE},
+   rollups AS MATERIALIZED (
+    SELECT email,purpose,${dateBucket} AS date,GROUPING(email,purpose,${dateBucket}) AS grain,${sums},
+     count(*) FILTER(WHERE event_kind IN('consume','refund'))::int AS purpose_events,
+     count(*) FILTER(WHERE $6::text='' OR event_kind=$6)::int AS detail_total,
      COALESCE(sum(delta) FILTER(WHERE event_kind IN('grant','purchase')),0)::float8 AS issued,
      COALESCE(sum(delta) FILTER(WHERE event_kind='adjust'),0)::float8 AS adjustment,
      COALESCE(sum(-delta) FILTER(WHERE event_kind='expire'),0)::float8 AS expired,
      count(*) FILTER(WHERE event_kind IN('consume','refund') AND purpose='unknown')::int AS unclassified FROM ledger
+     GROUP BY GROUPING SETS ((),(email),(purpose),(${dateBucket}))
+   ), usage AS (SELECT email,consumed,refunded,net,events FROM rollups WHERE grain=3),
+   summary AS (
+    SELECT consumed,refunded,net,events,(SELECT count(*)::int FROM usage WHERE consumed>0) AS "activeMembers",
+     issued,adjustment,expired,unclassified FROM rollups WHERE grain=7
    ), purposes AS (
-    SELECT purpose,${sums} FROM ledger WHERE event_kind IN('consume','refund') GROUP BY purpose
-   ), usage AS (SELECT email,${sums} FROM ledger GROUP BY email),
+    SELECT purpose,consumed,refunded,net,purpose_events AS events FROM rollups WHERE grain=5 AND purpose_events>0
+   ),
    detail_rows AS (${detailSQL} LIMIT 25 OFFSET $7),
    days AS (SELECT DISTINCT ${bucket('d')} AS date FROM generate_series($2::timestamptz,$3::timestamptz-interval '1 day',interval '1 day')d),
-   spending AS (SELECT ${bucket('created_at')} AS date,${sums} FROM ledger GROUP BY 1),
-   output AS (
-    SELECT ${bucket('created_at')} AS date,count(*)::int AS artworks FROM app_artworks WHERE email=ANY($1::text[])
-     AND created_at >= $2 AND created_at < $3 AND deleted_at IS NULL AND ($4::text='' OR email=$4) AND $5::text='' GROUP BY 1
-   ), trend AS (
+   spending AS (SELECT date,consumed,refunded,net,events FROM rollups WHERE grain=6),
+   artwork_counts AS MATERIALIZED (${artworkSql}),
+   output AS (SELECT date,n AS artworks FROM artwork_counts WHERE by_date=1), trend AS (
     SELECT to_char(d.date,'YYYY-MM-DD') AS date,COALESCE(u.consumed,0)::float8 AS consumed,COALESCE(u.refunded,0)::float8 AS refunded,
      COALESCE(u.net,0)::float8 AS net,COALESCE(u.events,0)::int AS events,COALESCE(o.artworks,0)::int AS artworks
     FROM days d LEFT JOIN spending u USING(date) LEFT JOIN output o USING(date)
@@ -107,34 +121,35 @@ export async function enterpriseAnalytics(actor:TeamActor,q:AnalyticsFilter,sign
    SELECT (SELECT row_to_json(s) FROM summary s) AS summary,
     COALESCE((SELECT json_agg(p ORDER BY net DESC,purpose) FROM purposes p),'[]') AS purposes,
     COALESCE((SELECT json_agg(u) FROM usage u),'[]') AS usage,
-    (SELECT count(*)::int FROM ledger WHERE $6::text='' OR event_kind=$6) AS total,
+    (SELECT detail_total FROM rollups WHERE grain=7) AS total,
     COALESCE((SELECT json_agg(d ORDER BY "createdAt" DESC,id DESC) FROM detail_rows d),'[]') AS "detailRows",
+    COALESCE((SELECT json_agg(a) FROM (SELECT email,n FROM artwork_counts WHERE by_date=0) a),'[]') AS artworks,
     COALESCE((SELECT json_agg(t ORDER BY date) FROM trend t),'[]') AS trend`,[...p,q.kind,(q.page-1)*25])).rows[0] as {
       summary: Pick<EnterpriseAnalytics['summary'],'consumed'|'refunded'|'net'|'events'|'activeMembers'|'issued'|'adjustment'|'expired'|'unclassified'>;
       purposes: EnterpriseAnalytics['purposes']; usage: { email: string; consumed: number; refunded: number; net: number; events: number }[];
-      total: number; detailRows: LedgerEntry[]; trend: EnterpriseAnalytics['trend'];
+      total: number; detailRows: LedgerEntry[]; trend: EnterpriseAnalytics['trend']; artworks: { email: string; n: number }[];
     };
   const details=detailRows.map(row=>({...row,createdAt:new Date(row.createdAt).toISOString()}));
   const days=(Date.parse(q.to)-Date.parse(q.from))/86400000+1;
   const previous=(await tx.query(`${ledgerCTE} SELECT ${sums} FROM ledger`,[emails,shiftDate(q.from,-days)+'T00:00:00+08:00',q.from+'T00:00:00+08:00',q.email,q.purpose])).rows[0];
   const tasks=(await tx.query(`${tasksCTE} SELECT email,${taskSums} FROM tasks GROUP BY email`,p)).rows;
-  // Artworks have no immutable business-purpose association. Never guess it;
-  // in a purpose-filtered report output metrics are deliberately unavailable.
-  const artworks=q.purpose?[]:(await tx.query(`SELECT email,count(*)::int AS n FROM app_artworks WHERE email=ANY($1::text[]) AND created_at >= $2 AND created_at < $3 AND deleted_at IS NULL AND ($4::text='' OR email=$4) GROUP BY email`,p.slice(0,4))).rows;
   const wallets=(await tx.query(`SELECT u.email,u.name,COALESCE(r.name,CASE WHEN m.email IS NULL THEN '企业老板' ELSE '员工' END) AS role,COALESCE(m.employment,'owner') AS employment,COALESCE(m.supervisor_email,'') AS supervisor,
     u.banned,u.account_expires_at AS "expiresAt",u.credits_used::float8 AS reserved,GREATEST(0,COALESCE(b.principal,0)-u.credits_used)::float8 AS available,COALESCE(b.expiring,0)::float8 AS expiring
     FROM app_users u LEFT JOIN app_enterprise_members m ON m.email=u.email AND m.enterprise_id=$2 LEFT JOIN app_enterprise_roles r ON r.enterprise_id=m.enterprise_id AND r.id=m.role_id
     LEFT JOIN LATERAL(SELECT sum(remaining) AS principal,sum(remaining) FILTER(WHERE expires_at <= now()+interval '30 days') AS expiring FROM app_credit_batches WHERE email=u.email AND remaining>0 AND expires_at>now())b ON true
     WHERE u.email=ANY($1::text[]) AND ($3::text='' OR u.email=$3) ORDER BY u.name,u.email`,[emails,q.enterpriseId,q.email])).rows;
-  const members=wallets.map(w=>({...w,...(usage.find(u=>u.email===w.email)||{consumed:0,refunded:0,net:0,events:0}),...(tasks.find(t=>t.email===w.email)||{tasks:0,succeeded:0,failed:0,pending:0,unknown:0}),artworks:artworks.find(a=>a.email===w.email)?.n||0})).sort((a,b)=>b.net-a.net||a.email.localeCompare(b.email));
+  const usageByEmail=new Map(usage.map(row=>[row.email,row])), tasksByEmail=new Map(tasks.map(row=>[row.email,row]));
+  const artworksByEmail=new Map(artworks.map(row=>[row.email,row.n]));
+  const members=wallets.map(w=>({...w,...(usageByEmail.get(w.email)||{consumed:0,refunded:0,net:0,events:0}),...(tasksByEmail.get(w.email)||{tasks:0,succeeded:0,failed:0,pending:0,unknown:0}),artworks:artworksByEmail.get(w.email)||0})).sort((a,b)=>b.net-a.net||a.email.localeCompare(b.email));
   const risk=(code:string,rows:typeof wallets,amount=0)=>({code,count:rows.length,amount,members:rows.map(w=>({email:w.email,name:w.name}))});
   const riskRows=(await tx.query(`SELECT DISTINCT o.email FROM app_billing_operations o WHERE o.email=ANY($1::text[]) AND ($2::text='' OR o.email=$2) AND o.feature NOT LIKE 'credits.%' AND (o.state IN('manual','hold') OR o.state IN('prepared','reserved') AND o.created_at < now()-interval '24 hours') ${excludeImportedHistory('app_billing_operations','o')}`,[emails,q.email])).rows;
+  const riskEmails=new Set(riskRows.map(row=>row.email));
   const sumsMember=(key:string)=>members.reduce((n,m)=>n+Number(m[key as keyof typeof m]||0),0);
   const completed=sumsMember('succeeded')+sumsMember('failed');
   return {filter:q,timezone:'Asia/Shanghai',generatedAt:new Date().toISOString(),choices,summary:{...summary,scopeMembers:wallets.length,artworks:sumsMember('artworks'),tasks:sumsMember('tasks'),succeeded:sumsMember('succeeded'),failed:sumsMember('failed'),pending:sumsMember('pending'),unknown:sumsMember('unknown'),successRate:completed?sumsMember('succeeded')/completed*100:null,creditsPerArtwork:!q.purpose&&sumsMember('artworks')?summary.net/sumsMember('artworks'):null,previousNet:previous.net,changePercent:previous.net>0?(summary.net-previous.net)/previous.net*100:null,available:sumsMember('available'),reserved:sumsMember('reserved'),expiring:sumsMember('expiring')},trend,purposes,members,details:{rows:details,total,page:q.page,size:25},risks:[
     risk('low-balance',wallets.filter(w=>w.available<100)),risk('expiring-credits',wallets.filter(w=>w.expiring>0),sumsMember('expiring')),
     risk('intern-expiry',wallets.filter(w=>w.employment==='intern'&&w.expiresAt&&Date.parse(w.expiresAt)<=Date.now()+7*86400000)),risk('disabled',wallets.filter(w=>w.banned)),
-    risk('settlement-review',wallets.filter(w=>riskRows.some(r=>r.email===w.email)))
+    risk('settlement-review',wallets.filter(w=>riskEmails.has(w.email)))
   ]};
  },signal);
 }
