@@ -29,10 +29,19 @@ export async function enterpriseManaged(email: string) {
   return !!(await getPool().query(`SELECT 1 FROM app_enterprise_settings s JOIN app_account_teams t ON t.id=s.team_id
     WHERE t.owner_email=$1 OR EXISTS(SELECT 1 FROM app_enterprise_members m WHERE m.enterprise_id=s.team_id AND m.email=$1)`,[email])).rowCount;
 }
-async function transaction<T>(run: (tx: PoolClient)=>Promise<T>,readOnly=false) {
+async function transaction<T>(run: (tx: PoolClient)=>Promise<T>) {
   await ensureEnterpriseSchema();const tx=await getPool().connect();
-  try {await tx.query(readOnly?'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY':'BEGIN');if(readOnly)await tx.query("SET LOCAL statement_timeout='5s'; SET LOCAL lock_timeout='1s'");const result=await run(tx);await tx.query('COMMIT');return result}
+  try {await tx.query('BEGIN');const result=await run(tx);await tx.query('COMMIT');return result}
   catch(e){await tx.query('ROLLBACK');throw e}finally{tx.release()}
+}
+async function enterprisePickerRead<T>(run:(tx:PoolClient)=>Promise<T>,signal?:AbortSignal) {
+  signal?.throwIfAborted();
+  await ensureEnterpriseSchema();
+  return withOwnedReportClient(getPool(),async tx=>{
+    await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+    await tx.query("SET LOCAL statement_timeout='5s'; SET LOCAL lock_timeout='1s'"+(signal?checkReadClientSocket:''));
+    const result=await run(tx);await tx.query('COMMIT');return result;
+  },signal);
 }
 type Node = { email: string; supervisor_email: string; role_id: string|null; employment: 'permanent'|'intern'; version:number; membership_status?:'active'|'suspended';membership_expires_at?:string|null; global_active?:boolean };
 type Scope = { team: EnterpriseIdentity; teamVersion:number; owner:boolean; level:number; manageMembers:boolean; viewRecords:boolean; roles:EnterpriseRole[]; nodes:Node[]; visible:Set<string>; manageable:Set<string>; entitlement:{name:string|null;seatLimit:number|null;featurePolicy:Record<string,boolean>} };
@@ -183,8 +192,8 @@ type PickerRow=Omit<EnterpriseIdentity,'owner'>&{
   revoked_at:string|null;sponsor_banned:boolean|null;sponsor_account_expires_at:string|null;
   member_email:string|null;membership_status:Node['membership_status']|null;membership_expires_at:string|null;role_id:string|null;
 };
-export async function enterpriseList(actor:TeamActor,allowSelf=false,allowedIds?:readonly string[]):Promise<EnterpriseIdentity[]> {
-  return transaction(async tx=>{
+export async function enterpriseList(actor:TeamActor,allowSelf=false,allowedIds?:readonly string[],signal?:AbortSignal):Promise<EnterpriseIdentity[]> {
+  return enterprisePickerRead(async tx=>{
     let pinned:string[];try{pinned=pinnedEnterpriseIds()}catch{throw new TeamError('企业部署范围尚未配置',503)}
     const requested=allowedIds?.length?allowedIds:null;
     const tenantIds=pinned.length?pinned.filter(id=>!requested||requested.includes(id)):requested;
@@ -237,7 +246,7 @@ export async function enterpriseList(actor:TeamActor,allowSelf=false,allowedIds?
       result.push({id:t.id,name:t.name,owner_email:t.owner_email,authorized_until:t.sponsor_email?t.expires_at:t.authorized_until,owner});
     }
     return result;
-  },true).catch(error=>{
+  },signal).catch(error=>{
     if(['57014','55P03'].includes((error as {code?:string})?.code??''))throw new TeamError('企业列表暂不可读取，请稍后重试',503);
     throw error;
   });
@@ -248,17 +257,27 @@ async function memberRows(tx:PoolClient,s:Scope):Promise<EnterpriseMember[]> {
   const site=enterpriseSiteIdentity()?.enterpriseId===s.team.id;
   // Users allowed to manage the directory may still have no records access.
   // Their member query must not open billing or media relations at all.
+  // Compiling the grouped projections costs more than executing them for
+  // interactive directories. This setting is limited to this read snapshot.
+  if(metrics.length)await tx.query('SET LOCAL jit=off');
+  const metricCtes=metrics.length?`WITH metric_members AS MATERIALIZED (SELECT unnest($5::text[]) AS email),
+    principal AS (SELECT b.email,sum(b.remaining) AS total FROM app_credit_batches b JOIN metric_members m USING (email)
+      WHERE b.expires_at>now() AND b.remaining>0 GROUP BY b.email),
+    consumed AS (SELECT l.email,-sum(l.delta) AS total FROM app_ledger l JOIN metric_members m USING (email)
+      WHERE l.kind='consume' AND l.delta<0 GROUP BY l.email),
+    artwork AS (SELECT a.email,count(*) AS total FROM app_artworks a JOIN metric_members m USING (email)
+      WHERE a.deleted_at IS NULL GROUP BY a.email)`:'';
   const metricFields=metrics.length?`
-    CASE WHEN m.email=ANY($5::text[]) THEN GREATEST(0,COALESCE(b.principal,0)-u.credits_used)::int ELSE NULL END AS available,
-    CASE WHEN m.email=ANY($5::text[]) THEN COALESCE(l.consumed,0)::int ELSE NULL END AS consumed,
-    CASE WHEN m.email=ANY($5::text[]) THEN COALESCE(a.n,0)::int ELSE NULL END AS artworks,
-    CASE WHEN m.email=ANY($5::text[]) THEN 'recorded' ELSE 'restricted' END AS legacy_metrics_state`:
+    CASE WHEN metric.email IS NOT NULL THEN GREATEST(0,COALESCE(b.total,0)-u.credits_used)::int ELSE NULL END AS available,
+    CASE WHEN metric.email IS NOT NULL THEN COALESCE(l.total,0)::int ELSE NULL END AS consumed,
+    CASE WHEN metric.email IS NOT NULL THEN COALESCE(a.total,0)::int ELSE NULL END AS artworks,
+    CASE WHEN metric.email IS NOT NULL THEN 'recorded' ELSE 'restricted' END AS legacy_metrics_state`:
     "NULL::int AS available,NULL::int AS consumed,NULL::int AS artworks,'restricted' AS legacy_metrics_state";
   const metricJoins=metrics.length?`
-    LEFT JOIN LATERAL(SELECT sum(remaining) AS principal FROM app_credit_batches WHERE email=u.email AND u.email=ANY($5::text[]) AND expires_at>now() AND remaining>0)b ON true
-    LEFT JOIN LATERAL(SELECT -sum(delta) AS consumed FROM app_ledger WHERE email=u.email AND u.email=ANY($5::text[]) AND kind='consume' AND delta<0)l ON true
-    LEFT JOIN LATERAL(SELECT count(*) AS n FROM app_artworks WHERE email=u.email AND u.email=ANY($5::text[]) AND deleted_at IS NULL)a ON true`:'';
-  const rows=(await tx.query(`SELECT m.email,u.name,u.role AS account_role,CASE WHEN $4::boolean THEN u.position ELSE NULL END AS position,CASE WHEN $3::boolean THEN u.phone ELSE NULL END AS phone,CASE WHEN $3::boolean THEN u.note ELSE NULL END AS note,m.supervisor_email,m.role_id,m.employment,m.version,m.membership_status,m.membership_expires_at,m.joined_at,m.left_at,u.management_version,u.banned,u.account_expires_at,
+    LEFT JOIN metric_members metric ON metric.email=m.email
+    LEFT JOIN principal b ON b.email=metric.email LEFT JOIN consumed l ON l.email=metric.email
+    LEFT JOIN artwork a ON a.email=metric.email`:'';
+  const rows=(await tx.query(`${metricCtes} SELECT m.email,u.name,u.role AS account_role,CASE WHEN $4::boolean THEN u.position ELSE NULL END AS position,CASE WHEN $3::boolean THEN u.phone ELSE NULL END AS phone,CASE WHEN $3::boolean THEN u.note ELSE NULL END AS note,m.supervisor_email,m.role_id,m.employment,m.version,m.membership_status,m.membership_expires_at,m.joined_at,m.left_at,u.management_version,u.banned,u.account_expires_at,
     COALESCE(r.name,'员工') AS role_name,COALESCE(r.level,999)::int AS level,
     ${metricFields}
     FROM app_enterprise_members m JOIN app_users u ON u.email=m.email LEFT JOIN app_enterprise_roles r ON r.enterprise_id=m.enterprise_id AND r.id=m.role_id
@@ -267,11 +286,11 @@ async function memberRows(tx:PoolClient,s:Scope):Promise<EnterpriseMember[]> {
     [s.team.id,selected,s.owner&&site,site,...(metrics.length?[metrics]:[])])).rows;
   return rows.map(m=>({...m,canManage:m.account_role==='user'&&s.manageMembers&&m.email!==s.team.owner_email&&m.email!==undefined&&m.level>s.level}));
 }
-export async function enterpriseSnapshot(actor:TeamActor,id:string):Promise<EnterpriseSnapshot> {
+export async function enterpriseSnapshot(actor:TeamActor,id:string,signal?:AbortSignal):Promise<EnterpriseSnapshot> {
   return enterpriseProjectionRead(actor,id,async(tx,s)=>{const members=await memberRows(tx,s);
     const ownerAvailable=s.owner?Number((await tx.query(`SELECT GREATEST(0,COALESCE((SELECT sum(remaining) FROM app_credit_batches WHERE email=u.email AND expires_at>now() AND remaining>0),0)-u.credits_used)::int AS n FROM app_users u WHERE email=$1`,[s.team.owner_email])).rows[0]?.n||0):null;
     return {enterprise:s.team,members,roles:s.owner?s.roles:[],actor:{owner:s.owner,manageMembers:s.manageMembers,viewRecords:s.viewRecords,level:s.level,scopeLabel:s.owner?'本企业':'当前下级'},ownerAvailable,entitlement:s.entitlement};
-  },false);
+  },false,false,signal,withOwnedReportClient);
 }
 const common={id:z.string().uuid(),enterpriseId:z.string().uuid()};
 const target={...common,email:z.string().trim().min(1).max(254).transform(s=>s.toLowerCase()),expectedVersion:z.number().int().nonnegative(),expectedUserVersion:z.number().int().nonnegative()};

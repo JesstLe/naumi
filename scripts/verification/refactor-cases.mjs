@@ -55,6 +55,7 @@ export const refactorCases=[
  ts('tenant-usage-range','pricing','scripts/verify-tenant-usage-range.ts','TENANT_USAGE_RANGE=PASS'),
  ts('creation-asset-auth-pressure','foundation','scripts/verify-creation-asset-auth-pressure.ts','CREATION_ASSET_AUTH=PASS'),
  ts('enterprise-scope-scale','foundation','scripts/verify-enterprise-scope-scale.ts','ENTERPRISE_SCOPE_SCALE=PASS'),
+ ts('enterprise-directory-pressure','foundation','scripts/verify-enterprise-directory-pressure.ts','ENTERPRISE_DIRECTORY=PASS'),
  node('native-fixture-lifecycle','runtime','scripts/verify-native-fixture-lifecycle.cjs','NATIVE_FIXTURE_LIFECYCLE=PASS'),
  node('native-fixture-memory','runtime','scripts/verify-native-fixture-memory.cjs','NATIVE_FIXTURE_MEMORY=PASS'),
  node('native-parent-database','runtime','scripts/verify-native-parent-database.cjs','NATIVE_PARENT_DATABASE=PASS'),
