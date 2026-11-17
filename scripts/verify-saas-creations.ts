@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {randomUUID} from 'node:crypto';
+import {createHash,randomUUID} from 'node:crypto';
 import {Pool} from 'pg';
 
 async function main(){
@@ -189,7 +189,7 @@ async function main(){
  await pool.query("INSERT INTO app_image_jobs(id,email,kind,snapshot,payload,metered) VALUES($1,$2,'generate',$3::jsonb,'{}',false)",[pendingJob,departed,JSON.stringify({status:'done',creationEvidencePending:true,images:[{id:pendingWork}]})]);
  await pool.query("INSERT INTO app_creation_links(creation_id,target_type,target_id,actor_email) VALUES($1,'image:generate',$2,$3)",[pendingId,pendingJob,departed]);
  const beforeCounts=(await pool.query("SELECT (SELECT count(*) FROM app_billing_operations)::int AS billing,(SELECT count(*) FROM app_creation_assets)::int AS assets,(SELECT count(*) FROM app_ledger)::int AS ledger")).rows[0];
- const recovered=await(await enterpriseDetail.GET(request(`/api/enterprise/creations/${pendingId}?tenantId=${a.tenantId}`,ownerA),detailCtx(pendingId))).json();assert.equal(recovered.evidencePending,true);assert.equal(recovered.status,'succeeded');assert.equal(recovered.assets.length,1);assert.match(recovered.assets[0].id,/^recovered-/);
+ const recovered=await(await enterpriseDetail.GET(request(`/api/enterprise/creations/${pendingId}?tenantId=${a.tenantId}`,ownerA),detailCtx(pendingId))).json();assert.equal(recovered.evidencePending,true);assert.equal(recovered.status,'succeeded');assert.equal(recovered.assets.length,1);assert.match(recovered.assets[0].id,/^recovered-/);assert.equal(recovered.assets[0].evidenceRecordId,pendingId);
  const linkedHistory=legacyReader.legacyCreationId({table:'app_image_jobs',id:pendingJob,email:departed});
  const linkedEvent=`ev-${randomUUID()}`;await pool.query("INSERT INTO app_creation_events(id,creation_id,event_key,type,status,summary) VALUES($1,$2,'linked-event','execution','succeeded','INTERNAL_PROVIDER historical')",[linkedEvent,pendingId]);
  const linkedItems=(await (await adminEvents.GET(request(`/api/admin/creations/${linkedHistory}/events`,admin),detailCtx(linkedHistory))).json()).items;
@@ -226,6 +226,52 @@ async function main(){
  const batchOwnerResponse=await enterpriseDetail.GET(request(`/api/enterprise/creations/${batchRecord}?tenantId=${a.tenantId}`,ownerA),detailCtx(batchRecord));assert.equal(batchOwnerResponse.status,200);
  const batchEvidence=await batchOwnerResponse.json();assert.equal(batchEvidence.evidencePending,true);assert.equal(batchEvidence.assets.length,1);
  const batchAdminResponse=await adminDetail.GET(request(`/api/admin/creations/${batchRecord}`,admin),detailCtx(batchRecord));assert.equal(batchAdminResponse.status,200);assert.equal((await batchAdminResponse.json()).assets.length,1);
+ await pool.query("UPDATE app_artworks SET video_url=image_url WHERE id=$1",[pendingWork]);
+ const recoveryRepository=await import('../src/lib/saas/creations');
+ for(const [parent,source] of [[batchRecord,batchEvidence.assets[0]],[workflowRecord,partialWorkflow.assets[0]]]){
+  assert.equal(source.evidenceRecordId,parent);
+  assert.deepEqual(await recoveryRepository.creationAsset({platform:true},parent,source.id,parent),await recoveryRepository.creationAsset({platform:true},parent,source.id));
+ }
+ const locatorRoot=`cr-${randomUUID()}`,locatorChild=`cr-${randomUUID()}`,locatorWork=`work-${randomUUID()}`,locatorJob=`job-${randomUUID()}`;
+ const unauthorizedBranch=`cr-${randomUUID()}`,unauthorizedDescendant=`cr-${randomUUID()}`;
+ await record(locatorRoot,departed,a.tenantId);await record(locatorChild,departed,a.tenantId,locatorRoot);
+ await record(unauthorizedBranch,ownerB,b.tenantId,locatorRoot);await record(unauthorizedDescendant,departed,a.tenantId,unauthorizedBranch);
+ await pool.query("INSERT INTO app_artworks(id,email,title,category,prompt,image_url,gradient) VALUES($1,$2,'fixture','fixture','',$3,'')",[locatorWork,departed,historicInput]);
+ await pool.query("INSERT INTO app_image_jobs(id,email,kind,snapshot,payload,metered) VALUES($1,$2,'generate',$3,'{}',false)",[locatorJob,departed,{status:'done',creationEvidencePending:true,images:[{id:locatorWork}]}]);
+ await pool.query("INSERT INTO app_creation_links(creation_id,target_type,target_id,actor_email) VALUES($1,'image:generate',$3,$4),($2,'image:generate',$3,$4)",[locatorChild,unauthorizedDescendant,locatorJob,departed]);
+ const proofDetail=await (await enterpriseDetail.GET(request(`/api/enterprise/creations/${locatorRoot}?tenantId=${a.tenantId}`,ownerA),detailCtx(locatorRoot))).json();
+ assert.equal(proofDetail.assets.length,1);const proof=proofDetail.assets[0];assert.equal(proof.evidenceRecordId,locatorChild);
+ const recoveredRoute=(id:string,assetId:string,locator?:string,email=ownerA,extra='')=>mediaRoute.GET(request(`/api/enterprise/creations/${id}/assets/${assetId}?tenantId=${a.tenantId}${locator?`&evidenceRecord=${locator}`:''}${extra}`,email),{params:Promise.resolve({id,assetId})});
+ const oldUrl=await recoveredRoute(locatorRoot,proof.id),shortUrl=await recoveredRoute(locatorRoot,proof.id,locatorChild);
+ assert.equal(oldUrl.status,200);assert.equal(shortUrl.status,200);assert.deepEqual(await oldUrl.arrayBuffer(),await shortUrl.arrayBuffer());
+ const deniedAsset=`recovered-${createHash('sha256').update(`${unauthorizedDescendant}:${locatorWork}`).digest('hex').slice(0,32)}`;
+ assert.equal((await recoveredRoute(locatorRoot,deniedAsset,unauthorizedDescendant)).status,404);
+ assert.equal((await recoveredRoute(locatorRoot,deniedAsset)).status,404);
+ assert.equal((await recoveredRoute(locatorRoot,proof.id,locatorRoot)).status,404);
+ assert.equal((await recoveredRoute(locatorRoot,proof.id,locatorChild,manager)).status,404);
+ const videoProof=partialWorkflow.assets[0];const signed=await recoveredRoute(workflowRecord,videoProof.id,workflowRecord,ownerA,'&playback=1');
+ assert.equal(signed.status,200);const playbackWithLocator=(await signed.json()).url;assert.equal(new URL(playbackWithLocator,'https://fixture.test').searchParams.get('evidenceRecord'),workflowRecord);
+ const signedBytes=await mediaRoute.GET(request(playbackWithLocator,undefined,{range:'bytes=0-6'}),{params:Promise.resolve({id:workflowRecord,assetId:videoProof.id})});
+ assert.equal(signedBytes.status,206);assert.equal(await signedBytes.text(),'fixture');
+ if(process.env.NAUMI_VERIFY_CREATION_QUERY_STATS==='1'){
+  const sharing=1600;
+  await pool.query(`INSERT INTO app_creation_records(id,actor_email,scope_kind,tenant_id,source_kind,source_id,parent_id,status)
+   SELECT 'cr-'||gen_random_uuid(),$1,'tenant',$2,'fixture','locator-bulk-'||n,$3,'succeeded' FROM generate_series(1,$4) n`,[departed,a.tenantId,locatorRoot,sharing]);
+  await pool.query(`INSERT INTO app_image_jobs(id,email,kind,snapshot,payload,metered)
+   SELECT source_id,actor_email,'generate',jsonb_build_object('creationEvidencePending',true,'images',jsonb_build_array(jsonb_build_object('id',source_id))),'{}',false
+   FROM app_creation_records WHERE source_id LIKE 'locator-bulk-%';
+   INSERT INTO app_creation_links(creation_id,target_type,target_id,actor_email)
+   SELECT id,'image:generate',source_id,actor_email FROM app_creation_records WHERE source_id LIKE 'locator-bulk-%';
+   ANALYZE app_creation_records; ANALYZE app_image_jobs; ANALYZE app_creation_links`);
+  const measure=async(locator?:string)=>{
+   await pool.query('SELECT pg_stat_statements_reset()');
+   for(let i=0;i<8;i++){const read=await recoveryRepository.creationAsset({platform:true},locatorRoot,proof.id,locator);assert.equal(read.url,historicInput);}
+   const {rows:[stats]}=await pool.query("SELECT COALESCE(sum(shared_blks_hit+shared_blks_read),0)::int AS blocks,COALESCE(sum(calls),0)::int AS queries FROM pg_stat_statements WHERE dbid=(SELECT oid FROM pg_database WHERE datname=current_database()) AND query ~* '^(select|with)\\s' AND query NOT LIKE '%pg_stat_statements%'");
+   return stats;
+  };
+  const full=await measure(),single=await measure(locatorChild);assert.ok(single.blocks<full.blocks/5,JSON.stringify({full,single}));
+  console.log('CREATION_RECOVERED_PREVIEW_STATS',JSON.stringify({familyRecords:sharing+2,reads:8,full,single}));
+ }
  // Bounded overview preview must look beyond the first unfiltered page and
  // retain live source state, scope, ordering and recorded billing.
  await pool.query("UPDATE app_enterprise_members SET membership_status='active' WHERE email=$1",[member]);

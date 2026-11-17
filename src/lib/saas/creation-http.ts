@@ -61,7 +61,8 @@ export async function creationAssetRoute(request:Request,id:string,assetId:strin
  if(grant?.mode==='tenant'&&!allows(await userFeaturePolicy(grant.email),'team'))return teamJson({error:'企业管理功能尚未授权'},403);
  if(grant?.mode==='platform'&&!await platformPlaybackAllowed(grant))return teamJson({error:'平台播放授权已失效'},403);
  const reader:CreationReader|NextResponse=grant?grant.mode==='platform'?{platform:true}:{platform:false,actor:{email:grant.email,admin:false,consoleAdmin:false},tenantId:grant.tenantId}:await creationReader(request,enterprise);if(reader instanceof NextResponse)return reader;
- const media=id.startsWith('legacy-')?(reader.platform?await legacyCreationAsset(id,assetId):await enterpriseHistoryAsset(reader.actor,reader.tenantId,id,assetId)):await creationAsset(reader,id,assetId);
+ const locator=query.get('evidenceRecord');
+ const media=id.startsWith('legacy-')?(reader.platform?await legacyCreationAsset(id,assetId):await enterpriseHistoryAsset(reader.actor,reader.tenantId,id,assetId)):await creationAsset(reader,id,assetId,locator&&isCreationId(locator)?locator:undefined);
  if(media.mediaType==='image')return enterpriseMediaResponse(request,media.url);
  if(!['video','audio'].includes(media.mediaType))return teamJson({error:'仅支持查看受控媒体'},422);
  if(query.get('playback')==='1'&&!grant){const url=new URL(request.url);url.searchParams.delete('playback');url.searchParams.set('mediaToken',reader.platform?await platformPlaybackToken(request,id,assetId):creationPlaybackToken(reader.actor.email,reader.tenantId,id,assetId));return teamJson({url:url.pathname+url.search});}

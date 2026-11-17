@@ -5,7 +5,7 @@ import {enterpriseRead,enterpriseReportRead} from '@/lib/enterprise/server';
 import { TeamError } from "@/lib/teams/errors";
 import type {TeamActor} from '@/lib/teams/grants';
 import {ensureCreationSchema} from './creation-schema';
-import {creationSourceEvidence,videoWorkflowEvidenceAvailable} from './creation-source-evidence';
+import {creationRecoveredAsset,creationSourceEvidence,videoWorkflowEvidenceAvailable} from './creation-source-evidence';
 import {publicCreationParameters} from './creation-parameters';
 import {creationRequestEvidence} from './creation-request-evidence';
 import {creationStatus,type CreationFilters,type CreationPage,type CreationListPage,type CreationSummary,type CreationDetail,type CreationAsset,type CreationEvent} from './creation-contracts';
@@ -188,7 +188,7 @@ async function authorizedRecord(tx:PoolClient,reader:CreationDetailReader,id:str
  const row=(await tx.query(`${select} ${sql}`,values)).rows[0];
  if(!row||!reader.platform&&visible&&!visible.includes(row.actor_email))throw new TeamError('记录不存在或无权访问',404);return row;
 }
-const asset=(a:Record<string,any>):CreationAsset=>({id:a.id,direction:a.direction,role:a.role,...(Array.isArray(a.roles)?{roles:a.roles.filter((v:unknown)=>typeof v==='string')}:{}),position:a.position,...(Number.isInteger(a.input_position)?{inputPosition:a.input_position}:{}),...(a.execution_ref?{executionRef:a.execution_ref}:{}),variant:a.variant,mime:a.mime,bytes:a.byte_size===null?null:Number(a.byte_size),hash:a.hash,availability:a.availability,mediaType:a.media_type,...(a.text_content?{text:a.text_content}:{})});
+const asset=(a:Record<string,any>):CreationAsset=>({id:a.id,direction:a.direction,role:a.role,...(Array.isArray(a.roles)?{roles:a.roles.filter((v:unknown)=>typeof v==='string')}:{}),position:a.position,...(Number.isInteger(a.input_position)?{inputPosition:a.input_position}:{}),...(a.execution_ref?{executionRef:a.execution_ref}:{}),...(a.id.startsWith('recovered-')?{evidenceRecordId:a.creation_id}:{}),variant:a.variant,mime:a.mime,bytes:a.byte_size===null?null:Number(a.byte_size),hash:a.hash,availability:a.availability,mediaType:a.media_type,...(a.text_content?{text:a.text_content}:{})});
 export type DetailPages={assetPage?:number;eventPage?:number;childPage?:number};
 const publicEventSummary:Record<string,string>={accepted:'已接受创作请求',execution:'执行状态更新',settlement:'账务状态更新',delivered:'已交付结果','input-prepared':'模型输入已就绪','agent-tool':'工具执行',evidence:'资料核查'};
 function projectEvents(rows:Record<string,any>[],reader:CreationDetailReader):CreationEvent[]{
@@ -236,17 +236,24 @@ export async function creationDetailInTransaction(tx:PoolClient,reader:CreationD
  state:ops.length?settled?'settled':'pending':noCharge?'not_applicable':'not_recorded',operations:ops.map(o=>({id:o.id,state:o.state,charged:['settled','released'].includes(o.state)?Number(o.charged_credits):null}))},
  ...(reader.platform?{technical:{sourceKind:row.source_kind,sourceId:row.source_id,parentId:row.parent_id,schemaVersion:row.schema_version,links:links.rows}}:{})};
 }
-export async function creationAsset(reader:CreationReader,id:string,assetId:string){
+export async function creationAsset(reader:CreationReader,id:string,assetId:string,evidenceRecord?:string){
  await ensureMediaSchema();
- return scoped(reader,(tx,visible,historyEmails)=>creationAssetInTransaction(tx,reader.platform?reader:{...reader,historyEmails:historyEmails||[]},id,assetId,visible),'asset');
+ return scoped(reader,(tx,visible,historyEmails)=>creationAssetInTransaction(tx,reader.platform?reader:{...reader,historyEmails:historyEmails||[]},id,assetId,visible,evidenceRecord),'asset');
 }
-export async function creationAssetInTransaction(tx:PoolClient,reader:CreationDetailReader,id:string,assetId:string,visible:readonly string[]|null){
- await authorizedRecord(tx,reader,id,visible,true);let a=(await tx.query(`WITH RECURSIVE ancestors AS(
-  SELECT c.id,c.parent_id,c.actor_email,c.tenant_id FROM app_creation_assets a JOIN app_creation_records c ON c.id=a.creation_id WHERE a.id=$2
+const creationAncestors=(anchor:string)=>`WITH RECURSIVE ancestors AS(
+  SELECT c.id,c.parent_id,c.actor_email,c.tenant_id FROM ${anchor}
   UNION SELECT p.id,p.parent_id,p.actor_email,p.tenant_id FROM ancestors c JOIN app_creation_records p ON p.id=c.parent_id
-   AND p.actor_email=c.actor_email AND p.tenant_id IS NOT DISTINCT FROM c.tenant_id WHERE c.id<>$1)
+   AND p.actor_email=c.actor_email AND p.tenant_id IS NOT DISTINCT FROM c.tenant_id WHERE c.id<>$1)`;
+export async function creationAssetInTransaction(tx:PoolClient,reader:CreationDetailReader,id:string,assetId:string,visible:readonly string[]|null,evidenceRecord?:string){
+ await authorizedRecord(tx,reader,id,visible,true);let a=(await tx.query(`${creationAncestors('app_creation_assets a JOIN app_creation_records c ON c.id=a.creation_id WHERE a.id=$2')}
   SELECT a.* FROM app_creation_assets a WHERE a.id=$2 AND EXISTS(SELECT 1 FROM ancestors WHERE id=$1)`,[id,assetId])).rows[0];
- if(!a&&assetId.startsWith('recovered-'))a=(await creationSourceEvidence(tx,id)).assets.find(asset=>asset.id===assetId);
+ if(!a&&assetId.startsWith('recovered-')){
+  // The optional locator only shortens the read. The root and every parent
+  // edge are still checked live, and the exact asset ID must be recovered.
+  if(evidenceRecord&&evidenceRecord!==id&&!(await tx.query(`${creationAncestors('app_creation_records c WHERE c.id=$2')}
+   SELECT 1 FROM ancestors WHERE id=$1`,[id,evidenceRecord])).rowCount)throw new TeamError('素材不存在或无权访问',404);
+  a=await creationRecoveredAsset(tx,evidenceRecord||id,assetId,!!evidenceRecord);
+ }
  if(!a)throw new TeamError('素材不存在或无权访问',404);
  let url=(a.storage_snapshot||a.storage_ref) as string;
  if(url.startsWith('artwork:')){const artworkId=url.slice(8);if(artworkId.startsWith('asset-')){url=(await readImagegenInputAssetReference(artworkId,a.actor_email,tx)).url;}
