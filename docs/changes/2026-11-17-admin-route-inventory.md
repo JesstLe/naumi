@@ -85,10 +85,10 @@
 | `GET /api/enterprise/workflow/imports` | `src/app/api/enterprise/workflow/imports/route.ts` | 部分：代码确认 source/worksheet 流式代理及客户端断开传递；工作流直连两份 64 MiB 已核查，代理实流复查保留 |
 | `GET /api/enterprise/workflow/notifications` | `src/app/api/enterprise/workflow/notifications/route.ts` | 部分：JSON 上限、取消和浏览器角标，`verify-workflow-read-safety.ts`、`verify-workflow-polling.mjs` |
 | `GET /api/enterprise/workflow/performance` | `src/app/api/enterprise/workflow/performance/route.ts` | 待核查 |
-| `GET /api/enterprise/workflow/projects` | `src/app/api/enterprise/workflow/projects/route.ts` | 待核查 |
+| `GET /api/enterprise/workflow/projects` | `src/app/api/enterprise/workflow/projects/route.ts` | 部分：隔离代理读契约、服务详情断开释放连接；其他动态组合待核 |
 | `GET /api/enterprise/workflow/publication-files` | `src/app/api/enterprise/workflow/publication-files/route.ts` | 待核查 |
-| `GET /api/enterprise/workflow/publication-preflight` | `src/app/api/enterprise/workflow/publication-preflight/route.ts` | 部分：核对代理的身份、读取取消及有界响应；直连列表、详情、释放连接及撤权回归，真实网关待核 |
-| `GET /api/enterprise/workflow/publications` | `src/app/api/enterprise/workflow/publications/route.ts` | 待核查 |
+| `GET /api/enterprise/workflow/publication-preflight` | `src/app/api/enterprise/workflow/publication-preflight/route.ts` | 部分：隔离代理身份、取消和有界响应；直连列表、详情、释放连接、文件取消和撤权回归，真实网关待核 |
+| `GET /api/enterprise/workflow/publications` | `src/app/api/enterprise/workflow/publications/route.ts` | 部分：隔离代理读契约、直连详情无目录锁并在连接外校验；列表/历史/来源读链路待核 |
 | `GET /api/enterprise/workflow/references` | `src/app/api/enterprise/workflow/references/route.ts` | 待核查 |
 | `GET /api/enterprise/workflow/reviews` | `src/app/api/enterprise/workflow/reviews/route.ts` | 待核查 |
 | `GET /api/enterprise/workflow/routing` | `src/app/api/enterprise/workflow/routing/route.ts` | 待核查 |
@@ -161,10 +161,10 @@
 | `POST /api/enterprise/workflow/guidelines` | `src/app/api/enterprise/workflow/guidelines/route.ts` | 待核查 |
 | `POST /api/enterprise/workflow/notifications` | `src/app/api/enterprise/workflow/notifications/route.ts` | 待核查 |
 | `POST /api/enterprise/workflow/performance` | `src/app/api/enterprise/workflow/performance/route.ts` | 待核查 |
-| `POST /api/enterprise/workflow/projects` | `src/app/api/enterprise/workflow/projects/route.ts` | 部分：直连预览无写锁、实际确认锁定并重算；代理仍以写入语义处理预览取消和超时 |
+| `POST /api/enterprise/workflow/projects` | `src/app/api/enterprise/workflow/projects/route.ts` | 部分：实际代理预览断开、确认命令继续；直连并发、权限及回执通过，真实网关待核 |
 | `POST /api/enterprise/workflow/publication-files` | `src/app/api/enterprise/workflow/publication-files/route.ts` | 待核查 |
 | `POST /api/enterprise/workflow/publication-preflight` | `src/app/api/enterprise/workflow/publication-preflight/route.ts` | 部分：直连检查文件、撤权、哈希、原子审计和幂等；代理有界请求与已受理语义静态核对 |
-| `POST /api/enterprise/workflow/publications` | `src/app/api/enterprise/workflow/publications/route.ts` | 待核查 |
+| `POST /api/enterprise/workflow/publications` | `src/app/api/enterprise/workflow/publications/route.ts` | 部分：实际代理预览断开、发布命令继续；直连预览和实际确认契约通过，真实网关待核 |
 | `POST /api/enterprise/workflow/reviews` | `src/app/api/enterprise/workflow/reviews/route.ts` | 待核查 |
 | `POST /api/enterprise/workflow/routing` | `src/app/api/enterprise/workflow/routing/route.ts` | 待核查 |
 | `POST /api/enterprise/workflow/sla` | `src/app/api/enterprise/workflow/sla/route.ts` | 待核查 |
@@ -227,10 +227,10 @@
 | `工作流 GET /v1/people/audit` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 GET /v1/performance` | `services/enterprise-workflow/src/server.ts` | 部分：结算预览、规则、范围与列表投影，`performance.test.ts` |
 | `工作流 GET /v1/performance-corrections` | `services/enterprise-workflow/src/server.ts` | 部分：对账、参与人范围、分页与调整明细，`corrections.test.ts` |
-| `工作流 GET /v1/projects` | `services/enterprise-workflow/src/server.ts` | 部分：列表分批、30 项 14 次 SELECT、详情及历史的权限与撤权，`projects.test.ts`；大范围聚合待量化 |
+| `工作流 GET /v1/projects` | `services/enterprise-workflow/src/server.ts` | 部分：列表分批、30 项 14 次 SELECT、详情及历史的权限与撤权、详情断开释放连接；大范围聚合待量化 |
 | `工作流 GET /v1/publication-files` | `services/enterprise-workflow/src/server.ts` | 部分：列表 30 项 15 次 SELECT、扫描/下载范围与撤权、ZIP 无锁内整文件重读，`publication-files.test.ts`；大 ZIP 并发待量化 |
-| `工作流 GET /v1/publication-preflight` | `services/enterprise-workflow/src/server.ts` | 部分：列表无写锁、同数据投影、详情文件校验不占连接、撤权后拒绝；大报告分页和高峰负载待核 |
-| `工作流 GET /v1/publications` | `services/enterprise-workflow/src/server.ts` | 待核查 |
+| `工作流 GET /v1/publication-preflight` | `services/enterprise-workflow/src/server.ts` | 部分：列表无写锁、同投影、详情文件校验释放连接、取消及撤权；大报告分页和高峰负载待核 |
+| `工作流 GET /v1/publications` | `services/enterprise-workflow/src/server.ts` | 部分：详情与旧版一致、无目录锁、文件校验不占连接、期间撤权拒绝；列表/历史/来源读链路待核 |
 | `工作流 GET /v1/references` | `services/enterprise-workflow/src/server.ts` | 已核查：仅显式选中附件、租户/团队、旧来源、停用和变更，`reference-assets.test.ts` |
 | `工作流 GET /v1/references/file` | `services/enterprise-workflow/src/server.ts` | 部分：快照、权限、哈希、原字节和预览限制，`reference-assets.test.ts`；同屏并发原始文件待测 |
 | `工作流 GET /v1/references/library` | `services/enterprise-workflow/src/server.ts` | 部分：24 个订单页共 7 次 SELECT、撤权/停用和跨团队，`reference-assets.test.ts`；大范围精确总数待量化 |
@@ -281,10 +281,10 @@
 | `工作流 POST /v1/performance` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 POST /v1/performance-corrections` | `services/enterprise-workflow/src/server.ts` | 部分：更正预览不占结算锁，写入重算，`corrections.test.ts` |
 | `工作流 POST /v1/plan-move/preview` | `services/enterprise-workflow/src/server.ts` | 待核查 |
-| `工作流 POST /v1/projects` | `services/enterprise-workflow/src/server.ts` | 部分：项目变更预览无项目与订单锁、预览哈希原样、候选负责人撤权；执行原子、快照、重放及授权回归 |
+| `工作流 POST /v1/projects` | `services/enterprise-workflow/src/server.ts` | 部分：预览无项目/订单锁、哈希一致、撤权；实际 HTTP 断开释放预览连接，已受理提交及回执保留 |
 | `工作流 POST /v1/publication-files` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 POST /v1/publication-preflight` | `services/enterprise-workflow/src/server.ts` | 部分：文件 IO 移出事务，解码及哈希、陈旧来源、撤权、幂等和审计回归；大文件峰值与服务断开待核 |
-| `工作流 POST /v1/publications` | `services/enterprise-workflow/src/server.ts` | 待核查 |
+| `工作流 POST /v1/publications` | `services/enterprise-workflow/src/server.ts` | 部分：预览无订单/目录锁、文件校验、哈希一致和撤权；实际确认、审批、回执与重放回归，大文件高峰待核 |
 | `工作流 POST /v1/routing` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 POST /v1/routing/resolve` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 POST /v1/scheduling/commands` | `services/enterprise-workflow/src/server.ts` | 待核查 |

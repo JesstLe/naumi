@@ -85,12 +85,12 @@ export class ProjectStore{
   if(action.type==='transition'&&['retrospective','archived'].includes(action.status)){ensure(d.summary.ready,'PROJECT_NOT_READY');if(action.status==='archived')p.archiveSnapshot=d.summary;}
   const consent=action.type==='consent';return {next:p,draft,previewHash,preview:{id:p.id,version:p.version,code:p.code,title:p.title,status:p.status,action:action.type,summary:consent?undefined:d.summary,visibleOrders:consent?undefined:d.links,hiddenLinks:consent?undefined:d.hiddenLinks,milestones:consent?undefined:p.milestones,milestoneChanges:action.type==='milestones'?p.milestones.filter(m=>digest(m)!==digest(old?.milestones.find(x=>x.id===m.id)??null)).map(m=>({id:m.id,title:m.title,before:old?.milestones.find(x=>x.id===m.id)?.targetAt??null,after:m.targetAt})):[],notice:'项目修改不改变原任务期限、排期、验收或积分。'}};
  }
- async preview(p:Principal,raw:unknown){const c=projectInput.parse(raw);return (await readWorkflowSnapshot(this.pool,this.resolveActor,p,async(tx,a,snapshot)=>{
+ async preview(p:Principal,raw:unknown,signal?:AbortSignal){const c=projectInput.parse(raw);return (await readWorkflowSnapshot(this.pool,this.resolveActor,p,async(tx,a,snapshot)=>{
   await this.ready(tx,a);const old=snapshot?await this.row(tx,a,c.id):await this.lock(tx,a,c);
   if(snapshot)this.authorize(a,old,c);
   const evidence=emptyEvidence(),plan=await this.prepare(tx,a,c,old,this.now().toISOString(),!snapshot,evidence);
   return {result:{preview:plan.preview,previewHash:plan.previewHash},version:old?.version??null,team:old?.teamId??a.teamId!,evidence};
- },{statementTimeoutMs:20000,checkCurrent:async(tx,a,read)=>{
+ },{statementTimeoutMs:20000,signal,checkCurrent:async(tx,a,read)=>{
   const {rows}=await tx.query('SELECT version FROM enterprise_workflow.projects WHERE enterprise_id=$1 AND id=$2',[a.enterpriseId,c.id]);
   ensure((rows[0]?.version??null)===read.version,'PROJECT_SCOPE_CHANGED');
   await this.checkEvidence(tx,a,read.evidence);
@@ -106,7 +106,7 @@ export class ProjectStore{
   await tx.query('INSERT INTO enterprise_workflow.projects(enterprise_id,id,team_id,code,version,document)VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(enterprise_id,id)DO UPDATE SET version=EXCLUDED.version,document=EXCLUDED.document,updated_at=now()',[a.enterpriseId,n.id,n.teamId,n.code,n.version,n]);
   await tx.query('INSERT INTO enterprise_workflow.project_revisions(enterprise_id,project_id,revision,command_id,actor,action,reason,document)VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[a.enterpriseId,n.id,n.version,c.commandId,a.subject,c.action.type,c.reason,n]);return {id:n.id,version:n.version,appliedVersion:n.version,replayed:false};
  });}
- async read(p:Principal,raw:unknown){const q=projectQuery.parse(raw);return (await readWorkflowSnapshot(this.pool,this.resolveActor,p,async(tx,a,snapshot)=>{
+ async read(p:Principal,raw:unknown,signal?:AbortSignal){const q=projectQuery.parse(raw);return (await readWorkflowSnapshot(this.pool,this.resolveActor,p,async(tx,a,snapshot)=>{
   await this.ready(tx,a);
   if(q.action==='list'||q.action==='invitations'){
    const invited=q.action==='invitations';if(invited)ensure(manager(a),'PROJECT_MANAGER_REQUIRED',403);
@@ -126,7 +126,7 @@ export class ProjectStore{
   const rows=(await tx.query('SELECT revision,actor,action,reason,document,created_at FROM enterprise_workflow.project_revisions WHERE enterprise_id=$1 AND project_id=$2 ORDER BY revision DESC LIMIT 30 OFFSET $3',[a.enterpriseId,project.id,(q.page-1)*30])).rows;
   // Never replay old linked-order IDs or revoked-team data through historical documents.
   return {result:{events:rows.map(r=>({revision:r.revision,actor:r.actor,action:r.action,reason:r.reason,createdAt:r.created_at,project:{title:r.document.title,code:r.document.code,status:r.document.status,milestones:r.document.milestones}})),total:project.version,page:q.page},projects:[project],evidence:null};
- },{legacyRepeatable:true,statementTimeoutMs:20000,checkCurrent:async(tx,a,{projects,evidence})=>{
+ },{legacyRepeatable:true,statementTimeoutMs:20000,signal,checkCurrent:async(tx,a,{projects,evidence})=>{
   const versions=new Map(projects.map(p=>[p.id,p.version]));
   if(versions.size){const current=(await tx.query('SELECT id,version FROM enterprise_workflow.projects WHERE enterprise_id=$1 AND id=ANY($2::uuid[])',[a.enterpriseId,[...versions.keys()]])).rows;ensure(current.length===versions.size&&current.every(r=>versions.get(r.id)===r.version),'PROJECT_SCOPE_CHANGED');}
   if(evidence)await this.checkEvidence(tx,a,evidence);

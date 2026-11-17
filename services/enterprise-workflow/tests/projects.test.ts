@@ -6,6 +6,9 @@ import {WorkflowStore} from '../src/store';
 import {resolveDatabaseActor} from '../src/identity';
 import type {Action,WorkOrder} from '../src/contracts';
 import {whileReadWaits} from './read-transaction.test';
+import {createWorkflowServer} from '../src/server';
+import {once} from 'node:events';
+import {setTimeout as delay} from 'node:timers/promises';
 export async function projectChecks(pool:Pool){
  const enterpriseId=randomUUID(),teamId=randomUUID(),second=randomUUID(),foreign=randomUUID(),foreignTeam=randomUUID();
  await pool.query('INSERT INTO enterprise_workflow.teams(enterprise_id,team_id)VALUES($1,$2),($1,$3),($4,$5)',[enterpriseId,teamId,second,foreign,foreignTeam]);
@@ -36,6 +39,27 @@ export async function projectChecks(pool:Pool){
  assert.equal(ownerChanged.status,'rejected');assert.match(String(ownerChanged.reason),/PROJECT_OWNER_UNAVAILABLE/);
  await pool.query("UPDATE enterprise_workflow.team_members SET enabled=true WHERE enterprise_id=$1 AND team_id=$2 AND subject='reviewer'",[enterpriseId,teamId]);
  console.log('PROJECT_PREVIEW_READ_PASS: previous_project_and_order_locks=1 snapshot_no_locks=1 preview_hash_and_values_unchanged=1 prospective_owner_revocation=1');
+ const http=createWorkflowServer(workflow,async()=>p());http.listen(0,'127.0.0.1');await once(http,'listening');
+ const address=http.address();assert(address&&typeof address!=='string');const endpoint=`http://127.0.0.1:${address.port}/v1/projects`;
+ try{
+  const control=new AbortController(),post=(operation:string,command:unknown,signal?:AbortSignal)=>fetch(endpoint,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({operation,...command as object}),signal});
+  const cancelled=await whileReadWaits(pool,'orders',()=>post('preview',lockPreview,control.signal),async()=>{
+   assert.equal(pool.totalCount-pool.idleCount,2,'preview must have a live connection plus the test blocker');control.abort();
+   const end=Date.now()+1500;while(pool.totalCount-pool.idleCount>1){assert.ok(Date.now()<end,'abandoned preview still holds a connection');await delay(15);}
+  });
+  assert.equal(cancelled.status,'rejected');assert.equal(cancelled.reason.name,'AbortError');
+  assert.equal((await (await post('preview',lockPreview)).json() as any).previewHash,unlocked.value.previewHash);
+  const detailAbort=new AbortController();const detailRead=await whileReadWaits(pool,'orders',()=>fetch(endpoint+`?action=detail&id=${id}`,{signal:detailAbort.signal}),async()=>{
+   detailAbort.abort();const end=Date.now()+1500;while(pool.totalCount-pool.idleCount>1){assert.ok(Date.now()<end,'abandoned detail still holds a connection');await delay(15);}
+  });assert.equal(detailRead.status,'rejected');assert.equal(detailRead.reason.name,'AbortError');
+  // An accepted mutation is deliberately not attached to the response socket.
+  const applying=new AbortController(),saved={...lockPreview,confirmed:true,previewHash:unlocked.value.previewHash};
+  const result=await whileReadWaits(pool,'orders',()=>post('apply',saved,applying.signal),async()=>{applying.abort();await delay(60);assert.equal(pool.totalCount-pool.idleCount,2);});
+  assert.equal(result.status,'rejected');const end=Date.now()+2000;
+  while(!(await pool.query('SELECT 1 FROM enterprise_workflow.project_commands WHERE enterprise_id=$1 AND id=$2',[enterpriseId,saved.commandId])).rowCount){assert.ok(Date.now()<end,'accepted apply did not commit');await delay(15);}
+  assert.equal((await (await post('apply',saved)).json() as any).replayed,true);v++;
+ }finally{http.closeAllConnections();await new Promise<void>(resolve=>http.close(()=>resolve()));}
+ console.log('PROJECT_PREVIEW_HTTP_ABORT_PASS: release_before_lock_clears=1 later_preview_succeeds=1 accepted_apply_commits_and_replays=1');
  const before=JSON.stringify((await pool.query('SELECT document FROM enterprise_workflow.orders WHERE enterprise_id=$1 AND id=ANY($2::uuid[]) ORDER BY id',[enterpriseId,oids])).rows);await apply(command(id,v++,{type:'milestones',milestones:[{...m1,targetAt:'2099-02-01T00:00:00Z'},m2]}));assert.equal(JSON.stringify((await pool.query('SELECT document FROM enterprise_workflow.orders WHERE enterprise_id=$1 AND id=ANY($2::uuid[]) ORDER BY id',[enterpriseId,oids])).rows),before);
  const edit=command(id,v,{type:'edit',title:'adjusted title',brief:'project metadata',ownerSubject:'lead'}),stale=await store.preview(p(),edit);await b.act('worker',{type:'progress',taskId:b.taskId,percent:20,note:'actual change'});await assert.rejects(store.execute(p(),{...edit,previewHash:stale.previewHash,confirmed:true}),/PROJECT_PREVIEW_CHANGED/);
  await a.act('worker',{type:'submit-delivery',taskId:a.taskId,assetIds:[randomUUID()],note:'synthetic validator'});await a.act('reviewer',{type:'accept-delivery',taskId:a.taskId,quality:4,note:'independent accepted'});d=await detail(id);assert.equal(d.summary.ratio,20);assert.equal(d.summary.ready,false);await assert.rejects(apply(command(id,v,{type:'transition',status:'retrospective'})),/PROJECT_NOT_READY/);
