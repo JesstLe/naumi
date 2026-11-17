@@ -3,6 +3,7 @@
  * Zero network, zero supplier calls. */
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { Pool } from 'pg';
 import { fixtureModelConfig } from "./model-config-unit-fixture";
 import { fixtureConfig } from "./billing-unit-fixture";
 
@@ -59,7 +60,26 @@ async function main() {
     if (!hasModelState) { await assertBillingKeepsModelPricing(fixtureConfig(), before, tx); await tx.query("SELECT 1"); ok(true, "guard leaves the transaction usable without model tables"); }
     await tx.query("ROLLBACK");
   } finally { tx.release(); }
+  // The active model must be read on the billing transaction's only available
+  // connection. Do not initialize the model administration or contact Router.
+  const {ensureModelSchema}=await import('../src/lib/model-config/storage-schema');
+  const {modelConfigDigest}=await import('../src/lib/model-config/snapshot-value');
+  await ensureModelSchema(pool);
+  const single=new Pool({connectionString:process.env.DATABASE_URL,max:1,connectionTimeoutMillis:750});
+  const active=await single.connect();
+  try{
+    await active.query('BEGIN');
+    const oldRouter=process.env.NAUMI_ROUTER_MANAGEMENT_URL;delete process.env.NAUMI_ROUTER_MANAGEMENT_URL;
+    try{
+      const {rows:[version]}=await active.query(`INSERT INTO app_model_config_versions(operation_id,actor,reason,config,digest) VALUES($1,'fixture','single connection',$2,$3) RETURNING version`,[randomUUID(),model,modelConfigDigest(model)]);
+      await active.query('INSERT INTO app_model_config_state(singleton,active_version) VALUES(true,$1)',[version.version]);
+      await assertBillingKeepsModelPricing(unrelated,current,active);
+      await assert.rejects(assertBillingKeepsModelPricing(withoutCost,current,active),{code:'INVALID_CONFIG'});
+      assert.equal((await active.query('SELECT 1 AS ok')).rows[0].ok,1);
+      ok(single.totalCount===1&&single.waitingCount===0,'real pricing guard reads the uncommitted fixture version on the existing connection and does not initialize Router');
+    }finally{if(oldRouter!==undefined)process.env.NAUMI_ROUTER_MANAGEMENT_URL=oldRouter;}
+  }finally{await active.query('ROLLBACK');active.release();await single.end();}
   await pool.end();
-  console.log(`BILLING_PUBLICATION_CHECK=PASS CHECKS=${checks} NEW_BREAKAGE=REJECTED UNRELATED=PASS PRE_EXISTING=NOT_BLAMED IN_LOCK=BEFORE_INSERT REPLAY=UNCHECKED NO_MODEL_TABLES=NOOP SUPPLIER_CALLS=0`);
+  console.log(`BILLING_PUBLICATION_CHECK=PASS CHECKS=${checks} NEW_BREAKAGE=REJECTED UNRELATED=PASS PRE_EXISTING=NOT_BLAMED IN_LOCK=BEFORE_INSERT REPLAY=UNCHECKED NO_MODEL_TABLES=NOOP SINGLE_CONNECTION=PASS SUPPLIER_CALLS=0`);
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

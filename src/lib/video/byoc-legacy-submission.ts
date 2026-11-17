@@ -2,7 +2,7 @@ import "server-only";
 import {associateWorkflowTaskTx} from "./workflow-links";
 import {prepareByocRecipe} from "./byoc-recipe";
 import {createHash,randomUUID} from "node:crypto";
-import {byocVideoInputSchema} from "./byoc";
+import {byocVideoInputSchema} from "./byoc-input-schema";
 import {getVideoTaskByIdempotencyKey} from "@/lib/video/task-repository";
 import {createVideoTaskWithReservation} from "@/lib/video/task-transitions";
 import {type VideoTaskRow} from "@/lib/video/task-types";

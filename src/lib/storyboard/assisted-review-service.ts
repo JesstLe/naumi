@@ -4,7 +4,7 @@ import {authorizeCanvasProject} from "../canvas/project-access";
 import {assertCreationProjectInput} from "../saas/creation-access";
 import {requireTimelineMaterials} from "../canvas/timeline-materials";
 import {readStoryboardRevision} from "./repository";
-import {assertStoryboardTake} from "./service";
+import {assertStoryboardTake} from "./take-access";
 import {getVideoTask} from "../video/task-repository";
 import {publicVideoTaskSnapshot} from "../video/task-snapshot";
 import {readMediaJobEvidence,createMediaJob} from "../video/media-jobs";
