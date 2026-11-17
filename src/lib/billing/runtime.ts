@@ -38,7 +38,12 @@ export async function updateBillingCompatibility(actor: string, reason: string, 
     change(next);
     return config.publish({ id: randomUUID(), actor, reason, expectedVersion: current.version, config: next });
 }
-export async function billingSwitches() { const snapshot = await billingSnapshot(); return { metering: await meteringFor(snapshot), commerce: process.env.NAUMI_PUBLIC_COMMERCE === "1" && snapshot.config.switches.commerce, recharge: snapshot.config.switches.recharge, environmentCommerce: process.env.NAUMI_PUBLIC_COMMERCE === "1" }; }
+export async function billingSwitchesFor(snapshot:ConfigSnapshot, tx?:PoolClient) {
+    const environmentCommerce = process.env.NAUMI_PUBLIC_COMMERCE === "1";
+    return { metering: await meteringFor(snapshot, tx), commerce: environmentCommerce && snapshot.config.switches.commerce, recharge: snapshot.config.switches.recharge, environmentCommerce };
+}
+
+export async function billingSwitches() { return billingSwitchesFor(await billingSnapshot()); }
 
 export async function creditMeteringEnabled(tx?: PoolClient): Promise<boolean> {
   if (!dbEnabled) return false;

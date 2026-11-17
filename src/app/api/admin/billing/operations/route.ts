@@ -4,12 +4,13 @@ import { billingErrorResponse } from "@/lib/billing/request";
 import { getPool } from "@/platform/db/pool";
 import {reconcileTaskBilling} from "@/lib/application/billing-task-recovery";
 import { resultSchema } from "@/lib/billing/validation";
-import {readBillingReviewOperation,readBillingReviewOperations,withBillingReviewRead} from '@/lib/billing/review-read';
+import {readBillingReviewOperation,readBillingReviewOperations} from '@/lib/billing/review-read';
+import {withBillingAdminRead} from '@/lib/billing/admin-read';
 export const runtime = "nodejs", dynamic = "force-dynamic";
 export async function GET(request: Request) { const auth = await billingAuthorize(request); if (auth instanceof Response)
     return auth; try {
     const id = new URL(request.url).searchParams.get("id");
-    return await withBillingReviewRead(getPool(),request.signal,async tx=>{
+    return await withBillingAdminRead(getPool(),request.signal,async tx=>{
         if(!id)return billingJson(await readBillingReviewOperations(tx));
         const row=await readBillingReviewOperation(tx,id);
         return billingJson(row??{error:'操作不存在'},row?200:404);

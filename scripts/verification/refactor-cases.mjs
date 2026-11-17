@@ -41,6 +41,7 @@ export const refactorCases=[
  ts('billing-review-route','pricing','scripts/verify-billing-review-route-lock.ts','BILLING_REVIEW_ROUTE=PASS'),
  node('billing-review-client','pricing','scripts/verify-billing-review-client.mjs','BILLING_REVIEW_CLIENT=PASS'),
  {...node('billing-review-entry','pricing','scripts/verify-billing-review-entry.mjs','BILLING_REVIEW_ENTRY=PASS'),clientReact:true},
+ ts('billing-config-admin-read','pricing','scripts/verify-billing-config-admin-read.ts','BILLING_CONFIG_ADMIN_READ=PASS'),
  node('native-fixture-lifecycle','runtime','scripts/verify-native-fixture-lifecycle.cjs','NATIVE_FIXTURE_LIFECYCLE=PASS'),
  node('native-fixture-memory','runtime','scripts/verify-native-fixture-memory.cjs','NATIVE_FIXTURE_MEMORY=PASS'),
  node('native-parent-database','runtime','scripts/verify-native-parent-database.cjs','NATIVE_PARENT_DATABASE=PASS'),

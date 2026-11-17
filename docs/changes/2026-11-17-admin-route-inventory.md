@@ -18,7 +18,7 @@
 | `GET /api/admin/bi/provider-ops` | `src/app/api/admin/bi/provider-ops/route.ts` | 部分：隔离回归验证发布凭据隔离、同账户去重、缓存、版本变动拒绝、管理员边界和活动口径；50,000 条聚合、50,001 条原上限、历史索引、并发占用及真实 HTTP 断开配置/凭据/事件/熔断 SQL、最后页面取消上游已通过。缓存本身的现场锁与真实网关待核 |
 | `GET /api/admin/bi/trace` | `src/app/api/admin/bi/trace/route.ts` | 部分：外部追踪的总时限、在途上限及部分结果，`verify-bi-trace-deadline.ts` |
 | `GET /api/admin/bi/usage` | `src/app/api/admin/bi/usage/route.ts` | 部分：隔离断开、CSV 精简、新旧浏览器兼容；混合企业报表并发占满场景复现与连接保留见 `verify-admin-report-contention.ts`。每页精确统计成本和真实网关待核 |
-| `GET /api/admin/billing` | `src/app/api/admin/billing/route.ts` | 待核查 |
+| `GET /api/admin/billing` | `src/app/api/admin/billing/route.ts` | 已核查：隔离 PG 证实不初始化、不等发布锁、活动版本只读一次，同快照计算开关，断开释放查询；权限与私有响应头保留 |
 | `GET /api/admin/billing/image25-prices` | `src/app/api/admin/billing/image25-prices/route.ts` | 待核查 |
 | `GET /api/admin/billing/models/stages` | `src/app/api/admin/billing/models/stages/route.ts` | 待核查 |
 | `GET /api/admin/billing/operations` | `src/app/api/admin/billing/operations/route.ts` | 已核查：列表和详情不等待账务行锁，不写状态；可取消，旧字段和人工核对资格保持 |
