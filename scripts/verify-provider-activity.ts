@@ -42,7 +42,7 @@ async function main() {
   await pool.query('ALTER TABLE app_model_execution_stages RENAME TO fixture_saved_stages');
   const missingStats = await read(); assert(missingStats.providers.every(provider => provider.stats.errorCode === 'NOT_RECORDED' && provider.stats.h24 === null)); assert.equal(missingStats.providers[0].circuit.openChannels, 1);
   await pool.query('ALTER TABLE fixture_saved_stages RENAME TO app_model_execution_stages');
-  const unsafePool = { connect: async () => { throw new Error('sk-SENSITIVE https://private.fixture/?key=DO_NOT_LEAK'); } } as unknown as typeof pool;
+  const unsafePool = { options:{max:5},connect: async () => { throw new Error('sk-SENSITIVE https://private.fixture/?key=DO_NOT_LEAK'); } } as unknown as typeof pool;
   const safe = await readProviderActivity(unsafePool, config, providers, now); assert(safe.providers.every(provider => provider.stats.errorCode === 'ACTIVITY_UNAVAILABLE' && provider.circuit.errorCode === 'HEALTH_UNAVAILABLE')); assert.doesNotMatch(JSON.stringify(safe), /sk-SENSITIVE|private.fixture|DO_NOT_LEAK/);
   const missingConfig = await readProviderActivity(pool, {}, providers, now); assert(missingConfig.providers.every(provider => provider.circuit.configuredChannels === null && provider.circuit.errorCode === 'CONFIG_NOT_RECORDED'));
   await pool.query('DELETE FROM app_model_execution_stages'); const zero = await read(); assert(zero.providers.every(provider => provider.stats.h24!.total === 0 && provider.stats.h1!.total === 0));

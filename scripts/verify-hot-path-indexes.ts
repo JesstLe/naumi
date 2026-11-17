@@ -7,6 +7,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import {HOT_PATH_INDEXES} from "../src/lib/persistence/hot-path-indexes";
 
 const source = (file: string, start: string, end: string) => { const text = readFileSync(file, "utf8"), i = text.indexOf(start); assert.ok(i >= 0, `${file}: ${start}`); const j = text.indexOf(end, i + start.length); return text.slice(i, j).trim(); };
 // The committed SQL, read from source so the test cannot drift from the code.
@@ -38,6 +39,7 @@ async function main() {
   const pool = db.getPool(); let checks = 0; const ok = (v: unknown, m: string) => { assert.ok(v, m); checks++; };
   try {
     await db.ensureSchema(); await release.ensureReleaseSchema(); await creation.ensureCreationSchema();
+    await (await import("../src/lib/model-config/execution-audit-schema")).ensureExecutionAuditSchema(pool);
     // ---- production-shaped volume ----
     await pool.query(`INSERT INTO app_release_activities(id,instance_id,boot_id,runtime_id,activity_kind,state,started_at,heartbeat_at,finished_at,work_scope,work_key,admission_key)
       SELECT gen_random_uuid(),'i-current','00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000002','accepted-work','finished',now()-interval '1 day',now(),now()-(g||' seconds')::interval,'scope-'||(g%5),'k'||g,'k'||g FROM generate_series(1,150000) g`);
@@ -68,7 +70,7 @@ async function main() {
     // ---- the actual ops runner ----
     const run = (args: string[]) => spawnSync(process.execPath, ["--conditions=react-server", "--import", "tsx", "scripts/ops/hot-path-indexes.ts", ...args], { encoding: "utf8", env: { ...process.env, NAUMI_DEPLOY_THREE_LOCKS_HELD: "1" } });
     const applied = run(["--apply"]); ok(applied.status === 0 && /HOT_PATH_INDEXES=PASS/.test(applied.stdout), `ops --apply: ${applied.stderr.slice(-400)}`);
-    const verified = run(["--verify"]); ok(verified.status === 0 && (verified.stdout.match(/=VALID /g) || []).length === Object.keys(HOT).length, "ops --verify lists every index VALID");
+    const verified = run(["--verify"]); ok(verified.status === 0 && (verified.stdout.match(/=VALID /g) || []).length === HOT_PATH_INDEXES.length, "ops --verify lists every index VALID");
     await pool.query("ANALYZE");
     const timings: Record<string, string> = {};
     for (const [name, q] of Object.entries(HOT)) {

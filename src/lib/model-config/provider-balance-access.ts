@@ -1,5 +1,6 @@
 import 'server-only';
 import { biAuthorize, biJson } from '@/lib/bi/access';
+import {ReportReadBusy} from '@/platform/db/owned-read-client';
 import { ProviderBalanceFailure, providerBalanceOverview } from './provider-balance';
 import type { ProviderBalanceOverview } from './provider-balance-contracts';
 
@@ -16,7 +17,9 @@ export function createProviderOpsHandler(deps: { authorize: typeof biAuthorize; 
     catch (error) {
       if(request.signal.aborted)return biJson({error:'查询已取消'},499);
       const code = error instanceof ProviderBalanceFailure ? error.code : 'PROVIDER_OPS_UNAVAILABLE';
-      return biJson({ error: code === 'CONFIG_CHANGED' ? '发布配置已变化，请重新读取' : '供应商账户数据暂不可用', code }, code === 'CONFIG_CHANGED' ? 409 : 503);
+      const response=biJson({ error: code === 'CONFIG_CHANGED' ? '发布配置已变化，请重新读取' : '供应商账户数据暂不可用', code }, code === 'CONFIG_CHANGED' ? 409 : 503);
+      if(error instanceof ReportReadBusy)response.headers.set('Retry-After','1');
+      return response;
     }
   };
 }

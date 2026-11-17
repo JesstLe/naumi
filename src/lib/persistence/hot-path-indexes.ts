@@ -22,4 +22,7 @@ export const HOT_PATH_INDEXES = [
   {name:"app_image_jobs_imagegen_failed",sql:`CREATE INDEX CONCURRENTLY IF NOT EXISTS app_image_jobs_imagegen_failed ON app_image_jobs(updated_at DESC,id) WHERE kind='imagegen' AND snapshot->>'status' IN ('error','needs_attention') AND lease_token IS NULL`},
   // notifyImagegenJobReleased(): finds the open parent of a released child.
   {name:"app_image_jobs_imagegen_open",sql:`CREATE INDEX CONCURRENTLY IF NOT EXISTS app_image_jobs_imagegen_open ON app_image_jobs(id) WHERE kind='imagegen' AND snapshot->>'status' IN ('pending','running')`},
+  // Recent supplier activity by published provider. Keep mutable attempt state
+  // outside the index so finishing an attempt need not update it.
+  {name:"app_model_execution_stages_provider_created",sql:`CREATE INDEX CONCURRENTLY IF NOT EXISTS app_model_execution_stages_provider_created ON app_model_execution_stages(provider_id,created_at)`},
 ] as const;

@@ -21,6 +21,7 @@ async function main(){
  });
  Object.assign(process.env,{PGOPTIONS:`-c search_path=${f.schemaName}`,PGPOOL_MAX:'5',NAUMI_MULTI_USER:'1'});
  const {getPool,closeDatabasePools}=await import('../src/platform/db/pool');
+ const {ReportReadBusy}=await import('../src/platform/db/owned-read-client');
  const {getOrCreateUser}=await import('../src/lib/db');
  const {getSetting,setSetting}=await import('../src/lib/settings/repository');
  const {signUserSession}=await import('../src/lib/native-auth');
@@ -29,7 +30,7 @@ async function main(){
  const {createProviderBalanceService,readProviderBalanceCredential,createPublishedProviderBalanceReader}=await import('../src/lib/model-config/provider-balance');
  const pool=getPool(),admin='admin@provider-abort.fixture';
  const responses=new Map<string,number>();
- let host='',creds=0,writes=0,time=Date.now();
+ let host='',creds=0,writes=0,time=Date.now(),busy=false;
  const service=createProviderBalanceService({
   secret:process.env.SETTINGS_SECRET!,
   now:()=>time,
@@ -37,7 +38,7 @@ async function main(){
     const {remaining}=body as {remaining:number};return {kind:'account_balance',remaining,used:null,total:null,unlimited:null,unit:null};
   }}],
   readCredential:async (ref,id)=>{const value=await readProviderBalanceCredential(pool,ref,id);creds++;return value;},
-  readCache:getSetting,writeCache:async (key,value)=>{writes++;await setSetting(key,value);},transport:()=>fetch,
+  readCache:key=>{if(busy)throw new ReportReadBusy();return getSetting(key);},writeCache:async (key,value)=>{writes++;await setSetting(key,value);},transport:()=>fetch,
  });
  const handler=createProviderOpsHandler({authorize:biAuthorize,overview:createPublishedProviderBalanceReader(pool,service)});
  const server=createServer(async(req,res)=>{
@@ -81,7 +82,11 @@ async function main(){
    upstream!.end('9}');
    const otherResponse=await other.done;assert.equal(otherResponse?.status,200);
    assert.equal((await otherResponse!.json()).accounts[0].measurement.remaining,9);assert.equal(writes,2);
-   console.log('PROVIDER_BALANCE_CANCEL=PASS LAST_DISCONNECT_ABORTED=1 SHARED_REQUEST=1 OTHER_PAGE_COMPLETES=1 RETRY_FRESH=1');
+   busy=true;
+   const overloaded=await start('cache-busy',true).done;
+   assert.equal(overloaded?.status,503);assert.equal(overloaded?.headers.get('retry-after'),'1');
+   assert.equal((await overloaded!.json()).code,'PROVIDER_OPS_UNAVAILABLE');assert.equal(calls,3);assert.equal(writes,2);
+   console.log('PROVIDER_BALANCE_CANCEL=PASS LAST_DISCONNECT_ABORTED=1 SHARED_REQUEST=1 OTHER_PAGE_COMPLETES=1 RETRY_FRESH=1 CACHE_BUSY_NO_SUPPLIER=1');
   }
  }finally{
   for(const request of requests)request.controller.abort();

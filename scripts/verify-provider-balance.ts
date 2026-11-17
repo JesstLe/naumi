@@ -24,7 +24,7 @@ async function main() {
   let time = Date.parse('2026-10-23T01:00:00Z'), calls = 0, mode: 'ok' | 'network' | 'unauthorized' | 'malformed' | 'timeout' = 'ok';
   const usedKeys: string[] = [], readRefs: string[] = [];
   const service = balance.createProviderBalanceService({ secret: process.env.SETTINGS_SECRET, now: () => time,
-    readCredential: async (ref, id) => { readRefs.push(ref); return readCredential(ref, id); }, readCache: db.getSetting, writeCache: db.setSetting,
+    readCredential: async (ref, id) => { readRefs.push(ref); return readCredential(ref, id); }, readCache:key=>db.getSetting(key), writeCache: db.setSetting,
     transport: () => async (input, init) => {
       calls++; assert(['https://www.geeknow.top/api/usage/token/', 'https://api.apib.ai/v1/user/balance'].includes(String(input))); assert.equal(init?.method, 'GET');
       const key = new Headers(init?.headers).get('authorization')!.replace('Bearer ', ''); usedKeys.push(key); assert.notEqual(key, secretKeys.old);
