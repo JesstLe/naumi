@@ -1,4 +1,4 @@
-import {SourceWorksheetStore} from './source-worksheet-store';
+import {SourceWorksheetStore,type SheetAuthorize} from './source-worksheet-store';
 import {ReferenceStore} from './reference-store';
 import { createServer,type IncomingMessage } from 'node:http';
 import { createReadStream } from 'node:fs';
@@ -16,7 +16,8 @@ export function createImportServer(store:ImportStore,secret:string,options:{sour
  if(secret.length<32)throw new Error('IMPORT_TOKEN_REQUIRED');
  const local={enterpriseId:store.enterpriseId,subject:'local-owner'};
  const sourceSnapshot=new LocalSourceSnapshot(store.pool,store.enterpriseId,options.sourceSnapshotFile,options.sourceSnapshotRegistry);
- const worksheet=new SourceWorksheetStore(store.pool,async(_tx,p)=>{if(p.enterpriseId!==local.enterpriseId||p.subject!==local.subject)throw new WorkflowError(403,'FORBIDDEN');});
+ const authorizeWorksheet:SheetAuthorize=async(_tx,p)=>{if(p.enterpriseId!==local.enterpriseId||p.subject!==local.subject)throw new WorkflowError(403,'FORBIDDEN');};
+ const worksheet=new SourceWorksheetStore(store.pool,authorizeWorksheet,authorizeWorksheet);
  const people=new PeopleStore(store.pool,async(_tx,p)=>p.enterpriseId===local.enterpriseId&&p.subject===local.subject?{...p,permissions:['manage'],workKinds:[]}:null,local);
  const workflow=new WorkflowStore(store.pool,async(_tx,p)=>p.enterpriseId===local.enterpriseId&&p.subject===local.subject?{...p,permissions:['request','dispatch','manage'],workKinds:[]}:null,async()=>false,local);
  const references=new ReferenceStore(store.pool,async(_tx,p)=>p.enterpriseId===local.enterpriseId&&p.subject===local.subject?{...p,permissions:['request','manage'],workKinds:[]}:null,{[store.enterpriseId]:store.blobRoot});

@@ -6,6 +6,8 @@ import JSZip from 'jszip';
 import {excelRevision} from './excel-revision';
 import {WorkflowError,type Principal} from './contracts';
 import {sourceDigest} from './source-files';
+import {importRead,requireActiveImportBatch} from './import-read';
+import {projectImportedWorksheet,type WorksheetSeed} from './source-worksheet-seed';
 
 const hash=z.string().regex(/^[a-f0-9]{64}$/),key=z.string().regex(/^[A-Za-z0-9_-]{1,80}$/).refine(v=>!['__proto__','constructor','prototype'].includes(v));
 const fileRef=z.strictObject({kind:z.enum(['source','worksheet']),id:hash,name:z.string().min(1).max(500),excelRevision:hash.optional()});
@@ -31,29 +33,31 @@ export type SheetRow={id:string;originRow:number|null;parentId:string|null;paren
 export type SheetDocument={columns:SheetColumn[];rows:SheetRow[]};
 export type SheetAuthorize=(tx:PoolClient,p:Principal,write:boolean)=>Promise<void>;
 function need(v:unknown,code:string,status=409):asserts v{if(!v)throw new WorkflowError(status,code);}
-const baseColumns:[string,string,SheetColumn['type'],number,string?][]=[
- ['title','产品需求 / 制作任务','text',310,'产品需求名称'],['image','产品图','image',100],['designer','设计师','text',135,'设计师'],['owner','需求方','text',130,'需求方'],['started','沟通后开始','date',140,'任务沟通后开始时间'],['finished','完成日期','date',140,'设计完成日期'],['status','完成情况','text',115,'任务完成情况'],['schedule','排期标签','text',160,'任务排期情况'],['quantity','数量','text',110,'数量'],['files','需求附件','files',130],['dispatch','下发日期','date',140,'下发日期'],['taskType','任务类型','text',140,'任务类型'],['attributes','属性','text',160,'属性（运营填写）'],['send','发送任务','text',130,'发送任务'],['parentText','原父标签','text',180,'父记录']
-];
 /** Import evidence is read to seed a document, never UPDATEd by this module. */
 export class SourceWorksheetStore{
- constructor(readonly pool:Pool,private authorize:SheetAuthorize){}
- private async tx<T>(p:Principal,source:string,write:boolean,fn:(c:PoolClient)=>Promise<T>){hash.parse(source);const c=await this.pool.connect();try{await c.query('BEGIN');await c.query("SET LOCAL lock_timeout='3s';SET LOCAL statement_timeout='15s'");await this.authorize(c,p,write);
-  need((await c.query('SELECT 1 FROM enterprise_workflow.import_batches WHERE enterprise_id=$1 AND source_hash=$2 AND active FOR SHARE',[p.enterpriseId,source])).rowCount===1,'SOURCE_NOT_FOUND',404);
+ constructor(readonly pool:Pool,private authorize:SheetAuthorize,private authorizeRead?:SheetAuthorize){}
+ private async access(c:PoolClient,p:Principal,source:string,write:boolean,snapshot:boolean){
+  await (snapshot?this.authorizeRead!:this.authorize)(c,p,write);
+  await requireActiveImportBatch(c,p,source,!snapshot);
   need((await c.query("SELECT to_regclass('enterprise_workflow.source_worksheets') AS t")).rows[0].t,'WORKSHEET_MIGRATION_REQUIRED',503);
+ }
+ private async tx<T>(p:Principal,source:string,write:boolean,fn:(c:PoolClient)=>Promise<T>){hash.parse(source);const c=await this.pool.connect();try{await c.query('BEGIN');await c.query("SET LOCAL lock_timeout='3s';SET LOCAL statement_timeout='15s'");await this.access(c,p,source,write,false);
   const result=await fn(c);await c.query('COMMIT');return result;
  }catch(e){await c.query('ROLLBACK');throw e;}finally{c.release();}}
- private async seed(c:PoolClient,p:Principal,source:string):Promise<SheetDocument>{
-  const sourceRows=(await c.query('SELECT document,resolution FROM enterprise_workflow.import_rows WHERE enterprise_id=$1 AND source_hash=$2 ORDER BY row_number',[p.enterpriseId,source])).rows;
-  const assets=(await c.query('SELECT document FROM enterprise_workflow.import_assets WHERE enterprise_id=$1 AND source_hash=$2',[p.enterpriseId,source])).rows.map(r=>r.document);
-  const columns=baseColumns.map(([id,label,type,width])=>({id,label,type,width,visible:!['dispatch','taskType','attributes','send','parentText'].includes(id),archived:false}));
-  const known=new Set(baseColumns.map(c=>c[4]).filter(Boolean));known.add('白底产品图');known.add('运营需求文档（必传文档，按上传文档时间设计排期）');
-  for(const k of new Set<string>(sourceRows.flatMap(x=>Object.keys(x.document.raw))))if(!known.has(k)&&columns.length<64)columns.push({id:'raw_'+sourceDigest(k).slice(0,16),label:k.slice(0,80),type:'text',width:160,visible:false,archived:false});
-  return {columns,rows:sourceRows.map(({document:r,resolution})=>{const attached=new Set<string>(r.attachments.flatMap((l:any)=>l.assets));const refs=assets.filter(a=>attached.has(a.id)).map(a=>({kind:'source' as const,id:a.id,name:a.name}));const rowCells:SheetRow['cells']={};
-   for(const col of columns){const field=baseColumns.find(x=>x[0]===col.id)?.[4];rowCells[col.id]=col.id==='image'?refs.filter(a=>/\.(png|jpe?g)$/i.test(a.name)):col.id==='files'?refs.filter(a=>!/\.(png|jpe?g)$/i.test(a.name)):field?(r.raw[field]||''):Object.entries(r.raw).find(([k])=>'raw_'+sourceDigest(k).slice(0,16)===col.id)?.[1] as string||'';}
-   rowCells.title=r.title;const parent=resolution?.parentRow||(r.parentCandidates.length===1?r.parentCandidates[0]:null);
-   return {id:'e'+r.excelRow,originRow:r.excelRow,parentId:parent?'e'+parent:null,parentConfirmed:!!resolution,archived:false,cells:rowCells};})};
+ private readSession<T>(p:Principal,source:string,fn:(c:PoolClient)=>Promise<T>){
+  hash.parse(source);const snapshot=!!this.authorizeRead;
+  return importRead(this.pool,snapshot,async c=>{await this.access(c,p,source,false,snapshot);return fn(c);},15000);
  }
- async read(p:Principal,source:string){return this.tx(p,source,false,async c=>{const r=(await c.query('SELECT version,document,updated_at FROM enterprise_workflow.source_worksheets WHERE enterprise_id=$1 AND source_hash=$2',[p.enterpriseId,source])).rows[0];return r?{version:r.version,document:r.document,updatedAt:r.updated_at,persisted:true}:{version:0,document:await this.seed(c,p,source),updatedAt:null,persisted:false};});}
+ private async loadSeed(c:PoolClient,p:Principal,source:string):Promise<WorksheetSeed>{
+  const rows=(await c.query<WorksheetSeed['rows'][number]>('SELECT document,resolution FROM enterprise_workflow.import_rows WHERE enterprise_id=$1 AND source_hash=$2 ORDER BY row_number',[p.enterpriseId,source])).rows;
+  const assets=(await c.query<WorksheetSeed['assets'][number]>("SELECT document->>'id' AS id,document->>'name' AS name FROM enterprise_workflow.import_assets WHERE enterprise_id=$1 AND source_hash=$2",[p.enterpriseId,source])).rows;
+  return {rows,assets};
+ }
+ async read(p:Principal,source:string){
+  const raw=await this.readSession(p,source,async c=>{const r=(await c.query<{version:number;document:SheetDocument;updated_at:Date}>('SELECT version,document,updated_at FROM enterprise_workflow.source_worksheets WHERE enterprise_id=$1 AND source_hash=$2',[p.enterpriseId,source])).rows[0];return r?{row:r}:{seed:await this.loadSeed(c,p,source)};});
+  const result=raw.row?{version:raw.row.version,document:raw.row.document,updatedAt:raw.row.updated_at,persisted:true}:{version:0,document:projectImportedWorksheet(raw.seed!),updatedAt:null,persisted:false};
+  await this.readSession(p,source,async()=>{});return result;
+ }
  async execute(p:Principal,source:string,raw:unknown){const cmd=command.parse(raw);return this.tx(p,source,true,c=>this.apply(c,p,source,cmd));}
  private async apply(c:PoolClient,p:Principal,source:string,cmd:z.infer<typeof command>,stableFingerprint?:string){
   // Serialize the first write as well as later CAS checks; replay binds actor, tenant, source and payload.
@@ -62,7 +66,7 @@ export class SourceWorksheetStore{
   const fingerprint=stableFingerprint||sourceDigest({p,source,cmd}),prior=(await c.query('SELECT fingerprint,result FROM enterprise_workflow.source_worksheet_commands WHERE enterprise_id=$1 AND command_id=$2',[p.enterpriseId,cmd.commandId])).rows[0];
   if(prior){need(prior.fingerprint===fingerprint,'IDEMPOTENCY_CONFLICT');return {...prior.result,replayed:true};}
   const current=(await c.query('SELECT version,document FROM enterprise_workflow.source_worksheets WHERE enterprise_id=$1 AND source_hash=$2 FOR UPDATE',[p.enterpriseId,source])).rows[0];const version=current?.version||0;need(version===cmd.expectedVersion,'VERSION_CONFLICT');
-  const d:SheetDocument=current?structuredClone(current.document):await this.seed(c,p,source);const a=cmd.action;let before:unknown=null,after:unknown=null;
+  const d:SheetDocument=current?structuredClone(current.document):projectImportedWorksheet(await this.loadSeed(c,p,source));const a=cmd.action;let before:unknown=null,after:unknown=null;
   const row=(id:string)=>{const r=d.rows.find(r=>r.id===id);need(r,'ROW_NOT_FOUND',404);return r;};
   const col=(id:string)=>{const x=d.columns.find(x=>x.id===id);need(x,'COLUMN_NOT_FOUND',404);return x;};
   const validate=async(entries:Record<string,string|Ref[]>)=>{for(const [k,v] of Object.entries(entries)){const f=col(k);need(!f.archived,'COLUMN_ARCHIVED');if(['image','files'].includes(f.type)){need(Array.isArray(v),'CELL_TYPE_INVALID',400);for(const ref of v){
@@ -98,7 +102,7 @@ export class SourceWorksheetStore{
    const stableFingerprint=sourceDigest({kind:'office-save',p,source,q,id});
    const replay=(await c.query('SELECT fingerprint,result FROM enterprise_workflow.source_worksheet_commands WHERE enterprise_id=$1 AND command_id=$2',[p.enterpriseId,q.commandId])).rows[0];
    if(replay){need(replay.fingerprint===stableFingerprint,'IDEMPOTENCY_CONFLICT');const file=(await c.query('SELECT name FROM enterprise_workflow.source_worksheet_files WHERE enterprise_id=$1 AND source_hash=$2 AND id=$3',[p.enterpriseId,source,id])).rows[0];need(file,'ASSET_NOT_FOUND',404);return {...replay.result,replayed:true,ref:{kind:'worksheet' as const,id,name:file.name}};}
-   const current=(await c.query('SELECT version,document FROM enterprise_workflow.source_worksheets WHERE enterprise_id=$1 AND source_hash=$2 FOR UPDATE',[p.enterpriseId,source])).rows[0],document:SheetDocument=current?.document||await this.seed(c,p,source),version=current?.version||0;
+   const current=(await c.query('SELECT version,document FROM enterprise_workflow.source_worksheets WHERE enterprise_id=$1 AND source_hash=$2 FOR UPDATE',[p.enterpriseId,source])).rows[0],document:SheetDocument=current?.document||projectImportedWorksheet(await this.loadSeed(c,p,source)),version=current?.version||0;
    const target=document.rows.find(r=>r.id===q.row&&!r.archived),column=document.columns.find(c=>c.id===q.column&&!c.archived&&c.type==='files'),refsNow=target?.cells[q.column];
    const refSignature=(refs:Ref[])=>JSON.stringify(refs.map(r=>[r.kind,r.id,r.name,r.excelRevision||null]));
    need(column&&Array.isArray(refsNow)&&q.expectedVersion<=version&&refSignature(refsNow)===refSignature(q.refs),'VERSION_CONFLICT');
@@ -108,12 +112,20 @@ export class SourceWorksheetStore{
    const result=await this.apply(c,p,source,{commandId:q.commandId,expectedVersion:version,action:{type:'set-cells',row:q.row,cells:{[q.column]:refs}}},stableFingerprint);return {...result,ref};
   });
  }
- async history(p:Principal,source:string,before=2147483647){need(Number.isInteger(before)&&before>0,'INVALID_CURSOR',400);return this.tx(p,source,false,async c=>({events:(await c.query('SELECT version,subject,operation,detail,created_at FROM enterprise_workflow.source_worksheet_audit WHERE enterprise_id=$1 AND source_hash=$2 AND version<$3 ORDER BY version DESC LIMIT 30',[p.enterpriseId,source,before])).rows}));}
+ async history(p:Principal,source:string,before=2147483647){need(Number.isInteger(before)&&before>0,'INVALID_CURSOR',400);const result=await this.readSession(p,source,async c=>({events:(await c.query('SELECT version,subject,operation,detail,created_at FROM enterprise_workflow.source_worksheet_audit WHERE enterprise_id=$1 AND source_hash=$2 AND version<$3 ORDER BY version DESC LIMIT 30',[p.enterpriseId,source,before])).rows}));await this.readSession(p,source,async()=>{});return result;}
  async upload(p:Principal,source:string,raw:unknown){const q=z.strictObject({name:z.string().trim().min(1).max(240).refine(v=>!/[\\/\x00-\x1f]/.test(v)),data:z.string().min(4).max(5592408).regex(/^[A-Za-z0-9+/]+={0,2}$/)}).parse(raw);const data=Buffer.from(q.data,'base64');need(data.length>0&&data.length<=4*1024*1024&&data.toString('base64')===q.data,'FILE_SIZE_OR_ENCODING',413);
   // Authorization happens before the potentially expensive decode, again before commit.
   await this.tx(p,source,true,async()=>{});let mime='application/octet-stream';if(/\.(png|jpe?g)$/i.test(q.name)){try{const x=sharp(data,{limitInputPixels:16_000_000,animated:false}),meta=await x.metadata();need(['png','jpeg'].includes(meta.format||''),'INVALID_IMAGE',400);await x.stats();mime=meta.format==='png'?'image/png':'image/jpeg';}catch{throw new WorkflowError(400,'INVALID_IMAGE');}}
   const id=createHash('sha256').update(data).digest('hex');return this.tx(p,source,true,async c=>{await c.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`worksheet:${p.enterpriseId}:${source}`]);const existing=(await c.query('SELECT name,mime FROM enterprise_workflow.source_worksheet_files WHERE enterprise_id=$1 AND source_hash=$2 AND id=$3',[p.enterpriseId,source,id])).rows[0];if(existing)return {kind:'worksheet' as const,id,name:existing.name,mime:existing.mime};need((await c.query('SELECT count(*)::int AS n,COALESCE(sum(bytes) FILTER (WHERE mime <> \'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\'),0)::bigint AS bytes FROM enterprise_workflow.source_worksheet_files WHERE enterprise_id=$1 AND source_hash=$2',[p.enterpriseId,source])).rows.every(r=>r.n<1000&&Number(r.bytes)+data.length<=128*1024*1024),'FILE_QUOTA',413);
    await c.query('INSERT INTO enterprise_workflow.source_worksheet_files(enterprise_id,source_hash,id,name,mime,bytes,content,subject)VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING',[p.enterpriseId,source,id,q.name,mime,data.length,data,p.subject]);return {kind:'worksheet' as const,id,name:q.name,mime};});
  }
- async file(p:Principal,source:string,id:string){hash.parse(id);return this.tx(p,source,false,async c=>{const r=(await c.query('SELECT name,mime,bytes,content FROM enterprise_workflow.source_worksheet_files WHERE enterprise_id=$1 AND source_hash=$2 AND id=$3',[p.enterpriseId,source,id])).rows[0];need(r,'ASSET_NOT_FOUND',404);need(r.content.length===r.bytes&&createHash('sha256').update(r.content).digest('hex')===id,'FILE_HASH_MISMATCH',503);return {...r,id};});}
+ async file(p:Principal,source:string,id:string){
+  hash.parse(id);
+  const file=await this.readSession(p,source,async c=>(await c.query<{name:string;mime:string;bytes:number;content:Buffer;revision:string}>(
+   'SELECT name,mime,bytes,content,xmin::text AS revision FROM enterprise_workflow.source_worksheet_files WHERE enterprise_id=$1 AND source_hash=$2 AND id=$3',[p.enterpriseId,source,id])).rows[0]);
+  need(file,'ASSET_NOT_FOUND',404);const {revision,...asset}=file;
+  need(asset.content.length===asset.bytes&&createHash('sha256').update(asset.content).digest('hex')===id,'FILE_HASH_MISMATCH',503);
+  await this.readSession(p,source,async c=>{need((await c.query('SELECT 1 FROM enterprise_workflow.source_worksheet_files WHERE enterprise_id=$1 AND source_hash=$2 AND id=$3 AND xmin::text=$4',[p.enterpriseId,source,id,revision])).rowCount,'ASSET_NOT_FOUND',404);});
+  return {...asset,id};
+ }
 }
