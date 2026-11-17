@@ -26,7 +26,7 @@
 | `GET /api/admin/billing/versions` | `src/app/api/admin/billing/versions/route.ts` | 待核查 |
 | `GET /api/admin/creations` | `src/app/api/admin/creations/route.ts` | 部分：时间、精确计数和筛选；混合归档和高归档深页已测，游标原型高归档全站深页放大仍待解决 |
 | `GET /api/admin/creations/[id]` | `src/app/api/admin/creations/[id]/route.ts` | 部分：整详情、分页和费用经大任务逐项对照；恢复素材带可选来源定位，源取证、旧 URL 和鉴权已对照 |
-| `GET /api/admin/creations/[id]/assets/[assetId]` | `src/app/api/admin/creations/[id]/assets/[assetId]/route.ts` | 部分：历史深页、锁竞争、视频 Range、来源定位和多图浏览器峰值已验证；服务端转码、取消和跨标签待核 |
+| `GET /api/admin/creations/[id]/assets/[assetId]` | `src/app/api/admin/creations/[id]/assets/[assetId]/route.ts` | 部分：历史深页、锁竞争、Range、来源定位、浏览器峰值和共用渲染器 HTTP 过载/断开通过；真实网关与多实例待核 |
 | `GET /api/admin/creations/[id]/events` | `src/app/api/admin/creations/[id]/events/route.ts` | 部分：规范与历史事件投影、鉴权、无事件历史空结果，`verify-saas-creations.ts`；大任务族待核 |
 | `GET /api/admin/enterprise-workbench` | `src/app/api/admin/enterprise-workbench/route.ts` | 待核查 |
 | `GET /api/admin/feature-access` | `src/app/api/admin/feature-access/route.ts` | 待核查 |
@@ -64,11 +64,11 @@
 | `GET /api/enterprise/content` | `src/app/api/enterprise/content/route.ts` | 待核查 |
 | `GET /api/enterprise/creations` | `src/app/api/enterprise/creations/route.ts` | 部分：企业近期固定 5 条、历史归属与统一列表；混合归档深页待核 |
 | `GET /api/enterprise/creations/[id]` | `src/app/api/enterprise/creations/[id]/route.ts` | 部分：共用详情查询经大任务 SQL 对照；企业鉴权、证据和费用分页、脱敏、撤权、来源定位已验证 |
-| `GET /api/enterprise/creations/[id]/assets/[assetId]` | `src/app/api/enterprise/creations/[id]/assets/[assetId]/route.ts` | 部分：Range、撤权、旧 URL、来源归属、隔离连接和页面并发已验证；服务端转码、取消和跨标签待核 |
+| `GET /api/enterprise/creations/[id]/assets/[assetId]` | `src/app/api/enterprise/creations/[id]/assets/[assetId]/route.ts` | 部分：Range、撤权、旧 URL、归属、连接和页面并发通过；共用渲染器 HTTP 限流、断开和回退通过，真实网关待核 |
 | `GET /api/enterprise/creations/[id]/events` | `src/app/api/enterprise/creations/[id]/events/route.ts` | 部分：事件分页、规范与归档脱敏、跨租户、撤权和锁竞争，`verify-saas-creations.ts`；大任务族待核 |
 | `GET /api/enterprise/health` | `src/app/api/enterprise/health/route.ts` | 部分：健康统计权限、账户行锁及隔离，`verify-enterprise-analytics.ts` |
 | `GET /api/enterprise/integration` | `src/app/api/enterprise/integration/route.ts` | 待核查 |
-| `GET /api/enterprise/media` | `src/app/api/enterprise/media/route.ts` | 待核查 |
+| `GET /api/enterprise/media` | `src/app/api/enterprise/media/route.ts` | 部分：共用渲染器的并发、过载、取消与镜像回退经本地 HTTP 验证；此入口自身的授权组合待核 |
 | `GET /api/enterprise/saas-overview` | `src/app/api/enterprise/saas-overview/route.ts` | 待核查 |
 | `GET /api/enterprise/tenant-usage` | `src/app/api/enterprise/tenant-usage/route.ts` | 待核查 |
 | `GET /api/enterprise/usage` | `src/app/api/enterprise/usage/route.ts` | 部分：报表账户行锁及撤权，`verify-enterprise-analytics.ts` |
@@ -93,9 +93,10 @@
 | `GET /api/enterprise/workflow/reviews` | `src/app/api/enterprise/workflow/reviews/route.ts` | 待核查 |
 | `GET /api/enterprise/workflow/routing` | `src/app/api/enterprise/workflow/routing/route.ts` | 待核查 |
 | `GET /api/enterprise/workflow/sla` | `src/app/api/enterprise/workflow/sla/route.ts` | 待核查 |
-| `GET /api/enterprise/workflow/source` | `src/app/api/enterprise/workflow/source/route.ts` | 部分：候选、证据与来源权限，`verify-workflow-read-safety.ts` |
+| `GET /api/enterprise/workflow/source` | `src/app/api/enterprise/workflow/source/route.ts` | 部分：候选、证据与来源权限；媒体分支共用渲染器经本地 HTTP 验证，真实代理断开待核 |
 | `GET /api/enterprise/workflow/uploads` | `src/app/api/enterprise/workflow/uploads/route.ts` | 待核查 |
 | `GET /api/enterprise/workflow/worklogs` | `src/app/api/enterprise/workflow/worklogs/route.ts` | 待核查 |
+| `GET /api/fleet/media` | `src/app/api/fleet/media/route.ts` | 部分：签名缩略图、拒绝越权原件、原件字节及审计、断开信号保留经隔离站点控制回归；真实中继与网关待核 |
 | `GET /api/team` | `src/app/api/team/route.ts` | 部分：快照、聚合及账务写入竞争，`verify-team-subaccounts.ts` |
 | `GET /api/team/access` | `src/app/api/team/access/route.ts` | 待核查 |
 | `GET /api/team/conversation` | `src/app/api/team/conversation/route.ts` | 部分：对话 JSON 投影的锁及撤权，见连续排查首个检查点 |
@@ -170,6 +171,10 @@
 | `POST /api/enterprise/workflow/source` | `src/app/api/enterprise/workflow/source/route.ts` | 待核查 |
 | `POST /api/enterprise/workflow/uploads` | `src/app/api/enterprise/workflow/uploads/route.ts` | 待核查 |
 | `POST /api/enterprise/workflow/worklogs` | `src/app/api/enterprise/workflow/worklogs/route.ts` | 待核查 |
+| `POST /api/fleet/ack` | `src/app/api/fleet/ack/route.ts` | 待核查 |
+| `POST /api/fleet/poll` | `src/app/api/fleet/poll/route.ts` | 待核查 |
+| `POST /api/fleet/releases/ack` | `src/app/api/fleet/releases/ack/route.ts` | 待核查 |
+| `POST /api/fleet/releases/poll` | `src/app/api/fleet/releases/poll/route.ts` | 待核查 |
 | `POST /api/team/users` | `src/app/api/team/users/route.ts` | 待核查 |
 | `PUT /api/admin/bi/model-config/draft` | `src/app/api/admin/bi/model-config/draft/route.ts` | 待核查 |
 | `PUT /api/admin/bi/profile` | `src/app/api/admin/bi/profile/route.ts` | 待核查 |

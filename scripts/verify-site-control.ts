@@ -81,6 +81,8 @@ async function main() {
     const original=await fleet.applyFleetCommand({id:randomUUID(),instanceId,actor:'fixture-central',expiresAt:Date.now()+300000,operation:{type:'creations.media',creationId:own,assetId:asset}},instanceId);
     assert(original.status==='succeeded'&&'mediaUrl' in original.data);const orig=await media.fleetMediaResponse(new Request(original.data.mediaUrl));assert.equal(orig.status,200);assert(Buffer.from(await orig.arrayBuffer()).equals(bytes));
     assert.equal((await pool.query('SELECT count(*)::int n FROM app_site_media_audit')).rows[0].n,2);
+    const disconnected=new AbortController();disconnected.abort();
+    assert.equal((await media.fleetMediaResponse(new Request(thumbnail,{signal:disconnected.signal}))).status,499);
     await features.saveFeaturePolicy('fixture',{id:randomUUID(),email:staff,mode:'custom',allowed:['canvas','team'],expectedVersion:0});
     const narrowed={...policy,enabledFeatures:['team'],workspaceModules:['requirements']};
     assert.equal((await fleet.applyFleetCommand(command(2,narrowed),instanceId)).status,'succeeded');
