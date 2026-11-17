@@ -24,7 +24,14 @@ const historical=`CASE
  WHEN l.reason ~ '^画布标注编辑( · (low|medium|high))?$' THEN 'canvas.annotate'
  WHEN l.reason='画布在线改字' THEN 'canvas.text-edit'
  ELSE NULL END`;
-const ledgerSourceCTE=(window="l.created_at >= $2::timestamptz AND l.created_at < $3::timestamptz")=>`WITH mapped AS (
+const ledgerSourceCTE=(window="l.created_at >= $2::timestamptz AND l.created_at < $3::timestamptz")=>`WITH ledger_input AS MATERIALIZED (
+ SELECT l.id,l.email,l.created_at,l.delta,l.kind,l.reason FROM app_ledger l
+ WHERE l.email=ANY($1::text[]) AND ${window} AND ($4::text='' OR l.email=$4)
+), operation_keys AS (
+ SELECT DISTINCT ON (o.email,o.ledger_id) o.email,o.ledger_id,o.id,o.feature
+ FROM app_billing_operations o JOIN ledger_input l ON l.id=o.ledger_id AND l.email=o.email
+ ORDER BY o.email,o.ledger_id,o.created_at,o.id
+), mapped AS (
  SELECT l.id,l.email,l.created_at,l.delta,l.kind,l.reason,
   COALESCE(o.id,ro.id) AS operation_id,
   COALESCE(${featureCase('o.feature')},${featureCase('ro.feature')},${historical},'unknown') AS purpose,
@@ -33,11 +40,10 @@ const ledgerSourceCTE=(window="l.created_at >= $2::timestamptz AND l.created_at 
     WHEN l.kind='refund' AND l.delta>0 OR l.delta>0 AND EXISTS(SELECT 1 FROM app_credit_batches b WHERE b.email=l.email AND b.source='refund' AND b.id='bat-'||substring(l.id from 5)) THEN 'refund'
     WHEN l.kind='consume' AND l.delta<0 THEN 'consume'
     WHEN l.kind IN('grant','purchase','expire') THEN l.kind ELSE 'other' END AS event_kind
- FROM app_ledger l
- LEFT JOIN LATERAL(SELECT id,feature FROM app_billing_operations WHERE email=l.email AND ledger_id=l.id ORDER BY created_at,id LIMIT 1)o ON true
- LEFT JOIN app_billing_api_cost_reviews r ON l.id='led-api-refund-'||r.id
+ FROM ledger_input l
+ LEFT JOIN operation_keys o ON o.email=l.email AND o.ledger_id=l.id
+ LEFT JOIN app_billing_api_cost_reviews r ON starts_with(l.id,'led-api-refund-') AND r.id=substring(l.id from 16)
  LEFT JOIN app_billing_operations ro ON ro.id=r.operation_id AND ro.email=l.email
- WHERE l.email=ANY($1::text[]) AND ${window} AND ($4::text='' OR l.email=$4)
 ), ledger AS (SELECT * FROM mapped WHERE $5::text='' OR purpose=$5)`;
 const ledgerCTE=ledgerSourceCTE();
 const sums=`COALESCE(sum(-delta) FILTER(WHERE event_kind='consume'),0)::float8 AS consumed,COALESCE(sum(delta) FILTER(WHERE event_kind='refund'),0)::float8 AS refunded,
@@ -72,13 +78,42 @@ export async function enterpriseAnalytics(actor:TeamActor,q:AnalyticsFilter):Pro
  return enterpriseRead(actor,q.enterpriseId,async(tx,s)=>{
   const emails=scopedEmails(s,q),p=range(q,emails);
   const choices=(await tx.query(`SELECT u.email,u.name,COALESCE(m.supervisor_email,'') AS supervisor FROM app_users u LEFT JOIN app_enterprise_members m ON m.email=u.email AND m.enterprise_id=$2 WHERE u.email=ANY($1::text[]) ORDER BY u.name,u.email`,[emails,q.enterpriseId])).rows;
-  const summary=(await tx.query(`${ledgerCTE} SELECT ${sums},count(DISTINCT email) FILTER(WHERE event_kind='consume')::int AS "activeMembers",
-    COALESCE(sum(delta) FILTER(WHERE event_kind IN('grant','purchase')),0)::float8 AS issued,COALESCE(sum(delta) FILTER(WHERE event_kind='adjust'),0)::float8 AS adjustment,
-    COALESCE(sum(-delta) FILTER(WHERE event_kind='expire'),0)::float8 AS expired,count(*) FILTER(WHERE event_kind IN('consume','refund') AND purpose='unknown')::int AS unclassified FROM ledger`,p)).rows[0];
+  // Materialize the filtered ledger once for the six views of the current range.
+  const bucket=(v:string)=>`date_trunc('${q.group}',${v} AT TIME ZONE 'Asia/Shanghai')::date`;
+  const {summary,purposes,usage,total,detailRows,trend}=(await tx.query(`${ledgerCTE},
+   summary AS (
+    SELECT ${sums},count(DISTINCT email) FILTER(WHERE event_kind='consume')::int AS "activeMembers",
+     COALESCE(sum(delta) FILTER(WHERE event_kind IN('grant','purchase')),0)::float8 AS issued,
+     COALESCE(sum(delta) FILTER(WHERE event_kind='adjust'),0)::float8 AS adjustment,
+     COALESCE(sum(-delta) FILTER(WHERE event_kind='expire'),0)::float8 AS expired,
+     count(*) FILTER(WHERE event_kind IN('consume','refund') AND purpose='unknown')::int AS unclassified FROM ledger
+   ), purposes AS (
+    SELECT purpose,${sums} FROM ledger WHERE event_kind IN('consume','refund') GROUP BY purpose
+   ), usage AS (SELECT email,${sums} FROM ledger GROUP BY email),
+   detail_rows AS (${detailSQL} LIMIT 25 OFFSET $7),
+   days AS (SELECT DISTINCT ${bucket('d')} AS date FROM generate_series($2::timestamptz,$3::timestamptz-interval '1 day',interval '1 day')d),
+   spending AS (SELECT ${bucket('created_at')} AS date,${sums} FROM ledger GROUP BY 1),
+   output AS (
+    SELECT ${bucket('created_at')} AS date,count(*)::int AS artworks FROM app_artworks WHERE email=ANY($1::text[])
+     AND created_at >= $2 AND created_at < $3 AND deleted_at IS NULL AND ($4::text='' OR email=$4) AND $5::text='' GROUP BY 1
+   ), trend AS (
+    SELECT to_char(d.date,'YYYY-MM-DD') AS date,COALESCE(u.consumed,0)::float8 AS consumed,COALESCE(u.refunded,0)::float8 AS refunded,
+     COALESCE(u.net,0)::float8 AS net,COALESCE(u.events,0)::int AS events,COALESCE(o.artworks,0)::int AS artworks
+    FROM days d LEFT JOIN spending u USING(date) LEFT JOIN output o USING(date)
+   )
+   SELECT (SELECT row_to_json(s) FROM summary s) AS summary,
+    COALESCE((SELECT json_agg(p ORDER BY net DESC,purpose) FROM purposes p),'[]') AS purposes,
+    COALESCE((SELECT json_agg(u) FROM usage u),'[]') AS usage,
+    (SELECT count(*)::int FROM ledger WHERE $6::text='' OR event_kind=$6) AS total,
+    COALESCE((SELECT json_agg(d ORDER BY "createdAt" DESC,id DESC) FROM detail_rows d),'[]') AS "detailRows",
+    COALESCE((SELECT json_agg(t ORDER BY date) FROM trend t),'[]') AS trend`,[...p,q.kind,(q.page-1)*25])).rows[0] as {
+      summary: Pick<EnterpriseAnalytics['summary'],'consumed'|'refunded'|'net'|'events'|'activeMembers'|'issued'|'adjustment'|'expired'|'unclassified'>;
+      purposes: EnterpriseAnalytics['purposes']; usage: { email: string; consumed: number; refunded: number; net: number; events: number }[];
+      total: number; detailRows: LedgerEntry[]; trend: EnterpriseAnalytics['trend'];
+    };
+  const details=detailRows.map(row=>({...row,createdAt:new Date(row.createdAt).toISOString()}));
   const days=(Date.parse(q.to)-Date.parse(q.from))/86400000+1;
   const previous=(await tx.query(`${ledgerCTE} SELECT ${sums} FROM ledger`,[emails,shiftDate(q.from,-days)+'T00:00:00+08:00',q.from+'T00:00:00+08:00',q.email,q.purpose])).rows[0];
-  const purposes=(await tx.query(`${ledgerCTE} SELECT purpose,${sums} FROM ledger WHERE event_kind IN('consume','refund') GROUP BY purpose ORDER BY net DESC,purpose`,p)).rows;
-  const usage=(await tx.query(`${ledgerCTE} SELECT email,${sums} FROM ledger GROUP BY email`,p)).rows;
   const tasks=(await tx.query(`${tasksCTE} SELECT email,${taskSums} FROM tasks GROUP BY email`,p)).rows;
   // Artworks have no immutable business-purpose association. Never guess it;
   // in a purpose-filtered report output metrics are deliberately unavailable.
@@ -89,13 +124,6 @@ export async function enterpriseAnalytics(actor:TeamActor,q:AnalyticsFilter):Pro
     LEFT JOIN LATERAL(SELECT sum(remaining) AS principal,sum(remaining) FILTER(WHERE expires_at <= now()+interval '30 days') AS expiring FROM app_credit_batches WHERE email=u.email AND remaining>0 AND expires_at>now())b ON true
     WHERE u.email=ANY($1::text[]) AND ($3::text='' OR u.email=$3) ORDER BY u.name,u.email`,[emails,q.enterpriseId,q.email])).rows;
   const members=wallets.map(w=>({...w,...(usage.find(u=>u.email===w.email)||{consumed:0,refunded:0,net:0,events:0}),...(tasks.find(t=>t.email===w.email)||{tasks:0,succeeded:0,failed:0,pending:0,unknown:0}),artworks:artworks.find(a=>a.email===w.email)?.n||0})).sort((a,b)=>b.net-a.net||a.email.localeCompare(b.email));
-  const total=(await tx.query(`${ledgerCTE} SELECT count(*)::int AS n FROM ledger WHERE $6::text='' OR event_kind=$6`,[...p,q.kind])).rows[0].n;
-  const details=(await tx.query(`${ledgerCTE} ${detailSQL} LIMIT 25 OFFSET $7`,[...p,q.kind,(q.page-1)*25])).rows as LedgerEntry[];
-  const bucket=(v:string)=>`date_trunc('${q.group}',${v} AT TIME ZONE 'Asia/Shanghai')::date`;
-  const trend=(await tx.query(`${ledgerCTE}, days AS (SELECT DISTINCT ${bucket('d')} AS date FROM generate_series($2::timestamptz,$3::timestamptz-interval '1 day',interval '1 day')d),
-    usage AS(SELECT ${bucket('created_at')} AS date,${sums} FROM ledger GROUP BY 1),
-    output AS(SELECT ${bucket('created_at')} AS date,count(*)::int AS artworks FROM app_artworks WHERE email=ANY($1::text[]) AND created_at >= $2 AND created_at < $3 AND deleted_at IS NULL AND ($4::text='' OR email=$4) AND $5::text='' GROUP BY 1)
-    SELECT to_char(d.date,'YYYY-MM-DD') AS date,COALESCE(u.consumed,0)::float8 AS consumed,COALESCE(u.refunded,0)::float8 AS refunded,COALESCE(u.net,0)::float8 AS net,COALESCE(u.events,0)::int AS events,COALESCE(o.artworks,0)::int AS artworks FROM days d LEFT JOIN usage u USING(date) LEFT JOIN output o USING(date) ORDER BY d.date`,p)).rows;
   const risk=(code:string,rows:typeof wallets,amount=0)=>({code,count:rows.length,amount,members:rows.map(w=>({email:w.email,name:w.name}))});
   const riskRows=(await tx.query(`SELECT DISTINCT o.email FROM app_billing_operations o WHERE o.email=ANY($1::text[]) AND ($2::text='' OR o.email=$2) AND o.feature NOT LIKE 'credits.%' AND (o.state IN('manual','hold') OR o.state IN('prepared','reserved') AND o.created_at < now()-interval '24 hours') ${excludeImportedHistory('app_billing_operations','o')}`,[emails,q.email])).rows;
   const sumsMember=(key:string)=>members.reduce((n,m)=>n+Number(m[key as keyof typeof m]||0),0);

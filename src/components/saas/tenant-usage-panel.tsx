@@ -16,6 +16,7 @@ export function TenantUsagePanel({ tenantId, enterprise = false, refreshRevision
   const dedicated=useSiteProfile().mode==='enterprise';
   const [localPeriod, setPeriod] = useState(currentPeriod), [retry, setRetry] = useState(0);
   const period = selectedPeriod || localPeriod;
+  const { from, to } = period;
   const [result, setResult] = useState<{ key: string; data?: TenantUsage; error?: string } | null>(null);
   const key = `${enterprise}:${tenantId}:${period.from}:${period.to}`;
   const current = result?.key === key ? result : null;
@@ -25,14 +26,16 @@ export function TenantUsagePanel({ tenantId, enterprise = false, refreshRevision
     if (!valid) return () => controller.abort();
     void (async () => {
       try {
-        const query = new URLSearchParams({ tenantId, ...period });
-        const response = await fetch(`/api/${enterprise ? 'enterprise' : 'admin'}/tenant-usage?${query}`, { headers: await authHeader(), cache: 'no-store', signal: controller.signal });
+        const headers = await authHeader();
+        if (controller.signal.aborted) return;
+        const query = new URLSearchParams({ tenantId, from, to });
+        const response = await fetch(`/api/${enterprise ? 'enterprise' : 'admin'}/tenant-usage?${query}`, { headers, cache: 'no-store', signal: controller.signal });
         const payload = await response.json();
         if (!controller.signal.aborted) setResult(response.ok ? { key, data: payload } : { key, error: '企业用量读取失败，请重试' });
       } catch { if (!controller.signal.aborted) setResult({ key, error: '企业用量读取失败，请重试' }); }
     })();
     return () => controller.abort();
-  }, [tenantId, enterprise, key, period, retry, valid, refreshRevision]);
+  }, [tenantId, enterprise, key, from, to, retry, valid, refreshRevision]);
   const data = current?.data;
   const records = enterprise ? `${dedicated?'/admin':'/enterprise'}?${new URLSearchParams({ ...(dedicated?{}:{enterpriseId:tenantId}), view:'records',recordView:'confirmed', ...period })}` : `/admin/creations?${new URLSearchParams({ tenantId, ...period })}`;
   return <section className={styles.card} aria-label='企业创作用量' aria-busy={valid && !current}>
