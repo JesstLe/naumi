@@ -22,7 +22,7 @@ export async function readWorkflowSnapshot<T>(
   resolve: ResolveActor,
   principal: Principal,
   project: (tx: PoolClient, actor: Actor, snapshot: boolean) => Promise<T>,
-  options: {legacyRepeatable?: boolean; statementTimeoutMs?: 10000 | 15000; checkCurrent?: (tx: PoolClient, actor: Actor, result: T) => Promise<void>} = {},
+  options: {legacyRepeatable?: boolean; statementTimeoutMs?: 10000 | 15000 | 20000; checkCurrent?: (tx: PoolClient, actor: Actor, result: T) => Promise<void>} = {},
 ): Promise<T> {
   const tx = await pool.connect();
   const snapshot = resolve.readSnapshot;
