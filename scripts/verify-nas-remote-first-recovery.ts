@@ -38,7 +38,7 @@ async function main(){
     SETTINGS_SECRET:randomUUID()+randomUUID(),PGPOOL_MAX:'1',NAUMI_MULTI_USER:'1',NAUMI_NAS_DEFER_UPLOAD:'0',NAUMI_RELEASE_RUNTIME:'0'});
   const capacity=createMediaCapacityFixture(dir,8*1024**3);
   const realClock=Date.now;let jump=0;
-  let stopDb:(()=>Promise<void>)|undefined;
+  let stopDb:(()=>Promise<void>)|undefined,stopReleaseDb:(()=>Promise<void>)|undefined;
   try {
     Date.now=()=>realClock()+jump; // advance only the adapter's captured circuit clock below
     const storage=await import('../src/lib/storage');
@@ -153,10 +153,54 @@ async function main(){
       assert.ok(!fresh.preview_key.includes(oldScope));assert.deepEqual(objects.get(changing),replacement);
     }finally{pausePut=undefined;continuePut();}
     console.log('NAS_MISSING_VARIANTS=PASS POOL_MAX=1 DB_QUERY_WHILE_NAS_GET_PUT_PENDING=1 ORIGINAL_UNCHANGED=1 REPLAY_WRITES=0 SOURCE_CAS=1 EXPIRED_CLAIM_RECOVERED=1 DISTINCT_OWNER=1');
+
+    // Production release tracking remains on the real PostgreSQL path here;
+    // only the retired releases' observation rows and original files are synthetic.
+    const release=await import('../src/lib/release-runtime/store');
+    stopReleaseDb=()=>release.releasePool().end();
+    const currentInstance='nas-preview-recovery-fixture',previousInstance='retired-media-fixture',oldBoot=randomUUID(),oldRun=randomUUID();
+    Object.assign(process.env,{NAUMI_RELEASE_RUNTIME:'1',NAUMI_RELEASE_ADMISSION_START:'open',NAUMI_INSTANCE_ID:currentInstance,SOURCE_COMMIT:'a'.repeat(40)});
+    await release.ensureReleaseSchema();
+    const keys=Array.from({length:12},(_,i)=>`historical-previews/${i}.png`);
+    for(const key of keys){objects.set(key,original);await assets.registerMediaAsset(key,original,'image/png',true,owner,false);}
+    await db.getPool().query(`INSERT INTO app_release_activities(id,instance_id,boot_id,runtime_id,activity_kind,state,work_scope,work_key,outcome)
+      SELECT gen_random_uuid(),$1::text,$2::uuid,$3::uuid,'accepted-work','unknown','media-variant',($4::text[])[(n-1)%12+1],'background-promise-unconfirmed' FROM generate_series(1,125) n
+      UNION ALL SELECT gen_random_uuid(),$1::text,$2::uuid,$3::uuid,'accepted-work','active','media-mirror','fixture-mirror-'||n,NULL FROM generate_series(1,2) n
+      UNION ALL SELECT gen_random_uuid(),'other-retired-fixture',$2::uuid,$3::uuid,'accepted-work','unknown','durable-image','fixture-unrelated-'||n,'background-promise-unconfirmed' FROM generate_series(1,8) n`,[previousInstance,oldBoot,oldRun,keys]);
+    const historical=async()=> (await db.getPool().query("SELECT to_jsonb(a)::text AS value FROM app_release_activities a WHERE instance_id IN ($1,'other-retired-fixture') ORDER BY id",[previousInstance])).rows.map(r=>r.value);
+    const archived=await historical();assert.equal(archived.length,135);
+    const active=async()=> (await db.getPool().query("SELECT state,outcome,work_key FROM app_release_activities WHERE instance_id=$1 AND work_scope='media-variant' ORDER BY work_key",[currentInstance])).rows;
+    let resumeTracked!:()=>void,trackStarted!:()=>void;
+    const trackPause=new Promise<void>(resolve=>resumeTracked=resolve),trackReached=new Promise<void>(resolve=>trackStarted=resolve);
+    pauseGet=async key=>{if(key===keys[0]){trackStarted();await trackPause;}};
+    const tracked=assets.ensureMediaVariants(keys[0]);void tracked.catch(()=>{});
+    try{
+      await within(trackReached,'TRACKED_ORIGINAL_GET_NEVER_STARTED');
+      assert.deepEqual(await within(active(),'TRACKED_DATABASE_POOL_BLOCKED'),[{state:'active',outcome:null,work_key:keys[0]}]);
+      assert.deepEqual(await historical(),archived);
+    }finally{pauseGet=undefined;resumeTracked();}
+    assert.ok((await tracked)?.preview_key);
+    for(const key of keys.slice(1))assert.ok((await assets.ensureMediaVariants(key))?.preview_key);
+    const derivatives=new Set<string>();
+    for(const key of keys){
+      assert.deepEqual(objects.get(key),original);
+      const [,thumb,preview]=await keySet(key);assert.ok(thumb&&preview);
+      for(const part of [thumb,preview]){
+        const detail=await assets.getMediaAsset(part);assert.ok(detail?.remote_ready);assert.equal(detail.owner,owner);
+        assert.equal(writes.get(part),1);assert.equal(detail.sha256,hash(objects.get(part)!));derivatives.add(part);
+      }
+      assert.equal((await request(key,other,'preview')).status,404);
+      assert.ok((await assets.ensureMediaVariants(key))?.preview_key);
+    }
+    assert.equal(derivatives.size,24);assert.deepEqual(await historical(),archived);
+    const outcomes=await active();assert.equal(outcomes.length,12);
+    assert.ok(outcomes.every(x=>x.state==='finished'&&x.outcome==='background-promise-completed'));
+    assert.deepEqual(new Set(outcomes.map(x=>x.work_key)),new Set(keys));
+    console.log('NAS_MISSING_VARIANTS_HISTORY=PASS REAL_PG=1 TRACKED_ACTIVE_AND_FINISHED=12 ORIGINALS_UNCHANGED=12 DERIVATIVES_VERIFIED=24 OLD_ROWS_UNCHANGED=135 PRODUCTION=0');
     console.log('NAS_FIRST_RECOVERY=PASS PG=1 HTTP=1 ORIGINAL_AND_PREVIEWS=3 FALLBACK_REPAIRED=3 LOW_DISK_REFUSED=1 ACCESS_ISOLATED=1 EXTERNAL_PAID=0');
   }finally{
     Date.now=realClock;capacity.restore();server.closeAllConnections();await new Promise<void>(r=>server.close(()=>r()));
-    await stopDb?.();await pool.query(`DROP SCHEMA ${schema} CASCADE`);await pool.end();
+    await stopReleaseDb?.();await stopDb?.();await pool.query(`DROP SCHEMA ${schema} CASCADE`);await pool.end();
     await rm(dir,{recursive:true});
   }
 }

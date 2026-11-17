@@ -41,6 +41,17 @@ for(const path of tracked){
 add('入口 /admin','src/middleware.ts');
 add('入口 /enterprise（站点模式）','src/middleware.ts');
 
+// These entrypoints run in the same Web process and business pool: a wave of
+// ordinary media requests must not starve admin reads. Keep their evidence
+// separate from the admin/enterprise assets endpoints' own permissions.
+const sharedMedia=['src/app/media/[...path]/route.ts','src/app/api/media/image-cache/route.ts'];
+for(const path of sharedMedia){
+ const verbs=methods(path);
+ if(!verbs.length)throw Error(`Review shared media route: ${path}`);
+ const route=path.slice('src/app'.length,path.lastIndexOf('/'));
+ for(const verb of verbs)add(`共享素材 ${verb} ${route}`,path);
+}
+
 const workflow='services/enterprise-workflow/src/server.ts';
 const code=read(workflow);
 const multiline=new Map([['/v1/publication-files',['GET','POST']],['/v1/uploads',['GET','PUT','POST']]]);
@@ -74,7 +85,7 @@ for(const [,kind] of streams[1].matchAll(/'([^']+)'/g))workflowAdd(streams[2],`/
 
 const heading=`# 后台逐入口排查清单
 
-从 Git 跟踪的页面、布局、Next API 方法和工作流服务分发生成。它只枚举入口；同方法内的 \`action\`、\`operation\`、筛选、客户端触发及向下调用要在对应行追加证据。POST 也有只读预览，不能按方法直接划为写入。代理与直连分别记账；覆盖本表不代表完成生产验收。
+从 Git 跟踪的页面、布局、Next API 方法和工作流服务分发生成。另列与后台共用业务连接池的素材入口。它只枚举入口；同方法内的 \`action\`、\`operation\`、筛选、客户端触发及向下调用要在对应行追加证据。POST 也有只读预览，不能按方法直接划为写入。代理与直连分别记账；覆盖本表不代表完成生产验收。
 
 \`待核查\` 表示尚未逐项验证；\`部分\` 说明已验证的分支；整行所有读取变体和边界都有证据时才标记 \`已核查\`。用 \`node scripts/audit-admin-read-inventory.mjs --update\` 刷新入口并保留未变化行的记录，默认命令仅检查清单是否漂移。
 
