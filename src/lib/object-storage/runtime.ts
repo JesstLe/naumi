@@ -14,7 +14,10 @@ export const storageEnabled = config.enabled;
 export const privateMedia = config.privateMedia;
 
 export const remoteMediaAccess = config.accessMode;
-export const deferredNasDelivery=process.env.NAUMI_NAS_DEFER_UPLOAD==='1'&&config.driver==='s3'&&config.privateMedia&&config.accessMode==='proxy';
+const privateNasProxy=config.driver==='s3'&&config.privateMedia&&config.accessMode==='proxy';
+export const deferredNasDelivery=process.env.NAUMI_NAS_DEFER_UPLOAD==='1'&&privateNasProxy;
+const NAS_DISK_RESERVE=4*1024**3;
+let inFlightNasFallbackBytes=0;
 
 export const MEDIA_DIR = path.resolve(config.mediaDir);
 export const hasVerifiedStoredMirror=createStoredMirrorVerifier(MEDIA_DIR,deferredNasDelivery);
@@ -60,7 +63,7 @@ export async function writeStoredObject(bytes: Uint8Array, contentType: string, 
   if(deferredNasDelivery && bytes.byteLength<=64*1024*1024){
     await mkdir(MEDIA_DIR,{recursive:true});
     const space=await statfs(MEDIA_DIR);
-    if(space.bavail*space.bsize>4*1024**3+bytes.byteLength){
+    if(space.bavail*space.bsize>NAS_DISK_RESERVE+bytes.byteLength){
       await local.put(normalized,bytes,contentType,'private, max-age=300');
       return {remoteReady:false};
     }
@@ -69,9 +72,23 @@ export async function writeStoredObject(bytes: Uint8Array, contentType: string, 
     await backend.put(normalized, bytes, contentType, "private, max-age=300");
     return { remoteReady: true };
   } catch {
-    await local.put(normalized, bytes, contentType, "private, max-age=300").catch(() => {
-      throw new Error("对象写入失败");
-    });
+    // Under remote-first, disk writes are strictly a failure fallback. Count
+    // overlapping fallback writes in this process before admitting more data.
+    const protectReserve=privateNasProxy&&!deferredNasDelivery;
+    if(protectReserve)inFlightNasFallbackBytes+=bytes.byteLength;
+    try {
+      if(protectReserve){
+        await mkdir(MEDIA_DIR,{recursive:true});
+        const space=await statfs(MEDIA_DIR);
+        if(space.bavail*space.bsize<=NAS_DISK_RESERVE+inFlightNasFallbackBytes)
+          throw new Error("媒体暂时无法保存：NAS 不可用且本地空间不足");
+      }
+      await local.put(normalized, bytes, contentType, "private, max-age=300").catch(() => {
+        throw new Error("对象写入失败");
+      });
+    } finally {
+      if(protectReserve)inFlightNasFallbackBytes-=bytes.byteLength;
+    }
     return { remoteReady: false };
   }
 }

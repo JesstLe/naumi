@@ -149,7 +149,8 @@ class Gates(unittest.TestCase):
         real_path = pathlib.Path
         image = 'sha256:'+'a'*64
         source = {'Id': '1'*64, 'Name': '/naumi47-existing-web', 'Image': image,
-                  'Config': {'Cmd': ['node', 'server.js'], 'Env': ['EXISTING_SETTING=preserved']},
+                  'Config': {'Cmd': ['node', 'server.js'], 'Env': ['EXISTING_SETTING=preserved',
+                             'STORAGE_DRIVER=s3', 'MEDIA_PRIVATE=1', 'MEDIA_REMOTE_ACCESS=proxy', 'NAUMI_NAS_DEFER_UPLOAD=1']},
                   'NetworkSettings': {'Networks': {'synthetic-network': {}}}, 'Mounts': [],
                   'State': {'Running': True, 'StartedAt': 'existing-boot'},
                   'HostConfig': {'RestartPolicy': {'Name': 'unless-stopped'}}}
@@ -184,10 +185,12 @@ class Gates(unittest.TestCase):
                 result = tx.clone_web(m.public_identity(source), name='naumi47-new-video-origin', port=13122,
                                       image=image, commit='b'*40, memory_mib=2048, cpu=0.5,
                                       release_secret='s'*40, state_dir=state_name, build_version='1792674911',
-                                      reviewed_video_reference_origin='https://47.105.59.142')
+                                      reviewed_video_reference_origin='https://47.105.59.142',
+                                      reviewed_remote_first_nas_delivery=True)
             self.assertFalse(result['running'])
             self.assertEqual(candidate_env['VIDEO_REFERENCE_PUBLIC_BASE_URL'], 'https://47.105.59.142')
             self.assertEqual(candidate_env['EXISTING_SETTING'], 'preserved')
+            self.assertEqual(candidate_env['NAUMI_NAS_DEFER_UPLOAD'], '0')
             self.assertEqual(source, before, 'Existing slot configuration must remain untouched')
             self.assertEqual(len(calls), 1, 'Only candidate create is requested; no restart or update')
             tx.save.assert_any_call('reviewed-video-reference-origin-naumi47-new-video-origin.json',
