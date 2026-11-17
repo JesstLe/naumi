@@ -13,12 +13,12 @@ const prefix=(table:string)=>`'legacy:${table}:'||`;
 type Key={id:string;actor_email:string;source_id:string;legacy_table:LegacySource['table']|null;accepted_at:string};
 type Bookmark={id:string;accepted_at:string};
 
-function seek(after:Bookmark, materializeArchive=false) {
+function seek(after:Bookmark, materializeArchive=false, owner?:string) {
  const ranked=legacy.map(({table,kind})=>{
   const key=prefix(table)+'r.id';
   return `(SELECT ${key} AS id,r.email AS actor_email,r.created_at AS accepted_at,r.id AS source_id,'${table}'::text AS legacy_table
    FROM ${table} r
-   WHERE (r.created_at,(${key}))<($1::timestamptz,$2::text)
+   WHERE (r.created_at,(${key}))<($1::timestamptz,$2::text) ${owner?'AND r.email=$4':''}
    ${materializeArchive?`AND NOT EXISTS(SELECT 1 FROM archived a WHERE a.actor_email=r.email AND a.source_kind=${kind} AND a.source_id=r.id)`:`AND NOT EXISTS(SELECT 1 FROM app_creation_records known WHERE known.actor_email=r.email AND known.source_kind=${kind} AND known.source_id=r.id)
    AND NOT EXISTS(SELECT 1 FROM app_creation_links l JOIN app_creation_records known ON known.id=l.creation_id AND known.actor_email=l.actor_email
     WHERE l.actor_email=r.email AND l.target_id=r.id AND l.target_type=${kind})`}
@@ -34,16 +34,16 @@ function seek(after:Bookmark, materializeArchive=false) {
  return {sql:`WITH ${archive}children AS MATERIALIZED (
    SELECT p.email,c.value->>'jobId' AS child_id FROM app_image_jobs p
    CROSS JOIN LATERAL jsonb_each(CASE WHEN jsonb_typeof(p.snapshot->'children')='object' THEN p.snapshot->'children' ELSE '{}'::jsonb END)c
-   WHERE p.kind='imagegen' AND jsonb_typeof(p.snapshot->'children')='object'
+   WHERE p.kind='imagegen' AND jsonb_typeof(p.snapshot->'children')='object' ${owner?'AND p.email=$4':''}
    AND c.value->>'jobId' IS NOT NULL AND c.value->>'jobId'<>p.id
  ), ranked AS (
   (SELECT id,actor_email,accepted_at,source_id,NULL::text AS legacy_table FROM app_creation_records
-   WHERE parent_id IS NULL AND (accepted_at,id)<($1::timestamptz,$2::text)
+   WHERE parent_id IS NULL AND (accepted_at,id)<($1::timestamptz,$2::text) ${owner?'AND actor_email=$4':''}
    ORDER BY accepted_at DESC,id DESC LIMIT $3)
   UNION ALL ${ranked.join(' UNION ALL ')}
  )
  SELECT id,actor_email,accepted_at::text AS accepted_at,source_id,legacy_table FROM ranked
- ORDER BY ranked.accepted_at DESC,id DESC LIMIT $3`,args:[after.accepted_at,after.id,20]};
+ ORDER BY ranked.accepted_at DESC,id DESC LIMIT $3`,args:[after.accepted_at,after.id,20,...(owner?[owner]:[])]};
 }
 
 async function main() {
@@ -99,7 +99,7 @@ async function main() {
     return logPlan(label,{query:original},sql,params as unknown[]).then(()=>original(sql,params as unknown[]));
    }) as typeof client.query;
   });
-  const exact=(page:number)=>listUnifiedCreationPage({platform:true},creationFiltersSchema.parse({view:'unified',projection:'list',period:'all',page,size:20}));
+  const exact=(page:number,user?:string)=>listUnifiedCreationPage({platform:true},creationFiltersSchema.parse({view:'unified',projection:'list',period:'all',page,size:20,user}));
   const rowId=(r:Key)=>r.legacy_table?legacyCreationId({table:r.legacy_table,id:r.source_id,email:r.actor_email}):r.id;
   const execute=async(bookmark:Bookmark)=>{const {sql,args}=seek(bookmark);return (await pool.query<Key>(sql,args)).rows;};
   const rawBookmark=async(id:string):Promise<Bookmark>=>{
@@ -146,6 +146,26 @@ async function main() {
    const batch=seek(bookmark,true);
    await logPlan(`seek-page-${page}-with-materialized-archive`,pool,batch.sql,batch.args);
    assert.deepEqual((await pool.query<Key>(batch.sql,batch.args)).rows.map(rowId),expected.items.map(r=>r.id));
+  }
+  if(process.argv.includes('--dense')){
+   // Reclassify 29,500 older image jobs under immutable archive IDs. The
+   // excluded child stays excluded; reclassification must not change totals.
+   await pool.query(`INSERT INTO app_creation_records(id,actor_email,scope_kind,source_kind,source_id,status,accepted_at)
+    SELECT 'dense-'||n,r.email,'personal','image:generate',r.id,'succeeded',r.created_at
+    FROM generate_series(10002,39501)n JOIN app_image_jobs r ON r.id='img-'||n; ANALYZE app_creation_records`);
+   const owner='audit-1@fixture.test';
+   for(const probe of [{page:1,user:undefined,total:63700},{page:1901,user:undefined,total:63700},{page:64,user:owner,total:1274}]){
+    const {page,user,total}=probe;
+    const anchor=page===1?initial:await rawBookmark((await exact(page-1,user)).items.at(-1)!.id);
+    baselinePlan=`dense-exact-page-${page}${user?'-account':''}`;
+    const result=await exact(page,user);
+    assert.equal(result.pagination.total,total);
+    if(user){assert.equal(result.items.length,14);assert.ok(result.items.every(row=>row.actorEmail===user));}
+    const candidate=seek(anchor,false,user);
+    await logPlan(`dense-seek-page-${page}${user?'-account':''}`,pool,candidate.sql,candidate.args);
+    assert.deepEqual((await pool.query<Key>(candidate.sql,candidate.args)).rows.map(rowId),result.items.map(row=>row.id));
+   }
+   console.log('CREATION_KEYSET_DENSE_PASS image_archived=39500/40000 global_total=63700 account_total=1274 order_and_ids=1');
   }
   console.log('CREATION_KEYSET_PROBE_PASS exact_ids_and_order=1 mixed_sources=1 canonical_link_dedup=1 child_excluded=1 microsecond_ties=1 production_changes=0');
  }finally{await pool.end();}
