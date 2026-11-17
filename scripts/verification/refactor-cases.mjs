@@ -52,6 +52,7 @@ export const refactorCases=[
  ts('image25-price-admin-read','pricing','scripts/verify-image25-price-admin-read.ts','IMAGE25_ADMIN_READ=PASS'),
  {...node('image25-price-client','pricing','scripts/verify-image25-price-client.mjs','IMAGE25_PRICE_CLIENT=PASS'),clientReact:true},
  ts('tenant-admin-read-pressure','pricing','scripts/verify-tenant-admin-read-pressure.ts','TENANT_ADMIN_READ=PASS'),
+ ts('tenant-usage-range','pricing','scripts/verify-tenant-usage-range.ts','TENANT_USAGE_RANGE=PASS'),
  node('native-fixture-lifecycle','runtime','scripts/verify-native-fixture-lifecycle.cjs','NATIVE_FIXTURE_LIFECYCLE=PASS'),
  node('native-fixture-memory','runtime','scripts/verify-native-fixture-memory.cjs','NATIVE_FIXTURE_MEMORY=PASS'),
  node('native-parent-database','runtime','scripts/verify-native-parent-database.cjs','NATIVE_PARENT_DATABASE=PASS'),

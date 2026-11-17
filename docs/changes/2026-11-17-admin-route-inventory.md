@@ -51,7 +51,7 @@
 | `GET /api/admin/teams` | `src/app/api/admin/teams/route.ts` | 待核查 |
 | `GET /api/admin/templates` | `src/app/api/admin/templates/route.ts` | 待核查 |
 | `GET /api/admin/templates/cache` | `src/app/api/admin/templates/cache/route.ts` | 待核查 |
-| `GET /api/admin/tenant-usage` | `src/app/api/admin/tenant-usage/route.ts` | 部分：混合报表额度、HTTP 断开取消、租户归属和冻结用量口径由隔离 PG 验证；长区间容量待核 |
+| `GET /api/admin/tenant-usage` | `src/app/api/admin/tenant-usage/route.ts` | 部分：混合报表额度、HTTP 断开取消、冻结归属及隔离 PG 36,000 根记录的一年范围、单日与空窗口通过；真实站容量待核 |
 | `GET /api/admin/tenants` | `src/app/api/admin/tenants/route.ts` | 部分：按负责人邮箱核对，`verify-saas-tenants.ts`；其余列表变体待复查 |
 | `GET /api/admin/tenants/[id]` | `src/app/api/admin/tenants/[id]/route.ts` | 待核查 |
 | `GET /api/admin/tryon` | `src/app/api/admin/tryon/route.ts` | 待核查 |
@@ -70,7 +70,7 @@
 | `GET /api/enterprise/integration` | `src/app/api/enterprise/integration/route.ts` | 部分：实际登录、独立站、下级范围、流水精确分页及配置缺失拒绝；作品/生成历史深页、越界和具体记录读范围通过隔离库验证；真实网关待核 |
 | `GET /api/enterprise/media` | `src/app/api/enterprise/media/route.ts` | 部分：隔离 HTTP 验证共用渲染队列并发、过载、取消、镜像回退；单图的作品授权查询在断开时释放，私有权限和缓存版本回归。外围入口鉴权和真实网关待核 |
 | `GET /api/enterprise/saas-overview` | `src/app/api/enterprise/saas-overview/route.ts` | 部分：同租户/主管可见范围、专属站所有者仅数一次、报表连接额度和断开取消通过隔离 PG；大组织范围开销待核 |
-| `GET /api/enterprise/tenant-usage` | `src/app/api/enterprise/tenant-usage/route.ts` | 部分：混合报表额度、HTTP 断开取消、租户权限和冻结账务由隔离 PG 验证；长区间容量待核 |
+| `GET /api/enterprise/tenant-usage` | `src/app/api/enterprise/tenant-usage/route.ts` | 部分：混合报表额度、HTTP 断开取消、租户权限、冻结账务及隔离 PG 年度主管范围通过；大组织授权复核和真实站容量待核 |
 | `GET /api/enterprise/usage` | `src/app/api/enterprise/usage/route.ts` | 部分：报表账户行锁、撤权；CSV 精简投影不扩大成员权限；关闭 HTTP 后事务释放，与 BI 共用报表排队。长窗 SQL 成本和真实网关待核 |
 | `GET /api/enterprise/workflow` | `src/app/api/enterprise/workflow/route.ts` | 部分：工作流代理的取消和流限制；动态 action 按工作流直连条目继续追踪 |
 | `GET /api/enterprise/workflow/appeals` | `src/app/api/enterprise/workflow/appeals/route.ts` | 部分：实际登录 Cookie 和签名代理专项回归，通过跨企业、跨团队和撤权边界；直连断开实测，真实网关待核 |
