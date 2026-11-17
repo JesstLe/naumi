@@ -69,40 +69,46 @@ export function reverseHubCatalogMetadata(row: any, url: string, observedAt: str
   return metadata;
 }
 export type PublicSupplierDirectory = { url: string; fetchedAt: string; hash: string; body: any;specifications?:SupplierSpecificationCatalog };
-export async function discoverPublicSupplierDirectory(provider: ModelProvider, trustedOrigins: readonly string[], fetcher?: typeof fetch): Promise<PublicSupplierDirectory | null> {
+export async function discoverPublicSupplierDirectory(provider: ModelProvider, trustedOrigins: readonly string[], fetcher?: typeof fetch,signal?:AbortSignal): Promise<PublicSupplierDirectory | null> {
+  signal?.throwIfAborted();
+  const deadline=()=>{
+    signal?.throwIfAborted();
+    const timeout=AbortSignal.timeout(8000);
+    return signal?AbortSignal.any([signal,timeout]):timeout;
+  };
   if (!provider.options?.parameterCatalogPath&&!["openai-images", "new-api-flow", "openai-chat", "openai-videos"].includes(provider.protocol)) return null;
   try {
     const endpoint = validateModelEndpoint(provider.baseUrl, { trustedOrigins });
     const url = new URL("/api/pricing", endpoint).toString();
     let body:any=null;
     try{
-      const response = await (fetcher || modelEndpointFetch(endpoint, { trustedOrigins }))(url, { cache: "no-store", redirect: "error", signal: AbortSignal.timeout(8000) });
+      const response = await (fetcher || modelEndpointFetch(endpoint, { trustedOrigins }))(url, { cache: "no-store", redirect: "error", signal: deadline() });
       if(response.ok){const parsed=cleanSource(JSON.parse(await readBounded(response)));if(parsed.success===true&&Array.isArray(parsed.data)&&parsed.data.length<=10000)body=parsed;}
       else await response.body?.cancel();
-    }catch{/* A missing pricing endpoint must not prevent explicit parameter discovery. */}
+    }catch{signal?.throwIfAborted();/* Missing pricing does not prevent parameter discovery. */}
     let specifications:SupplierSpecificationCatalog|undefined;
     // Explicit same-origin catalog location, reusable across providers. Never
     // follow arbitrary links or send a provider key to a documentation host.
     if(provider.options?.parameterCatalogPath){
       const docsUrl=new URL(provider.options.parameterCatalogPath,endpoint).toString();
       try{
-        const docsResponse=await (fetcher||modelEndpointFetch(endpoint,{trustedOrigins}))(docsUrl,{cache:'no-store',redirect:'error',signal:AbortSignal.timeout(8000)});
+        const docsResponse=await (fetcher||modelEndpointFetch(endpoint,{trustedOrigins}))(docsUrl,{cache:'no-store',redirect:'error',signal:deadline()});
         if(docsResponse.ok){const docs=cleanSource(JSON.parse(await readBounded(docsResponse)));if(Array.isArray(docs.models)&&docs.models.length<=10000)specifications={url:docsUrl,fetchedAt:new Date().toISOString(),hash:sourceHash(docs),body:docs};}
         else await docsResponse.body?.cancel();
-      }catch{/* Preserve the previous separately-versioned source on an unavailable refresh. */}
+      }catch{signal?.throwIfAborted();/* Preserve previous sources on unavailable refresh. */}
     }
     // This is a documented export endpoint of this supplier, not a guessed convention for every host.
     if(!specifications&&(new URL(endpoint).hostname==="newapi.prompt-hubs.com"||new URL(endpoint).hostname==="console.prompt-hubs.com")){
       try{
         const docsUrl="https://console.prompt-hubs.com/docs/catalog.json";
-        const docsResponse=await (fetcher||modelEndpointFetch(docsUrl,{trustedOrigins}))(docsUrl,{cache:"no-store",redirect:"error",signal:AbortSignal.timeout(8000)});
+        const docsResponse=await (fetcher||modelEndpointFetch(docsUrl,{trustedOrigins}))(docsUrl,{cache:"no-store",redirect:"error",signal:deadline()});
         if(docsResponse.ok){const docs=cleanSource(JSON.parse(await readBounded(docsResponse)));if(docs.success===true&&Array.isArray(docs.models)&&docs.models.length<=10000){const stable={version:docs.version,capability_version:docs.capability_version,models:docs.models};specifications={url:docsUrl,fetchedAt:new Date().toISOString(),hash:sourceHash(stable),body:stable};}}else await docsResponse.body?.cancel();
-      }catch{/* A temporary missing spec export leaves recorded defaults and manual data intact. */}
+      }catch{signal?.throwIfAborted();/* Keep recorded defaults and manual data. */}
     }
     if(!body&&!specifications)return null;
     body ||= {success:false,data:[]};
     return { url, fetchedAt: new Date().toISOString(), hash: sourceHash(body), body,...(specifications?{specifications}:{}) };
-  } catch { return null; }
+  } catch { signal?.throwIfAborted();return null; }
 }
 const priceId = (model: string, variant: string) => {
   const h = sourceHash([model, variant]).slice(0, 32);

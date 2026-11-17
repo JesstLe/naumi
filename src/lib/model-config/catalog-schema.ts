@@ -8,4 +8,8 @@ export async function ensureProviderCatalogSchema(pool:Pool){
 export const PROVIDER_CATALOG_SQL = `CREATE TABLE IF NOT EXISTS app_model_provider_catalog(
  fingerprint text PRIMARY KEY,provider_id text NOT NULL,result jsonb NOT NULL,last_success_at timestamptz,
  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS app_model_provider_catalog_refresh(
+ fingerprint text PRIMARY KEY, token uuid NOT NULL, expires_at timestamptz NOT NULL,
+ published boolean NOT NULL DEFAULT false
 );`;

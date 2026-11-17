@@ -51,23 +51,29 @@ export async function discoverProviderCatalog(
   credentials: ReturnType<typeof createCredentialStore>,
   trustedOrigins: readonly string[],
   fetcher?: typeof fetch,
+  signal?:AbortSignal,
 ): Promise<ProviderCatalogResult> {
+  signal?.throwIfAborted();
   const fetchedAt = new Date().toISOString();
   const base = { providerId: provider.id, name: provider.name, protocol: provider.protocol, fetchedAt } as const;
   if (!catalogProtocols.has(provider.protocol)) return { ...base, status: "unsupported", models: [], error: "该协议未声明标准模型目录接口" };
   if (!provider.credentialRef) return { ...base, status: "no-credential", models: [], error: "尚未配置供应商凭据" };
   try {
     const key = await credentials.read(provider.credentialRef, provider.id);
+    signal?.throwIfAborted();
     const endpoint = validateModelEndpoint(provider.baseUrl, { trustedOrigins });
     const transport = fetcher || modelEndpointFetch(endpoint, { trustedOrigins });
-    const response = await transport(catalogUrl(endpoint,provider.protocol), { headers: { authorization: `Bearer ${key}` }, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(12000) });
+    const deadline=AbortSignal.timeout(12000);
+    const response = await transport(catalogUrl(endpoint,provider.protocol), { headers: { authorization: `Bearer ${key}` }, cache: "no-store", redirect: "error", signal:signal?AbortSignal.any([signal,deadline]):deadline });
     if (!response.ok) {await response.body?.cancel();return { ...base, status: "error", models: [], error: `供应商目录请求失败（HTTP ${response.status}）` };}
     const text = await readBounded(response);
+    signal?.throwIfAborted();
     let body: unknown;
     try { body = JSON.parse(text); } catch { return { ...base, status: "error", models: [], error: "供应商目录不是有效 JSON" }; }
     const {models,sourceModels,truncated} = parseModels(body);
     return { ...base, status: models.length ? "ok" : "empty", models, sourceModels, truncated };
   } catch (error) {
+    signal?.throwIfAborted();
     const code = error instanceof Error && ["TimeoutError", "AbortError"].includes(error.name) ? "目录连接超时，请检查上游网络或服务端代理配置" : error instanceof Error && /^supplier-query-http-\d+$/.test(error.message) ? error.message : "目录暂时不可用，请检查接口协议、地址或网络连接";
     return { ...base, status: "error", models: [], error: code };
   }

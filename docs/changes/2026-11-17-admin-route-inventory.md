@@ -13,7 +13,7 @@
 | `GET /api/admin/bi/conversation` | `src/app/api/admin/bi/conversation/route.ts` | 部分：按账号和会话取文字、保持 20 条分页；回环 HTTP 断开后 PostgreSQL 在解锁前退出；共享报表连接排队。会话正文大样本结果对照；真实网关与高并发待核 |
 | `GET /api/admin/bi/media` | `src/app/api/admin/bi/media/route.ts` | 部分：私有素材只取一次正文、本人原图授权、审计、与企业共用并发槽、断开停止存储和 SQL、实际 Chromium 切换/延迟加载。`verify-platform-bi-preview-pressure.ts`、`verify-bi-preview-browser.cjs`；真实网关待核 |
 | `GET /api/admin/bi/model-config` | `src/app/api/admin/bi/model-config/route.ts` | 待核查 |
-| `GET /api/admin/bi/model-config/catalog` | `src/app/api/admin/bi/model-config/catalog/route.ts` | 待核查 |
+| `GET /api/admin/bi/model-config/catalog` | `src/app/api/admin/bi/model-config/catalog/route.ts` | 部分：隔离验证管理员、缓存、已配置模型名，以及不暴露凭据；旧草稿读的写入和锁仍待独立核查 |
 | `GET /api/admin/bi/model-config/versions` | `src/app/api/admin/bi/model-config/versions/route.ts` | 待核查 |
 | `GET /api/admin/bi/provider-ops` | `src/app/api/admin/bi/provider-ops/route.ts` | 部分：隔离回归验证发布凭据隔离、同账户去重、缓存、版本变动拒绝、管理员边界和活动口径；50,000 条聚合、50,001 条原上限、历史索引、并发占用及真实 HTTP 断开配置/凭据/事件/熔断 SQL、最后页面取消上游已通过。缓存本身的现场锁与真实网关待核 |
 | `GET /api/admin/bi/trace` | `src/app/api/admin/bi/trace/route.ts` | 部分：外部追踪的总时限、在途上限及部分结果，`verify-bi-trace-deadline.ts` |
@@ -110,7 +110,7 @@
 | `POST /api/admin/artworks` | `src/app/api/admin/artworks/route.ts` | 部分：封禁分支与成员管理共享权限，阻止自封、其他管理员和跨站请求，成功记录操作日志（`verify-admin-route-hardening.ts`）；导入和删除的完整读写链路待核 |
 | `POST /api/admin/bi/channel-capacity` | `src/app/api/admin/bi/channel-capacity/route.ts` | 部分：隔离模块回归验证预算复位、通道探测状态清理、未知目标拒绝与审计字段；现网管理员入口未验，未在生产复位 |
 | `POST /api/admin/bi/model-config` | `src/app/api/admin/bi/model-config/route.ts` | 待核查 |
-| `POST /api/admin/bi/model-config/catalog` | `src/app/api/admin/bi/model-config/catalog/route.ts` | 待核查 |
+| `POST /api/admin/bi/model-config/catalog` | `src/app/api/admin/bi/model-config/catalog/route.ts` | 部分核查：显式刷新已验证短事务、跨连接池去重、过期结果不覆盖及客户端取消；旧版滚动期及间接写入口另验 |
 | `POST /api/admin/bi/model-config/credentials` | `src/app/api/admin/bi/model-config/credentials/route.ts` | 待核查 |
 | `POST /api/admin/bi/model-config/simulate` | `src/app/api/admin/bi/model-config/simulate/route.ts` | 待核查 |
 | `POST /api/admin/bi/model-config/validate` | `src/app/api/admin/bi/model-config/validate/route.ts` | 待核查 |
@@ -128,7 +128,7 @@
 | `POST /api/admin/fleet/releases` | `src/app/api/admin/fleet/releases/route.ts` | 待核查 |
 | `POST /api/admin/login` | `src/app/api/admin/login/route.ts` | 待核查 |
 | `POST /api/admin/model-health` | `src/app/api/admin/model-health/route.ts` | 待核查 |
-| `POST /api/admin/model-management` | `src/app/api/admin/model-management/route.ts` | 部分：隔离回归验证配置发布、并发锁、积分修改、旧任务和未知收据重试；供应商目录发现持事务等待外部 I/O 待独立复现 |
+| `POST /api/admin/model-management` | `src/app/api/admin/model-management/route.ts` | 部分：隔离回归验证发布、并发锁、积分、旧任务及未知收据；手动目录刷新共用已验证的短事务领取和网络取消。发布编排持会话锁期间的外部 I/O 待分支核查 |
 | `POST /api/admin/model-management/library` | `src/app/api/admin/model-management/library/route.ts` | 待核查 |
 | `POST /api/admin/model-management/onboarding` | `src/app/api/admin/model-management/onboarding/route.ts` | 待核查 |
 | `POST /api/admin/mvp` | `src/app/api/admin/mvp/route.ts` | 待核查 |

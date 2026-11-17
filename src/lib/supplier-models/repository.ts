@@ -40,12 +40,13 @@ export async function ingestSupplierDirectory(pool:Pool,p:ModelProvider,models:P
  try{await tx.query("BEGIN");for(const m of models)if(await insert(tx,p,m,unknownSupplierMetadata()))added++;await tx.query("COMMIT");return added;}
  catch(e){await tx.query("ROLLBACK");throw e;}finally{tx.release();}
 }
-export async function ingestSupplierSources(pool: Pool, provider: ModelProvider, directory: {models: ProviderCatalogModel[]; fetchedAt: string; truncated?: boolean; status: string}, published: PublicSupplierDirectory | null) {
+export async function ingestSupplierSources(pool: Pool, provider: ModelProvider, directory: {models: ProviderCatalogModel[]; fetchedAt: string; truncated?: boolean; status: string}, published: PublicSupplierDirectory | null,beforeWrite?:(tx:PoolClient)=>Promise<void>) {
  await ensureSupplierModels(pool);
  await ensureSupplierVideoSchema(pool);
  const tx = await pool.connect();
  try {
   await tx.query("BEGIN");
+  if(beforeWrite)await beforeWrite(tx);
   const accessible = new Map(directory.models.map(m => [m.id, m]));
   const publishedRows = (published?.body.data || []).filter((m: any) => typeof m.model_name === "string" && !!m.model_name.trim() && m.model_name.length <= 160 && !/[\u0000-\u001f\u007f]/.test(m.model_name));
   const publicMap = new Map<string, any>(publishedRows.map((m: any) => [m.model_name, m]));

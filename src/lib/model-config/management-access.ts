@@ -30,7 +30,7 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
   return async (request: Request) => {
     const auth = await deps.authorize(request); if (auth instanceof Response) return auth;
     if (request.method !== "GET" && !sameSiteBiMutation(request)) return biJson({ error: "不允许跨站修改" }, 403);
-    let staged = false;
+    let staged = false,discovering=false;
     let lock: PoolClient | undefined, lockKey: string | undefined;
     let releaseMutationTurn:(()=>void)|undefined;
     try {
@@ -66,7 +66,8 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
       if (body.action === "discover") {
         const p = snapshot.config.providers.find(p => p.id === body.providerId);
         if (!p) throw new ModelConfigError("PROVIDER_UNAVAILABLE", "上游来源不存在", 404);
-        return biJson(await refreshProviderCatalog(admin.pool, p, admin.credentials, admin.trustedOrigins, deps.fetcher, body.force));
+        discovering=true;
+        return biJson(await refreshProviderCatalog(admin.pool, p, admin.credentials, admin.trustedOrigins, deps.fetcher, body.force,request.signal));
       }
       const publicationResponse=async(publication:ModelPublication)=>{
         let discovery;
@@ -147,6 +148,7 @@ export function createModelManagementHandler(deps: { authorize: typeof biAuthori
       if(publication.phase==="applied")await pruneAppliedOperationDrafts(admin.pool).catch(()=>0);
       return await publicationResponse(publication);
     } catch (e) {
+      if(discovering&&request.signal.aborted)return biJson({error:"查询已取消"},499);
       if(request.method==="GET"){
         if(request.signal.aborted)return biJson({error:"查询已取消"},499);
         if(e instanceof ReportReadBusy||["55P03","57014"].includes((e as {code?:string})?.code??"")){
