@@ -6,6 +6,7 @@ import { BillingError, type BillingConfig, type ConfigRuntime } from "./types";
 import { validateBillingConfig } from "./rules/schema";
 import { ensureBillingSchema } from "./schema";
 import { fingerprint } from "./fingerprint";
+import type {BillingVersionSummary} from "./version-history-contract";
 type Deps = {
     pool: Pool;
     ensureSchema: () => Promise<void>;
@@ -28,6 +29,20 @@ export async function readPublishedBillingConfig(client:Pick<Pool,"query">):Prom
     const row=(await selectCurrent(client)).rows[0];
     if(!row)throw new BillingError("CONFIG_UNAVAILABLE","计费配置暂时不可用，请稍后重试",503);
     return snapshot(row);
+}
+
+function assertHistoryLimit(limit:number){
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100)
+        throw new BillingError("INVALID_CONFIG", "记录数量无效", 400);
+}
+export async function readBillingVersionHistory(client:Pick<Pool,"query">,limit:number,before?:number):Promise<BillingVersionSummary[]>{
+    assertHistoryLimit(limit);
+    if (before !== undefined && (!Number.isSafeInteger(before) || before < 1))
+        throw new BillingError("INVALID_CONFIG", "历史版本游标无效", 400);
+    const {rows}=before===undefined
+        ? await client.query("SELECT version,actor,created_at,reason FROM app_billing_config_versions ORDER BY version DESC LIMIT $1",[limit])
+        : await client.query("SELECT version,actor,created_at,reason FROM app_billing_config_versions WHERE version < $2 ORDER BY version DESC LIMIT $1",[limit,before]);
+    return rows.map(row=>({version:Number(row.version),actor:row.actor,createdAt:row.created_at.toISOString(),reason:row.reason}));
 }
 
 function validateWrite(id: string, actor: string, reason: string, version: number) {
@@ -130,11 +145,9 @@ export function createConfigRuntime(deps: Deps): ConfigRuntime {
             return structuredClone(await pending);
         },
         async history(limit) {
-            if (!Number.isInteger(limit) || limit < 1 || limit > 100)
-                throw new BillingError("INVALID_CONFIG", "记录数量无效", 400);
+            assertHistoryLimit(limit);
             await ensure();
-            const { rows } = await deps.pool.query("SELECT version,actor,created_at,reason FROM app_billing_config_versions ORDER BY version DESC LIMIT $1", [limit]);
-            return rows.map(row => ({ version: Number(row.version), actor: row.actor, createdAt: row.created_at.toISOString(), reason: row.reason }));
+            return readBillingVersionHistory(deps.pool,limit);
         },
         publish,
         async restore(input) { const target = await runtime.byVersion(input.targetVersion); return publish({ id: input.id, expectedVersion: input.expectedVersion, config: target.config, actor: input.actor, reason: input.reason }, input.targetVersion); },

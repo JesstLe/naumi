@@ -23,7 +23,7 @@
 | `GET /api/admin/billing/models/stages` | `src/app/api/admin/billing/models/stages/route.ts` | 待核查 |
 | `GET /api/admin/billing/operations` | `src/app/api/admin/billing/operations/route.ts` | 已核查：列表和详情不等待账务行锁，不写状态；可取消，旧字段和人工核对资格保持 |
 | `GET /api/admin/billing/pending` | `src/app/api/admin/billing/pending/route.ts` | 已核查：汇总和四类列表同一只读快照；角标继续只计已记录的状态及待核查任务 |
-| `GET /api/admin/billing/versions` | `src/app/api/admin/billing/versions/route.ts` | 待核查 |
+| `GET /api/admin/billing/versions` | `src/app/api/admin/billing/versions/route.ts` | 已核查：列表仅元数据，按版本游标翻页并兼容原数组；单版本只读冻结快照。隔离 PG 核对权限、错误、私有头、并发插入和两条读取断开释放 |
 | `GET /api/admin/creations` | `src/app/api/admin/creations/route.ts` | 部分：时间、精确计数和筛选；混合归档和高归档深页已测，游标原型高归档全站深页放大仍待解决 |
 | `GET /api/admin/creations/[id]` | `src/app/api/admin/creations/[id]/route.ts` | 部分：整详情、分页和费用经大任务逐项对照；恢复素材带可选来源定位，源取证、旧 URL 和鉴权已对照 |
 | `GET /api/admin/creations/[id]/assets/[assetId]` | `src/app/api/admin/creations/[id]/assets/[assetId]/route.ts` | 部分：历史深页、锁竞争、Range、来源定位、浏览器峰值和共用渲染器 HTTP 过载/断开通过；真实网关与多实例待核 |
@@ -121,7 +121,7 @@
 | `POST /api/admin/billing/models/preview` | `src/app/api/admin/billing/models/preview/route.ts` | 待核查 |
 | `POST /api/admin/billing/operations` | `src/app/api/admin/billing/operations/route.ts` | 已核查：锁定原操作后复核资格，原报价、审计、原操作号重试和历史隔离保持 |
 | `POST /api/admin/billing/simulate` | `src/app/api/admin/billing/simulate/route.ts` | 待核查 |
-| `POST /api/admin/billing/versions` | `src/app/api/admin/billing/versions/route.ts` | 待核查 |
+| `POST /api/admin/billing/versions` | `src/app/api/admin/billing/versions/route.ts` | 部分：隔离 PG 真实路由验证来源、版本 CAS、冻结目标与原操作重试，历史版本未改；生产模型配置兼容与真实用量待验 |
 | `POST /api/admin/brand-logo` | `src/app/api/admin/brand-logo/route.ts` | 待核查 |
 | `POST /api/admin/feature-access` | `src/app/api/admin/feature-access/route.ts` | 待核查 |
 | `POST /api/admin/fleet` | `src/app/api/admin/fleet/route.ts` | 待核查 |
@@ -298,7 +298,7 @@
 | `页面 /admin` | `src/app/admin/page.tsx` | 待核查 |
 | `页面 /admin/bi` | `src/app/admin/bi/page.tsx` | 待核查 |
 | `页面 /admin/bi/models` | `src/app/admin/bi/models/page.tsx` | 待核查 |
-| `页面 /admin/billing` | `src/app/admin/billing/page.tsx` | 部分：人工核对新旧深链不读现价；列表、详情及当前配置读取取消去重，切换保留草稿和原提交身份。计费历史、恢复与其他分区另核 |
+| `页面 /admin/billing` | `src/app/admin/billing/page.tsx` | 部分：人工核对新旧深链不读现价；列表、详情及当前配置读取取消去重，切换保留草稿和原提交身份；历史翻页、预览防乱序、基线更新保留冻结目标和恢复重试已核。其他分区另核 |
 | `页面 /admin/billing/price-table` | `src/app/admin/billing/price-table/page.tsx` | 待核查 |
 | `页面 /admin/billing/supplier-cost` | `src/app/admin/billing/supplier-cost/page.tsx` | 待核查 |
 | `页面 /admin/center` | `src/app/admin/center/page.tsx` | 部分：默认双概览分口径，旧 URL 重复 BI GET 已在真实浏览器复现及修复；导航和各面板仍待复查 |
