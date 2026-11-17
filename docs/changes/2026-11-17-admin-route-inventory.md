@@ -82,7 +82,7 @@
 | `GET /api/enterprise/workflow/files` | `src/app/api/enterprise/workflow/files/route.ts` | 待核查 |
 | `GET /api/enterprise/workflow/forms` | `src/app/api/enterprise/workflow/forms/route.ts` | 待核查 |
 | `GET /api/enterprise/workflow/guidelines` | `src/app/api/enterprise/workflow/guidelines/route.ts` | 待核查 |
-| `GET /api/enterprise/workflow/imports` | `src/app/api/enterprise/workflow/imports/route.ts` | 部分：代码确认 source/worksheet 流式代理、客户端断开传递；大文件并发内存待测 |
+| `GET /api/enterprise/workflow/imports` | `src/app/api/enterprise/workflow/imports/route.ts` | 部分：代码确认 source/worksheet 流式代理及客户端断开传递；工作流直连两份 64 MiB 已核查，代理实流复查保留 |
 | `GET /api/enterprise/workflow/notifications` | `src/app/api/enterprise/workflow/notifications/route.ts` | 部分：JSON 上限、取消和浏览器角标，`verify-workflow-read-safety.ts`、`verify-workflow-polling.mjs` |
 | `GET /api/enterprise/workflow/performance` | `src/app/api/enterprise/workflow/performance/route.ts` | 待核查 |
 | `GET /api/enterprise/workflow/projects` | `src/app/api/enterprise/workflow/projects/route.ts` | 待核查 |
@@ -212,7 +212,7 @@
 | `工作流 GET /v1/imports/rows` | `services/enterprise-workflow/src/server.ts` | 部分：并发停用、只读投影、原路径隐私，`formal-import.test.ts`；整表网络负载待测 |
 | `工作流 GET /v1/imports/worksheet` | `services/enterprise-workflow/src/server.ts` | 部分：首次展开解除批次锁、索引附件、排序兼容；整表网络负载待测 |
 | `工作流 GET /v1/imports/worksheet-audit` | `services/enterprise-workflow/src/server.ts` | 已核查：目录管理员与批次范围、定长审计分页及重开，`source-worksheet.ts` |
-| `工作流 GET /v1/imports/worksheet-file` | `services/enterprise-workflow/src/server.ts` | 部分：并发停用、撤权与损坏哈希、图片响应及大附件；多下载峰值内存待测 |
+| `工作流 GET /v1/imports/worksheet-file` | `services/enterprise-workflow/src/server.ts` | 已核查：并发停用、撤权、损坏哈希、图片响应、两个 64 MiB 流、取消与进程上限，`formal-import.test.ts`、`worksheet-download.test.ts` |
 | `工作流 GET /v1/notifications` | `services/enterprise-workflow/src/server.ts` | 部分：角标、收件箱、投递、设置与审计改用只读快照，`notifications.test.ts`、`read-transaction.test.ts` |
 | `工作流 GET /v1/orders` | `services/enterprise-workflow/src/server.ts` | 部分：分页、可见性及撤权竞争，`read-transaction.test.ts`；大范围扫描待量化 |
 | `工作流 GET /v1/orders/[orderId]` | `services/enterprise-workflow/src/server.ts` | 待核查 |
@@ -226,9 +226,9 @@
 | `工作流 GET /v1/publication-files` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 GET /v1/publication-preflight` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 GET /v1/publications` | `services/enterprise-workflow/src/server.ts` | 待核查 |
-| `工作流 GET /v1/references` | `services/enterprise-workflow/src/server.ts` | 待核查 |
-| `工作流 GET /v1/references/file` | `services/enterprise-workflow/src/server.ts` | 待核查 |
-| `工作流 GET /v1/references/library` | `services/enterprise-workflow/src/server.ts` | 待核查：页面逐订单重复读多组数据与持锁；下一轮复现 |
+| `工作流 GET /v1/references` | `services/enterprise-workflow/src/server.ts` | 已核查：仅显式选中附件、租户/团队、旧来源、停用和变更，`reference-assets.test.ts` |
+| `工作流 GET /v1/references/file` | `services/enterprise-workflow/src/server.ts` | 部分：快照、权限、哈希、原字节和预览限制，`reference-assets.test.ts`；同屏并发原始文件待测 |
+| `工作流 GET /v1/references/library` | `services/enterprise-workflow/src/server.ts` | 部分：24 个订单页共 7 次 SELECT、撤权/停用和跨团队，`reference-assets.test.ts`；大范围精确总数待量化 |
 | `工作流 GET /v1/routing` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 GET /v1/sla` | `services/enterprise-workflow/src/server.ts` | 待核查 |
 | `工作流 GET /v1/tasks` | `services/enterprise-workflow/src/server.ts` | 部分：分页、执行人范围、撤权竞争，`tasks.test.ts`、`read-transaction.test.ts` |

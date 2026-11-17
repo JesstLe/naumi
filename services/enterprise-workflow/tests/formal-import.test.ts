@@ -22,7 +22,7 @@ export async function formalImportChecks(pool:Pool){
  const imports=new FormalImportStore(pool,resolveDatabaseActor,{[enterpriseId]:root});
  assert.equal((await imports.context(p)).batches.length,2);assert.equal((await imports.rows(p,source)).rows[1].raw['任务完成情况'],'已完成');assert(!('path' in (await imports.rows(p,source)).assets[0]));
  const uploaded=await imports.worksheet.upload(p,source,{name:'worksheet.txt',data:data.toString('base64')});
- assert.equal(uploaded.id,h);assert.equal((await imports.worksheet.read(p,source)).persisted,false);assert((await imports.worksheet.file(p,source,h)).content.equals(data));
+ assert.equal(uploaded.id,h);assert.equal((await imports.worksheet.read(p,source)).persisted,false);const small=await imports.worksheet.file(p,source,h);const parts=[];for await(const part of small.stream)parts.push(part);assert(Buffer.concat(parts).equals(data));
  const legacy=new FormalImportStore(pool,(c,actor)=>resolveDatabaseActor(c,actor));
  const holdRows=(c:PoolClient)=>c.query('LOCK TABLE enterprise_workflow.import_rows IN ACCESS EXCLUSIVE MODE');
  const holdFiles=(c:PoolClient)=>c.query('LOCK TABLE enterprise_workflow.source_worksheet_files IN ACCESS EXCLUSIVE MODE');
@@ -30,7 +30,7 @@ export async function formalImportChecks(pool:Pool){
  const disableSource=()=>mutation('UPDATE enterprise_workflow.import_batches SET active=false WHERE enterprise_id=$1 AND source_hash=$2',[enterpriseId,source]);
  const restoreSource=()=>local.active(source,true,'fixture');
  for(const [lock,former,current] of [[holdRows,()=>legacy.worksheet.read(p,source),()=>imports.worksheet.read(p,source)],[holdRows,()=>legacy.rows(p,source),()=>imports.rows(p,source)],[holdFiles,()=>legacy.worksheet.file(p,source,h),()=>imports.worksheet.file(p,source,h)]] as const){
-  const old=await whileReadWaits<unknown>(pool,lock,former,async()=>{await assert.rejects(disableSource,{code:'55P03'});});assert.equal(old.status,'fulfilled');
+  const old=await whileReadWaits(pool,lock,former as ()=>Promise<unknown>,async()=>{await assert.rejects(disableSource,{code:'55P03'});});assert.equal(old.status,'fulfilled');if(old.value&&typeof old.value==='object'&&'stream' in old.value)(old.value.stream as import('node:stream').Readable).destroy();
   const result=await whileReadWaits<unknown>(pool,lock,current,disableSource);assert.equal(result.status,'rejected');assert.match(String(result.reason),/SOURCE_NOT_FOUND/);await restoreSource();
  }
  const revoked=await whileReadWaits(pool,holdFiles,()=>imports.worksheet.file(p,source,h),()=>mutation('UPDATE enterprise_workflow.person_directory_admins SET enabled=false WHERE enterprise_id=$1 AND subject=$2',[enterpriseId,p.subject]));
@@ -51,6 +51,14 @@ export async function formalImportChecks(pool:Pool){
  const server=createWorkflowServer(orders,async req=>req.headers.authorization==='Bearer formal-test'?p:null,undefined,undefined,undefined,undefined,undefined,undefined,undefined,imports);server.listen(0,'127.0.0.1');await once(server,'listening');const address=server.address();assert(address&&typeof address!=='string');const origin='http://127.0.0.1:'+address.port,headers={authorization:'Bearer formal-test'};
  try{assert.equal((await fetch(origin+'/v1/imports/context')).status,401);assert.equal((await fetch(origin+'/v1/imports/context',{headers})).status,200);const r=await fetch(origin+'/v1/imports/asset?source='+source+'&id='+h,{headers});assert.equal(r.status,200);assert.equal(r.headers.get('cache-control'),'private, no-store');assert.equal(r.headers.get('x-content-sha256'),h);assert.deepEqual(Buffer.from(await r.arrayBuffer()),data);
   await writeFile(join(root,h),Buffer.alloc(data.length));await assert.rejects(imports.asset(p,source,h,true),/SOURCE_FILE_HASH_MISMATCH/);await writeFile(join(root,h),data);
+  const size=64*1024*1024,block=Buffer.alloc(1024*1024,171),digest=createHash('sha256');for(let i=0;i<64;i++)digest.update(block);const largeId=digest.digest('hex');
+  await pool.query("INSERT INTO enterprise_workflow.source_worksheet_files(enterprise_id,source_hash,id,name,mime,bytes,content,subject) VALUES($1,$2,$3,'large.xlsx','application/octet-stream',$4,decode(repeat('ab',$4),'hex'),$5)",[enterpriseId,source,largeId,size,p.subject]);
+  const largeUrl=origin+'/v1/imports/worksheet-file?source='+source+'&id='+largeId;
+  const largeDownload=async()=>{const response=await fetch(largeUrl,{headers});assert.equal(response.status,200);assert.equal(response.headers.get('content-length'),String(size));assert.equal(response.headers.get('x-content-sha256'),largeId);assert.equal(response.headers.get('cache-control'),'private, no-store');const reader=response.body!.getReader();let count=0;const hash=createHash('sha256');for(;;){const part=await reader.read();if(part.done)break;count+=part.value.length;hash.update(part.value);}assert.equal(count,size);assert.equal(hash.digest('hex'),largeId);};
+  await Promise.all([largeDownload(),largeDownload()]);
+  const abandoned=await fetch(largeUrl,{headers});assert.equal(abandoned.status,200);await abandoned.body!.cancel();
+  await largeDownload();
+  console.log('WORKSHEET_STREAM_PASS: full_size64MiB=1 parallel_two=1 verified_bytes=1 headers=1 cancellation_and_next_download=1');
   await local.active(source,false,'fixture');await assert.rejects(imports.rows(p,source),/SOURCE_NOT_FOUND/);await assert.rejects(imports.confirm(p,source,{...command,expectedVersion:2}),/SOURCE_NOT_FOUND/);await assert.rejects(imports.asset(p,source,h,true),/SOURCE_NOT_FOUND/);await local.active(source,true,'fixture');
   await pool.query('UPDATE enterprise_workflow.person_directory_admins SET enabled=false WHERE enterprise_id=$1',[enterpriseId]);assert.equal((await fetch(origin+'/v1/imports/rows?source='+source,{headers})).status,403);await assert.rejects(imports.asset(p,source,h,true),/DIRECTORY_ADMIN_REQUIRED/);await pool.query('UPDATE enterprise_workflow.person_directory_admins SET enabled=true WHERE enterprise_id=$1',[enterpriseId]);
   await pool.query('UPDATE enterprise_workflow.accounts SET enabled=false WHERE enterprise_id=$1 AND subject=$2',[enterpriseId,p.subject]);await assert.rejects(imports.context(p),/FORBIDDEN/);
