@@ -95,6 +95,9 @@ async function workflows(){
   taskDocumentRef:{current:{merge:async ids=>ids.map(id=>({id,image:'/media/'+id+'.png'})),history:()=>{}}},videoTaskStore:{refresh:async()=>{}},livePendingPosition:()=>({x:400,y:50}),
   setPendNodes:fn=>{const next=fn(pend);pend.splice(0,pend.length,...next);},window:{setInterval:()=>1,clearInterval:()=>{}},flashTip:()=>{}};
  const hasRunOwner=fs.existsSync(path.join(root,'src/lib/canvas/workflow-runs.ts'));
+ if(fs.existsSync(path.join(root,'src/lib/browser-storage/local.ts'))){
+  compositionPorts.resilientLocalStorage=loader(root,{},{localStorage:storage})('src/lib/browser-storage/local.ts').resilientLocalStorage;
+ }
  if(hasRunOwner){
   const pending=load('src/lib/canvas/pending-presentation.ts').createCanvasPendingPresentation().bind('fixture-original-view');
   pending.subscribe(()=>pend.splice(0,pend.length,...pending.getSnapshot()));compositionPorts.pendingPresentation=pending;
