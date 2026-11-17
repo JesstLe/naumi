@@ -15,6 +15,7 @@ import {teamJson} from '@/lib/teams/access';
 import {ALL_FEATURE_IDS} from '@/lib/feature-access/catalog';
 import type {TeamActor} from '@/lib/teams/grants';
 import {createTenantSchema,updateTenantSchema,tenantMemberSchema,type TenantFilters,type TenantList,type TenantSummary} from './tenant-contracts';
+import {readOverviewActivity,type TenantDateWindow} from './overview-activity';
 
 
 
@@ -49,9 +50,8 @@ function summary(r:Record<string,any>):TenantSummary {
     createdAt:iso(r.created_at)!,updatedAt:iso(r.updated_at)!,creationCount:null,lastActivityAt:null};
 }
 async function creationTable(tx:PoolClient) {return !!(await tx.query("SELECT to_regclass('app_creation_records') IS NOT NULL AS present")).rows[0].present;}
-async function attachTenantActivity(tx:PoolClient,items:TenantSummary[],filters:TenantFilters) {
-  if(!items.length||!await creationTable(tx))return;
-  const dates=tenantDates(filters);
+async function attachTenantActivity(tx:PoolClient,items:TenantSummary[],dates:TenantDateWindow,creationExists?:boolean) {
+  if(!items.length||!(creationExists??await creationTable(tx)))return;
   const rows=(await tx.query(`SELECT tenant_id,count(*) FILTER(WHERE accepted_at>=$2 AND accepted_at<$3)::int AS n,max(accepted_at) AS last
     FROM app_creation_records WHERE scope_kind='tenant' AND parent_id IS NULL AND tenant_id=ANY($1::uuid[]) GROUP BY tenant_id`,[items.map(t=>t.tenantId),dates.start,dates.end])).rows;
   for(const tenant of items){const row=rows.find(r=>r.tenant_id===tenant.tenantId);tenant.creationCount=row?.n??0;tenant.lastActivityAt=iso(row?.last??null);}
@@ -62,18 +62,18 @@ export function tenantDates(filters:Pick<TenantFilters,'from'|'to'>) {
   if(from>to||Date.parse(to)-Date.parse(from)>366*day)throw new TeamError('日期范围须在一年内',400);
   return {from,to,start:new Date(`${from}T00:00:00+08:00`).toISOString(),end:new Date(Date.parse(`${to}T00:00:00+08:00`)+day).toISOString()};
 }
-export async function listTenants(filters:TenantFilters):Promise<TenantList> {
-  return transaction(async tx=>{
-    tenantDates(filters);
+async function tenantList(tx:PoolClient,filters:TenantFilters,dates:TenantDateWindow,creationExists?:boolean):Promise<TenantList> {
     const q=`%${filters.q.replace(/[\\%_]/g,'\\$&')}%`;
     const source=`WITH tenants AS (${projection}) SELECT * FROM tenants WHERE (name ILIKE $1 OR owner_email ILIKE $1 OR owner_name ILIKE $1) AND ($2::text IS NULL OR status=$2 OR ($2='expiring' AND status='active' AND authorized_until>now() AND authorized_until<=now()+interval '7 days'))`;
     const params=[q,filters.status||null];
     const total=Number((await tx.query(`SELECT count(*)::int n FROM (${source}) filtered`,params)).rows[0].n);
     const order=filters.sort==='name'?'lower(name),id':'created_at DESC,id';
     const rows=(await tx.query(`${source} ORDER BY ${order} LIMIT $3 OFFSET $4`,[...params,filters.size,(filters.page-1)*filters.size])).rows;
-    const items=rows.map(summary);await attachTenantActivity(tx,items,filters);
+    const items=rows.map(summary);await attachTenantActivity(tx,items,dates,creationExists);
     return {items,total,page:filters.page,size:filters.size,appliedFilters:filters,generatedAt:new Date().toISOString(),scope:'platform',availability:'available'};
-  });
+}
+export async function listTenants(filters:TenantFilters):Promise<TenantList> {
+  return transaction(tx=>tenantList(tx,filters,tenantDates(filters)));
 }
 export async function tenantDetail(id:string) {
   return transaction(async tx=>{
@@ -89,7 +89,7 @@ export async function tenantDetail(id:string) {
     const audit=(await tx.query(`SELECT command_id AS id,actor,action,changes,created_at FROM app_tenant_commands WHERE tenant_id=$1
       UNION ALL SELECT id,actor,action,changes,created_at FROM app_enterprise_audit WHERE enterprise_id=$1
       ORDER BY created_at DESC,id DESC LIMIT 100`,[id])).rows.map(row=>({...row,reason:row.changes?.reason??row.changes?.after?.reason??null}));
-    const tenant=summary(row);await attachTenantActivity(tx,[tenant],{q:'',page:1,size:20,sort:'createdAt'});
+    const tenant=summary(row);await attachTenantActivity(tx,[tenant],tenantDates({}));
     let consumedCredits:number|null=null;
     if(await creationTable(tx)&&(await tx.query("SELECT to_regclass('app_creation_links') IS NOT NULL AS present")).rows[0].present){
       const money=(await tx.query(`SELECT sum(b.charged_credits)::int AS n FROM app_billing_operations b
@@ -217,21 +217,16 @@ export async function mutateTenantMember(actor:TeamActor,id:string,command:z.inf
   });
 }
 export async function saasOverview(filters:TenantFilters) {
-  const tenants=await listTenants({...filters,size:10});
+  const dates=tenantDates(filters);
   await ensureTenantSchema();
-  const totals=(await getPool().query(`WITH tenants AS (${projection}) SELECT count(*)::int total,
-    count(*) FILTER(WHERE status='active' AND authorized_until>now() AND authorized_until<=now()+interval '7 days')::int expiring FROM tenants`)).rows[0];
-  const dates=tenantDates(filters),metrics={tenants:totals.total,activeTenants:null as number|null,creations:null as number|null,needsReview:null as number|null,failed:null as number|null,expiring:totals.expiring};
-  let trend:{date:string;count:number}[]|null=null;
-  const pool=getPool(),present=(await pool.query("SELECT to_regclass('app_creation_records') IS NOT NULL AS present")).rows[0].present;
-  if(present){
-    const counts=(await pool.query(`SELECT count(*)::int creations,count(DISTINCT tenant_id)::int active,
-      count(*) FILTER(WHERE status='needs_review')::int review,count(*) FILTER(WHERE status='failed')::int failed
-      FROM app_creation_records WHERE parent_id IS NULL AND accepted_at>=$1 AND accepted_at<$2`,[dates.start,dates.end])).rows[0];
-    Object.assign(metrics,{activeTenants:counts.active,creations:counts.creations,needsReview:counts.review,failed:counts.failed});
-    trend=(await pool.query(`SELECT to_char(d,'YYYY-MM-DD') AS date,COALESCE(c.n,0)::int AS count FROM generate_series($1::date,$2::date,'1 day') d
-      LEFT JOIN(SELECT (accepted_at AT TIME ZONE 'Asia/Shanghai')::date AS date_key,count(*)::int n FROM app_creation_records
-      WHERE parent_id IS NULL AND accepted_at>=$3 AND accepted_at<$4 GROUP BY date_key)c ON c.date_key=d::date ORDER BY d`,[dates.from,dates.to,dates.start,dates.end])).rows;
-  }
-  return {metrics,trend,tenants,generatedAt:new Date().toISOString()};
+  return withTransaction(getPool(),async tx=>{
+    await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
+    await tx.query("SET LOCAL statement_timeout='20s'; SET LOCAL lock_timeout='5s'");
+    const present=await creationTable(tx),tenants=await tenantList(tx,{...filters,size:10},dates,present);
+    const totals=(await tx.query(`WITH tenants AS (${projection}) SELECT count(*)::int total,
+      count(*) FILTER(WHERE status='active' AND authorized_until>now() AND authorized_until<=now()+interval '7 days')::int expiring FROM tenants`)).rows[0];
+    const activity=present?await readOverviewActivity(tx,dates):null;
+    return {metrics:{tenants:totals.total,expiring:totals.expiring,activeTenants:activity?.active??null,creations:activity?.creations??null,
+      needsReview:activity?.review??null,failed:activity?.failed??null},trend:activity?.trend??null,tenants,generatedAt:new Date().toISOString()};
+  });
 }

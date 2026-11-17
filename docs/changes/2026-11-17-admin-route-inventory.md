@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | `DELETE /api/admin/login` | `src/app/api/admin/login/route.ts` | 待核查 |
 | `GET /api/admin/artworks` | `src/app/api/admin/artworks/route.ts` | 待核查 |
-| `GET /api/admin/bi` | `src/app/api/admin/bi/route.ts` | 待核查 |
+| `GET /api/admin/bi` | `src/app/api/admin/bi/route.ts` | 部分：overview 的流水、作品、支付合并重复扫描；旧新指标及筛选对照通过，其他 section 继续核查 |
 | `GET /api/admin/bi/channel-capacity` | `src/app/api/admin/bi/channel-capacity/route.ts` | 待核查 |
 | `GET /api/admin/bi/conversation` | `src/app/api/admin/bi/conversation/route.ts` | 待核查 |
 | `GET /api/admin/bi/media` | `src/app/api/admin/bi/media/route.ts` | 待核查 |
@@ -43,7 +43,7 @@
 | `GET /api/admin/owner-account` | `src/app/api/admin/owner-account/route.ts` | 待核查 |
 | `GET /api/admin/prompts` | `src/app/api/admin/prompts/route.ts` | 待核查 |
 | `GET /api/admin/pubkey` | `src/app/api/admin/pubkey/route.ts` | 待核查 |
-| `GET /api/admin/saas-overview` | `src/app/api/admin/saas-overview/route.ts` | 部分：确认总数和趋势重复扫描同一创作窗口，隔离查询计划待对照 |
+| `GET /api/admin/saas-overview` | `src/app/api/admin/saas-overview/route.ts` | 已核查：管理授权、只读快照、日期和租户筛选、20 万条合成记录的单扫描计划 |
 | `GET /api/admin/settings` | `src/app/api/admin/settings/route.ts` | 待核查 |
 | `GET /api/admin/supplier-cost` | `src/app/api/admin/supplier-cost/route.ts` | 部分：流水、汇总和账户概览分标签，见负载排查记录 |
 | `GET /api/admin/supplier-cost/operations/[id]` | `src/app/api/admin/supplier-cost/operations/[id]/route.ts` | 待核查 |
@@ -294,7 +294,7 @@
 | `页面 /admin/billing` | `src/app/admin/billing/page.tsx` | 待核查 |
 | `页面 /admin/billing/price-table` | `src/app/admin/billing/price-table/page.tsx` | 待核查 |
 | `页面 /admin/billing/supplier-cost` | `src/app/admin/billing/supplier-cost/page.tsx` | 待核查 |
-| `页面 /admin/center` | `src/app/admin/center/page.tsx` | 待核查 |
+| `页面 /admin/center` | `src/app/admin/center/page.tsx` | 部分：默认双概览分口径，旧 URL 重复 BI GET 已在真实浏览器复现及修复；导航和各面板仍待复查 |
 | `页面 /admin/creations` | `src/app/admin/creations/page.tsx` | 待核查 |
 | `页面 /admin/creations/[id]` | `src/app/admin/creations/[id]/page.tsx` | 待核查 |
 | `页面 /admin/creations/resolve` | `src/app/admin/creations/resolve/page.tsx` | 待核查 |

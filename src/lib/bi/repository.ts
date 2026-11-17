@@ -355,76 +355,66 @@ export async function queryBi(q: BiQuery, access?: { client: PoolClient; allowed
 
 async function overview(q: BiQuery, pool: PoolClient): Promise<BiOverview> {
   const params = values(q);
-  const results = [
-    await pool.query(
-      `${scope} SELECT count(*)::int AS accounts,count(*) FILTER(WHERE membership.company IS NOT NULL OR p.account_type='enterprise')::int AS enterprises,
-      COALESCE(sum(u.credits_used),0)::float8 AS reserved FROM app_users u LEFT JOIN app_bi_account_profiles p ON p.email=u.email
-      LEFT JOIN enterprise_directory membership ON membership.email=u.email WHERE ${accountFilter("u.email")}`,
-      params,
-    ),
-    await pool.query(
-      `${scope} SELECT COALESCE(sum(-delta) FILTER(WHERE kind='consume' AND delta<0 AND reason<>'管理员调整积分'),0)::float8 AS consumed,
-      COALESCE(sum(delta) FILTER(WHERE kind='refund' AND delta>0),0)::float8 AS refunded,
-      count(DISTINCT email) FILTER(WHERE kind='consume' AND delta<0 AND reason<>'管理员调整积分')::int AS active_users
-      FROM app_ledger l WHERE ${accountFilter("l.email")} AND ${inRange("l")}`,
-      params,
-    ),
-    await pool.query(
-      `${scope} SELECT COALESCE(sum(GREATEST(0,COALESCE(b.principal,0)-u.credits_used)),0)::float8 AS available FROM app_users u
-      LEFT JOIN (SELECT email,sum(remaining) AS principal FROM app_credit_batches WHERE expires_at>now() AND remaining>0 GROUP BY email) b ON b.email=u.email WHERE ${accountFilter("u.email")}`,
-      params,
-    ),
-    await pool.query(
-      `${scope} SELECT count(*) FILTER(WHERE deleted_at IS NULL)::int AS artworks,count(*) FILTER(WHERE deleted_at IS NOT NULL)::int AS deleted_artworks FROM app_artworks a WHERE ${accountFilter("a.email")} AND ${inRange("a")}`,
-      params,
-    ),
-    await pool.query(
-      `${scope} SELECT sum(tasks)::int AS tasks,sum(failed)::int AS failed,sum(review)::int AS review FROM (${operationSummary}) t`,
-      params,
-    ),
-    await pool.query(
-      `${scope} SELECT COALESCE(sum(images),0)::int AS audit_images,COALESCE(sum(images) FILTER(WHERE requested_quality<>'' AND executed_quality<>'' AND requested_quality<>executed_quality),0)::int AS downgraded_images FROM app_image_cost_audit c WHERE ${accountFilter("c.email")} AND ${inRange("c")}`,
-      params,
-    ),
-    await pool.query(
-      `${scope} SELECT COALESCE(sum(amount) FILTER(WHERE provider IN ('wechat','alipay')),0)::float8 AS received_cents,COALESCE(sum(amount) FILTER(WHERE provider='mock'),0)::float8 AS mock_cents FROM app_orders o WHERE ${accountFilter("o.email")} AND status='paid' AND paid_at >= $1::timestamptz AND paid_at < $2::timestamptz`,
-      params,
-    ),
-    await pool.query(
-      `${scope}, days AS (SELECT d::date AS date FROM generate_series(($1::timestamptz AT TIME ZONE 'Asia/Shanghai')::date,(($2::timestamptz AT TIME ZONE 'Asia/Shanghai')::date-1),interval '1 day') d),
-      usage AS (SELECT (created_at AT TIME ZONE 'Asia/Shanghai')::date AS date,sum(-delta) FILTER(WHERE kind='consume' AND delta<0 AND reason<>'管理员调整积分') AS consumed,sum(delta) FILTER(WHERE kind='refund' AND delta>0) AS refunded FROM app_ledger l WHERE ${accountFilter("l.email")} AND ${inRange("l")} GROUP BY 1),
-      images AS (SELECT (created_at AT TIME ZONE 'Asia/Shanghai')::date AS date,count(*) AS artworks FROM app_artworks a WHERE ${accountFilter("a.email")} AND a.deleted_at IS NULL AND ${inRange("a")} GROUP BY 1)
-      , payments AS (SELECT (paid_at AT TIME ZONE 'Asia/Shanghai')::date AS date,sum(amount) FILTER(WHERE provider IN ('wechat','alipay')) AS received,sum(amount) FILTER(WHERE provider='mock') AS mock FROM app_orders o WHERE ${accountFilter("o.email")} AND status='paid' AND paid_at >= $1 AND paid_at < $2 GROUP BY 1)
-      SELECT to_char(d.date,'YYYY-MM-DD') AS date,COALESCE(u.consumed,0)::float8 AS consumed,COALESCE(u.refunded,0)::float8 AS refunded,COALESCE(i.artworks,0)::int AS artworks,COALESCE(p.received,0)::float8 AS "receivedCents",COALESCE(p.mock,0)::float8 AS "mockCents" FROM days d LEFT JOIN usage u USING(date) LEFT JOIN images i USING(date) LEFT JOIN payments p USING(date) ORDER BY d.date`,
-      params,
-    ),
-    await pool.query(
-      `${scope} SELECT upstream,cost_currency,sum(cost_amount_micros)::text AS cost_amount_micros,bool_and(COALESCE(cost_actual,false)) AS cost_actual,sum(images)::int AS images,sum(billed_credits)::float8 AS billed_credits,count(*) FILTER(WHERE requested_quality<>'' AND executed_quality<>'' AND requested_quality<>executed_quality)::int AS fallbacks FROM app_image_cost_audit c WHERE ${accountFilter("c.email")} AND ${inRange("c")} GROUP BY upstream,cost_currency ORDER BY images DESC,upstream,cost_currency LIMIT 12`,
-      params,
-    ),
-  ];
-  const row = (i: number) => results[i].rows[0];
+  const accounts=(await pool.query(
+    `${scope} SELECT count(*)::int AS accounts,count(*) FILTER(WHERE membership.company IS NOT NULL OR p.account_type='enterprise')::int AS enterprises,
+    COALESCE(sum(u.credits_used),0)::float8 AS reserved FROM app_users u LEFT JOIN app_bi_account_profiles p ON p.email=u.email
+    LEFT JOIN enterprise_directory membership ON membership.email=u.email WHERE ${accountFilter("u.email")}`,params,
+  )).rows[0];
+  const balance=(await pool.query(
+    `${scope} SELECT COALESCE(sum(GREATEST(0,COALESCE(b.principal,0)-u.credits_used)),0)::float8 AS available FROM app_users u
+    LEFT JOIN (SELECT email,sum(remaining) AS principal FROM app_credit_batches WHERE expires_at>now() AND remaining>0 GROUP BY email) b ON b.email=u.email WHERE ${accountFilter("u.email")}`,params,
+  )).rows[0];
+  // Each fact table contributes its own daily and total aggregate, avoiding both
+  // a second base scan and fan-out across ledger entries, artworks and orders.
+  const activity=(await pool.query(
+    `${scope}, days AS (SELECT d::date AS day FROM generate_series(($1::timestamptz AT TIME ZONE 'Asia/Shanghai')::date,(($2::timestamptz AT TIME ZONE 'Asia/Shanghai')::date-1),interval '1 day') d),
+    usage AS MATERIALIZED (
+      SELECT (l.created_at AT TIME ZONE 'Asia/Shanghai')::date AS day,l.email,GROUPING(l.email) AS daily,
+        sum(-delta) FILTER(WHERE kind='consume' AND delta<0 AND reason<>'管理员调整积分') AS consumed,
+        sum(delta) FILTER(WHERE kind='refund' AND delta>0) AS refunded
+      FROM app_ledger l WHERE ${accountFilter("l.email")} AND ${inRange("l")}
+      GROUP BY GROUPING SETS ((day),(l.email))
+    ), images AS MATERIALIZED (
+      SELECT (a.created_at AT TIME ZONE 'Asia/Shanghai')::date AS day,
+        count(*) FILTER(WHERE deleted_at IS NULL) AS artworks,count(*) FILTER(WHERE deleted_at IS NOT NULL) AS deleted
+      FROM app_artworks a WHERE ${accountFilter("a.email")} AND ${inRange("a")} GROUP BY day
+    ), payments AS MATERIALIZED (
+      SELECT (o.paid_at AT TIME ZONE 'Asia/Shanghai')::date AS day,
+        sum(amount) FILTER(WHERE provider IN ('wechat','alipay')) AS received,sum(amount) FILTER(WHERE provider='mock') AS mock
+      FROM app_orders o WHERE ${accountFilter("o.email")} AND status='paid' AND paid_at >= $1 AND paid_at < $2 GROUP BY day
+    )
+    SELECT
+      (SELECT COALESCE(sum(consumed),0)::float8 FROM usage WHERE daily=0) AS consumed,
+      (SELECT COALESCE(sum(refunded),0)::float8 FROM usage WHERE daily=0) AS refunded,
+      (SELECT count(*)::int FROM usage WHERE daily=0 AND consumed IS NOT NULL) AS active_users,
+      (SELECT COALESCE(sum(artworks),0)::int FROM images) AS artworks,
+      (SELECT COALESCE(sum(deleted),0)::int FROM images) AS deleted_artworks,
+      (SELECT COALESCE(sum(received),0)::float8 FROM payments) AS received_cents,
+      (SELECT COALESCE(sum(mock),0)::float8 FROM payments) AS mock_cents,
+      (SELECT jsonb_agg(jsonb_build_object('date',to_char(d.day,'YYYY-MM-DD'),'consumed',COALESCE(u.consumed,0)::float8,
+        'refunded',COALESCE(u.refunded,0)::float8,'artworks',COALESCE(i.artworks,0)::int,'receivedCents',COALESCE(p.received,0)::float8,
+        'mockCents',COALESCE(p.mock,0)::float8) ORDER BY d.day)
+       FROM days d LEFT JOIN usage u ON u.daily=1 AND u.day=d.day LEFT JOIN images i ON i.day=d.day LEFT JOIN payments p ON p.day=d.day) AS daily`,params,
+  )).rows[0];
+  const operations=(await pool.query(
+    `${scope} SELECT sum(tasks)::int AS tasks,sum(failed)::int AS failed,sum(review)::int AS review FROM (${operationSummary}) t`,params,
+  )).rows[0];
+  const audit=(await pool.query(
+    `${scope} SELECT COALESCE(sum(images),0)::int AS audit_images,COALESCE(sum(images) FILTER(WHERE requested_quality<>'' AND executed_quality<>'' AND requested_quality<>executed_quality),0)::int AS downgraded_images FROM app_image_cost_audit c WHERE ${accountFilter("c.email")} AND ${inRange("c")}`,params,
+  )).rows[0];
+  const models=(await pool.query(
+    `${scope} SELECT upstream,cost_currency,sum(cost_amount_micros)::text AS cost_amount_micros,bool_and(COALESCE(cost_actual,false)) AS cost_actual,sum(images)::int AS images,sum(billed_credits)::float8 AS billed_credits,count(*) FILTER(WHERE requested_quality<>'' AND executed_quality<>'' AND requested_quality<>executed_quality)::int AS fallbacks FROM app_image_cost_audit c WHERE ${accountFilter("c.email")} AND ${inRange("c")} GROUP BY upstream,cost_currency ORDER BY images DESC,upstream,cost_currency LIMIT 12`,params,
+  )).rows;
   return {
-    accounts: row(0).accounts,
-    enterprises: row(0).enterprises,
-    reserved: row(0).reserved,
-    available: row(2).available,
-    consumed: row(1).consumed,
-    refunded: row(1).refunded,
-    activeUsers: row(1).active_users,
-    artworks: row(3).artworks,
-    deletedArtworks: row(3).deleted_artworks,
-    tasks: row(4).tasks,
-    failed: row(4).failed,
-    review: row(4).review,
-    auditImages: row(5).audit_images,
-    downgradedImages: row(5).downgraded_images,
-    receivedCents: row(6).received_cents,
-    mockCents: row(6).mock_cents,
-    daily: results[7].rows,
-    models: normalize(results[8].rows),
+    accounts:accounts.accounts,enterprises:accounts.enterprises,reserved:accounts.reserved,available:balance.available,
+    consumed:activity.consumed,refunded:activity.refunded,activeUsers:activity.active_users,
+    artworks:activity.artworks,deletedArtworks:activity.deleted_artworks,
+    tasks:operations.tasks,failed:operations.failed,review:operations.review,
+    auditImages:audit.audit_images,downgradedImages:audit.downgraded_images,
+    receivedCents:activity.received_cents,mockCents:activity.mock_cents,daily:activity.daily??[],models:normalize(models),
   };
 }
+
 
 export async function updateBiProfile(
   email: string,
