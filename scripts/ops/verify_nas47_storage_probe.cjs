@@ -11,6 +11,8 @@ const specs=[
  {name:'mixed_asset_placement',ready:[false,true,false],local:[true,false,true],deferred:true,pass:true,pending:2},
  {name:'already_delivered_with_local_cache',ready:[true,true,true],local:[true,true,true],deferred:true,pass:true,pending:0},
  {name:'non_deferred_remote_first',ready:[true,true,true],local:[false,false,false],deferred:false,pass:true,pending:0},
+ {name:'scoped_v2_derivatives_cleaned',ready:[true,true,true],local:[false,false,false],deferred:false,scoped:true,pass:true,pending:0},
+ {name:'mismatched_v2_scope_never_deleted',ready:[true,true,true],local:[false,false,false],deferred:false,scoped:true,wrongScope:true,pass:false,error:'FIXTURE_KEY_REQUIRED'},
  {name:'pending_missing_local_rejected',ready:[false,true,true],local:[false,false,false],deferred:true,pass:false,error:'DURABLE_LOCAL_BYTES'},
  {name:'corrupt_local_rejected',ready:[false,true,true],local:[true,false,false],deferred:true,corruptLocal:true,pass:false,error:'LOCAL_FIXTURE_CHANGED'},
  {name:'corrupt_remote_rejected',ready:[true,true,true],local:[false,false,false],deferred:true,corruptRemote:true,pass:false,error:'NAS_DIRECT_SHA'},
@@ -33,8 +35,9 @@ async function scenario(spec,index){
   if(u.pathname==='/api/artworks/add'){
    body=Buffer.from(await options.body.get('image').arrayBuffer());const sha=hash(body),key=`canvas-uploads/${id}.png`;
    const bytes=[body,await sharp(body).resize(12,16).webp().toBuffer(),await sharp(body).resize(24,32).webp().toBuffer()];
-   const keys=[key,`media-variants/${sha}-thumb.webp`,`media-variants/${sha}-preview.webp`];
-   assets=keys.map((k,i)=>({key:k,owner,driver:'s3',sha256:hash(bytes[i]),bytes:bytes[i].length,remote_ready:spec.ready[i],thumbnail_key:i===0?keys[1]:null,preview_key:i===0?keys[2]:null}));
+   const scope=hash(JSON.stringify([key,owner,false,sha]));
+   const keys=spec.scoped?[key,`media-variants/v2/${scope}-512-${hash(bytes[1])}.webp`,`media-variants/v2/${spec.wrongScope?'0'.repeat(64):scope}-1600-${hash(bytes[2])}.webp`]:[key,`media-variants/${sha}-thumb.webp`,`media-variants/${sha}-preview.webp`];
+   assets=keys.map((k,i)=>({key:k,owner,public:false,driver:'s3',sha256:hash(bytes[i]),bytes:bytes[i].length,remote_ready:spec.ready[i],thumbnail_key:i===0?keys[1]:null,preview_key:i===0?keys[2]:null}));
    for(let i=0;i<3;i++){objects.set(keys[i],bytes[i]);if(spec.local[i]){const f=path.join(media,keys[i]);fs.mkdirSync(path.dirname(f),{recursive:true});fs.writeFileSync(f,spec.corruptLocal&&i===0?Buffer.from('corrupt'):bytes[i]);}}
    art={ok:true,id,image:'/media/'+key};return json(art);
   }
@@ -68,6 +71,7 @@ async function scenario(spec,index){
   const passed=fakeProcess.exitCode===0&&result?.passed===true;
   assert.equal(passed,spec.pass,'probe acceptance contract');assert.equal(sqlEnded,true);
   if(!spec.pass)assert.ok(errors.at(-1)?.endsWith(spec.error),'expected rejection reason');
+  if(spec.wrongScope)assert.equal(objects.size,3,'verify all cleanup keys before deleting any object');
   if(spec.pass){assert.equal(result.verificationDataCleaned,true);assert.equal(result.deferredQueueVerified,spec.pending>0);assert.equal(updateKeys.length,spec.pending);assert.equal(deleted,true);assert.equal(objects.size,0);}
   return{name:spec.name,pass:true,probeExit:fakeProcess.exitCode,queueVerified:result?.deferredQueueVerified,updateCount:updateKeys.length,error:errors.at(-1)||null};
  }catch(e){return{name:spec.name,pass:false,probeExit:fakeProcess.exitCode,error:String(e),probeError:errors.at(-1)||null};}
