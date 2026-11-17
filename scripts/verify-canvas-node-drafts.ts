@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { ImageNodeDraftStore, imageDraftKey, imageDraftScope } from '../src/lib/canvas/image-node-drafts';
 import { canvasMediaVariant } from '../src/lib/canvas/media-loading';
 import { reconcileCanvasNodes } from '../src/lib/canvas/scene-reconciliation';
+import { createCanvasPendingAtScreen, type CanvasPendingCreationPorts } from '../src/lib/canvas/node-creation';
+import { inheritableImagePrompt } from '../src/lib/canvas/image-references';
 import { readFileSync } from 'node:fs';
 const memory = new Map<string,string>();
 const storage = {getItem:(key:string)=>memory.get(key)||null,setItem:(key:string,value:string)=>{memory.set(key,value)}};
@@ -27,6 +29,18 @@ const full=new ImageNodeDraftStore(()=>({getItem:()=>null,setItem:()=>{throw Err
 for(const dpr of [1,1.25,1.5,2,3,4])for(const pixels of [512,513,1600,1601])check(canvasMediaVariant(pixels/dpr,dpr),pixels<=512?'thumbnail':pixels<=1600?'preview':'original');
 check(canvasMediaVariant(600,3),'original');check(canvasMediaVariant(600,2),'preview');check(canvasMediaVariant(1800,NaN),'original');
 const client=readFileSync('src/components/canvas/canvas-client.tsx','utf8');
+// The shared creation owner no longer seeds each single-reference pending node.
+// A new node gets its own draft key; linking a source must not copy its old prompt.
+let sequence=0;const activated:string[]=[];
+const ports:CanvasPendingCreationPorts={project:'project-A',viewport:()=>({x:0,y:0,zoom:1}),nextSequence:()=>++sequence,now:()=>100,imageLabel:'Image',
+  append:()=>{},history:()=>{},activate:node=>{activated.push(node.id);},focus:()=>{}};
+const blank=createCanvasPendingAtScreen({x:100,y:100},null,false,ports);
+const linked=createCanvasPendingAtScreen({x:200,y:200},'text-source',true,ports);
+store.write(imageDraftKey(scope,'text-source'),{prompt:'source text that must stay a live reference'});
+check(activated,[blank.id,linked.id]);check(blank.inputs,[]);check(linked.inputs,['text-source']);
+for(const node of [blank,linked]){
+  check({...{prompt:inheritableImagePrompt(undefined),ratio:'auto'},...store.read(imageDraftKey(scope,node.id))},{prompt:'',ratio:'auto'});
+}
 // Scene equality now belongs to the complete-value reconciliation owner, not
 // a handwritten JSON field list in CanvasClient. Both visual fields must still
 // invalidate a node, while an unchanged projection preserves its identity.
@@ -44,7 +58,9 @@ for(const [owner,token] of [
   [client,'const imageDraftNodeId = selectedPendId || selectedId'],
   [renderer,'forceOriginal={forceOriginal || !!d.inspectOriginal}'],
   [projection,'inspectOriginal: n.id === selectedId && multiSel.length <= 1'],
-  [client,'imageDraft.seed(pend.id, { prompt: "" });'],
+  [client,'const imageDraftArtwork = selectedPendId ? undefined'],
+  [client,'prompt: inheritableImagePrompt(imageDraftArtwork?.prompt)'],
+  [client,'await submitCanvasLink({source:sourceId,target:node.id,add:true},true)'],
   [client,'imageDraft.seed(node.id,{prompt:"",ratio:"auto"})'],
 ]){assert.ok(owner.includes(token),token);checks++;}
 assert.ok(!client.includes('setEditPrompt(carried ?? selected?.prompt'));checks++;

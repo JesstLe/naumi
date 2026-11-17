@@ -33,11 +33,22 @@ function noAgentQuoteConsent(source: string) {
     const sf=parsed(source);
     assert.equal(collect(sf,node=>ts.isPropertyAccessExpression(node)&&['pendingQuotes','userConfirmedQuote'].includes(node.name.text)).length,0,'cross-turn quote consent/quote pile must not return');
     assert.ok(hasCall(source,'getUser'),'retain real account/balance lookup');
-    const quote=importedName(sf,'./quotation','quoteForActor'),owner=sf.statements.filter(ts.isFunctionDeclaration).find(node=>node.name?.text==='agentQuote');assert.ok(owner,'retain Agent quotation owner');
-    const calls=collect(owner,node=>ts.isCallExpression(node)&&node.expression.getText(sf)===quote) as ts.CallExpression[];
-    assert.equal(calls.length,1,'one typed server quotation');
-    assert.equal(calls[0].arguments[0]?.getText(sf),'email','quote uses the authenticated actor');
-    assert.equal(calls[0].arguments[3]?.getText(sf),'snapshot','quote retains the original server snapshot');
+    const quote=importedName(sf,'./quotation','quoteForActor'),owner=sf.statements.filter(ts.isFunctionDeclaration).find(node=>node.name?.text==='agentQuote');assert.ok(owner?.body,'retain Agent quotation owner');
+    const quoteCalls=(scope:ts.Node)=>collect(scope,node=>ts.isCallExpression(node)&&node.expression.getText(sf)===quote) as ts.CallExpression[];
+    // Each mutually exclusive tool path (including the final fallback) owns one quote.
+    const gates=['videoTool','name==="review_video_storyboard_audio"','name==="generate_dialogue_speech"||name==="transcribe_dialogue_audio"','name==="review_video_storyboard_take"'];
+    const branchMap=new Map(owner.body.statements.filter(ts.isIfStatement).map(node=>[node.expression.getText(sf).replace(/\s/g,'').replace(/'/g,'"'),node]));
+    for(const gate of gates){const branch=branchMap.get(gate);assert.ok(branch,`retain quotation path ${gate}`);assert.equal(quoteCalls(branch.thenStatement).length,1,`one typed server quotation in ${gate}`);}
+    const fallback=owner.body.statements.at(-1);assert.ok(fallback&&ts.isReturnStatement(fallback),'retain direct final quotation fallback');assert.equal(quoteCalls(fallback).length,1,'one typed server quotation in the fallback');
+    const calls=quoteCalls(owner.body);
+    assert.equal(calls.length,gates.length+1,'no duplicate or unowned quotation calls');
+    for(const call of calls){
+        assert.equal(call.arguments[0]?.getText(sf),'email','quote uses the authenticated actor on every path');
+        assert.equal(call.arguments[3]?.getText(sf),'snapshot','quote retains the original server snapshot on every path');
+    }
+    const snapshots=collect(owner,node=>ts.isVariableDeclaration(node)&&node.name.getText(sf)==='snapshot') as ts.VariableDeclaration[];
+    assert.equal(snapshots.length,2,'only the general and prepared-video paths establish a snapshot');
+    assert.ok(snapshots.every(node=>node.initializer?.getText(sf).replace(/\s/g,'')==='currentModelBillingSnapshot()??awaitruntime.config.current()'),'use the current server context or billing configuration for each snapshot');
     assert.equal(collect(sf,node=>ts.isNewExpression(node)&&node.expression.getText(sf)==='Request').length,0,'Agent quotation must not synthesize HTTP authentication');
 }
 function importedName(sf:ts.SourceFile,module:string,name:string){
@@ -147,12 +158,15 @@ try {
     checks++;
     assert.throws(() => noAgentQuoteConsent(agent + '\nconst consent=session.userConfirmedQuote;'));
     checks++;
-    noAgentQuoteConsent(agent.replace('import {quoteForActor}','import {quoteForActor as originalActorQuote}').replace('await quoteForActor(','await originalActorQuote('));checks++;
+    noAgentQuoteConsent(agent.replace('import {quoteForActor}','import {quoteForActor as originalActorQuote}').replaceAll('await quoteForActor(','await originalActorQuote('));checks++;
     for(const changed of [
         agent.replace('await quoteForActor(','await fabricatedQuote('),
         agent.replace('from "./quotation"','from "./server"'),
         agent.replace('quoteForActor(email,','quoteForActor(cred.cookie,'),
         agent.replace('},undefined,snapshot)','})'),
+        agent.replace('if(!plan)return undefined;','if(!plan)return undefined; await quoteForActor(email,{},undefined,snapshot);'),
+        agent.replace('const quantity =','await quoteForActor(email,{},undefined,snapshot);\n    const quantity ='),
+        agent.replace('snapshot=currentModelBillingSnapshot()??await runtime.config.current()','snapshot=args.snapshot'),
         agent.replace('    const quantity =','    new Request("http://internal");\n    const quantity ='),
     ]){assert.throws(()=>noAgentQuoteConsent(changed));checks++;}
 
