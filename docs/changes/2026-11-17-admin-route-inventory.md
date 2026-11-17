@@ -24,9 +24,9 @@
 | `GET /api/admin/billing/operations` | `src/app/api/admin/billing/operations/route.ts` | 待核查 |
 | `GET /api/admin/billing/pending` | `src/app/api/admin/billing/pending/route.ts` | 部分：角标、待核查查询和旧账务状态边界，`verify-billing-pending-view.ts` |
 | `GET /api/admin/billing/versions` | `src/app/api/admin/billing/versions/route.ts` | 待核查 |
-| `GET /api/admin/creations` | `src/app/api/admin/creations/route.ts` | 部分：历史时间、精确计数、筛选，`verify-saas-creations.ts`；混合归档深页和连接成本待核 |
-| `GET /api/admin/creations/[id]` | `src/app/api/admin/creations/[id]/route.ts` | 部分：规范与历史详情、证据分页、状态与费用，`verify-saas-creations.ts`；大任务族待核 |
-| `GET /api/admin/creations/[id]/assets/[assetId]` | `src/app/api/admin/creations/[id]/assets/[assetId]/route.ts` | 部分：历史深页输入和输出独立读取、拒绝跨来源和已删作品、视频 Range，锁竞争专项通过；页面并发素材待核 |
+| `GET /api/admin/creations` | `src/app/api/admin/creations/route.ts` | 部分：时间、精确计数和筛选；混合归档和高归档深页已测，游标原型高归档全站深页放大仍待解决 |
+| `GET /api/admin/creations/[id]` | `src/app/api/admin/creations/[id]/route.ts` | 部分：规范与历史详情、证据分页、状态与费用；6,000 后代的整详情与旧版逐项对照，恢复素材高负载待核 |
+| `GET /api/admin/creations/[id]/assets/[assetId]` | `src/app/api/admin/creations/[id]/assets/[assetId]/route.ts` | 部分：历史深页、视频 Range 和锁竞争；已记录素材向上核对归属，大任务跨分支对照通过；页面并发素材待核 |
 | `GET /api/admin/creations/[id]/events` | `src/app/api/admin/creations/[id]/events/route.ts` | 部分：规范与历史事件投影、鉴权、无事件历史空结果，`verify-saas-creations.ts`；大任务族待核 |
 | `GET /api/admin/enterprise-workbench` | `src/app/api/admin/enterprise-workbench/route.ts` | 待核查 |
 | `GET /api/admin/feature-access` | `src/app/api/admin/feature-access/route.ts` | 待核查 |
@@ -63,7 +63,7 @@
 | `GET /api/enterprise/artworks` | `src/app/api/enterprise/artworks/route.ts` | 待核查 |
 | `GET /api/enterprise/content` | `src/app/api/enterprise/content/route.ts` | 待核查 |
 | `GET /api/enterprise/creations` | `src/app/api/enterprise/creations/route.ts` | 部分：企业近期固定 5 条、历史归属与统一列表；混合归档深页待核 |
-| `GET /api/enterprise/creations/[id]` | `src/app/api/enterprise/creations/[id]/route.ts` | 部分：证据及费用分页、脱敏、跨租户和撤权，`verify-saas-creations.ts`；大任务族待核 |
+| `GET /api/enterprise/creations/[id]` | `src/app/api/enterprise/creations/[id]/route.ts` | 部分：共用详情查询经大任务 SQL 对照；企业真实鉴权、证据与费用分页、脱敏、跨租户和撤权通过；恢复素材高负载待核 |
 | `GET /api/enterprise/creations/[id]/assets/[assetId]` | `src/app/api/enterprise/creations/[id]/assets/[assetId]/route.ts` | 部分：视频 Range、撤权、保留一连接时的受控输入、历史输入与账务解耦；页面并发素材待核 |
 | `GET /api/enterprise/creations/[id]/events` | `src/app/api/enterprise/creations/[id]/events/route.ts` | 部分：事件分页、规范与归档脱敏、跨租户、撤权和锁竞争，`verify-saas-creations.ts`；大任务族待核 |
 | `GET /api/enterprise/health` | `src/app/api/enterprise/health/route.ts` | 部分：健康统计权限、账户行锁及隔离，`verify-enterprise-analytics.ts` |
