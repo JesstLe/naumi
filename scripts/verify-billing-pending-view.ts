@@ -52,6 +52,10 @@ async function main() {
     await pool.query("INSERT INTO app_video_tasks(id,email,status,model,cost,error_code,error,updated_at) VALUES('op-video','video@example.com','needs_attention','video-x',30,'poll_unknown','轮询结果未知',now()-interval '30 minutes')");
     await pool.query("INSERT INTO app_video_tasks(id,email,status,model,cost,error_code,error,updated_at) VALUES('video-plain','video2@example.com','needs_attention','video-y',0,'creation_unknown','停止请求已保留',now()-interval '5 minutes')");
 
+    const projected=await readPendingOverview(pool);
+    assert.equal(projected.summary["billing-operation"].count,4,"overview includes the due reservations before the worker");
+    assert.equal((await readPendingSummary(pool)).total,4,"the badge still counts only stored operation state and visible tasks");
+    assert.equal((await pool.query("SELECT count(*)::int AS n FROM app_billing_operations WHERE state='manual'")).rows[0].n,0,"overview does not write the projected state");
     const exposed = await exposeAbandonedBillingOperations();
     assert.equal(exposed, 4, "expose converts exactly the four linked/stale operations");
     const states = Object.fromEntries((await pool.query("SELECT id,state FROM app_billing_operations")).rows.map(row => [row.id, row.state]));
@@ -65,6 +69,7 @@ async function main() {
     console.log("PASS exposure converts stale and task-linked reservations, spares fresh/settled ones");
 
     const view = await readPendingOverview(pool);
+    assert.deepEqual(view.items,projected.items);assert.deepEqual(view.summary,projected.summary);
     assert.equal(view.summary["billing-operation"].count, 4);
     assert.equal(view.summary["image-job"].count, 1);
     assert.equal(view.summary["canvas-task"].count, 1);

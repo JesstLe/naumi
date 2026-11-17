@@ -21,8 +21,8 @@
 | `GET /api/admin/billing` | `src/app/api/admin/billing/route.ts` | 待核查 |
 | `GET /api/admin/billing/image25-prices` | `src/app/api/admin/billing/image25-prices/route.ts` | 待核查 |
 | `GET /api/admin/billing/models/stages` | `src/app/api/admin/billing/models/stages/route.ts` | 待核查 |
-| `GET /api/admin/billing/operations` | `src/app/api/admin/billing/operations/route.ts` | 待核查 |
-| `GET /api/admin/billing/pending` | `src/app/api/admin/billing/pending/route.ts` | 部分：角标、待核查查询和旧账务状态边界，`verify-billing-pending-view.ts` |
+| `GET /api/admin/billing/operations` | `src/app/api/admin/billing/operations/route.ts` | 已核查：列表和详情不等待账务行锁，不写状态；可取消，旧字段和人工核对资格保持 |
+| `GET /api/admin/billing/pending` | `src/app/api/admin/billing/pending/route.ts` | 已核查：汇总和四类列表同一只读快照；角标继续只计已记录的状态及待核查任务 |
 | `GET /api/admin/billing/versions` | `src/app/api/admin/billing/versions/route.ts` | 待核查 |
 | `GET /api/admin/creations` | `src/app/api/admin/creations/route.ts` | 部分：时间、精确计数和筛选；混合归档和高归档深页已测，游标原型高归档全站深页放大仍待解决 |
 | `GET /api/admin/creations/[id]` | `src/app/api/admin/creations/[id]/route.ts` | 部分：整详情、分页和费用经大任务逐项对照；恢复素材带可选来源定位，源取证、旧 URL 和鉴权已对照 |
@@ -119,7 +119,7 @@
 | `POST /api/admin/billing` | `src/app/api/admin/billing/route.ts` | 待核查 |
 | `POST /api/admin/billing/models/postprocess/retry` | `src/app/api/admin/billing/models/postprocess/retry/route.ts` | 待核查 |
 | `POST /api/admin/billing/models/preview` | `src/app/api/admin/billing/models/preview/route.ts` | 待核查 |
-| `POST /api/admin/billing/operations` | `src/app/api/admin/billing/operations/route.ts` | 待核查 |
+| `POST /api/admin/billing/operations` | `src/app/api/admin/billing/operations/route.ts` | 已核查：锁定原操作后复核资格，原报价、审计、原操作号重试和历史隔离保持 |
 | `POST /api/admin/billing/simulate` | `src/app/api/admin/billing/simulate/route.ts` | 待核查 |
 | `POST /api/admin/billing/versions` | `src/app/api/admin/billing/versions/route.ts` | 待核查 |
 | `POST /api/admin/brand-logo` | `src/app/api/admin/brand-logo/route.ts` | 待核查 |

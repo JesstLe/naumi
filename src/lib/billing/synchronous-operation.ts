@@ -14,7 +14,7 @@ import {billingFailure} from "./failure";
 import {fingerprint} from "./fingerprint";
 import type {ResolvedImageQuality} from "../image-quality";
 import {currentModelExecution} from "../model-config/context";
-import {excludeImportedHistory} from "../staging-history";
+export {exposeAbandonedBillingOperations} from './review-state';
 import {currentCreationContext,withFrozenCreation} from "@/lib/saas/creation-scope";
 import {claimCreation,finishCreation} from "../saas/creation-writer";
 import { TeamError } from "../teams/errors";
@@ -223,17 +223,6 @@ async function checkpointToolArtwork(context: Context, tx?: Tx, expectedId?: str
     const stored = await client.query("UPDATE app_billing_operations SET result_response=$2::jsonb WHERE id=$1 AND email=$3 RETURNING id", [context.id, JSON.stringify(checkpoint), context.email]);
     if (stored.rowCount !== 1) throw new BillingError("INVALID_RESULT", "原操作回执保存尚未确认，请保留原操作核查", 409);
     context.resultCheckpointed = true;
-}
-/** Expired request ownership never permits a supplier resubmission or a refund. */
-export async function exposeAbandonedBillingOperations(): Promise<number> {
-    const exposed = await getPool().query(`UPDATE app_billing_operations SET state='manual'
-      WHERE state='reserved' AND (
-        (id LIKE 'tool-%' AND updated_at < now()-make_interval(mins=>GREATEST(30,COALESCE((quote->>'staleReservationMinutes')::int,30))))
-        OR EXISTS (SELECT 1 FROM app_canvas_image_tasks c WHERE c.id=app_billing_operations.id AND c.status='needs_attention')
-        OR EXISTS (SELECT 1 FROM app_image_jobs j WHERE j.id=app_billing_operations.id AND j.snapshot->>'status'='needs_attention')
-        OR EXISTS (SELECT 1 FROM app_video_tasks v WHERE v.id=app_billing_operations.id AND v.status='needs_attention'))
-      ${excludeImportedHistory("app_billing_operations")}`);
-    return exposed.rowCount ?? 0;
 }
 export async function synchronousCost(quality?: ResolvedImageQuality, resolution = "1K") {
     const context = storage.getStore();

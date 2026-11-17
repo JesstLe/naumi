@@ -6,6 +6,7 @@ import { isChargelessQuote, settlementFor } from "./quote";
 import * as repository from "./repository";
 import { operationApiCost } from "./api-cost-ledger";
 import { assertMutableStagingTask, isImportedHistory } from "../staging-history";
+import {lockedReservationNeedsReview} from './review-state';
 // Compatibility export for existing domain callers; no second transaction implementation.
 export {withTransaction as withBillingTransaction} from "@/platform/db/transaction";
 
@@ -70,7 +71,8 @@ export function createBillingService(): BillingService {
             const previous=(await tx.query("SELECT request_fingerprint,charge FROM app_billing_reconciliations WHERE id=$1",[input.id])).rows[0];
             if(previous){if(previous.request_fingerprint!==hash)throw new BillingError("OPERATION_CONFLICT","该核对编号已用于不同操作",409);return {replayed:true,charge:Number(previous.charge)};}
             const row=(await tx.query<repository.OperationRow>("SELECT * FROM app_billing_operations WHERE id=$1 FOR UPDATE",[input.operationId])).rows[0];
-            if(!row||!["hold","manual"].includes(row.state))throw new BillingError("OPERATION_CONFLICT","操作不处于人工核对状态，请刷新",409);
+            if(!row||(!["hold","manual"].includes(row.state)&&!(row.state==='reserved'&&await lockedReservationNeedsReview(tx,row.id))))
+                throw new BillingError("OPERATION_CONFLICT","操作不处于人工核对状态，请刷新",409);
             if(input.result.state==="unknown"||input.result.items.some(i=>i.state==="unknown"))throw new BillingError("INVALID_RESULT","结果未知，不能强行结算",400);
             const completed=await settleLocked(tx,row,input.result,input.reason);
             await tx.query("INSERT INTO app_billing_reconciliations(id,operation_id,email,actor,request_fingerprint,reason,proof,result,charge) VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9)",[input.id,row.id,row.email,input.actor,hash,input.reason,input.proof,JSON.stringify(input.result),completed.charge]);
