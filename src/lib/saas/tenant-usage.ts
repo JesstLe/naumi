@@ -1,7 +1,7 @@
 import 'server-only';
 import type { Pool, PoolClient } from 'pg';
 import { getPool } from "@/platform/db/pool";
-import { enterpriseRead } from '@/lib/enterprise/server';
+import { enterpriseReportRead } from '@/lib/enterprise/server';
 import { TeamError } from "@/lib/teams/errors";
 import type { TeamActor } from '@/lib/teams/grants';
 import { tenantDates } from './tenants';
@@ -75,6 +75,6 @@ export async function platformTenantUsage(query: TenantUsageQuery, pool: Pool = 
   } catch (error) { await tx.query('ROLLBACK'); throw error; } finally { tx.release(); }
 }
 export async function enterpriseTenantUsage(actor: TeamActor, query: TenantUsageQuery) {
-  return enterpriseRead({ ...actor, admin: false, consoleAdmin: false }, query.tenantId,
+  return enterpriseReportRead({ ...actor, admin: false, consoleAdmin: false }, query.tenantId,
     (tx, scope) => readTenantUsage(tx, query, scope.owner ? null : [...scope.visible]));
 }

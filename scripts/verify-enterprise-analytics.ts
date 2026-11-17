@@ -83,12 +83,62 @@ async function main(){
   start:'2026-10-13T00:00:00+08:00',end:'2026-10-14T00:00:00+08:00',email:'',page:1,size:25,recordId:'dedup-ledger',
  }));
  assert.equal(single.total,1);assert.equal(single.rows[0]?.operationId,'a-same-time');
+
+ // Run the actual report transaction while another connection takes the same
+ // account lock used by billing and revokes the sponsoring grant. Neither
+ // action should queue behind the report, and stale data must not be returned.
+ let started!:()=>void, resume!:()=>void;
+ const entered=new Promise<void>(resolve=>{started=resolve});
+ const continueReport=new Promise<void>(resolve=>{resume=resolve});
+ const stale=server.enterpriseReportRead(actor,root,async tx=>{
+  assert.equal((await tx.query("SELECT current_setting('transaction_read_only') AS mode")).rows[0].mode,'on');
+  started();
+  await continueReport;
+  return {mustNotEscape:'report generated from stale authorization'};
+ });
+ const denial=assert.rejects(stale,{status:403});
+ try {
+  await Promise.race([entered,stale]);
+  const otherTx=await pool.connect();
+  try {
+   await otherTx.query('BEGIN');
+   await otherTx.query("SET LOCAL lock_timeout='300ms'");
+   await otherTx.query('SELECT email FROM app_users WHERE email=$1 FOR UPDATE',[owner]);
+   await otherTx.query('UPDATE app_team_access_grants SET enabled=false WHERE email=$1',[owner]);
+   await otherTx.query('COMMIT');
+  } catch(error) {
+   await otherTx.query('ROLLBACK');
+   throw error;
+  } finally { otherTx.release(); }
+ } finally {
+  resume();
+ }
+ await denial;
+ await pool.query('UPDATE app_team_access_grants SET enabled=true WHERE email=$1',[owner]);
+ assert.equal(await server.enterpriseReportRead(actor,root,async()=>true),true);
+
+ // Changing a team edge must also invalidate the report even when an owner
+ // still sees the same set of members. A selected subtree could have changed.
+ const changed=server.enterpriseReportRead(actor,root,async(_tx,s)=>{
+  const member=s.nodes.find(n=>n.email===employee)!;assert.equal(member.supervisor_email,director);
+  await pool.query('UPDATE app_enterprise_members SET supervisor_email=$1 WHERE enterprise_id=$2 AND email=$3',[lead,root,employee]);
+  return 'must not return a report for the old subtree';
+ });
+ await assert.rejects(changed,{status:409});
+ await pool.query('UPDATE app_enterprise_members SET supervisor_email=$1 WHERE enterprise_id=$2 AND email=$3',[director,root,employee]);
+ Object.assign(process.env,{NAUMI_ENTERPRISE_DEPLOYMENT_MODE:'dedicated',NAUMI_ENTERPRISE_SOURCE_INSTANCE_ID:'analytics-fixture-site',NAUMI_ENTERPRISE_ALLOWED_IDS:root});
+ await pool.query("UPDATE app_users SET role='admin' WHERE email=$1",[other]);
+ const dedicated=await analytics.enterpriseAnalytics({email:other,admin:false},q);
+ assert(dedicated.choices.some(member=>member.email===other));
+ await pool.query("UPDATE app_users SET role='user' WHERE email=$1",[other]);
+ await assert.rejects(analytics.enterpriseAnalytics({email:other,admin:false},q),{status:403});
  console.log('ANALYTICS=PASS CONSUMED=210 REFUNDED=15 NET=195 ADJUSTMENT=-30 ISSUED=500 UNKNOWN_USAGE=2');
  console.log('DATES=PASS SHANGHAI_START_END_INCLUSIVE=PASS DAILY_WEEKLY_MONTHLY_ZERO_FILL=PASS PREVIOUS=999 INVALID_RANGE=400');
  console.log('SCOPE=PASS BOSS=5 LEAD=2 SUBTEAM=2 CROSS_MEMBER=403 CROSS_TEAM=403 ROLE_REVOKE=403 ROOT_GRANT_PAUSE=403 ANONYMOUS=401');
  console.log('PRODUCTIVITY=PASS TASKS=6 SUCCESS=3 FAILED=1 PENDING=1 UNKNOWN=1 SUCCESS_RATE=75 ARTWORKS=1 ASYNC_BILLING_DEDUP=PASS');
  console.log('LEDGER=PASS TOTAL=39 PAGE1=25 PAGE2=14 CSV_ROWS=39 FORMULA_ESCAPE=PASS SENSITIVE_FIELDS=ABSENT FIRST_OPERATION_AND_EMAIL_BINDING=PASS');
  console.log('WALLET=PASS AVAILABLE=980 RESERVED=25 EXPIRING=1000 RISK=PASS DATABASE_FINGERPRINT=UNCHANGED PROVIDER_CALLS=0');
+ console.log('REPORT_LOCKS=PASS BILLING_ROW_LOCK_DURING_REPORT=PASS LIVE_GRANT_REVOCATION=403 SAME_VISIBLE_SET_SUBTREE_CHANGE=409 DEDICATED_SITE=PASS');
  await pool.end();
 }
 main().catch(e=>{console.error(e);process.exitCode=1});

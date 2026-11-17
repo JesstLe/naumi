@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { enterpriseAuthorize } from "@/lib/enterprise/access";
-import { enterpriseRead } from "@/lib/enterprise/server";
+import { enterpriseReportRead } from "@/lib/enterprise/server";
 import { teamFailure, teamJson } from "@/lib/teams/access";
 import { TeamError } from "@/lib/teams/errors";
 import { parseUsageQuery } from "@/lib/bi/usage-contracts";
@@ -13,7 +13,7 @@ export async function GET(request: Request) {
   try { query = parseUsageQuery(new URL(request.url).searchParams); if (!query.tenantId) throw new Error("请选择企业"); }
   catch (error) { return teamJson({ error: error instanceof Error ? error.message : "筛选条件无效" }, 400); }
   try {
-    return teamJson(await enterpriseRead(actor, query.tenantId, (tx, scope) => {
+    return teamJson(await enterpriseReportRead(actor, query.tenantId, (tx, scope) => {
       const emails = new Set(scope.visible); if (scope.owner) emails.add(scope.team.owner_email);
       if (query.email && !emails.has(query.email)) throw new TeamError("没有该成员用量的查看权限", 403);
       return readUserUsage(tx, query, { allowedEmails: [...emails], tenantId: scope.team.id, tenantName: scope.team.name });

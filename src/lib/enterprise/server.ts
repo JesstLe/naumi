@@ -46,45 +46,46 @@ export function validateHierarchy(owner:string,nodes:Node[],roles:EnterpriseRole
       if(!pr?.manage_members||pr.level>=level)throw new TeamError('上级必须具有管理权限且等级高于成员',409)}
   }
 }
-async function scope(tx:PoolClient,actor:TeamActor,id:string,allowSelf=false):Promise<Scope> {
+async function scope(tx:PoolClient,actor:TeamActor,id:string,allowSelf=false,lock:'share'|'snapshot'='share'):Promise<Scope> {
+  const share=(of?:string)=>lock==='snapshot'?'':of?' FOR SHARE OF '+of:' FOR SHARE';
   try {const pinned=pinnedEnterpriseIds();if(pinned.length&&!pinned.includes(id))throw new TeamError('企业不存在',404);}
   catch(e){if(e instanceof IntegrationError)throw new TeamError('企业部署范围尚未配置',503);throw e;}
   const team=(await tx.query(`SELECT t.id,t.name,t.owner_email,t.authorized_until,t.enabled,s.enabled AS enterprise_enabled
-    FROM app_enterprise_settings s JOIN app_account_teams t ON t.id=s.team_id WHERE s.team_id=$1 FOR SHARE OF s,t`,[id])).rows[0];
+    FROM app_enterprise_settings s JOIN app_account_teams t ON t.id=s.team_id WHERE s.team_id=$1${share('s,t')}`,[id])).rows[0];
   if(!team)throw new TeamError('企业不存在',404);
   // Activated enterprises use the entry lifecycle grant as the single source of
   // access expiry. The legacy team cap is only for legacy subaccount management.
   // A null grant expiry is permanent, not an expired Unix epoch.
   let accessExpiry:string|null=team.authorized_until;
   if(!actor.admin){
-    const current=(await tx.query('SELECT banned,account_expires_at FROM app_users WHERE email=$1 FOR SHARE',[actor.email])).rows[0];
+    const current=(await tx.query('SELECT banned,account_expires_at FROM app_users WHERE email=$1'+share(),[actor.email])).rows[0];
     if(!current||current.banned||current.account_expires_at&&new Date(current.account_expires_at).getTime()<=Date.now())throw new TeamError('账号已停用或到期');
     if(!team.enabled||!team.enterprise_enabled)throw new TeamError('企业授权已关闭或到期');
     // Every descendant uses the live sponsoring owner's entry grant, not a copied/evergreen capability.
-    const grant=await requireTeamGrant(tx,{email:team.owner_email,admin:false});
+    const grant=await requireTeamGrant(tx,{email:team.owner_email,admin:false},lock);
     if(team.authorized_until&&new Date(team.authorized_until).getTime()<=Date.now())throw new TeamError('企业授权已到期');
     accessExpiry=grant!.expires_at;
   }else{
-    const grant=(await tx.query('SELECT expires_at FROM app_team_access_grants WHERE email=$1 FOR SHARE',[team.owner_email])).rows[0];
+    const grant=(await tx.query('SELECT expires_at FROM app_team_access_grants WHERE email=$1'+share(),[team.owner_email])).rows[0];
     if(grant)accessExpiry=grant.expires_at;
   }
-  const roles=(await tx.query('SELECT id,name,level,manage_members,view_records,workflow_permissions,version FROM app_enterprise_roles WHERE enterprise_id=$1 FOR SHARE',[id])).rows as EnterpriseRole[];
+  const roles=(await tx.query('SELECT id,name,level,manage_members,view_records,workflow_permissions,version FROM app_enterprise_roles WHERE enterprise_id=$1'+share(),[id])).rows as EnterpriseRole[];
   const nodes=(await tx.query(`SELECT m.email,m.supervisor_email,m.role_id,m.employment,m.version,m.membership_status,m.membership_expires_at,
     (NOT u.banned AND (u.account_expires_at IS NULL OR u.account_expires_at>now())) AS global_active
-    FROM app_enterprise_members m JOIN app_users u ON u.email=m.email WHERE m.enterprise_id=$1 FOR SHARE OF m,u`,[id])).rows as Node[];
+    FROM app_enterprise_members m JOIN app_users u ON u.email=m.email WHERE m.enterprise_id=$1${share('m,u')}`,[id])).rows as Node[];
   validateHierarchy(team.owner_email,nodes,roles);
-  const siteAdmin=(await administeredSite(tx,actor.email))===id;
+  const siteAdmin=(await administeredSite(tx,actor.email,lock))===id;
   const owner=actor.admin||team.owner_email===actor.email||siteAdmin;
   const node=nodes.find(m=>m.email===actor.email),role=roles.find(r=>r.id===node?.role_id);
   if(!owner&&(!node||!activeMembership(node)||!allowSelf&&(!role||!role.manage_members&&!role.view_records)))throw new TeamError('当前企业身份已停用、到期或岗位没有管理权限');
-  const entitlementRow=(await tx.query('SELECT entitlement_name,seat_limit,feature_policy FROM app_tenant_entitlements WHERE tenant_id=$1 FOR SHARE',[id])).rows[0];
+  const entitlementRow=(await tx.query('SELECT entitlement_name,seat_limit,feature_policy FROM app_tenant_entitlements WHERE tenant_id=$1'+share(),[id])).rows[0];
   const entitlement={name:entitlementRow?.entitlement_name??null,seatLimit:entitlementRow?.seat_limit??null,featurePolicy:entitlementRow?.feature_policy??{}};
   if(!actor.admin&&entitlement.featurePolicy.team===false)throw new TeamError('企业管理功能已停用');
   const visible=new Set<string>();if(owner){for(const m of nodes)if(activeMembership(m))visible.add(m.email);}
   else {visible.add(actor.email);let changed=!allowSelf||!!role?.view_records;while(changed){changed=false;for(const m of nodes)if(activeMembership(m)&&visible.has(m.supervisor_email)&&!visible.has(m.email)){visible.add(m.email);changed=true}}}
   // Membership management needs paused descendants so they can be restored;
   // content readers retain the separate effective-membership set above.
-  if(owner){const administrators=await siteAdministrators(tx,id);if(administrators.length){for(const email of administrators)visible.add(email);visible.add(team.owner_email);}}
+  if(owner){const administrators=await siteAdministrators(tx,id,lock);if(administrators.length){for(const email of administrators)visible.add(email);visible.add(team.owner_email);}}
   const manageable=new Set<string>(owner?nodes.map(n=>n.email):[actor.email]);
   if(!owner&&role?.manage_members){let changed=true;while(changed){changed=false;for(const m of nodes)if(manageable.has(m.supervisor_email)&&!manageable.has(m.email)){manageable.add(m.email);changed=true;}}}
   return {team:{id:team.id,name:team.name,owner_email:team.owner_email,authorized_until:accessExpiry,owner},owner,level:owner?0:role?.level??999,manageMembers:owner||!!role?.manage_members,viewRecords:owner||!!role?.view_records,roles,nodes,visible,manageable,entitlement};
@@ -107,9 +108,7 @@ export async function enterpriseCreationRead<T>(email:string,id:string,run:(tx:P
   }finally{tx.release();}
  }
 }
-/** Analytics never trusts client member lists. Recheck the live hierarchy/grant in
- * the same consistent snapshot used for every aggregate and export. Shared
- * authorization locks require a read-write transaction; analytics only SELECTs. */
+/** General enterprise access also serves mutations; retain its authorization locks. */
 export async function enterpriseRead<T>(actor:TeamActor,id:string,run:(tx:PoolClient,s:Scope)=>Promise<T>) {
   await ensureEnterpriseSchema();const tx=await getPool().connect();
   try {
@@ -119,6 +118,48 @@ export async function enterpriseRead<T>(actor:TeamActor,id:string,run:(tx:PoolCl
     if(!s.viewRecords)throw new TeamError('当前岗位没有经营数据查看权限');
     const result=await run(tx,s);await tx.query('COMMIT');return result;
   }catch(e){await tx.query('ROLLBACK');throw e}finally{tx.release()}
+}
+
+// Analytics can narrow scope by a subtree. Include the hierarchy edges as well
+// as visible membership so a same-size move can't authorize an old projection.
+function reportScopeKey(s: Scope) {
+  return JSON.stringify([
+    s.team.id,s.team.owner_email,s.owner,[...s.visible].sort(),
+    s.nodes.map(n=>[n.email,n.supervisor_email]).sort(([a],[b])=>a.localeCompare(b)),
+  ]);
+}
+
+/**
+ * Heavy read-only reports must never retain account/grant row locks while
+ * aggregating. Authorize the data snapshot first, then check a fresh scope in a
+ * short transaction before any result leaves the server.
+ */
+export async function enterpriseReportRead<T>(actor:TeamActor,id:string,run:(tx:PoolClient,s:Scope)=>Promise<T>) {
+  await ensureEnterpriseSchema();
+  const tx=await getPool().connect();
+  try {
+    await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+    await tx.query("SET LOCAL statement_timeout='5s'; SET LOCAL lock_timeout='1s'");
+    const s=await scope(tx,actor,id,false,'snapshot');
+    if(!s.viewRecords)throw new TeamError('当前岗位没有经营数据查看权限');
+    const key=reportScopeKey(s);
+    const result=await run(tx,s);
+    await tx.query('COMMIT');
+    await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
+    await tx.query("SET LOCAL statement_timeout='3s'; SET LOCAL lock_timeout='1s'");
+    const current=await scope(tx,actor,id);
+    if(!current.viewRecords)throw new TeamError('当前岗位没有经营数据查看权限');
+    if(key!==reportScopeKey(current))throw new TeamError('企业成员范围已变化，请刷新后重试',409);
+    await tx.query('COMMIT');
+    return result;
+  } catch(error) {
+    await tx.query('ROLLBACK').catch(()=>{});
+    const code=(error as {code?:string})?.code;
+    if(code==='57014'||code==='55P03'||code==='40001'||code==='40P01') {
+      throw new TeamError('用量暂不可读取，请稍后重试或缩小日期范围',503);
+    }
+    throw error;
+  } finally { tx.release(); }
 }
 export async function enterpriseList(actor:TeamActor,allowSelf=false):Promise<EnterpriseIdentity[]> {
   return transaction(async tx=>{
