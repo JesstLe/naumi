@@ -37,7 +37,7 @@
 | `GET /api/admin/model-health` | `src/app/api/admin/model-health/route.ts` | 待核查 |
 | `GET /api/admin/model-management` | `src/app/api/admin/model-management/route.ts` | 部分：列表、积分细项、视频就绪/迁移按已发布快照；真实隔离 HTTP 验证授权、池占用、断开释放、并发版本切换、冻结缺失不补写与摘要不符拒绝。公网网关及冷启动待核 |
 | `GET /api/admin/model-management/library` | `src/app/api/admin/model-management/library/route.ts` | 已核查：可取消只读快照，列表保留精确计数和分页；详情与历史保留 404；单页导出只取完整模型记录 |
-| `GET /api/admin/model-management/onboarding` | `src/app/api/admin/model-management/onboarding/route.ts` | 待核查 |
+| `GET /api/admin/model-management/onboarding` | `src/app/api/admin/model-management/onboarding/route.ts` | 已核查：可取消的单连接只读快照，无草稿写入或行锁等待；版本、归属和最近五份历史恢复保持 |
 | `GET /api/admin/mvp` | `src/app/api/admin/mvp/route.ts` | 待核查 |
 | `GET /api/admin/mvp/library` | `src/app/api/admin/mvp/library/route.ts` | 已核查：与模型管理共用权限和只读查询，旧入口响应结构保持 |
 | `GET /api/admin/owner-account` | `src/app/api/admin/owner-account/route.ts` | 待核查 |
@@ -130,7 +130,7 @@
 | `POST /api/admin/model-health` | `src/app/api/admin/model-health/route.ts` | 待核查 |
 | `POST /api/admin/model-management` | `src/app/api/admin/model-management/route.ts` | 部分：接入后的补读及发布前注册目录均不持发布锁等待供应商；显式新增模型不再刷新目录；Router 执行另核 |
 | `POST /api/admin/model-management/library` | `src/app/api/admin/model-management/library/route.ts` | 待核查 |
-| `POST /api/admin/model-management/onboarding` | `src/app/api/admin/model-management/onboarding/route.ts` | 已核查：预览与保存按显式定义校验，不访问供应商；计费版本、草稿冲突和权限回归通过 |
+| `POST /api/admin/model-management/onboarding` | `src/app/api/admin/model-management/onboarding/route.ts` | 已核查：预览与保存不访问供应商；首次保存原修订号、并发只写一次、旧草稿 ID、模型版本与权限回归通过 |
 | `POST /api/admin/mvp` | `src/app/api/admin/mvp/route.ts` | 部分：与模型管理共用发布入口；接入补读和注册网络读取已移出发布锁，Router 执行待核 |
 | `POST /api/admin/mvp/library` | `src/app/api/admin/mvp/library/route.ts` | 待核查 |
 | `POST /api/admin/owner-account` | `src/app/api/admin/owner-account/route.ts` | 待核查 |

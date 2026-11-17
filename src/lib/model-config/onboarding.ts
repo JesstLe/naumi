@@ -85,7 +85,7 @@ export function planModelOnboarding(snapshot:ModelSnapshot,billing:ConfigSnapsho
 }
 
 export function onboardingView(config:ModelConfig){return {upstreams:config.upstreamModels.map(u=>structuredClone(u)),incomplete:config.publicModels.filter(m=>!m.enabled||!m.visible).map(m=>({id:m.id,label:m.label,reason:!m.enabled?'未启用':'前端隐藏'}))};}
-export function onboardingDraftEntries(config:ModelConfig,base:ModelConfig):OnboardingEntry[]{
+export function onboardingDraftEntries(config:Pick<ModelConfig,'publicModels'|'upstreamModels'|'business'>,base:Pick<ModelConfig,'publicModels'|'upstreamModels'>):OnboardingEntry[]{
  return config.publicModels.filter(m=>!base.publicModels.some(old=>old.id===m.id)).flatMap(m=>{
   if(m.target.type!=='upstream')return [];const u=config.upstreamModels.find(u=>u.id===m.target.id);if(!u)return [];
   const features=Object.entries(config.business||{}).filter(([,f])=>f?.options.some(o=>o.modelId===m.id)).map(([id])=>id as FeatureId).sort();

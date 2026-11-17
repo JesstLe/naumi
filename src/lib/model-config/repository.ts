@@ -12,6 +12,7 @@ import {ensureSupplierVideoSchema} from "@/lib/supplier-models/video-schema";
 
 import {validateModelConfig,type ValidationOptions} from "./schema";
 import {ensureModelSchema} from "@/lib/model-config/storage-schema";
+import {draftUpstreamFromRow,draftPublicModelFromRow} from './draft-row-values';
 
 import { ModelConfigError, type ModelConfig, type ModelConfigRepository, type ModelDraft, type ModelPublication, type ModelSnapshot, type PublicationPhase } from "./types";
 function requireActor(actor: string) { if (typeof actor !== "string" || !actor.trim() || actor.length > 254) throw new ModelConfigError("INVALID_CONFIG", "操作者无效"); }
@@ -46,8 +47,8 @@ async function readDraft(tx: PoolClient, row: any): Promise<ModelDraft> {
   const providers = await read("providers"), upstreams = await read("upstreams"), publics = await read("public_models"), pools = await read("pools"), candidates = await read("candidates"), rules = await read("rules"), bindings = await read("bindings");
   const config: ModelConfig = { schemaVersion: 1,
     providers: providers.map(p => ({ id: p.id, name: p.name, protocol: p.protocol, baseUrl: p.base_url, ...(p.credential_ref ? { credentialRef: p.credential_ref } : {}), enabled: p.enabled, timeoutMs: p.timeout_ms, maxConcurrent: p.max_concurrent, ...(p.options ? { options: p.options } : {}) })),
-    upstreamModels: upstreams.map(u => ({ id: u.id, providerId: u.provider_id, model: u.model, label: u.label, modality: u.modality, enabled: u.enabled, capabilities: u.capabilities, parameterMap: u.parameter_map, ...(u.cost_ref ? { costRef: u.cost_ref } : {}), ...(u.procurement ? { procurement: u.procurement } : {}) })),
-    publicModels: publics.map(m => ({ id: m.id, ...(m.previous_ids ? {previousIds:m.previous_ids} : {}), label: m.label, modality: m.modality, enabled: m.enabled, visible: m.visible, ...(m.tool_scope ? {toolScope:m.tool_scope} : {}), ...(m.display_resolutions ? {displayResolutions:m.display_resolutions} : {}), ...(m.supplier_routing ? {supplierRouting:m.supplier_routing} : {}), target: m.upstream_target ? { type: "upstream", id: m.upstream_target } : { type: "pool", id: m.pool_target } })),
+    upstreamModels: upstreams.map(draftUpstreamFromRow),
+    publicModels: publics.map(draftPublicModelFromRow),
     pools: pools.map(p => ({ id: p.id, modality: p.modality, strategy: p.strategy, candidates: candidates.filter(c => c.pool_id === p.id).map(c => c.upstream_id), rules: rules.filter(r => r.pool_id === p.id).map(r => ({ id: r.id, priority: r.priority, when: r.conditions, require: r.requirements })) })),
     bindings: Object.fromEntries(bindings.map(b => [b.id, b.public_model_id])),
   };
@@ -128,6 +129,24 @@ export function createModelRepository(deps: ValidationOptions & { pool: Pool; in
         await checkCredentials(tx, config); await writeDraft(tx, input.id, config);
         const updated = (await tx.query("UPDATE app_model_drafts SET revision=revision+1,updated_at=now() WHERE id=$1 RETURNING *", [input.id])).rows[0];
         return { id: row.id, revision: Number(updated.revision), basedOnVersion: Number(row.based_on_version), config };
+      });
+    },
+    async saveOnboardingDraft(input){
+      requireUUID(input.initialId);requireActor(input.actor);requireVersion(input.expectedVersion);requireVersion(input.expectedRevision);
+      const config=validateModelConfig(input.config,deps);await ensure();
+      return transaction(async tx=>{
+        await tx.query("SET LOCAL lock_timeout='3s'; SET LOCAL statement_timeout='5s'");
+        // As in markApplied, take the active pointer before the draft row.
+        const active=(await tx.query('SELECT active_version FROM app_model_config_state WHERE singleton=true FOR SHARE')).rows[0];
+        if(Number(active?.active_version)!==input.expectedVersion)throw new ModelConfigError('CONFIG_CONFLICT','模型或计费版本已变化，请刷新核对后继续',409);
+        const created=input.expectedRevision===1&&(await tx.query(`INSERT INTO app_model_drafts(id,revision,based_on_version,actor)
+          VALUES($1,2,$2,$3) ON CONFLICT DO NOTHING RETURNING id`,[input.initialId,input.expectedVersion,input.actor])).rows[0];
+        const row=created|| (await tx.query('SELECT id,revision,based_on_version FROM app_model_drafts WHERE actor=$1 FOR UPDATE',[input.actor])).rows[0];
+        if(!row||(!created&&(Number(row.revision)!==input.expectedRevision||Number(row.based_on_version)!==input.expectedVersion)))
+          throw new ModelConfigError('DRAFT_CONFLICT','创建草稿已改变，请重新打开草稿后继续',409);
+        await checkCredentials(tx,config);await writeDraft(tx,row.id,config);
+        if(!created)await tx.query('UPDATE app_model_drafts SET revision=revision+1,updated_at=now() WHERE id=$1',[row.id]);
+        return {id:row.id,revision:input.expectedRevision+1,basedOnVersion:input.expectedVersion,config};
       });
     },
     async stage(input) {

@@ -19,6 +19,7 @@ export interface ModelConfigRepository {
   byVersion(version: number): Promise<ModelSnapshot>;
   draft(actor: string): Promise<ModelDraft>;
   saveDraft(input: { id: string; expectedRevision: number; config: ModelConfig; actor: string }): Promise<ModelDraft>;
+  saveOnboardingDraft(input:{initialId:string;expectedVersion:number;expectedRevision:number;config:ModelConfig;actor:string}):Promise<ModelDraft>;
   stage(input: StageInput): Promise<ModelPublication>;
   stageRestore(input: RestoreInput): Promise<ModelPublication>;
   publication(id: string): Promise<ModelPublication>;
