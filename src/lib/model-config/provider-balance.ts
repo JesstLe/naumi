@@ -49,6 +49,7 @@ const cacheSchema = z.object({
   lastKnown: z.object({ measurement: balanceMeasurementSchema, checkedAt: z.string().datetime() }).strict().nullable(),
 }).strict();
 type CacheRecord = z.infer<typeof cacheSchema>;
+type SharedBalanceRead = {controller:AbortController;waiters:number;result:Promise<ProviderAccountBalance>};
 type Dependencies = {
   readCredential: (ref: string, providerId: string) => Promise<string | null>;
   readCache: (key: string) => Promise<string | null>; writeCache: (key: string, value: string) => Promise<unknown>;
@@ -59,13 +60,15 @@ const knownErrors = new Set<BalanceErrorCode>(['AUTH_FAILED', 'RATE_LIMITED', 'U
 
 export function createProviderBalanceService(deps: Dependencies) {
   const now = deps.now || Date.now, adapters = deps.adapters || documentedBalanceAdapters;
-  const inFlight = new Map<string, Promise<ProviderAccountBalance>>();
+  const inFlight = new Map<string, SharedBalanceRead>();
   const digest = (text: string) => createHmac('sha256', deps.secret).update(text).digest('hex');
-  async function targets(providers: readonly Provider[]): Promise<AccountTarget[]> {
+  async function targets(providers: readonly Provider[],signal?:AbortSignal): Promise<AccountTarget[]> {
     const groups = new Map<string, AccountTarget>();
     for (const provider of providers) {
+      signal?.throwIfAborted();
       let apiKey: string | null = null;
       if (provider.credentialRef) { try { apiKey = await deps.readCredential(provider.credentialRef, provider.id); } catch { /* Safe state, never an exception body. */ } }
+      signal?.throwIfAborted();
       let adapter: ProviderBalanceAdapter | null = null, endpoint: string | null = null, canonical = provider.baseUrl;
       try {
         const base = new URL(provider.baseUrl); canonical = base.origin + base.pathname.replace(/\/+$/, '');
@@ -80,13 +83,14 @@ export function createProviderBalanceService(deps: Dependencies) {
     }
     return [...groups.values()];
   }
-  async function probe(target: AccountTarget): Promise<ProviderBalanceProbe> {
+  async function probe(target: AccountTarget,signal:AbortSignal): Promise<ProviderBalanceProbe> {
+    signal.throwIfAborted();
     if (!target.adapter || !target.endpoint) return { status: 'unsupported', measurement: null, errorCode: 'UNSUPPORTED', checkedAt: null, attemptedAt: null };
     if (!target.apiKey) return { status: 'error', measurement: null, errorCode: 'CREDENTIAL_UNAVAILABLE', checkedAt: null, attemptedAt: null };
     const attemptedAt = new Date(now()).toISOString();
     try {
       const fetcher = deps.transport(target.baseUrl, deps.validation || {});
-      const response = await fetcher(target.endpoint, { method: 'GET', headers: { authorization: `Bearer ${target.apiKey}`, accept: 'application/json' }, signal: AbortSignal.timeout(PROBE_TIMEOUT_MS), redirect: 'error' });
+      const response = await fetcher(target.endpoint, { method: 'GET', headers: { authorization: `Bearer ${target.apiKey}`, accept: 'application/json' }, signal: AbortSignal.any([signal,AbortSignal.timeout(PROBE_TIMEOUT_MS)]), redirect: 'error' });
       if (!response.ok) { await response.body?.cancel().catch(() => {}); return { status: 'error', measurement: null, checkedAt: null, attemptedAt, errorCode: response.status === 401 || response.status === 403 ? 'AUTH_FAILED' : response.status === 429 ? 'RATE_LIMITED' : 'UPSTREAM_UNAVAILABLE' }; }
       let body: string;
       try { body = await readBounded(response, 32 * 1024); }
@@ -94,40 +98,83 @@ export function createProviderBalanceService(deps: Dependencies) {
         if (!(error instanceof Error) || !['receipt too large', 'empty receipt'].includes(error.message)) throw error;
         return { status: 'error', measurement: null, checkedAt: null, attemptedAt, errorCode: 'MALFORMED_RESPONSE' };
       }
+      signal.throwIfAborted();
       let measurement: BalanceMeasurement;
       try { measurement = balanceMeasurementSchema.parse(target.adapter.parse(JSON.parse(body))); }
       catch { return { status: 'error', measurement: null, checkedAt: null, attemptedAt, errorCode: 'MALFORMED_RESPONSE' }; }
       return { status: 'ok', measurement, checkedAt: new Date(now()).toISOString(), attemptedAt, errorCode: null };
     } catch (error) {
+      signal.throwIfAborted();
       const timeout = error instanceof Error && ['AbortError', 'TimeoutError'].includes(error.name);
       return { status: 'error', measurement: null, checkedAt: null, attemptedAt, errorCode: timeout ? 'TIMEOUT' : 'NETWORK_ERROR' };
     }
   }
-  async function read(target: AccountTarget, refresh: boolean): Promise<ProviderAccountBalance> {
+  async function read(target: AccountTarget, refresh: boolean,signal:AbortSignal): Promise<ProviderAccountBalance> {
+    signal.throwIfAborted();
     const summary = {
       accountId: target.id, accountLabel: `凭据账户 ${target.id.slice(0, 8)}`, identity: 'published_credential' as const,
       providers: target.providers.map(provider => ({ id: provider.id, name: provider.name, enabled: provider.enabled })), credentialAvailable: !!target.apiKey,
       source: target.adapter?.source || null,
     };
-    if (!target.adapter || !target.apiKey) return { ...summary, ...await probe(target), cache: { state: 'none', expiresAt: null, persisted: false, refreshLimited: false }, lastKnown: null };
+    if (!target.adapter || !target.apiKey) return { ...summary, ...await probe(target,signal), cache: { state: 'none', expiresAt: null, persisted: false, refreshLimited: false }, lastKnown: null };
     const key = 'provider-balance:v2:' + digest(target.id + ':' + target.adapter.source.revision);
     let cached: CacheRecord | null = null;
     try { const raw = await deps.readCache(key); if (raw) { const parsed = cacheSchema.safeParse(JSON.parse(raw)); if (parsed.success && parsed.data.accountId === target.id && parsed.data.adapterRevision === target.adapter.source.revision && (!parsed.data.errorCode || knownErrors.has(parsed.data.errorCode as BalanceErrorCode)) && (parsed.data.status !== 'ok' || parsed.data.measurement)) cached = parsed.data; } } catch { /* Cache is optional, not authorization. */ }
+    signal.throwIfAborted();
     const age = cached ? now() - Date.parse(cached.attemptedAt) : Infinity;
     const fresh = age >= 0 && age < (cached?.status === 'ok' ? CACHE_TTL_MS : ERROR_TTL_MS);
     if (cached && fresh && (!refresh || age < MIN_REFRESH_MS)) return { ...summary, status: cached.status, measurement: cached.measurement, errorCode: cached.errorCode as BalanceErrorCode | null, checkedAt: cached.checkedAt, attemptedAt: cached.attemptedAt,
       cache: { state: 'hit', expiresAt: new Date(Date.parse(cached.attemptedAt) + (cached.status === 'ok' ? CACHE_TTL_MS : ERROR_TTL_MS)).toISOString(), persisted: true, refreshLimited: refresh && age < MIN_REFRESH_MS }, lastKnown: cached.status === 'error' ? cached.lastKnown : null };
-    const result = await probe(target), lastKnown = result.status === 'error' ? cached?.status === 'ok' && cached.measurement && cached.checkedAt ? { measurement: cached.measurement, checkedAt: cached.checkedAt } : cached?.lastKnown || null : null;
+    const result = await probe(target,signal), lastKnown = result.status === 'error' ? cached?.status === 'ok' && cached.measurement && cached.checkedAt ? { measurement: cached.measurement, checkedAt: cached.checkedAt } : cached?.lastKnown || null : null;
+    signal.throwIfAborted();
     let persisted = false;
     if (result.attemptedAt && result.status !== 'unsupported') {
       try { await deps.writeCache(key, JSON.stringify({ accountId: target.id, adapterRevision: target.adapter.source.revision, ...result, lastKnown })); persisted = true; } catch { /* The read result remains valid, cache durability is explicit. */ }
     }
     return { ...summary, ...result, cache: { state: 'fresh', expiresAt: result.attemptedAt ? new Date(Date.parse(result.attemptedAt) + (result.status === 'ok' ? CACHE_TTL_MS : ERROR_TTL_MS)).toISOString() : null, persisted, refreshLimited: false }, lastKnown };
   }
+  /** Each page owns one subscription. A disconnected page can't end a shared
+   * upstream request still needed by a different page. */
+  async function subscribe(target:AccountTarget,refresh:boolean,signal?:AbortSignal){
+    signal?.throwIfAborted();
+    let work=inFlight.get(target.id);
+    if(!work){
+      const controller=new AbortController();
+      const created={controller,waiters:0,result:read(target,refresh,controller.signal)};
+      inFlight.set(target.id,created);work=created;
+      const clear=()=>{if(inFlight.get(target.id)===created)inFlight.delete(target.id);};
+      void created.result.then(clear,clear);
+    }
+    const active=work;active.waiters++;
+    return new Promise<ProviderAccountBalance>((resolve,reject)=>{
+      let subscribed=true;
+      const finish=()=>{
+        if(!subscribed)return false;
+        subscribed=false;
+        signal?.removeEventListener('abort',abort);
+        if(--active.waiters===0&&inFlight.get(target.id)===active){
+          inFlight.delete(target.id);
+          active.controller.abort();
+        }
+        return true;
+      };
+      const abort=()=>{if(finish())reject(signal!.reason);};
+      signal?.addEventListener('abort',abort,{once:true});
+      if(signal?.aborted){abort();return;}
+      void active.result.then(value=>{if(finish())resolve(value);},error=>{if(finish())reject(error);});
+    });
+  }
   return {
-    async overview(providers: readonly Provider[], configVersion: number, refresh = false): Promise<ProviderBalanceOverview> {
-      const accounts = await targets(providers), results: ProviderAccountBalance[] = new Array(accounts.length); let cursor = 0;
-      await Promise.all(Array.from({ length: Math.min(4, accounts.length) }, async () => { while (cursor < accounts.length) { const index = cursor++, target = accounts[index]; let pending = inFlight.get(target.id); if (!pending) { pending = read(target, refresh); inFlight.set(target.id, pending); } try { const result = await pending; results[index] = { ...result, providers: target.providers.map(provider => ({ id: provider.id, name: provider.name, enabled: provider.enabled })) }; } finally { if (inFlight.get(target.id) === pending) inFlight.delete(target.id); } } }));
+    async overview(providers: readonly Provider[], configVersion: number, refresh = false,signal?:AbortSignal): Promise<ProviderBalanceOverview> {
+      const accounts = await targets(providers,signal), results: ProviderAccountBalance[] = new Array(accounts.length); let cursor = 0;
+      await Promise.all(Array.from({length:Math.min(4,accounts.length)},async()=>{
+        while(cursor<accounts.length){
+          signal?.throwIfAborted();
+          const index=cursor++,target=accounts[index],result=await subscribe(target,refresh,signal);
+          results[index]={...result,providers:target.providers.map(provider=>({id:provider.id,name:provider.name,enabled:provider.enabled}))};
+        }
+      }));
+      signal?.throwIfAborted();
       return { accounts: results, configVersion, generatedAt: new Date(now()).toISOString(), cacheTtlSeconds: CACHE_TTL_MS / 1000 };
     },
   };
@@ -139,19 +186,23 @@ export async function readProviderBalanceCredential(pool: Pool, ref: string, pro
   return stored ? decryptAtRest(stored.key_enc) : null;
 }
 export function createPublishedProviderBalanceReader(pool: Pool, service: ReturnType<typeof createProviderBalanceService>) {
-  return async (refresh = false, includeActivity = true) => {
+  return async (refresh = false, includeActivity = true,signal?:AbortSignal) => {
+    signal?.throwIfAborted();
     const row = (await pool.query(`SELECT v.version,v.config FROM app_model_config_state s JOIN app_model_config_versions v ON v.version=s.active_version WHERE s.singleton=true`)).rows[0];
     if (!row) throw new Error('CONFIG_UNAVAILABLE');
     const providers = modelConfigSchema.shape.providers.parse(row.config.providers);
-    const result = await service.overview(providers, Number(row.version), refresh);
+    const result = await service.overview(providers, Number(row.version), refresh,signal);
+    signal?.throwIfAborted();
     const activity = includeActivity ? await readProviderActivity(pool, row.config, providers) : undefined;
+    signal?.throwIfAborted();
     const current = (await pool.query('SELECT active_version FROM app_model_config_state WHERE singleton=true')).rows[0]?.active_version;
+    signal?.throwIfAborted();
     if (Number(current) !== Number(row.version)) throw new ProviderBalanceFailure('CONFIG_CHANGED');
     return { ...result, activity };
   };
 }
 let defaultService: ReturnType<typeof createProviderBalanceService> | undefined;
-export async function providerBalanceOverview(refresh = false, includeActivity = true): Promise<ProviderBalanceOverview> {
+export async function providerBalanceOverview(refresh = false, includeActivity = true,signal?:AbortSignal): Promise<ProviderBalanceOverview> {
   const pool = getPool();
   // No bootstrap, runtime execution, supplier-cost collection, or health writes.
   if (!defaultService) defaultService = createProviderBalanceService({
@@ -161,5 +212,5 @@ export async function providerBalanceOverview(refresh = false, includeActivity =
     validation: { trustedOrigins: (process.env.MODEL_CONFIG_TRUSTED_ORIGINS || '').split(/[\s,]+/).filter(Boolean) },
     transport: (baseUrl, validation) => modelEndpointFetch(baseUrl, validation, { providerId: 'balance-read-only', timeoutMs: PROBE_TIMEOUT_MS, costDisabled: true }),
   });
-  return createPublishedProviderBalanceReader(pool, defaultService)(refresh, includeActivity);
+  return createPublishedProviderBalanceReader(pool, defaultService)(refresh, includeActivity,signal);
 }

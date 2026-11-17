@@ -82,6 +82,7 @@ export const refactorCases=[
  ts('team-media-manifest','foundation','scripts/verify-team-media-manifest.ts','TEAM_PREVIEW_MANIFEST=PASS'),
  ts('admin-artworks-read','foundation','scripts/verify-admin-artworks-read.ts','ADMIN_ARTWORKS_READ=PASS'),
  ts('admin-channel-capacity-read','foundation','scripts/verify-admin-channel-capacity-read.ts','ADMIN_CHANNEL_CAPACITY_READ=PASS'),
+ ts('admin-provider-balance-cancel','foundation','scripts/verify-provider-balance-cancel.ts','PROVIDER_BALANCE_CANCEL=PASS'),
  node('platform-bi-preview-browser','foundation','scripts/verify-bi-preview-browser.cjs','BI_PREVIEW_BROWSER=PASS'),
  node('enterprise-source-onboarding','foundation','scripts/verify-enterprise-source-onboarding.mjs','ENTERPRISE_SOURCE_ONBOARDING=PASS'),
  node('enterprise-source-audit','foundation','scripts/verify-enterprise-source-audit.mjs','SOURCE_AUDIT_VERIFY_PASS'),

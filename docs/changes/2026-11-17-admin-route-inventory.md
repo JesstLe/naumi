@@ -15,7 +15,7 @@
 | `GET /api/admin/bi/model-config` | `src/app/api/admin/bi/model-config/route.ts` | 待核查 |
 | `GET /api/admin/bi/model-config/catalog` | `src/app/api/admin/bi/model-config/catalog/route.ts` | 待核查 |
 | `GET /api/admin/bi/model-config/versions` | `src/app/api/admin/bi/model-config/versions/route.ts` | 待核查 |
-| `GET /api/admin/bi/provider-ops` | `src/app/api/admin/bi/provider-ops/route.ts` | 部分：现有隔离回归验证发布凭据、同账户上游去重、缓存、版本变动拒绝、管理员边界和活动统计；HTTP 断开后的分支取消及长窗活动的池占用待核 |
+| `GET /api/admin/bi/provider-ops` | `src/app/api/admin/bi/provider-ops/route.ts` | 部分：隔离回归验证发布凭据、同账户去重、缓存、版本变动拒绝、管理员边界和活动统计；真实回环验证最后一个页面断开时关闭上游读，其余页面仍能正常完成；本地凭据/配置 SQL 与活动统计的断开取消及规模待核 |
 | `GET /api/admin/bi/trace` | `src/app/api/admin/bi/trace/route.ts` | 部分：外部追踪的总时限、在途上限及部分结果，`verify-bi-trace-deadline.ts` |
 | `GET /api/admin/bi/usage` | `src/app/api/admin/bi/usage/route.ts` | 部分：隔离断开、CSV 精简、新旧浏览器兼容；混合企业报表并发占满场景复现与连接保留见 `verify-admin-report-contention.ts`。每页精确统计成本和真实网关待核 |
 | `GET /api/admin/billing` | `src/app/api/admin/billing/route.ts` | 待核查 |
