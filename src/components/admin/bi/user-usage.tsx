@@ -131,9 +131,9 @@ export function UserUsage({ embedded = false, enterpriseId, refreshRevision = 0 
     try {
       const rows: UsageUser[] = [], seen = new Set<string>(); let total: number | undefined;
       for (let page = 1; ; page++) {
-        const query = queryParameters({ ...filter, page }, enterpriseId); query.set("size", "100");
-        const result = await readUsageResponse(`${endpoint}?${query}`, controller.signal);
-        if (!Array.isArray(result.users) || !Number.isSafeInteger(result.total)) throw new Error("导出数据格式异常");
+        const query = queryParameters({ ...filter, page }, enterpriseId);
+        query.set("size", "100"); query.set("view", "export");
+        const result = await readUsageResponse(`${endpoint}?${query}`, controller.signal, "export");
         if (result.total > 10000) throw new Error("当前筛选超过 10,000 个账号，请缩小范围后导出");
         if (total !== undefined && result.total !== total) throw new Error("账号列表在导出期间发生变化，请重新导出");
         total = result.total;

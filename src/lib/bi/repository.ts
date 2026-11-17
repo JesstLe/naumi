@@ -7,6 +7,7 @@ import {randomUUID} from "node:crypto";
 import type {PoolClient} from "pg";
 
 import {getPool} from "@/platform/db/pool";
+import {checkReadClientSocket, withOwnedReadClient} from "@/platform/db/owned-read-client";
 import type {BiOverview,BiQuery,BiResponse,BiRow} from "./contracts";
 import {ARTWORK_INPUT_COLUMNS,ARTWORK_INPUT_JOINS,artworkInputPresentation} from "./artwork-inputs";
 import {artworkBiPresentation} from "@/lib/artwork-provenance";
@@ -190,61 +191,18 @@ function normalize(rows: Record<string, unknown>[]): BiRow[] {
   );
 }
 
-function acquireSnapshotClient(signal?: AbortSignal): Promise<PoolClient> {
-  if (!signal) return getPool().connect();
-  signal.throwIfAborted();
-  const pending = getPool().connect();
-  // pg does not expose a way to unlink a pending checkout. A late checkout
-  // must go straight back to the pool without starting a transaction.
-  return new Promise((resolve, reject) => {
-    const abort = () => reject(signal.reason);
-    signal.addEventListener("abort", abort, { once: true });
-    void pending.then(client => {
-      signal.removeEventListener("abort", abort);
-      if (signal.aborted) client.release();
-      else resolve(client);
-    }, error => {
-      signal.removeEventListener("abort", abort);
-      reject(error);
-    });
-  });
-}
-
 async function snapshot<T>(
   run: (client: PoolClient) => Promise<T>,
   signal?: AbortSignal,
 ): Promise<T> {
-  const client = await acquireSnapshotClient(signal);
-  let held = true;
-  const release = (discard = false) => {
-    if (!held) return;
-    held = false;
-    client.release(discard);
-  };
-  const abort = () => release(true);
-  signal?.addEventListener("abort", abort, { once: true });
-  try {
-    signal?.throwIfAborted();
+  return withOwnedReadClient(getPool(), async client => {
     await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-    // On PostgreSQL 16/Linux, check the wire even while SQL is busy so closing
-    // the discarded socket stops server-side work as well as freeing a slot.
-    await client.query("SET LOCAL statement_timeout='20s'; SET LOCAL lock_timeout='5s'" +
-      (signal ? "; SET LOCAL client_connection_check_interval='250ms'" : ""));
+    await client.query("SET LOCAL statement_timeout='20s'; SET LOCAL lock_timeout='5s'" + (signal ? checkReadClientSocket : ""));
     const result = await run(client);
     signal?.throwIfAborted();
     await client.query("COMMIT");
     return result;
-  } catch (error) {
-    if (held) {
-      try { await client.query("ROLLBACK"); }
-      catch { release(true); }
-    }
-    signal?.throwIfAborted();
-    throw error;
-  } finally {
-    signal?.removeEventListener("abort", abort);
-    release();
-  }
+  }, signal);
 }
 
 /** Scoped callers must supply a server-authorized member list and its transaction.
@@ -543,7 +501,9 @@ export async function biConversation(
   email: string,
   kind: "agent" | "genchat",
   page: number,
+  signal?: AbortSignal,
 ) {
+  signal?.throwIfAborted();
   await ensureBiSchema();
   const source =
     kind === "agent"
@@ -574,5 +534,5 @@ export async function biConversation(
       [email, id, (page - 1) * 20],
     );
     return { total: result.rows[0].total, messages: result.rows[0].messages, page, size: 20 };
-  });
+  }, signal);
 }

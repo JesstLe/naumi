@@ -1,8 +1,9 @@
 import "server-only";
 import type { PoolClient } from "pg";
 import { getPool } from "@/platform/db/pool";
+import { checkReadClientSocket, withOwnedReadClient } from "@/platform/db/owned-read-client";
 import { ensureBiSchema } from "./schema";
-import { USAGE_DEFINITIONS, type UsageMetrics, type UsageQuery, type UsageResponse, type UsageUser } from "./usage-contracts";
+import { USAGE_DEFINITIONS, type UsageExportPage, type UsageMetrics, type UsageQuery, type UsageResponse, type UsageUser } from "./usage-contracts";
 
 type ReadClient = Pick<PoolClient, "query">;
 export type UsageReadScope = { allowedEmails: readonly string[]; tenantId: string; tenantName: string };
@@ -29,7 +30,10 @@ function metrics(raw: Record<string, unknown>): UsageMetrics {
 
 /** Query-only analytics: optional historical tables are detected, never fabricated.
  * Server authorization must supply scope; an empty allowed list stays empty. */
-export async function readUserUsage(tx: ReadClient, query: UsageQuery, scope?: UsageReadScope): Promise<UsageResponse> {
+export function readUserUsage(tx: ReadClient, query: UsageQuery, scope?: UsageReadScope): Promise<UsageResponse>;
+export function readUserUsage(tx: ReadClient, query: UsageQuery, scope: UsageReadScope | undefined, view: "export"): Promise<UsageExportPage>;
+export function readUserUsage(tx: ReadClient, query: UsageQuery, scope: UsageReadScope | undefined, view: "export" | undefined): Promise<UsageResponse | UsageExportPage>;
+export async function readUserUsage(tx: ReadClient, query: UsageQuery, scope?: UsageReadScope, view?: "export"): Promise<UsageResponse | UsageExportPage> {
   if (scope && query.email && !scope.allowedEmails.includes(query.email)) throw new Error("所选账号不在当前可见成员范围");
   if (scope && query.tenantId && query.tenantId !== scope.tenantId) throw new Error("所选企业不在当前授权范围");
   const names = [...sources.map(s => s[0]), "app_users", "app_enterprise_members", "app_account_team_members", "app_account_teams", "app_bi_account_profiles", "app_creation_records", "app_billing_operations"];
@@ -142,32 +146,38 @@ export async function readUserUsage(tx: ReadClient, query: UsageQuery, scope?: U
     identities AS (SELECT u.email FROM app_users u WHERE ${filter("u.email")} UNION SELECT email FROM user_totals),
     people AS (SELECT i.email,COALESCE(u.name,'') name,COALESCE(t.company,'') company,t.tenant_id AS "tenantId",COALESCE(u.role,'unknown') role,
       ${numericKeys.map(k => `COALESCE(a."${k}",0) AS "${k}"`).join(",")},COALESCE(a."activeDays",0) AS "activeDays",CASE WHEN a."activeDays">0 THEN 1 ELSE 0 END AS "activeUsers",a."lastActivityAt"
-      FROM identities i LEFT JOIN app_users u ON u.email=i.email LEFT JOIN tenancy t ON t.email=i.email LEFT JOIN user_totals a ON a.email=i.email),
-    daily AS (SELECT day,${sums("f")},count(DISTINCT email) FILTER(WHERE activity) AS "activeUsers" FROM facts f GROUP BY day),
-    days AS (SELECT d::date AS day FROM generate_series(($1::timestamptz AT TIME ZONE 'Asia/Shanghai')::date,(($2::timestamptz AT TIME ZONE 'Asia/Shanghai')::date-1),'1 day'::interval) d)
+      FROM identities i LEFT JOIN app_users u ON u.email=i.email LEFT JOIN tenancy t ON t.email=i.email LEFT JOIN user_totals a ON a.email=i.email)
+    ${view === "export" ? "" : `,daily AS (SELECT day,${sums("f")},count(DISTINCT email) FILTER(WHERE activity) AS "activeUsers" FROM facts f GROUP BY day),
+    days AS (SELECT d::date AS day FROM generate_series(($1::timestamptz AT TIME ZONE 'Asia/Shanghai')::date,(($2::timestamptz AT TIME ZONE 'Asia/Shanghai')::date-1),'1 day'::interval) d)`}
     SELECT (SELECT count(*) FROM people) total,
-      COALESCE((SELECT jsonb_agg(p) FROM (SELECT * FROM people ORDER BY "${sortColumns[query.sort]}" DESC,email LIMIT $7 OFFSET $8) p),'[]') users,
-      (SELECT jsonb_build_object(${numericKeys.map(k => `'${k}',COALESCE(sum(p."${k}"),0)`).join(",")},'activeDays',COALESCE(sum(p."activeDays"),0),'activeUsers',COALESCE(sum(p."activeUsers"),0)) FROM people p) summary,
+      COALESCE((SELECT jsonb_agg(p) FROM (SELECT * FROM people ORDER BY "${sortColumns[query.sort]}" DESC,email LIMIT $7 OFFSET $8) p),'[]') users
+      ${view === "export" ? "" : `,(SELECT jsonb_build_object(${numericKeys.map(k => `'${k}',COALESCE(sum(p."${k}"),0)`).join(",")},'activeDays',COALESCE(sum(p."activeDays"),0),'activeUsers',COALESCE(sum(p."activeUsers"),0)) FROM people p) summary,
       (SELECT jsonb_agg(jsonb_build_object('date',d.day::text,'tasks',COALESCE(a."tasks",0),'delivered',COALESCE(a."delivered",0),'uploads',COALESCE(a."uploads",0),'consumed',COALESCE(a."consumed",0),'refunded',COALESCE(a."refunded",0),'activeUsers',COALESCE(a."activeUsers",0)) ORDER BY d.day) FROM days d LEFT JOIN daily a USING(day)) daily,
       COALESCE((SELECT jsonb_object_agg(source,n) FROM (SELECT source,count(*) n FROM facts GROUP BY source)c),'{}') source_counts,
-      (SELECT min(day)::text FROM facts) first_in_window`, values);
+      (SELECT min(day)::text FROM facts) first_in_window`}`, values);
   const raw = result.rows[0];
+  const page: UsageExportPage = {
+    users: raw.users.map((r: Record<string, unknown>): UsageUser => ({ ...metrics(r), email: String(r.email), name: String(r.name), company: String(r.company), tenantId: r.tenantId ? String(r.tenantId) : null, role: String(r.role), lastActivityAt: r.lastActivityAt ? String(r.lastActivityAt) : null })),
+    total: num(raw.total), page: query.page, size: query.size,
+  };
+  // Export callers can only see the same rows and exact count as a normal page.
+  // The chart, aggregate summary, coverage scans and tenant list are unnecessary.
+  if (view === "export") return page;
   const tenants = scope ? [{ id: scope.tenantId, name: scope.tenantName }] : has("app_account_teams") ? (await tx.query("SELECT id::text,name FROM app_account_teams ORDER BY name,id")).rows : [];
   return { generatedAt: new Date().toISOString(), query: { from: query.from, to: query.to, email: query.email, tenantId: scope?.tenantId || query.tenantId, q: query.q, sort: query.sort },
-    summary: metrics(raw.summary || {}), users: raw.users.map((r: Record<string, unknown>): UsageUser => ({ ...metrics(r), email: String(r.email), name: String(r.name), company: String(r.company), tenantId: r.tenantId ? String(r.tenantId) : null, role: String(r.role), lastActivityAt: r.lastActivityAt ? String(r.lastActivityAt) : null })),
-    daily: raw.daily || [], total: num(raw.total), page: query.page, size: query.size, tenants,
+    ...page, summary: metrics(raw.summary || {}), daily: raw.daily || [], tenants,
     coverage: { sources: sources.map(([table, label, key]) => ({ key, label, available: has(table), records: num(raw.source_counts[key]) })), historyFrom: raw.first_in_window,
       notes: ["日期按北京时间；历史记录直接读取原业务表，不依赖新创作中心回填。", "企业筛选按当前账号归属；企业视图仅统计当前获准查看成员的历史账号用量，不回写旧任务归属。", "最早记录指本次查询窗口内的首条记录；可修改日期逐年查询更早历史。", "生成交付为已保存作品，不等于已采纳、质量评分或员工绩效；来源证据不足的历史作品单列。", "后台退款与赠送不计用户活跃；所有效率指标不推算在线工时。", "缺失 Token 或来源表时记录覆盖不足，不以零值冒充完整历史。"] }, definitions: USAGE_DEFINITIONS };
 }
 
-export async function queryUserUsage(query: UsageQuery): Promise<UsageResponse> {
+export async function queryUserUsage(query: UsageQuery, signal: AbortSignal, view?: "export"): Promise<UsageResponse | UsageExportPage> {
+  signal.throwIfAborted();
   await ensureBiSchema();
-  const tx = await getPool().connect();
-  try {
+  return withOwnedReadClient(getPool(), async tx => {
     await tx.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-    await tx.query("SET LOCAL statement_timeout='15s'");
-    const result = await readUserUsage(tx, query);
+    await tx.query("SET LOCAL statement_timeout='15s'" + checkReadClientSocket);
+    const result = await readUserUsage(tx, query, undefined, view);
+    signal.throwIfAborted();
     await tx.query("COMMIT"); return result;
-  } catch (error) { await tx.query("ROLLBACK"); throw error; }
-  finally { tx.release(); }
+  }, signal);
 }

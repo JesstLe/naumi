@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {randomUUID} from 'node:crypto';
 import {createServer, request as httpRequest} from 'node:http';
 import {setTimeout as delay} from 'node:timers/promises';
 import {Client} from 'pg';
@@ -22,6 +23,8 @@ async function main() {
   process.env.SETTINGS_SECRET = 'bi-read-cancellation-isolated-fixture-1234567890';
   process.env.NAUMI_MULTI_USER = '1';
   process.env.PGPOOL_MAX = '1';
+  const schema = 'bi_disconnect_' + randomUUID().replaceAll('-', '');
+  process.env.PGOPTIONS = `-c search_path=${schema}`;
 
   const {getPool, closeDatabasePools} = await import('../src/platform/db/pool');
   const {getOrCreateUser} = await import('../src/lib/db');
@@ -29,13 +32,18 @@ async function main() {
   const {parseBiQuery} = await import('../src/lib/bi/contracts');
   const {signUserSession} = await import('../src/lib/native-auth');
   const {GET} = await import('../src/app/api/admin/bi/route');
+  const {GET: conversation} = await import('../src/app/api/admin/bi/conversation/route');
+  const {GET: usage} = await import('../src/app/api/admin/bi/usage/route');
+  const {GET: tenantUsage} = await import('../src/app/api/enterprise/usage/route');
+  const {activateEnterprise} = await import('../src/lib/enterprise/server');
   const pool = getPool();
   const lock = new Client({connectionString: url.toString()});
   const done = new Map<string, number>();
   const server = createServer(async (req, res) => {
     const uri = new URL(req.url!, 'http://fixture.invalid');
     try {
-      const result = await GET(new Request(uri, {
+      const handler = uri.pathname === '/api/enterprise/usage' ? tenantUsage : uri.pathname.endsWith('/conversation') ? conversation : uri.pathname.endsWith('/usage') ? usage : GET;
+      const result = await handler(new Request(uri, {
         headers: {cookie: req.headers.cookie ?? ''}, signal: signalFromNodeResponse(res),
       }));
       done.set(uri.searchParams.get('probe') ?? '', result.status);
@@ -47,14 +55,21 @@ async function main() {
 
   await lock.connect();
   try {
+    await lock.query(`CREATE SCHEMA ${schema}`);
     await ensureBiSchema();
     const admin = 'admin@bi-cancel.fixture', member = 'member@bi-cancel.fixture';
-    await getOrCreateUser(admin);
-    await getOrCreateUser(member);
+    const owner = 'owner@bi-cancel.fixture', outsider = 'outsider@bi-cancel.fixture', tenant = randomUUID();
+    for (const email of [admin, member, owner, outsider]) await getOrCreateUser(email);
     await pool.query("UPDATE app_users SET role='admin' WHERE email=$1", [admin]);
     await pool.query("INSERT INTO app_artworks(id,email,title,category,prompt,image_url,gradient) VALUES('owned-art',$1,'Owned','image','prompt','','')", [member]);
     await pool.query(`INSERT INTO app_bi_model_calls(id,email,operation,operation_id,wire_model,state,duration_ms,frontend_model_label)
       VALUES ('owned-call',$1,'generate','owned-task','wire','success',5,'后台显示名')`, [member]);
+    await pool.query(`INSERT INTO app_agent_sessions(id,email,messages) VALUES ('conversation-a',$1,$2),('conversation-a',$3,$4)`,
+      [member, JSON.stringify([{role:'user',content:'用户甲'},{role:'tool',content:'不应返回'}]), admin, JSON.stringify([{role:'user',content:'另一位用户'}])]);
+    await pool.query("INSERT INTO app_team_access_grants(email,scope,starts_at,created_by,updated_by) VALUES($1,'owned',now()-interval '1 day','fixture','fixture')", [owner]);
+    await pool.query("INSERT INTO app_account_teams(id,name,owner_email,authorized_until) VALUES($1,'Fixture',$2,now()+interval '3 days')", [tenant,owner]);
+    await pool.query('INSERT INTO app_account_team_members(email,team_id) VALUES($1,$2)',[member,tenant]);
+    await activateEnterprise({email:admin,admin:true,consoleAdmin:true},tenant,member,[]);
 
     const cookie = (email: string) => ({cookie: 'nv_user=' + signUserSession(email, Date.now())});
     const request = (section: string, email = admin) => new Request(`http://fixture.invalid/api/admin/bi?section=${section}`, {headers: cookie(email)});
@@ -66,15 +81,20 @@ async function main() {
     const origin = `http://127.0.0.1:${(server.address() as {port: number}).port}`;
     const holderPid = (await lock.query('SELECT pg_backend_pid() AS pid')).rows[0].pid as number;
     const freshStats = async () => { await lock.query('SELECT pg_stat_clear_snapshot()'); };
-    for (const [section, table, pattern] of [
-      ['artworks', 'app_artworks', 'WITH query_window'],
-      ['calls', 'app_supplier_calls', 'WITH wanted AS MATERIALIZED'],
-      ['overview', 'app_credit_batches', 'WITH query_window'],
+    const detailUrl = `/conversation?id=conversation-a&email=${encodeURIComponent(member)}&kind=agent`;
+    const enterpriseUrl = `/api/enterprise/usage?enterpriseId=${tenant}`;
+    for (const [section, table, pattern, endpoint, actor] of [
+      ['artworks', 'app_artworks', 'WITH query_window', '/api/admin/bi?section=artworks', admin],
+      ['calls', 'app_supplier_calls', 'WITH wanted AS MATERIALIZED', '/api/admin/bi?section=calls', admin],
+      ['overview', 'app_credit_batches', 'WITH query_window', '/api/admin/bi?section=overview', admin],
+      ['conversation', 'app_agent_sessions', 'WITH extracted AS MATERIALIZED', `/api/admin/bi${detailUrl}`, admin],
+      ['usage-export', 'app_ledger', 'WITH tenancy AS MATERIALIZED', '/api/admin/bi/usage?view=export', admin],
+      ['enterprise-export', 'app_ledger', 'WITH tenancy AS MATERIALIZED', `${enterpriseUrl}&view=export`, owner],
     ]) {
       await lock.query('BEGIN');
       try {
         await lock.query(`LOCK TABLE ${table} IN ACCESS EXCLUSIVE MODE`);
-        const clientRequest = httpRequest(`${origin}/api/admin/bi?section=${section}&probe=${section}`, {headers: cookie(admin)});
+        const clientRequest = httpRequest(`${origin}${endpoint}&probe=${section}`, {headers: cookie(actor)});
         clientRequest.on('error', () => {});
         clientRequest.end();
         const pid = await until(async () => {
@@ -105,7 +125,20 @@ async function main() {
     assert.equal(calls.total, 1);
     assert.equal(calls.rows[0].frontend_model_label, '后台显示名');
     assert.equal((await GET(request('overview'))).status, 200);
-    assert.equal((await pool.query('SELECT count(*)::int AS total FROM app_bi_access_log')).rows[0].total, 6);
+    const detail = await conversation(new Request(`${origin}/api/admin/bi${detailUrl}`, {headers: cookie(admin)}));
+    assert.equal(detail.status, 200);
+    assert.deepEqual(await detail.json(), {total:1, messages:[{role:'user',text:'用户甲',truncated:false}],page:1,size:20});
+    const report = await (await usage(new Request(`${origin}/api/admin/bi/usage`, {headers: cookie(admin)}))).json();
+    const exportPage = await (await usage(new Request(`${origin}/api/admin/bi/usage?view=export`, {headers: cookie(admin)}))).json();
+    assert.deepEqual(exportPage, {total:report.total, users:report.users, page:report.page, size:report.size});
+    assert.equal((await pool.query('SELECT count(*)::int AS total FROM app_bi_access_log')).rows[0].total, 11);
+    const enterprise = (account: string, suffix = '') => tenantUsage(new Request(`${origin}${enterpriseUrl}${suffix}`, {headers: cookie(account)}));
+    const tenantReport = await (await enterprise(owner)).json();
+    const tenantPage = await (await enterprise(owner, '&view=export')).json();
+    assert.deepEqual(tenantPage, {total:tenantReport.total, users:tenantReport.users, page:tenantReport.page, size:tenantReport.size});
+    assert.deepEqual(tenantPage.users.map((row: {email: string}) => row.email).sort(), [member,owner].sort());
+    assert.equal((await enterprise(outsider, '&view=export')).status, 403);
+    assert.equal((await enterprise(owner, `&view=export&email=${encodeURIComponent(outsider)}`)).status, 403);
 
     const tx = await pool.connect();
     try {
@@ -120,12 +153,14 @@ async function main() {
       tx.release();
     }
     await until(async () => pool.waitingCount === 0 && pool.idleCount === 1 ? true : undefined, 'late checkout returned idle');
-    console.log('BI_READ_CANCELLATION=PASS HTTP_DISCONNECT ARTWORK_COUNT MODEL_EVIDENCE OVERVIEW POSTGRES_EXIT WAITING_CHECKOUT AUDIT_AUTH_RETRY');
+    console.log('BI_READ_CANCELLATION=PASS HTTP_DISCONNECT ARTWORK_COUNT MODEL_EVIDENCE OVERVIEW CONVERSATION TWO_USAGE_EXPORTS POSTGRES_EXIT WAITING_CHECKOUT AUDIT_AUTH_RETRY');
   } finally {
-    await lock.end();
     server.closeAllConnections();
     await new Promise<void>(resolve => server.close(() => resolve()));
-    await closeDatabasePools();
+    try {
+      await closeDatabasePools();
+      await lock.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+    } finally { await lock.end(); }
   }
 }
 

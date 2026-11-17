@@ -1,4 +1,4 @@
-import type { UsageResponse } from "./usage-contracts";
+import type { UsageExportPage, UsageResponse } from "./usage-contracts";
 
 /** One bounded read, including the response body. No persistent or cross-account cache. */
 export const USAGE_READ_TIMEOUT_MS = 30_000;
@@ -8,7 +8,9 @@ export class UsageReadError extends Error {
 export function isUsageAccessError(reason: unknown): reason is UsageReadError {
   return reason instanceof UsageReadError && (reason.status === 401 || reason.status === 403 || reason.status === 404);
 }
-export async function readUsageResponse(url: string, signal: AbortSignal): Promise<UsageResponse> {
+export function readUsageResponse(url: string, signal: AbortSignal): Promise<UsageResponse>;
+export function readUsageResponse(url: string, signal: AbortSignal, view: "export"): Promise<UsageExportPage>;
+export async function readUsageResponse(url: string, signal: AbortSignal, view?: "export"): Promise<UsageResponse | UsageExportPage> {
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let rejectAborted: (reason: unknown) => void = () => {};
@@ -26,6 +28,11 @@ export async function readUsageResponse(url: string, signal: AbortSignal): Promi
       if (response.status === 401 || response.status === 403 || response.status === 404) throw new UsageReadError(response.status === 401 ? "登录已失效，请重新登录" : "当前账号没有此用量数据的访问权限", response.status);
       const body = await response.json();
       if (!response.ok) throw new UsageReadError(body?.error || "用量数据读取失败，请重试", response.status);
+      // During a rolling update an older server still returns the full report.
+      if (view === "export") {
+        if (!Array.isArray(body?.users) || !Number.isSafeInteger(body.total) || body.total < 0) throw new UsageReadError("导出数据格式异常");
+        return body as UsageExportPage;
+      }
       if (!Array.isArray(body?.users) || !Array.isArray(body?.daily) || !body?.summary || !body?.coverage) throw new UsageReadError("用量数据格式异常，请重试");
       return body as UsageResponse;
     })();

@@ -9,14 +9,19 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   const actor = await enterpriseAuthorize(request); if (actor instanceof NextResponse) return actor;
+  const params = new URL(request.url).searchParams;
+  const view = params.get("view") === "export" ? "export" : undefined;
   let query;
-  try { query = parseUsageQuery(new URL(request.url).searchParams); if (!query.tenantId) throw new Error("请选择企业"); }
+  try { query = parseUsageQuery(params); if (!query.tenantId) throw new Error("请选择企业"); }
   catch (error) { return teamJson({ error: error instanceof Error ? error.message : "筛选条件无效" }, 400); }
   try {
     return teamJson(await enterpriseReportRead(actor, query.tenantId, (tx, scope) => {
       const emails = new Set(scope.visible); if (scope.owner) emails.add(scope.team.owner_email);
       if (query.email && !emails.has(query.email)) throw new TeamError("没有该成员用量的查看权限", 403);
-      return readUserUsage(tx, query, { allowedEmails: [...emails], tenantId: scope.team.id, tenantName: scope.team.name });
-    }));
-  } catch (error) { return teamFailure(error); }
+      return readUserUsage(tx, query, { allowedEmails: [...emails], tenantId: scope.team.id, tenantName: scope.team.name }, view);
+    }, request.signal));
+  } catch (error) {
+    if (request.signal.aborted) return teamJson({ error: "查询已取消" }, 499);
+    return teamFailure(error);
+  }
 }

@@ -12,6 +12,7 @@ import { TeamError } from "@/lib/teams/errors";
 
 import {activeTeamGrant,requireTeamGrant,type TeamActor} from '@/lib/teams/grants';
 import {getPool} from "@/platform/db/pool";
+import {checkReadClientSocket, withOwnedReadClient} from "@/platform/db/owned-read-client";
 import {settingsSecret} from '@/lib/settings-secret';
 import type {ContentPage} from '@/lib/teams/contracts';
 import type {EnterpriseIdentity,EnterpriseMember,EnterpriseRole,EnterpriseSnapshot} from './contracts';
@@ -142,36 +143,39 @@ function projectionScopeKey(s: Scope) {
  * aggregating. Authorize the data snapshot first, then check a fresh scope in a
  * short transaction before any result leaves the server.
  */
-async function enterpriseProjectionRead<T>(actor:TeamActor,id:string,run:(tx:PoolClient,s:Scope)=>Promise<T>,requireRecords:boolean,allowSelf=false) {
+async function enterpriseProjectionRead<T>(actor:TeamActor,id:string,run:(tx:PoolClient,s:Scope)=>Promise<T>,requireRecords:boolean,allowSelf=false,signal?:AbortSignal) {
+  signal?.throwIfAborted();
   await ensureEnterpriseSchema();
-  const tx=await getPool().connect();
   try {
-    await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
-    await tx.query("SET LOCAL statement_timeout='5s'; SET LOCAL lock_timeout='1s'");
-    const s=await scope(tx,actor,id,allowSelf,'snapshot');
-    if(requireRecords&&!s.viewRecords)throw new TeamError('当前岗位没有经营数据查看权限');
-    const key=projectionScopeKey(s);
-    const result=await run(tx,s);
-    await tx.query('COMMIT');
-    await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
-    await tx.query("SET LOCAL statement_timeout='3s'; SET LOCAL lock_timeout='1s'");
-    const current=await scope(tx,actor,id,allowSelf);
-    if(requireRecords&&!current.viewRecords)throw new TeamError('当前岗位没有经营数据查看权限');
-    if(key!==projectionScopeKey(current))throw new TeamError('企业成员范围已变化，请刷新后重试',409);
-    await tx.query('COMMIT');
-    return result;
+    return await withOwnedReadClient(getPool(), async tx=>{
+      const cancellation=signal?checkReadClientSocket:'';
+      await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+      await tx.query("SET LOCAL statement_timeout='5s'; SET LOCAL lock_timeout='1s'"+cancellation);
+      const s=await scope(tx,actor,id,allowSelf,'snapshot');
+      if(requireRecords&&!s.viewRecords)throw new TeamError('当前岗位没有经营数据查看权限');
+      const key=projectionScopeKey(s);
+      const result=await run(tx,s);
+      signal?.throwIfAborted();
+      await tx.query('COMMIT');
+      await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
+      await tx.query("SET LOCAL statement_timeout='3s'; SET LOCAL lock_timeout='1s'"+cancellation);
+      const current=await scope(tx,actor,id,allowSelf);
+      if(requireRecords&&!current.viewRecords)throw new TeamError('当前岗位没有经营数据查看权限');
+      if(key!==projectionScopeKey(current))throw new TeamError('企业成员范围已变化，请刷新后重试',409);
+      await tx.query('COMMIT');
+      return result;
+    },signal);
   } catch(error) {
-    await tx.query('ROLLBACK').catch(()=>{});
     const code=(error as {code?:string})?.code;
     if(code==='57014'||code==='55P03'||code==='40001'||code==='40P01') {
       throw new TeamError('企业数据暂不可读取，请稍后重试',503);
     }
     throw error;
-  } finally { tx.release(); }
+  }
 }
 
-export function enterpriseReportRead<T>(actor:TeamActor,id:string,run:(tx:PoolClient,s:Scope)=>Promise<T>) {
-  return enterpriseProjectionRead(actor,id,run,true);
+export function enterpriseReportRead<T>(actor:TeamActor,id:string,run:(tx:PoolClient,s:Scope)=>Promise<T>,signal?:AbortSignal) {
+  return enterpriseProjectionRead(actor,id,run,true,false,signal);
 }
 
 /** A workflow evidence picker grants self visibility to ordinary employees,

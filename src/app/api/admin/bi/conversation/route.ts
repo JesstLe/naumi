@@ -23,11 +23,13 @@ export async function GET(request: Request) {
   )
     return biJson({ error: "对话参数无效" }, 400);
   try {
+    request.signal.throwIfAborted();
     await logBiAccess(auth.actor, "view-conversation", "conversations", email);
     return biJson(
-      await biConversation(id, email, kind as "agent" | "genchat", page),
+      await biConversation(id, email, kind as "agent" | "genchat", page, request.signal),
     );
   } catch {
+    if (request.signal.aborted) return biJson({ error: "查询已取消" }, 499);
     return biJson({ error: "对话内容读取失败" }, 500);
   }
 }

@@ -10,14 +10,14 @@
 | `GET /api/admin/artworks` | `src/app/api/admin/artworks/route.ts` | 待核查 |
 | `GET /api/admin/bi` | `src/app/api/admin/bi/route.ts` | 部分：overview 去重复扫描、作品深页先排序键、越界只计数；全分类 145 项新旧结果对照；作品计数、模型调用证据、概览断开后的 SQL 与连接释放见 `verify-bi-read-cancellation.ts`。鉴权/审计阶段、其他路由、长窗背压及真实网关待核 |
 | `GET /api/admin/bi/channel-capacity` | `src/app/api/admin/bi/channel-capacity/route.ts` | 待核查 |
-| `GET /api/admin/bi/conversation` | `src/app/api/admin/bi/conversation/route.ts` | 待核查 |
+| `GET /api/admin/bi/conversation` | `src/app/api/admin/bi/conversation/route.ts` | 部分：按账号和会话取文字、保持 20 条分页；回环 HTTP 断开后 PostgreSQL 在解锁前退出。会话正文大样本结果对照；真实网关与长窗并发待核 |
 | `GET /api/admin/bi/media` | `src/app/api/admin/bi/media/route.ts` | 待核查 |
 | `GET /api/admin/bi/model-config` | `src/app/api/admin/bi/model-config/route.ts` | 待核查 |
 | `GET /api/admin/bi/model-config/catalog` | `src/app/api/admin/bi/model-config/catalog/route.ts` | 待核查 |
 | `GET /api/admin/bi/model-config/versions` | `src/app/api/admin/bi/model-config/versions/route.ts` | 待核查 |
 | `GET /api/admin/bi/provider-ops` | `src/app/api/admin/bi/provider-ops/route.ts` | 待核查 |
 | `GET /api/admin/bi/trace` | `src/app/api/admin/bi/trace/route.ts` | 部分：外部追踪的总时限、在途上限及部分结果，`verify-bi-trace-deadline.ts` |
-| `GET /api/admin/bi/usage` | `src/app/api/admin/bi/usage/route.ts` | 待核查 |
+| `GET /api/admin/bi/usage` | `src/app/api/admin/bi/usage/route.ts` | 部分：读事务断开释放；CSV 只取同权限的当页账号和精确总数，隔离真实 SQL、浏览器新旧响应兼容；每页总数依旧需要全范围统计，长窗并发和真实网关待核 |
 | `GET /api/admin/billing` | `src/app/api/admin/billing/route.ts` | 待核查 |
 | `GET /api/admin/billing/image25-prices` | `src/app/api/admin/billing/image25-prices/route.ts` | 待核查 |
 | `GET /api/admin/billing/models/stages` | `src/app/api/admin/billing/models/stages/route.ts` | 待核查 |
@@ -71,7 +71,7 @@
 | `GET /api/enterprise/media` | `src/app/api/enterprise/media/route.ts` | 部分：共用渲染器的并发、过载、取消与镜像回退经本地 HTTP 验证；此入口自身的授权组合待核 |
 | `GET /api/enterprise/saas-overview` | `src/app/api/enterprise/saas-overview/route.ts` | 待核查 |
 | `GET /api/enterprise/tenant-usage` | `src/app/api/enterprise/tenant-usage/route.ts` | 待核查 |
-| `GET /api/enterprise/usage` | `src/app/api/enterprise/usage/route.ts` | 部分：报表账户行锁及撤权，`verify-enterprise-analytics.ts` |
+| `GET /api/enterprise/usage` | `src/app/api/enterprise/usage/route.ts` | 部分：报表账户行锁及撤权；CSV 精简投影不扩大成员权限，回环 HTTP 断开后数据事务释放。`verify-enterprise-analytics.ts`、`verify-bi-read-cancellation.ts`；真实网关和长窗并发待核 |
 | `GET /api/enterprise/workflow` | `src/app/api/enterprise/workflow/route.ts` | 部分：工作流代理的取消和流限制；动态 action 按工作流直连条目继续追踪 |
 | `GET /api/enterprise/workflow/appeals` | `src/app/api/enterprise/workflow/appeals/route.ts` | 部分：实际登录 Cookie 和签名代理专项回归，通过跨企业、跨团队和撤权边界；直连断开实测，真实网关待核 |
 | `GET /api/enterprise/workflow/capacity` | `src/app/api/enterprise/workflow/capacity/route.ts` | 待核查 |

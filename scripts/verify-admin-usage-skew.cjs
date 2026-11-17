@@ -54,6 +54,7 @@ function load(relative) {
     if (name === '@/lib/db' || name === '@/platform/db/pool') return { getPool() { throw new Error('Unexpected nested database checkout'); } };
     if (name === './repository' || name === './schema') return { ensureBiSchema() { throw new Error('Unexpected production schema initialization'); } };
     if (name === './usage-contracts') return load('src/lib/bi/usage-contracts.ts');
+    if (name === '@/platform/db/owned-read-client') return load('src/platform/db/owned-read-client.ts');
     throw new Error(`Unexpected application import ${name}`);
   };
   new vm.Script(`(function(require,module,exports){${code}\n})`, { filename }).runInThisContext()(req, loadedModule, loadedModule.exports);

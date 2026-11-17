@@ -18,6 +18,7 @@ function load(relative, mocks = {}) {
     if (Object.hasOwn(mocks, name)) return mocks[name];
     if (name.startsWith('./')) return load(path.relative(root, path.resolve(path.dirname(filename), name + '.ts')), mocks);
     if (name === '@/lib/db' || name === '@/platform/db/pool') return { getPool() { throw new Error('Only explicit test client is allowed'); } };
+    if (name === '@/platform/db/owned-read-client') return load('src/platform/db/owned-read-client.ts');
     if (name === './repository' || name === './schema') return { ensureBiSchema() { throw new Error('Test SQL schema is explicit'); } };
     return require(name);
   };
@@ -166,6 +167,25 @@ async function main() {
       const explain = (await tx.query('EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) '+statement,args)).rows[0]['QUERY PLAN'];
       const nodes=[];function walk(node){if(!node||typeof node!=='object')return;if(node['Node Type'])nodes.push(node);for(const value of Object.values(node)){if(Array.isArray(value))value.forEach(walk);else if(value&&typeof value==='object')walk(value)}}walk(explain);
       assert.ok(!nodes.some(n=>n['Node Type']==='CTE Scan'&&Number(n['Actual Loops'])>5),'No per-task scans over materialized link collections');
+      const reportFactScans=nodes.filter(n=>n['CTE Name']==='facts').length;
+      const reportBytes=Buffer.byteLength(JSON.stringify(current));
+      const page = await readUserUsage(reader, largeQuery, undefined, 'export');
+      assert.deepEqual(page, {users:current.users,total:current.total,page:current.page,size:current.size});
+      assert.doesNotMatch(statement, /source_counts|generate_series| AS daily| AS summary/);
+      const exportExplain=(await tx.query('EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) '+statement,args)).rows[0]['QUERY PLAN'];
+      nodes.length=0;walk(exportExplain);
+      const exportFactScans=nodes.filter(n=>n['CTE Name']==='facts').length;
+      assert.equal(exportFactScans,1);
+      assert.ok(reportFactScans>exportFactScans);
+      for (const filters of [{page:'2'},{page:'99'},{sort:'modelCalls',tenantId:tenant},{sort:'tasks',q:'规模用户'}]) {
+        const selected = {...largeQuery,...query({from:'2026-09-30',size:'100',...filters})};
+        const expected=await readUserUsage(tx,selected), actual=await readUserUsage(tx,selected,undefined,'export');
+        assert.deepEqual(actual,{users:expected.users,total:expected.total,page:expected.page,size:expected.size});
+      }
+      const allowed={allowedEmails:[A],tenantId:tenant,tenantName:'企业A'};
+      const scopedPage=await readUserUsage(tx,largeQuery,allowed,'export');
+      assert.deepEqual(scopedPage.users.map(u=>u.email),[A]);
+      console.log('USAGE_EXPORT_FACT_SCANS='+reportFactScans+'->'+exportFactScans+' BYTES='+reportBytes+'->'+Buffer.byteLength(JSON.stringify(page)));
       const oldBundlePath=process.env.ADMIN_USAGE_BASELINE_BUNDLE;
       let baselinePlan=null;
       if(oldBundlePath){
