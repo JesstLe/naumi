@@ -312,6 +312,7 @@ function fixture({runtime = true} = {}) {
     },
     'src/lib/saas/creation-writer.ts': {
       './creation-scope': () => load('src/lib/saas/creation-scope.ts'), './creation-contracts': () => load('src/lib/saas/creation-contracts.ts'),
+      './creation-parameters': () => load('src/lib/saas/creation-parameters.ts'),
       '@/lib/model-config/context': modelContext, '@/platform/db/pool': db, './creation-schema': {ensureCreationSchema: async () => {}},
       '@/lib/storage': {uploadImage: fail('creation-upload')}, '@/lib/bi/call-scope': {currentObservedCallId: () => undefined}, '@/lib/teams/server': {TeamError},
     },

@@ -4,6 +4,7 @@ import { ImageCacheDenied, type BrowserImageReadOptions, acquireCanvasImageByteS
 
 type ImageLease = Awaited<ReturnType<typeof acquireBrowserImage>>;
 type Display = ImageLease & { identity: string; source: string; owner: string; revision: number };
+class ImageDecodeFailed extends Error {}
 type Props = ImgHTMLAttributes<HTMLImageElement> & {
   onCacheSettled?: () => void;
   networkQueue?: BrowserImageReadOptions['networkQueue'];
@@ -35,7 +36,8 @@ export const CachedImage = forwardRef<HTMLImageElement, Props>(function CachedIm
   const held = useRef<Display | null>(null), retired = useRef<ImageLease[]>([]);
   const [visible, setVisible] = useState(loading !== 'lazy');
   const [revision, setRevision] = useState(0);
-  const [resolved, setResolved] = useState<Display | null>(null), [denied, setDenied] = useState('');
+  const [resolved, setResolved] = useState<Display | null>(null);
+  const [failure, setFailure] = useState<{ src: string; denied: boolean } | null>(null);
   const callbacks = useRef({ onCacheSettled }); callbacks.current = { onCacheSettled };
   const retries = useRef({ src: '', attempts: 0 }), retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const managed = typeof src === 'string' ? imageCacheSource(src) : null;
@@ -65,7 +67,7 @@ export const CachedImage = forwardRef<HTMLImageElement, Props>(function CachedIm
       if (controlled) ref.current?.removeAttribute('src');
       if (retryTimer.current) { clearTimeout(retryTimer.current); retryTimer.current = null; }
       retries.current = { src: '', attempts: 0 };
-      releaseDisplay(); setResolved(null); setDenied(''); setRevision(n => n + 1);
+      releaseDisplay(); setResolved(null); setFailure(null); setRevision(n => n + 1);
     };
     const invalidate = (event: Event) => {
       const source = (event as CustomEvent<{ source: string }>).detail?.source;
@@ -93,7 +95,7 @@ export const CachedImage = forwardRef<HTMLImageElement, Props>(function CachedIm
   }, [reuseActivePreview, src, managed, visible, identity, owner, revision, releaseDisplay]);
   useEffect(() => releaseDisplay, [releaseDisplay]);
   useEffect(() => {
-    setDenied('');
+    setFailure(null);
     if (held.current && (held.current.identity !== identity || held.current.owner !== owner || held.current.revision !== revision || !src)) {
       releaseDisplay(); setResolved(null);
     }
@@ -112,7 +114,13 @@ export const CachedImage = forwardRef<HTMLImageElement, Props>(function CachedIm
         // clear drafts/session data, reuse a denied frame, or retry in a loop.
         candidate = await acquireBrowserImage(src, controller.signal, { networkQueue, bypassCache: true });
         if (controller.signal.aborted) { candidate.release(); return; }
-        await decodeImage(candidate.url, props.crossOrigin, controller.signal);
+        try { await decodeImage(candidate.url, props.crossOrigin, controller.signal); }
+        catch (cause) {
+          // Only a downloaded Blob proves the transport succeeded. A managed
+          // image above the cache limit may still be decoding a direct URL.
+          if (candidate.url.startsWith('blob:')) throw new ImageDecodeFailed('Image repair did not decode', { cause });
+          throw cause;
+        }
       }
       candidate.networkComplete?.();
       if (!managed) candidate.release(); // native byte slot is done after decode
@@ -127,7 +135,9 @@ export const CachedImage = forwardRef<HTMLImageElement, Props>(function CachedIm
       candidate?.release(); candidate = undefined;
       if (!controller.signal.aborted) {
         releaseDisplay(); setResolved(null);
-        if (error instanceof ImageCacheDenied) setDenied(src);
+        if (error instanceof ImageCacheDenied || error instanceof ImageDecodeFailed) {
+          setFailure({ src, denied: error instanceof ImageCacheDenied });
+        }
         else {
           // A transport outage (429/5xx/network) is recoverable: retry a
           // bounded number of times, then stay blank so the next session
@@ -144,16 +154,17 @@ export const CachedImage = forwardRef<HTMLImageElement, Props>(function CachedIm
     return () => { controller.abort(); candidate?.release(); if (retryTimer.current) { clearTimeout(retryTimer.current); retryTimer.current = null; } };
   }, [src, managed, controlled, identity, owner, visible, revision, networkQueue, props.crossOrigin, releaseDisplay]);
   const frame = src && resolved?.identity === identity && resolved.owner === owner && resolved.revision === revision ? resolved : null;
+  const failed = failure !== null && failure.src === src;
   // Preview buttons already have an accessible name. A cold request must not
   // paint broken-image alt text while it authorizes; error callbacks still run.
   return <img {...props} ref={attach} loading={loading}
     style={reuseActivePreview && controlled && !frame ? { ...props.style, visibility: 'hidden' } : props.style}
-    src={controlled ? (denied === src ? 'data:image/png;base64,invalid' : frame?.url) : src}
-    data-browser-image-denied={denied === src ? 'true' : undefined}
+    src={controlled ? (failed ? 'data:image/png;base64,invalid' : frame?.url) : src}
+    data-browser-image-denied={failed && failure.denied ? 'true' : undefined}
     data-browser-image-cache={managed ? (frame?.url.startsWith('blob:') ? 'local' : 'pending') : 'native'}
     onLoad={props.onLoad}
     onError={event => {
       onError?.(event);
-      if (denied === src) event.currentTarget.removeAttribute('src');
+      if (failed) event.currentTarget.removeAttribute('src');
     }} />;
 });

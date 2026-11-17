@@ -80,8 +80,13 @@ async function main() {
     const facts = { task: "product" as const, quality: "high", resolution: "2K", needsEdit: false, preserveIdentity: false, needsText: false, nativeResolution: true, references: 0 };
     const simulated = await runtime.simulate({ draftId: currentDraft.id, actor, facts, publicModelId: "image-a" });
     assert.deepEqual(simulated.eligible.map(x => x.upstreamId), ["u1"]);
-    const excluded = await runtime.simulate({ draftId: currentDraft.id, actor, facts: { ...facts, resolution: "4K" }, publicModelId: "image-a" });
-    assert.equal(excluded.eligible.length, 0); assert.ok(excluded.excluded[0].codes.includes("NATIVE_RESOLUTION"));
+    const metadataOnly = await runtime.simulate({ draftId: currentDraft.id, actor, facts: { ...facts, resolution: "4K" }, publicModelId: "image-a" });
+    assert.deepEqual(metadataOnly.eligible.map(x=>x.upstreamId),['u1'],'descriptive native sizes alone are not an admission rule');
+    const explicit=structuredClone(latest);
+    explicit.config.pools[0].rules=[{id:'require-native-size',priority:10,when:{nativeResolution:true},require:{nativeResolution:true}},
+      {id:'require-layout-text',priority:20,when:{task:['layout']},require:{textAccuracy:true}}];
+    const excluded=simulateModel(explicit,billing,'image-a',{...facts,resolution:'4K'},{trustedOrigins:[f.origin]});
+    assert.equal(excluded.eligible.length,0);assert.ok(excluded.excluded[0].codes.includes('NATIVE_RESOLUTION'));
     assert.equal(generationRequests, 0, "publication and simulation never call paid generation");
     const creditCost = { version: 3, config: structuredClone(config) }; creditCost.config.costs["supplier-cost-estimate"] = { currency: "credits", amountMicros: "4000000", unit: "image", source: "legacy-credit-estimate" };
     await assert.rejects(runtime.prepareExecution({ snapshot: latest, billing: creditCost }), /货币成本/);
@@ -105,10 +110,13 @@ async function main() {
     delete partial.config.costs["supplier-cost-estimate"];
     partial.config.costs["supplier-cost-estimate:high:1K:generate"] = { currency: "CNY", amountMicros: "10000", unit: "image", source: "manual-estimate" };
     assert.throws(() => compileRouterProjection(latest, partial, { trustedOrigins: [f.origin] }), /成本缺项/);
-    const layout = simulateModel(latest, billing, "image-a", { ...facts, task: "layout", nativeResolution: false }, { trustedOrigins: [f.origin] });
-    assert.equal(layout.eligible.length, 0, "layout always requires text accuracy in the real Router");
-    const tooLarge = simulateModel(latest, billing, "image-a", { ...facts, resolution: "4K", nativeResolution: false }, { trustedOrigins: [f.origin] });
-    assert.equal(tooLarge.eligible.length, 0, "requested output still exceeds the route pixel cap when native is optional");
+    const layout = simulateModel(explicit, billing, "image-a", { ...facts, task: "layout", nativeResolution: false }, { trustedOrigins: [f.origin] });
+    assert.equal(layout.eligible.length,0);assert.ok(layout.excluded[0].codes.includes('TEXT_UNSUPPORTED'),'explicit layout text requirement still applies');
+    const mapped=structuredClone(latest);
+    mapped.config.publicModels[0].target={type:'upstream',id:'u1'};
+    mapped.config.upstreamModels[0].parameterMap={resolutionPolicy:{mode:'map',field:'size',values:{'2K':'2048x2048'}}};
+    const tooLarge=simulateModel(mapped,billing,'image-a',{...facts,resolution:'4K',nativeResolution:false},{trustedOrigins:[f.origin]});
+    assert.equal(tooLarge.eligible.length,0);assert.ok(tooLarge.excluded[0].codes.includes('RESOLUTION_MAPPING_MISSING'),'missing declared mapping is rejected even if native size is optional');
     const mixedUnits = structuredClone(latest);
     mixedUnits.config.upstreamModels.push({ ...structuredClone(mixedUnits.config.upstreamModels[0]), id: "u2", model: "wire-image-two", costRef: "per-image" });
     mixedUnits.config.pools[0].candidates.push("u2");

@@ -20,6 +20,10 @@ export const orderedInputSchema=z.strictObject({id:z.string().min(1).max(160),no
   kind:z.enum(["text","image","video","audio"]),role:z.enum(["context","author","first_frame","last_frame","reference","element","source_video","source_audio"]),
   value:z.string().min(1).max(65536)});
 export type OrderedInput=z.infer<typeof orderedInputSchema>;
+export function inputReference(input:OrderedInput):VideoReference|null{
+  if(input.kind==="text")return null;
+  return {id:input.id,kind:input.kind,role:input.role as VideoReference["role"],artworkId:input.nodeId.replace(/^(image|video|audio):/,""),url:input.value};
+}
 export type NumberedInput=OrderedInput&{index:number;kindIndex:number};
 export function numberVideoInputs(raw:readonly OrderedInput[]){
   const inputs=z.array(orderedInputSchema).max(256).parse(raw);

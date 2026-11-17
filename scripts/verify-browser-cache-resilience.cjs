@@ -272,9 +272,12 @@ async function main() {
     try {
       await seedImage(f.page, true); await f.page.evaluate(source => window.fixture.render(source), source);
       await f.page.waitForFunction(() => window.imageErrors > 0);
-      await new Promise(resolve => setTimeout(resolve, 250));
-      assert.ok(f.calls.media <= 1, 'no network decode retry loop');
-      assert.equal(await f.page.locator('img').evaluate(image => image.naturalWidth), 0);
+      // Wait beyond the first automatic transport retry window; malformed
+      // bytes after repair must not spend that budget or look unauthorized.
+      await new Promise(resolve => setTimeout(resolve, 1100));
+      assert.equal(f.calls.media, 1, 'one authorized repair without transport retries');
+      const state=await f.page.locator('img').evaluate(image=>({width:image.naturalWidth,denied:image.hasAttribute('data-browser-image-denied'),errors:window.imageErrors}));
+      assert.deepEqual(state,{width:0,denied:false,errors:1});
       return { calls: f.calls, errors: await f.page.evaluate(() => window.imageErrors) };
     } finally { await f.close(); }
   });

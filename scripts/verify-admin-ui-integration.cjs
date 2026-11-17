@@ -18,11 +18,13 @@ async function main(){fs.mkdirSync(out,{recursive:true});
  if(baseline){checks('Old actual sidebar is dark, not the accepted light layout',()=>assert.equal(color,'rgb(24, 50, 79)'));checks('Existing creation subpages are present positive control',()=>{});assert.equal(await page.getByRole('navigation',{name:'模块功能'}).getByRole('link').count(),5);report.result='REPRODUCED';report.exit=1;
  }else{
  checks('Actual shell stays light under an inherited dark document',()=>assert.equal(color,'rgb(255, 255, 255)'));
- const coverage=JSON.parse(fs.readFileSync(path.join(root,'prototypes/admin-console/coverage.json'),'utf8')).sideSubpages;
- let visited=0;
+ const coverage=[...JSON.parse(fs.readFileSync(path.join(root,'prototypes/admin-console/coverage.json'),'utf8')).sideSubpages,{label:'待核查工作台',url:'/admin/pending-review'}];
+ const visited=[];
  for(const [active,url]of [['creations','/admin/creations'],['tenants','/admin/tenants'],['users','/admin/center'],['billing','/admin/billing'],['model-management','/admin/model-management'],['settings','/admin']]){
- await navigate(active,url);await page.getByRole('navigation',{name:'模块功能'}).waitFor();const links=await page.getByRole('navigation',{name:'模块功能'}).getByRole('link').evaluateAll(a=>a.map(x=>({label:x.textContent,url:x.getAttribute('href')})));for(const link of links)assert.ok(coverage.some(x=>x.label===link.label&&x.url===link.url),JSON.stringify(link));visited+=links.length;}
- checks('All 25 original secondary labels and destinations preserved',()=>assert.equal(visited,25));
+ await navigate(active,url);await page.getByRole('navigation',{name:'模块功能'}).waitFor();const links=await page.getByRole('navigation',{name:'模块功能'}).getByRole('link').evaluateAll(a=>a.map(x=>({label:x.textContent,url:x.getAttribute('href')})));visited.push(...links);}
+ const normalize=links=>links.map(({label,url})=>JSON.stringify([label,url])).sort();
+ checks('Original subpages and published pending-review destination are preserved',()=>assert.deepEqual(normalize(visited),normalize(coverage)));
+ await navigate('pending-review','/admin/pending-review');assert.equal(await page.getByRole('navigation',{name:'模块功能'}).locator('[aria-current=page]').innerText(),'待核查工作台');checks('Pending review remains in the billing navigation',()=>{});
  await navigate('feature-access','/admin/feature-access');assert.equal(await page.locator('aside a[aria-current=page]').innerText(),'用户管理');checks('Feature permissions retain their parent navigation highlight',()=>{});
  await navigate('billing','/admin/billing','tab=history');assert.equal(await page.getByRole('navigation',{name:'模块功能'}).locator('[aria-current=page]').innerText(),'钱包与充值');checks('Wallet deep tab preserves its correct navigation',()=>{});
  await navigate('tenants','/admin/tenants/fixture-id','tab=members');assert.equal(await page.getByRole('navigation',{name:'模块功能'}).count(),0);checks('Tenant detail owns its nested tabs without duplicate parent strip',()=>{});

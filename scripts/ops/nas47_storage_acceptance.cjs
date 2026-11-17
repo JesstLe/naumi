@@ -7,7 +7,7 @@ const hash=b=>crypto.createHash('sha256').update(b).digest('hex'),pool=new Pool(
 const hmac=(k,v)=>crypto.createHmac('sha256',k).update(v).digest();
 const aws={async fetch(input,options={}){const u=new URL(input),method=options.method||'GET',date=new Date().toISOString().replace(/[:-]|\.\d{3}/g,''),day=date.slice(0,8),region=process.env.S3_REGION||'garage',headers={host:u.host,'x-amz-content-sha256':hash(Buffer.alloc(0)),'x-amz-date':date},names=Object.keys(headers).sort(),canonical=[method,u.pathname,'',names.map(k=>k+':'+headers[k]+'\n').join(''),names.join(';'),headers['x-amz-content-sha256']].join('\n'),scope=day+'/'+region+'/s3/aws4_request',key=hmac(hmac(hmac(hmac('AWS4'+process.env.S3_SECRET_ACCESS_KEY,day),region),'s3'),'aws4_request');headers.authorization='AWS4-HMAC-SHA256 Credential='+process.env.S3_ACCESS_KEY_ID+'/'+scope+', SignedHeaders='+names.join(';')+', Signature='+crypto.createHmac('sha256',key).update(['AWS4-HMAC-SHA256',date,scope,hash(Buffer.from(canonical))].join('\n')).digest('hex');return fetch(u,{...options,headers,redirect:'error'});}};
 function url(key){return process.env.S3_ENDPOINT+'/'+process.env.S3_BUCKET+'/'+key.split('/').map(encodeURIComponent).join('/');}
-async function run(){let art,assets=[],cleaned=false;const result={releaseId:input.releaseId,sourceCommit:process.env.SOURCE_COMMIT,supplierCalls:0};
+async function run(){let art,assets=[],cleaned=false,original;const result={releaseId:input.releaseId,sourceCommit:process.env.SOURCE_COMMIT,supplierCalls:0};
  try{
   const session=await(await fetch(origin+'/api/auth/session',{headers})).json();if(!session.user?.email)throw Error('AUTH_SESSION');
   const body=await sharp(crypto.randomBytes(48*64*3),{raw:{width:48,height:64,channels:3}}).png().toBuffer(),fd=new FormData();fd.set('image',new File([body],'nas-release-acceptance.png',{type:'image/png'}));fd.set('title','NAS_RELEASE_VERIFICATION_'+crypto.randomUUID());fd.set('entry','canvas');fd.set('x','-99999');fd.set('y','-99999');
@@ -15,6 +15,7 @@ async function run(){let art,assets=[],cleaned=false;const result={releaseId:inp
   const key=decodeURIComponent(art.image.slice(7)),row=(await pool.query('SELECT * FROM app_media_assets WHERE key=$1',[key])).rows[0];
   const deferred=process.env.NAUMI_NAS_DEFER_UPLOAD==='1';
   if(!row||row.owner!==session.user.email.toLowerCase()||!deferred&&!row.remote_ready||row.driver!=='s3'||row.sha256!==hash(body))throw Error('ASSET_BINDING');
+  original=row;
   result.originalSha256=hash(body);
   const keys=[...new Set([key,row.thumbnail_key,row.preview_key].filter(Boolean))];assets=(await pool.query('SELECT * FROM app_media_assets WHERE key=ANY($1::text[])',[keys])).rows;
   if(assets.length!==keys.length||assets.some(a=>a.owner!==row.owner||!deferred&&!a.remote_ready))throw Error('VARIANT_BINDING');
@@ -41,7 +42,14 @@ async function run(){let art,assets=[],cleaned=false;const result={releaseId:inp
  }finally{
   try{
   if(art?.id){const r=await fetch(origin+'/api/artworks/delete',{method:'POST',headers:{...headers,'content-type':'application/json'},body:JSON.stringify({ids:[art.id]})});const v=await r.json();if(!r.ok||!v.ok||v.deleted!==1)throw Error('TEST_ART_CLEANUP');
-   for(const a of assets){if(a.owner!==input.email&&input.email)throw Error('CLEANUP_OWNER_MISMATCH');if(!(a.key.startsWith('canvas-uploads/'+art.id+'.')||a.key.startsWith('media-variants/'+result.originalSha256+'-')))throw Error('FIXTURE_KEY_REQUIRED');const r=await aws.fetch(url(a.key),{method:'DELETE',signal:AbortSignal.timeout(30000)});await r.body?.cancel();if(!r.ok&&r.status!==404)throw Error('TEST_OBJECT_CLEANUP');const local=path.join(mediaDir,a.key);if(fs.existsSync(local)){if(hash(fs.readFileSync(local))!==a.sha256)throw Error('LOCAL_FIXTURE_CHANGED');fs.unlinkSync(local);}}
+   const scope=original&&hash(JSON.stringify([original.key,original.owner,original.public,original.sha256]));
+   for(const a of assets){
+    if(a.owner!==original.owner||input.email&&a.owner!==input.email)throw Error('CLEANUP_OWNER_MISMATCH');
+    const size=a.key===original.thumbnail_key?512:a.key===original.preview_key?1600:0;
+    const derivative=size>0&&(a.key.startsWith('media-variants/'+original.sha256+'-')||/^[a-f0-9]{64}$/.test(a.sha256)&&a.key===`media-variants/v2/${scope}-${size}-${a.sha256}.webp`);
+    if(!(a.key===original.key&&a.key.startsWith('canvas-uploads/'+art.id+'.')||derivative))throw Error('FIXTURE_KEY_REQUIRED');
+   }
+   for(const a of assets){const r=await aws.fetch(url(a.key),{method:'DELETE',signal:AbortSignal.timeout(30000)});await r.body?.cancel();if(!r.ok&&r.status!==404)throw Error('TEST_OBJECT_CLEANUP');const local=path.join(mediaDir,a.key);if(fs.existsSync(local)){if(hash(fs.readFileSync(local))!==a.sha256)throw Error('LOCAL_FIXTURE_CHANGED');fs.unlinkSync(local);}}
    if(assets.length){await pool.query('DELETE FROM app_media_assets WHERE key=ANY($1::text[])AND owner=$2',[assets.map(a=>a.key),assets[0].owner]);
     const purged=await pool.query("DELETE FROM app_artworks WHERE id=$1 AND email=$2 AND image_url=$3 AND title LIKE 'NAS_RELEASE_VERIFICATION_%'AND deleted_at IS NOT NULL",[art.id,assets[0].owner,art.image]);if(purged.rowCount!==1)throw Error('TEST_ART_PURGE');}cleaned=true;
   }

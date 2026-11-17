@@ -1,5 +1,5 @@
-import {inputReference,type VideoNodeConfig} from './client-settings';
-import type {OrderedInput} from './references';
+import type {VideoNodeConfig} from './client-settings';
+import {inputReference,type OrderedInput} from './references';
 
 /** One lossless BYOC ingress projection for preview, Workbench, Canvas and
  * Agent. It selects no model capability and does not discard structured input.
