@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | `DELETE /api/admin/login` | `src/app/api/admin/login/route.ts` | 待核查 |
 | `GET /api/admin/artworks` | `src/app/api/admin/artworks/route.ts` | 待核查 |
-| `GET /api/admin/bi` | `src/app/api/admin/bi/route.ts` | 部分：overview 的流水、作品、支付合并重复扫描；旧新指标及筛选对照通过，其他 section 继续核查 |
+| `GET /api/admin/bi` | `src/app/api/admin/bi/route.ts` | 部分：overview 去重复扫描、作品深页先排序键、所有列表越界只计数；全分类 145 项新旧结果对照通过；其余长窗、入口背压及断开待核 |
 | `GET /api/admin/bi/channel-capacity` | `src/app/api/admin/bi/channel-capacity/route.ts` | 待核查 |
 | `GET /api/admin/bi/conversation` | `src/app/api/admin/bi/conversation/route.ts` | 待核查 |
 | `GET /api/admin/bi/media` | `src/app/api/admin/bi/media/route.ts` | 待核查 |
@@ -28,7 +28,7 @@
 | `GET /api/admin/creations/[id]` | `src/app/api/admin/creations/[id]/route.ts` | 部分：整详情、分页和费用经大任务逐项对照；恢复素材带可选来源定位，源取证、旧 URL 和鉴权已对照 |
 | `GET /api/admin/creations/[id]/assets/[assetId]` | `src/app/api/admin/creations/[id]/assets/[assetId]/route.ts` | 部分：历史深页、锁竞争、Range、来源定位、浏览器峰值和共用渲染器 HTTP 过载/断开通过；真实网关与多实例待核 |
 | `GET /api/admin/creations/[id]/events` | `src/app/api/admin/creations/[id]/events/route.ts` | 部分：规范与历史事件投影、鉴权、无事件历史空结果，`verify-saas-creations.ts`；大任务族待核 |
-| `GET /api/admin/enterprise-workbench` | `src/app/api/admin/enterprise-workbench/route.ts` | 部分：租户筛选下推、成员无查看权时不读指标、流水独立分页，真实隔离库验证授权、越界、归属和锁竞争；作品/生成历史大页待复核 |
+| `GET /api/admin/enterprise-workbench` | `src/app/api/admin/enterprise-workbench/route.ts` | 部分：名单、成员无权不读指标、流水独立分页；隔离库验证作品/任务深页、精准计数和越界锁竞争；真实网关与高并发待核 |
 | `GET /api/admin/feature-access` | `src/app/api/admin/feature-access/route.ts` | 待核查 |
 | `GET /api/admin/fleet` | `src/app/api/admin/fleet/route.ts` | 待核查 |
 | `GET /api/admin/fleet/releases` | `src/app/api/admin/fleet/releases/route.ts` | 待核查 |
@@ -60,14 +60,14 @@
 | `GET /api/admin/users` | `src/app/api/admin/users/route.ts` | 待核查 |
 | `GET /api/enterprise` | `src/app/api/enterprise/route.ts` | 部分：目录与站点范围、仅成员管理避开账务/素材表、停用成员指标隔离；超大成员目录和浏览器切换待复核 |
 | `GET /api/enterprise/analytics` | `src/app/api/enterprise/analytics/route.ts` | 部分：隔离 PostgreSQL 验证日期边界、汇总、CSV、订单归属、现行权限及写方获取账户锁，`verify-enterprise-analytics.ts`；长窗口/高容量查询、断开和导出峰值待核 |
-| `GET /api/enterprise/artworks` | `src/app/api/enterprise/artworks/route.ts` | 待核查 |
+| `GET /api/enterprise/artworks` | `src/app/api/enterprise/artworks/route.ts` | 部分：真实受权范围、回收站、跨企业和撤权、CSV 及私有素材回归；深页键排序，`verify-enterprise-artworks.ts`、`verify-bi-history-pages.ts`；浏览器连续切换/真实网关待核 |
 | `GET /api/enterprise/content` | `src/app/api/enterprise/content/route.ts` | 待核查 |
 | `GET /api/enterprise/creations` | `src/app/api/enterprise/creations/route.ts` | 部分：企业近期固定 5 条、历史归属与统一列表；混合归档深页待核 |
 | `GET /api/enterprise/creations/[id]` | `src/app/api/enterprise/creations/[id]/route.ts` | 部分：共用详情查询经大任务 SQL 对照；企业鉴权、证据和费用分页、脱敏、撤权、来源定位已验证 |
 | `GET /api/enterprise/creations/[id]/assets/[assetId]` | `src/app/api/enterprise/creations/[id]/assets/[assetId]/route.ts` | 部分：Range、撤权、旧 URL、归属、连接和页面并发通过；共用渲染器 HTTP 限流、断开和回退通过，真实网关待核 |
 | `GET /api/enterprise/creations/[id]/events` | `src/app/api/enterprise/creations/[id]/events/route.ts` | 部分：事件分页、规范与归档脱敏、跨租户、撤权和锁竞争，`verify-saas-creations.ts`；大任务族待核 |
 | `GET /api/enterprise/health` | `src/app/api/enterprise/health/route.ts` | 部分：健康统计权限、账户行锁及隔离，`verify-enterprise-analytics.ts` |
-| `GET /api/enterprise/integration` | `src/app/api/enterprise/integration/route.ts` | 部分：登录、独立站租户、下级范围、流水精确分页及配置缺失拒绝，`verify-enterprise-integration.ts`、`verify-enterprise-analytics.ts`；历史大页和真实网关待复核 |
+| `GET /api/enterprise/integration` | `src/app/api/enterprise/integration/route.ts` | 部分：实际登录、独立站、下级范围、流水精确分页及配置缺失拒绝；作品/生成历史深页、越界和具体记录读范围通过隔离库验证；真实网关待核 |
 | `GET /api/enterprise/media` | `src/app/api/enterprise/media/route.ts` | 部分：共用渲染器的并发、过载、取消与镜像回退经本地 HTTP 验证；此入口自身的授权组合待核 |
 | `GET /api/enterprise/saas-overview` | `src/app/api/enterprise/saas-overview/route.ts` | 待核查 |
 | `GET /api/enterprise/tenant-usage` | `src/app/api/enterprise/tenant-usage/route.ts` | 待核查 |

@@ -77,7 +77,8 @@ const creationStatusFilter = (value:string) => `(${value}=ANY(CASE $6::text
   OR ($6='creation:needs_review' AND COALESCE(${value} NOT IN ('done','completed','success','error','rejected','pending','reviewing','processing','generating','queued','running','succeeded','partial','failed','cancel_requested','cancelled'),true)))`;
 // Only page keys enter this projection. In particular, UNION ALL + an outer
 // LIMIT can otherwise evaluate JSON and correlated billing for every candidate.
-const operationPageSource = `SELECT 'app_image_jobs'::text AS source_table,EXISTS(SELECT 1 FROM app_ledger WHERE email=j.email AND id='led-image-'||j.id AND kind='consume') AS has_ledger_charge,j.id,j.email,j.kind,j.created_at,j.updated_at,
+const operationPageSources = {
+ app_image_jobs: `SELECT 'app_image_jobs'::text AS source_table,EXISTS(SELECT 1 FROM app_ledger WHERE email=j.email AND id='led-image-'||j.id AND kind='consume') AS has_ledger_charge,j.id,j.email,j.kind,j.created_at,j.updated_at,
   ${imageOperationStatus} AS status,COALESCE(j.snapshot#>>'{result,stage}',j.snapshot->>'stage','') AS stage,
   COALESCE(j.payload->'p'->>'userPrompt',j.payload->'p'->>'prompt',j.payload->>'extra',j.snapshot->>'extra','') AS content,
   COALESCE(j.payload->'p'->>'model',j.payload->>'model',j.snapshot->>'model','') AS requested_model,
@@ -86,18 +87,20 @@ const operationPageSource = `SELECT 'app_image_jobs'::text AS source_table,EXIST
   COALESCE((SELECT -sum(l.delta) FROM app_ledger l WHERE l.email=j.email AND l.id='led-image-'||j.id),0) AS billed_credits,
   CASE WHEN j.billing_settled THEN 0 ELSE j.reserved_cost END AS reserved_credits,j.billing_settled AS settled,
   COALESCE(j.snapshot#>>'{result,error,message}',j.snapshot->>'error','') AS error
- FROM app_image_jobs j JOIN selected k ON k.source_table='app_image_jobs' AND k.id=j.id AND k.email=j.email
- UNION ALL SELECT 'app_canvas_image_tasks',EXISTS(SELECT 1 FROM app_ledger WHERE email=c.email AND id='led-canvas-image-'||c.id AND kind='consume'),c.id,c.email,'canvas-'||c.kind,c.created_at,c.updated_at,c.status,'' AS stage,
+ FROM app_image_jobs j JOIN selected k ON k.source_table='app_image_jobs' AND k.id=j.id AND k.email=j.email`,
+ app_canvas_image_tasks: `SELECT 'app_canvas_image_tasks'::text AS source_table,EXISTS(SELECT 1 FROM app_ledger WHERE email=c.email AND id='led-canvas-image-'||c.id AND kind='consume') AS has_ledger_charge,c.id,c.email,'canvas-'||c.kind AS kind,c.created_at,c.updated_at,c.status,'' AS stage,
   COALESCE(c.parameters->>'newText',c.parameters->>'prompt','') AS content,'' AS requested_model,
   COALESCE(c.parameters->'qualityAudit'->>'requested','') AS requested_quality,
-  COALESCE(c.parameters->>'billingResolution','') AS resolution,c.cost,
-  COALESCE((SELECT -sum(l.delta) FROM app_ledger l WHERE l.email=c.email AND l.id='led-canvas-image-'||c.id),0),
-  COALESCE((SELECT r.cost FROM app_gen_reservations r WHERE r.job_id=c.id AND r.email=c.email),0),
-  c.status='completed' OR c.credits_refunded,COALESCE(c.error,'') FROM app_canvas_image_tasks c JOIN selected k ON k.source_table='app_canvas_image_tasks' AND k.id=c.id AND k.email=c.email
- UNION ALL SELECT 'app_video_tasks',EXISTS(SELECT 1 FROM app_ledger WHERE email=v.email AND id='led-video-'||v.id AND kind='consume'),v.id,v.email,'video',v.created_at,v.updated_at,v.status,'' AS stage,v.prompt,v.model,'' AS requested_quality,
-  v.size,v.cost,COALESCE((SELECT -sum(l.delta) FROM app_ledger l WHERE l.email=v.email AND l.id='led-video-'||v.id),0),
-  COALESCE((SELECT r.cost FROM app_gen_reservations r WHERE r.job_id=v.id AND r.email=v.email),0),
-  v.status='completed' OR v.credits_refunded,v.error FROM app_video_tasks v JOIN selected k ON k.source_table='app_video_tasks' AND k.id=v.id AND k.email=v.email`;
+  COALESCE(c.parameters->>'billingResolution','') AS resolution,c.cost AS quoted_credits,
+  COALESCE((SELECT -sum(l.delta) FROM app_ledger l WHERE l.email=c.email AND l.id='led-canvas-image-'||c.id),0) AS billed_credits,
+  COALESCE((SELECT r.cost FROM app_gen_reservations r WHERE r.job_id=c.id AND r.email=c.email),0) AS reserved_credits,
+  c.status='completed' OR c.credits_refunded AS settled,COALESCE(c.error,'') AS error FROM app_canvas_image_tasks c JOIN selected k ON k.source_table='app_canvas_image_tasks' AND k.id=c.id AND k.email=c.email`,
+ app_video_tasks: `SELECT 'app_video_tasks'::text AS source_table,EXISTS(SELECT 1 FROM app_ledger WHERE email=v.email AND id='led-video-'||v.id AND kind='consume') AS has_ledger_charge,v.id,v.email,'video' AS kind,v.created_at,v.updated_at,v.status,'' AS stage,v.prompt AS content,v.model AS requested_model,'' AS requested_quality,
+  v.size AS resolution,v.cost AS quoted_credits,COALESCE((SELECT -sum(l.delta) FROM app_ledger l WHERE l.email=v.email AND l.id='led-video-'||v.id),0) AS billed_credits,
+  COALESCE((SELECT r.cost FROM app_gen_reservations r WHERE r.job_id=v.id AND r.email=v.email),0) AS reserved_credits,
+  v.status='completed' OR v.credits_refunded AS settled,v.error FROM app_video_tasks v JOIN selected k ON k.source_table='app_video_tasks' AND k.id=v.id AND k.email=v.email`,
+};
+const operationPageSource=Object.values(operationPageSources).join(' UNION ALL ');
 
 /** Expand display JSON and billing only for the selected page. A nonempty image
  * status filter still reads snapshot before paging; it needs an indexed state
@@ -148,19 +151,22 @@ export async function queryEnterpriseOperations(q:BiQuery,access:{client:PoolCli
   // Keep the existing exact-record/date, raw-status and authorization semantics.
   // Both count and page use these same keys on the caller's authorization snapshot.
   // An exact ID bypasses the date window, never the source or allowed-email gate.
+  const tables={'image-job':'app_image_jobs','canvas-task':'app_canvas_image_tasks','video-task':'app_video_tasks'} as const;
+  const exactSource=exact?tables[exact.kind]:undefined;
   const keys = ([['app_image_jobs','j',imageOperationStatus],['app_canvas_image_tasks','c','c.status'],['app_video_tasks','v','v.status']] as const)
+    .filter(([table])=>!exactSource||table===exactSource)
     .map(([table,alias,status]) => `SELECT '${table}'::text AS source_table,${alias}.id,${alias}.email,${alias}.created_at
       FROM ${table} ${alias} WHERE ${alias}.email=ANY($5::text[])
         AND (($6::text<>'' AND ${alias}.id=$6 AND '${table}'=$7) OR ($6='' AND ${inRange(alias)}))
         AND ($3::text='' OR ${alias}.email=$3) AND ($4::text='' OR ${status}=$4)`)
     .join(' UNION ALL ');
-  const tables={'image-job':'app_image_jobs','canvas-task':'app_canvas_image_tasks','video-task':'app_video_tasks'};
-  const params=[q.start,q.end,q.email,q.status,access.allowedEmails,exact?.id??'',exact?tables[exact.kind]:''];
+  const params=[q.start,q.end,q.email,q.status,access.allowedEmails,exact?.id??'',exactSource??''];
   const total=Number((await access.client.query(`SELECT count(*)::int AS n FROM (${keys}) s`,params)).rows[0].n);
-  const rows=(await access.client.query(`WITH selected AS MATERIALIZED (
+  const offset=(q.page-1)*q.size;
+  const rows=offset>=total?[]:(await access.client.query(`WITH selected AS MATERIALIZED (
       SELECT * FROM (${keys}) k ORDER BY created_at DESC,source_table,id LIMIT $8 OFFSET $9)
     SELECT source_table,has_ledger_charge,id,email,kind,created_at,status,content,quoted_credits,billed_credits,reserved_credits,settled
-    FROM (${operationPageSource}) t ORDER BY created_at DESC,source_table,id`,[...params,q.size,(q.page-1)*q.size])).rows;
+    FROM (${exactSource?operationPageSources[exactSource]:operationPageSource}) t ORDER BY created_at DESC,source_table,id`,[...params,q.size,offset])).rows;
   return {section:'operations',rows:normalize(rows),total,page:q.page,size:q.size,generatedAt:new Date().toISOString(),query:{from:q.from,to:q.to}};
 }
 function normalize(rows: Record<string, unknown>[]): BiRow[] {
@@ -269,11 +275,10 @@ export async function queryBi(q: BiQuery, access?: { client: PoolClient; allowed
       COALESCE(j.payload->'p'->>'entry',j.payload->>'entry') AS job_entry,
       c.id AS canvas_task_id,c.kind AS canvas_task_kind,v.id AS video_task_id,v.source AS video_task_source,
       (a.image_url<>'') AS has_image,(COALESCE(a.video_url,'')<>'') AS has_video
-      FROM selected a ${ARTWORK_INPUT_JOINS}
-      LEFT JOIN LATERAL (SELECT id,source FROM app_video_tasks WHERE email=a.email AND artwork_id=a.id ORDER BY created_at,id LIMIT 1) v ON true
-      WHERE ${artworkFilter(!!access)}`;
+      FROM selected k JOIN app_artworks a ON a.id=k.id ${ARTWORK_INPUT_JOINS}
+      LEFT JOIN LATERAL (SELECT id,source FROM app_video_tasks WHERE email=a.email AND artwork_id=a.id ORDER BY created_at,id LIMIT 1) v ON true`;
       countSource = `SELECT a.id FROM app_artworks a WHERE ${artworkFilter(!!access)}`;
-      pagePrefix = `, selected AS MATERIALIZED (SELECT a.* FROM app_artworks a WHERE ${artworkFilter(!!access)}
+      pagePrefix = `, selected AS MATERIALIZED (SELECT a.id,a.created_at FROM app_artworks a WHERE ${artworkFilter(!!access)}
         ORDER BY a.created_at DESC,a.id DESC LIMIT $${filterBinds.length + 1} OFFSET $${filterBinds.length + 2})`;
       break;
     case "operations":
@@ -328,12 +333,13 @@ export async function queryBi(q: BiQuery, access?: { client: PoolClient; allowed
        SELECT * FROM (${operationPageSource}) result ORDER BY created_at DESC,id DESC,source_table`
     : pagePrefix ? `${scopedSql}${pagePrefix} SELECT * FROM (${source}) result ORDER BY ${order}`
     : `${scopedSql} SELECT * FROM (${source}) result ORDER BY ${order} LIMIT $${filterBinds.length + 1} OFFSET $${filterBinds.length + 2}`;
-  const readPage = async (client: PoolClient) => [
-    await client.query(countSql, filterBinds),
-    await client.query(pageSql, binds),
-  ];
-  const [count, page] = access ? await readPage(access.client) : await snapshot(readPage);
-  result.total = count.rows[0].total;
+  const readPage = async (client: PoolClient) => {
+    const total=(await client.query(countSql,filterBinds)).rows[0].total as number;
+    const rows=(q.page-1)*q.size>=total?[]:(await client.query(pageSql,binds)).rows;
+    return {total,rows};
+  };
+  const page = access ? await readPage(access.client) : await snapshot(readPage);
+  result.total = page.total;
   result.rows = normalize(q.section === "artworks" ? page.rows.map(raw => {
     const presentation = artworkBiPresentation(raw);
     // Do not expose private/signed source URLs or raw JSON in the BI list/CSV.
