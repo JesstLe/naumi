@@ -28,7 +28,7 @@ export async function preflightChecks(pool:Pool){
  const locked=await whileReadWaits(pool,reportLock,()=>legacyRead.read(p(),query),async()=>{assert.deepEqual(await heldLocks(),[true,true]);});
  const unlocked=await whileReadWaits(pool,reportLock,()=>store.read(p(),query),async()=>{assert.deepEqual(await heldLocks(),[false,false]);});
  assert.equal(locked.status,'fulfilled');assert.equal(unlocked.status,'fulfilled');assert.deepEqual(locked.value,unlocked.value);
- const checkDetail=()=>store.read(p(),{action:'detail',publicationId:id,id:c.id});
+ const checkDetail=(signal?:AbortSignal)=>store.read(p(),{action:'detail',publicationId:id,id:c.id},signal);
  const verify=delivery.verifyAcceptedFiles.bind(delivery);let verified=0;
  delivery.verifyAcceptedFiles=async(...args)=>{
   assert.equal(pool.totalCount,pool.idleCount,'all PostgreSQL connections must be released during file verification');assert.deepEqual(await heldLocks(),[false,false]);verified++;
@@ -37,6 +37,11 @@ export async function preflightChecks(pool:Pool){
  };
  try{await assert.rejects(checkDetail(),/MEMBERSHIP_REQUIRED/);assert.equal(verified,1);}finally{delivery.verifyAcceptedFiles=verify;await pool.query("UPDATE enterprise_workflow.team_members SET enabled=true WHERE enterprise_id=$1 AND subject='lead'",[enterpriseId]);}
  assert.equal((await checkDetail() as any).currentAvailability.status,'available');
+ const cancelledDetail=new AbortController();let passedSignal=false;
+ delivery.verifyAcceptedFiles=async(...args)=>{passedSignal=args[2]===cancelledDetail.signal;cancelledDetail.abort();return verify(...args);};
+ try{await assert.rejects(checkDetail(cancelledDetail.signal),{name:'AbortError'});assert(passedSignal);}finally{delivery.verifyAcceptedFiles=verify;}
+ assert.equal((await checkDetail() as any).currentAvailability.status,'available');
+ console.log('PREFLIGHT_FILE_ABORT_PASS: signal_reaches_file_verification=1 next_read_available=1');
  const blob=join(root,enterpriseId,pass.report.source.files[0].sha256),afterDecode={...c,id:randomUUID()};
  const corrupt=new PreflightStore(wf.publications,delivery,async bytes=>{const image=await inspectPublicationImage(bytes);await writeFile(blob,Buffer.alloc(png.length));return image;});
  try{await assert.rejects(corrupt.execute(p(),afterDecode),/ASSET_CORRUPT/);assert.equal((await pool.query('SELECT 1 FROM enterprise_workflow.publication_preflights WHERE enterprise_id=$1 AND id=$2',[enterpriseId,afterDecode.id])).rowCount,0);}finally{await writeFile(blob,png);}

@@ -16,28 +16,51 @@ function equalSet(a: readonly string[], b: readonly string[]) {
   return new Set(a).size === right.size && a.every(value => right.has(value));
 }
 
+// pg has no cancellable pool waiter. Reject the caller immediately and return
+// any client assigned to the abandoned waiter without starting a transaction.
+function acquire(pool:Pool,signal?:AbortSignal):Promise<PoolClient>{
+  if(!signal)return pool.connect();
+  signal.throwIfAborted();
+  return new Promise((resolve,reject)=>{
+    const abort=()=>reject(signal.reason);
+    signal.addEventListener('abort',abort,{once:true});
+    void pool.connect().then(client=>{
+      signal.removeEventListener('abort',abort);
+      if(signal.aborted)client.release();else resolve(client);
+    },error=>{signal.removeEventListener('abort',abort);reject(error);});
+  });
+}
+
 /** Keep the projection consistent without blocking writes, then verify the actor in a fresh snapshot. */
 export async function readWorkflowSnapshot<T>(
   pool: Pool,
   resolve: ResolveActor,
   principal: Principal,
   project: (tx: PoolClient, actor: Actor, snapshot: boolean) => Promise<T>,
-  options: {legacyRepeatable?: boolean; statementTimeoutMs?: 10000 | 15000 | 20000; betweenSnapshots?: (result: T) => Promise<void>; checkCurrent?: (tx: PoolClient, actor: Actor, result: T) => Promise<void>} = {},
+  options: {legacyRepeatable?: boolean; statementTimeoutMs?: 10000 | 15000 | 20000; signal?: AbortSignal; betweenSnapshots?: (result: T) => Promise<void>; checkCurrent?: (tx: PoolClient, actor: Actor, result: T) => Promise<void>} = {},
 ): Promise<T> {
-  let tx = await pool.connect(), ownsClient = true;
+  const signal=options.signal;
+  let tx = await acquire(pool,signal), ownsClient = true;
   const snapshot = resolve.readSnapshot;
   const {legacyRepeatable = false, statementTimeoutMs = 10000, checkCurrent} = options;
   const begin = snapshot ? 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY' : legacyRepeatable ? 'BEGIN ISOLATION LEVEL REPEATABLE READ' : 'BEGIN';
   let discard = false;
+  const release=(remove=false)=>{if(ownsClient){ownsClient=false;tx.release(remove||discard);}};
+  // Never return a client with an abandoned statement/transaction to the pool.
+  const abort=()=>release(true);
+  signal?.addEventListener('abort',abort,{once:true});
   const run = async <R>(fn: () => Promise<R>): Promise<R> => {
     try {
+      signal?.throwIfAborted();
       await tx.query(begin);
       await tx.query(`SET LOCAL lock_timeout='3s'; SET LOCAL statement_timeout='${statementTimeoutMs}ms'`);
       const result = await fn();
+      signal?.throwIfAborted();
       await tx.query('COMMIT');
       return result;
     } catch (error) {
-      try { await tx.query('ROLLBACK'); } catch { discard = true; }
+      if(ownsClient)try { await tx.query('ROLLBACK'); } catch { discard = true; }
+      signal?.throwIfAborted();
       throw error;
     }
   };
@@ -48,9 +71,10 @@ export async function readWorkflowSnapshot<T>(
     });
     // Custom resolvers without snapshot support retain their existing locked authorization path.
     if (snapshot && options.betweenSnapshots) {
-      tx.release(discard); ownsClient = false;
+      release();
+      signal?.throwIfAborted();
       await options.betweenSnapshots(result);
-      tx = await pool.connect(); ownsClient = true; discard = false;
+      tx = await acquire(pool,signal); ownsClient = true; discard = false;
     }
     if (snapshot) await run(async () => {
       const current = await requireActor(tx, snapshot, principal);
@@ -59,9 +83,9 @@ export async function readWorkflowSnapshot<T>(
       }
       await checkCurrent?.(tx, current, result);
     });
-    return result;
+    signal?.throwIfAborted();return result;
   } finally {
-    if (ownsClient) tx.release(discard);
+    signal?.removeEventListener('abort',abort);release();
   }
 }
 

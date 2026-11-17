@@ -99,6 +99,18 @@ async function main(){
   output.setHeader('content-type','application/json');output.end('{"ok":true}');
   assert.deepEqual(await(await until(write)).json(),{ok:true});
 
+  for(const [route,operation] of [['projects','apply'],['publications','command']] as const){
+   const {POST:post}:{POST:(request:Request)=>Promise<Response>}=await import(`../src/app/api/enterprise/workflow/${route}/route`);
+   const call=(action:string,signal:AbortSignal)=>post(new Request(req().url.replace('/worklogs?','/'+route+'?'),{method:'POST',signal,headers:req().headers,body:JSON.stringify({operation:action})}));
+   const preview=new AbortController(),previewSeen=once(srv,'fixture-write'),previewResult=call('preview',preview.signal);
+   const [previewSocket]=await until(previewSeen),previewClosed=once(previewSocket,'close');preview.abort();
+   const cancelled=await until(previewResult);assert.equal(cancelled.status,503);assert.equal((await cancelled.json()).error,'WORKFLOW_SERVICE_UNAVAILABLE');await until(previewClosed);
+   const command=new AbortController(),commandSeen=once(srv,'fixture-write'),commandResult=call(operation,command.signal);
+   const [commandSocket]=await until(commandSeen);command.abort();commandSocket.setHeader('content-type','application/json');commandSocket.end('{"ok":true}');
+   assert.deepEqual(await(await until(commandResult)).json(),{ok:true});
+  }
+  console.log('WORKFLOW_PREVIEW_PROXY_ABORT_PASS: project_and_publication_preview_cancelled=1 command_response_after_disconnect=1');
+
   const make=(subject:string)=>new CreationAdapter(subject,deploymentPolicy());
   const self=(await make(employee).records({enterpriseId:id,kind:'artworks',size:20})).rows;
   assert.equal(self.length,1);assert.equal(self[0].account.email,employee);

@@ -13,6 +13,7 @@ const operator=(a:Actor)=>a.permissions.includes('request')||a.permissions.inclu
 const active=['draft','approved','executing','unknown','manual_published','recall_requested','recall_unknown'];
 const key=(shopId:string,externalObjectId:string,slot:string,locale:string)=>digest({shopId,externalObjectId,slot,locale});
 export class PublicationStore{
+ private verifyingReads=0;
  constructor(readonly pool:Pool,private resolveActor:ResolveActor,private validateAssets:ValidateAssets,private catalog:CatalogStore,private guidelines:GuidelineStore,readonly enabled=true,private now=()=>new Date()){}
  async assertFileReadiness(tx:PoolClient,a:Actor,n:Publication,mode:'full'|'metadata'|'snapshot'='full'){
   const validate=mode==='snapshot'?this.validateAssets.readMetadata:mode==='metadata'?this.validateAssets.metadata:this.validateAssets;
@@ -23,10 +24,10 @@ export class PublicationStore{
   if(lock){await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`publication:${a.enterpriseId}:${id}`]);await this.catalog.lock(tx,a.enterpriseId);}
   const n=await this.row(tx,a,id);ensure(n,'PUBLICATION_NOT_FOUND',404);await this.access(tx,a,n,lock);ensure((await tx.query('SELECT 1 FROM enterprise_workflow.schema_version WHERE version=31')).rowCount,'PUBLICATION_FILES_MIGRATION_REQUIRED',503);return n;
  }
- async fileRead<T>(p:Principal,id:string,run:(tx:PoolClient,a:Actor,n:Publication,snapshot:boolean)=>Promise<T>,options:{verifyFiles?:(result:T)=>Promise<void>;checkCurrent?:(tx:PoolClient,a:Actor,n:Publication,result:T)=>Promise<void>}={}){
+ async fileRead<T>(p:Principal,id:string,run:(tx:PoolClient,a:Actor,n:Publication,snapshot:boolean)=>Promise<T>,options:{signal?:AbortSignal;verifyFiles?:(result:T)=>Promise<void>;checkCurrent?:(tx:PoolClient,a:Actor,n:Publication,result:T)=>Promise<void>}={}){
   return (await readWorkflowSnapshot(this.pool,this.resolveActor,p,async(tx,a,snapshot)=>{
    await this.requireReady(tx,a);const n=await this.fileAccess(tx,a,id,!snapshot);return {result:await run(tx,a,n,snapshot),version:n.version};
-  },{statementTimeoutMs:20000,betweenSnapshots:options.verifyFiles?read=>options.verifyFiles!(read.result):undefined,checkCurrent:async(tx,a,read)=>{const n=await this.fileAccess(tx,a,id,false);ensure(n.version===read.version,'PUBLICATION_VERSION_CONFLICT');await options.checkCurrent?.(tx,a,n,read.result);}})).result;
+  },{statementTimeoutMs:20000,signal:options.signal,betweenSnapshots:options.verifyFiles?read=>options.verifyFiles!(read.result):undefined,checkCurrent:async(tx,a,read)=>{const n=await this.fileAccess(tx,a,id,false);ensure(n.version===read.version,'PUBLICATION_VERSION_CONFLICT');await options.checkCurrent?.(tx,a,n,read.result);}})).result;
  }
  async fileScope<T>(p:Principal,id:string,run:(tx:PoolClient,a:Actor,n:Publication)=>Promise<T>,expectedVersion?:number,packageDownload=false){return this.tx(p,async(tx,a)=>{const n=await this.fileAccess(tx,a,id,true);if(expectedVersion!==undefined)ensure(n.version===expectedVersion,'PUBLICATION_VERSION_CONFLICT');if(packageDownload){ensure(operator(a),'PUBLICATION_OPERATOR_REQUIRED',403);ensure(['approved','executing'].includes(n.status),'PUBLICATION_PACKAGE_STATE');await this.readiness(tx,a,n,this.validateAssets.metadata??this.validateAssets);}return run(tx,a,n);});}
  private async requireReady(tx:PoolClient,a:Actor){ensure(a.teamId,'MEMBERSHIP_REQUIRED',403);ensure(this.enabled,'PUBLICATIONS_NOT_ENABLED',503);ensure((await tx.query('SELECT 1 FROM enterprise_workflow.schema_version WHERE version=30')).rowCount,'PUBLICATIONS_MIGRATION_REQUIRED',503);}
@@ -42,7 +43,23 @@ export class PublicationStore{
  private async readiness(tx:PoolClient,a:Actor,n:Publication,validate=this.validateAssets,lock=true){const d:PublicationDraft={orderId:n.source.orderId,taskId:n.source.taskId,selection:n.target.selection,externalObjectId:n.externalObjectId,slot:n.slot,locale:n.locale,scheduleAt:n.scheduleAt},c=await this.checked(tx,a,d,validate,lock);ensure(digest(c.source)===digest(n.source)&&digest(c.target)===digest(n.target),'PUBLICATION_SOURCE_CHANGED');}
  private async currentAvailability(tx:PoolClient,a:Actor,n:Publication,snapshot=false){await tx.query('SAVEPOINT publication_availability');try{await this.assertFileReadiness(tx,a,n,snapshot?'snapshot':'full');await tx.query('RELEASE SAVEPOINT publication_availability');return {status:'available',checkedAt:this.now().toISOString(),code:null};}catch(e){await tx.query('ROLLBACK TO SAVEPOINT publication_availability');await tx.query('RELEASE SAVEPOINT publication_availability');if(!(e instanceof WorkflowError))throw e;return {status:'unavailable',checkedAt:this.now().toISOString(),code:e.code};}}
  private projection(a:Actor,n:Publication){return {publication:n,verification:'manual_report_not_platform_verified',canApprove:n.status==='draft'&&reviewer(a)&&n.createdBy!==a.subject&&!n.source.participants.includes(a.subject),canStart:n.status==='approved'&&operator(a),canReceipt:n.status==='executing'&&operator(a)&&n.executor===a.subject,canInvestigate:reviewer(a)&&['executing','unknown','recall_requested','recall_unknown'].includes(n.status),canRecall:a.permissions.includes('manage')&&['manual_published','unknown'].includes(n.status),canCancel:operator(a)&&['draft','approved'].includes(n.status),canReplace:reviewer(a)&&n.status==='manual_recalled'&&!n.replacementId};}
- async preview(p:Principal,raw:unknown){const q=publicationPreview.parse(raw);return this.tx(p,async(tx,a)=>{ensure(operator(a),'PUBLICATION_OPERATOR_REQUIRED',403);await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`order:${a.enterpriseId}:${q.draft.orderId}`]);const c=await this.checked(tx,a,q.draft);return {source:c.source,target:c.target,draft:q.draft,previewHash:digest({p,q,source:c.source,target:c.target}),verification:'manual_plan_only'};});}
+ private detachedReads(){return !!(this.resolveActor.readSnapshot&&this.validateAssets.readMetadata&&this.validateAssets.verifyFiles);}
+ private async verifyReadFiles(enterpriseId:string,files:PublicationSource['files'],signal?:AbortSignal){
+  signal?.throwIfAborted();ensure(this.verifyingReads<2,'PUBLICATION_FILES_BUSY',429);this.verifyingReads++;
+  try{await this.validateAssets.verifyFiles!(enterpriseId,files,signal);}finally{this.verifyingReads--;}
+ }
+ async preview(p:Principal,raw:unknown,signal?:AbortSignal){const q=publicationPreview.parse(raw);
+  const plan=async(tx:PoolClient,a:Actor,snapshot:boolean)=>{
+   ensure(operator(a),'PUBLICATION_OPERATOR_REQUIRED',403);
+   if(!snapshot)await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`order:${a.enterpriseId}:${q.draft.orderId}`]);
+   const c=await this.checked(tx,a,q.draft,snapshot?this.validateAssets.readMetadata:this.validateAssets,!snapshot);
+   return {source:c.source,target:c.target,draft:q.draft,previewHash:digest({p,q,source:c.source,target:c.target}),verification:'manual_plan_only'};
+  };
+  if(!this.detachedReads())return this.tx(p,(tx,a)=>plan(tx,a,false));
+  return readWorkflowSnapshot(this.pool,this.resolveActor,p,async(tx,a)=>{await this.requireReady(tx,a);return plan(tx,a,true);},
+   {statementTimeoutMs:20000,signal,betweenSnapshots:result=>this.verifyReadFiles(p.enterpriseId,result.source.files,signal),
+    checkCurrent:async(tx,a,result)=>{ensure((await plan(tx,a,true)).previewHash===result.previewHash,'PUBLICATION_PREVIEW_CHANGED');}});
+ }
  async execute(p:Principal,raw:unknown){const c=publicationCommand.parse(raw);return this.tx(p,async(tx,a)=>{
   await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`publication-command:${a.enterpriseId}:${c.commandId}`]);for(const id of [...new Set([c.id,...c.action.type==='link-replacement'?[c.action.replacementId]:[]])].sort())await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`publication:${a.enterpriseId}:${id}`]);
   const old=await this.row(tx,a,c.id),action=c.action,oid=old?.source.orderId??(action.type==='create'?action.draft.orderId:null);ensure(oid,'PUBLICATION_NOT_FOUND',404);await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`order:${a.enterpriseId}:${oid}`]);const targetKey=old?key(old.target.shop.id,old.externalObjectId,old.slot,old.locale):action.type==='create'?key(action.draft.selection.shopId,action.draft.externalObjectId,action.draft.slot,action.draft.locale):null;ensure(targetKey,'PUBLICATION_NOT_FOUND',404);await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`publication-target:${a.enterpriseId}:${targetKey}`]);await this.catalog.lock(tx,a.enterpriseId);if(old)await this.access(tx,a,old);else ensure(action.type==='create','PUBLICATION_NOT_FOUND',404);
@@ -64,7 +81,21 @@ export class PublicationStore{
   const tk=key(n.target.shop.id,n.externalObjectId,n.slot,n.locale);if(active.includes(n.status)){await tx.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[`publication-target:${a.enterpriseId}:${tk}`]);ensure(!(await tx.query('SELECT 1 FROM enterprise_workflow.publications WHERE enterprise_id=$1 AND target_key=$2 AND id<>$3 AND status=ANY($4::text[])',[a.enterpriseId,tk,n.id,active])).rowCount,'PUBLICATION_TARGET_OCCUPIED');}
   await tx.query('INSERT INTO enterprise_workflow.publication_commands(enterprise_id,id,publication_id,subject,fingerprint,applied_version)VALUES($1,$2,$3,$4,$5,$6)',[a.enterpriseId,c.commandId,n.id,a.subject,fp,n.version]);await tx.query('INSERT INTO enterprise_workflow.publications(enterprise_id,id,team_id,order_id,task_id,shop_id,target_key,version,status,document)VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(enterprise_id,id)DO UPDATE SET version=EXCLUDED.version,status=EXCLUDED.status,document=EXCLUDED.document,updated_at=now()',[a.enterpriseId,n.id,n.teamId,n.source.orderId,n.source.taskId,n.target.shop.id,tk,n.version,n.status,n]);await tx.query('INSERT INTO enterprise_workflow.publication_revisions(enterprise_id,publication_id,revision,command_id,actor,reason,action,document)VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[a.enterpriseId,n.id,n.version,c.commandId,a.subject,c.reason,action.type,n]);return {...this.projection(a,n),replayed:false,appliedVersion:n.version};
  });}
- async read(p:Principal,raw:unknown){const q=publicationQuery.parse(raw);return this.tx(p,async(tx,a)=>{
+ async read(p:Principal,raw:unknown,signal?:AbortSignal){const q=publicationQuery.parse(raw);
+ if(q.action==='detail'&&this.detachedReads()){
+  const current=async(tx:PoolClient,a:Actor)=>{const n=await this.row(tx,a,q.id);ensure(n,'PUBLICATION_NOT_FOUND',404);await this.access(tx,a,n,false);return n;};
+  return readWorkflowSnapshot(this.pool,this.resolveActor,p,async(tx,a)=>{
+   await this.requireReady(tx,a);const n=await current(tx,a);return {...this.projection(a,n),availability:await this.currentAvailability(tx,a,n,true)};
+  },{statementTimeoutMs:20000,signal,betweenSnapshots:async result=>{
+   if(result.availability.status!=='available')return;
+   try{await this.verifyReadFiles(p.enterpriseId,result.publication.source.files,signal);}
+   catch(e){if(!(e instanceof WorkflowError)||e.status!==409)throw e;result.availability={status:'unavailable',checkedAt:result.availability.checkedAt,code:e.code};}
+  },checkCurrent:async(tx,a,result)=>{
+   const n=await current(tx,a);ensure(n.version===result.publication.version,'PUBLICATION_VERSION_CONFLICT');
+   const availability=await this.currentAvailability(tx,a,n,true);if(availability.status==='unavailable')result.availability=availability;
+  }});
+ }
+ return this.tx(p,async(tx,a)=>{
   if(q.action==='source'){const c=await this.source(tx,a,q.orderId,q.taskId);return {source:c.source,catalog:c.o.catalog??null,canCreate:operator(a)};}
   if(q.action==='list'){const where=`p.enterprise_id=$1 AND p.team_id=$2 AND ${readScope('o.document','$7')} AND s.document->'teamIds' ? $2::text AND ($8='' OR p.status=$8) AND ($9='' OR p.order_id::text=$9) AND ($10='' OR p.shop_id::text=$10)`,args=[a.enterpriseId,a.teamId,a.permissions.some(p=>['manage','dispatch','review'].includes(p)),a.subject,a.permissions.includes('execute'),a.workKinds,a.permissions.some(p=>['manage','dispatch'].includes(p)),q.status,q.orderId??'',q.shopId??''],from=' FROM enterprise_workflow.publications p JOIN enterprise_workflow.orders o ON o.enterprise_id=p.enterprise_id AND o.id=p.order_id JOIN enterprise_workflow.catalog_entities s ON s.enterprise_id=p.enterprise_id AND s.id=p.shop_id WHERE '+where;return {items:(await tx.query('SELECT p.document'+from+' ORDER BY p.updated_at DESC,p.id DESC LIMIT 30 OFFSET $11',[...args,(q.page-1)*30])).rows.map(r=>{const n=r.document as Publication;return {id:n.id,version:n.version,status:n.status,taskTitle:n.source.taskTitle,shop:n.target.shop.document.name,externalObjectId:n.externalObjectId,slot:n.slot,locale:n.locale,scheduleAt:n.scheduleAt,updatedAt:n.updatedAt,verification:'manual_report_not_platform_verified'};}),total:Number((await tx.query('SELECT count(*) n'+from,args)).rows[0].n),page:q.page,canCreate:operator(a)};}
   const n=await this.row(tx,a,q.id);ensure(n,'PUBLICATION_NOT_FOUND',404);if(q.action==='detail')await this.catalog.lock(tx,a.enterpriseId);await this.access(tx,a,n);if(q.action==='detail')return {...this.projection(a,n),availability:await this.currentAvailability(tx,a,n)};return {events:(await tx.query('SELECT revision,actor,reason,action,document,created_at FROM enterprise_workflow.publication_revisions WHERE enterprise_id=$1 AND publication_id=$2 ORDER BY revision DESC LIMIT 30 OFFSET $3',[a.enterpriseId,n.id,(q.page-1)*30])).rows,total:n.version,page:q.page};

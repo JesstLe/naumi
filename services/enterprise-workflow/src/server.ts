@@ -24,8 +24,15 @@ import {z} from 'zod';
 export type Authenticate = (request: IncomingMessage) => Promise<Principal | null>;
 export function createWorkflowPool(connectionString:string){return new Pool({connectionString,max:4});}
 function json(res: ServerResponse, status: number, value: unknown) {
+  if(res.destroyed||res.writableEnded)return;
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
   res.end(JSON.stringify(value));
+}
+async function readUntilDisconnect<T>(req:IncomingMessage,res:ServerResponse,read:(signal:AbortSignal)=>Promise<T>){
+  const controller=new AbortController(),abort=()=>controller.abort();
+  req.once('aborted',abort);res.once('close',abort);
+  try{if(req.aborted||res.destroyed)abort();controller.signal.throwIfAborted();return await read(controller.signal);}
+  finally{req.removeListener('aborted',abort);res.removeListener('close',abort);}
 }
 async function body(req: IncomingMessage,limit=128*1024) {
   if (!req.headers['content-type']?.startsWith('application/json')) throw new WorkflowError(415, 'JSON_REQUIRED');
@@ -56,7 +63,7 @@ export function createWorkflowServer(store: WorkflowStore, authenticate: Authent
       const principal = await authenticate(req);
       if (!principal) throw new WorkflowError(401, 'AUTH_REQUIRED');
       if (!id.safeParse(principal.enterpriseId).success || !principal.subject) throw new WorkflowError(401, 'INVALID_IDENTITY');
-      if(url.pathname==='/v1/publication-preflight'){if(!preflights)throw new WorkflowError(503,'PREFLIGHT_NOT_CONFIGURED');if(req.method==='GET')return json(res,200,await preflights.read(principal,Object.fromEntries(url.searchParams)));if(req.method==='POST'){if(url.search)throw new WorkflowError(400,'INVALID_PREFLIGHT_QUERY');return json(res,200,await preflights.execute(principal,await body(req)));}throw new WorkflowError(405,'METHOD_NOT_ALLOWED');}
+      if(url.pathname==='/v1/publication-preflight'){if(!preflights)throw new WorkflowError(503,'PREFLIGHT_NOT_CONFIGURED');if(req.method==='GET')return json(res,200,await readUntilDisconnect(req,res,signal=>preflights.read(principal,Object.fromEntries(url.searchParams),signal)));if(req.method==='POST'){if(url.search)throw new WorkflowError(400,'INVALID_PREFLIGHT_QUERY');return json(res,200,await preflights.execute(principal,await body(req)));}throw new WorkflowError(405,'METHOD_NOT_ALLOWED');}
       if(url.pathname==='/v1/publication-files'){
         if(!publicationFiles)throw new WorkflowError(503,'PUBLICATION_FILES_NOT_CONFIGURED');
         const raw=Object.fromEntries(url.searchParams);
@@ -168,12 +175,12 @@ export function createWorkflowServer(store: WorkflowStore, authenticate: Authent
       if(url.pathname==='/v1/capacity'){if(req.method==='GET')return json(res,200,await store.capacity.read(principal,Object.fromEntries(url.searchParams)));if(req.method==='POST'){const c=await body(req);const q=z.strictObject({operation:z.enum(['preview','save']),input:z.unknown()}).parse(c);return json(res,200,q.operation==='preview'?await store.capacity.preview(principal,q.input):await store.capacity.save(principal,q.input));}}
       if(url.pathname==='/v1/sla'){if(req.method==='GET')return json(res,200,await store.sla.read(principal,Object.fromEntries(url.searchParams)));if(req.method==='POST'){const c=await body(req);const q=z.strictObject({operation:z.enum(['preview','save']),input:z.unknown()}).parse(c);return json(res,200,q.operation==='preview'?await store.sla.preview(principal,q.input):await store.sla.save(principal,q.input));}}
       if(url.pathname==='/v1/delivery-reviews'){if(req.method==='GET')return json(res,200,await store.reviews.read(principal,Object.fromEntries(url.searchParams)));if(req.method==='POST')return json(res,200,await store.reviews.execute(principal,await body(req)));}
-      if(url.pathname==='/v1/publications'&&req.method==='GET')return json(res,200,await store.publications.read(principal,Object.fromEntries(url.searchParams)));
-      if(url.pathname==='/v1/publications'&&req.method==='POST'){const {operation,...c}=await body(req);if(operation!=='preview'&&operation!=='command')throw new WorkflowError(400,'INVALID_PUBLICATION_OPERATION');return json(res,200,operation==='preview'?await store.publications.preview(principal,c):await store.publications.execute(principal,c));}
+      if(url.pathname==='/v1/publications'&&req.method==='GET')return json(res,200,await readUntilDisconnect(req,res,signal=>store.publications.read(principal,Object.fromEntries(url.searchParams),signal)));
+      if(url.pathname==='/v1/publications'&&req.method==='POST'){const {operation,...c}=await body(req);if(operation!=='preview'&&operation!=='command')throw new WorkflowError(400,'INVALID_PUBLICATION_OPERATION');return json(res,200,operation==='preview'?await readUntilDisconnect(req,res,signal=>store.publications.preview(principal,c,signal)):await store.publications.execute(principal,c));}
       if(url.pathname==='/v1/guidelines'&&req.method==='GET')return json(res,200,await store.guidelines.read(principal,Object.fromEntries(url.searchParams)));
       if(url.pathname==='/v1/guidelines'&&req.method==='POST')return json(res,200,await store.guidelines.execute(principal,await body(req)));
-      if(url.pathname==='/v1/projects'&&req.method==='GET')return json(res,200,await store.projects.read(principal,Object.fromEntries(url.searchParams)));
-      if(url.pathname==='/v1/projects'&&req.method==='POST'){const {operation,...c}=await body(req);if(operation!=='preview'&&operation!=='apply')throw new WorkflowError(400,'INVALID_PROJECT_OPERATION');return json(res,200,operation==='preview'?await store.projects.preview(principal,c):await store.projects.execute(principal,c));}
+      if(url.pathname==='/v1/projects'&&req.method==='GET')return json(res,200,await readUntilDisconnect(req,res,signal=>store.projects.read(principal,Object.fromEntries(url.searchParams),signal)));
+      if(url.pathname==='/v1/projects'&&req.method==='POST'){const {operation,...c}=await body(req);if(operation!=='preview'&&operation!=='apply')throw new WorkflowError(400,'INVALID_PROJECT_OPERATION');return json(res,200,operation==='preview'?await readUntilDisconnect(req,res,signal=>store.projects.preview(principal,c,signal)):await store.projects.execute(principal,c));}
       if(url.pathname==='/v1/appeals'&&req.method==='GET')return json(res,200,await store.appeals.read(principal,Object.fromEntries(url.searchParams)));
       if(url.pathname==='/v1/appeals'&&req.method==='POST')return json(res,200,await store.appeals.execute(principal,await body(req)));
       if(url.pathname==='/v1/worklogs'&&req.method==='GET')return json(res,200,await store.worklogs.read(principal,Object.fromEntries(url.searchParams)));
