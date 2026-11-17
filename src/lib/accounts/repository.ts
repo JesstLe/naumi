@@ -1,4 +1,5 @@
 import "server-only";
+import type {PoolClient} from "pg";
 import {getPool} from "@/platform/db/pool";
 import {ensureSchema} from "@/lib/persistence/schema";
 import {OPERATOR_EMAIL} from "@/lib/operator";
@@ -108,9 +109,13 @@ export async function setUserNote(
 /** Given a set of emails, returns the subset currently banned. */
 export async function bannedEmailsAmong(emails: string[]): Promise<string[]> {
   await ensureSchema();
+  return bannedEmailsAmongTx(getPool(), emails);
+}
+
+export async function bannedEmailsAmongTx(db: Pick<PoolClient, "query">, emails: readonly string[]): Promise<string[]> {
   if (emails.length === 0) return [];
   const lowered = Array.from(new Set(emails.map((e) => e.toLowerCase())));
-  const { rows } = await getPool().query(
+  const { rows } = await db.query(
     `SELECT email FROM app_users WHERE banned = true AND email = ANY($1)`,
     [lowered]
   );

@@ -54,7 +54,19 @@ async function main(){
  {const f=fixture(sql=>({rows:sql.includes('RETURNING credits_total')?[{credits_total:'19'}]:[]}));eq(await f.api.refreshBalance('USER@Example.test'),19);eq(f.events,['sql','begin','sql','sql','commit']);ok(f.calls[1].sql.includes('FOR UPDATE'));ok(f.calls[2].sql.includes('SELECT COALESCE(SUM(remaining),0)'));ok(f.calls.every(c=>c.params[0]==='user@example.test'));cases++;}
  {const f=fixture(sql=>({rows:sql.includes('RETURNING credits_total')?[{credits_total:9}]:sql.includes('SELECT remaining, expires_at')?[{remaining:3,expires_at:'2030-01-01T00:00:00Z'}]:[]}));eq(await f.api.getCreditOverview('USER@Example.test'),{balance:9,nextExpiry:{amount:3,at:'2030-01-01T00:00:00.000Z'}});eq(f.events[0],'schema');cases++;}
  const user={email:'user@example.test',name:'Name',plan:'starter',credits_used:3,joined_at:new Date('2020-01-01'),renews_at:new Date('2020-02-01')};
- for(const loginOnly of [false,true]){const f=fixture(sql=>({rows:sql.startsWith('SELECT * FROM app_users')?[user]:sql.includes('RETURNING credits_total')?[{credits_total:9}]:sql.includes('AS total FROM app_credit_batches')?[{total:9}]:[]}),loginOnly?{NAUMI_AUTH_LOGIN_ONLY:'1'}:{});const u=await f.api.getUser('USER@Example.test');eq(u,{name:'Name',email:'user@example.test',plan:'starter',creditsTotal:9,creditsUsed:3,joinedAt:'2020-01-01T00:00:00.000Z',renewsAt:'2020-02-01T00:00:00.000Z',invoices:[]});eq(f.calls.filter(c=>/^UPDATE|^WITH/.test(c.sql)).length,loginOnly?0:2);cases++;}
+ for(const loginOnly of [false,true]){
+  const principal=sql=>sql.startsWith('SELECT')&&sql.includes('FROM app_credit_batches')&&/\bAS total\b/.test(sql);
+  const f=fixture(sql=>({rows:sql.startsWith('SELECT * FROM app_users')?[user]:sql.includes('RETURNING credits_total')?[{credits_total:9}]:principal(sql)?[{total:9}]:[]}),loginOnly?{NAUMI_AUTH_LOGIN_ONLY:'1'}:{});
+  const u=await f.api.getUser('USER@Example.test');
+  eq(u,{name:'Name',email:'user@example.test',plan:'starter',creditsTotal:9,creditsUsed:3,joinedAt:'2020-01-01T00:00:00.000Z',renewsAt:'2020-02-01T00:00:00.000Z',invoices:[]});
+  eq(f.calls.filter(c=>/^UPDATE|^WITH/.test(c.sql)).length,loginOnly?0:2);
+  if(loginOnly){
+   const wallet=f.calls.filter(c=>principal(c.sql));eq(wallet.length,1);
+   ok(wallet[0].sql.includes('expires_at')&&wallet[0].sql.includes('remaining')&&!wallet[0].sql.includes('FOR UPDATE'));
+   eq(wallet[0].params,['user@example.test']);
+  }
+  cases++;
+ }
  {const f=fixture();await assert.rejects(f.api.changeUserPlan('missing','starter'),/用户不存在/);checks++;cases++;}
  {const f=fixture(()=>({rows:[{id:'provider',email:'user@example.test',name:'',is_active:0,enabled:false,protocol:'old-invalid',base_url_enc:'legacy-ciphertext',api_key_enc:' raw-key ',models:[1,'model'],default_model:null,updated_at:'2020-01-01'}]}));const rows=await f.api.listUserImageProviderRecords('USER@Example.test');eq(rows,[{id:'provider',email:'user@example.test',name:'未命名供应商',isActive:false,enabled:false,protocol:'openai-images',baseUrlEnc:'legacy-ciphertext',apiKeyEnc:' raw-key ',models:['1','model'],defaultModel:'',updatedAt:'2020-01-01T00:00:00.000Z'}]);eq(f.calls[0].params,['user@example.test']);cases++;}
  {const f=fixture();eq(await f.api.getUserImageProviderRecord('missing'),null);eq(await f.api.getUserImageProviderRecordById('OTHER','id'),null);eq(await f.api.countUserImageProviderRecords('missing'),0);eq(await f.api.deleteUserImageProviderRecord('OTHER','id'),false);eq(f.calls[1].params,['other','id']);eq(f.calls[3].params,['other','id']);cases++;}

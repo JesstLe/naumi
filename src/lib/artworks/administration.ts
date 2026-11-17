@@ -1,5 +1,7 @@
 import "server-only";
+import type {PoolClient} from "pg";
 import {getPool} from "@/platform/db/pool";
+import {withOwnedReportClient} from "@/platform/db/owned-read-client";
 import {ensureSchema} from "@/lib/persistence/schema";
 import type {ArtworkRecord,AdminArtwork} from "./types";
 
@@ -55,20 +57,29 @@ export async function listAllArtworks(
   offset = 0
 ): Promise<{ artworks: AdminArtwork[]; total: number }> {
   await ensureSchema();
-  const lim = Math.min(Math.max(Math.trunc(limit) || 24, 1), 100);
-  const off = Math.max(Math.trunc(offset) || 0, 0);
-  const [rowsRes, cntRes] = await Promise.all([
-    getPool().query(
-      `SELECT ${ADMIN_ARTWORK_COLS} FROM app_artworks
-        ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
-      [lim, off]
-    ),
-    getPool().query(`SELECT count(*)::int AS n FROM app_artworks`),
-  ]);
-  return {
-    artworks: rowsRes.rows.map(rowToAdminArtwork),
-    total: cntRes.rows[0].n,
-  };
+  return withOwnedReportClient(getPool(),async tx=>{
+    await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+    await tx.query("SET LOCAL statement_timeout='5s'; SET LOCAL lock_timeout='3s'");
+    const result=await listAllArtworksTx(tx,limit,offset);
+    await tx.query('COMMIT');
+    return result;
+  });
+}
+
+/** Count and fields belong to the caller's snapshot; deep pages sort only keys. */
+export async function listAllArtworksTx(tx: PoolClient, limit: number, offset: number) {
+  const lim=Math.min(Math.max(Math.trunc(limit)||24,1),100),off=Math.max(Math.trunc(offset)||0,0);
+  const {rows:[count]}=await tx.query<{n:number}>('SELECT count(*)::int AS n FROM app_artworks');
+  if(off>=count.n)return {artworks:[],total:count.n};
+  const {rows}=await tx.query(`WITH page_keys AS MATERIALIZED (
+    SELECT id,created_at FROM app_artworks ORDER BY created_at DESC,id DESC LIMIT $1 OFFSET $2
+  )
+  SELECT item.* FROM page_keys
+  CROSS JOIN LATERAL (
+    SELECT ${ADMIN_ARTWORK_COLS} FROM app_artworks WHERE id=page_keys.id OFFSET 0
+  ) item
+  ORDER BY page_keys.created_at DESC,page_keys.id DESC`,[lim,off]);
+  return {artworks:rows.map(rowToAdminArtwork),total:count.n};
 }
 
 /** Admin: a single artwork by id (used when importing into the template lib). */
@@ -115,9 +126,12 @@ export async function deleteArtwork(id: string): Promise<boolean> {
  *  library (template id convention: `tpl-art-<artworkId>`). */
 export async function importedArtworkIds(ids: string[]): Promise<string[]> {
   await ensureSchema();
+  return importedArtworkIdsTx(getPool(),ids);
+}
+export async function importedArtworkIdsTx(db: Pick<PoolClient, "query">, ids: readonly string[]): Promise<string[]> {
   if (ids.length === 0) return [];
   const tplIds = ids.map((id) => `tpl-art-${id}`);
-  const { rows } = await getPool().query(
+  const { rows } = await db.query(
     `SELECT id FROM app_templates WHERE id = ANY($1)`,
     [tplIds]
   );

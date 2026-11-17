@@ -2,13 +2,15 @@ import { isHostedImageUrl } from "@/lib/media-url";
 import { NextResponse } from "next/server";
 import {createTemplate} from "@/lib/templates/repository";
 import {dbEnabled} from "@/platform/db/pool";
-import {listAllArtworks, getArtworkById, deleteArtwork, importedArtworkIds} from "@/lib/artworks/administration";
-import {setUserBanned, bannedEmailsAmong} from "@/lib/accounts/repository";
+import {getArtworkById, deleteArtwork} from "@/lib/artworks/administration";
+import {readAdminArtworkPage} from "@/lib/artworks/admin-read";
+import {setUserBanned} from "@/lib/accounts/repository";
 import { requireAdmin } from "@/lib/admin-auth";
 import { authorizeAdminMutation } from "@/lib/admin-mutation";
 import { AccountChangeError, assertAccountChangeAllowed } from "@/lib/accounts/change-policy";
 import { appendManagementLogAfterChange } from "@/lib/bi/management-log";
 import { CATEGORY_LABELS, type Category } from "@/lib/mock-data";
+import {ReportReadBusy} from "@/platform/db/owned-read-client";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,39 +30,28 @@ async function guard(req: Request): Promise<NextResponse | null> {
 }
 
 const PAGE_SIZE = 24;
+function artworkReadJson(body:unknown,status=200){
+  return NextResponse.json(body,{status,headers:{"Cache-Control":"private, no-store",Vary:"Cookie, Authorization"}});
+}
 
 /** GET — paginated list of every user's artworks (newest first). */
 export async function GET(req: Request) {
-  const blocked = await guard(req);
-  if (blocked) return blocked;
-  const sp = new URL(req.url).searchParams;
-  const page = Math.max(0, Math.trunc(Number(sp.get("page")) || 0));
-  const pageSize = Math.min(
-    Math.max(Math.trunc(Number(sp.get("pageSize")) || PAGE_SIZE), 1),
-    100
-  );
   try {
-    const { artworks, total } = await listAllArtworks(
-      pageSize,
-      page * pageSize
-    );
-    const [importedIds, bannedEmails] = await Promise.all([
-      importedArtworkIds(artworks.map((a) => a.id)),
-      bannedEmailsAmong(artworks.map((a) => a.email)),
-    ]);
-    return NextResponse.json({
-      artworks,
-      total,
-      page,
-      pageSize,
-      importedIds,
-      bannedEmails,
-    });
-  } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : "读取失败" },
-      { status: 500 }
-    );
+    req.signal.throwIfAborted();
+    const blocked=await guard(req);
+    if(blocked){blocked.headers.set("Cache-Control","private, no-store");return blocked;}
+    const sp=new URL(req.url).searchParams;
+    const page=Math.max(0,Math.trunc(Number(sp.get("page"))||0));
+    const pageSize=Math.min(Math.max(Math.trunc(Number(sp.get("pageSize"))||PAGE_SIZE),1),100);
+    if(!Number.isSafeInteger(page))return artworkReadJson({error:"页码无效"},400);
+    return artworkReadJson(await readAdminArtworkPage(page,pageSize,req.signal));
+  } catch (error) {
+    if(req.signal.aborted)return artworkReadJson({error:"查询已取消"},499);
+    if(error instanceof ReportReadBusy||["55P03","57014"].includes((error as {code?:string})?.code??"")){
+      const response=artworkReadJson({error:"作品暂时不可读取，请稍后重试"},503);
+      response.headers.set("Retry-After","1");return response;
+    }
+    return artworkReadJson({error:"读取失败"},500);
   }
 }
 

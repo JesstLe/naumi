@@ -7,7 +7,7 @@
 | 入口 | 定义 | 覆盖与证据 |
 | --- | --- | --- |
 | `DELETE /api/admin/login` | `src/app/api/admin/login/route.ts` | 待核查 |
-| `GET /api/admin/artworks` | `src/app/api/admin/artworks/route.ts` | 待核查 |
+| `GET /api/admin/artworks` | `src/app/api/admin/artworks/route.ts` | 部分：旧客户端列表字段、软删除、导入/封禁标记保留；隔离库 4 万行深页、越界、同时间排序、管理员验证、排队超时和真实 HTTP 断开通过。当前导航未挂载旧作品组件；生产网关和更长历史待核 |
 | `GET /api/admin/bi` | `src/app/api/admin/bi/route.ts` | 部分：overview 去重复扫描、作品深页先排序键、越界只计数；全分类 145 项新旧结果对照；查询取消；数据快照与其它报表共用池前排队。鉴权/审计、长窗 SQL 成本及真实网关待核 |
 | `GET /api/admin/bi/channel-capacity` | `src/app/api/admin/bi/channel-capacity/route.ts` | 待核查 |
 | `GET /api/admin/bi/conversation` | `src/app/api/admin/bi/conversation/route.ts` | 部分：按账号和会话取文字、保持 20 条分页；回环 HTTP 断开后 PostgreSQL 在解锁前退出；共享报表连接排队。会话正文大样本结果对照；真实网关与高并发待核 |
@@ -107,7 +107,7 @@
 | `PATCH /api/admin/templates` | `src/app/api/admin/templates/route.ts` | 待核查 |
 | `PATCH /api/admin/tenants/[id]` | `src/app/api/admin/tenants/[id]/route.ts` | 待核查 |
 | `PATCH /api/enterprise/saas-overview` | `src/app/api/enterprise/saas-overview/route.ts` | 待核查 |
-| `POST /api/admin/artworks` | `src/app/api/admin/artworks/route.ts` | 待核查 |
+| `POST /api/admin/artworks` | `src/app/api/admin/artworks/route.ts` | 部分：封禁分支与成员管理共享权限，阻止自封、其他管理员和跨站请求，成功记录操作日志（`verify-admin-route-hardening.ts`）；导入和删除的完整读写链路待核 |
 | `POST /api/admin/bi/channel-capacity` | `src/app/api/admin/bi/channel-capacity/route.ts` | 待核查 |
 | `POST /api/admin/bi/model-config` | `src/app/api/admin/bi/model-config/route.ts` | 待核查 |
 | `POST /api/admin/bi/model-config/catalog` | `src/app/api/admin/bi/model-config/catalog/route.ts` | 待核查 |
