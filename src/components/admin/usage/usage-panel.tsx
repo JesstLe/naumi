@@ -9,10 +9,10 @@ import {Pager} from "../pager";
 /** Only the usage panel reads member statistics. System configuration never
  * loads the old member/ledger payload merely because administrator auth passed. */
 export function AdminUsagePanel({token,usageDays,setUsageDays,onManageUsers}:{token:string|null;usageDays:number;setUsageDays:(days:number)=>void;onManageUsers:()=>void}){
- const {usersData,setUsersData,usageData,usageLoading,usageError,page,setPage,refresh}=useUsageQuery(token,usageDays);
+ const {usersData,patchMember,usageData,usageLoading,usageError,page,setPage,refresh}=useUsageQuery(token,usageDays);
  const usersByEmail=useMemo(()=>new Map(usersData?.users.map(user=>[user.email,user])??[]),[usersData]);
  const usagePeak=useMemo(()=>Math.max(1,...(usageData?.daily??[]).map(row=>row.credits)),[usageData]);
- const member=useMemberDetail(token,usersData,setUsersData),{openDetail}=member;
+ const member=useMemberDetail(token,usersData,patchMember),{openDetail}=member;
  return <>
  {member.msg&&<p className={`mb-4 rounded-lg border px-3 py-2 text-sm ${member.msg.ok?"border-emerald-200 bg-emerald-50 text-emerald-700":"border-red-200 bg-red-50 text-red-600"}`}>{member.msg.text}</p>}
  {usageError&&<p role="alert" className="mb-4 text-sm text-red-600">{usageError}</p>}

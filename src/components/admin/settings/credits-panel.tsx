@@ -13,7 +13,7 @@ const [grantEmail, setGrantEmail] = useState(OPERATOR_EMAIL);
 const [grantAmount, setGrantAmount] = useState("100");
 const [grantMsg, setGrantMsg] = useState<string | null>(null);
 useEffect(()=>{if(prefillEmail)setGrantEmail(prefillEmail)},[prefillEmail]);
-async function grantCredits(){const email=grantEmail.trim().toLowerCase(),delta=Math.trunc(Number(grantAmount)||0);if(!email||!delta){setGrantMsg("请填写邮箱和有效的积分数");return;}setGrantMsg(null);await mutation(async actor=>{const response=await fetch("/api/admin/users",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${actor}`},body:JSON.stringify({action:"adjust",email,delta,months:0})});const data=await response.json();if(!response.ok)throw Error(data.error||"操作失败");return data;},()=>setGrantMsg(`已给 ${email} ${delta>0?"增加":"扣减"} ${Math.abs(delta)} 积分`),undefined,error=>setGrantMsg(error.message));}
+async function grantCredits(){const email=grantEmail.trim().toLowerCase(),delta=Math.trunc(Number(grantAmount)||0);if(!email||!delta){setGrantMsg("请填写邮箱和有效的积分数");return;}setGrantMsg(null);await mutation(async actor=>{const response=await fetch("/api/admin/users?view=command",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${actor}`},body:JSON.stringify({action:"adjust",email,delta,months:0})});const data=await response.json();if(!response.ok)throw Error(data.error||"操作失败");return data;},()=>setGrantMsg(`已给 ${email} ${delta>0?"增加":"扣减"} ${Math.abs(delta)} 积分`),undefined,error=>setGrantMsg(error.message));}
 return <>
       {section === "credits" && (
       <div>

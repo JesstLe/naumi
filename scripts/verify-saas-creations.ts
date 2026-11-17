@@ -129,6 +129,63 @@ async function main(){
  const batchOwnerResponse=await enterpriseDetail.GET(request(`/api/enterprise/creations/${batchRecord}?tenantId=${a.tenantId}`,ownerA),detailCtx(batchRecord));assert.equal(batchOwnerResponse.status,200);
  const batchEvidence=await batchOwnerResponse.json();assert.equal(batchEvidence.evidencePending,true);assert.equal(batchEvidence.assets.length,1);
  const batchAdminResponse=await adminDetail.GET(request(`/api/admin/creations/${batchRecord}`,admin),detailCtx(batchRecord));assert.equal(batchAdminResponse.status,200);assert.equal((await batchAdminResponse.json()).assets.length,1);
+ // Bounded overview preview must look beyond the first unfiltered page and
+ // retain live source state, scope, ordering and recorded billing.
+ await pool.query("UPDATE app_enterprise_members SET membership_status='active' WHERE email=$1",[member]);
+ const recentFixture=async(email:string,tenant:string,status:string,minute:number)=>{
+  const id=`cr-${randomUUID()}`;await record(id,email,tenant,null,status);
+  await pool.query("UPDATE app_creation_records SET accepted_at='2002-01-09T00:00Z'::timestamptz+$2::int*interval '1 minute' WHERE id=$1",[id,minute]);
+  return id;
+ };
+ const wanted=await Promise.all(['queued','running','cancel_requested','queued','running','queued'].map((status,i)=>recentFixture(member,a.tenantId,status,i+1)));
+ const olderUnrelated=await recentFixture(member,a.tenantId,'failed',0);
+ const ownerOnly=await recentFixture(ownerA,a.tenantId,'running',29);
+ const foreignQueued=await recentFixture(ownerB,b.tenantId,'running',30);
+ for(let i=0;i<7;i++)await recentFixture(member,a.tenantId,'succeeded',20+i);
+ const linked=`overview-live-${randomUUID()}`;
+ await pool.query("INSERT INTO app_image_jobs(id,email,kind,snapshot,payload,metered) VALUES($1,$2,'generate','{\"status\":\"processing\"}','{}',false)",[linked,member]);
+ await pool.query("INSERT INTO app_creation_links(creation_id,target_type,target_id,actor_email) VALUES($1,'image:generate',$2,$3),($1,'billing',$4,$3)",[wanted[5],linked,member,operation]);
+ const window=`/api/enterprise/creations?tenantId=${a.tenantId}&from=2002-01-09&to=2002-01-09&size=5`,pending=`${window}&projection=recent&statusGroup=pending`;
+ const response=await enterpriseRoutes.GET(request(pending,manager));assert.equal(response.status,200);
+ const recent=await response.json();assert.deepEqual(Object.keys(recent),['items']);
+ assert.deepEqual(recent.items.map((r:any)=>r.id),wanted.slice(1).reverse());
+ assert.deepEqual(recent.items.map((r:any)=>r.status),['running','running','queued','cancel_requested','running']);
+ assert.equal(recent.items[0].settledCredits,0);
+ const unrestricted=await(await enterpriseRoutes.GET(request(pending,ownerA))).json();
+ assert.equal(unrestricted.items[0].id,ownerOnly);assert(!unrestricted.items.some((r:any)=>r.id===foreignQueued));
+ const rejected=await(await enterpriseRoutes.GET(request(`${window}&projection=recent&status=failed`,manager))).json();
+ assert.deepEqual(rejected.items.map((r:any)=>r.id),[olderUnrelated]);
+ assert.equal((await(await enterpriseRoutes.GET(request(window,manager))).json()).summary.pending,6);
+ for(const invalid of [pending+'&status=failed',pending+'&page=2',pending+'&size=6',pending+'&view=unified',window+'&statusGroup=pending']){
+  assert.equal((await enterpriseRoutes.GET(request(invalid,manager))).status,400);
+ }
+ assert.equal((await enterpriseRoutes.GET(request(pending,member))).status,403);
+ assert.equal((await adminRoutes.GET(request(pending.replace('/enterprise/','/admin/'),admin))).status,400);
+ console.log('RECENT_CREATION_PASS bounded=5 grouped_order=1 live_status=1 scoped_billing=1 cancelled_requests_counted=1 foreign_denied=1');
+
+ // An existing writer lock on a selected tenant's sponsoring account must
+ // never stall the picker; tenancy grants and action scopes still apply.
+ const {enterpriseList}=await import('../src/lib/enterprise/server');
+ const writer=await pool.connect();
+ try {
+  await writer.query('BEGIN');await writer.query('SELECT email FROM app_users WHERE email=$1 FOR UPDATE',[ownerA]);
+  // Bound the test independently of the application timeout so a regression in
+  // the old unbounded, share-locked query fails instead of hanging the suite.
+  let timeout:ReturnType<typeof setTimeout>|undefined;
+  try{
+   const identities=await Promise.race([enterpriseList({email:manager,admin:false}),new Promise<never>((_,reject)=>{timeout=setTimeout(()=>reject(Error('Enterprise picker waited for the writer lock')),2500);})]);
+   assert.deepEqual(identities.map(t=>[t.id,t.owner,t.authorized_until]),[[a.tenantId,false,null]]);
+  }finally{clearTimeout(timeout);}
+ } finally {await writer.query('ROLLBACK');writer.release();}
+ assert.equal((await enterpriseList({email:member,admin:false})).length,0);
+ assert.deepEqual((await enterpriseList({email:member,admin:false},true)).map(t=>t.id),[a.tenantId]);
+ assert.deepEqual(new Set((await enterpriseList(actor)).map(t=>t.id)),new Set([a.tenantId,b.tenantId]));
+ await pool.query('UPDATE app_team_access_grants SET enabled=false WHERE email=$1',[ownerA]);
+ assert.equal((await enterpriseList({email:manager,admin:false})).length,0);
+ await pool.query('UPDATE app_team_access_grants SET enabled=true WHERE email=$1',[ownerA]);
+ await pool.query("UPDATE app_tenant_entitlements SET feature_policy=feature_policy||'{\"team\":false}'::jsonb WHERE tenant_id=$1",[a.tenantId]);
+ assert.equal((await enterpriseList({email:manager,admin:false})).length,0);
+ console.log('ENTERPRISE_PICKER_PASS writer_lock_nonblocking=1 management_scope=1 workflow_self=1 sponsorship=1 entitlement=1');
  const previous=process.env.FLEET_PORTAL_ONLY;process.env.FLEET_PORTAL_ONLY='1';assert.equal((await adminRoutes.GET(request('/api/admin/creations',admin))).status,403);process.env.FLEET_PORTAL_ONLY=previous;
  console.log('SAAS_CREATION_READER_PASS real_pg=1 real_imagegen_uuid_schema=1 uuid_batch_recovery=1 heterogeneous_link_ids=1 real_auth=1 cross_tenant=1 media_parent_scope=1 revoked_media=1 archived_owner=1 current_subordinates=1 private_cache=1 safe_projection=1 explicit_false_zero=1 exact_billing_dedup=1 unknown_null=1 child_assets=1 bounded_pages=1 video_range=1 ssrf_reject=1 fleet_restriction=1 supplier_calls=0');
  await pool.end();

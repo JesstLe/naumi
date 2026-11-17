@@ -4,8 +4,8 @@ import {listLedger, listUserLedger} from "@/lib/billing/legacy-ledger";
 import {adjustUserCredits} from "@/lib/billing/grants";
 import {dbEnabled} from "@/platform/db/pool";
 import {listArtworks} from "@/lib/artworks/repository";
-import {getOrCreateUser, getUser} from "@/lib/accounts/session";
-import {setUserPassword, setUserRole, setUserBanned, setUserNote, banIp, unbanIp, listBannedIps} from "@/lib/accounts/repository";
+import {getOrCreateUser, readUserSnapshot} from "@/lib/accounts/session";
+import {getUserRole, setUserPassword, setUserRole, setUserBanned, setUserNote, banIp, unbanIp, listBannedIps} from "@/lib/accounts/repository";
 import { requireAdmin } from "@/lib/admin-auth";
 import {authorizeAdminMutation} from "@/lib/admin-mutation";
 import {AccountChangeError, assertAccountChangeAllowed} from "@/lib/accounts/change-policy";
@@ -17,12 +17,12 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 async function snapshot() {
-  const [stats, users, ledger, bannedIps] = await Promise.all([
-    adminStats(),
-    listAllUsers(),
-    listLedger(50),
-    listBannedIps(),
-  ]);
+  // Compatibility response for older admin clients. Don't borrow four
+  // connections at once from the same pool as live billing.
+  const stats = await adminStats();
+  const users = await listAllUsers();
+  const ledger = await listLedger(50);
+  const bannedIps = await listBannedIps();
   return { stats, users, ledger, bannedIps };
 }
 
@@ -48,17 +48,15 @@ export async function GET(req: Request) {
     const emails = [...new Set(params.getAll("member").map(value => value.trim().toLowerCase()))];
     if (emails.length > 100 || emails.some(email => !email || email.length > 320))
       return NextResponse.json({ error: "用户筛选参数无效" }, { status: 400 });
-    return NextResponse.json({ users: await listAllUsers(emails) });
+    return NextResponse.json({ users: emails.length ? await listAllUsers(emails) : [] });
   }
   // ?email= -> per-member detail (artworks + credit ledger)
-  const email = new URL(req.url).searchParams.get("email");
+  const email = params.get("email");
   if (email) {
     const e = email.trim().toLowerCase();
-    const [user, artworks, ledger] = await Promise.all([
-      getUser(e),
-      listArtworks(e),
-      listUserLedger(e, 100),
-    ]);
+    const user = await readUserSnapshot(e);
+    const artworks = await listArtworks(e);
+    const ledger = await listUserLedger(e, 100);
     return NextResponse.json({ detail: { email: e, user, artworks, ledger } });
   }
   return NextResponse.json(await snapshot());
@@ -70,6 +68,8 @@ export async function POST(req: Request) {
   const mutation = await authorizeAdminMutation(req, "users");
   if (mutation instanceof Response) return mutation;
   const { actor } = mutation;
+  const respond = async () => NextResponse.json(new URL(req.url).searchParams.get('view') === 'command'
+    ? { ok: true } : await snapshot());
 
   let body: {
     action?: string;
@@ -105,7 +105,7 @@ export async function POST(req: Request) {
         await unbanIp(ip);
       }
       await appendManagementLogAfterChange({ actor, subject: `ip:${ip}`, action, reason: (body.reason ?? "").trim(), changes: { ip } });
-      return NextResponse.json(await snapshot());
+      return await respond();
     }
 
     const email = (body.email ?? "").trim().toLowerCase();
@@ -121,7 +121,7 @@ export async function POST(req: Request) {
       if (password.length < 6) {
         return NextResponse.json({ error: "密码至少 6 位" }, { status: 400 });
       }
-      const existing = await getUser(email);
+      const existing = await getUserRole(email);
       if (existing) {
         return NextResponse.json({ error: "该邮箱已存在" }, { status: 409 });
       }
@@ -133,7 +133,7 @@ export async function POST(req: Request) {
       if (password.length < 6) {
         return NextResponse.json({ error: "密码至少 6 位" }, { status: 400 });
       }
-      const existing = await getUser(email);
+      const existing = await getUserRole(email);
       if (!existing) {
         return NextResponse.json({ error: "用户不存在" }, { status: 404 });
       }
@@ -177,7 +177,7 @@ export async function POST(req: Request) {
       );
     }
     await appendManagementLogAfterChange({ actor, subject: email, action, changes });
-    return NextResponse.json(await snapshot());
+    return await respond();
   } catch (e) {
     if (e instanceof AccountChangeError) return NextResponse.json({ error: e.message }, { status: e.status });
     return NextResponse.json(

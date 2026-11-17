@@ -23,6 +23,8 @@ async function scoped<T>(reader:CreationReader,run:(tx:PoolClient,visible:string
  const tx=await getPool().connect();try{await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');await tx.query("SET LOCAL statement_timeout='20s'");const result=await run(tx,null,null);await tx.query('COMMIT');return result;}catch(e){await tx.query('ROLLBACK');throw e;}finally{tx.release();}
 }
 const fromDate=(s:string)=>`${s}T00:00:00+08:00`;
+const normalizedLiveStatus=`CASE WHEN live_status IN ('done','completed','success') THEN 'succeeded' WHEN live_status IN ('error','rejected') THEN 'failed' WHEN live_status IN ('pending','reviewing') THEN 'queued' WHEN live_status IN ('processing','generating') THEN 'running' WHEN live_status IN ('queued','running','succeeded','partial','failed','cancel_requested','cancelled','needs_review') THEN live_status ELSE 'needs_review' END`;
+const pendingLiveStatuses="'queued','running','pending','processing','reviewing','generating','cancel_requested'";
 const recordProjection=`SELECT c.*,COALESCE(u.name,c.actor_email) AS actor_name,
  (SELECT a.id FROM app_creation_assets a WHERE a.creation_id=c.id AND a.direction='output' AND a.media_type='image' ORDER BY position,id LIMIT 1) thumbnail_asset_id,`;
 // A terminal result snapshot stays authoritative. A job that failed at its top
@@ -60,9 +62,24 @@ function where(reader:CreationReader,f:CreationFilters,visible:string[]|null){
 }
 export async function listCreations(reader:CreationReader,f:CreationFilters):Promise<CreationPage>{return readCreationList(reader,f,false);}
 export async function listUnifiedCreations(reader:CreationReader,f:CreationFilters):Promise<CreationPage>{return readCreationList(reader,f,true);}
+/** Overview preview: find the newest matching records across the whole window,
+ * then read billing and assets only for that bounded set. */
+export async function listRecentEnterpriseCreations(reader:Extract<CreationReader,{platform:false}>,f:CreationFilters):Promise<{items:CreationSummary[]}>{return scoped(reader,async(tx,visible)=>{
+ const filter=where(reader,f,visible),values=[...filter.values];
+ const bind=(value:unknown)=>{values.push(value);return `$${values.length}`;};
+ const states=f.statusGroup==='pending'?`live_status IN (${pendingLiveStatuses})`:`${normalizedLiveStatus}=${bind(f.status)}`;
+ const limit=bind(Math.min(5,f.size));
+ const result=await tx.query(`WITH selected AS MATERIALIZED (
+  SELECT id,live_status FROM (${await recordSelect(tx,false)} WHERE ${filter.sql}) eligible
+  WHERE ${states} ORDER BY accepted_at DESC,id DESC LIMIT ${limit})
+  ${recordProjection} b.charged,k.live_status
+  FROM selected k JOIN app_creation_records c ON c.id=k.id LEFT JOIN app_users u ON u.email=c.actor_email
+  ${recordBillingJoin} ORDER BY c.accepted_at DESC,c.id DESC`,values);
+ return {items:result.rows.map(summary)};
+});}
 async function readCreationList(reader:CreationReader,f:CreationFilters,unified:boolean):Promise<CreationPage>{return scoped(reader,async(tx,visible,historyVisible)=>{
  const filter=where(reader,f,visible);let values=[...filter.values],sql=`SELECT id,actor_email,tenant_id,accepted_at,live_status,source_kind,source_id FROM (${await recordSelect(tx,false)} WHERE ${filter.sql}) records`;
- if(f.status){values.push(f.status);sql+=` WHERE CASE WHEN live_status IN ('done','completed','success') THEN 'succeeded' WHEN live_status IN ('error','rejected') THEN 'failed' WHEN live_status IN ('pending','reviewing') THEN 'queued' WHEN live_status IN ('processing','generating') THEN 'running' WHEN live_status IN ('queued','running','succeeded','partial','failed','cancel_requested','cancelled','needs_review') THEN live_status ELSE 'needs_review' END=$${values.length}`;}
+ if(f.status){values.push(f.status);sql+=` WHERE ${normalizedLiveStatus}=$${values.length}`;}
  const historical=unified?legacyCreationCandidates(f,reader.platform&&(reader.boundTenantId||f.tenantId)?[]:historyVisible,value=>{values.push(value);return `$${values.length}`;},{...(!reader.platform?{tenantId:reader.tenantId}:{})}):null;
  // The exact status and recursive billing facts are needed for whole-result
  // totals/ranking, but must not be recomputed by four independent queries.
@@ -95,7 +112,7 @@ async function readCreationList(reader:CreationReader,f:CreationFilters,unified:
  WHERE k.legacy_table IS NOT NULL`:""}),
  aggregate AS (SELECT count(*)::int AS total,count(DISTINCT actor_email)::int AS active_members,
  sum(charged)::int AS charged,
- count(*) FILTER(WHERE live_status IN ('queued','running','pending','processing','reviewing','generating'))::int AS pending,
+ count(*) FILTER(WHERE live_status IN (${pendingLiveStatuses}))::int AS pending,
  count(*) FILTER(WHERE live_status IN ('failed','error','rejected'))::int AS failed,
  count(*) FILTER(WHERE live_status IN ('needs_review','needs_attention'))::int AS review FROM creation_facts),
  member_usage AS (SELECT f.actor_email AS email,COALESCE(max(u.name),f.actor_email) AS name,sum(f.charged)::int AS "settledCredits"
@@ -121,7 +138,7 @@ export async function listUnifiedCreationPage(reader:CreationReader,f:CreationFi
  const columns='id,actor_email,accepted_at,source_id';
  let canonical=f.status?`SELECT ${columns},NULL::text AS legacy_table FROM (${await recordSelect(tx,false)} WHERE ${filter.sql}) record_status`:
   `SELECT c.id,c.actor_email,c.accepted_at,c.source_id,NULL::text AS legacy_table FROM app_creation_records c WHERE ${filter.sql}`;
- if(f.status){const status=bind(f.status);canonical+=` WHERE CASE WHEN live_status IN ('done','completed','success') THEN 'succeeded' WHEN live_status IN ('error','rejected') THEN 'failed' WHEN live_status IN ('pending','reviewing') THEN 'queued' WHEN live_status IN ('processing','generating') THEN 'running' WHEN live_status IN ('queued','running','succeeded','partial','failed','cancel_requested','cancelled','needs_review') THEN live_status ELSE 'needs_review' END=${status}`;}
+ if(f.status){const status=bind(f.status);canonical+=` WHERE ${normalizedLiveStatus}=${status}`;}
  const keys=legacyCreationCandidates(f,history,bind,{tenantId:tenant,keysOnly:true});
  const legacyPage=legacyCreationCandidates(f,history,bind,{tenantId:tenant,selectedOnly:true});
  const limit=bind(f.size),offset=bind((f.page-1)*f.size);
