@@ -1,6 +1,7 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
+import { useAppSearchParams } from "@/lib/app-router-navigation";
 import { AdminCenterShell } from "@/components/admin/center-shell";
 import { adminDestination } from "@/lib/admin-navigation";
 import { useEffect } from "react";
@@ -12,7 +13,7 @@ import { Input } from "@/components/ui/input";
 
 export function AdminClient() {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const searchParams = useAppSearchParams();
   const settingsView = searchParams.get("view") === "settings";
   const destination = adminDestination(searchParams.get("next"));
   const entry=useAdminEntry();

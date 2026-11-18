@@ -1,6 +1,6 @@
 "use client";
 import { useEffect,useRef } from "react";
-import { useSearchParams } from "next/navigation";
+import { useAppSearchParams } from "@/lib/app-router-navigation";
 import { readBrowserImage } from "@/lib/browser-image-cache";
 import { agentMediaUrl } from "@/lib/agent/media-policy";
 import { currentWorkspace,currentWorkspaceRevision } from "@/lib/saas/workspace-client";
@@ -10,7 +10,7 @@ import { toolImageError } from "@/lib/tool-ui";
  * automatic generation. A late read cannot overwrite manual selection or cross
  * account/workspace identity. */
 export function useToolReference({account,empty,busy,onFile,onError}:{account:string|undefined;empty:boolean;busy:boolean;onFile:(file:File)=>void;onError:(message:string)=>void}){
-  const params=useSearchParams(),source=params.get("src")||"";
+  const params=useAppSearchParams(),source=params.get("src")||"";
   const current=useRef({account,empty,busy,onFile,onError});current.current={account,empty,busy,onFile,onError};
   const consumed=useRef("");
   useEffect(()=>{

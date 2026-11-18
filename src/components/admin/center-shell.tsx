@@ -1,7 +1,7 @@
 "use client";
 import Link from 'next/link';
 import {useEffect,useRef,useState} from 'react';
-import {usePathname,useSearchParams} from 'next/navigation';
+import { useAppPathname, useAppSearchParams } from '@/lib/app-router-navigation';
 import {ArrowLeft,LogOut,Menu,X} from 'lucide-react';
 import type {BiSection} from '@/lib/bi/contracts';
 import {SiteVersion} from '@/components/site-version';
@@ -16,7 +16,7 @@ export function AdminCenterShell({embedded=false,...props}:ShellProps){return em
 function AdminShell({active,children,deploymentsOnly=false,moduleNavigation=true}:ShellProps){
  const [fleetEnabled,setFleetEnabled]=useState(active==='deployments'),[logoutError,setLogoutError]=useState(''),[pendingTotal,setPendingTotal]=useState(0);
  const mobile=useRef<HTMLDialogElement>(null),menu=useRef<HTMLButtonElement>(null);
- const pathname=usePathname()||'',search=useSearchParams(),category=adminCategory(active);
+ const pathname=useAppPathname()||'',search=useAppSearchParams(),category=adminCategory(active);
  useEffect(()=>{const abort=new AbortController();void fetch('/api/admin/fleet/status',{cache:'no-store',signal:abort.signal}).then(async response=>{if(response.ok){const data=await response.json();if(!abort.signal.aborted)setFleetEnabled(data.enabled===true);}}).catch(()=>{});return()=>abort.abort();},[]);
  // Billing backlog badge: passive read-only summary (no exposure write); a
  // failed poll simply keeps the previous count instead of surfacing errors.

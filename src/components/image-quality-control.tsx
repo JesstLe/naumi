@@ -5,7 +5,7 @@ import { useImageQuality } from "@/lib/image-quality-context";
 import { CANVAS_QUALITIES } from "@/lib/canvas/generation-parameters";
 import { IMAGE_QUALITY_IDS } from "@/lib/image-quality";
 import { useBilling, type PublicQuote, type QuoteInput } from "@/lib/billing/client";
-import {usePathname} from "next/navigation";
+import { useAppPathname } from "@/lib/app-router-navigation";
 import {CATEGORY_FEATURES} from "@/lib/billing/feature-map";
 import { useI18n } from "@/lib/i18n/locale-context";
 import { ImageQualitySelect } from "@/components/ui/image-quality-select";
@@ -31,7 +31,7 @@ function priceText(price: Price | undefined, unit: boolean): string {
 }
 
 export function ImageQualityControl({ feature: requestedFeature, disabled = false, compact = false, resolution = "1K", value, modelId, binding, quantity = 1, ratio }: { feature?: import("@/lib/billing/types").FeatureId; disabled?: boolean; compact?: boolean; resolution?: string; value?: string; modelId?: string; binding?: string; quantity?: number; ratio?: string }) {
-  const pathname = usePathname(), feature = requestedFeature ?? CATEGORY_FEATURES[pathname.split('/')[1]] ?? "image.generate", canvas = pathname === "/canvas";
+  const pathname = useAppPathname(), feature = requestedFeature ?? CATEGORY_FEATURES[pathname.split('/')[1]] ?? "image.generate", canvas = pathname === "/canvas";
   const { selected } = useFeatureModels(feature);
   const quoteModelId = modelId || selected || undefined;
   const { quality, setQuality, qualityLabels, capable, experimental, allowedQualities, modelConfig } = useImageQuality(feature, quoteModelId, binding);

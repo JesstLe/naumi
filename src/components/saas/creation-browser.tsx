@@ -1,7 +1,7 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
 import {AdminQueryInput} from '@/components/admin/query-input';
-import {useSearchParams} from 'next/navigation';
+import { useAppSearchParams } from '@/lib/app-router-navigation';
 import {replaceAdminQuery} from '@/components/admin/query-navigation';
 import {ArrowLeft,ChevronRight,ImageIcon,RefreshCw,X} from 'lucide-react';
 import {authHeader} from '@/lib/supabase';
@@ -19,7 +19,7 @@ function eventSummary(event:{type:string;summary:string}){
 export function CreationStatus({status}:{status:string}){return <span className={`${styles.badge} ${styles[status]||''}`}>{labels[status]||'未记录'}</span>;}
 export function CreationBrowser(props:{tenantId?:string;enterprise?:boolean}){const {user}=useAuth();return <ScopedCreationBrowser key={`${user?.email||'console'}:${props.tenantId||'*'}:${props.enterprise?'enterprise':'platform'}`} {...props}/>;}
 function ScopedCreationBrowser({tenantId,enterprise=false}:{tenantId?:string;enterprise?:boolean}){
- const query=useSearchParams();const selected=query.get('creationId')||'';
+ const query=useAppSearchParams();const selected=query.get('creationId')||'';
  const platformHistory=!enterprise&&!tenantId;
  const [page,setPage]=useState<CreationListPage|null>(null),[error,setError]=useState(''),[listRevision,refreshList]=useState(0),[loading,setLoading]=useState(true);
  const api=enterprise?'/api/enterprise/creations':'/api/admin/creations';

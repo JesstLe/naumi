@@ -14,7 +14,7 @@ import { cdnUrl } from "@/lib/cdn";
 import { takePendingRefs } from "@/lib/pending-refs";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useAppSearchParams } from "@/lib/app-router-navigation";
 import { useWorkspaceRouter as useRouter } from "@/lib/desktop/navigation";
 import {
   Loader2,
@@ -88,7 +88,7 @@ export function GenerateClient({
 }: {
   seedTemplateId?: string;
 } = {}) {
-  const params = useSearchParams();
+  const params = useAppSearchParams();
   const router = useRouter();
   const { user, ready, remaining, consumeCredits, applyServerUser } =
     useAuth();
@@ -150,7 +150,7 @@ export function GenerateClient({
   const [tpl, setTpl] = useState<
     { id: string; image: string; prompt: string; name?: string } | null
   >(null);
-  // 已加载/在载的底图 URL(去重):防止 useSearchParams 水合后偶发返回新实例 →
+  // 已加载/在载的底图 URL(去重):防止 useAppSearchParams 水合后偶发返回新实例 →
   // effect 重跑把在途的大图下载误取消,导致产品图(底图)时灵时不灵。
   const baseLoadRef = useRef<string>("");
   const baseController = useRef<AbortController | null>(null);

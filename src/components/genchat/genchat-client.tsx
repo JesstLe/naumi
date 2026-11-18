@@ -9,7 +9,8 @@ import { createImageDownloadName } from "@/lib/download";
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
+import { useAppSearchParams } from "@/lib/app-router-navigation";
 import {
   Plus,
   ArrowUp,
@@ -119,7 +120,7 @@ export function GenChatClient() {
   const { openAuth } = useAuthModal();
   const { t, te } = useI18n();
   const router = useRouter();
-  const params = useSearchParams();
+  const params = useAppSearchParams();
 
   const [input, setInput] = useState("");
   const [turns, setTurns] = useState<Turn[]>([]);

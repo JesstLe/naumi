@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
+import { useAppSearchParams } from "@/lib/app-router-navigation";
 import { X } from "lucide-react";
 import { AuthForm } from "@/components/auth-form";
 import { AuthPanel } from "@/components/supabase-auth";
@@ -19,7 +20,7 @@ export function AuthModal() {
   const { user } = useAuth();
   const { locale } = useI18n();
   const L = (z: string, e: string) => (locale === "en" ? e : z);
-  const params = useSearchParams();
+  const params = useAppSearchParams();
   const router=useRouter();
   const cardRef = useRef<HTMLDivElement>(null);
   // 防误关:只有「鼠标在遮罩本身按下」才算点遮罩关闭。否则在输入框里选中文本拖到

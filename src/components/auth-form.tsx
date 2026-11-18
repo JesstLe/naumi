@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
+import { useAppSearchParams } from "@/lib/app-router-navigation";
 import {
   Loader2,
   Mail,
@@ -159,7 +160,7 @@ export function AuthForm({
 }) {
   const site=useSiteProfile(),dedicated=site.mode==='enterprise';
   const router = useRouter();
-  const params = useSearchParams();
+  const params = useAppSearchParams();
   const { signIn, signUp, multiUser, applyServerUser } = useAuth();
 
   const [loading, setLoading] = useState(false);

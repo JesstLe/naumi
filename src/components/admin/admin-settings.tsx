@@ -1,7 +1,8 @@
 "use client";
 import {useEffect,useState} from "react";
 import Link from "next/link";
-import {usePathname,useRouter,useSearchParams} from "next/navigation";
+import { useRouter } from "next/navigation";
+import { useAppPathname, useAppSearchParams } from "@/lib/app-router-navigation";
 import {ShieldCheck,KeyRound,Users,ImageIcon,Server,Database,LayoutGrid,MessageSquare,Shirt,Palette,FileText,Ticket,Activity} from "lucide-react";
 import {AdminUsagePanel} from "./usage/usage-panel";
 import {AdminTemplates} from "./admin-templates";
@@ -49,7 +50,7 @@ const SETTINGS_MOVED: Record<string, { path: string; section?: string; tab?: str
 
 
 export function AdminSettings({localAdmin=false}:{localAdmin?:boolean}){
-const settingsQuery = useSearchParams(), settingsRouter = useRouter(), settingsPath = usePathname();
+const settingsQuery = useAppSearchParams(), settingsRouter = useRouter(), settingsPath = useAppPathname();
 const requestedSection = settingsQuery.get('tab') || settingsQuery.get('section') || 'api';
 const canonicalSection = Object.hasOwn(SETTINGS_ALIASES, requestedSection) ? SETTINGS_ALIASES[requestedSection] : requestedSection;
 const [migrationMessage, setMigrationMessage] = useState('');

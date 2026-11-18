@@ -11,23 +11,26 @@ const members=(count,prefix)=>Array.from({length:count},(_,i)=>({email:`${prefix
  role_id:null,role_name:'成员',level:999,employment:'permanent',version:1,management_version:1,banned:false,
  membership_status:'active',membership_expires_at:null,available:18,consumed:4,artworks:2,legacy_metrics_state:'recorded',account_role:'user',canManage:true}));
 const data=new Map([[a.id,{enterprise:a,members:members(1801,'甲')}],[b.id,{enterprise:b,members:members(4,'乙')}]]);
-const snapshots=id=>({...data.get(id),roles:[],actor:{owner:true,manageMembers:true,viewRecords:true,level:0,scopeLabel:'本企业'},
+const snapshots=id=>({...data.get(id),roles:[],actor:{owner:true,manageMembers:true,viewRecords:true,canManageIdentity:id===a.id,level:0,scopeLabel:'本企业'},
  ownerAvailable:null,entitlement:{name:null,seatLimit:null,featurePolicy:{}}});
 const asset=await build({stdin:{contents:`
  import React from 'react';import {createRoot} from 'react-dom/client';
  import {EnterpriseConsole} from '@/components/enterprise/enterprise-console';
- createRoot(document.getElementById('root')).render(<EnterpriseConsole initialQuery={{view:'members'}}/>);
+ const query=new URLSearchParams(location.search);
+ createRoot(document.getElementById('root')).render(<EnterpriseConsole initialQuery={{view:query.get('view')||'members',tenantId:query.get('tenantId')||undefined}} identityAuthorityEnabled={query.has('identityAuthority')}/>);
  `,loader:'tsx',resolveDir:process.cwd()},bundle:true,write:false,jsx:'automatic',platform:'browser',format:'iife',
  define:{'process.env.NODE_ENV':'"development"','process.env':'{}'},
  outfile:'output/enterprise-directory-browser/app.js',plugins:[{name:'isolated-enterprise-fixture',setup(plugin){
-  plugin.onResolve({filter:/^(?:@\/lib\/(?:site-control\/client|auth-context|supabase)|@\/components\/(?:admin\/bi\/user-usage|saas\/(?:tenant-usage-panel|creation-browser))|\.\/(?:enterprise-health|enterprise-artworks|enterprise-history-usage|enterprise-saas-overview))$/},
+  plugin.onResolve({filter:/^(?:@\/lib\/(?:site-control\/client|auth-context|supabase)|@\/components\/(?:admin\/bi\/user-usage|saas\/(?:tenant-usage-panel|creation-browser))|\.\/(?:enterprise-health|enterprise-artworks|enterprise-history-usage|enterprise-saas-overview|identity-manager))$/},
    args=>({path:args.path,namespace:'fixture'}));
-  plugin.onLoad({filter:/.*/,namespace:'fixture'},args=>({contents:args.path.endsWith('/client')?`
+  plugin.onLoad({filter:/.*/,namespace:'fixture'},args=>({resolveDir:process.cwd(),contents:args.path.endsWith('/client')?`
    export function useSiteProfile(){return new URLSearchParams(location.search).has('dedicated')?{mode:'enterprise',policy:{brand:'测试'}}:{mode:'shared'}}
    `:args.path.endsWith('/auth-context')?`export function useAuth(){return {ready:true,user:{email:'owner@example.test',name:'Fixture'}}}`:
    args.path.endsWith('/supabase')?`export async function authHeader(){return {}}`:`
+   import {createElement} from 'react';
    export const UserUsage=()=>null,TenantUsagePanel=()=>null,CreationBrowser=()=>null,EnterpriseHealthPanel=()=>null,
-    EnterpriseArtworks=()=>null,EnterpriseHistoryUsage=()=>null,EnterpriseSaasOverview=()=>null,EnterpriseEntitlement=()=>null;`}));
+    EnterpriseArtworks=()=>null,EnterpriseHistoryUsage=()=>null,EnterpriseSaasOverview=()=>null,EnterpriseEntitlement=()=>null,
+    IdentityManager=({enterpriseId})=>createElement('div',{'data-testid':'identity-manager-fixture'},enterpriseId);`}));
  }}]});
 const reads=[],tags=new Map([[a.id,'"fixture-alpha"'],[b.id,'"fixture-beta"']]);
 let hold=false,held,aborts=0,denied=false,plain=baseline,zeroBodies=0;
@@ -96,8 +99,20 @@ try{
   await page.getByLabel('成员账号操作').selectOption('adjust');
   assert.equal(await page.getByLabel('积分增减').getAttribute('min'),'-18');
   assert.equal((await refreshResponse()).status(),200);assert.equal(reads.at(-1).tag,null);
+  const identityNav=page.getByRole('button',{name:'组织与权限',exact:true});
+  await page.goto(origin+'/enterprise?view=identity');
+  await page.waitForURL(url=>url.searchParams.get('view')==='overview');
+  assert.equal(await identityNav.count(),0);
+  await page.goto(origin+'/enterprise?view=identity&identityAuthority=1');
+  await identityNav.waitFor();
+  const identityContent=page.getByTestId('identity-manager-fixture');
+  await identityContent.waitFor();
+  assert.equal(await identityContent.textContent(),a.id);
+  await page.goto(origin+'/enterprise?view=identity&identityAuthority=1&tenantId='+b.id);
+  await page.waitForURL(url=>url.searchParams.get('view')==='overview');
+  assert.equal(await identityNav.count(),0);
   assert.deepEqual(errors,[]);
-  console.log('ENTERPRISE_DIRECTORY_BROWSER=PASS RENDERED_ROWS=50 NOT_MODIFIED=1 TENANT_ABORT=1 REVOKED_CLEARS=1 FILTER_SCOPE=1 LEGACY_SERVER=1 ACTUAL_REACT=1');
+  console.log('ENTERPRISE_DIRECTORY_BROWSER=PASS RENDERED_ROWS=50 NOT_MODIFIED=1 TENANT_ABORT=1 REVOKED_CLEARS=1 FILTER_SCOPE=1 LEGACY_SERVER=1 ACTUAL_REACT=1 IDENTITY_ACCESS=PASS');
  }
 }finally{
  await browser?.close();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));

@@ -2,7 +2,7 @@
 import Link from 'next/link';
 import { TenantUsagePanel } from './tenant-usage-panel';
 import {useEffect,useRef,useState} from 'react';
-import {usePathname,useSearchParams} from 'next/navigation';
+import { useAppPathname, useAppSearchParams } from '@/lib/app-router-navigation';
 import {Building2,Users,FileText,TriangleAlert,Plus,RefreshCw,X} from 'lucide-react';
 import {authHeader} from '@/lib/supabase';
 import {ACCESS_FEATURES} from '@/lib/feature-access/catalog';
@@ -26,7 +26,7 @@ const num=(v:number|null|undefined)=>v===null||v===undefined?'未记录':v.toLoc
 const date=(v:string|null)=>v?new Date(v).toLocaleDateString('zh-CN'):'永久';
 const tenantStatus:Record<string,string>={active:'正常',suspended:'已暂停',expired:'已到期'};
 export function PlatformConsole({view='overview',tenantId,embedded=false}:{embedded?:boolean;view?:'overview'|'tenants'|'tenant'|'creations';tenantId?:string}){
- const q=useSearchParams(),[editing,setEditing]=useState<Tenant|null|false>(false);
+ const q=useAppSearchParams(),[editing,setEditing]=useState<Tenant|null|false>(false);
  const update=replaceAdminQuery;
  const reads=usePlatformOverviewReads<OverviewMetrics,TenantList>(view,q,api);
  const overview=reads.denied?null:reads.metrics.data,tenants=reads.denied?null:reads.tenants.data;
@@ -47,7 +47,7 @@ export function PlatformConsole({view='overview',tenantId,embedded=false}:{embed
 }
 function TenantTable({list}:{list:TenantList}){return <div className={styles.tableWrap}><table className={styles.table}><thead><tr>{['企业','权益','有效成员','期间创作','授权状态','最近活跃','操作'].map(h=><th key={h}>{h}</th>)}</tr></thead><tbody>{list.items.map(t=><tr key={t.tenantId}><td className={styles.wrap}><div className={styles.tenantName}><span className={styles.avatar}>{t.name.slice(0,1)}</span><div>{t.name}<small className={styles.muted} style={{display:'block',fontWeight:400}}>{t.owner.name||t.owner.email}</small></div></div></td><td>{t.entitlementName||'未配置'}</td><td>{t.activeMembers}</td><td>{num(t.creationCount)}</td><td><span className={`${styles.badge} ${styles[t.status]||''}`}>{tenantStatus[t.status]||t.status}</span></td><td>{t.lastActivityAt?new Date(t.lastActivityAt).toLocaleString('zh-CN'):'未记录'}</td><td><Link className={styles.button} href={`/admin/tenants/${t.tenantId}`}>管理</Link></td></tr>)}</tbody></table></div>;}
 function TenantDetail({tenantId}:{tenantId:string}){
- const q=useSearchParams(),path=usePathname(),tab=q.get('tab')||'overview';
+ const q=useAppSearchParams(),path=useAppPathname(),tab=q.get('tab')||'overview';
  const projection=tab==='members'||tab==='audit'?tab:'summary';
  const [loaded,setLoaded]=useState<{key:string;value:TenantDetailData}|null>(null),[failure,setFailure]=useState<{key:string;message:string}|null>(null);
  const [retry,setRetry]=useState(0),[editing,setEditing]=useState(false);

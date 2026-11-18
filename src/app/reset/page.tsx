@@ -1,7 +1,8 @@
 "use client";
 
 import { Suspense, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
+import { useAppSearchParams } from "@/lib/app-router-navigation";
 import Link from "next/link";
 import { Loader2, Check, KeyRound } from "lucide-react";
 import { Logo } from "@/components/logo";
@@ -9,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 function ResetInner() {
-  const params = useSearchParams();
+  const params = useAppSearchParams();
   const router = useRouter();
   const token = params.get("token") || "";
   const [pw, setPw] = useState("");

@@ -10,7 +10,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   if (enterpriseSiteIdentity()) {
     const params = await searchParams;
     const query = Object.fromEntries(Object.entries(params).filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
-    return <EnterpriseConsole initialQuery={query}/>;
+    return <EnterpriseConsole initialQuery={query} identityAuthorityEnabled={process.env.NAUMI_IDENTITY_AUTHORITY_ENABLED === '1'} />;
   }
   return (
     <Suspense

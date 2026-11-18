@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useAppSearchParams } from "@/lib/app-router-navigation";
 import Link from "next/link";
 import type { BillingConfig, ConfigSnapshot, FeatureId } from "@/lib/billing/types";
 import { FEATURE_IDS } from "@/lib/billing/rules/registry";
@@ -24,7 +24,7 @@ function changes(before: BillingConfig, after: BillingConfig) { const result: st
     if (JSON.stringify(before[key]) !== JSON.stringify(after[key]))
         result.push(`${label}已修改`); return result; }
 export function BillingManager({initialTab="prices"}:{initialTab?:BillingTab}={}) {
-    const query = useSearchParams();
+    const query = useAppSearchParams();
     const [snapshot, setSnapshot] = useState<ConfigSnapshot | null>(null), [draft, setDraft] = useState<BillingConfig | null>(null), [reason, setReason] = useState(""), [error, setError] = useState<string | null>(null), [message, setMessage] = useState(""), [busy, setBusy] = useState(false), [preview, setPreview] = useState(false), [restoreTarget, setRestoreTarget] = useState<number | null>(null), [effective, setEffective] = useState<any>(null), [publication, setPublication] = useState<string | null>(null);
     const selectedFeature = query.get("feature") as FeatureId | null;
     const tab = resolveLegacyBillingTab(query.get("tab"), query.get("section")) ?? initialTab;

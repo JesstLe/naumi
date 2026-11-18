@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
+import { useAppPathname, useAppSearchParams } from "@/lib/app-router-navigation";
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from "react";
 import { ArrowLeft, ArrowUpRight, BarChart3, CalendarDays, ChevronLeft, ChevronRight, Download, ImageIcon, Loader2, RefreshCw, Search, Users, Wallet, X } from "lucide-react";
 import { AdminCenterShell } from "@/components/admin/center-shell";
@@ -60,7 +61,7 @@ function csvForUsers(rows: UsageUser[]) {
 
 /** System usage/output evidence only: does not infer employee performance or working hours. */
 export function UserUsage({ embedded = false, enterpriseId, refreshRevision = 0 }: Props) {
-  const router = useRouter(), pathname = usePathname(), params = useSearchParams();
+  const router = useRouter(), pathname = useAppPathname(), params = useAppSearchParams();
   const { user, ready } = useAuth();
   const [defaults] = useState(() => recentDates(30));
   const prefix = embedded ? "usage" : "";

@@ -9,7 +9,7 @@ import { loadAccountSnapshot, invalidateBrowserData } from "@/lib/browser-data-c
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useAppSearchParams } from "@/lib/app-router-navigation";
 import { useWorkspaceRouter as useRouter } from "@/lib/desktop/navigation";
 import {
   ArrowRight,
@@ -268,7 +268,7 @@ export function WorkbenchClient({appearance="legacy"}:{appearance?:"legacy"|"cre
   const { user, ready, remaining } = useAuth();
   const { openAuth } = useAuthModal();
   const L = (zh: string, en: string) => (locale === "en" ? en : zh);
-  const params = useSearchParams();
+  const params = useAppSearchParams();
   const [creationWorkspace,setCreationWorkspace]=useState(()=>appearance==="creation"?currentWorkspace():"personal");
   const recoveryWorkspaceRef=useRef(creationWorkspace);
   useEffect(()=>{if(appearance!=="creation")return;const sync=()=>setCreationWorkspace(currentWorkspace());window.addEventListener(WORKSPACE_SELECTION,sync);return()=>window.removeEventListener(WORKSPACE_SELECTION,sync);},[appearance]);

@@ -65,15 +65,18 @@ export function EnterpriseConsole({ initialQuery = {}, identityAuthorityEnabled=
   if (!entry.enterprises.length) return <main className={styles.page}><section className={styles.empty}><Building2 size={28} /><p>{error || (dedicated?'当前账号没有管理权限':'当前账号没有企业管理权限')}</p>{!user?.email&&<a href={`/sign-in?redirect=${encodeURIComponent(typeof window==='undefined'?'/enterprise':window.location.pathname+window.location.search+window.location.hash)}`}>登录</a>}<a href='/dashboard'>返回创作工作台</a></section></main>;
   const requested = initialQuery.tenantId || initialQuery.enterpriseId;
   if (requested && !entry.enterprises.some(enterprise => enterprise.id === requested)) return <main className={styles.page}><section className={styles.empty}><Building2 size={28} /><p>没有此管理范围的访问权限</p><a href={dedicated?'/admin':'/enterprise'}>返回管理后台</a></section></main>;
-  return <Workspace key={`${email}:${JSON.stringify(initialQuery)}`} enterprises={entry.enterprises} initialQuery={initialQuery} email={email} />;
+  return <Workspace key={`${email}:${JSON.stringify(initialQuery)}`} enterprises={entry.enterprises} initialQuery={initialQuery} email={email} identityAuthorityEnabled={identityAuthorityEnabled} />;
 }
 
-function Workspace({ enterprises, initialQuery, email }: { enterprises: EnterpriseIdentity[]; initialQuery: InitialQuery; email: string }) {
+function Workspace({ enterprises, initialQuery, email, identityAuthorityEnabled }: { enterprises: EnterpriseIdentity[]; initialQuery: InitialQuery; email: string; identityAuthorityEnabled: boolean }) {
   const site = useSiteProfile(), dedicated = site.mode === 'enterprise';
   const {user:sessionUser}=useAuth();
   const requestedId = initialQuery.tenantId || initialQuery.enterpriseId;
   const [enterpriseId, setEnterpriseId] = useState(enterprises.some(t => t.id === requestedId) ? requestedId! : enterprises[0].id);
   const [data, setData] = useState<SaasSnapshot | null>(null), [view, setView] = useState<View>(validView(initialQuery.view));
+  useEffect(() => {
+    if (view === 'identity' && (!identityAuthorityEnabled || (data && !data.actor.canManageIdentity))) setView('overview');
+  }, [view, identityAuthorityEnabled, data]);
   const [loading, setLoading] = useState(true), [pending, setPending] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState(''), [mobileOpen, setMobileOpen] = useState(false);
   const [selected, setSelected] = useState(initialQuery.user || initialQuery.email || ''), [section, setSection] = useState<LegacySection>(()=>initialQuery.recordView==='artworks'?'artworks':'records');
   const dates = presetDates('last7');
