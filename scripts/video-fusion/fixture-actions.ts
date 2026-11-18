@@ -21,6 +21,13 @@ try{
     const {readTaskCostEvidence}=await import("../../src/lib/billing/task-cost-evidence"),id=`tool-${sourceId}`;
     const {readAudioIntent,readAudioCostSources}=await import("../../src/lib/audio/operation-repository"),intent=await readAudioIntent(email,sourceId);if(!intent)throw new Error("Owned audio fixture intent required");
     process.stdout.write(JSON.stringify({...((await readTaskCostEvidence(email,[{id,ledgerId:`led-${id}`}]))[0]),linkedSources:await readAudioCostSources(email,intent.request.target.projectKey,[intent.request.target.timelineId])}));
+  }else if(process.argv.includes("--compiled-task-evidence")){
+    if(!/^vid-[0-9a-f-]{36}$/.test(sourceId))throw new Error("Invalid compiled fixture task");
+    const {getVideoTask}=await import("../../src/lib/video/task-repository");
+    const {readTaskCompiledVideoPlan}=await import("../../src/lib/video/compiled-task");
+    const row=await getVideoTask(email,sourceId);if(!row)throw new Error("Owned compiled fixture task required");
+    const plan=readTaskCompiledVideoPlan(email,row);
+    process.stdout.write(JSON.stringify({digest:plan.digest,inputs:plan.inputManifest.map(input=>({kind:input.kind,nodeId:input.nodeId,...(input.kind==='text'?{text:input.text}:{artworkId:input.asset.artworkId})}))}));
   }else if(process.argv.includes("--prepare-queued")||process.argv.includes("--node-reservation-failure")){
     const row=(await getPool().query("SELECT * FROM app_video_tasks WHERE email=$1 AND id=$2",[email,sourceId])).rows[0];
     if(!row||row.parameters.version!==2)throw new Error("Owned versioned fixture task required");
