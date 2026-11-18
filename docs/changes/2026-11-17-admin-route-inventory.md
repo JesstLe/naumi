@@ -25,7 +25,7 @@
 | `GET /api/admin/billing/pending` | `src/app/api/admin/billing/pending/route.ts` | 已核查：汇总和四类列表同一只读快照；角标继续只计已记录的状态及待核查任务 |
 | `GET /api/admin/billing/versions` | `src/app/api/admin/billing/versions/route.ts` | 已核查：列表仅元数据，按版本游标翻页并兼容原数组；单版本只读冻结快照。隔离 PG 核对权限、错误、私有头、并发插入和两条读取断开释放 |
 | `GET /api/admin/creations` | `src/app/api/admin/creations/route.ts` | 部分：精确计数、正式/归档及混合断开；显式来源和仅正式租户列表不等无关历史表，未启用全站游标 |
-| `GET /api/admin/creations/[id]` | `src/app/api/admin/creations/[id]/route.ts` | 部分：详情证据和费用、旧 URL 和鉴权；正式/历史详情共享读额度，历史来源、关联和诊断同一快照 |
+| `GET /api/admin/creations/[id]` | `src/app/api/admin/creations/[id]/route.ts` | 部分：详情证据和费用、旧 URL 和鉴权；正式/历史详情共享读额度。素材投影与原结果和来源定位一致，跳过事件及账务。子任务独立翻页和真实网关待核 |
 | `GET /api/admin/creations/[id]/assets/[assetId]` | `src/app/api/admin/creations/[id]/assets/[assetId]/route.ts` | 部分：历史深页、来源定位、Range、浏览器峰值与渲染器已测；隔离 PG 验证正式和历史元数据共用连接额度、断开会释放。真实网关与多实例待核 |
 | `GET /api/admin/creations/[id]/events` | `src/app/api/admin/creations/[id]/events/route.ts` | 部分：鉴权、断开、4.8 万事件深页窄排序；新旧响应及正式/归档准确总数对照通过，真实网关待核 |
 | `GET /api/admin/enterprise-workbench` | `src/app/api/admin/enterprise-workbench/route.ts` | 部分：名单、成员无权不读指标、流水独立分页；隔离库验证作品/任务深页、精准计数和越界锁竞争；真实网关与高并发待核 |
@@ -63,7 +63,7 @@
 | `GET /api/enterprise/artworks` | `src/app/api/enterprise/artworks/route.ts` | 部分：真实授权范围、回收站、跨企业和撤权、深页/素材、CSV 只读当页；隔离 HTTP 断开释放、数据快照共享报表排队；浏览器连续切换/真实网关待核 |
 | `GET /api/enterprise/content` | `src/app/api/enterprise/content/route.ts` | 待核查 |
 | `GET /api/enterprise/creations` | `src/app/api/enterprise/creations/route.ts` | 部分：近期、历史归属、共享额度和取消；共用查询提前排除无权账号和不匹配来源，企业真实网关与混合深页待核 |
-| `GET /api/enterprise/creations/[id]` | `src/app/api/enterprise/creations/[id]/route.ts` | 部分：证据和费用分页、历史脱敏、来源定位；混合断开释放，等待期间撤权实测 403 |
+| `GET /api/enterprise/creations/[id]` | `src/app/api/enterprise/creations/[id]/route.ts` | 部分：证据和费用分页、历史脱敏、来源定位；混合断开释放，等待期间撤权实测 403。素材页在事件、账务表锁下仍返回完整准确的分页，跨租户拒绝 |
 | `GET /api/enterprise/creations/[id]/assets/[assetId]` | `src/app/api/enterprise/creations/[id]/assets/[assetId]/route.ts` | 部分：Range、旧 URL、归属、连接和页面并发通过；正式和历史元数据共享连接额度、断开取消；等素材时可撤权且原请求 403。渲染器已测，真实网关待核 |
 | `GET /api/enterprise/creations/[id]/events` | `src/app/api/enterprise/creations/[id]/events/route.ts` | 部分：正式与归档脱敏、跨租户、撤权和断开；4.8 万事件深页、同时间顺序、越权子链及确切总数已验 |
 | `GET /api/enterprise/health` | `src/app/api/enterprise/health/route.ts` | 部分：健康统计权限、账户行锁及隔离，`verify-enterprise-analytics.ts` |
@@ -302,7 +302,7 @@
 | `页面 /admin/billing/price-table` | `src/app/admin/billing/price-table/page.tsx` | 已核查：实际浏览器验证筛选和导出零请求、下载与显示同一版本、连点刷新去重、离开取消；隔离验证，非生产 |
 | `页面 /admin/billing/supplier-cost` | `src/app/admin/billing/supplier-cost/page.tsx` | 部分：调用链切换、去重、取消、分页及账务按需展开，旧服务器返回完整数据时本地分页；长窗口和深页已隔离核查。写操作与真实容量另核 |
 | `页面 /admin/center` | `src/app/admin/center/page.tsx` | 部分：双概览分口径和独立读取；新建租户结果不确定时按原编号核对，离开取消且不重复提交；其他面板和真实网关待复查 |
-| `页面 /admin/creations` | `src/app/admin/creations/page.tsx` | 部分：预览峰值、可见性及取消；浏览器验证事件翻页不重读完整详情、切记录取消、独立错误重试及撤权清空；真实网关待核 |
+| `页面 /admin/creations` | `src/app/admin/creations/page.tsx` | 部分：预览峰值、可见性及取消；浏览器验证共享容器的素材与事件独立翻页、深链接、切记录取消、独立重试、旧响应兼容及撤权清空；真实网关待核 |
 | `页面 /admin/creations/[id]` | `src/app/admin/creations/[id]/page.tsx` | 待核查 |
 | `页面 /admin/creations/resolve` | `src/app/admin/creations/resolve/page.tsx` | 待核查 |
 | `页面 /admin/deployments` | `src/app/admin/deployments/page.tsx` | 待核查 |

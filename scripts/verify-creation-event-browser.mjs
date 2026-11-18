@@ -4,7 +4,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {build} from 'esbuild';
 import {chromium} from 'playwright';
 
-const baseline=process.argv.includes('--baseline');
+const baseline=process.argv.includes('--baseline'),assetMode=process.argv.includes('--assets');
 const bundle=await build({stdin:{contents:`
  import React from 'react';import {createRoot} from 'react-dom/client';
  import {CreationBrowser} from '@/components/saas/creation-browser';
@@ -27,23 +27,30 @@ const summaries=set.map(([id,title])=>({id,title,actorName:'隔离用户',accept
 const hits=[],canceled=[];
 let hold='',holdDetail='',failure=0,oldServer=false;
 const eventsFor=(id,page)=>[{id:'event-'+id+'-'+page,type:'execution',summary:'事件 '+id+' '+page,occurredAt:date,status:'succeeded'}];
+const assetsFor=(id,page)=>assetMode?[{id:'asset-'+id+'-'+page,direction:'output',role:'reply',variant:'original',text:'素材 '+id+' '+page}]:[];
 const pagination=(page,total=73)=>({page,total,size:24});
 const send=(res,data,status=200)=>res.writeHead(status,{'content-type':'application/json'}).end(JSON.stringify(data));
 const server=createServer((req,res)=>{
  const url=new URL(req.url,'http://fixture');
  const match=/^\/api\/admin\/creations(?:\/([^/]+)(\/events)?)?$/.exec(url.pathname);
  if(match){
-  const id=match[1],kind=match[2]?'event':id?'detail':'list',page=Number(url.searchParams.get('eventPage')||1);
-  hits.push({id,kind,page,projection:url.searchParams.get('projection')});
+  const id=match[1],projection=url.searchParams.get('projection'),kind=match[2]?'event':id?(projection==='assets'?'asset':'detail'):'list';
+  const eventPage=Number(url.searchParams.get('eventPage')||1),assetPage=Number(url.searchParams.get('assetPage')||1),page=kind==='asset'?assetPage:eventPage;
+  hits.push({id,kind,page,assetPage,projection});
   if(kind==='list')return send(res,{items:summaries,pagination:{page:1,total:2,size:24},appliedFilters:{}});
   if(kind==='event'){
    if(hold===id+':'+page){res.once('close',()=>{if(!res.writableFinished)canceled.push(id+':'+page);});return;}
    if(failure)return send(res,{error:failure===403?'创作查看权限已收回':'事件服务暂不可用'},failure);
    return send(res,{items:eventsFor(id,page),...(oldServer?{}:{pagination:pagination(page,81)})});
   }
+  if(kind==='asset'){
+   if(hold===id+':'+page){res.once('close',()=>{if(!res.writableFinished)canceled.push(id+':'+page);});return;}
+   if(failure)return send(res,{error:failure===403?'创作查看权限已收回':'素材暂不可用'},failure);
+   if(!oldServer)return send(res,{assets:assetsFor(id,page),assetPagination:pagination(page,81)});
+  }
   if(holdDetail===id)return;
-  return send(res,{...summaries.find(row=>row.id===id),assets:[],children:[],events:eventsFor(id,page),eventPagination:pagination(page),
-   assetPagination:{page:1,size:24,total:0},childPagination:{page:1,size:24,total:0},
+  return send(res,{...summaries.find(row=>row.id===id),assets:assetsFor(id,assetPage),children:[],events:eventsFor(id,eventPage),eventPagination:pagination(eventPage),
+   assetPagination:pagination(assetPage,assetMode?73:0),childPagination:{page:1,size:24,total:0},
    request:{state:'recorded',text:'原始要求 '+id},parameters:{state:'not_recorded'},model:{},
    billing:{state:'settled',charged:7,quoted:7,reserved:7,released:0,refunded:0,payerAccountId:'payer@example.test',operations:[]}});
  }
@@ -62,6 +69,38 @@ try{
  page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(8000);
  const text=value=>page.getByText(value,{exact:true});
  const next=()=>page.getByText(/执行事件共 \d+ 条/).locator('..').getByRole('button',{name:'下一页',exact:true});
+ if(assetMode){
+  const assetNext=()=>page.getByText(/^素材共 \d+ 条$/).locator('..').getByRole('button',{name:'下一页',exact:true});
+  await page.goto(origin+'/admin/creations?creationId=record-a&assetPage=2&eventPage=2');
+  await text('素材 record-a 2').waitFor();await text('事件 record-a 2').waitFor();
+  assert.deepEqual(hits.filter(h=>h.kind==='detail').map(h=>[h.page,h.assetPage]),[[2,2]]);
+  hold='record-a:3';await assetNext().click();
+  await until(()=>hits.some(h=>h.kind==='asset'&&h.page===3),'asset page request missing');
+  await text('正在读取素材').waitFor();assert.equal(await text('素材 record-a 2').count(),0);
+  assert.equal(await text('原始要求 record-a').count(),1);assert.equal(await text('费用结算').count(),1);
+  assert.equal(await text('事件 record-a 2').count(),1);assert.equal(hits.filter(h=>h.kind==='detail').length,1);
+  await assetNext().click();await text('素材 record-a 4').waitFor();
+  await until(()=>canceled.includes('record-a:3'),'previous asset request not canceled');
+  await text('素材共 81 条').waitFor();
+  hold='';
+  await next().click();await text('事件 record-a 3').waitFor();assert.equal(await text('素材 record-a 4').count(),1);
+  assert.equal(hits.filter(h=>h.kind==='asset').length,2);
+  failure=503;await page.getByText(/^素材共 \d+ 条$/).locator('..').getByRole('button',{name:'上一页',exact:true}).click();
+  await page.getByRole('alert').filter({hasText:'素材暂不可用'}).waitFor();await text('事件 record-a 3').waitFor();
+  failure=0;oldServer=true;await page.getByRole('button',{name:'重试素材',exact:true}).click();
+  await text('素材 record-a 3').waitFor();await text('素材共 73 条').waitFor();assert.equal(await text('事件 record-a 3').count(),1);
+  const beforeSwitch=hits.filter(h=>h.kind==='asset'&&h.id==='record-a'&&h.page===2).length;
+  hold='record-a:2';await page.getByText(/^素材共 \d+ 条$/).locator('..').getByRole('button',{name:'上一页',exact:true}).click();
+  await until(()=>hits.filter(h=>h.kind==='asset'&&h.id==='record-a'&&h.page===2).length>beforeSwitch,'return did not revalidate asset page');
+  await page.getByRole('button',{name:/任务乙/}).click();await text('素材 record-b 1').waitFor();
+  await until(()=>canceled.includes('record-a:2'),'switching record did not cancel its assets');
+  assert.equal(await text('素材 record-a 3').count(),0);
+  failure=403;await assetNext().click();await page.getByRole('alert').filter({hasText:'创作查看权限已收回'}).waitFor();
+  assert.equal(await text('原始要求 record-b').count(),0);assert.equal(await text('素材 record-b 1').count(),0);
+  assert.deepEqual(hits.filter(h=>h.kind==='detail').map(h=>[h.id,h.assetPage]),[['record-a',2],['record-b',1]]);
+  assert.deepEqual(errors,[]);
+  console.log('CREATION_ASSET_BROWSER=PASS DEEP_LINK=1 INDEPENDENT_PAGE=1 ABORT=1 OLD_RESPONSE=1 AUTH_CLEAR=1 ACTUAL_REACT=1');
+ }else{
  await page.goto(origin+'/admin/creations?creationId=record-a&eventPage=2');
  await text('事件 record-a 2').waitFor();assert.deepEqual(hits.filter(h=>h.kind==='detail').map(h=>h.page),[2]);
  if(!baseline)hold='record-a:3';
@@ -98,5 +137,6 @@ try{
   assert.equal(await text('原始要求 record-a').count(),0);assert.equal(await text('原始要求 record-b').count(),0);
   assert.deepEqual(errors,[]);
   console.log('CREATION_EVENT_BROWSER=PASS DEEP_LINK=1 INDEPENDENT_PAGE=1 ABORT=1 TOTAL=1 OLD_RESPONSE=1 AUTH_CLEAR=1 ACTUAL_REACT=1');
+ }
  }
 }finally{await browser?.close();server.closeAllConnections();await new Promise(r=>server.close(r));}

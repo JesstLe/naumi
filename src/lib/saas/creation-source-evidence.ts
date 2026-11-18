@@ -9,6 +9,9 @@ const family=`WITH RECURSIVE family AS(SELECT id,actor_email,tenant_id FROM app_
 export async function videoWorkflowEvidenceAvailable(tx:PoolClient){return !!(await tx.query("SELECT 1 FROM pg_attribute WHERE attrelid=to_regclass('app_video_workflow_runs') AND attname='creation_evidence_pending' AND NOT attisdropped")).rowCount;}
 /** Read-only recovery from exact frozen source IDs. Never schedules or repairs paid work. */
 export function creationSourceEvidence(tx:PoolClient,rootId:string){return readEvidence(tx,rootId,{scope:'family',pending:true});}
+export async function creationSourceAssets(tx:PoolClient,rootId:string){
+ return (await readEvidence(tx,rootId,{scope:'family',pending:false})).assets;
+}
 
 /** Asset-only callers don't need the pending state from settlements or events. */
 export async function creationRecoveredAsset(tx:PoolClient,id:string,assetId:string,recordOnly:boolean){

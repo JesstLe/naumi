@@ -36,16 +36,25 @@ type ReadRow={
  asset_total:number;event_total:number;child_total:number;
  operations:Record<string,any>[];refunds:number|null;no_charge:boolean;
 };
+const assetPageSql=`asset_rows AS(SELECT to_jsonb(a) AS data,0 AS priority FROM app_creation_assets a JOIN family f ON f.id=a.creation_id
+ UNION ALL SELECT value,1 FROM jsonb_array_elements($2::jsonb)),${creationAssetKeysSql},
+ asset_page AS MATERIALIZED(SELECT * FROM representatives ORDER BY ${creationAssetViewOrder} LIMIT $3 OFFSET $4),
+ asset_roles AS(SELECT a.asset_key,jsonb_agg(DISTINCT a.data->>'role' ORDER BY a.data->>'role') AS roles
+ FROM keyed_assets a JOIN asset_page p ON p.asset_key=a.asset_key GROUP BY a.asset_key)`;
+const assetFields=`(SELECT COUNT(*)::int FROM representatives) AS asset_total,
+ COALESCE((SELECT jsonb_agg(p.data||jsonb_build_object('roles',r.roles) ORDER BY ${creationAssetViewOrder}) FROM asset_page p JOIN asset_roles r USING(asset_key)),'[]'::jsonb) AS assets`;
+
+export async function readCreationAssetPage(tx:PoolClient,id:string,recovered:Record<string,unknown>[],page:number){
+ const size=evidencePageSize;
+ const {rows:[result]}=await tx.query<Pick<ReadRow,'assets'|'asset_total'>>(`${creationFamilySql},${assetPageSql} SELECT ${assetFields}`,
+  [id,JSON.stringify(recovered),size,(page-1)*size]);
+ return result;
+}
 
 /** One authorized family and one set of dedup keys; expand only the selected evidence and child pages. */
 export async function readCreationDetailEvidence(tx:PoolClient,id:string,recovered:Record<string,unknown>[],pages:EvidencePages){
  const size=evidencePageSize,offset=(page:number)=>(page-1)*size;
- const {rows:[result]}=await tx.query<ReadRow>(`${creationFamilySql},
- asset_rows AS(SELECT to_jsonb(a) AS data,0 AS priority FROM app_creation_assets a JOIN family f ON f.id=a.creation_id
-  UNION ALL SELECT value,1 FROM jsonb_array_elements($2::jsonb)),${creationAssetKeysSql},
- asset_page AS MATERIALIZED(SELECT * FROM representatives ORDER BY ${creationAssetViewOrder} LIMIT $3 OFFSET $4),
- asset_roles AS(SELECT a.asset_key,jsonb_agg(DISTINCT a.data->>'role' ORDER BY a.data->>'role') AS roles
-  FROM keyed_assets a JOIN asset_page p ON p.asset_key=a.asset_key GROUP BY a.asset_key),
+ const {rows:[result]}=await tx.query<ReadRow>(`${creationFamilySql},${assetPageSql},
  event_keys AS MATERIALIZED(SELECT e.id,e.occurred_at FROM app_creation_events e JOIN family f ON f.id=e.creation_id),
  event_page AS(SELECT e.id,e.event_key,e.type,e.status,e.summary,e.occurred_at,e.observed_at
   FROM (SELECT * FROM event_keys ORDER BY occurred_at,id LIMIT $3 OFFSET $5) k JOIN app_creation_events e ON e.id=k.id),
@@ -56,8 +65,7 @@ export async function readCreationDetailEvidence(tx:PoolClient,id:string,recover
  billing_ops AS(SELECT o.id,o.state,o.charged_credits,o.quote,max(l.reserved_credits) AS evidence_reserved,max(l.released_credits) AS evidence_released
   FROM billing_links l JOIN app_billing_operations o ON o.id=l.target_id AND o.email=l.actor_email GROUP BY o.id)
  SELECT
-  (SELECT COUNT(*)::int FROM representatives) AS asset_total,
-  COALESCE((SELECT jsonb_agg(p.data||jsonb_build_object('roles',r.roles) ORDER BY ${creationAssetViewOrder}) FROM asset_page p JOIN asset_roles r USING(asset_key)),'[]'::jsonb) AS assets,
+  ${assetFields},
   (SELECT COUNT(*)::int FROM event_keys) AS event_total,
   COALESCE((SELECT jsonb_agg(e ORDER BY e.occurred_at,e.id) FROM event_page e),'[]'::jsonb) AS events,
   (SELECT COUNT(*)::int FROM child_keys) AS child_total,

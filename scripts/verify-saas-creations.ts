@@ -55,6 +55,26 @@ async function main(){
  const list=await enterpriseRoutes.GET(request(`/api/enterprise/creations?tenantId=${a.tenantId}`,ownerA));assert.equal(list.status,200);assert.match(list.headers.get('cache-control')||'',/private.*no-store/);const listing=await list.json();assert.equal(listing.pagination.total,3);assert.equal(listing.items.find((x:any)=>x.id===root).settledCredits,0);assert.equal(listing.items.find((x:any)=>x.id===unknown).settledCredits,null);
  const detail=await enterpriseDetail.GET(request(`/api/enterprise/creations/${root}?tenantId=${a.tenantId}`,ownerA),detailCtx(root));assert.equal(detail.status,200);const full=await detail.json();assert.doesNotMatch(JSON.stringify(full),/INTERNAL_PROVIDER|INTERNAL_MODEL|INTERNAL_SECRET|providerId|modelId|apiKey|technical/);assert.equal(full.parameters.values.count,0);assert.equal(full.parameters.values.moderation,false);assert.equal(full.billing.quoted,0);assert.equal(full.billing.reserved,2);assert.equal(full.billing.released,2);assert.equal(full.billing.charged,0);assert.equal(full.billing.refunded,1);assert.equal(full.children.length,1);assert.equal(full.assetPagination.total,30);assert.equal(full.assets.length,24);assert.equal(full.eventPagination.total,31);
  const second=await(await enterpriseDetail.GET(request(`/api/enterprise/creations/${root}?tenantId=${a.tenantId}&assetPage=2&eventPage=2`,ownerA),detailCtx(root))).json();assert.equal(second.assets.length,6);assert.equal(second.events.length,7);
+ const assetBaseline=process.argv.includes('--asset-projection-baseline'),verifyAssetProjection=assetBaseline||process.argv.includes('--asset-projection');
+ const projectedAssetPage=(id:string,num:number,scoped=false)=>scoped
+  ?enterpriseDetail.GET(request(`/api/enterprise/creations/${id}?tenantId=${a.tenantId}&assetPage=${num}&projection=assets`,ownerA),detailCtx(id))
+  :adminDetail.GET(request(`/api/admin/creations/${id}?assetPage=${num}&projection=assets`,admin),detailCtx(id));
+ const sameAssets=async(response:Response,reference:{assets:unknown;assetPagination:unknown})=>{
+  const body=await response.json();
+  assert.equal(response.status,200,JSON.stringify(body));
+  assert.deepEqual(body,{assets:reference.assets,assetPagination:reference.assetPagination});
+ };
+ if(verifyAssetProjection){
+  const locked=await pool.connect();
+  try{
+   await locked.query('BEGIN; LOCK TABLE app_billing_operations,app_creation_events IN ACCESS EXCLUSIVE MODE');
+   if(assetBaseline){
+    assert.equal((await projectedAssetPage(root,2,true)).status,503);
+    console.log('CREATION_ASSET_PAGE_BASELINE=PASS UNRELATED_TABLES_BLOCK=1');
+   }else await sameAssets(await projectedAssetPage(root,2,true),second);
+  }finally{await locked.query('ROLLBACK');locked.release();}
+  if(!assetBaseline)assert.equal((await projectedAssetPage(foreign,1,true)).status,404);
+ }
  const unknownDetail=await(await enterpriseDetail.GET(request(`/api/enterprise/creations/${unknown}?tenantId=${a.tenantId}`,ownerA),detailCtx(unknown))).json();for(const key of ['quoted','reserved','released','charged','refunded'])assert.equal(unknownDetail.billing[key],null);
  const adminFull=await(await adminDetail.GET(request(`/api/admin/creations/${root}`,admin),detailCtx(root))).json();assert.equal(adminFull.technical.sourceKind,'fixture');assert.equal(adminFull.parameters.values.providerId,'INTERNAL_PROVIDER');
  const adminEventsPath=`/api/admin/creations/${root}/events`,enterpriseEventsPath=`/api/enterprise/creations/${root}/events?tenantId=${a.tenantId}`;
@@ -157,6 +177,7 @@ async function main(){
  await pool.query(`INSERT INTO app_artworks(id,email,title,category,prompt,image_url,gradient,batch_id)
   SELECT 'legacy-output-'||$1||'-'||n,$2,'fixture output','fixture','','/media/creation-fixture/video.mp4','',$1 FROM generate_series(1,107)n`,[legacyJob,departed]);
  const lastLegacy=await(await adminDetail.GET(request(`/api/admin/creations/${legacy.id}?assetPage=5`,admin),detailCtx(legacy.id))).json();assert.equal(lastLegacy.assetPagination.total,107);assert.equal(lastLegacy.assets.length,11);assert.equal(lastLegacy.assetPagination.page,5);
+ if(verifyAssetProjection&&!assetBaseline)await sameAssets(await projectedAssetPage(legacy.id,5),lastLegacy);
  const legacyReader=await import('../src/lib/saas/legacy-creations');assert.equal((await legacyReader.legacyCreationAsset(legacy.id,lastLegacy.assets[10].id)).url,'/media/creation-fixture/video.mp4');
  const platformMedia=await import('../src/app/api/admin/creations/[id]/assets/[assetId]/route');
  const lastLegacyAsset=lastLegacy.assets[10].id,ownedOutput=Buffer.from(lastLegacyAsset.slice('legacy-artwork-'.length),'base64url').toString();
@@ -191,6 +212,11 @@ async function main(){
  const beforeCounts=(await pool.query("SELECT (SELECT count(*) FROM app_billing_operations)::int AS billing,(SELECT count(*) FROM app_creation_assets)::int AS assets,(SELECT count(*) FROM app_ledger)::int AS ledger")).rows[0];
  const recovered=await(await enterpriseDetail.GET(request(`/api/enterprise/creations/${pendingId}?tenantId=${a.tenantId}`,ownerA),detailCtx(pendingId))).json();assert.equal(recovered.evidencePending,true);assert.equal(recovered.status,'succeeded');assert.equal(recovered.assets.length,1);assert.match(recovered.assets[0].id,/^recovered-/);assert.equal(recovered.assets[0].evidenceRecordId,pendingId);
  const linkedHistory=legacyReader.legacyCreationId({table:'app_image_jobs',id:pendingJob,email:departed});
+ if(verifyAssetProjection&&!assetBaseline){
+  await sameAssets(await projectedAssetPage(linkedHistory,1),recovered);
+  assert.equal((await projectedAssetPage(linkedHistory,1,true)).status,404);
+  console.log('CREATION_ASSET_PAGE=PASS CANONICAL=1 OLD_HISTORY=1 RECOVERED_LOCATOR=1 OTHER_TABLES_LOCKED=1 CROSS_TENANT=1');
+ }
  const linkedEvent=`ev-${randomUUID()}`;await pool.query("INSERT INTO app_creation_events(id,creation_id,event_key,type,status,summary) VALUES($1,$2,'linked-event','execution','succeeded','INTERNAL_PROVIDER historical')",[linkedEvent,pendingId]);
  const linkedItems=(await (await adminEvents.GET(request(`/api/admin/creations/${linkedHistory}/events`,admin),detailCtx(linkedHistory))).json()).items;
  assert.equal(linkedItems[0].id,linkedEvent);assert.equal(linkedItems[0].eventKey,'linked-event');

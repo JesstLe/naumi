@@ -6,14 +6,14 @@ import {enterpriseHeavyReportRead} from '@/lib/enterprise/server';
 import { TeamError } from "@/lib/teams/errors";
 import type {TeamActor} from '@/lib/teams/grants';
 import {ensureCreationSchema} from './creation-schema';
-import {creationRecoveredAsset,creationSourceEvidence,videoWorkflowEvidenceAvailable} from './creation-source-evidence';
+import {creationRecoveredAsset,creationSourceAssets,creationSourceEvidence,videoWorkflowEvidenceAvailable} from './creation-source-evidence';
 import {publicCreationParameters} from './creation-parameters';
 import {creationRequestEvidence} from './creation-request-evidence';
-import {creationStatus,type CreationFilters,type CreationPage,type CreationListPage,type CreationSummary,type CreationDetail,type CreationAsset,type CreationEvent,type CreationEventSlice} from './creation-contracts';
+import {creationStatus,type CreationFilters,type CreationPage,type CreationListPage,type CreationSummary,type CreationDetail,type CreationAsset,type CreationEvent,type CreationEventSlice,type CreationAssetSlice} from './creation-contracts';
 import {legacyCreationId} from './creation-history-identity';
 import {legacyCreationCandidates} from './creation-unified-query';
 import {creationFailures,legacyCreationFailuresInTransaction,hasCreationFailure} from './creation-failures';
-import {creationEventPageSql,creationEventPageWithTotalSql,evidencePageSize,readCreationDetailEvidence} from './creation-detail-evidence';
+import {creationEventPageSql,creationEventPageWithTotalSql,evidencePageSize,readCreationDetailEvidence,readCreationAssetPage} from './creation-detail-evidence';
 import {workflowOutcomeStagesSql} from '../video/workflow-outcome';
 import {ensureMediaSchema} from '@/lib/media-assets-schema';
 import {readImagegenInputAssetReference} from '@/lib/imagegen/input-asset-reference';
@@ -212,6 +212,14 @@ export async function creationEventProjectionInTransaction(tx:PoolClient,reader:
  return {items:projectEvents(row.items,reader),pagination:{page,size,total:row.total}};
 }
 export async function creationDetail(reader:CreationReader,id:string,pages:DetailPages={},signal?:AbortSignal):Promise<CreationDetail>{return scoped(reader,(tx,visible,historyEmails)=>creationDetailInTransaction(tx,reader.platform?reader:{...reader,historyEmails:historyEmails||[]},id,visible,pages),'report',signal);}
+export function creationAssetPage(reader:CreationReader,id:string,page:number,signal?:AbortSignal){
+ return scoped(reader,(tx,visible,historyEmails)=>creationAssetPageInTransaction(tx,reader.platform?reader:{...reader,historyEmails:historyEmails||[]},id,visible,page),'report',signal);
+}
+export async function creationAssetPageInTransaction(tx:PoolClient,reader:CreationDetailReader,id:string,visible:readonly string[]|null,page:number):Promise<CreationAssetSlice>{
+ await authorizedRecord(tx,reader,id,visible,true);
+ const result=await readCreationAssetPage(tx,id,await creationSourceAssets(tx,id),page);
+ return {assets:result.assets.map(asset),assetPagination:{page,size:evidencePageSize,total:result.asset_total}};
+}
 /** Reuse the caller's authorization snapshot; no nested pool checkout. */
 export async function creationDetailInTransaction(tx:PoolClient,reader:CreationDetailReader,id:string,visible:readonly string[]|null,pages:DetailPages={}):Promise<CreationDetail>{
  const row=await authorizedRecord(tx,reader,id,visible);const size=evidencePageSize,assetPage=pages.assetPage||1,eventPage=pages.eventPage||1,childPage=pages.childPage||1;

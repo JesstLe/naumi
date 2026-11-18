@@ -10,7 +10,7 @@ import Markdown from 'react-markdown';
 import type {CreationListPage,CreationDetail,CreationAsset,CreationFailure} from '@/lib/saas/creation-contracts';
 import styles from './saas.module.css';
 import {queueCreationPreview} from './creation-preview-queue';
-import {useCreationEvidence,type CreationEventFeedback} from './use-creation-evidence';
+import {useCreationEvidence,type CreationEvidenceFeedback} from './use-creation-evidence';
 const labels:Record<string,string>={queued:'排队中',running:'处理中',succeeded:'已完成',partial:'部分成功',failed:'失败',cancel_requested:'取消申请中',cancelled:'已取消',needs_review:'待核查'};
 function eventSummary(event:{type:string;summary:string}){
  if(event.type==='agent-tool'){try{const detail=JSON.parse(event.summary);if(typeof detail.tool==='string'&&typeof detail.summary==='string')return `${detail.tool} · ${detail.summary}`;}catch{}}
@@ -25,9 +25,9 @@ function ScopedCreationBrowser({tenantId,enterprise=false}:{tenantId?:string;ent
  const api=enterprise?'/api/enterprise/creations':'/api/admin/creations';
  const sessionEnded=useRef(false),listRead=useRef<AbortController|null>(null);
  const evidencePages=new URLSearchParams();
- for(const key of ['assetPage','childPage'])if(query.get(key))evidencePages.set(key,query.get(key)!);
+ if(query.get('childPage'))evidencePages.set('childPage',query.get('childPage')!);
  if(tenantId)evidencePages.set('tenantId',tenantId);
- const {detail,error:detailError,reload:reloadDetails,endSession:endEvidence,feedback}=useCreationEvidence(api,selected,evidencePages.toString(),query.get('eventPage')||'1',tenantId);
+ const {detail,error:detailError,reload:reloadDetails,endSession:endEvidence,eventFeedback,assetFeedback}=useCreationEvidence(api,selected,evidencePages.toString(),query.get('eventPage')||'1',query.get('assetPage')||'1',tenantId);
  const reloadList=()=>{if(!sessionEnded.current&&!listRead.current)refreshList(v=>v+1);};
  useEffect(()=>{
   let wasHidden=document.visibilityState==='hidden';
@@ -61,11 +61,11 @@ function ScopedCreationBrowser({tenantId,enterprise=false}:{tenantId?:string;ent
   <div className={styles.detailGrid}>
    <section className={`${styles.panel} ${styles.recordList}`} aria-label="创作记录列表">{filtersUi}<div className={styles.actions}><span className={styles.muted}>{range}</span>{platformHistory&&<a href={`/admin/center?${artworkParams}`}>图片作品</a>}{!allDates&&<button onClick={()=>update({period:'all',from:'',to:'',page:'1'})}>全部日期</button>}</div>{loading?<div className={styles.empty} role="status">正在读取记录</div>:!page?.items.length?<div className={styles.empty}><ImageIcon size={30}/>暂无匹配的创作记录</div>:page.items.map(item=><button aria-pressed={selected===item.id||detail?.id===item.id} className={`${styles.record} ${selected===item.id||detail?.id===item.id?styles.selected:''}`} key={item.id} onClick={()=>update({creationId:item.id,assetPage:"",eventPage:"",childPage:""})}><div><strong>{item.title}</strong><p>{item.actorName} · {new Date(item.acceptedAt).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}</p><CreationStatus status={item.status}/>{item.scopeKind==='legacy_unconfirmed'&&<span className={styles.muted} title="历史任务记录，保留原始归属"> · 历史记录</span>}{!enterprise&&item.failure&&<p className={styles.failureSummary}>{item.failure.title}{item.failure.code&&`（${item.failure.code}）`}</p>}</div><ChevronRight size={16}/></button>)}
    {page&&<div className={styles.pager}><span>共 {page.pagination.total} 次创作</span><div className={styles.actions}><button aria-label="上一页" disabled={page.pagination.page===1} onClick={()=>update({page:String(page.pagination.page-1)})}>‹</button><span>{page.pagination.page}</span><button aria-label="下一页" disabled={page.pagination.page*page.pagination.size>=page.pagination.total} onClick={()=>update({page:String(page.pagination.page+1)})}>›</button></div></div>}</section>
-   <section className={`${styles.panel} ${selected?styles.detail:''}`} aria-label="创作全链路详情">{selected&&<button className={styles.mobileBack} onClick={()=>update({creationId:''})}><ArrowLeft size={15}/>返回列表</button>}{detailError?<div className={styles.error} role="alert">{detailError}<button onClick={reloadDetails}>重试</button></div>:detail?<CreationDetailView detail={detail} api={api} tenantId={tenantId} eventFeedback={feedback} onPage={(key,value)=>update({[key]:String(value)})} onChild={id=>update({creationId:id,assetPage:'',eventPage:'',childPage:''})}/>:<div className={styles.empty}>{selected?'正在读取详情':'选择创作记录查看输入、结果与费用'}</div>}</section>
+   <section className={`${styles.panel} ${selected?styles.detail:''}`} aria-label="创作全链路详情">{selected&&<button className={styles.mobileBack} onClick={()=>update({creationId:''})}><ArrowLeft size={15}/>返回列表</button>}{detailError?<div className={styles.error} role="alert">{detailError}<button onClick={reloadDetails}>重试</button></div>:detail?<CreationDetailView detail={detail} api={api} tenantId={tenantId} eventFeedback={eventFeedback} assetFeedback={assetFeedback} onPage={(key,value)=>update({[key]:String(value)})} onChild={id=>update({creationId:id,assetPage:'',eventPage:'',childPage:''})}/>:<div className={styles.empty}>{selected?'正在读取详情':'选择创作记录查看输入、结果与费用'}</div>}</section>
   </div>
  </div>;
 }
-export function CreationDetailView({detail,api,tenantId,eventFeedback,onPage,onChild}:{detail:CreationDetail;api:string;tenantId?:string;eventFeedback?:CreationEventFeedback;onPage?:(key:string,value:number)=>void;onChild?:(id:string)=>void}){
+export function CreationDetailView({detail,api,tenantId,eventFeedback,assetFeedback,onPage,onChild}:{detail:CreationDetail;api:string;tenantId?:string;eventFeedback?:CreationEvidenceFeedback;assetFeedback?:CreationEvidenceFeedback;onPage?:(key:string,value:number)=>void;onChild?:(id:string)=>void}){
  const [showProcessed,setShowProcessed]=useState(false);
  useEffect(()=>setShowProcessed(false),[detail.id]);
  const outputs=detail.assets.filter(a=>a.direction==='output'&&a.role!=='reply'),replies=detail.assets.filter(a=>a.direction==='output'&&a.role==='reply'),inputs=detail.assets.filter(a=>a.direction==='input'&&a.variant!=='processed'),processed=detail.assets.filter(a=>a.direction==='input'&&a.variant==='processed');
@@ -83,7 +83,9 @@ export function CreationDetailView({detail,api,tenantId,eventFeedback,onPage,onC
  {inputs.length>0&&<section className={styles.mediaSection} aria-label="输入素材"><h3>输入素材</h3>{media(inputs)}</section>}
  {processed.length>0&&<details className={styles.technical} open={showProcessed} onToggle={e=>setShowProcessed(e.currentTarget.open)}><summary>处理后输入（{processed.length}）</summary>{showProcessed&&media(processed)}</details>}
  <EvidencePager label="素材" page={detail.assetPagination} onPage={value=>onPage?.('assetPage',value)}/>
- {!detail.assets.length&&<div className={styles.empty} style={{minHeight:130}}>输入与产物素材未记录</div>}
+ {assetFeedback?.error?<div className={styles.error} role="alert">{assetFeedback.error} <button onClick={assetFeedback.retry}>重试素材</button></div>:
+  assetFeedback?.loading?<div className={styles.empty} role="status">正在读取素材</div>:
+  !detail.assets.length&&<div className={styles.empty} style={{minHeight:130}}>{detail.assetPagination.total>0?'本页没有素材':'输入与产物素材未记录'}</div>}
  <dl><div className={styles.facts}><dt>原始要求</dt><dd>{detail.request.state==='recorded'?detail.request.text||'已记录为空':'未记录'}</dd></div><div className={styles.facts}><dt>创作参数</dt><dd className={styles.creationParameters}>{detail.parameters.state==='recorded'?<><ParameterChips values={detail.parameters.values}/ ><ImageExecutionParameters value={detail.parameters.values.executionPlans}/></>:'未记录'}{detail.model.label&&<span className={styles.modelChip}>模型：{detail.model.label}</span>}</dd></div></dl>
  <h3 style={{marginTop:18,fontSize:16}}>执行过程</h3>{eventFeedback?.error?
   <div className={styles.error} role="alert">{eventFeedback.error} <button onClick={eventFeedback.retry}>重试执行事件</button></div>:eventFeedback?.loading?
