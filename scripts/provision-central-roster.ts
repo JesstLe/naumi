@@ -107,6 +107,24 @@ async function main() {
     initial = new Map<string, Record<string, any>>(
       dir.members.map((m) => [m.email, m] as [string, Record<string, any>]),
     );
+  for (const m of plan.members.filter(
+    (m) => m.create && initial.has(m.email),
+  )) {
+    const prior = (
+      await getPool().query(
+        "SELECT result FROM app_identity_receipts WHERE id=$1 AND enterprise_id=$2 AND actor=$3",
+        [operationId(m.email + ":create"), plan.enterpriseId, plan.ownerEmail],
+      )
+    ).rows[0];
+    const existing = initial.get(m.email);
+    if (
+      !prior ||
+      prior.result.email !== m.email ||
+      prior.result.subjectId !== existing?.subject_id ||
+      existing?.name !== m.name
+    )
+      throw Error("NEW_IDENTITY_COLLISION:" + m.name);
+  }
   const changes = plan.members.map((m) => {
     if (m.email !== loginIdentifierToEmail(m.name))
       throw Error("IDENTITY_PROVENANCE_CONFLICT");
