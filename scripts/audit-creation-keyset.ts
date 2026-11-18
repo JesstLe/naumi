@@ -164,6 +164,11 @@ async function main() {
     const candidate=seek(anchor,false,user);
     await logPlan(`dense-seek-page-${page}${user?'-account':''}`,pool,candidate.sql,candidate.args);
     assert.deepEqual((await pool.query<Key>(candidate.sql,candidate.args)).rows.map(rowId),result.items.map(row=>row.id));
+    if(page===1901&&!user){
+     const batch=seek(anchor,true);
+     await logPlan('dense-seek-page-1901-with-materialized-archive',pool,batch.sql,batch.args);
+     assert.deepEqual((await pool.query<Key>(batch.sql,batch.args)).rows.map(rowId),result.items.map(row=>row.id));
+    }
    }
    console.log('CREATION_KEYSET_DENSE_PASS image_archived=39500/40000 global_total=63700 account_total=1274 order_and_ids=1');
   }

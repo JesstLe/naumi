@@ -56,6 +56,7 @@ export const refactorCases=[
  ts('creation-asset-auth-pressure','foundation','scripts/verify-creation-asset-auth-pressure.ts','CREATION_ASSET_AUTH=PASS'),
  ts('creation-report-pressure','foundation','scripts/verify-creation-asset-auth-pressure.ts','CREATION_REPORTS=PASS',['--reports']),
  ts('creation-event-page','foundation','scripts/verify-creation-event-page.ts','CREATION_EVENT_PAGE=PASS'),
+ ts('creation-history-sources','foundation','scripts/verify-creation-history-sources.ts','CREATION_HISTORY_SOURCES=PASS'),
  {...node('creation-event-browser','foundation','scripts/verify-creation-event-browser.mjs','CREATION_EVENT_BROWSER=PASS'),clientReact:true},
  ts('enterprise-scope-scale','foundation','scripts/verify-enterprise-scope-scale.ts','ENTERPRISE_SCOPE_SCALE=PASS'),
  ts('enterprise-directory-pressure','foundation','scripts/verify-enterprise-directory-pressure.ts','ENTERPRISE_DIRECTORY=PASS'),

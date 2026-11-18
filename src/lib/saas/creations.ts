@@ -90,7 +90,10 @@ export async function listRecentEnterpriseCreations(reader:Extract<CreationReade
 async function readCreationList(reader:CreationReader,f:CreationFilters,unified:boolean,signal?:AbortSignal):Promise<CreationPage>{return scoped(reader,async(tx,visible,historyVisible)=>{
  const filter=where(reader,f,visible);let values=[...filter.values],sql=`SELECT id,actor_email,tenant_id,accepted_at,live_status,source_kind,source_id FROM (${await recordSelect(tx,false)} WHERE ${filter.sql}) records`;
  if(f.status){values.push(f.status);sql+=` WHERE ${normalizedLiveStatus}=$${values.length}`;}
- const historical=unified?legacyCreationCandidates(f,reader.platform&&(reader.boundTenantId||f.tenantId)?[]:historyVisible,value=>{values.push(value);return `$${values.length}`;},{...(!reader.platform?{tenantId:reader.tenantId}:{})}):null;
+ const history=reader.platform&&(reader.boundTenantId||f.tenantId)?[]:historyVisible;
+ const bind=(value:unknown)=>{values.push(value);return `$${values.length}`;};
+ const historical=unified?legacyCreationCandidates(f,history,bind,{tenantId:reader.platform?undefined:reader.tenantId}):null;
+ const historicalPage=historical?legacyCreationCandidates(f,history,bind,{selectedOnly:'prompt'}):null;
  // The exact status and recursive billing facts are needed for whole-result
  // totals/ranking, but must not be recomputed by four independent queries.
  // Keep snapshots and thumbnail lookup out of this materialized row set.
@@ -112,14 +115,10 @@ async function readCreationList(reader:CreationReader,f:CreationFilters,unified:
  COALESCE(u.name,c.actor_email) AS actor_name,k.charged,k.live_status,k.legacy_table,c.source_id,
  (SELECT a.id FROM app_creation_assets a WHERE a.creation_id=c.id AND a.direction='output' AND a.media_type='image' ORDER BY position,id LIMIT 1) AS thumbnail_asset_id
  FROM selected k JOIN app_creation_records c ON c.id=k.id LEFT JOIN app_users u ON u.email=c.actor_email
- ${historical?`UNION ALL SELECT k.id,k.actor_email,'legacy_unconfirmed',NULL::uuid,k.source_kind,k.live_status,
- jsonb_build_object('state',CASE WHEN COALESCE(j.payload#>>'{plan,request,prompt}',j.payload#>>'{p,userPrompt}',j.payload#>>'{p,prompt}',ci.parameters->>'newText',ci.parameters->>'prompt',v.parameters->>'prompt') IS NULL THEN 'not_recorded' ELSE 'recorded' END,'text',COALESCE(j.payload#>>'{plan,request,prompt}',j.payload#>>'{p,userPrompt}',j.payload#>>'{p,prompt}',ci.parameters->>'newText',ci.parameters->>'prompt',v.parameters->>'prompt')),
+ ${historicalPage?`UNION ALL SELECT k.id,k.actor_email,'legacy_unconfirmed',NULL::uuid,k.source_kind,k.live_status,
+ jsonb_build_object('state',CASE WHEN k.prompt_text IS NULL THEN 'not_recorded' ELSE 'recorded' END,'text',k.prompt_text),
  k.accepted_at,COALESCE(u.name,k.actor_email),k.charged,k.live_status,k.legacy_table,k.source_id,NULL::text
- FROM selected k LEFT JOIN app_users u ON u.email=k.actor_email
- LEFT JOIN app_image_jobs j ON k.legacy_table='app_image_jobs' AND j.id=k.source_id AND j.email=k.actor_email
- LEFT JOIN app_canvas_image_tasks ci ON k.legacy_table='app_canvas_image_tasks' AND ci.id=k.source_id AND ci.email=k.actor_email
- LEFT JOIN app_video_tasks v ON k.legacy_table='app_video_tasks' AND v.id=k.source_id AND v.email=k.actor_email
- WHERE k.legacy_table IS NOT NULL`:""}),
+ FROM (${historicalPage}) k LEFT JOIN app_users u ON u.email=k.actor_email`:""}),
  aggregate AS (SELECT count(*)::int AS total,count(DISTINCT actor_email)::int AS active_members,
  sum(charged)::int AS charged,
  count(*) FILTER(WHERE live_status IN (${pendingLiveStatuses}))::int AS pending,
@@ -150,24 +149,20 @@ export async function listUnifiedCreationPage(reader:CreationReader,f:CreationFi
   `SELECT c.id,c.actor_email,c.accepted_at,c.source_id,NULL::text AS legacy_table FROM app_creation_records c WHERE ${filter.sql}`;
  if(f.status){const status=bind(f.status);canonical+=` WHERE ${normalizedLiveStatus}=${status}`;}
  const keys=legacyCreationCandidates(f,history,bind,{tenantId:tenant,keysOnly:true});
- const legacyPage=legacyCreationCandidates(f,history,bind,{tenantId:tenant,selectedOnly:true});
+ const legacyPage=keys?legacyCreationCandidates(f,history,bind,{selectedOnly:'row'}):null;
  const limit=bind(f.size),offset=bind((f.page-1)*f.size);
  const result=(await tx.query(`WITH creation_keys AS MATERIALIZED(
- ${canonical} UNION ALL SELECT ${columns},legacy_table FROM (${keys}) historical),
+ ${canonical}${keys?` UNION ALL SELECT ${columns},legacy_table FROM (${keys}) historical`:''}),
  selected AS MATERIALIZED(SELECT * FROM creation_keys ORDER BY accepted_at DESC,id DESC LIMIT ${limit} OFFSET ${offset}),
  canonical_page AS (${await recordSelect(tx)} WHERE c.id IN(SELECT id FROM selected WHERE legacy_table IS NULL)),
- historical_page AS (${legacyPage}),
+ ${legacyPage?`historical_page AS (${legacyPage}),`:''}
  page_rows AS(
  SELECT id,actor_email,scope_kind,tenant_id,source_kind,status,request_snapshot,accepted_at,actor_name,charged,live_status,
  NULL::text AS legacy_table,source_id,thumbnail_asset_id FROM canonical_page
- UNION ALL SELECT k.id,k.actor_email,'legacy_unconfirmed',NULL::uuid,k.source_kind,k.live_status,
- jsonb_build_object('state',CASE WHEN COALESCE(j.payload#>>'{plan,request,prompt}',j.payload#>>'{p,userPrompt}',j.payload#>>'{p,prompt}',ci.parameters->>'newText',ci.parameters->>'prompt',v.parameters->>'prompt') IS NULL THEN 'not_recorded' ELSE 'recorded' END,
- 'text',COALESCE(j.payload#>>'{plan,request,prompt}',j.payload#>>'{p,userPrompt}',j.payload#>>'{p,prompt}',ci.parameters->>'newText',ci.parameters->>'prompt',v.parameters->>'prompt')),
+ ${legacyPage?`UNION ALL SELECT k.id,k.actor_email,'legacy_unconfirmed',NULL::uuid,k.source_kind,k.live_status,
+ jsonb_build_object('state',CASE WHEN k.prompt_text IS NULL THEN 'not_recorded' ELSE 'recorded' END,'text',k.prompt_text),
  k.accepted_at,COALESCE(u.name,k.actor_email),k.charged,k.live_status,k.legacy_table,k.source_id,NULL::text
- FROM historical_page k LEFT JOIN app_users u ON u.email=k.actor_email
- LEFT JOIN app_image_jobs j ON k.legacy_table='app_image_jobs' AND j.id=k.source_id AND j.email=k.actor_email
- LEFT JOIN app_canvas_image_tasks ci ON k.legacy_table='app_canvas_image_tasks' AND ci.id=k.source_id AND ci.email=k.actor_email
- LEFT JOIN app_video_tasks v ON k.legacy_table='app_video_tasks' AND v.id=k.source_id AND v.email=k.actor_email)
+ FROM historical_page k LEFT JOIN app_users u ON u.email=k.actor_email`:''})
  SELECT (SELECT count(*)::int FROM creation_keys) AS total,COALESCE((SELECT jsonb_agg(p ORDER BY accepted_at DESC,id DESC) FROM page_rows p),'[]'::jsonb) AS items`,values)).rows[0];
  const items:CreationSummary[]=result.items.map(summary);
  if(reader.platform){
