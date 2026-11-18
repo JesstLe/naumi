@@ -26,7 +26,7 @@
 | `GET /api/admin/billing/versions` | `src/app/api/admin/billing/versions/route.ts` | 已核查：列表仅元数据，按版本游标翻页并兼容原数组；单版本只读冻结快照。隔离 PG 核对权限、错误、私有头、并发插入和两条读取断开释放 |
 | `GET /api/admin/creations` | `src/app/api/admin/creations/route.ts` | 部分：精确计数、正式/归档及混合断开；显式来源和仅正式租户列表不等无关历史表，未启用全站游标 |
 | `GET /api/admin/creations/[id]` | `src/app/api/admin/creations/[id]/route.ts` | 部分：详情证据、费用和旧 URL；素材和直接子任务可独立翻页。2.4 万条规范素材深页的角色、正文和准确总数已对照；无关联历史的深页成本与真实网关待核 |
-| `GET /api/admin/creations/[id]/assets/[assetId]` | `src/app/api/admin/creations/[id]/assets/[assetId]/route.ts` | 部分：历史深页、来源定位、Range、浏览器峰值与渲染器已测；隔离 PG 验证正式和历史元数据共用连接额度、断开会释放。真实网关与多实例待核 |
+| `GET /api/admin/creations/[id]/assets/[assetId]` | `src/app/api/admin/creations/[id]/assets/[assetId]/route.ts` | 部分：历史深页、来源定位、Range、浏览器峰值与渲染器已测；隔离 PG 验证连接额度、断开取消和按真实关联读取待补齐素材。真实网关与多实例待核 |
 | `GET /api/admin/creations/[id]/events` | `src/app/api/admin/creations/[id]/events/route.ts` | 部分：鉴权、断开、4.8 万事件深页窄排序；新旧响应及正式/归档准确总数对照通过，真实网关待核 |
 | `GET /api/admin/enterprise-workbench` | `src/app/api/admin/enterprise-workbench/route.ts` | 部分：名单、成员无权不读指标、流水独立分页；隔离库验证作品/任务深页、精准计数和越界锁竞争；真实网关与高并发待核 |
 | `GET /api/admin/feature-access` | `src/app/api/admin/feature-access/route.ts` | 待核查 |
@@ -63,8 +63,8 @@
 | `GET /api/enterprise/artworks` | `src/app/api/enterprise/artworks/route.ts` | 部分：真实授权范围、回收站、跨企业和撤权、深页/素材、CSV 只读当页；隔离 HTTP 断开释放、数据快照共享报表排队；浏览器连续切换/真实网关待核 |
 | `GET /api/enterprise/content` | `src/app/api/enterprise/content/route.ts` | 待核查 |
 | `GET /api/enterprise/creations` | `src/app/api/enterprise/creations/route.ts` | 部分：近期、历史归属、共享额度和取消；共用查询提前排除无权账号和不匹配来源，企业真实网关与混合深页待核 |
-| `GET /api/enterprise/creations/[id]` | `src/app/api/enterprise/creations/[id]/route.ts` | 部分：证据和费用分页、历史脱敏、来源定位；混合断开释放，等待期间撤权实测 403。素材、子任务分页与无关表锁隔离，规范素材深页与平台输出等价、跨租户拒绝 |
-| `GET /api/enterprise/creations/[id]/assets/[assetId]` | `src/app/api/enterprise/creations/[id]/assets/[assetId]/route.ts` | 部分：Range、旧 URL、归属、连接和页面并发通过；正式和历史元数据共享连接额度、断开取消；等素材时可撤权且原请求 403。渲染器已测，真实网关待核 |
+| `GET /api/enterprise/creations/[id]` | `src/app/api/enterprise/creations/[id]/route.ts` | 部分：证据和费用分页、历史脱敏、来源定位；等待期间撤权实测 403。素材、子任务分页与无关表锁隔离，待补齐素材按真实链接查来源，个人历史按原所有者及来源确认；全量实时状态路径另验 |
+| `GET /api/enterprise/creations/[id]/assets/[assetId]` | `src/app/api/enterprise/creations/[id]/assets/[assetId]/route.ts` | 部分：Range、旧 URL、归属、连接和页面并发通过；旧路径和带定位路径均跳过无关来源表，等待时可撤权且原请求 403。渲染器已测，真实网关待核 |
 | `GET /api/enterprise/creations/[id]/events` | `src/app/api/enterprise/creations/[id]/events/route.ts` | 部分：正式与归档脱敏、跨租户、撤权和断开；4.8 万事件深页、同时间顺序、越权子链及确切总数已验 |
 | `GET /api/enterprise/health` | `src/app/api/enterprise/health/route.ts` | 部分：健康统计权限、账户行锁及隔离，`verify-enterprise-analytics.ts` |
 | `GET /api/enterprise/integration` | `src/app/api/enterprise/integration/route.ts` | 部分：实际登录、独立站、下级范围、流水精确分页及配置缺失拒绝；作品/生成历史深页、越界和具体记录读范围通过隔离库验证；真实网关待核 |

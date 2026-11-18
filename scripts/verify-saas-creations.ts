@@ -279,6 +279,83 @@ async function main(){
  assert.equal(signed.status,200);const playbackWithLocator=(await signed.json()).url;assert.equal(new URL(playbackWithLocator,'https://fixture.test').searchParams.get('evidenceRecord'),workflowRecord);
  const signedBytes=await mediaRoute.GET(request(playbackWithLocator,undefined,{range:'bytes=0-6'}),{params:Promise.resolve({id:workflowRecord,assetId:videoProof.id})});
  assert.equal(signedBytes.status,206);assert.equal(await signedBytes.text(),'fixture');
+ const sourceBaseline=process.argv.includes('--asset-sources-baseline');
+ if(sourceBaseline||process.argv.includes('--asset-sources')){
+  const allJobTables=['app_image_jobs','app_video_tasks','app_canvas_image_tasks','app_imagegen_batches','app_video_workflow_runs'] as const;
+  const withTaskLocks=async(tables:readonly (typeof allJobTables)[number][],run:()=>Promise<void>)=>{
+   const locked=await pool.connect();try{await locked.query(`BEGIN; LOCK TABLE ${tables.join(',')} IN ACCESS EXCLUSIVE MODE`);await run();}
+   finally{await locked.query('ROLLBACK');locked.release();}
+  };
+  await withTaskLocks(allJobTables,async()=>{
+   for(const scoped of [false,true]){
+    const response=await projectedAssetPage(root,1,scoped);
+    if(sourceBaseline)assert.equal(response.status,503);
+    else await sameAssets(response,safeFamily);
+   }
+  });
+  await withTaskLocks(allJobTables.filter(t=>t!=='app_image_jobs'),async()=>{
+   for(const scoped of [false,true]){
+    const response=await projectedAssetPage(locatorRoot,1,scoped);
+    if(sourceBaseline)assert.equal(response.status,503);
+    else await sameAssets(response,proofDetail);
+   }
+   for(const locator of [undefined,locatorChild]){
+    const response=await recoveredRoute(locatorRoot,proof.id,locator);
+    assert.equal(response.status,sourceBaseline?503:200);if(!sourceBaseline)await response.arrayBuffer();
+   }
+  });
+  if(sourceBaseline)console.log('CREATION_ASSET_SOURCE_BASELINE=PASS UNRELATED_LOCKS_BLOCK=6');
+  else{
+   await withTaskLocks(['app_image_jobs'],async()=>{
+    assert.equal((await projectedAssetPage(locatorRoot,1,true)).status,503);
+    assert.equal((await recoveredRoute(locatorRoot,proof.id,locatorChild)).status,503);
+    await sameAssets(await projectedAssetPage(batchRecord,1,true),batchEvidence);
+    await sameAssets(await projectedAssetPage(workflowRecord,1,true),partialWorkflow);
+   });
+   const mixedRoot=`cr-${randomUUID()}`,videoRecord=`cr-${randomUUID()}`,canvasRecord=`cr-${randomUUID()}`;
+   const videoTask=`video-source-${randomUUID()}`,canvasTask=`canvas-source-${randomUUID()}`;
+   await record(mixedRoot,departed,a.tenantId);await record(videoRecord,departed,a.tenantId,mixedRoot);await record(canvasRecord,departed,a.tenantId,mixedRoot);
+   await pool.query("INSERT INTO app_video_tasks(id,email,upstream_id,parameters) VALUES($1,$2,'fixture',$3)",
+    [videoTask,departed,{creationEvidencePending:true,resultArtworkIds:[pendingWork]}]);
+   await pool.query("INSERT INTO app_canvas_image_tasks(id,email,source_artwork_id,result_artwork_id,parameters) VALUES($1,$2,'fixture',$3,$4)",
+    [canvasTask,departed,locatorWork,{creationEvidencePending:true}]);
+   await pool.query("INSERT INTO app_creation_links(creation_id,target_type,target_id,actor_email) VALUES($1,'video',$2,$3),($4,'canvas-image',$5,$3)",[videoRecord,videoTask,departed,canvasRecord,canvasTask]);
+   const isolated=async(id:string,kind:string)=>{const res=await projectedAssetPage(id,1,true);assert.equal(res.status,200);const body=await res.json();
+    assert.equal(body.assetPagination.total,1);assert.equal(body.assets[0].mediaType,kind);assert.equal(body.assets[0].evidenceRecordId,id);};
+   await withTaskLocks(allJobTables.filter(t=>t!=='app_video_tasks'),()=>isolated(videoRecord,'video'));
+   await withTaskLocks(allJobTables.filter(t=>t!=='app_canvas_image_tasks'),()=>isolated(canvasRecord,'image'));
+   const mixed=await projectedAssetPage(mixedRoot,1,true);assert.equal(mixed.status,200);
+   assert.deepEqual(new Set((await mixed.json()).assets.map((asset:any)=>[asset.mediaType,asset.evidenceRecordId].join(':'))),new Set([`video:${videoRecord}`,`image:${canvasRecord}`]));
+   const personalJob=`personal-source-${randomUUID()}`,personals=Array.from({length:3},()=>`cr-${randomUUID()}`);
+   await pool.query("INSERT INTO app_image_jobs(id,email,kind,snapshot,payload,metered) VALUES($1,$2,'generate','{}','{}',false)",[personalJob,member]);
+   for(const [i,id] of personals.entries()){
+    await record(id,member,a.tenantId);
+    await pool.query("UPDATE app_creation_records SET tenant_id=NULL,scope_kind='personal',source_kind=$2,source_id=$3 WHERE id=$1",[id,i===1?'image:suite':'image:generate',i===2?locatorJob:personalJob]);
+   }
+   assert.equal((await projectedAssetPage(personals[0],1,true)).status,404);
+   await pool.query("UPDATE app_enterprise_members SET membership_status='active' WHERE email=$1",[member]);
+   try{
+    await withTaskLocks(['app_canvas_image_tasks','app_video_tasks'],async()=>{
+     const owned=await projectedAssetPage(personals[0],1,true);assert.equal(owned.status,200);assert.deepEqual(await owned.json(),{assets:[],assetPagination:{page:1,size:24,total:0}});
+     assert.equal((await projectedAssetPage(personals[1],1,true)).status,404);
+     assert.equal((await projectedAssetPage(personals[2],1,true)).status,404);
+     assert.equal((await projectedAssetPage(foreign,1,true)).status,404);
+    });
+   }finally{await pool.query("UPDATE app_enterprise_members SET membership_status='suspended' WHERE email=$1",[member]);}
+   const eventDebt=`cr-${randomUUID()}`,billingDebt=`cr-${randomUUID()}`;
+   await record(eventDebt,member,a.tenantId);await record(billingDebt,member,a.tenantId);
+   await pool.query("INSERT INTO app_creation_events(id,creation_id,event_key,type,status) VALUES($1,$2,'pending-only-event','evidence','needs_review')",[`ev-${randomUUID()}`,eventDebt]);
+   await pool.query("INSERT INTO app_creation_links(creation_id,target_type,target_id,actor_email) VALUES($1,'billing',$2,$3)",[billingDebt,operation,member]);
+   await pool.query("UPDATE app_billing_operations SET result_response='{\"creationEvidencePending\":true}' WHERE id=$1",[operation]);
+   try{
+    for(const id of [eventDebt,billingDebt]){
+     const res=await adminDetail.GET(request(`/api/admin/creations/${id}`,admin),detailCtx(id));assert.equal(res.status,200);
+     const body=await res.json();assert.equal(body.evidencePending,true);assert.deepEqual(body.assets,[]);
+    }
+   }finally{await pool.query('UPDATE app_billing_operations SET result_response=NULL WHERE id=$1',[operation]);}
+   console.log('CREATION_ASSET_SOURCE_SCOPE=PASS NO_SOURCE=1 IMAGE=1 VIDEO=1 CANVAS=1 BATCH=1 WORKFLOW=1 MIXED=1 RELEVANT_LOCK=1 LOCATOR=1 PERSONAL_SOURCE_ISOLATION=1');
+  }
+ }
  if(process.env.NAUMI_VERIFY_CREATION_QUERY_STATS==='1'){
   const sharing=1600;
   await pool.query(`INSERT INTO app_creation_records(id,actor_email,scope_kind,tenant_id,source_kind,source_id,parent_id,status)

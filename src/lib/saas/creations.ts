@@ -177,23 +177,25 @@ export async function listUnifiedCreationPage(reader:CreationReader,f:CreationFi
  return {items,pagination:{total:Number(result.total),page:f.page,size:f.size},appliedFilters:f,generatedAt:new Date().toISOString(),scope:reader.platform?'platform':visible?'member':'tenant',availability:'available'};
 },'report',signal);}
 
-function authorizedRecordWhere(reader:CreationDetailReader,id:string){
- const tenant=reader.platform?reader.boundTenantId:reader.tenantId;
- // Match the existing member-history port, not arbitrary personal ledger data.
- // A personal image/video source can expose its recorded execution evidence to
- // that same live member scope without changing its original tenant or owner.
- const history=!reader.platform?reader.historyEmails||[]:[];
- const sql=`WHERE c.id=$1 ${tenant?`AND (c.tenant_id=$2 OR (c.tenant_id IS NULL AND c.scope_kind='personal' AND c.actor_email=ANY($3::text[]) AND (
-  EXISTS(SELECT 1 FROM app_image_jobs j WHERE j.id=c.source_id AND j.email=c.actor_email AND c.source_kind='image:'||j.kind)
-  OR c.source_kind IN ('canvas-image','canvas') AND EXISTS(SELECT 1 FROM app_canvas_image_tasks j WHERE j.id=c.source_id AND j.email=c.actor_email)
-  OR c.source_kind='video' AND EXISTS(SELECT 1 FROM app_video_tasks j WHERE j.id=c.source_id AND j.email=c.actor_email))))`:''}`;
- return {sql,values:[id,...(tenant?[tenant,history]:[])]};
+type RecordScope={actor_email:string;tenant_id:string|null;scope_kind:string;source_kind:string;source_id:string};
+/** Match the existing exact personal history rules, using only its source. */
+async function hasOwnedPersonalSource(tx:PoolClient,row:RecordScope){
+ const args=[row.source_id,row.actor_email],kind=row.source_kind;
+ if(kind.startsWith('image:'))return !!(await tx.query('SELECT 1 FROM app_image_jobs WHERE id=$1 AND email=$2 AND kind=$3',[...args,kind.slice(6)])).rowCount;
+ if(kind==='canvas-image'||kind==='canvas')return !!(await tx.query('SELECT 1 FROM app_canvas_image_tasks WHERE id=$1 AND email=$2',args)).rowCount;
+ if(kind==='video')return !!(await tx.query('SELECT 1 FROM app_video_tasks WHERE id=$1 AND email=$2',args)).rowCount;
+ return false;
 }
 async function authorizedRecord(tx:PoolClient,reader:CreationDetailReader,id:string,visible:readonly string[]|null,identityOnly=false){
- const {sql,values}=authorizedRecordWhere(reader,id);
- const select=identityOnly?'SELECT c.actor_email FROM app_creation_records c':await recordSelect(tx,false);
- const row=(await tx.query(`${select} ${sql}`,values)).rows[0];
- if(!row||!reader.platform&&visible&&!visible.includes(row.actor_email))throw new TeamError('记录不存在或无权访问',404);return row;
+ const tenant=reader.platform?reader.boundTenantId:reader.tenantId;
+ const {rows:[row]}=await tx.query<RecordScope>('SELECT actor_email,tenant_id,scope_kind,source_kind,source_id FROM app_creation_records WHERE id=$1',[id]);
+ const missing=()=>new TeamError('记录不存在或无权访问',404);
+ if(!row||(!reader.platform&&visible&&!visible.includes(row.actor_email)))throw missing();
+ if(tenant&&row.tenant_id!==tenant.toLowerCase()){
+  if(reader.platform||row.tenant_id!==null||row.scope_kind!=='personal'||!reader.historyEmails?.includes(row.actor_email)||!await hasOwnedPersonalSource(tx,row))throw missing();
+ }
+ if(identityOnly)return row;
+ return (await tx.query(`${await recordSelect(tx,false)} WHERE c.id=$1`,[id])).rows[0];
 }
 const asset=(a:Record<string,any>):CreationAsset=>({id:a.id,direction:a.direction,role:a.role,...(Array.isArray(a.roles)?{roles:a.roles.filter((v:unknown)=>typeof v==='string')}:{}),position:a.position,...(Number.isInteger(a.input_position)?{inputPosition:a.input_position}:{}),...(a.execution_ref?{executionRef:a.execution_ref}:{}),...(a.id.startsWith('recovered-')?{evidenceRecordId:a.creation_id}:{}),variant:a.variant,mime:a.mime,bytes:a.byte_size===null?null:Number(a.byte_size),hash:a.hash,availability:a.availability,mediaType:a.media_type,...(a.text_content?{text:a.text_content}:{})});
 export type DetailPages={assetPage?:number;eventPage?:number;childPage?:number};
