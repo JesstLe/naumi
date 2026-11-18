@@ -4,6 +4,7 @@ import path from "node:path";
 const ts=(id,group,file,expect,args=[])=>({id,group,file,args,expect,pg:true,tsx:true});
 const node=(id,group,file,expect,args=[])=>({id,group,file,args,expect,pg:false,tsx:false});
 export const refactorCases=[
+ ts('enterprise-central-identity','central-identity','scripts/verify-central-identity.ts','CENTRAL_IDENTITY_PASS'),
  node('agent-desktop-client','agent-desktop','scripts/verify-agent-desktop-client.mjs','AGENT_DESKTOP_CLIENT=PASS'),
  ts('agent-desktop-scope-pg','agent-desktop','scripts/verify-agent-desktop-scope-pg.ts','AGENT_DESKTOP_SCOPE_PG=PASS'),
  ts('agent-desktop-gateway','agent-desktop','scripts/agent-gateway-smoke.ts','AGENT_GATEWAY_SMOKE=PASS'),
