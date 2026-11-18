@@ -72,7 +72,18 @@ async function main() {
     process.env.VIDEO_FIXTURE_ROUTER_MANAGEMENT_URL = `http://127.0.0.1:${(router.address() as { port: number }).port}`;
     process.env.VIDEO_FIXTURE_ROUTER_TOKEN = randomBytes(32).toString("hex"); process.env.VIDEO_FIXTURE_ROUTER_ENVELOPE_SECRET = randomBytes(32).toString("hex");
     const assetsRoot = path.join(out, "assets"); await prepareVideoAssets(assetsRoot, [4]);
-    const h = fixture = await createVideoFixture({ startWorker: false, databaseUrl, assetsRoot, videoDefinition: { ...CAP_RICH, providerOptions: { seed: { type: "integer", minimum: 0, maximum: 9999 } } } });
+    const h = fixture = await createVideoFixture({ startWorker: false, databaseUrl, assetsRoot,
+      videoDefinition: { ...CAP_RICH, providerOptions: { seed: { type: "integer", minimum: 0, maximum: 9999 } } },
+      videoExecution: { schemaVersion: 1, profileId: "native-video", profileVersion: 1,
+        recipe: { layout: "ark", defaults: { ordinaryImage: "single_image", sourceVideo: "reference" }, parameters: {
+          durationSeconds: { type: "integer", default: 4, send: "semantic" },
+          resolution: { type: "string", default: "720p", send: "semantic" },
+          aspectRatio: { type: "string", default: "16:9", send: "semantic" },
+          generateAudio: { type: "boolean", default: false, wireField: "generate_audio" },
+          seed: { type: "integer", minimum: 0, maximum: 9999, wireField: "seed" },
+        }, operations: [{ intent: "text" }, { intent: "single_image" }, { intent: "reference" }] },
+      },
+    });
 
     if(process.argv.includes('--matrix-only')){const matrix=await verifyAudioMatrix(h,out);await writeFile(path.join(out,'result.json'),JSON.stringify({matrixOnly:true,matrix},null,2));console.log('AUDIO_MATRIX=PASS NONZERO_FROZEN=3 CANCEL_FAILURE_REFUND=PASS UNKNOWN_ACK_RESTART=ONE_JOB CONCURRENT_CAS=ONE_WINNER MIXED_HISTORY=ATOMIC FOREIGN_TENANT_MEDIA=DENIED TOTAL_CHARGED=17 PAID_CALLS=0');return;}
     if(process.argv.includes('--ui-only')){
@@ -110,7 +121,7 @@ async function main() {
     const restored=await h.request<any>('a','POST','/api/canvas/history',{operationId:randomUUID(),operations:[{type:'audio-visibility',id:copy.id,visible:true},{type:'visibility',id:map[h.refs.audio.id],visible:true},{type:'visibility',id:map[output.artworkId],visible:true}]});assert.equal(restored.status,200,JSON.stringify(restored.body));
     assert.equal((await h.request('a','GET',`/api/canvas/audio-nodes/${copy.id}`)).status,200);
     console.log('AUDIO_PHASE=VIDEO_ACCEPTANCE');
-    const baseConfig = { modelId: "video-a", providerId: "managed-video", mode: "reference", prompt: "保持 {{ref 1}}，人物 {{ref 2}}，对比 {{ref 3}}，另看 图片1", durationSeconds: 4, resolution: "720p", aspectRatio: "16:9", generateAudio: false, providerOptions: { seed: 0 } };
+    const baseConfig = { modelId: "video-a", providerId: "managed-video", mode: "reference", prompt: "保持 {{ref 1}}，人物 {{ref 2}}，对比 {{ref 3}}，另看 图片1", durationSeconds: 4, resolution: "720p", aspectRatio: "16:9", generateAudio: false, parameters: { seed: 0 } };
 
     const characterId='character-audio-'+randomUUID(),sceneId='scene-audio-'+randomUUID(),character=newCharacterProject('司灯人'),scene=newSceneProject('木廊');
     character.description='蓝色工作服';character.appearances[0].referenceArtworkIds=[h.refs.image.id];scene.description='石桌靠东';scene.states[0].referenceArtworkIds=[h.refs.lastImage.id];
@@ -134,17 +145,22 @@ async function main() {
     }
 
     const videoId='vnode-audio-'+randomUUID();await videoNode(videoId);const first=await generate(videoId),frozen=await h.taskPersistence('a',first.task.id);
-    assert.equal(frozen.parameters.request.references.find((ref:any)=>ref.kind==='audio').artworkId,output.artworkId);
-    assert.ok(!JSON.stringify(frozen).includes('FORGED'));
-    const acceptedInputs=frozen.parameters.request.orderedInputs;assert.equal(acceptedInputs.length,6);assert.equal(acceptedInputs[1].nodeId,`inline:character:${characterId}#base@1`);assert.equal(acceptedInputs[3].nodeId,`inline:scene:${sceneId}#base@1`);
-    assert.deepEqual(frozen.parameters.request.references.map((ref:any)=>ref.artworkId),[output.artworkId,h.refs.image.id,h.refs.lastImage.id,h.refs.image.id]);
-    assert.ok(frozen.parameters.request.prompt.includes('角色参考：图片1'));assert.ok(frozen.parameters.request.prompt.includes('场景参考：图片2'));assert.ok(frozen.parameters.request.prompt.includes('对比 图片3'));assert.ok(frozen.parameters.request.prompt.includes('配音 音频1'));
+    const accepted=await h.compiledTaskEvidence('a',first.task.id),acceptedInputs=accepted.inputs;
+    assert.equal(accepted.digest,frozen.parameters.compiledPlanDigest);
+    assert.equal(acceptedInputs.find(ref=>ref.kind==='audio')?.artworkId,output.artworkId);
+    assert.ok(!JSON.stringify([accepted,frozen]).includes('FORGED'));
+    assert.equal(acceptedInputs.length,6);assert.equal(acceptedInputs[1].nodeId,`inline:character:${characterId}#base@1`);assert.equal(acceptedInputs[3].nodeId,`inline:scene:${sceneId}#base@1`);
+    assert.deepEqual(acceptedInputs.filter(ref=>ref.kind!=='text').map(ref=>ref.artworkId),[output.artworkId,h.refs.image.id,h.refs.lastImage.id,h.refs.image.id]);
+    const requestToSupplier=h.supplierCalls().find(call=>call.phase==='create')?.body;
+    const sentPrompt=requestToSupplier?.content[0].text;
+    assert.equal(typeof sentPrompt,'string');assert.ok(sentPrompt.includes('角色参考：图片1'));assert.ok(sentPrompt.includes('场景参考：图片2'));assert.ok(sentPrompt.includes('对比 图片3'));assert.ok(sentPrompt.includes('配音 音频1'));
     const frozenText=JSON.stringify(frozen);
     console.log('AUDIO_PHASE=REPLAY_AFTER_DELETE');
     const deleted=await h.request<any>('a','POST','/api/canvas/nodes/delete',{artworkIds:[h.refs.audio.id],audioIds:[id],operationId:randomUUID()});assert.equal(deleted.status,200,JSON.stringify(deleted.body));
     const afterDelete=await h.creditState('a');
     const acceptedReplay=await h.request<any>('a','POST',`/api/canvas/audio-nodes/${id}/render`,renderIntent);assert.equal(acceptedReplay.status,200,JSON.stringify(acceptedReplay.body));assert.equal(acceptedReplay.body.job.id,job.id);
     const replayVideo=await h.request<any>('a','POST',`/api/canvas/video-nodes/${videoId}/generate`,first.request);assert.equal(replayVideo.body.taskId,first.task.id);assert.deepEqual(await h.creditState('a'),afterDelete);assert.equal(JSON.stringify(await h.taskPersistence('a',first.task.id)),frozenText);
+    const creates=h.supplierCalls().filter(call=>call.phase==='create');assert.equal(creates.length,1);assert.equal(creates[0].body.seed,0);
     const summary={matrix,realAppDbMediaWorker:true,realFfmpegJob:true,adoptedRecipeVerified:true,originalAndDraftSeparate:true,crossAccount404:true,sourceDeletedAcceptedReplay:true,videoSnapshotImmutable:true,mixedCopyRestore:true,mixedAudioCharacterSceneNumberingOnce:true,mediaCost:job.cost,simulatedSupplierCreates:1,paidCalls:0,job,taskId:first.task.id};
     await writeFile(path.join(out,'result.json'),JSON.stringify(summary,null,2));console.log('AUDIO_APPLICATION_CORE=PASS REAL_APP_DB_MEDIA_WORKER=PASS REAL_FFMPEG=PASS RECIPE=TRUSTED PRIVATE_MEDIA_SHA=PASS CROSS_ACCOUNT=404 MIXED_COPY_HISTORY=PASS VIDEO_FROZEN=PASS MIXED_AUDIO_CHARACTER_SCENE=PASS ACCEPTED_REPLAY_AFTER_DELETE=PASS SIMULATED_CREATES=1 PAID_CALLS=0');
   } finally {
