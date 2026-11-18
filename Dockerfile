@@ -47,6 +47,7 @@ ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL \
     NEXT_TELEMETRY_DISABLED=1
 RUN if [ "$NEXT_PUBLIC_CANVAS_PERF_PROBE" = "1" ]; then npm run build -- --profile; else npm run build; fi \
     && npm run build:worker \
+    && npm run build:identity \
     && node scripts/verify-application-worker-package.mjs .next/standalone dist/worker
 
 # ── isolated media runtime (no compiler in the release image) ────────────────
@@ -83,6 +84,8 @@ COPY --from=build --chown=nextjs:nodejs /app/scripts/model-health-worker.mjs ./s
 COPY --from=build --chown=nextjs:nodejs /app/scripts/worker-runtime.mjs ./scripts/worker-runtime.mjs
 COPY --from=build --chown=nextjs:nodejs /app/scripts/direct-worker-settings.mjs ./scripts/direct-worker-settings.mjs
 COPY --from=build --chown=nextjs:nodejs /app/dist/worker ./dist/worker
+COPY --from=build --chown=nextjs:nodejs /app/dist/identity ./dist/identity
+COPY --from=build --chown=nextjs:nodejs /app/docs/organization/APPROVED_ROSTER_20261118.json ./docs/organization/APPROVED_ROSTER_20261118.json
 COPY --from=build --chown=nextjs:nodejs /app/scripts/release-http-observer.cjs ./scripts/release-http-observer.cjs
 COPY --from=build --chown=nextjs:nodejs /app/scripts/runtime-memory.cjs ./scripts/runtime-memory.cjs
 COPY --from=build --chown=nextjs:nodejs /app/scripts/video-media-worker.mjs ./scripts/video-media-worker.mjs

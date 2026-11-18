@@ -1,5 +1,7 @@
 "use client";
 
+import {IdentityManager} from './identity-manager';
+
 import {WORKFLOW_PERMISSIONS,DEFAULT_WORKFLOW_PERMISSIONS,WORKFLOW_PERMISSION_LABELS,type WorkflowPermission} from '@/lib/enterprise/workflow-permissions';
 import {USER_POSITIONS} from '@/lib/accounts/positions';
 import { useSiteProfile } from '@/lib/site-control/client';
@@ -24,7 +26,7 @@ import { EnterpriseEntitlement, EnterpriseSaasOverview, type SaasSnapshot } from
 import type { EnterpriseOverviewMeta } from './saas-overview-contracts';
 import styles from './enterprise.module.css';
 
-type View = 'overview' | 'members' | 'roles' | 'records' | 'usage' | 'settings' | 'health';
+type View = 'identity' | 'overview' | 'members' | 'roles' | 'records' | 'usage' | 'settings' | 'health';
 type LegacySection = 'records' | 'artworks';
 type Member = EnterpriseMember & { membership_status?: 'active' | 'suspended'; membership_expires_at?: string | null };
 type Editor = { kind: 'organization' | 'expiry'; member: Member } | { kind: 'role'; role: EnterpriseRole | null } | null;
@@ -32,7 +34,7 @@ type InitialQuery = { position?:string; recordView?:string; creationId?:string; 
 const identity = (email: string) => email.endsWith(`@${USERNAME_DOMAIN}`) ? email.slice(0, email.lastIndexOf('@')) : email;
 const datetime = (value: string | null | undefined) => value ? new Date(value).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) : '永久';
 const inputDate = (value: string | null | undefined) => { if (!value) return ''; const date = new Date(value); return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16); };
-const validView = (value?: string): View => ['overview', 'members', 'roles', 'records', 'usage', 'settings', 'health'].includes(value || '') ? value as View : 'overview';
+const validView = (value?: string): View => ['overview', 'members', 'roles', 'records', 'usage', 'settings', 'health', 'identity'].includes(value || '') ? value as View : 'overview';
 const validDate = (value?: string) => !!value && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value));
 async function enterpriseFetch(url: string, init?: RequestInit) {
   const headers=new Headers(await authHeader());
@@ -44,7 +46,7 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
   const body = await response.json(); if (!response.ok) throw new Error(body.error || '读取失败'); return body;
 }
 
-export function EnterpriseConsole({ initialQuery = {} }: { initialQuery?: InitialQuery }) {
+export function EnterpriseConsole({ initialQuery = {}, identityAuthorityEnabled=false }: { initialQuery?: InitialQuery; identityAuthorityEnabled?:boolean }) {
   const site=useSiteProfile(), dedicated=site.mode==='enterprise';
   const { user, ready } = useAuth(), email = user?.email || 'console';
   const [entry, setEntry] = useState<{ email: string; enterprises: EnterpriseIdentity[] } | null>(null), [error, setError] = useState('');
@@ -179,7 +181,7 @@ function Workspace({ enterprises, initialQuery, email }: { enterprises: Enterpri
   const closeEditor=()=>{if(!pending&&(!editorDirty.current||window.confirm('有未保存的修改，确定放弃并关闭？')))setEditor(null);};
   const edit = (kind: 'organization' | 'expiry', member: Member) => { editorDirty.current=false;setEditor({ kind, member }); setExpiry(inputDate(member.membership_expires_at)); setEmployment(member.employment); setRoleId(member.role_id || ''); setSupervisor(member.supervisor_email); setError(''); };
   const editRole = (role: EnterpriseRole | null) => { editorDirty.current=false;newRoleId.current = role?.id || crypto.randomUUID(); setEditor({ kind: 'role', role }); setRoleName(role?.name || ''); setLevel(role?.level || 100); setManageMembers(role?.manage_members || false); setViewRecords(role?.view_records || false);setWorkflowPermissions(role?.workflow_permissions??DEFAULT_WORKFLOW_PERMISSIONS); setError(''); };
-  const nav = [{ id: 'overview' as View, label: dedicated?'经营概览':'企业概览', icon: LayoutDashboard }, { id: 'members' as View, label: '组织与成员', icon: Users }, ...(data?.actor.owner ? [{ id: 'roles' as View, label: '岗位与权限', icon: ShieldCheck }] : []), ...(data?.actor.viewRecords ? [{ id: 'records' as View, label: '创作记录', icon: FileText }, { id: 'usage' as View, label: '额度与用量', icon: BarChart3 }] : []), ...(data?.actor.manageMembers?[{id:'health' as View,label:'运行健康',icon:HeartPulse}]:[]), { id: 'settings' as View, label:dedicated?'系统设置':'企业设置', icon: Settings }];
+  const nav = [...(identityAuthorityEnabled&&data?.actor.canManageIdentity?[{id:'identity' as View,label:'组织与权限',icon:ShieldCheck}]:[]),{ id: 'overview' as View, label: dedicated?'经营概览':'企业概览', icon: LayoutDashboard }, { id: 'members' as View, label: '组织与成员', icon: Users }, ...(data?.actor.owner ? [{ id: 'roles' as View, label: '岗位与权限', icon: ShieldCheck }] : []), ...(data?.actor.viewRecords ? [{ id: 'records' as View, label: '创作记录', icon: FileText }, { id: 'usage' as View, label: '额度与用量', icon: BarChart3 }] : []), ...(data?.actor.manageMembers?[{id:'health' as View,label:'运行健康',icon:HeartPulse}]:[]), { id: 'settings' as View, label:dedicated?'系统设置':'企业设置', icon: Settings }];
   const title = nav.find(item => item.id === view)?.label || '企业概览', currentEnterprise = enterprises.find(t => t.id === enterpriseId) || enterprises[0];
   return <main className={styles.page} data-testid='enterprise-console' onClickCapture={event=>{if(accountLockRef.current&&(event.target as HTMLElement).closest('a')){event.preventDefault();event.stopPropagation();setNotice('请先确认当前账号操作的结果');}}}>
     <header className={styles.mobileHeader}><strong>{site.mode === 'enterprise' ? site.policy.brand : 'Naumi'} · 企业管理</strong><button type='button' aria-controls='enterprise-navigation' aria-expanded={mobileOpen} aria-label={mobileOpen ? '收起企业导航' : '展开企业导航'} onClick={() => setMobileOpen(!mobileOpen)}>{mobileOpen ? <X size={23} /> : <Menu size={23} />}</button></header>
@@ -215,6 +217,7 @@ function Workspace({ enterprises, initialQuery, email }: { enterprises: Enterpri
         {view === 'records' && data.actor.viewRecords && <div className={styles.pane}><div className={styles.recordViewTabs}>{([['records','创作记录'],['artworks','图片作品']] as const).map(([id,label])=><button key={id} className={section===id?styles.selectedTab:''} onClick={()=>{setSection(id);updateUrl({recordView:id,creationId:undefined,page:'1',source:undefined,period:undefined,from:undefined,to:undefined});}}>{label}</button>)}</div>{section==='artworks'?<EnterpriseArtworks key={scopeKey+selected} snapshot={data} initialEmail={selected} dedicated={dedicated}/>:<CreationBrowser key={scopeKey+section} tenantId={enterpriseId} enterprise/>}</div>}
         {view==='health'&&data.actor.manageMembers&&<EnterpriseHealthPanel enterpriseId={enterpriseId}/>}
         {view === 'usage' && data.actor.viewRecords && <div className={styles.pane}>{!dedicated && <EnterpriseEntitlement snapshot={data} />}<TenantUsagePanel key={scopeKey} tenantId={enterpriseId} enterprise refreshRevision={metaRevision} selectedPeriod={range} />{!dedicated&&<section className={styles.overviewCard}><h2>功能权益</h2>{data.entitlement && Object.keys(data.entitlement.featurePolicy).length ? <dl className={styles.settingsList}>{Object.entries(data.entitlement.featurePolicy).map(([feature, allowed]) => <div key={feature}><dt>{ACCESS_FEATURES.find(item=>item.id===feature)?.label||'历史权益配置'}</dt><dd>{allowed ? '已开放' : '已关闭'}</dd></div>)}</dl> : <p className={styles.hint}>尚未配置独立功能权益，按现有账户权限执行。</p>}</section>}<EnterpriseHistoryUsage key={scopeKey} snapshot={data} dedicated={dedicated} onMember={memberEmail => navigate('records', { email: memberEmail })} /></div>}
+        {view==='identity'&&identityAuthorityEnabled&&data.actor.canManageIdentity&&<IdentityManager enterpriseId={enterpriseId}/>}
         {view === 'settings' && <EnterpriseSettings dedicated={dedicated} key={enterpriseId} snapshot={data} meta={meta} metaError={metaError} onSaved={() => { setMetaRevision(n => n + 1); void load(); }} />}
       </>}
     </div></section>

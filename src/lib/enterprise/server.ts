@@ -1,3 +1,4 @@
+import {prepareIdentityEvents,identityAccountEvent} from './identity/events';
 import {administeredSite,siteAdministrators} from './site-administrator';
 import {enterpriseSiteIdentity} from '@/lib/site-control/identity';
 import {workflowPermissionsSchema,DEFAULT_WORKFLOW_PERMISSIONS} from './workflow-permissions';
@@ -30,13 +31,13 @@ export async function enterpriseManaged(email: string) {
     WHERE t.owner_email=$1 OR EXISTS(SELECT 1 FROM app_enterprise_members m WHERE m.enterprise_id=s.team_id AND m.email=$1)`,[email])).rowCount;
 }
 async function transaction<T>(run: (tx: PoolClient)=>Promise<T>) {
-  await ensureEnterpriseSchema();const tx=await getPool().connect();
+  await ensureEnterpriseSchema();await prepareIdentityEvents();const tx=await getPool().connect();
   try {await tx.query('BEGIN');const result=await run(tx);await tx.query('COMMIT');return result}
   catch(e){await tx.query('ROLLBACK');throw e}finally{tx.release()}
 }
 async function enterprisePickerRead<T>(run:(tx:PoolClient)=>Promise<T>,signal?:AbortSignal) {
   signal?.throwIfAborted();
-  await ensureEnterpriseSchema();
+  await ensureEnterpriseSchema();await prepareIdentityEvents();
   return withOwnedReportClient(getPool(),async tx=>{
     await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
     await tx.query("SET LOCAL statement_timeout='5s'; SET LOCAL lock_timeout='1s'"+(signal?checkReadClientSocket:''));
@@ -44,7 +45,7 @@ async function enterprisePickerRead<T>(run:(tx:PoolClient)=>Promise<T>,signal?:A
   },signal);
 }
 type Node = { email: string; supervisor_email: string; role_id: string|null; employment: 'permanent'|'intern'; version:number; membership_status?:'active'|'suspended';membership_expires_at?:string|null; global_active?:boolean };
-type Scope = { team: EnterpriseIdentity; teamVersion:number; owner:boolean; level:number; manageMembers:boolean; viewRecords:boolean; roles:EnterpriseRole[]; nodes:Node[]; visible:Set<string>; manageable:Set<string>; entitlement:{name:string|null;seatLimit:number|null;featurePolicy:Record<string,boolean>} };
+type Scope = { team: EnterpriseIdentity; teamVersion:number; owner:boolean; level:number; manageMembers:boolean; viewRecords:boolean; canManageIdentity:boolean; roles:EnterpriseRole[]; nodes:Node[]; visible:Set<string>; manageable:Set<string>; entitlement:{name:string|null;seatLimit:number|null;featurePolicy:Record<string,boolean>} };
 const activeMembership=(node:Node)=>node.global_active!==false&&node.membership_status!=='suspended'&&(!node.membership_expires_at||new Date(node.membership_expires_at).getTime()>Date.now());
 const canManageWorkspace=(role:HierarchyRole|undefined)=>!!role&&(role.manage_members||role.view_records);
 async function scope(tx:PoolClient,actor:TeamActor,id:string,allowSelf=false,lock:'share'|'snapshot'='share'):Promise<Scope> {
@@ -77,8 +78,11 @@ async function scope(tx:PoolClient,actor:TeamActor,id:string,allowSelf=false,loc
   validateHierarchy(team.owner_email,nodes,roles);
   const siteAdmin=(await administeredSite(tx,actor.email,lock))===id;
   const owner=actor.admin||team.owner_email===actor.email||siteAdmin;
+  const centralTitle=process.env.NAUMI_IDENTITY_AUTHORITY_ENABLED==='1'
+    ?(await tx.query(`SELECT o.organization->>'title' AS title FROM app_identity_organizations o JOIN app_identity_subjects i ON i.subject_id=o.subject_id WHERE o.enterprise_id=$1 AND i.account_email=$2`,[id,actor.email])).rows[0]?.title:undefined;
+  const canManageIdentity=team.owner_email===actor.email||centralTitle==='administrator';
   const node=nodes.find(m=>m.email===actor.email),role=roles.find(r=>r.id===node?.role_id);
-  if(!owner&&(!node||!activeMembership(node)||!allowSelf&&!canManageWorkspace(role)))throw new TeamError('当前企业身份已停用、到期或岗位没有管理权限');
+  if(!owner&&(!node||!activeMembership(node)||!allowSelf&&!canManageWorkspace(role)&&!canManageIdentity))throw new TeamError('当前企业身份已停用、到期或岗位没有管理权限');
   const entitlementRow=(await tx.query('SELECT entitlement_name,seat_limit,feature_policy FROM app_tenant_entitlements WHERE tenant_id=$1'+share(),[id])).rows[0];
   const entitlement={name:entitlementRow?.entitlement_name??null,seatLimit:entitlementRow?.seat_limit??null,featurePolicy:entitlementRow?.feature_policy??{}};
   if(!actor.admin&&entitlement.featurePolicy.team===false)throw new TeamError('企业管理功能已停用');
@@ -87,7 +91,7 @@ async function scope(tx:PoolClient,actor:TeamActor,id:string,allowSelf=false,loc
     manageable:new Set(nodes.map(m=>m.email)),
   }:descendantScope(nodes,actor.email,!allowSelf||!!role?.view_records,!!role?.manage_members,activeMembership);
   if(owner){const administrators=await siteAdministrators(tx,id,lock);if(administrators.length){for(const email of administrators)visible.add(email);visible.add(team.owner_email);}}
-  return {team:{id:team.id,name:team.name,owner_email:team.owner_email,authorized_until:accessExpiry,owner},teamVersion:team.version,owner,level:owner?0:role?.level??999,manageMembers:owner||!!role?.manage_members,viewRecords:owner||!!role?.view_records,roles,nodes,visible,manageable,entitlement};
+  return {team:{id:team.id,name:team.name,owner_email:team.owner_email,authorized_until:accessExpiry,owner},teamVersion:team.version,owner,canManageIdentity,level:owner?0:role?.level??999,manageMembers:owner||!!role?.manage_members,viewRecords:owner||!!role?.view_records,roles,nodes,visible,manageable,entitlement};
 }
 /** Workflow creation picker: ordinary employees get self only; never elevates existing analytics routes. */
 /** Read-only snapshot: membership rows are share-locked under REPEATABLE READ, so a
@@ -109,7 +113,7 @@ export async function enterpriseCreationRead<T>(email:string,id:string,run:(tx:P
 }
 /** General enterprise access also serves mutations; retain its authorization locks. */
 export async function enterpriseRead<T>(actor:TeamActor,id:string,run:(tx:PoolClient,s:Scope)=>Promise<T>) {
-  await ensureEnterpriseSchema();const tx=await getPool().connect();
+  await ensureEnterpriseSchema();await prepareIdentityEvents();const tx=await getPool().connect();
   try {
     await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
     await tx.query("SET LOCAL statement_timeout='20s'");
@@ -124,7 +128,7 @@ export async function enterpriseRead<T>(actor:TeamActor,id:string,run:(tx:PoolCl
 function projectionScopeKey(s: Scope) {
   const byId = (a: string, b: string) => a < b ? -1 : a === b ? 0 : 1;
   return JSON.stringify([
-    s.team.id,s.team.owner_email,s.owner,s.level,s.manageMembers,s.viewRecords,
+    s.team.id,s.team.owner_email,s.owner,s.level,s.manageMembers,s.viewRecords,s.canManageIdentity,
     [...s.visible].sort(),[...s.manageable].sort(),
     s.nodes.slice().sort((a,b)=>byId(a.email,b.email)).map(n=>[
       n.email,n.supervisor_email,n.role_id,n.version,n.membership_status,n.membership_expires_at,n.global_active,
@@ -140,7 +144,7 @@ function projectionScopeKey(s: Scope) {
  */
 async function enterpriseProjectionRead<T>(actor:TeamActor,id:string,run:(tx:PoolClient,s:Scope)=>Promise<T>,requireRecords:boolean,allowSelf=false,signal?:AbortSignal,checkout=withOwnedReadClient) {
   signal?.throwIfAborted();
-  await ensureEnterpriseSchema();
+  await ensureEnterpriseSchema();await prepareIdentityEvents();
   try {
     return await checkout(getPool(), async tx=>{
       const cancellation=signal?checkReadClientSocket:'';
@@ -237,10 +241,12 @@ export async function enterpriseList(actor:TeamActor,allowSelf=false,allowedIds?
       return byTenant;
     };
     const roles=group(roleRows),nodes=group(nodeRows);
+    const identityAdmins=process.env.NAUMI_IDENTITY_AUTHORITY_ENABLED==='1'
+      ?new Set((await tx.query(`SELECT o.enterprise_id FROM app_identity_organizations o JOIN app_identity_subjects i ON i.subject_id=o.subject_id WHERE i.account_email=$1 AND o.organization->>'title'='administrator'`,[actor.email])).rows.map(r=>r.enterprise_id)):new Set<string>();
     const result:EnterpriseIdentity[]=[];
     for(const t of eligible){
       const owner=isOwner(t),tenantRoles=roles.get(t.id)??[];
-      if(!owner&&!allowSelf&&!canManageWorkspace(tenantRoles.find(r=>r.id===t.role_id)))continue;
+      if(!owner&&!allowSelf&&!canManageWorkspace(tenantRoles.find(r=>r.id===t.role_id))&&!identityAdmins.has(t.id))continue;
       try{validateHierarchy(t.owner_email,nodes.get(t.id)??[],tenantRoles);}
       catch(e){if(!(e instanceof TeamError)||actor.admin)throw e;continue;}
       result.push({id:t.id,name:t.name,owner_email:t.owner_email,authorized_until:t.sponsor_email?t.expires_at:t.authorized_until,owner});
@@ -289,7 +295,7 @@ async function memberRows(tx:PoolClient,s:Scope):Promise<EnterpriseMember[]> {
 export async function enterpriseSnapshot(actor:TeamActor,id:string,signal?:AbortSignal):Promise<EnterpriseSnapshot> {
   return enterpriseProjectionRead(actor,id,async(tx,s)=>{const members=await memberRows(tx,s);
     const ownerAvailable=s.owner?Number((await tx.query(`SELECT GREATEST(0,COALESCE((SELECT sum(remaining) FROM app_credit_batches WHERE email=u.email AND expires_at>now() AND remaining>0),0)-u.credits_used)::int AS n FROM app_users u WHERE email=$1`,[s.team.owner_email])).rows[0]?.n||0):null;
-    return {enterprise:s.team,members,roles:s.owner?s.roles:[],actor:{owner:s.owner,manageMembers:s.manageMembers,viewRecords:s.viewRecords,level:s.level,scopeLabel:s.owner?'本企业':'当前下级'},ownerAvailable,entitlement:s.entitlement};
+    return {enterprise:s.team,members,roles:s.owner?s.roles:[],actor:{owner:s.owner,canManageIdentity:s.canManageIdentity,manageMembers:s.manageMembers,viewRecords:s.viewRecords,level:s.level,scopeLabel:s.owner?'本企业':'当前下级'},ownerAvailable,entitlement:s.entitlement};
   },false,false,signal,withOwnedReportClient);
 }
 const common={id:z.string().uuid(),enterpriseId:z.string().uuid()};
@@ -304,6 +310,7 @@ export const enterpriseCommandSchema=z.discriminatedUnion('action',[
   z.object({...target,action:z.literal('reset-password'),password:z.string().min(8).max(128)}).strict(),
 ]);
 export async function mutateEnterprise(actor:TeamActor,command:z.infer<typeof enterpriseCommandSchema>) {
+  await prepareIdentityEvents();
   const fingerprint=createHmac('sha256',settingsSecret()).update(JSON.stringify(command)).digest('hex');
   if(command.action==='reset-password')throw new TeamError('企业管理不允许修改全站登录密码，请使用账号安全流程',403);
   return transaction(async tx=>{
@@ -366,6 +373,7 @@ export async function mutateEnterprise(actor:TeamActor,command:z.infer<typeof en
     }
     const result={ok:true,replayed:false};
     await tx.query('INSERT INTO app_enterprise_audit(id,enterprise_id,actor,action,target,fingerprint,result,changes) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb)',[command.id,command.enterpriseId,actor.email,command.action,'email'in command?command.email:command.roleId,fingerprint,JSON.stringify(result),JSON.stringify(changes)]);
+    if('email' in command&&typeof command.email==='string')await identityAccountEvent(tx,command.email,'enterprise-'+command.action,command.enterpriseId);
     return result;
   });
 }
@@ -461,5 +469,16 @@ export async function enterpriseManageTransaction<T>(actor:TeamActor,id:string,r
   const current=await scope(tx,actor,id);
   if(!current.owner||!current.manageMembers)throw new TeamError('仅企业负责人或本站管理员可维护成员账号',403);
   return run(tx,current);
+ });
+}
+
+/** Central organization authority is independent of legacy native business hierarchy. */
+export async function enterpriseIdentityTransaction<T>(actor:TeamActor,id:string,run:(tx:PoolClient,s:Scope)=>Promise<T>){
+ await prepareIdentityEvents();
+ return transaction(async tx=>{
+  await tx.query("SELECT pg_advisory_xact_lock(hashtext('naumi-team-management'))");
+  const s=await scope(tx,actor,id,true);
+  if(actor.admin||actor.consoleAdmin||!s.canManageIdentity)throw new TeamError('需要中央账号管理权限',403);
+  return run(tx,s);
  });
 }

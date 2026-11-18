@@ -1,0 +1,33 @@
+{
+  "implementationCommit": "e5bae085050e16db989c66edb6094b7b72668d58",
+  "baselineCommit": "62ed1ba767195b3e5939da59545deb7d86bce13f",
+  "backendChecks": 13,
+  "baselineHierarchy": "PASS",
+  "modifiedHierarchy": "PASS",
+  "typecheck": "PASS exit0",
+  "registeredRunner": {
+    "status": "PARTIAL",
+    "passed": 1,
+    "failed": 0,
+    "exit": 2,
+    "wholeCore": false
+  },
+  "sourceCopyRollback": {
+    "originalPaths": 1,
+    "addedPathsRemoved": 8,
+    "hashes": "exact",
+    "baselineHierarchy": "PASS"
+  },
+  "liveDeployment": false,
+  "liveAccountCreates": 0,
+  "livePermissionWrites": 0,
+  "remaining": [
+    "central UI",
+    "consumer integration and scoped enforcement",
+    "SSO and invitations",
+    "two actual UI accounts",
+    "browser E2E and independent review",
+    "main integration and47release"
+  ],
+  "artifactRoot": "E:\\Workspace\\naumi-central-identity-20261118\\output\\central-identity-20261118"
+}

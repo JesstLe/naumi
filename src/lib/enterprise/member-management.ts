@@ -1,3 +1,4 @@
+import {prepareIdentityEvents,identityAccountEvent} from './identity/events';
 import 'server-only';
 import {createHmac} from 'node:crypto';
 import {z} from 'zod';
@@ -29,6 +30,7 @@ export type EnterpriseMemberCommand=z.infer<typeof enterpriseMemberCommandSchema
 
 /** Dedicated installations own native account credentials. Shared tenants do not. */
 export async function manageEnterpriseMember(actor:TeamActor,command:EnterpriseMemberCommand){
+ await prepareIdentityEvents();
  const site=enterpriseSiteIdentity();
  if(!site||site.enterpriseId!==command.enterpriseId||supabaseEnabled)throw new TeamError('此账号维护入口仅用于本站独立企业的原生账号',403);
  const runtime=await getBillingRuntime(),billing=await runtime.config.current();
@@ -72,6 +74,7 @@ export async function manageEnterpriseMember(actor:TeamActor,command:EnterpriseM
   const after=(await tx.query('SELECT name,phone,note,position,management_version FROM app_users WHERE email=$1',[command.email])).rows[0];
   const result={ok:true,replayed:false,email:command.email,version:after.management_version};
   await tx.query('INSERT INTO app_enterprise_audit(id,enterprise_id,actor,action,target,fingerprint,result,changes) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb)',[command.id,command.enterpriseId,actor.email,`account-${command.action}`,command.email,fingerprint,JSON.stringify(result),JSON.stringify({before,after,reason:command.reason,...balance,...(command.action==='reset-password'?{sessionsRevoked:true}:{})})]);
+  await identityAccountEvent(tx,command.email,'account-'+command.action,command.enterpriseId);
   return result;
  });}catch(error){if(error instanceof BillingError)throw new TeamError(error.message,error.status);if((error as {code?:string}).code==='23505')throw new TeamError((error as {constraint?:string}).constraint==='app_users_phone_idx'?'该手机号已被其他账号使用':'账号或操作记录已存在，请刷新核对',409);throw error;}
 }
