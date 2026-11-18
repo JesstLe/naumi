@@ -14,7 +14,8 @@ import {listLegacyCreations,legacyCreationDetail,legacyCreationAsset,legacyCreat
 import {creationPlaybackToken,readCreationPlaybackToken,platformPlaybackToken,platformPlaybackAllowed} from './creation-playback';
 import {userFeaturePolicy} from "@/lib/feature-access/repository";
 import {allows} from '@/lib/feature-access/catalog';
-function creationFailure(error:unknown){return error instanceof TeamError?teamJson({error:error.message,code:`CREATION_${error.status}`},error.status):teamJson({error:'创作证据暂不可读取，请重试',code:'CREATION_UNAVAILABLE'},503);}
+function creationFailure(error:unknown,signal:AbortSignal){return signal.aborted?teamJson({error:'请求已取消'},499):
+ error instanceof TeamError?teamJson({error:error.message,code:`CREATION_${error.status}`},error.status):teamJson({error:'创作证据暂不可读取，请重试',code:'CREATION_UNAVAILABLE'},503);}
 export async function creationReader(request:Request,enterprise:boolean):Promise<CreationReader|NextResponse>{
  if(!enterprise){const auth=await tenantAuthorize(request);return auth instanceof NextResponse?auth:{platform:true};}
  const actor=await enterpriseAuthorize(request);if(actor instanceof NextResponse)return actor;
@@ -23,36 +24,39 @@ export async function creationReader(request:Request,enterprise:boolean):Promise
  return {platform:false,actor:{...actor,admin:false},tenantId:id!};
 }
 export async function creationListRoute(request:Request,enterprise=false){
- try{const reader=await creationReader(request,enterprise);if(reader instanceof NextResponse)return reader;
+ const signal=request.signal;
+ try{signal.throwIfAborted();const reader=await creationReader(request,enterprise);if(reader instanceof NextResponse)return reader;
  const query=Object.fromEntries(new URL(request.url).searchParams);if(query.email&&!query.user)query.user=query.email;
  if(query.view==='unified'&&query.source==='legacy')delete query.source;
  if((query.source==='legacy'||query.view==='unified')&&!query.from&&!query.to&&!query.period)query.period='all';
  const today=new Date(Date.now()+8*3600000).toISOString().slice(0,10);if(!query.from&&!query.to&&query.period!=='all'){query.to=today;query.from=new Date(Date.parse(today)-6*86400000).toISOString().slice(0,10);}
  const parsed=creationFiltersSchema.safeParse(query);if(!parsed.success)return teamJson({error:'创作筛选参数无效'},400);
- if(parsed.data.projection==='recent')return reader.platform?teamJson({error:'近期创作仅在企业概览可用'},400):teamJson(await listRecentEnterpriseCreations(reader,parsed.data));
- if(parsed.data.view==='unified')return teamJson(await (parsed.data.projection==='list'?listUnifiedCreationPage:listUnifiedCreations)(reader,parsed.data));
- if(parsed.data.source==='legacy'){if(!reader.platform)return teamJson(await enterpriseHistory(reader.actor,reader.tenantId,parsed.data));if(parsed.data.tenantId)return teamJson({error:'历史记录没有企业归属，不能用于此筛选'},400);return teamJson(await listLegacyCreations(parsed.data));}
- return teamJson(await listCreations(reader,parsed.data));}catch(e){return creationFailure(e);}
+ if(parsed.data.projection==='recent')return reader.platform?teamJson({error:'近期创作仅在企业概览可用'},400):teamJson(await listRecentEnterpriseCreations(reader,parsed.data,signal));
+ if(parsed.data.view==='unified')return teamJson(await (parsed.data.projection==='list'?listUnifiedCreationPage:listUnifiedCreations)(reader,parsed.data,signal));
+ if(parsed.data.source==='legacy'){if(!reader.platform)return teamJson(await enterpriseHistory(reader.actor,reader.tenantId,parsed.data,signal));if(parsed.data.tenantId)return teamJson({error:'历史记录没有企业归属，不能用于此筛选'},400);return teamJson(await listLegacyCreations(parsed.data,undefined,signal));}
+ return teamJson(await listCreations(reader,parsed.data,signal));}catch(e){return creationFailure(e,signal);}
 }
 const detailPagesSchema=z.object({assetPage:z.coerce.number().int().min(1).max(100000).default(1),eventPage:z.coerce.number().int().min(1).max(100000).default(1),childPage:z.coerce.number().int().min(1).max(100000).default(1)});
 const isCreationId=(id:string)=>/^cr-[a-f0-9-]{36}$/i.test(id);
-export async function creationDetailRoute(request:Request,id:string,enterprise=false){try{
+export async function creationDetailRoute(request:Request,id:string,enterprise=false){const signal=request.signal;try{
+ signal.throwIfAborted();
  const reader=await creationReader(request,enterprise);if(reader instanceof NextResponse)return reader;
  const pages=detailPagesSchema.safeParse(Object.fromEntries(new URL(request.url).searchParams));
  if(!pages.success)return teamJson({error:'详情分页参数无效'},400);
- if(id.startsWith('legacy-')&&!reader.platform)return teamJson(await enterpriseHistoryDetail(reader.actor,reader.tenantId,id,pages.data));
- if(id.startsWith('legacy-')&&reader.platform)return teamJson((await legacyCreationDetail(id,pages.data)).detail);
+ if(id.startsWith('legacy-')&&!reader.platform)return teamJson(await enterpriseHistoryDetail(reader.actor,reader.tenantId,id,pages.data,signal));
+ if(id.startsWith('legacy-')&&reader.platform)return teamJson((await legacyCreationDetail(id,pages.data,undefined,signal)).detail);
  if(!isCreationId(id))return teamJson({error:'记录不存在或无权访问'},404);
- return teamJson(await creationDetail(reader,id,pages.data));}catch(e){return creationFailure(e);}}
-export async function creationEventsRoute(request:Request,id:string,enterprise=false){try{
+ return teamJson(await creationDetail(reader,id,pages.data,signal));}catch(e){return creationFailure(e,signal);}}
+export async function creationEventsRoute(request:Request,id:string,enterprise=false){const signal=request.signal;try{
+ signal.throwIfAborted();
  const reader=await creationReader(request,enterprise);if(reader instanceof NextResponse)return reader;
  const pages=detailPagesSchema.safeParse(Object.fromEntries(new URL(request.url).searchParams));
  if(!pages.success)return teamJson({error:'详情分页参数无效'},400);
  const {eventPage}=pages.data;
  if(!id.startsWith('legacy-')&&!isCreationId(id))return teamJson({error:'记录不存在或无权访问'},404);
- const items=id.startsWith('legacy-')?(reader.platform?await legacyCreationEvents(id,eventPage):await enterpriseHistoryEvents(reader.actor,reader.tenantId,id,eventPage)):await creationEvents(reader,id,eventPage);
+ const items=id.startsWith('legacy-')?(reader.platform?await legacyCreationEvents(id,eventPage,undefined,signal):await enterpriseHistoryEvents(reader.actor,reader.tenantId,id,eventPage,signal)):await creationEvents(reader,id,eventPage,signal);
  return teamJson({items,generatedAt:new Date().toISOString()});
- }catch(e){return creationFailure(e);}}
+ }catch(e){return creationFailure(e,signal);}}
 export async function creationAssetRoute(request:Request,id:string,assetId:string,enterprise=false){try{
  const signal=request.signal;signal.throwIfAborted();
  const query=new URL(request.url).searchParams,token=query.get('mediaToken');
@@ -71,4 +75,4 @@ export async function creationAssetRoute(request:Request,id:string,assetId:strin
  if(!['video','audio'].includes(media.mediaType))return teamJson({error:'仅支持查看受控媒体'},422);
  if(query.get('playback')==='1'&&!grant){const url=new URL(request.url);url.searchParams.delete('playback');url.searchParams.set('mediaToken',reader.platform?await platformPlaybackToken(request,id,assetId):creationPlaybackToken(reader.actor.email,reader.tenantId,id,assetId));return teamJson({url:url.pathname+url.search});}
  return streamManagedMedia(request,media.url,media.mime||'application/octet-stream');
- }catch(e){return request.signal.aborted?teamJson({error:'请求已取消'},499):creationFailure(e);}}
+ }catch(e){return creationFailure(e,request.signal);}}

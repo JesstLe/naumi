@@ -16,6 +16,7 @@ async function until<T>(read:()=>Promise<T>,match:(value:T)=>boolean,message:str
 
 async function main(){
  const baseline=process.argv.includes('--baseline');
+ const reportBaseline=process.argv.includes('--reports-baseline'),reports=reportBaseline||process.argv.includes('--reports');
  const tempRoot=path.resolve(tmpdir()),prefix='naumi-creation-asset-fixture-';
  const rootDir=await mkdtemp(path.join(tempRoot,prefix));
  Object.assign(process.env,{SETTINGS_SECRET:'fixture-creation-assets-0123456789abcdef0123456789abcdef',NAUMI_MULTI_USER:'1',
@@ -71,6 +72,64 @@ async function main(){
   };
   const lock=async(sql:string)=>{await guard.query('BEGIN; '+sql);locked=true;};
   const unlock=async(commit=false)=>{await guard.query(commit?'COMMIT':'ROLLBACK');locked=false;};
+  if(reports){
+   const {creationListRoute,creationDetailRoute,creationEventsRoute}=await import('../src/lib/saas/creation-http');
+   await f.pool.query("INSERT INTO app_creation_events(id,creation_id,event_key,type,status,summary) VALUES($1,$2,'internal-accepted','accepted','queued','fixture internal')",
+    ['fixture-event',root]);
+   const read=(name:string,signal?:AbortSignal)=>{
+    const enterprise=name.startsWith('tenant-'),old=name.includes('history'),id=old?legacy:root;
+    const action=name.endsWith('-list')?'list':name.endsWith('-events')?'events':'detail';
+    const p=new URLSearchParams({tenantId});if(action==='list'&&old){p.set('source','legacy');p.set('period','all');if(!enterprise)p.delete('tenantId');}
+    const request=new Request('http://localhost/api/'+(enterprise?'enterprise':'admin')+'/creations'+(action==='list'?'':'/'+id+(action==='events'?'/events':''))+'?'+p,
+      {signal,headers:{cookie:'nv_user='+signUserSession(enterprise?manager:admin,Date.now())}});
+    return action==='list'?creationListRoute(request,enterprise):action==='events'?creationEventsRoute(request,id,enterprise):creationDetailRoute(request,id,enterprise);
+   };
+   const variants=['platform-record-list','tenant-record-detail','platform-record-events','platform-history-detail','tenant-history-events'];
+   for(const name of [...variants,'platform-history-list','tenant-history-list','tenant-history-detail','platform-history-events','tenant-record-events']){
+    const r=await read(name),body=await r.json();assert.equal(r.status,200,JSON.stringify({name,status:r.status,body}));
+    if(name.endsWith('detail'))assert.equal(body.id,name.includes('history')?legacy:root);
+    if(name==='platform-record-events')assert.equal(body.items[0].eventKey,'internal-accepted');
+    if(name==='tenant-record-events'){assert.equal(body.items[0].eventKey,'accepted');assert.equal(body.items[0].summary,'已接受创作请求');}
+    if(name.includes('history')&&name.endsWith('events'))assert.deepEqual(body.items,[]);
+    if(name==='tenant-history-detail')assert.equal(body.technical,undefined);
+   }
+   const waiting=async()=>Number((await guard.query(`SELECT count(DISTINCT pid) n FROM pg_locks WHERE NOT granted
+    AND database=(SELECT oid FROM pg_database WHERE datname=current_database())
+    AND relation IN(to_regclass('app_creation_records'),to_regclass('app_image_jobs'))`)).rows[0].n);
+   if(!reportBaseline){
+    await lock('LOCK TABLE app_creation_records IN ACCESS EXCLUSIVE MODE');
+    const oldDetail=read('tenant-record-detail');pending.push(oldDetail);
+    await until(waiting,n=>n===1,'tenant detail did not reach the lock');
+    await guard.query("SET LOCAL lock_timeout='150ms'");
+    assert.equal((await guard.query('UPDATE app_enterprise_roles SET view_records=false,version=version+1 WHERE id=$1 AND enterprise_id=$2',[role,tenantId])).rowCount,1);
+    await unlock(true);
+    assert.equal((await oldDetail).status,403);
+    await f.pool.query('UPDATE app_enterprise_roles SET view_records=true,version=version+1 WHERE id=$1',[role]);
+   }
+   const entered=new Set<string>(),done=new Map<string,number>();
+   server=createServer(async(req,res)=>{
+    const name=String(req.headers['x-fixture-id']);entered.add(name);
+    const result=await read(name,signalFromNodeResponse(res));done.set(name,result.status);
+    if(!res.destroyed){res.statusCode=result.status;res.end(await result.text());}
+   });
+   await new Promise<void>(resolve=>server!.listen(0,'127.0.0.1',resolve));
+   const endpoint='http://127.0.0.1:'+(server.address() as {port:number}).port;
+   await lock('LOCK TABLE app_creation_records,app_image_jobs IN ACCESS EXCLUSIVE MODE');
+   for(const name of variants){const abort=new AbortController();controllers.push(abort);
+    pending.push(fetch(endpoint,{signal:abort.signal,headers:{'x-fixture-id':name}}).catch(e=>e));}
+   await until(async()=>entered.size,n=>n===5,'all report requests did not enter');
+   const max=await until(waiting,n=>n===(reportBaseline?5:2),'creation report lock wait');
+   if(!reportBaseline){const probe=await Promise.race([f.pool.query('SELECT 1 AS n'),delay(300).then(()=>null)]);assert.equal(probe?.rows[0].n,1);}
+   for(const abort of controllers)abort.abort();
+   await Promise.all(pending);
+   if(reportBaseline){assert.equal(await waiting(),5);await unlock();}
+   else{await until(waiting,n=>n===0,'creation reports retained lock wait');assert.equal(locked,true);}
+   await until(async()=>done.size,n=>n===5,'creation report handlers unfinished');
+   if(!reportBaseline)assert.deepEqual([...done.values()],Array(5).fill(499));
+   console.log(reportBaseline?'CREATION_REPORTS_BASELINE=PASS WAITS=5 DISCONNECT_RETAINS_SQL=1':
+    `CREATION_REPORTS=PASS WAITS=${max} DISCONNECT_RELEASE=1 LEGACY_AND_CANONICAL=1 LIVE_BUSINESS_SQL=1 LIVE_REVOKE=403`);
+   return;
+  }
   await lock('LOCK TABLE app_creation_assets IN ACCESS EXCLUSIVE MODE');
   const beforeRevoke=run(true,false);pending.push(beforeRevoke);
   await until(waiters,n=>n===1,'asset did not reach the lock');

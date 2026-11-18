@@ -1,7 +1,7 @@
 import 'server-only';
 import type {PoolClient} from 'pg';
 import {getPool} from "@/platform/db/pool";
-import {checkReadClientSocket,withOwnedReadClient,withOwnedReportClient} from '@/platform/db/owned-read-client';
+import {checkReadClientSocket,withOwnedReportClient} from '@/platform/db/owned-read-client';
 import {queryBi} from "@/lib/bi/repository";
 import {ensureBiSchema} from "@/lib/bi/schema";
 
@@ -9,7 +9,7 @@ import {parseBiQuery} from '@/lib/bi/contracts';
 import { isManagedImageUrl } from "@/lib/object-storage/runtime";
 import {creationStatus,type CreationDetail,type CreationFilters,type CreationPage,type CreationSummary,type CreationAsset} from './creation-contracts';
 import { TeamError } from "@/lib/teams/errors";
-import {legacyCreationFailures,hasCreationFailure} from './creation-failures';
+import {legacyCreationFailuresInTransaction,hasCreationFailure} from './creation-failures';
 import {readImagegenInputAssetReference} from '@/lib/imagegen/input-asset-reference';
 import {ensureMediaSchema} from '@/lib/media-assets-schema';
 import {legacyCreationId,parseLegacyCreationId as parseId,type LegacySource as Source} from './creation-history-identity';
@@ -20,21 +20,22 @@ import {creationRequestFacts} from './creation-parameters';
 import {legacyImageChildren,legacyOutputFilter,confirmedParentCharge} from './legacy-creation-family';
 export type LegacyReadScope={client:PoolClient;allowedEmails:readonly string[];tenantId?:string};
 const item=(r:Record<string,any>):CreationSummary=>({id:legacyCreationId({table:r.source_table,id:r.id,email:r.email}),title:r.content?.slice(0,120)||r.kind||'历史创作',actorEmail:r.email,actorName:r.email,tenantId:null,scopeKind:'legacy_unconfirmed',sourceKind:r.kind,status:creationStatus(r.status),acceptedAt:new Date(r.created_at).toISOString(),settledCredits:r.has_ledger_charge?Number(r.billed_credits):null,thumbnailAssetId:null,completeness:'not_recorded'});
-export async function listLegacyCreations(f:CreationFilters,access?:LegacyReadScope):Promise<CreationPage>{
+export async function listLegacyCreations(f:CreationFilters,access?:LegacyReadScope,signal?:AbortSignal):Promise<CreationPage>{
  const p=new URLSearchParams({section:'operations',page:String(f.page),size:String(f.size),email:f.user,q:f.q});if(f.from)p.set('from',f.from);if(f.to)p.set('to',f.to);if(f.status)p.set('status',`creation:${f.status}`);
  const query=parseBiQuery(p);if(f.period==='all'){query.start='-infinity';query.end='infinity';}
-  const rows=await queryBi(query,access),items=rows.rows.map(item);
-  const failures=access?new Map():await legacyCreationFailures(getPool(),items.filter(i=>hasCreationFailure(i.status)).map(i=>{const r=parseId(i.id);return {root:i.id,table_name:r.table,id:r.id,email:r.email};}));
+  const rows=await queryBi(query,access,signal),items=rows.rows.map(item);
+  const failed=access?[]:items.filter(i=>hasCreationFailure(i.status)).map(i=>{const r=parseId(i.id);return {root:i.id,table_name:r.table,id:r.id,email:r.email};});
+  const failures=failed.length?await platformLegacyRead(tx=>legacyCreationFailuresInTransaction(tx,failed),signal):new Map();
   for(const i of items)if(failures.has(i.id))i.failure=failures.get(i.id);
   return {items,pagination:{total:rows.total,page:rows.page,size:rows.size},appliedFilters:f,generatedAt:rows.generatedAt,scope:'platform',availability:'available',summary:{total:rows.total,activeMembers:0,settledCredits:null,pending:0,failed:0,needsReview:0},memberUsage:[]};
 }
 type LegacyMedia={asset:CreationAsset;storageRef:string;actorEmail:string};
-async function platformLegacyRead<T>(run:(tx:PoolClient)=>Promise<T>,asset?:{signal?:AbortSignal}):Promise<T>{
- const signal=asset?.signal;signal?.throwIfAborted();
+async function platformLegacyRead<T>(run:(tx:PoolClient)=>Promise<T>,signal?:AbortSignal,asset=false):Promise<T>{
+ signal?.throwIfAborted();
  await ensureBiSchema();
- return (asset?withOwnedReportClient:withOwnedReadClient)(getPool(),async tx=>{
+ return withOwnedReportClient(getPool(),async tx=>{
   await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
-  await tx.query((asset?"SET LOCAL statement_timeout='5s'; SET LOCAL lock_timeout='1s'":"SET LOCAL statement_timeout='20s'")+
+  await tx.query(`SET LOCAL statement_timeout='${asset?'5s':'20s'}'; SET LOCAL lock_timeout='1s'`+
    (signal?checkReadClientSocket:''));
   const result=await run(tx);await tx.query('COMMIT');return result;
  },signal);
@@ -48,7 +49,7 @@ function legacyInputMedia(ref:Source,row:Record<string,any>):LegacyMedia[]{
  if(row.source_artwork_id)add('edit-target',`artwork:${row.source_artwork_id}`);
  return media;
 }
-export async function legacyCreationEvents(id:string,page:number,access?:LegacyReadScope){
+export async function legacyCreationEvents(id:string,page:number,access?:LegacyReadScope,signal?:AbortSignal){
  const ref=parseId(id);if(access&&!access.allowedEmails.includes(ref.email))throw new TeamError('记录不存在或无权访问',404);
  const run=async(tx:PoolClient)=>{
   if(access)await assertLegacySourceTenant(tx,ref,access.tenantId);
@@ -59,20 +60,20 @@ export async function legacyCreationEvents(id:string,page:number,access?:LegacyR
   if(!linked)return [];
   return creationEventsInTransaction(tx,access?{platform:false,tenantId:access.tenantId!,historyEmails:access.allowedEmails}:{platform:true},linked.id,access?.allowedEmails||null,page);
  };
- return access?run(access.client):platformLegacyRead(run);
+ return access?run(access.client):platformLegacyRead(run,signal);
 }
-export async function legacyCreationDetail(id:string,pages:DetailPages&{diagnostics?:boolean;canonical?:boolean}={},access?:LegacyReadScope){
+export async function legacyCreationDetail(id:string,pages:DetailPages&{diagnostics?:boolean;canonical?:boolean}={},access?:LegacyReadScope,signal?:AbortSignal){
  const ref=parseId(id);if(access&&!access.allowedEmails.includes(ref.email))throw new TeamError('记录不存在或无权访问',404);
- if(!access)await ensureBiSchema();const pool=access?.client||getPool();
- if(access)await assertLegacySourceTenant(access.client,ref,access.tenantId);
+ const run=(tx:PoolClient)=>readLegacyCreationDetail(tx,id,ref,pages,access);
+ return access?run(access.client):platformLegacyRead(run,signal);
+}
+async function readLegacyCreationDetail(pool:PoolClient,id:string,ref:Source,pages:DetailPages&{diagnostics?:boolean;canonical?:boolean},access?:LegacyReadScope){
+ if(access)await assertLegacySourceTenant(pool,ref,access.tenantId);
  // Table names come exclusively from the closed schema above; values stay bound.
  const row=(await pool.query(`SELECT * FROM ${ref.table} WHERE id=$1 AND email=$2`,[ref.id,ref.email])).rows[0];if(!row)throw new TeamError('记录不存在或无权访问',404);
  if(pages.canonical!==false&&(!access||access.tenantId)){
-  const linked=await linkedCreation(pool as PoolClient,ref,access?.tenantId);
-  if(linked){const run=async(tx:PoolClient)=>({detail:await creationDetailInTransaction(tx,access?{platform:false,tenantId:access.tenantId!,historyEmails:access.allowedEmails}:{platform:true},linked.id,access?.allowedEmails||null,pages),media:[] as LegacyMedia[]});
-   if(access)return run(access.client);
-   const tx=await getPool().connect();try{await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');const result=await run(tx);await tx.query('COMMIT');return result;}catch(error){await tx.query('ROLLBACK');throw error;}finally{tx.release();}
-  }
+  const linked=await linkedCreation(pool,ref,access?.tenantId);
+  if(linked)return {detail:await creationDetailInTransaction(pool,access?{platform:false,tenantId:access.tenantId!,historyEmails:access.allowedEmails}:{platform:true},linked.id,access?.allowedEmails||null,pages),media:[] as LegacyMedia[]};
  }
  const facts=creationRequestFacts(row.payload,row.parameters,row.prompt),text=facts.text;
  const childRows=await legacyImageChildren(pool,ref,row);
@@ -91,7 +92,7 @@ export async function legacyCreationDetail(id:string,pages:DetailPages&{diagnost
  const ledger=ledgerId?(await pool.query("SELECT -sum(delta)::int AS charged FROM app_ledger WHERE email=$1 AND id=$2 AND kind='consume'",[ref.email,ledgerId])).rows[0]?.charged:null;
  const charged=parentCharged!==null?parentCharged:row.kind==='imagegen'&&childRows.length?null:billing&&['settled','released'].includes(billing.state)?Number(billing.charged_credits):ledger!==null&&ledger!==undefined?Number(ledger):row.metered===false?0:null;
  const detail:CreationDetail={...root,settledCredits:charged,evidencePending:row.snapshot?.creationEvidencePending===true||row.parameters?.creationEvidencePending===true,request:{state:typeof text==='string'?'recorded':'not_recorded',text:typeof text==='string'?text:null},parameters:{state:Object.keys(facts.values).length?'recorded':'not_recorded',values:facts.values},model:{state:'not_recorded',label:null},assets:media.map(m=>m.asset),events:[],children:childRows.slice(((pages.childPage||1)-1)*24,(pages.childPage||1)*24).map(c=>item({source_table:'app_image_jobs',id:c.id,email:c.email,content:creationRequestFacts(c.payload).text||'',kind:'image:'+c.kind,status:c.snapshot?.status,created_at:c.created_at})),assetPagination:{page,size,total:inputCount+outputTotal},eventPagination:{page:1,size:24,total:0},childPagination:{page:pages.childPage||1,size:24,total:childRows.length},billing:{payerAccountId:billings.length||parentCharged!==null||ledger!==null?ref.email:null,source:'历史实际账户',quoted:Number.isSafeInteger(billing?.quote?.requestedCredits)?billing.quote.requestedCredits:Number.isSafeInteger(row.payload?.plan?.totalCredits)?row.payload.plan.totalCredits:null,reserved:null,charged,released:null,refunded:null,state:parentCharged!==null?'settled':billing?.state||'not_recorded',operations:billings.map(b=>({id:b.id,state:b.state,charged:['settled','released'].includes(b.state)?Number(b.charged_credits):null}))},technical:{sourceTable:ref.table,sourceId:ref.id,scope:'历史企业归属未确认',originalStatus:row.snapshot?.status||row.status}};
-  if(!access&&pages.diagnostics!==false&&hasCreationFailure(root.status))detail.failure=(await legacyCreationFailures(getPool(),[{root:id,table_name:ref.table,id:ref.id,email:ref.email}])).get(id);
+  if(!access&&pages.diagnostics!==false&&hasCreationFailure(root.status))detail.failure=(await legacyCreationFailuresInTransaction(pool,[{root:id,table_name:ref.table,id:ref.id,email:ref.email}])).get(id);
   return {detail,media};
 }
 export async function legacyCreationAsset(id:string,assetId:string,access?:LegacyReadScope,signal?:AbortSignal){
@@ -126,5 +127,5 @@ export async function legacyCreationAsset(id:string,assetId:string,access?:Legac
   if(!isManagedImageUrl(url)&&!url.startsWith('data:image/'))throw new TeamError('素材不在受控存储中',422);return {url,mediaType,mime:null};
  };
  if(access)return run(access.client);
- await ensureMediaSchema();return platformLegacyRead(run,{signal});
+ await ensureMediaSchema();return platformLegacyRead(run,signal,true);
 }

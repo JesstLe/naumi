@@ -54,6 +54,7 @@ export const refactorCases=[
  ts('tenant-admin-read-pressure','pricing','scripts/verify-tenant-admin-read-pressure.ts','TENANT_ADMIN_READ=PASS'),
  ts('tenant-usage-range','pricing','scripts/verify-tenant-usage-range.ts','TENANT_USAGE_RANGE=PASS'),
  ts('creation-asset-auth-pressure','foundation','scripts/verify-creation-asset-auth-pressure.ts','CREATION_ASSET_AUTH=PASS'),
+ ts('creation-report-pressure','foundation','scripts/verify-creation-asset-auth-pressure.ts','CREATION_REPORTS=PASS',['--reports']),
  ts('enterprise-scope-scale','foundation','scripts/verify-enterprise-scope-scale.ts','ENTERPRISE_SCOPE_SCALE=PASS'),
  ts('enterprise-directory-pressure','foundation','scripts/verify-enterprise-directory-pressure.ts','ENTERPRISE_DIRECTORY=PASS'),
  {...node('enterprise-directory-browser','foundation','scripts/verify-enterprise-directory-browser.mjs','ENTERPRISE_DIRECTORY_BROWSER=PASS'),clientReact:true},

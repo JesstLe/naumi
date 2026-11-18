@@ -1,8 +1,8 @@
 import 'server-only';
 import type {PoolClient} from 'pg';
 import {getPool} from "@/platform/db/pool";
-import {checkReadClientSocket,withOwnedReadClient,withOwnedReportClient} from '@/platform/db/owned-read-client';
-import {enterpriseHeavyReportRead,enterpriseReportRead} from '@/lib/enterprise/server';
+import {checkReadClientSocket,withOwnedReportClient} from '@/platform/db/owned-read-client';
+import {enterpriseHeavyReportRead} from '@/lib/enterprise/server';
 import { TeamError } from "@/lib/teams/errors";
 import type {TeamActor} from '@/lib/teams/grants';
 import {ensureCreationSchema} from './creation-schema';
@@ -23,12 +23,11 @@ export type CreationReader={platform:true;boundTenantId?:string}|{platform:false
 async function scoped<T>(reader:CreationReader,run:(tx:PoolClient,visible:string[]|null,historyVisible:readonly string[]|null)=>Promise<T>,kind:'report'|'asset'='report',signal?:AbortSignal){
  signal?.throwIfAborted();
  await ensureCreationSchema();
- if(!reader.platform)return (kind==='asset'?enterpriseHeavyReportRead:enterpriseReportRead)(reader.actor,reader.tenantId,
+ if(!reader.platform)return enterpriseHeavyReportRead(reader.actor,reader.tenantId,
   (tx,s)=>run(tx,s.owner?null:[...s.visible],[...new Set([...s.visible,...(s.owner?[s.team.owner_email]:[])])]),signal);
- const checkout=kind==='asset'?withOwnedReportClient:withOwnedReadClient;
- return checkout(getPool(),async tx=>{
+ return withOwnedReportClient(getPool(),async tx=>{
   await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
-  const limits=kind==='asset'?"SET LOCAL statement_timeout='5s'; SET LOCAL lock_timeout='1s'":"SET LOCAL statement_timeout='20s'";
+  const limits=`SET LOCAL statement_timeout='${kind==='asset'?'5s':'20s'}'; SET LOCAL lock_timeout='1s'`;
   await tx.query(limits+(signal?checkReadClientSocket:''));
   const result=await run(tx,null,null);await tx.query('COMMIT');return result;
  },signal);
@@ -71,11 +70,11 @@ function where(reader:CreationReader,f:CreationFilters,visible:string[]|null){
  if(f.from)add('c.accepted_at>=?::timestamptz',fromDate(f.from));if(f.to)add("c.accepted_at<(?::timestamptz+interval '1 day')",fromDate(f.to));
  return {sql:conditions.join(' AND '),values};
 }
-export async function listCreations(reader:CreationReader,f:CreationFilters):Promise<CreationPage>{return readCreationList(reader,f,false);}
-export async function listUnifiedCreations(reader:CreationReader,f:CreationFilters):Promise<CreationPage>{return readCreationList(reader,f,true);}
+export async function listCreations(reader:CreationReader,f:CreationFilters,signal?:AbortSignal):Promise<CreationPage>{return readCreationList(reader,f,false,signal);}
+export async function listUnifiedCreations(reader:CreationReader,f:CreationFilters,signal?:AbortSignal):Promise<CreationPage>{return readCreationList(reader,f,true,signal);}
 /** Overview preview: find the newest matching records across the whole window,
  * then read billing and assets only for that bounded set. */
-export async function listRecentEnterpriseCreations(reader:Extract<CreationReader,{platform:false}>,f:CreationFilters):Promise<{items:CreationSummary[]}>{return scoped(reader,async(tx,visible)=>{
+export async function listRecentEnterpriseCreations(reader:Extract<CreationReader,{platform:false}>,f:CreationFilters,signal?:AbortSignal):Promise<{items:CreationSummary[]}>{return scoped(reader,async(tx,visible)=>{
  const filter=where(reader,f,visible),values=[...filter.values];
  const bind=(value:unknown)=>{values.push(value);return `$${values.length}`;};
  const states=f.statusGroup==='pending'?`live_status IN (${pendingLiveStatuses})`:`${normalizedLiveStatus}=${bind(f.status)}`;
@@ -87,8 +86,8 @@ export async function listRecentEnterpriseCreations(reader:Extract<CreationReade
   FROM selected k JOIN app_creation_records c ON c.id=k.id LEFT JOIN app_users u ON u.email=c.actor_email
   ${recordBillingJoin} ORDER BY c.accepted_at DESC,c.id DESC`,values);
  return {items:result.rows.map(summary)};
-});}
-async function readCreationList(reader:CreationReader,f:CreationFilters,unified:boolean):Promise<CreationPage>{return scoped(reader,async(tx,visible,historyVisible)=>{
+},'report',signal);}
+async function readCreationList(reader:CreationReader,f:CreationFilters,unified:boolean,signal?:AbortSignal):Promise<CreationPage>{return scoped(reader,async(tx,visible,historyVisible)=>{
  const filter=where(reader,f,visible);let values=[...filter.values],sql=`SELECT id,actor_email,tenant_id,accepted_at,live_status,source_kind,source_id FROM (${await recordSelect(tx,false)} WHERE ${filter.sql}) records`;
  if(f.status){values.push(f.status);sql+=` WHERE ${normalizedLiveStatus}=$${values.length}`;}
  const historical=unified?legacyCreationCandidates(f,reader.platform&&(reader.boundTenantId||f.tenantId)?[]:historyVisible,value=>{values.push(value);return `$${values.length}`;},{...(!reader.platform?{tenantId:reader.tenantId}:{})}):null;
@@ -138,10 +137,10 @@ async function readCreationList(reader:CreationReader,f:CreationFilters,unified:
    const historicalFailures=await legacyCreationFailuresInTransaction(tx,rows.filter((r:Record<string,any>)=>r.legacy_table&&hasCreationFailure(r.live_status)).map((r:Record<string,any>)=>({root:legacyCreationId({table:r.legacy_table,id:r.source_id,email:r.actor_email}),table_name:r.legacy_table,id:r.source_id,email:r.actor_email})));
    for(const item of items)if(failures.has(item.id)||historicalFailures.has(item.id))item.failure=failures.get(item.id)||historicalFailures.get(item.id);}
   return {items,pagination:{total,page:f.page,size:f.size},appliedFilters:f,generatedAt:new Date().toISOString(),scope:reader.platform?'platform':visible?'member':'tenant',availability:'available',summary:{total,activeMembers:aggregate.active_members,settledCredits:aggregate.charged??null,pending:aggregate.pending,failed:aggregate.failed,needsReview:aggregate.review},memberUsage};
-});}
+},'report',signal);}
 /** Exact global keys/count first; expensive evidence and billing only for the
  * selected page. No cross-request cache or authorization snapshot is reused. */
-export async function listUnifiedCreationPage(reader:CreationReader,f:CreationFilters):Promise<CreationListPage>{return scoped(reader,async(tx,visible,historyVisible)=>{
+export async function listUnifiedCreationPage(reader:CreationReader,f:CreationFilters,signal?:AbortSignal):Promise<CreationListPage>{return scoped(reader,async(tx,visible,historyVisible)=>{
  const filter=where(reader,f,visible),values=[...filter.values];
  const bind=(value:unknown)=>{values.push(value);return `$${values.length}`;};
  const tenant=!reader.platform?reader.tenantId:undefined;
@@ -177,7 +176,7 @@ export async function listUnifiedCreationPage(reader:CreationReader,f:CreationFi
   for(const item of items)if(canonicalFailures.has(item.id)||legacyFailures.has(item.id))item.failure=canonicalFailures.get(item.id)||legacyFailures.get(item.id);
  }
  return {items,pagination:{total:Number(result.total),page:f.page,size:f.size},appliedFilters:f,generatedAt:new Date().toISOString(),scope:reader.platform?'platform':visible?'member':'tenant',availability:'available'};
-});}
+},'report',signal);}
 
 function authorizedRecordWhere(reader:CreationDetailReader,id:string){
  const tenant=reader.platform?reader.boundTenantId:reader.tenantId;
@@ -207,14 +206,14 @@ async function eventPageItems(tx:PoolClient,reader:CreationDetailReader,id:strin
  const {rows}=await tx.query(`${creationFamilySql} SELECT e.id,e.event_key,e.type,e.status,e.summary,e.occurred_at,e.observed_at FROM app_creation_events e JOIN family f ON f.id=e.creation_id ORDER BY e.occurred_at,e.id LIMIT $2 OFFSET $3`,[id,evidencePageSize,(page-1)*evidencePageSize]);
  return projectEvents(rows,reader);
 }
-export function creationEvents(reader:CreationReader,id:string,page:number){
- return scoped(reader,(tx,visible,historyEmails)=>creationEventsInTransaction(tx,reader.platform?reader:{...reader,historyEmails:historyEmails||[]},id,visible,page));
+export function creationEvents(reader:CreationReader,id:string,page:number,signal?:AbortSignal){
+ return scoped(reader,(tx,visible,historyEmails)=>creationEventsInTransaction(tx,reader.platform?reader:{...reader,historyEmails:historyEmails||[]},id,visible,page),'report',signal);
 }
 export async function creationEventsInTransaction(tx:PoolClient,reader:CreationDetailReader,id:string,visible:readonly string[]|null,page:number){
  await authorizedRecord(tx,reader,id,visible,true);
  return eventPageItems(tx,reader,id,page);
 }
-export async function creationDetail(reader:CreationReader,id:string,pages:DetailPages={}):Promise<CreationDetail>{return scoped(reader,(tx,visible,historyEmails)=>creationDetailInTransaction(tx,reader.platform?reader:{...reader,historyEmails:historyEmails||[]},id,visible,pages));}
+export async function creationDetail(reader:CreationReader,id:string,pages:DetailPages={},signal?:AbortSignal):Promise<CreationDetail>{return scoped(reader,(tx,visible,historyEmails)=>creationDetailInTransaction(tx,reader.platform?reader:{...reader,historyEmails:historyEmails||[]},id,visible,pages),'report',signal);}
 /** Reuse the caller's authorization snapshot; no nested pool checkout. */
 export async function creationDetailInTransaction(tx:PoolClient,reader:CreationDetailReader,id:string,visible:readonly string[]|null,pages:DetailPages={}):Promise<CreationDetail>{
  const row=await authorizedRecord(tx,reader,id,visible);const size=evidencePageSize,assetPage=pages.assetPage||1,eventPage=pages.eventPage||1,childPage=pages.childPage||1;
