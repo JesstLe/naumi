@@ -67,3 +67,9 @@ NAUMI_IDENTITY_CONSUMERS=[{"productId":"design-ops","enterpriseId":"ENTERPRISE_I
 6. 独立复核、真实浏览器与移动验收；main整合/发布继续核对最新主线及47自然排空条件，不强制结束原任务。
 
 功能模块计数：已完成中央后端切片1个；整个统一身份项目未完成。
+
+## 已提交切片与证据
+
+中央后端实现提交 `e5bae085050e16db989c66edb6094b7b72668d58` 已推送。本模块13组验证、既有企业层级回归、全源类型检查均通过；注册runner的定向分组为1通过/0失败，按既有规则整体标记PARTIAL且exit2，不宣称全仓core通过。独立源码副本逐hash恢复原registry并移除8个新增文件，原企业回归再次通过；修改源码保持不变。
+
+四件文件已重开核验：`output/central-identity-20261118/MODIFIED_FILE.tar.gz`、`DIFF_FILE.patch`、`VERIFICATION.txt`、可执行 `ROLLBACK.sh`。结构化结果见同目录文档中的 `2026-11-18-central-identity-evidence.json`。该源码切片没有对应生产部署，也没有新建两个真实账号。
