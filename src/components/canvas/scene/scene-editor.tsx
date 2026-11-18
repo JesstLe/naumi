@@ -57,10 +57,15 @@ export function SceneEditor({ node, images, english = false, readOnly, draftScop
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   async function persist() {
     if (readOnly || JSON.stringify(current.current) === saved.current) return;
-    const parsed = sceneProjectSchema.safeParse(current.current);
+    const submitted = current.current;
+    const parsed = sceneProjectSchema.safeParse(submitted);
     if (!parsed.success) throw new Error(L("请填写有效的场景名称、状态及参考素材", "Enter a valid scene name, state and references"));
     const result = await onSave(parsed.data, revision.current);
     revision.current = result.revision; saved.current = JSON.stringify(parsed.data);
+    if (alive.current && current.current === submitted) {
+      current.current = parsed.data;
+      setDraft(parsed.data);
+    }
     try { sessionStorage.removeItem(cacheKey); } catch {}
     if (alive.current) setHistoryVersion(value => value + 1);
   }

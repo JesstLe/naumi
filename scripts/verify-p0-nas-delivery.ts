@@ -89,18 +89,21 @@ async function main(){
   try{await lock.query('SELECT pg_advisory_lock(hashtextextended($1,0))',['media-variants:'+variantKey]);
    const pending=await Promise.race([assets.ensureMediaVariants(variantKey),new Promise<never>((_,reject)=>{const t=setTimeout(()=>reject(Error('contender waited for variant lock')),2000);t.unref();})]);assert.equal(pending!.thumbnail_key,null);
   }finally{await lock.query('SELECT pg_advisory_unlock(hashtextextended($1,0))',['media-variants:'+variantKey]);lock.release();}
-  // Freeze the original row while actual sharp/variant I/O runs; then change
-  // its content before attachment. Stale variants must not bind the new source.
-  const rowLock=await db.getPool().connect();let variantWork:ReturnType<typeof assets.ensureMediaVariants>|undefined;
-  try{await rowLock.query('BEGIN');await rowLock.query('SELECT key FROM app_media_assets WHERE key=$1 FOR UPDATE',[variantKey]);
-   variantWork=assets.ensureMediaVariants(variantKey,bytes);
-   const deadline=Date.now()+5000;let waiting=false;
-   while(Date.now()<deadline){const q=await admin.query("SELECT count(*)::int n FROM pg_stat_activity WHERE wait_event_type='Lock' AND query LIKE 'UPDATE app_media_assets SET thumbnail_key%'");if(q.rows[0].n){waiting=true;break;}await new Promise(r=>setTimeout(r,20));}
-   assert.equal(waiting,true,'actual variant attachment reached original row CAS');
+  // The worker must claim the row before deriving images. Pause its first
+  // actual variant upload so the original can change before attachment.
+  capacity.setAvailableBytes(0);hold();
+  const variantWork=assets.ensureMediaVariants(variantKey,bytes);
+  let variantTimer:ReturnType<typeof setTimeout>|undefined;
+  try{
+   await Promise.race([atPut,variantWork.then(()=>{throw Error('Variant work ended before the held upload');}),new Promise<never>((_,reject)=>{variantTimer=setTimeout(()=>reject(Error('Variant upload did not start')),5000);})]);
+   const claimed=await db.getPool().query('SELECT variant_claim_id FROM app_media_assets WHERE key=$1',[variantKey]);
+   assert.ok(claimed.rows[0].variant_claim_id);
+   capacity.setAvailableBytes(admittedBytes);
    await storage.writeStoredObject(changed,'image/png',variantKey);
-   await rowLock.query('UPDATE app_media_assets SET sha256=$2,bytes=$3 WHERE key=$1',[variantKey,hash(changed),changed.length]);await rowLock.query('COMMIT');
+   await db.getPool().query('UPDATE app_media_assets SET sha256=$2,bytes=$3 WHERE key=$1',[variantKey,hash(changed),changed.length]);
+   release();
    const result=await variantWork;assert.equal(result!.sha256,hash(changed));assert.equal(result!.thumbnail_key,null);assert.equal(result!.preview_key,null);
-  }finally{await rowLock.query('ROLLBACK').catch(()=>{});rowLock.release();await variantWork?.catch(()=>{});}
+  }finally{if(variantTimer)clearTimeout(variantTimer);capacity.setAvailableBytes(admittedBytes);release();await variantWork.catch(()=>{});}
   console.log('P0_NAS_DELIVERY PASS: actual PG + HTTP; immediate original/variants; owner ACL/media/download; range; fenced mirror/content/claim CAS; nonblocking variant lock; stale variant CAS; no network transaction; verified local read; corruption fallback; cancellation; supplier calls=0');
   const report={status:'PASS',admittedElapsedMs,originalDeadlineMs:5000,lowCapacityRemoteFirst,capacityRead:'EXPLICIT_FIXTURE',capacityObservations:capacity.observations(),actualPostgres:true,actualHttp:true,actualLocalFiles:true,actualSharp:true,supplierCalls:0};
   const out=path.resolve(process.env.P0_NAS_EVIDENCE||'output/p0-nas-delivery');await mkdir(out,{recursive:true});await writeFile(path.join(out,'RESULT.json'),JSON.stringify(report,null,2)+'\n');
