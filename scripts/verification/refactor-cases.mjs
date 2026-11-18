@@ -60,6 +60,7 @@ export const refactorCases=[
  ts('platform-tenant-reads','foundation','scripts/verify-platform-tenant-reads.ts','PLATFORM_TENANT_READ=PASS'),
  ts('platform-tenant-activity','foundation','scripts/verify-platform-tenant-activity.ts','PLATFORM_TENANT_ACTIVITY=PASS'),
  {...node('platform-tenant-browser','foundation','scripts/verify-platform-tenant-browser.mjs','PLATFORM_TENANT_BROWSER=PASS'),clientReact:true},
+ {...node('platform-overview-browser','foundation','scripts/verify-platform-overview-browser.mjs','PLATFORM_OVERVIEW_BROWSER=PASS'),clientReact:true},
  node('native-fixture-lifecycle','runtime','scripts/verify-native-fixture-lifecycle.cjs','NATIVE_FIXTURE_LIFECYCLE=PASS'),
  node('native-fixture-memory','runtime','scripts/verify-native-fixture-memory.cjs','NATIVE_FIXTURE_MEMORY=PASS'),
  node('native-parent-database','runtime','scripts/verify-native-parent-database.cjs','NATIVE_PARENT_DATABASE=PASS'),

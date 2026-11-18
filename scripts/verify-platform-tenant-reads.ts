@@ -104,7 +104,8 @@ async function main(){
   server=createServer(async(req,res)=>{
    const i=String(req.headers['x-fixture-id']);active.add(i);
    const kind=baseline?(Number(i)%2===0?'detail':'list'):Number(i)<3?'overview':Number(i)===3?'list':'detail';
-   try{const out=await get(kind,'',signalFromNodeResponse(res));done.set(i,out.status);
+   const query=kind==='overview'&&!overviewBaseline&&i==='0'?'projection=metrics':'';
+   try{const out=await get(kind,query,signalFromNodeResponse(res));done.set(i,out.status);
     if(!res.destroyed){res.statusCode=out.status;res.end(await out.text());}}finally{active.delete(i);}
   });
   await new Promise<void>(resolve=>server!.listen(0,'127.0.0.1',resolve));

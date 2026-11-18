@@ -43,7 +43,7 @@
 | `GET /api/admin/owner-account` | `src/app/api/admin/owner-account/route.ts` | 待核查 |
 | `GET /api/admin/prompts` | `src/app/api/admin/prompts/route.ts` | 待核查 |
 | `GET /api/admin/pubkey` | `src/app/api/admin/pubkey/route.ts` | 待核查 |
-| `GET /api/admin/saas-overview` | `src/app/api/admin/saas-overview/route.ts` | 已核查：管理授权、只读快照、日期和租户筛选、20 万条合成记录的单扫描计划；与租户列表/详情共用连接额度，HTTP 断开释放 SQL |
+| `GET /api/admin/saas-overview` | `src/app/api/admin/saas-overview/route.ts` | 已核查：管理授权、日期、旧完整快照、20 万条趋势单扫描；独立指标不读租户名单与权益表，旧/新投影共享额度，HTTP 断开释放 SQL |
 | `GET /api/admin/settings` | `src/app/api/admin/settings/route.ts` | 待核查 |
 | `GET /api/admin/supplier-cost` | `src/app/api/admin/supplier-cost/route.ts` | 部分：四个标签和旧合包隔离验证，共享读取额度与断开取消；48,000 条隔离流水验证长窗口、完整链前 500、旧页码减宽排序和响应一致。更大数据的精确总数、深偏移上界仍待量化 |
 | `GET /api/admin/supplier-cost/operations/[id]` | `src/app/api/admin/supplier-cost/operations/[id]/route.ts` | 部分：隔离 PG 验证权限、私有响应、共享额度、断开取消、旧五部分同快照；新版摘要与费用按 25 条翻页、单次详情按归属校验。单调用超大 JSON 和旧完整响应仍需容量验收 |
@@ -301,7 +301,7 @@
 | `页面 /admin/billing` | `src/app/admin/billing/page.tsx` | 部分：人工核对新旧深链不读现价；列表、详情及当前配置读取取消去重，切换保留草稿和原提交身份；历史翻页、预览防乱序、基线更新保留冻结目标和恢复重试已核。其他分区另核 |
 | `页面 /admin/billing/price-table` | `src/app/admin/billing/price-table/page.tsx` | 已核查：实际浏览器验证筛选和导出零请求、下载与显示同一版本、连点刷新去重、离开取消；隔离验证，非生产 |
 | `页面 /admin/billing/supplier-cost` | `src/app/admin/billing/supplier-cost/page.tsx` | 部分：调用链切换、去重、取消、分页及账务按需展开，旧服务器返回完整数据时本地分页；长窗口和深页已隔离核查。写操作与真实容量另核 |
-| `页面 /admin/center` | `src/app/admin/center/page.tsx` | 部分：默认双概览分口径，旧 URL 重复 BI GET 已在真实浏览器复现及修复；导航和各面板仍待复查 |
+| `页面 /admin/center` | `src/app/admin/center/page.tsx` | 部分：双概览分口径，旧 URL 不重复 BI GET；总览组件验证租户翻页/搜索/状态不重算指标、日期取消、独立重试、撤权清空；其他面板和真实网关待复查 |
 | `页面 /admin/creations` | `src/app/admin/creations/page.tsx` | 部分：实测可见性、重试、会话取消、预览解码、24 张图请求峰值和切换时清理；真实导航组合待核 |
 | `页面 /admin/creations/[id]` | `src/app/admin/creations/[id]/page.tsx` | 待核查 |
 | `页面 /admin/creations/resolve` | `src/app/admin/creations/resolve/page.tsx` | 待核查 |

@@ -32,7 +32,12 @@ function clearFaults() {
 const db = {
   dbEnabled: true, ensureSchema: async () => {}, creditMeteringEnabled: async () => true,
   expireDueBatches: async () => {}, refreshBalance: async () => {},
-  getPool: () => ({
+  getPool: () => fixtureDbPool,
+};
+// The report admission budget is keyed by a stable Pool instance and reads its
+// actual configured capacity. Keep the SQL fault injection on borrowed clients.
+const fixtureDbPool = {
+    get options() { return pool.options; },
     async query(sql, values) {
       if (sql.startsWith('UPDATE app_image_jobs SET lease_token=NULL')) metrics.releases++;
       return pool.query(sql, values);
@@ -74,7 +79,6 @@ const db = {
         },
       };
     },
-  }),
 };
 const mocks = {
   db,
@@ -477,7 +481,11 @@ async function main() {
     if (container) {
       assert.equal(JSON.parse(docker(['inspect', container]))[0].Config.Labels['naumi.fixture'], label);
       docker(['rm', '-f', container]); assert.equal(docker(['ps', '-aq', '--filter', 'label=naumi.fixture=' + label]), '');
-      assert.equal(await tcp(fixturePort), false); console.log('FIXTURE_REMOVED=1 TCP_CLOSED=1');
+      // The Windows/WSL loopback forwarder may observe removal after Docker.
+      const deadline=Date.now()+3_000;
+      let listening=await tcp(fixturePort);
+      while(listening&&Date.now()<deadline){await new Promise(resolve=>setTimeout(resolve,100));listening=await tcp(fixturePort);}
+      assert.equal(listening, false); console.log('FIXTURE_REMOVED=1 TCP_CLOSED=1');
     }
   }
 }

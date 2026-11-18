@@ -231,14 +231,23 @@ export async function mutateTenantMember(actor:TeamActor,id:string,command:z.inf
     return result;
   });
 }
+async function platformMetrics(tx:PoolClient,dates:TenantDateWindow,present:boolean) {
+  const totals=(await tx.query(`SELECT count(*)::int total,
+    count(*) FILTER(WHERE COALESCE(t.enabled,true) AND COALESCE(s.enabled,true)
+      AND t.authorized_until>now() AND t.authorized_until<=now()+interval '7 days')::int expiring
+    FROM app_account_teams t JOIN app_users owner ON owner.email=t.owner_email JOIN app_enterprise_settings s ON s.team_id=t.id`)).rows[0];
+  const activity=present?await readOverviewActivity(tx,dates):null;
+  return {metrics:{tenants:totals.total,expiring:totals.expiring,activeTenants:activity?.active??null,creations:activity?.creations??null,
+    needsReview:activity?.review??null,failed:activity?.failed??null},trend:activity?.trend??null};
+}
+export async function saasOverviewMetrics(filters:Pick<TenantFilters,'from'|'to'>,signal?:AbortSignal) {
+  const dates=tenantDates(filters);
+  return tenantRead(async tx=>({...await platformMetrics(tx,dates,await creationTable(tx)),generatedAt:new Date().toISOString()}),signal,'20s');
+}
 export async function saasOverview(filters:TenantFilters,signal?:AbortSignal) {
   const dates=tenantDates(filters);
   return tenantRead(async tx=>{
     const present=await creationTable(tx),tenants=await tenantList(tx,{...filters,size:10},dates,present);
-    const totals=(await tx.query(`WITH tenants AS (${projection}) SELECT count(*)::int total,
-      count(*) FILTER(WHERE status='active' AND authorized_until>now() AND authorized_until<=now()+interval '7 days')::int expiring FROM tenants`)).rows[0];
-    const activity=present?await readOverviewActivity(tx,dates):null;
-    return {metrics:{tenants:totals.total,expiring:totals.expiring,activeTenants:activity?.active??null,creations:activity?.creations??null,
-      needsReview:activity?.review??null,failed:activity?.failed??null},trend:activity?.trend??null,tenants,generatedAt:new Date().toISOString()};
+    return {...await platformMetrics(tx,dates,present),tenants,generatedAt:new Date().toISOString()};
   },signal,'20s');
 }

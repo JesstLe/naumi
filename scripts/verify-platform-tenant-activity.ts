@@ -31,6 +31,11 @@ async function main(){
   const without=await (await readList()).json();
   assert.equal(without.items.length,3);
   assert.ok(without.items.every((item:{creationCount:null;lastActivityAt:null})=>item.creationCount===null&&item.lastActivityAt===null));
+  if(!baseline){
+   const res=await overview.GET(req('/api/admin/saas-overview','projection=metrics')),missing=await res.json();
+   assert.equal(res.status,200,JSON.stringify(missing));assert.deepEqual(missing.metrics,{tenants:3,expiring:0,activeTenants:null,creations:null,needsReview:null,failed:null});
+   assert.equal(missing.trend,null);assert.equal(missing.tenants,undefined);
+  }
   await (await import('../src/lib/saas/creation-schema')).ensureCreationSchema();
   await f.pool.query(`INSERT INTO app_creation_records
     (id,actor_email,scope_kind,tenant_id,source_kind,source_id,accepted_at,request_snapshot)
@@ -61,6 +66,23 @@ async function main(){
   assert.deepEqual(sums.tenants.items.map(fields),[expected[0]]);
   assert.deepEqual(sums.metrics,{tenants:3,expiring:0,activeTenants:1,creations:3,needsReview:1,failed:1});
   assert.equal(sums.trend.at(0).count,2);assert.equal(sums.trend.at(-1).count,1);
+  if(!baseline){
+   const only=await(await overview.GET(req('/api/admin/saas-overview','projection=metrics&q=no-match&status=suspended&page=2'))).json();
+   assert.equal(only.tenants,undefined);assert.deepEqual(only.metrics,sums.metrics);assert.deepEqual(only.trend,sums.trend);
+   assert.equal((await overview.GET(req('/api/admin/saas-overview','projection=metrics','activity-alpha@tenant-activity.test'))).status,403);
+   assert.equal((await overview.GET(req('/api/admin/saas-overview','projection=metrics&projection=metrics'))).status,400);
+   await f.pool.query("UPDATE app_account_teams SET authorized_until=now()+interval '2 days' WHERE id=ANY($1::uuid[])",[[alpha,beta]]);
+   await f.pool.query("UPDATE app_enterprise_settings SET enabled=false WHERE team_id=$1",[beta]);
+   const lock=await f.pool.connect();
+   try{
+    await lock.query('BEGIN; LOCK TABLE app_tenant_entitlements,app_enterprise_members IN ACCESS EXCLUSIVE MODE');
+    const res=await overview.GET(req('/api/admin/saas-overview','projection=metrics')),unblocked=await res.json();
+    assert.equal(res.status,200,JSON.stringify(unblocked));assert.equal(unblocked.metrics.expiring,1);
+    assert.deepEqual(unblocked.trend,sums.trend);
+    assert.equal((await overview.GET(req('/api/admin/saas-overview'))).status,503);
+    console.log('PLATFORM_METRICS_PROJECTION=PASS WITHOUT_LIST_TABLES=1 LEGACY_SNAPSHOT=1');
+   }finally{await lock.query('ROLLBACK');lock.release();}
+  }
   const args=[[alpha,beta,empty],window.start,window.end];
   const explain=async(sql:string)=>{
    const plan=(await f.pool.query('EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) '+sql,args)).rows[0]['QUERY PLAN'][0];
