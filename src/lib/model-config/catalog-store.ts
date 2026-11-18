@@ -33,8 +33,11 @@ export async function readProviderCatalogFrom(pool:Pick<Pool,"query">,providers:
 type CacheRow={revision:string;result:ProviderCatalogResult;updated_at:Date;last_success_at:Date|null};
 const cacheRow=async (tx:PoolClient,key:string)=>(await tx.query<CacheRow>(
   "SELECT xmin::text AS revision,result,updated_at,last_success_at FROM app_model_provider_catalog WHERE fingerprint=$1",[key])).rows[0];
+const catalogLockKey=(key:string)=>'provider-catalog:'+key;
 const tryCatalogLock=async (tx:PoolClient,key:string)=>(await tx.query<{locked:boolean}>(
-  'SELECT pg_try_advisory_xact_lock(hashtextextended($1,0)) AS locked',['provider-catalog:'+key])).rows[0].locked;
+  'SELECT pg_try_advisory_xact_lock(hashtextextended($1,0)) AS locked',[catalogLockKey(key)])).rows[0].locked;
+const lockCatalog=(tx:PoolClient,key:string)=>tx.query(
+  'SELECT pg_advisory_xact_lock(hashtextextended($1,0))',[catalogLockKey(key)]);
 const refreshState=async (tx:PoolClient,key:string)=>(await tx.query<{published:boolean}>(
   'SELECT published FROM app_model_provider_catalog_refresh WHERE fingerprint=$1 AND expires_at>clock_timestamp()',[key])).rows[0];
 const ownsRefresh=async(tx:PoolClient,key:string,token:string)=>!!(await tx.query(
@@ -74,9 +77,13 @@ export async function refreshProviderCatalog(pool:Pool,p:ModelProvider,credentia
     const success=remote.status==='ok'||remote.status==='empty';
     const written=await catalogTx(pool,async tx=>{
       signal?.throwIfAborted();
-      const locked=await tryCatalogLock(tx,key),current=await cacheRow(tx,key);
-      if(!locked||!await ownsRefresh(tx,key,token)||current?.revision!==claimed.previous?.revision){
-        const running=!locked||!!await refreshState(tx,key);
+      // A duplicate request can hold the advisory lock briefly while reading
+      // the lease. Wait for that transaction within catalogTx's lock timeout.
+      await lockCatalog(tx,key);
+      signal?.throwIfAborted();
+      const current=await cacheRow(tx,key);
+      if(!await ownsRefresh(tx,key,token)||current?.revision!==claimed.previous?.revision){
+        const running=!!await refreshState(tx,key);
         return {entry:{...entry(current,p),...(running?{refreshing:true}:{})}};
       }
       const saved={...remote,models:success?remote.models:current?.result.models||[]};
@@ -93,7 +100,10 @@ export async function refreshProviderCatalog(pool:Pool,p:ModelProvider,credentia
     let superseded=false;
     const metadataSaved=await ingestSupplierSources(pool,p,{...written.entry,models:remote.sourceModels||written.entry.models},published,async tx=>{
       signal?.throwIfAborted();
-      if(!await tryCatalogLock(tx,key)||!await ownsRefresh(tx,key,token)||(await cacheRow(tx,key))?.revision!==written.revision){
+      await tx.query("SET LOCAL lock_timeout='750ms'");
+      await lockCatalog(tx,key);
+      signal?.throwIfAborted();
+      if(!await ownsRefresh(tx,key,token)||(await cacheRow(tx,key))?.revision!==written.revision){
         superseded=true;
         throw Error('CATALOG_REFRESH_SUPERSEDED');
       }

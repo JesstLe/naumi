@@ -6,8 +6,8 @@ import {Pool} from 'pg';
 import {signalFromNodeResponse} from 'next/dist/server/web/spec-extension/adapters/next-request';
 import {createModelFixture} from './model-config-fixture';
 
-async function until(check:()=>boolean,reason:string){
- const end=Date.now()+2500;while(!check()){assert.ok(Date.now()<end,reason);await delay(15);}
+async function until(check:()=>boolean|Promise<boolean>,reason:string){
+ const end=Date.now()+2500;while(!await check()){assert.ok(Date.now()<end,reason);await delay(15);}
 }
 async function main(){
  assert.match(new URL(process.env.DATABASE_URL??'http://invalid').pathname,/fixture/);
@@ -100,6 +100,27 @@ async function main(){
    }finally{await legacy.query('ROLLBACK');legacy.release();}
    release(pending.get('p0')![6],'would-overwrite-legacy');
    assert.equal((await racing).models[0].id,'legacy-winner');
+
+   const publishing=refresh(0,true);
+   await until(()=>pending.get('p0')?.length===8,'publication contention probe did not start');
+   const reader=await observer.connect();
+   try{
+    await reader.query('BEGIN');
+    await reader.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))",['provider-catalog:'+key]);
+    const {rows:[{pid}]}=await reader.query<{pid:number}>('SELECT pg_backend_pid() AS pid');
+    release(pending.get('p0')![7],'published-after-reader');
+    await until(async()=>{
+     const result=await observer.query(`SELECT 1 FROM pg_locks waiting
+       JOIN pg_locks held USING (database,classid,objid,objsubid)
+       WHERE waiting.locktype='advisory' AND held.locktype='advisory'
+         AND held.pid=$1 AND NOT waiting.granted`,[pid]);
+     return result.rowCount===1;
+    },'publishing lease owner did not wait for the short catalogue transaction');
+    await reader.query('COMMIT');
+   }finally{await reader.query('ROLLBACK');reader.release();}
+   const receipt=await publishing;
+   assert.equal(receipt.models[0].id,'published-after-reader');
+   assert.equal(receipt.metadataSaved,true);
 
    const {createCatalogHandler}=await import('../src/lib/model-config/catalog-access');
    f.config.providers.push(...providers);
