@@ -15,8 +15,9 @@ import { TeamError } from "@/lib/teams/errors";
 import {teamJson} from '@/lib/teams/access';
 import {ALL_FEATURE_IDS} from '@/lib/feature-access/catalog';
 import type {TeamActor} from '@/lib/teams/grants';
-import {createTenantSchema,updateTenantSchema,tenantMemberSchema,type TenantDetailProjection,type TenantFilters,type TenantList,type TenantSummary} from './tenant-contracts';
+import {createTenantSchema,updateTenantSchema,tenantMemberSchema,type TenantDetailProjection,type TenantFilters,type TenantList,type TenantMemberPageQuery,type TenantSummary} from './tenant-contracts';
 import {readOverviewActivity,type TenantDateWindow} from './overview-activity';
+import {readPlatformMembers,readPlatformSupervisors} from './platform-member-directory';
 
 
 
@@ -86,18 +87,12 @@ export async function listTenants(filters:TenantFilters,signal?:AbortSignal):Pro
   const dates=tenantDates(filters);
   return tenantRead(tx=>tenantList(tx,filters,dates),signal);
 }
-export async function tenantDetail(id:string,projectionKind:TenantDetailProjection='full',signal?:AbortSignal) {
+export async function tenantDetail(id:string,projectionKind:Exclude<TenantDetailProjection,'supervisors'>='full',signal?:AbortSignal,memberPage?:TenantMemberPageQuery) {
   return tenantRead(async tx=>{
     const row=(await tx.query(`${projection} WHERE t.id=$1`,[id])).rows[0];
     if(!row)throw new TeamError('租户不存在',404);
     const full=projectionKind==='full',readMembers=full||projectionKind==='members';
-    const members=readMembers?(await tx.query(`SELECT m.email,u.name,m.supervisor_email,m.role_id,COALESCE(r.name,'员工') role_name,
-      m.employment,m.membership_status,m.membership_expires_at,m.joined_at,m.left_at,m.version,
-      u.banned,u.account_expires_at,u.management_version
-      FROM app_enterprise_members m JOIN app_users u ON u.email=m.email
-      LEFT JOIN app_enterprise_roles r ON r.enterprise_id=m.enterprise_id AND r.id=m.role_id
-      WHERE m.enterprise_id=$1 ORDER BY u.name,m.email`,[id])).rows:[];
-    const roles=readMembers?(await tx.query('SELECT id,name,level,manage_members,view_records,version FROM app_enterprise_roles WHERE enterprise_id=$1 ORDER BY level,id',[id])).rows:[];
+    const directory=readMembers?await readPlatformMembers(tx,id,full?undefined:memberPage):{members:[],roles:[]};
     const audit=full||projectionKind==='audit'?(await tx.query(`SELECT command_id AS id,actor,action,changes,created_at FROM app_tenant_commands WHERE tenant_id=$1
       UNION ALL SELECT id,actor,action,changes,created_at FROM app_enterprise_audit WHERE enterprise_id=$1
       ORDER BY created_at DESC,id DESC LIMIT 100`,[id])).rows.map(row=>({...row,reason:row.changes?.reason??row.changes?.after?.reason??null})):[];
@@ -111,7 +106,13 @@ export async function tenantDetail(id:string,projectionKind:TenantDetailProjecti
           WHERE c.tenant_id=$1 AND c.scope_kind='tenant' AND l.target_type='billing' AND l.target_id=b.id AND c.payer_account_id=b.email)`,[id])).rows[0];
       consumedCredits=money.n??null;
     }
-    return {tenant,members,roles,audit,usage:{confirmedCreations:tenant.creationCount,consumedCredits},generatedAt:new Date().toISOString()};
+    return {tenant,...directory,audit,usage:{confirmedCreations:tenant.creationCount,consumedCredits},generatedAt:new Date().toISOString()};
+  },signal);
+}
+export async function tenantSupervisorOptions(id:string,query:TenantMemberPageQuery,signal?:AbortSignal) {
+  return tenantRead(async tx=>{
+    if(!(await tx.query('SELECT 1 FROM app_enterprise_settings WHERE team_id=$1',[id])).rowCount)throw new TeamError('租户不存在',404);
+    return readPlatformSupervisors(tx,id,query);
   },signal);
 }
 export async function tenantCommandResult(actor:TeamActor,commandId:string) {

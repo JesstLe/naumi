@@ -28,9 +28,16 @@ async function main(){
   await f.pool.query(`INSERT INTO app_users(email,name,renews_at)
    SELECT 'member-'||i||'@tenant-fixture.test','Member '||lpad(i::text,5,'0'),now()+interval '1 year' FROM generate_series(1,$1::int) i`,[qty]);
   const role=randomUUID();
-  await f.pool.query("INSERT INTO app_enterprise_roles(enterprise_id,id,name,level) VALUES($1,$2,'Staff',20)",[id,role]);
+  await f.pool.query("INSERT INTO app_enterprise_roles(enterprise_id,id,name,level,manage_members) VALUES($1,$2,'Staff',20,true)",[id,role]);
   await f.pool.query(`INSERT INTO app_enterprise_members(enterprise_id,email,supervisor_email,role_id,employment,membership_status)
    SELECT $1,'member-'||i||'@tenant-fixture.test',$2,$3,'permanent',CASE WHEN i=1 THEN 'suspended' ELSE 'active' END FROM generate_series(1,$4::int) i`,[id,owner,role,qty]);
+  await f.pool.query("UPDATE app_users SET name=CASE WHEN email LIKE 'member-51@%' THEN 'Member 00050' ELSE 'Member 00800 %_ Lead' END WHERE email IN ('member-51@tenant-fixture.test','member-800@tenant-fixture.test')");
+  await f.pool.query("UPDATE app_enterprise_members SET supervisor_email='member-800@tenant-fixture.test' WHERE enterprise_id=$1 AND email='member-1@tenant-fixture.test'",[id]);
+  await f.pool.query("UPDATE app_enterprise_members SET role_id=NULL WHERE enterprise_id=$1 AND email='member-2@tenant-fixture.test'",[id]);
+  await f.pool.query("INSERT INTO app_enterprise_roles(enterprise_id,id,name,level,manage_members) VALUES($1,$2,'Other',20,true)",[otherId,role]);
+  await db.getOrCreateUser('external@tenant-fixture.test','Member External');
+  await f.pool.query("INSERT INTO app_enterprise_members(enterprise_id,email,supervisor_email,role_id,employment) VALUES($1,'external@tenant-fixture.test',$2,$3,'permanent')",
+   [otherId,other,role]);
   await f.pool.query("INSERT INTO app_creation_records(id,actor_email,scope_kind,tenant_id,payer_account_id,source_kind,source_id) VALUES('tenant-root',$1,'tenant',$2,$1,'fixture','tenant-root'),('other-root',$3,'tenant',$4,$3,'fixture','other-root')",[owner,id,other,otherId]);
   await f.pool.query("INSERT INTO app_billing_operations(id,email,feature,quote,request_fingerprint,state,charged_credits,ledger_id) VALUES('fixture-settled',$1,'fixture','{}','fixture','settled',7,'tenant-ledger')",[owner]);
   await f.pool.query("INSERT INTO app_creation_links(creation_id,target_type,target_id,actor_email) VALUES('tenant-root','billing','fixture-settled',$1)",[owner]);
@@ -60,6 +67,29 @@ async function main(){
    assert.equal(profile.members.length,0);assert.equal(profile.audit.length,0);assert.equal(profile.usage.consumedCredits,null);
    const roster=await(await get('detail','projection=members')).json();
    assert.deepEqual(roster.members,payload.members);assert.deepEqual(roster.roles,payload.roles);assert.deepEqual(roster.audit,[]);
+   assert.equal(roster.memberPage,undefined);
+   const memberPage=(page:number,q='')=>get('detail',new URLSearchParams({projection:'members',memberPage:String(page),memberQuery:q}).toString());
+   const firstResponse=await memberPage(1),firstBytes=await firstResponse.text(),first=JSON.parse(firstBytes),second=await(await memberPage(2)).json();
+   assert.equal(firstResponse.status,200,firstBytes.slice(0,200));
+   assert.deepEqual(first.memberPage,{page:1,hasMore:true});assert.equal(first.members.length,50);assert.equal(first.roles[0].member_count,799);
+   assert.equal(first.members[0].supervisor_name,'Member 00800 %_ Lead');assert.equal(first.members[0].membership_status,'suspended');
+   assert.equal(first.members.at(-1).name,second.members[0].name);
+   assert.deepEqual([...first.members,...second.members].map(row=>row.email),payload.members.slice(0,100).map((row:{email:string})=>row.email));
+   const last=await(await memberPage(16)).json();assert.deepEqual(last.memberPage,{page:16,hasMore:false});assert.equal(last.members.length,50);
+   const searched=await(await memberPage(1,'%_')).json();assert.deepEqual(searched.members.map((row:{email:string})=>row.email),['member-800@tenant-fixture.test']);
+   const memberSearch=await(await memberPage(1,'external')).json();assert.deepEqual(memberSearch.members,[]);
+   const supervisors=await(await get('detail','projection=supervisors')).json();
+   assert.equal(supervisors.supervisors.length,30);assert.equal(supervisors.hasMore,true);assert.deepEqual(Object.keys(supervisors.supervisors[0]).sort(),['email','name']);
+   const supervisorSearch=await(await get('detail','projection=supervisors&memberQuery=%25_')).json();
+   assert.deepEqual(supervisorSearch,{supervisors:[{email:'member-800@tenant-fixture.test',name:'Member 00800 %_ Lead'}],hasMore:false});
+   const external=await(await get('detail','projection=supervisors&memberQuery=external')).json();assert.deepEqual(external.supervisors,[]);
+   const ordinary=await(await get('detail','projection=supervisors&memberQuery=member-2%40')).json();assert.deepEqual(ordinary.supervisors,[]);
+   assert.equal((await get('detail','projection=supervisors',undefined,owner)).status,403);
+   assert.equal((await get('detail','projection=members&memberPage=2',undefined,owner)).status,403);
+   assert.equal((await get('detail','projection=members&memberPage=0')).status,400);
+   assert.equal((await get('detail','projection=supervisors&memberPage=1&memberPage=2')).status,400);
+   assert.ok(Buffer.byteLength(firstBytes)<Buffer.byteLength(text)/10);
+   console.log('PLATFORM_MEMBER_PAGE_BYTES='+JSON.stringify({legacy:Buffer.byteLength(text),members:Buffer.byteLength(firstBytes)}));
    await unlock();await lock('app_creation_records,app_billing_operations');
    const audit=await(await get('detail','projection=audit')).json();
    assert.deepEqual(audit.audit,payload.audit);assert.deepEqual(audit.members,[]);assert.deepEqual(audit.roles,[]);

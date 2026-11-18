@@ -27,15 +27,26 @@ const bundle=await build({stdin:{contents:`
  }}]});
 const tenant={tenantId:'fixture-tenant',name:'测试企业',owner:{email:'owner@example.test',name:'所有者'},status:'active',
  entitlementName:null,validUntil:null,seatLimit:null,activeMembers:2,version:1,featurePolicy:{},createdAt:'2026-01-01'};
-const members=[{name:'只在成员页展示',email:'member@example.test',role_name:'成员',supervisor_email:tenant.owner.email,employment:'permanent',membership_status:'active'}];
+const currentLead={name:'当前上级不在本页',email:'old-lead@example.test'},nextLead={name:'新上级只在搜索结果',email:'new-lead@example.test'};
+const member={name:'只在成员页展示',email:'member@example.test',role_name:'成员',role_id:'staff',supervisor_email:currentLead.email,supervisor_name:currentLead.name,employment:'permanent',membership_status:'active'};
+const members=[member,...Array.from({length:54},(_,i)=>({...member,name:'其他成员'+String(i+1).padStart(2,'0'),email:'row-'+i+'@example.test'}))];
+const role={id:'staff',name:'职员',level:20,member_count:members.length};
 const audit=[{id:'fixture-audit',actor:'owner@example.test',action:'update',reason:'只在审计页展示',created_at:'2026-01-01T00:00:00Z'}];
-const hits=[];let hold=false,held,closed=0,legacy=baseline;
+const hits=[],queryHits=[];let hold=false,held,closed=0,legacy=baseline,holdOptions=false,heldOptions,closedOptions=0;
 const server=createServer((req,res)=>{
  const url=new URL(req.url,'http://fixture');
  if(url.pathname==='/api/admin/tenants/fixture-tenant'){
-  const view=url.searchParams.get('projection')||'full';hits.push(view);
+  const view=url.searchParams.get('projection')||'full',page=Number(url.searchParams.get('memberPage')||1),query=url.searchParams.get('memberQuery')||'';
+  hits.push(view);queryHits.push([view,page,query]);
   if(hold&&view==='members'){held=res;res.once('close',()=>{if(!res.writableFinished)closed++;});return;}
-  res.writeHead(200,{'content-type':'application/json'}).end(JSON.stringify({tenant,members:legacy||view==='members'?members:[],roles:[],audit:legacy||view==='audit'?audit:[]}));return;
+  if(view==='supervisors'){
+   if(holdOptions){heldOptions=res;res.once('close',()=>{if(!res.writableFinished)closedOptions++;});return;}
+   res.writeHead(200,{'content-type':'application/json'}).end(JSON.stringify({supervisors:query===nextLead.name?[nextLead]:[],hasMore:false}));return;
+  }
+  const filtered=members.filter(row=>row.name.includes(query)||row.email.includes(query));
+  const extra=!legacy&&view==='members'?{memberPage:{page,hasMore:filtered.length>page*50}}:{};
+  res.writeHead(200,{'content-type':'application/json'}).end(JSON.stringify({tenant,members:legacy?members:view==='members'?filtered.slice((page-1)*50,page*50):[],
+    roles:view==='members'?[role]:[],audit:legacy||view==='audit'?audit:[],...extra}));return;
  }
  const file=bundle.outputFiles.find(f=>url.pathname!=='/'&&f.path.replaceAll('\\','/').endsWith(url.pathname));
  if(file){res.writeHead(200,{'content-type':url.pathname.endsWith('.css')?'text/css':'text/javascript'}).end(file.contents);return;}
@@ -61,8 +72,30 @@ try{
   await tab('操作记录').click();await until(()=>closed===1,'leaving members did not abort');await page.getByText('只在审计页展示').waitFor();
   assert.deepEqual(hits,['summary','members','audit']);assert.equal(await page.getByText('只在成员页展示').count(),0);
   hold=false;await tab('成员与权限').click();await page.getByText('只在成员页展示').waitFor();assert.equal(await page.getByText('只在审计页展示').count(),0);
+  assert.equal(await page.locator('tbody tr').count(),50);
+  assert.equal(hits.includes('supervisors'),false);
+  await page.getByRole('button',{name:'下一页成员'}).click();await page.getByText('其他成员54').waitFor();
+  assert.equal(await page.locator('tbody tr').count(),5);assert.equal(await page.getByText('职员 · L20 · 55人').count(),1);
+  assert.deepEqual(queryHits.at(-1),['members',2,'']);
+  await page.getByRole('textbox',{name:'搜索企业成员'}).fill(member.name);
+  await page.getByRole('button',{name:'搜索成员',exact:true}).click();await page.getByText(member.email,{exact:true}).waitFor();
+  assert.deepEqual(queryHits.at(-1),['members',1,member.name]);assert.equal(await page.locator('tbody tr').count(),1);
+  holdOptions=true;
+  await page.getByRole('button',{name:'岗位与上级'}).click();await until(()=>heldOptions,'supervisor lookup did not start');
+  const dialog=page.getByRole('dialog'),select=dialog.getByLabel('直属上级',{exact:true});
+  assert.equal(await select.inputValue(),currentLead.email);assert.equal(await select.locator('option:checked').textContent(),currentLead.name);
+  holdOptions=false;await dialog.getByRole('textbox',{name:'查找直属上级'}).fill(nextLead.name);
+  await until(()=>closedOptions===1,'supervisor search did not cancel the previous request');
+  await select.selectOption(nextLead.email);
+  assert.equal(await select.inputValue(),nextLead.email);
+  await dialog.getByRole('button',{name:'预览修改'}).click();
+  await dialog.getByText(nextLead.email,{exact:true}).waitFor();
+  page.once('dialog',prompt=>prompt.accept());
+  await dialog.getByRole('button',{name:'取消'}).click();
   legacy=true;await page.goto(origin+'/admin/tenants/fixture-tenant?tab=members');await page.getByText('只在成员页展示').waitFor();
-  assert.equal(hits.at(-1),'members');assert.deepEqual(errors,[]);
-  console.log('PLATFORM_TENANT_BROWSER=PASS SUMMARY_FIRST=1 SAME_PROJECTION_NO_REFETCH=1 MEMBER_ABORT=1 AUDIT_ISOLATION=1 LEGACY_SERVER=1 ACTUAL_REACT=1');
+  assert.equal(hits.at(-1),'members');assert.equal(await page.locator('tbody tr').count(),50);
+  await page.getByRole('button',{name:'下一页成员'}).click();await page.getByText('其他成员54').waitFor();
+  assert.equal(await page.locator('tbody tr').count(),5);assert.deepEqual(errors,[]);
+  console.log('PLATFORM_TENANT_BROWSER=PASS SUMMARY_FIRST=1 SAME_PROJECTION_NO_REFETCH=1 MEMBER_ABORT=1 AUDIT_ISOLATION=1 LEGACY_SERVER=1 MEMBER_PAGING=1 CROSS_PAGE_SUPERVISOR=1 ACTUAL_REACT=1');
  }
 }finally{await browser?.close();server.closeAllConnections();await new Promise(r=>server.close(r));}

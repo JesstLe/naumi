@@ -28,3 +28,6 @@
 .creationTimeline{list-style:none;margin:16px 0;padding:0;display:flex;flex-direction:column;min-width:0}.creationEvent{display:grid;grid-template-columns:minmax(0,1fr) 80px auto;gap:16px;align-items:start;padding:13px 0;border-bottom:1px solid var(--line);line-height:1.65}.creationEvent strong{font-size:13px;font-weight:500;overflow-wrap:anywhere;min-width:0}.creationEvent>.muted{font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}.creationEvent:last-child{border-bottom:0}@media(max-width:600px){.creationEvent{grid-template-columns:minmax(0,1fr) auto;gap:4px 12px}.creationEvent strong{grid-column:1/-1}.creationEvent>.badge{justify-self:end}}
 
 .facts dd.creationParameters{max-height:none;overflow:visible}
+.memberToolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0 0 16px}
+.supervisorPicker{display:grid;align-content:start;gap:8px;min-width:0}
+.supervisorPicker label,.supervisorPicker select{min-width:0}
