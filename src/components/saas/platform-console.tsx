@@ -2,7 +2,7 @@
 import Link from 'next/link';
 import { TenantUsagePanel } from './tenant-usage-panel';
 import {useEffect,useRef,useState} from 'react';
-import {useRouter,usePathname,useSearchParams} from 'next/navigation';
+import {usePathname,useSearchParams} from 'next/navigation';
 import {Building2,Users,FileText,TriangleAlert,Plus,RefreshCw,X} from 'lucide-react';
 import {authHeader} from '@/lib/supabase';
 import {ACCESS_FEATURES} from '@/lib/feature-access/catalog';
@@ -15,6 +15,8 @@ import {TrendChart} from './trend-chart';
 import styles from './saas.module.css';
 type Tenant={tenantId:string;name:string;owner:{email:string;name:string};status:string;entitlementName:string|null;validUntil:string|null;seatLimit:number|null;activeMembers:number;version:number;featurePolicy:Record<string,boolean>;createdAt:string;updatedAt:string;creationCount:number|null;lastActivityAt:string|null};
 type TenantList={items:Tenant[];total:number;page:number;size:number};
+type TenantAudit={id:string;actor:string;action:string;created_at:string;createdAt?:string;reason:string|null;target?:string;changes?:unknown};
+type TenantDetailData={tenant:Tenant;members:MemberRow[];roles:EnterpriseRole[];audit:TenantAudit[]};
 type Overview={metrics:{tenants:number;activeTenants:number|null;creations:number|null;needsReview:number|null;failed:number|null;expiring:number};trend:{date:string;count:number}[]|null;tenants:TenantList;generatedAt:string};
 async function api(url:string,init?:RequestInit){const response=await fetch(url,{...init,cache:'no-store',headers:{...(await authHeader()),...init?.headers}});const data=await response.json();if(!response.ok)throw Object.assign(new Error(data.error||'读取失败，请重试'),{status:response.status,uncertain:data.uncertain});return data;}
 const num=(v:number|null|undefined)=>v===null||v===undefined?'未记录':v.toLocaleString('zh-CN');
@@ -30,7 +32,7 @@ export function PlatformConsole({view='overview',tenantId,embedded=false}:{embed
  const endDay=/^\d{4}-\d{2}-\d{2}$/.test(displayedTo)&&Number.isFinite(Date.parse(displayedTo))?displayedTo:defaultTo;
  const displayedFrom=q.get('from')||new Date(Date.parse(endDay+'T00:00:00Z')-6*86400000).toISOString().slice(0,10);
  return <AdminCenterShell embedded={embedded} active={view==='overview'?'overview':view==='creations'?'creations':'tenants'}><div className={styles.page}>
-  {view==='tenant'&&tenantId?<TenantDetail tenantId={tenantId}/>:view==='creations'?<><div className={styles.heading}><h1>创作记录</h1></div><CreationBrowser/></>:<>
+  {view==='tenant'&&tenantId?<TenantDetail key={tenantId} tenantId={tenantId}/>:view==='creations'?<><div className={styles.heading}><h1>创作记录</h1></div><CreationBrowser/></>:<>
   <div className={styles.heading}><div className={styles.actions}><h1>{view==='overview'?'平台总览':'租户管理'}</h1><input aria-label="开始日期" type="date" value={displayedFrom} onChange={e=>update({from:e.target.value,page:'1'})}/><span className={styles.muted}>—</span><input aria-label="结束日期" type="date" value={displayedTo} onChange={e=>update({to:e.target.value,page:'1'})}/></div><button className={styles.primary} onClick={()=>setEditing(null)}><Plus size={17}/>新建租户</button></div>
   {error&&<div className={styles.error} role="alert">{error}<button onClick={()=>setRetry(v=>v+1)}>重试</button></div>}
   {view==='overview'&&<><div className={styles.metrics}>{[{label:'企业总数',value:overview?.metrics.tenants,icon:Building2},{label:'期间活跃企业',value:overview?.metrics.activeTenants,icon:Users},{label:'期间创作',value:overview?.metrics.creations,icon:FileText},{label:'待核查任务',value:overview?.metrics.needsReview,icon:TriangleAlert}].map(({label,value,icon:Icon})=><div className={styles.metric} key={label}><div className={styles.metricIcon}><Icon size={25}/></div><div><span className={styles.muted}>{label}</span><strong>{loading?'—':num(value)}</strong></div></div>)}</div>
@@ -43,16 +45,32 @@ export function PlatformConsole({view='overview',tenantId,embedded=false}:{embed
 }
 function TenantTable({list}:{list:TenantList}){return <div className={styles.tableWrap}><table className={styles.table}><thead><tr>{['企业','权益','有效成员','期间创作','授权状态','最近活跃','操作'].map(h=><th key={h}>{h}</th>)}</tr></thead><tbody>{list.items.map(t=><tr key={t.tenantId}><td className={styles.wrap}><div className={styles.tenantName}><span className={styles.avatar}>{t.name.slice(0,1)}</span><div>{t.name}<small className={styles.muted} style={{display:'block',fontWeight:400}}>{t.owner.name||t.owner.email}</small></div></div></td><td>{t.entitlementName||'未配置'}</td><td>{t.activeMembers}</td><td>{num(t.creationCount)}</td><td><span className={`${styles.badge} ${styles[t.status]||''}`}>{tenantStatus[t.status]||t.status}</span></td><td>{t.lastActivityAt?new Date(t.lastActivityAt).toLocaleString('zh-CN'):'未记录'}</td><td><Link className={styles.button} href={`/admin/tenants/${t.tenantId}`}>管理</Link></td></tr>)}</tbody></table></div>;}
 function TenantDetail({tenantId}:{tenantId:string}){
- const q=useSearchParams(),router=useRouter(),path=usePathname();const tab=q.get('tab')||'overview';const [data,setData]=useState<any>(null),[error,setError]=useState(''),[retry,setRetry]=useState(0),[editing,setEditing]=useState(false);
- useEffect(()=>{const abort=new AbortController();setData(null);setError('');void api(`/api/admin/tenants/${tenantId}`,{signal:abort.signal}).then(d=>{if(!abort.signal.aborted)setData(d);}).catch(e=>{if(!abort.signal.aborted)setError(e.message);});return()=>abort.abort();},[tenantId,retry]);
- const t=data?.tenant as Tenant|undefined;const tabs=[['overview','概览'],['members','成员与权限'],['entitlement','套餐与额度'],['creations','创作记录'],['billing','账务'],['audit','操作记录']];
- return <>{error?<div className={styles.error}>{error}<button onClick={()=>setRetry(v=>v+1)}>重试</button></div>:!t?<div className={styles.empty}>正在读取租户详情</div>:<><div className={styles.heading}><div className={styles.tenantHeader}><span className={styles.avatar}>{t.name.slice(0,1)}</span><div><h1>{t.name} <span className={`${styles.badge} ${styles[t.status]||''}`}>{tenantStatus[t.status]}</span></h1><p>{t.entitlementName||'权益未配置'}　|　{t.activeMembers} 名有效成员　|　{t.validUntil?`有效期至 ${date(t.validUntil)}`:'永久授权'}</p></div></div><button onClick={()=>setEditing(true)}>管理企业</button></div>
+ const q=useSearchParams(),path=usePathname(),tab=q.get('tab')||'overview';
+ const projection=tab==='members'||tab==='audit'?tab:'summary';
+ const [loaded,setLoaded]=useState<{key:string;value:TenantDetailData}|null>(null),[failure,setFailure]=useState<{key:string;message:string}|null>(null);
+ const [retry,setRetry]=useState(0),[editing,setEditing]=useState(false);
+ const key=`${tenantId}:${projection}:${retry}`;
+ useEffect(()=>{
+  const abort=new AbortController();setFailure(null);
+  void api(`/api/admin/tenants/${tenantId}?projection=${projection}`,{signal:abort.signal})
+   .then(value=>{if(!abort.signal.aborted)setLoaded({key,value});})
+   .catch(error=>{if(!abort.signal.aborted){
+    if([401,403,404].includes(error.status)){setLoaded(null);setEditing(false);}
+    setFailure({key,message:error.message});
+   }});
+  return()=>abort.abort();
+ },[key,tenantId,projection]);
+ const t=loaded?.value.tenant,data=loaded?.key===key?loaded.value:null,error=failure?.key===key?failure.message:'';
+ const feedback=error?<div className={styles.error} role='alert'>{error}<button onClick={()=>setRetry(v=>v+1)}>重试</button></div>:
+  <div className={styles.empty} role='status'>正在读取租户详情</div>;
+ const tabs=[['overview','概览'],['members','成员与权限'],['entitlement','套餐与额度'],['creations','创作记录'],['billing','账务'],['audit','操作记录']];
+ return !t?feedback:<><div className={styles.heading}><div className={styles.tenantHeader}><span className={styles.avatar}>{t.name.slice(0,1)}</span><div><h1>{t.name} <span className={`${styles.badge} ${styles[t.status]||''}`}>{tenantStatus[t.status]}</span></h1><p>{t.entitlementName||'权益未配置'}　|　{t.activeMembers} 名有效成员　|　{t.validUntil?`有效期至 ${date(t.validUntil)}`:'永久授权'}</p></div></div><button onClick={()=>setEditing(true)}>管理企业</button></div>
  <nav className={styles.tabs} aria-label="租户详情标签">{tabs.map(([key,label])=><Link key={key} className={tab===key?styles.selected:''} href={`${path}?${(()=>{const p=new URLSearchParams(q.toString());p.set('tab',key);return p;})()}`} aria-current={tab===key?'page':undefined}>{label}</Link>)}</nav>
- {tab==='creations'?<CreationBrowser tenantId={tenantId}/>:tab==='members'?<TenantMembers tenantId={tenantId} data={data} onChanged={()=>setRetry(v=>v+1)}/>:tab==='audit'?<section className={styles.panel}><h2>操作记录</h2><div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>时间</th><th>操作者</th><th>操作</th><th>目标与原因</th></tr></thead><tbody>{(data.audit||[]).map((a:any)=><tr key={a.id}><td>{new Date(a.createdAt||a.created_at).toLocaleString('zh-CN')}</td><td className={styles.wrap}>{a.actor}</td><td>{({create:'新建企业',update:'更新企业资料与权益','member-status':'变更成员状态','member-organization':'变更成员组织关系','member-role':'变更成员岗位','member-expiry':'变更企业身份期限'} as Record<string,string>)[a.action]||a.action}</td><td className={styles.wrap}>{a.reason||a.target||'—'}<details><summary>变更详情</summary><pre style={{whiteSpace:'pre-wrap'}}>{JSON.stringify(a.changes||{},null,2)}</pre></details></td></tr>)}</tbody></table>{!data.audit?.length&&<div className={styles.empty}>暂无操作记录</div>}</div></section>:tab==='billing'?<TenantUsagePanel key={tenantId} tenantId={tenantId}/>:<section className={styles.panel}><h2>{tab==='entitlement'?'套餐与额度':'企业资料'}</h2><dl>{[['企业 ID',t.tenantId],['负责人',`${t.owner.name||''} ${t.owner.email}`],['权益名称',t.entitlementName||'未配置'],['成员席位',`${t.activeMembers} / ${t.seatLimit===null?'未限制':t.seatLimit}`],['授权期限',date(t.validUntil)],['功能权益',Object.entries(t.featurePolicy).map(([key,value])=>`${ACCESS_FEATURES.find(feature=>feature.id===key)?.label||'历史权益配置'}：${value?'开启':'关闭'}`).join('；')||'沿用账户授权'],['创建时间',new Date(t.createdAt).toLocaleString('zh-CN')]].map(([label,value])=><div className={styles.facts} key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl><div className={styles.actions} style={{marginTop:18}}><button onClick={()=>setEditing(true)}>编辑资料与权益</button><Link className={styles.button} href={`${path}?tab=creations`}>查看创作记录</Link><button onClick={()=>void navigator.clipboard.writeText(window.location.href)}>复制当前链接</button></div></section>}
- {editing&&<TenantEditor tenant={t} onClose={()=>setEditing(false)} onSaved={()=>{setEditing(false);setRetry(v=>v+1);}}/>}</>}</>;
+ {!data?feedback:tab==='creations'?<CreationBrowser tenantId={tenantId}/>:tab==='members'?<TenantMembers tenantId={tenantId} data={data} onChanged={()=>setRetry(v=>v+1)}/>:tab==='audit'?<section className={styles.panel}><h2>操作记录</h2><div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>时间</th><th>操作者</th><th>操作</th><th>目标与原因</th></tr></thead><tbody>{(data.audit||[]).map((a:any)=><tr key={a.id}><td>{new Date(a.createdAt||a.created_at).toLocaleString('zh-CN')}</td><td className={styles.wrap}>{a.actor}</td><td>{({create:'新建企业',update:'更新企业资料与权益','member-status':'变更成员状态','member-organization':'变更成员组织关系','member-role':'变更成员岗位','member-expiry':'变更企业身份期限'} as Record<string,string>)[a.action]||a.action}</td><td className={styles.wrap}>{a.reason||a.target||'—'}<details><summary>变更详情</summary><pre style={{whiteSpace:'pre-wrap'}}>{JSON.stringify(a.changes||{},null,2)}</pre></details></td></tr>)}</tbody></table>{!data.audit?.length&&<div className={styles.empty}>暂无操作记录</div>}</div></section>:tab==='billing'?<TenantUsagePanel key={tenantId} tenantId={tenantId}/>:<section className={styles.panel}><h2>{tab==='entitlement'?'套餐与额度':'企业资料'}</h2><dl>{[['企业 ID',t.tenantId],['负责人',`${t.owner.name||''} ${t.owner.email}`],['权益名称',t.entitlementName||'未配置'],['成员席位',`${t.activeMembers} / ${t.seatLimit===null?'未限制':t.seatLimit}`],['授权期限',date(t.validUntil)],['功能权益',Object.entries(t.featurePolicy).map(([key,value])=>`${ACCESS_FEATURES.find(feature=>feature.id===key)?.label||'历史权益配置'}：${value?'开启':'关闭'}`).join('；')||'沿用账户授权'],['创建时间',new Date(t.createdAt).toLocaleString('zh-CN')]].map(([label,value])=><div className={styles.facts} key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl><div className={styles.actions} style={{marginTop:18}}><button onClick={()=>setEditing(true)}>编辑资料与权益</button><Link className={styles.button} href={`${path}?tab=creations`}>查看创作记录</Link><button onClick={()=>void navigator.clipboard.writeText(window.location.href)}>复制当前链接</button></div></section>}
+ {editing&&<TenantEditor tenant={t} onClose={()=>setEditing(false)} onSaved={()=>{setEditing(false);setRetry(v=>v+1);}}/>}</>;
 }
-function TenantMembers({tenantId,data,onChanged}:{tenantId:string;data:any;onChanged:()=>void}) {
- const members=data.members as MemberRow[],roles=data.roles as EnterpriseRole[],owner=data.tenant.owner.email as string;
+function TenantMembers({tenantId,data,onChanged}:{tenantId:string;data:TenantDetailData;onChanged:()=>void}) {
+ const {members,roles}=data,owner=data.tenant.owner.email;
  const [editor,setEditor]=useState<MemberEditor|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[uncertain,setUncertain]=useState(false);
  const [email,setEmail]=useState(''),[roleId,setRoleId]=useState(''),[supervisor,setSupervisor]=useState(owner),[employment,setEmployment]=useState<'permanent'|'intern'>('permanent'),[expiry,setExpiry]=useState(''),[reason,setReason]=useState('');
  const [roleName,setRoleName]=useState(''),[level,setLevel]=useState(100),[manageMembers,setManageMembers]=useState(false),[viewRecords,setViewRecords]=useState(false),[preview,setPreview]=useState('');
@@ -99,8 +117,8 @@ function PlatformDialog({title,busy,onClose,children}:{title:string;busy:boolean
 function TenantEditor({tenant,onClose,onSaved}:{tenant:Tenant|null;onClose:()=>void;onSaved:()=>void}) {
  const [baseline,setBaseline]=useState(tenant),[name,setName]=useState(tenant?.name||''),[owner,setOwner]=useState(tenant?.owner.email||''),[until,setUntil]=useState(tenant?.validUntil?new Date(Date.parse(tenant.validUntil)+8*3600000).toISOString().slice(0,10):''),[seats,setSeats]=useState(tenant?.seatLimit?.toString()||''),[entitlement,setEntitlement]=useState(tenant?.entitlementName||''),[status,setStatus]=useState(tenant?.status==='suspended'?'suspended':'active'),[reason,setReason]=useState(''),[policy,setPolicy]=useState<Record<string,boolean>>({...tenant?.featurePolicy}),[error,setError]=useState(''),[busy,setBusy]=useState(false),[preview,setPreview]=useState(''),[uncertain,setUncertain]=useState(false),[conflict,setConflict]=useState(false);
  const [ownerCheck,setOwnerCheck]=useState<{email:string;team:{id:string;name:string}|null;activeTenant:string|null}|null>(null),[checking,setChecking]=useState(false),[reuseTeamId,setReuseTeamId]=useState(''),[latest,setLatest]=useState<Tenant|null>(null);
- const command=useRef<{key:string;id:string}|null>(null),submitted=useRef<Record<string,unknown>|null>(null),abort=useRef<AbortController|null>(null),ownerAbort=useRef<AbortController|null>(null),first=useRef<HTMLInputElement>(null);
- useEffect(()=>{first.current?.focus();return()=>{abort.current?.abort();ownerAbort.current?.abort();};},[]);
+ const command=useRef<{key:string;id:string}|null>(null),submitted=useRef<Record<string,unknown>|null>(null),abort=useRef<AbortController|null>(null),ownerAbort=useRef<AbortController|null>(null),latestAbort=useRef<AbortController|null>(null),first=useRef<HTMLInputElement>(null);
+ useEffect(()=>{first.current?.focus();return()=>{abort.current?.abort();ownerAbort.current?.abort();latestAbort.current?.abort();};},[]);
  const draft=useDraftClose(busy,uncertain,onClose,setError);
  const changed=()=>{setPreview('');setError('');setConflict(false);command.current=null;};
  async function checkOwner(){const email=owner.trim().toLowerCase();if(!email)return;ownerAbort.current?.abort();const controller=new AbortController();ownerAbort.current=controller;setChecking(true);setError('');setOwnerCheck(null);setReuseTeamId('');setPreview('');try{const result=await api(`/api/admin/tenants?${new URLSearchParams({ownerEmail:email})}`,{signal:controller.signal});if(!controller.signal.aborted)setOwnerCheck(result);}catch(reason:any){if(!controller.signal.aborted)setError(reason.message);}finally{if(!controller.signal.aborted)setChecking(false);}}
@@ -113,7 +131,11 @@ function TenantEditor({tenant,onClose,onSaved}:{tenant:Tenant|null;onClose:()=>v
   catch(reason:any){if(!controller.signal.aborted){setError(reason.message+(reason.status===409?'。草稿已保留。':''));setConflict(reason.status===409);if(reason.uncertain||!reason.status)setUncertain(true);}}
   finally{if(!controller.signal.aborted)setBusy(false);}
  }
- async function readLatest(){setError('');try{const result=await api(`/api/admin/tenants/${tenant!.tenantId}`);setLatest(result.tenant);}catch(reason:any){setError(reason.message);}}
+ async function readLatest(){
+  if(!tenant)return;latestAbort.current?.abort();const controller=new AbortController();latestAbort.current=controller;setError('');
+  try{const result=await api(`/api/admin/tenants/${tenant.tenantId}?projection=summary`,{signal:controller.signal});if(!controller.signal.aborted)setLatest(result.tenant);}
+  catch(reason:any){if(!controller.signal.aborted)setError(reason.message);}
+ }
  function adoptLatest(){if(!latest||!baseline)return;const day=(value:string|null)=>value?new Date(Date.parse(value)+8*3600000).toISOString().slice(0,10):'';
   if(name===baseline.name)setName(latest.name);if(until===day(baseline.validUntil))setUntil(day(latest.validUntil));if(seats===(baseline.seatLimit?.toString()||''))setSeats(latest.seatLimit?.toString()||'');if(entitlement===(baseline.entitlementName||''))setEntitlement(latest.entitlementName||'');if(status===(baseline.status==='suspended'?'suspended':'active'))setStatus(latest.status==='suspended'?'suspended':'active');
   setPolicy(draft=>{const merged={...latest.featurePolicy};for(const key of new Set([...Object.keys(baseline.featurePolicy),...Object.keys(draft)])){const edited=Object.hasOwn(draft,key)!==Object.hasOwn(baseline.featurePolicy,key)||draft[key]!==baseline.featurePolicy[key];if(edited){if(Object.hasOwn(draft,key))merged[key]=draft[key];else delete merged[key];}}return merged;});

@@ -1,6 +1,7 @@
 import {ensureTenantSchema} from "@/lib/saas/tenant-schema";
 export {ensureTenantSchema};
 import {withTransaction} from "@/platform/db/transaction";
+import {checkReadClientSocket,withOwnedReportClient} from '@/platform/db/owned-read-client';
 import 'server-only';
 import {createHash,randomUUID} from 'node:crypto';
 import type {PoolClient} from 'pg';
@@ -14,7 +15,7 @@ import { TeamError } from "@/lib/teams/errors";
 import {teamJson} from '@/lib/teams/access';
 import {ALL_FEATURE_IDS} from '@/lib/feature-access/catalog';
 import type {TeamActor} from '@/lib/teams/grants';
-import {createTenantSchema,updateTenantSchema,tenantMemberSchema,type TenantFilters,type TenantList,type TenantSummary} from './tenant-contracts';
+import {createTenantSchema,updateTenantSchema,tenantMemberSchema,type TenantDetailProjection,type TenantFilters,type TenantList,type TenantSummary} from './tenant-contracts';
 import {readOverviewActivity,type TenantDateWindow} from './overview-activity';
 
 
@@ -31,6 +32,15 @@ export function tenantFailure(error:unknown) {
 async function transaction<T>(run:(tx:PoolClient)=>Promise<T>) {
   await ensureTenantSchema();
   return withTransaction(getPool(),async tx=>{await tx.query("SET LOCAL statement_timeout='20s'");return run(tx);});
+}
+async function tenantRead<T>(run:(tx:PoolClient)=>Promise<T>,signal?:AbortSignal) {
+  signal?.throwIfAborted();
+  await ensureTenantSchema();
+  return withOwnedReportClient(getPool(),async tx=>{
+    await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+    await tx.query("SET LOCAL statement_timeout='5s'; SET LOCAL lock_timeout='1s'"+(signal?checkReadClientSocket:''));
+    const result=await run(tx);await tx.query('COMMIT');return result;
+  },signal);
 }
 const projection=`SELECT t.id,t.name,t.owner_email,u.name AS owner_name,t.authorized_until,t.enabled,t.version,t.created_at,t.updated_at,
   COALESCE(s.enabled,true) AS enterprise_enabled,e.entitlement_name,e.seat_limit,COALESCE(e.feature_policy,'{}') AS feature_policy,
@@ -72,33 +82,37 @@ async function tenantList(tx:PoolClient,filters:TenantFilters,dates:TenantDateWi
     const items=rows.map(summary);await attachTenantActivity(tx,items,dates,creationExists);
     return {items,total,page:filters.page,size:filters.size,appliedFilters:filters,generatedAt:new Date().toISOString(),scope:'platform',availability:'available'};
 }
-export async function listTenants(filters:TenantFilters):Promise<TenantList> {
-  return transaction(tx=>tenantList(tx,filters,tenantDates(filters)));
+export async function listTenants(filters:TenantFilters,signal?:AbortSignal):Promise<TenantList> {
+  const dates=tenantDates(filters);
+  return tenantRead(tx=>tenantList(tx,filters,dates),signal);
 }
-export async function tenantDetail(id:string) {
-  return transaction(async tx=>{
+export async function tenantDetail(id:string,projectionKind:TenantDetailProjection='full',signal?:AbortSignal) {
+  return tenantRead(async tx=>{
     const row=(await tx.query(`${projection} WHERE t.id=$1`,[id])).rows[0];
     if(!row)throw new TeamError('租户不存在',404);
-    const members=(await tx.query(`SELECT m.email,u.name,m.supervisor_email,m.role_id,COALESCE(r.name,'员工') role_name,
+    const full=projectionKind==='full',readMembers=full||projectionKind==='members';
+    const members=readMembers?(await tx.query(`SELECT m.email,u.name,m.supervisor_email,m.role_id,COALESCE(r.name,'员工') role_name,
       m.employment,m.membership_status,m.membership_expires_at,m.joined_at,m.left_at,m.version,
       u.banned,u.account_expires_at,u.management_version
       FROM app_enterprise_members m JOIN app_users u ON u.email=m.email
       LEFT JOIN app_enterprise_roles r ON r.enterprise_id=m.enterprise_id AND r.id=m.role_id
-      WHERE m.enterprise_id=$1 ORDER BY u.name,m.email`,[id])).rows;
-    const roles=(await tx.query('SELECT id,name,level,manage_members,view_records,version FROM app_enterprise_roles WHERE enterprise_id=$1 ORDER BY level,id',[id])).rows;
-    const audit=(await tx.query(`SELECT command_id AS id,actor,action,changes,created_at FROM app_tenant_commands WHERE tenant_id=$1
+      WHERE m.enterprise_id=$1 ORDER BY u.name,m.email`,[id])).rows:[];
+    const roles=readMembers?(await tx.query('SELECT id,name,level,manage_members,view_records,version FROM app_enterprise_roles WHERE enterprise_id=$1 ORDER BY level,id',[id])).rows:[];
+    const audit=full||projectionKind==='audit'?(await tx.query(`SELECT command_id AS id,actor,action,changes,created_at FROM app_tenant_commands WHERE tenant_id=$1
       UNION ALL SELECT id,actor,action,changes,created_at FROM app_enterprise_audit WHERE enterprise_id=$1
-      ORDER BY created_at DESC,id DESC LIMIT 100`,[id])).rows.map(row=>({...row,reason:row.changes?.reason??row.changes?.after?.reason??null}));
-    const tenant=summary(row);await attachTenantActivity(tx,[tenant],tenantDates({}));
+      ORDER BY created_at DESC,id DESC LIMIT 100`,[id])).rows.map(row=>({...row,reason:row.changes?.reason??row.changes?.after?.reason??null})):[];
+    const tenant=summary(row);
     let consumedCredits:number|null=null;
-    if(await creationTable(tx)&&(await tx.query("SELECT to_regclass('app_creation_links') IS NOT NULL AS present")).rows[0].present){
+    const recorded=full&&await creationTable(tx);
+    if(recorded)await attachTenantActivity(tx,[tenant],tenantDates({}),true);
+    if(recorded&&(await tx.query("SELECT to_regclass('app_creation_links') IS NOT NULL AS present")).rows[0].present){
       const money=(await tx.query(`SELECT sum(b.charged_credits)::int AS n FROM app_billing_operations b
         WHERE b.state='settled' AND EXISTS(SELECT 1 FROM app_creation_links l JOIN app_creation_records c ON c.id=l.creation_id
           WHERE c.tenant_id=$1 AND c.scope_kind='tenant' AND l.target_type='billing' AND l.target_id=b.id AND c.payer_account_id=b.email)`,[id])).rows[0];
       consumedCredits=money.n??null;
     }
     return {tenant,members,roles,audit,usage:{confirmedCreations:tenant.creationCount,consumedCredits},generatedAt:new Date().toISOString()};
-  });
+  },signal);
 }
 export async function tenantCommandResult(actor:TeamActor,commandId:string) {
   await ensureTenantSchema();

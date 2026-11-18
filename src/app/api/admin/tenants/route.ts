@@ -6,6 +6,8 @@ import { teamJson, teamMutationOrigin } from '@/lib/teams/access';
 export const dynamic='force-dynamic';
 export const runtime='nodejs';
 export async function GET(request:Request) {
+  const signal=request.signal;
+  if(signal.aborted)return teamJson({error:'请求已取消'},499);
   const actor=await tenantAuthorize(request);if(actor instanceof NextResponse)return actor;
   const search=new URL(request.url).searchParams;
   try {
@@ -16,8 +18,8 @@ export async function GET(request:Request) {
     }
     const parsed=tenantQuerySchema.safeParse(Object.fromEntries(search));
     if(!parsed.success)return teamJson({error:'租户查询参数无效',code:'INVALID_FILTERS'},400);
-    return teamJson(await listTenants(parsed.data));
-  }catch(e){return tenantFailure(e);}
+    return teamJson(await listTenants(parsed.data,signal));
+  }catch(e){return signal.aborted?teamJson({error:'请求已取消'},499):tenantFailure(e);}
 }
 export async function POST(request:Request) {
   const actor=await tenantAuthorize(request);if(actor instanceof NextResponse)return actor;

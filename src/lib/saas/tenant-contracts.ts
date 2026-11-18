@@ -2,6 +2,8 @@ import { z } from 'zod';
 import {ALL_FEATURE_IDS} from '@/lib/feature-access/catalog';
 
 export const tenantStatus = z.enum(['active', 'suspended', 'expired']);
+export const tenantDetailProjection = z.enum(['full','summary','members','audit']);
+export type TenantDetailProjection = z.infer<typeof tenantDetailProjection>;
 const tenantPolicyShape = z.record(z.string().min(1).max(80), z.boolean());
 export const tenantPolicy = tenantPolicyShape.refine(value=>Object.keys(value).every(key=>ALL_FEATURE_IDS.includes(key)),{message:'功能权益包含未知功能'});
 export const tenantConfiguration = {

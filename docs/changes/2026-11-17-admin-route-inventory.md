@@ -52,8 +52,8 @@
 | `GET /api/admin/templates` | `src/app/api/admin/templates/route.ts` | 待核查 |
 | `GET /api/admin/templates/cache` | `src/app/api/admin/templates/cache/route.ts` | 待核查 |
 | `GET /api/admin/tenant-usage` | `src/app/api/admin/tenant-usage/route.ts` | 部分：混合报表额度、HTTP 断开取消、冻结归属及隔离 PG 36,000 根记录的一年范围、单日与空窗口通过；真实站容量待核 |
-| `GET /api/admin/tenants` | `src/app/api/admin/tenants/route.ts` | 部分：按负责人邮箱核对，`verify-saas-tenants.ts`；其余列表变体待复查 |
-| `GET /api/admin/tenants/[id]` | `src/app/api/admin/tenants/[id]/route.ts` | 待核查 |
+| `GET /api/admin/tenants` | `src/app/api/admin/tenants/route.ts` | 部分：按负责人邮箱核对、列表筛选与租户归属；列表共享报表额度及真实断开取消通过，历史长区间和命令回执变体待核 |
+| `GET /api/admin/tenants/[id]` | `src/app/api/admin/tenants/[id]/route.ts` | 部分：平台权限、概览/成员/审计按需投影、旧全量字段、报表队列和断开取消隔离通过；大成员分页及真实网关待核 |
 | `GET /api/admin/tryon` | `src/app/api/admin/tryon/route.ts` | 待核查 |
 | `GET /api/admin/update-check` | `src/app/api/admin/update-check/route.ts` | 待核查 |
 | `GET /api/admin/usage` | `src/app/api/admin/usage/route.ts` | 待核查 |
@@ -319,6 +319,6 @@
 | `页面 /admin/team-access` | `src/app/admin/team-access/page.tsx` | 待核查 |
 | `页面 /admin/teams` | `src/app/admin/teams/page.tsx` | 待核查 |
 | `页面 /admin/tenants` | `src/app/admin/tenants/page.tsx` | 待核查 |
-| `页面 /admin/tenants/[tenantId]` | `src/app/admin/tenants/[tenantId]/page.tsx` | 待核查 |
+| `页面 /admin/tenants/[tenantId]` | `src/app/admin/tenants/[tenantId]/page.tsx` | 部分：浏览器验证概览按需、同投影不重读、切成员/审计取消、兼容旧响应；大成员渲染与真实网关待核 |
 | `页面 /admin/usage` | `src/app/admin/usage/page.tsx` | 待核查 |
 | `页面 /enterprise` | `src/app/enterprise/page.tsx` | 待核查 |

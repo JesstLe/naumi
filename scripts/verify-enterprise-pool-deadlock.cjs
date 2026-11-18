@@ -136,9 +136,10 @@ async function enterpriseChainTests(api,reference,bindings,detailTx,id){
   if(sql.includes('app_enterprise_roles')||sql.includes('app_enterprise_members')||sql.includes('app_tenant_entitlements'))return {rows:[]};
   return detailTx.query(sql,args);
  }};
- const pool={connect:async()=>{assert.equal(checkedOut,0,'second checkout');checkedOut++;return tx;},query:async()=>{assert.equal(active,false,'schema/pool query inside transaction');return {rows:[]};}};
+ const pool={options:{max:5},connect:async()=>{assert.equal(checkedOut,0,'second checkout');checkedOut++;return tx;},query:async()=>{assert.equal(active,false,'schema/pool query inside transaction');return {rows:[]};}};
  const team=bindings['@/lib/teams/server'];
- const server=load('src/lib/enterprise/server.ts',{'./site-administrator':{administeredSite:async()=>null,siteAdministrators:async()=>[]},'@/lib/site-control/identity':{},'./workflow-permissions':{workflowPermissionsSchema:require('zod').z.array(require('zod').z.string())},'@/lib/enterprise/schema':{ensureEnterpriseSchema:async()=>{}},'@/lib/teams/server':{...team,ensureTeamSchema:async()=>{}},'@/lib/teams/grants':{requireTeamGrant:async()=>({expires_at:null})},'@/lib/db':{getPool:()=>pool},'@/platform/db/owned-read-client':load('src/platform/db/owned-read-client.ts'),'@/lib/settings-secret':{},'./integration/policy':{pinnedEnterpriseIds:()=>[],IntegrationError:class extends Error{}}});
+ const hierarchy=load('src/lib/enterprise/hierarchy.ts',{'@/lib/teams/errors':team});
+ const server=load('src/lib/enterprise/server.ts',{'./hierarchy':hierarchy,'./site-administrator':{administeredSite:async()=>null,siteAdministrators:async()=>[]},'@/lib/site-control/identity':{},'./workflow-permissions':{workflowPermissionsSchema:require('zod').z.array(require('zod').z.string())},'@/lib/enterprise/schema':{ensureEnterpriseSchema:async()=>{}},'@/lib/teams/server':{...team,ensureTeamSchema:async()=>{}},'@/lib/teams/grants':{requireTeamGrant:async()=>({expires_at:null})},'@/lib/db':{getPool:()=>pool},'@/platform/db/owned-read-client':load('src/platform/db/owned-read-client.ts'),'@/lib/settings-secret':{},'./integration/policy':{pinnedEnterpriseIds:()=>[],IntegrationError:class extends Error{}}});
  const publicParameters=load('src/lib/saas/creation-parameters.ts');
  const history=load('src/lib/enterprise/creation-history.ts',{'./server':server,'@/lib/teams/server':team,'@/lib/bi/repository':{ensureBiSchema:async()=>{assert.equal(active,false);}},'@/lib/media-assets':{ensureMediaSchema:async()=>{assert.equal(active,false);events.push('schema');}},'@/lib/saas/legacy-creations':api,'@/lib/saas/creation-parameters':publicParameters,'@/lib/saas/creation-writer':publicParameters});
  const actor={email:'owner@example.test',admin:true};
@@ -151,7 +152,7 @@ async function enterpriseChainTests(api,reference,bindings,detailTx,id){
  assert.ok(events.indexOf('schema')<events.lastIndexOf('BEGIN'));assert.equal(events.at(-1),'release');
 
  // Exercise actual HTTP orchestration and image renderer after the real
- // enterpriseRead transaction, with only external auth/storage/DB ports mocked.
+ // owned snapshot and permission recheck, with only auth/storage/DB ports mocked.
  const {NextResponse}=require('next/server'),json=(value,status=200)=>NextResponse.json(value,{status});
  const png=await require('sharp')({create:{width:2,height:2,channels:4,background:'#ffffff'}}).png().toBuffer();
  const preview=load('src/lib/media-preview.ts',{'@/lib/storage':{isManagedImageUrl:url=>url.startsWith('/media/'),dataUrlToBytes:()=>null,readManagedObject:async()=>{assert.equal(active,false);assert.equal(checkedOut,0);events.push('body');return {bytes:png};}},'@/lib/download-source':{},'@/lib/media-cache-version':{},'./media-preview-budget':load('src/lib/media-preview-budget.ts')});
@@ -160,11 +161,12 @@ async function enterpriseChainTests(api,reference,bindings,detailTx,id){
  const request=new Request('http://fixture.test/api/enterprise/creations?tenantId=11111111-1111-4111-8111-111111111111&source=legacy');
  assert.equal((await http.creationListRoute(request,true)).status,200);
  const detailResponse=await http.creationDetailRoute(request,id,true);assert.equal(detailResponse.status,200);assert.equal((await detailResponse.json()).assets.length,1);
+ const beforeAsset=events.length;
  const assetResponse=await http.creationAssetRoute(request,id,'legacy-media-0',true);assert.equal(assetResponse.status,200);assert.equal(assetResponse.headers.get('content-type'),'image/webp');assert.ok((await assetResponse.arrayBuffer()).byteLength>0);
- assert.equal(events.at(-2),'release');assert.equal(events.at(-1),'body');
+ assert.deepEqual(events.slice(beforeAsset),['schema','BEGIN','COMMIT','BEGIN','COMMIT','release','body']);
  console.log('ENTERPRISE_HTTP records=200 detail=200 asset=200/webp bytes_after_release=PASS');
  const absent={query:async()=>({rows:[]})};await assert.rejects(()=>reference.readImagegenInputAssetReference('asset-11111111-1111-1111-1111-111111111111','other@example.test',absent),/\u7d20\u6750\u4e0d\u5b58\u5728\u6216\u65e0\u6743\u8bbf\u95ee/);
- console.log('ENTERPRISE_CHAIN records/detail/assets actual_enterpriseRead=PASS schema_before_begin=PASS media_after_release=PASS');
+ console.log('ENTERPRISE_CHAIN records/detail/assets snapshot_and_recheck=PASS schema_before_begin=PASS media_after_release=PASS');
 }
 
 main().catch(e=>{console.error(e);process.exitCode=1;});
