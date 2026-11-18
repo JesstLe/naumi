@@ -219,7 +219,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
-import { useAppSearchParams } from "@/lib/app-router-navigation";
+import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import NextImage from "@/components/cached-next-image";
 import { useWorkspaceRouter as useRouter } from "@/lib/desktop/navigation";
@@ -357,8 +357,8 @@ const CANVAS_ZOOM_KEYS = ["Control", "Meta"];
 
 export function CanvasClient({ initialProject, desktopAppearance = false }: { initialProject?: string; desktopAppearance?: boolean } = {}) {
   const collaboration = useCollaboration();
-  const projectSearchParams = useAppSearchParams();
-  const requestedProject = initialProject || projectSearchParams.get("project") || undefined;
+  const projectSearchParams = useSearchParams();
+  const requestedProject = initialProject || projectSearchParams?.get("project") || undefined;
   const { can: canFeature } = useFeatureAccess();
   const billing=useBilling();
   function privateFetch(input:RequestInfo|URL,init:CanvasCreationRequestInit={}){

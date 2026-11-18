@@ -9,7 +9,7 @@ import { loadAccountSnapshot, invalidateBrowserData } from "@/lib/browser-data-c
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useAppSearchParams } from "@/lib/app-router-navigation";
+import { useSearchParams } from "next/navigation";
 import { useWorkspaceRouter as useRouter } from "@/lib/desktop/navigation";
 import {
   ArrowRight,
@@ -268,7 +268,7 @@ export function WorkbenchClient({appearance="legacy"}:{appearance?:"legacy"|"cre
   const { user, ready, remaining } = useAuth();
   const { openAuth } = useAuthModal();
   const L = (zh: string, en: string) => (locale === "en" ? en : zh);
-  const params = useAppSearchParams();
+  const params = useSearchParams();
   const [creationWorkspace,setCreationWorkspace]=useState(()=>appearance==="creation"?currentWorkspace():"personal");
   const recoveryWorkspaceRef=useRef(creationWorkspace);
   useEffect(()=>{if(appearance!=="creation")return;const sync=()=>setCreationWorkspace(currentWorkspace());window.addEventListener(WORKSPACE_SELECTION,sync);return()=>window.removeEventListener(WORKSPACE_SELECTION,sync);},[appearance]);
@@ -498,14 +498,14 @@ export function WorkbenchClient({appearance="legacy"}:{appearance?:"legacy"|"cre
   useEffect(() => {
     if (appearance !== "creation" || !ready || !user?.email || !canOpenLinkedSession) return;
     const params = new URLSearchParams(window.location.search);
-    const id = params.get("session");
-    const key = JSON.stringify([user.email, creationWorkspace, id, params.get("history")]);
+    const id = params?.get("session");
+    const key = JSON.stringify([user.email, creationWorkspace, id, params?.get("history")]);
     if (openedLink.current === key) return;
     // StrictMode retires its first account scope before replaying effects. Defer
     // until that lifecycle has settled; a cancelled callback is never consumed.
     const timer = window.setTimeout(() => {
       openedLink.current = key;
-      if (params.get("history") === "1") setSessionsOpen(true);
+      if (params?.get("history") === "1") setSessionsOpen(true);
       if (id && id.length <= 200) void loadSession(id);
     }, 0);
     return () => window.clearTimeout(timer);
@@ -572,7 +572,7 @@ export function WorkbenchClient({appearance="legacy"}:{appearance?:"legacy"|"cre
   // ?prompt= 进入(旧 /brain 链接):清参数后自动首发,跳过门户空态
   useEffect(() => {
     if (bootstrapRef.current || (!ready && !user)) return;
-    const prompt = (params.get("prompt") || "").trim();
+    const prompt = (params?.get("prompt") || "").trim();
     if (!prompt) return;
     let active = true;
     // StrictMode's setup/cleanup probe must not consume the one-shot prompt

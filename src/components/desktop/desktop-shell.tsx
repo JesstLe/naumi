@@ -2,9 +2,7 @@
 import { CachedImage } from "@/components/cached-image";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useAppPathname } from "@/lib/app-router-pathname";
-import { useAppSearchParams } from "@/lib/app-router-navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ChevronRight, Folder, LayoutGrid, Layers, Menu, Network, Plus, LogOut, ArrowLeft, X, Users, Share2 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useAuthModal } from "@/lib/auth-modal-context";
@@ -19,7 +17,7 @@ import { CollaborationEntry } from "@/components/collaboration/collaboration-ent
 import { useCollaboration } from "@/components/collaboration/collaboration-provider";
 const NAV = [ {href:"/desktop", label:"工作台", Icon:LayoutGrid}, {href:"/desktop/canvas",label:"无限画布",Icon:Network}, {href:"/desktop/suite",label:"一键套图",Icon:Layers}, {href:"/desktop/works",label:"我的素材",Icon:Folder} ];
 export function DesktopShell({children}: {children:React.ReactNode}) {
-  const path = useAppPathname() || "/desktop";
+  const path = usePathname() || "/desktop";
   const router = useRouter();
   const collaboration = useCollaboration();
   const { user, ready, remaining, signOut, persistMode } = useAuth();
@@ -29,7 +27,7 @@ export function DesktopShell({children}: {children:React.ReactNode}) {
   const [verifiedEmail,setVerifiedEmail]=useState<string | null | undefined>(undefined);
   const [mobile, setMobile] = useState(false);
   const [projects, setProjects] = useState<DesktopProject[]>([]);
-  const activeProject = useAppSearchParams().get("project");
+  const activeProject = useSearchParams()?.get("project");
   const [accountOpen,setAccountOpen]=useState(false);
   const accountRef=useRef<HTMLDivElement>(null);
   useEffect(() => {setMobile(false);setAccountOpen(false);},[path]);

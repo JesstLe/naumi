@@ -4,8 +4,7 @@ import { PHONE_DOMAIN as PHONE_EMAIL_DOMAIN } from "@/lib/account-identity";
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useAppSearchParams } from "@/lib/app-router-navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2, ArrowLeft, Mail, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -120,7 +119,7 @@ export function AuthPanel({
   onSwitchMode?: (m: "sign-in" | "sign-up") => void;
 }) {
   const router = useRouter();
-  const params = useAppSearchParams();
+  const params = useSearchParams();
   const { t, locale } = useI18n();
 
   // 彻底堵住注册路径。登录逻辑本身不动。
@@ -182,8 +181,8 @@ export function AuthPanel({
   >("loading");
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const redirect = params.get("redirect");
-  const plan = params.get("plan");
+  const redirect = params?.get("redirect");
+  const plan = params?.get("plan");
   const nextUrl =
     redirect ?? (plan ? `/checkout?plan=${plan}` : "/dashboard");
   const carry = new URLSearchParams();

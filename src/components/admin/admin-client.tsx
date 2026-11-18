@@ -1,7 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useAppSearchParams } from "@/lib/app-router-navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AdminCenterShell } from "@/components/admin/center-shell";
 import { adminDestination } from "@/lib/admin-navigation";
 import { useEffect } from "react";
@@ -13,9 +12,9 @@ import { Input } from "@/components/ui/input";
 
 export function AdminClient() {
   const router = useRouter();
-  const searchParams = useAppSearchParams();
-  const settingsView = searchParams.get("view") === "settings";
-  const destination = adminDestination(searchParams.get("next"));
+  const searchParams = useSearchParams();
+  const settingsView = searchParams?.get("view") === "settings";
+  const destination = adminDestination(searchParams?.get("next"));
   const entry=useAdminEntry();
   const {status,localAdmin,password:pw,busy:pwBusy,error:pwErr,setPassword:setPw,submitLocal}=entry;
   useEffect(() => {

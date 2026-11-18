@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useAppSearchParams } from "@/lib/app-router-navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Loader2,
   Mail,
@@ -160,7 +159,7 @@ export function AuthForm({
 }) {
   const site=useSiteProfile(),dedicated=site.mode==='enterprise';
   const router = useRouter();
-  const params = useAppSearchParams();
+  const params = useSearchParams();
   const { signIn, signUp, multiUser, applyServerUser } = useAuth();
 
   const [loading, setLoading] = useState(false);
@@ -263,8 +262,8 @@ export function AuthForm({
     }
   }
 
-  const redirect = params.get("redirect");
-  const plan = params.get("plan");
+  const redirect = params?.get("redirect");
+  const plan = params?.get("plan");
   const nextUrl =
     redirect ?? (plan ? `/checkout?plan=${plan}` : "/dashboard");
   const carry = new URLSearchParams();

@@ -1,9 +1,7 @@
 "use client";
 import {useEffect,useState} from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useAppPathname } from "@/lib/app-router-pathname";
-import { useAppSearchParams } from "@/lib/app-router-navigation";
+import {usePathname,useRouter,useSearchParams} from "next/navigation";
 import {ShieldCheck,KeyRound,Users,ImageIcon,Server,Database,LayoutGrid,MessageSquare,Shirt,Palette,FileText,Ticket,Activity} from "lucide-react";
 import {AdminUsagePanel} from "./usage/usage-panel";
 import {AdminTemplates} from "./admin-templates";
@@ -51,13 +49,13 @@ const SETTINGS_MOVED: Record<string, { path: string; section?: string; tab?: str
 
 
 export function AdminSettings({localAdmin=false}:{localAdmin?:boolean}){
-const settingsQuery = useAppSearchParams(), settingsRouter = useRouter(), settingsPath = useAppPathname();
-const requestedSection = settingsQuery.get('tab') || settingsQuery.get('section') || 'api';
+const settingsQuery = useSearchParams(), settingsRouter = useRouter(), settingsPath = usePathname() ?? "";
+const requestedSection = settingsQuery?.get('tab') || settingsQuery?.get('section') || 'api';
 const canonicalSection = Object.hasOwn(SETTINGS_ALIASES, requestedSection) ? SETTINGS_ALIASES[requestedSection] : requestedSection;
 const [migrationMessage, setMigrationMessage] = useState('');
   const [usageDays, setActiveUsageDays] = useState(30);
-  useEffect(() => { const days = Number(settingsQuery.get('days')); setActiveUsageDays([7, 30, 90, 365].includes(days) ? days : 30); }, [settingsQuery]);
-  function setUsageDays(days: number) { setActiveUsageDays(days); const params = new URLSearchParams(settingsQuery.toString()); params.set('days', String(days)); settingsRouter.replace(`${settingsPath}?${params}`, { scroll: false }); }
+  useEffect(() => { const days = Number(settingsQuery?.get('days')); setActiveUsageDays([7, 30, 90, 365].includes(days) ? days : 30); }, [settingsQuery]);
+  function setUsageDays(days: number) { setActiveUsageDays(days); const params = new URLSearchParams(settingsQuery?.toString()); params.set('days', String(days)); settingsRouter.replace(`${settingsPath}?${params}`, { scroll: false }); }
   // 左侧分栏:当前板块(方案 A,大厂式后台)
   const [section, setActiveSection] = useState<
     | "users"
@@ -76,7 +74,7 @@ const [migrationMessage, setMigrationMessage] = useState('');
     | "cardkeys"
   >("api");
   function setSection(next: SettingsSection, email?: string) {
-    const params = new URLSearchParams(settingsQuery.toString()); params.set('view', 'settings'); params.set('tab', next); params.delete('section');
+    const params = new URLSearchParams(settingsQuery?.toString()); params.set('view', 'settings'); params.set('tab', next); params.delete('section');
     if (email) params.set('email', email);
     settingsRouter.replace(`${settingsPath}?${params}`, { scroll: false });
   }
@@ -84,7 +82,7 @@ const [migrationMessage, setMigrationMessage] = useState('');
     const compatibility = requestedSection === 'account-credits' || requestedSection === 'legacy-deploy';
     const moved = !compatibility && Object.hasOwn(SETTINGS_MOVED, canonicalSection) ? SETTINGS_MOVED[canonicalSection] : undefined;
     if (moved) {
-      const params = new URLSearchParams(settingsQuery.toString()); params.delete('view'); params.delete('tab'); params.delete('section');
+      const params = new URLSearchParams(settingsQuery?.toString()); params.delete('view'); params.delete('tab'); params.delete('section');
       if (moved.section) params.set('section', moved.section); if (moved.tab) params.set('tab', moved.tab);
       setMigrationMessage('正在打开此功能的新位置…');
       settingsRouter.replace(`${moved.path}${params.size ? `?${params}` : ''}`, { scroll: false }); return;
@@ -122,8 +120,8 @@ const [migrationMessage, setMigrationMessage] = useState('');
               </button>
             );
           })}
-          <Link href={`/admin?${(() => { const params = new URLSearchParams(settingsQuery.toString()); params.set('view', 'settings'); params.set('tab', 'account-credits'); params.delete('section'); return params; })()}`} aria-current={requestedSection === 'account-credits' ? 'page' : undefined} className="flex flex-none items-center whitespace-nowrap rounded-xl px-3 py-2 text-sm font-medium hover:bg-secondary">账号积分调整</Link>
-          <Link href={`/admin?${(() => { const params = new URLSearchParams(settingsQuery.toString()); params.set('view', 'settings'); params.set('tab', 'legacy-deploy'); params.delete('section'); return params; })()}`} aria-current={requestedSection === 'legacy-deploy' ? 'page' : undefined} className="flex flex-none items-center whitespace-nowrap rounded-xl px-3 py-2 text-sm font-medium hover:bg-secondary">旧部署与中转密钥</Link>
+          <Link href={`/admin?${(() => { const params = new URLSearchParams(settingsQuery?.toString()); params.set('view', 'settings'); params.set('tab', 'account-credits'); params.delete('section'); return params; })()}`} aria-current={requestedSection === 'account-credits' ? 'page' : undefined} className="flex flex-none items-center whitespace-nowrap rounded-xl px-3 py-2 text-sm font-medium hover:bg-secondary">账号积分调整</Link>
+          <Link href={`/admin?${(() => { const params = new URLSearchParams(settingsQuery?.toString()); params.set('view', 'settings'); params.set('tab', 'legacy-deploy'); params.delete('section'); return params; })()}`} aria-current={requestedSection === 'legacy-deploy' ? 'page' : undefined} className="flex flex-none items-center whitespace-nowrap rounded-xl px-3 py-2 text-sm font-medium hover:bg-secondary">旧部署与中转密钥</Link>
         </nav>
 
         {/* 内容区:一次只显示一个板块(浅灰底,白卡片落其上更清爽) */}
@@ -153,7 +151,7 @@ const [migrationMessage, setMigrationMessage] = useState('');
       <AdminApiSettings key={settings.epoch+"-AdminApiSettings"} section={section} settings={settings}/>
       <AdminAuthSettings key={settings.epoch+"-AdminAuthSettings"} section={section} settings={settings}/>
       <AdminSiteSettings key={settings.epoch+"-AdminSiteSettings"} section={section} settings={settings}/>
-      <AdminCreditSettings key={settings.epoch+"-AdminCreditSettings"} section={section} settings={settings} prefillEmail={requestedSection==='account-credits'?settingsQuery.get('email'):null}/>
+      <AdminCreditSettings key={settings.epoch+"-AdminCreditSettings"} section={section} settings={settings} prefillEmail={requestedSection==='account-credits'?(settingsQuery?.get('email') ?? null):null}/>
 
       {/* 部署与授权 */}
       {section === "deploy" && (

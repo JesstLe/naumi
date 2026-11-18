@@ -14,7 +14,7 @@ import { cdnUrl } from "@/lib/cdn";
 import { takePendingRefs } from "@/lib/pending-refs";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useAppSearchParams } from "@/lib/app-router-navigation";
+import { useSearchParams } from "next/navigation";
 import { useWorkspaceRouter as useRouter } from "@/lib/desktop/navigation";
 import {
   Loader2,
@@ -88,7 +88,7 @@ export function GenerateClient({
 }: {
   seedTemplateId?: string;
 } = {}) {
-  const params = useAppSearchParams();
+  const params = useSearchParams();
   const router = useRouter();
   const { user, ready, remaining, consumeCredits, applyServerUser } =
     useAuth();
@@ -150,7 +150,7 @@ export function GenerateClient({
   const [tpl, setTpl] = useState<
     { id: string; image: string; prompt: string; name?: string } | null
   >(null);
-  // 已加载/在载的底图 URL(去重):防止 useAppSearchParams 水合后偶发返回新实例 →
+  // 已加载/在载的底图 URL(去重):防止 useSearchParams 水合后偶发返回新实例 →
   // effect 重跑把在途的大图下载误取消,导致产品图(底图)时灵时不灵。
   const baseLoadRef = useRef<string>("");
   const baseController = useRef<AbortController | null>(null);
@@ -245,7 +245,7 @@ export function GenerateClient({
   // When ?template= is present, fetch the template (DB-backed) and seed its
   // prompt/category/image as the reference for comparison.
   useEffect(() => {
-    const tplId = params.get("template") || seedTemplateId;
+    const tplId = params?.get("template") || seedTemplateId;
     if (!tplId) return;
     let cancelled = false;
     (async () => {
@@ -295,29 +295,29 @@ export function GenerateClient({
 
   useEffect(() => {
     // Restore from a works-library item: prompt + 选项全还原。
-    const qp = params.get("prompt");
+    const qp = params?.get("prompt");
     if (qp) setPrompt(qp);
-    const qc = params.get("category");
+    const qc = params?.get("category");
     if (qc && qc in CATEGORY_LABELS) setCategory(qc as Category);
-    const qs = params.get("style");
+    const qs = params?.get("style");
     if (qs) setStyle(qs);
-    const qr = params.get("ratio");
+    const qr = params?.get("ratio");
     if (qr && qr in RATIO_ASPECT) setRatio(qr);
-    const qres = params.get("resolution");
+    const qres = params?.get("resolution");
     if (qres && GENERATION_RESOLUTIONS.some((r) => r.id === qres))
       setResolution(qres);
     // 工作台首页输入框指定的生图模型;后续 /api/config 归一化会在模型清单里校验保留。
-    const qmodel = params.get("model");
+    const qmodel = params?.get("model");
     if (qmodel) setModel(qmodel);
 
     // 血缘:从作品页带来的 from=<作品id> 作为本次迭代的父节点。
-    setParentId(params.get("from") ?? "");
+    setParentId(params?.get("from") ?? "");
     // AI 抠图「换背景」入口:提示词框给换背景引导(占位)。
-    setBgMode(params.get("bg") === "1");
+    setBgMode(params?.get("bg") === "1");
 
     // Seed the previous result into the canvas so new generations append
     // after it for side-by-side comparison.
-    const gen = params.get("gen");
+    const gen = params?.get("gen");
     if (gen) {
       setImages([
         {
@@ -334,7 +334,7 @@ export function GenerateClient({
     // 图生图底图:优先用原始上传的产品图(src);没有就退而用上一版生成结果(gen)。
     // 这样从作品页点「在此基础上再次生成」时,会真的把那张图当参考做图生图修改,
     // 而不是无参考地纯文生图(否则会出一张毫无关联的图)。按 URL 去重下载,避免大图被误取消。
-    void loadBaseImage(params.get("src") || gen || "");
+    void loadBaseImage(params?.get("src") || gen || "");
   }, [params, loadBaseImage]);
 
 
@@ -450,7 +450,7 @@ export function GenerateClient({
     if (loading || sourceLoading) return;
     let pid = "";
     if (image.id.startsWith("gen-")) pid = image.id;
-    else if (image.id.startsWith("prev-")) pid = params.get("from") ?? "";
+    else if (image.id.startsWith("prev-")) pid = params?.get("from") ?? "";
     if (await loadBaseImage(image.url)) {
       setParentId(pid);
       setTpl(null);

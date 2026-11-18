@@ -2,7 +2,7 @@
 import {useBillingProducts} from "@/lib/billing/products";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useAppSearchParams } from "@/lib/app-router-navigation";
+import { useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { useAuthModal } from "@/lib/auth-modal-context";
@@ -14,7 +14,7 @@ import { PayQrModal, type PayProvider } from "@/components/credits/pay-qr-modal"
 // 无 mock 发放——必须真实支付。月度会员已下线,只接受积分充值包。
 export function CheckoutClient({ pack }: { pack?: string } = {}) {
   const {packs:CREDIT_PACKS,buy:purchase}=useBillingProducts();
-  const params = useAppSearchParams();
+  const params = useSearchParams();
   const { user, ready, applyServerUser } = useAuth();
   const { openAuth } = useAuthModal();
   const { rechargeEnabled } = usePaymentConfig();
@@ -28,7 +28,7 @@ export function CheckoutClient({ pack }: { pack?: string } = {}) {
   } | null>(null);
   const started = useRef(false);
 
-  const raw = params.get("pack") || pack || "";
+  const raw = params?.get("pack") || pack || "";
   const packId = CREDIT_PACKS.find(p=>p.id===raw)?.id ?? CREDIT_PACKS[0]?.id ?? "";
   const pk = CREDIT_PACKS.find(p=>p.id===packId) ?? CREDIT_PACKS[0];
 

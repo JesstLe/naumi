@@ -9,8 +9,7 @@ import { createImageDownloadName } from "@/lib/download";
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useAppSearchParams } from "@/lib/app-router-navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Plus,
   ArrowUp,
@@ -120,7 +119,7 @@ export function GenChatClient() {
   const { openAuth } = useAuthModal();
   const { t, te } = useI18n();
   const router = useRouter();
-  const params = useAppSearchParams();
+  const params = useSearchParams();
 
   const [input, setInput] = useState("");
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -202,10 +201,10 @@ export function GenChatClient() {
   useEffect(() => {
     if (startedRef.current || !ready || !user) return;
     startedRef.current = true;
-    const qp = params.get("prompt");
-    const qr = params.get("ratio");
-    const qs = params.get("style");
-    const qm = params.get("model");
+    const qp = params?.get("prompt");
+    const qr = params?.get("ratio");
+    const qs = params?.get("style");
+    const qm = params?.get("model");
     urlModelRef.current = qm || "";
     if (qr) {
       const i = GENERATION_RATIOS.findIndex((r) => r.id === qr);
@@ -231,7 +230,7 @@ export function GenChatClient() {
         await sendTurn(qp?.trim() || "保留参考图主体,生成一张高质量的电商商品图", {
           ratio: qr || GENERATION_RATIOS[0]?.id || "auto",
           style: qs || GENERATION_STYLES[0] || "",
-          resolution: params.get("resolution") || "1K",
+          resolution: params?.get("resolution") || "1K",
           model: qm || undefined,
           refs,
         });

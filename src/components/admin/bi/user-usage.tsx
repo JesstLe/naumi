@@ -1,9 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useAppPathname } from "@/lib/app-router-pathname";
-import { useAppSearchParams } from "@/lib/app-router-navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from "react";
 import { ArrowLeft, ArrowUpRight, BarChart3, CalendarDays, ChevronLeft, ChevronRight, Download, ImageIcon, Loader2, RefreshCw, Search, Users, Wallet, X } from "lucide-react";
 import { AdminCenterShell } from "@/components/admin/center-shell";
@@ -62,12 +60,12 @@ function csvForUsers(rows: UsageUser[]) {
 
 /** System usage/output evidence only: does not infer employee performance or working hours. */
 export function UserUsage({ embedded = false, enterpriseId, refreshRevision = 0 }: Props) {
-  const router = useRouter(), pathname = useAppPathname(), params = useAppSearchParams();
+  const router = useRouter(), pathname = usePathname() ?? "", params = useSearchParams();
   const { user, ready } = useAuth();
   const [defaults] = useState(() => recentDates(30));
   const prefix = embedded ? "usage" : "";
   const key = (name: string) => prefix ? prefix + name[0].toUpperCase() + name.slice(1) : name;
-  const parameterText = params.toString();
+  const parameterText = params?.toString() ?? "";
   const filter = useMemo<Filter>(() => {
     const current = new URLSearchParams(parameterText), read = (name: string) => current.get(prefix ? prefix + name[0].toUpperCase() + name.slice(1) : name) || "";
     const sort = read("sort"), page = Number(read("page") || "1");

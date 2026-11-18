@@ -1,7 +1,7 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
 import {AdminQueryInput} from '@/components/admin/query-input';
-import { useAppSearchParams } from '@/lib/app-router-navigation';
+import {useSearchParams} from 'next/navigation';
 import {replaceAdminQuery} from '@/components/admin/query-navigation';
 import {ArrowLeft,ChevronRight,ImageIcon,RefreshCw,X} from 'lucide-react';
 import {authHeader} from '@/lib/supabase';
@@ -9,6 +9,7 @@ import {useAuth} from '@/lib/auth-context';
 import Markdown from 'react-markdown';
 import type {CreationListPage,CreationAsset,CreationFailure} from '@/lib/saas/creation-contracts';
 import styles from './saas.module.css';
+const emptySearchParams = new URLSearchParams();
 import {queueCreationPreview} from './creation-preview-queue';
 import {useCreationEvidence,type CreationEvidenceFeedback,type VisibleCreationDetail} from './use-creation-evidence';
 const labels:Record<string,string>={queued:'排队中',running:'处理中',succeeded:'已完成',partial:'部分成功',failed:'失败',cancel_requested:'取消申请中',cancelled:'已取消',needs_review:'待核查'};
@@ -19,7 +20,7 @@ function eventSummary(event:{type:string;summary:string}){
 export function CreationStatus({status}:{status:string}){return <span className={`${styles.badge} ${styles[status]||''}`}>{labels[status]||'未记录'}</span>;}
 export function CreationBrowser(props:{tenantId?:string;enterprise?:boolean}){const {user}=useAuth();return <ScopedCreationBrowser key={`${user?.email||'console'}:${props.tenantId||'*'}:${props.enterprise?'enterprise':'platform'}`} {...props}/>;}
 function ScopedCreationBrowser({tenantId,enterprise=false}:{tenantId?:string;enterprise?:boolean}){
- const query=useAppSearchParams();const selected=query.get('creationId')||'';
+ const query=useSearchParams() ?? emptySearchParams;const selected=query.get('creationId')||'';
  const platformHistory=!enterprise&&!tenantId;
  const [page,setPage]=useState<CreationListPage|null>(null),[error,setError]=useState(''),[listRevision,refreshList]=useState(0),[loading,setLoading]=useState(true);
  const api=enterprise?'/api/enterprise/creations':'/api/admin/creations';

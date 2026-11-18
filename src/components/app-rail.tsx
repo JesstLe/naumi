@@ -6,7 +6,7 @@ import { useFeatureAccess } from "@/lib/feature-access/client";
 
 
 import Link from "next/link";
-import { useAppPathname } from "@/lib/app-router-pathname";
+import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
   Home,
@@ -65,7 +65,7 @@ export function AppRail() {
   const visibleTools = TOOLS.filter(tool => tool.live !== false && canPage(tool.href));
   const createHref = canPage("/tools") ? "/tools" : visibleTools[0]?.href;
   const L = (zh: string, en: string) => (locale === "en" ? en : zh);
-  const path = useAppPathname();
+  const path = usePathname() ?? "";
   const { user, remaining, signOut } = useAuth();
   const { openAuth } = useAuthModal();
   const { openRecharge } = useRecharge();

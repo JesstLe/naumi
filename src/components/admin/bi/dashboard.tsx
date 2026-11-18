@@ -1,8 +1,7 @@
 "use client";
 import { USER_POSITIONS } from "@/lib/accounts/positions";
 
-import { useRouter } from "next/navigation";
-import { useAppSearchParams } from "@/lib/app-router-navigation";
+import { useRouter,useSearchParams } from "next/navigation";
 import { AdminCenterShell } from "@/components/admin/center-shell";
 import {microsToDecimal} from "@/lib/billing/decimal";
 import { ModelChain } from "./model-chain";
@@ -420,7 +419,7 @@ const statuses: Partial<Record<BiSection, [string, string][]>> = {
 
 export function BiDashboard({ initialSection = "overview", embedded = false }: { initialSection?: BiSection; embedded?:boolean }) {
   const router = useRouter();
-  const searchParams=useAppSearchParams(),searchKey=searchParams.toString();
+  const searchParams=useSearchParams(),searchKey=searchParams?.toString() ?? "";
   const [section, setSection] = useState<BiSection>(initialSection);
   const [draft, setDraft] = useState<Filter>(()=>initialFilter(new URLSearchParams(searchKey)));
   const [filter, setFilter] = useState<Filter>(()=>initialFilter(new URLSearchParams(searchKey)));

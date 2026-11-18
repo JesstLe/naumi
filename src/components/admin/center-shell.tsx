@@ -1,8 +1,7 @@
 "use client";
 import Link from 'next/link';
 import {useEffect,useRef,useState} from 'react';
-import { useAppPathname } from '@/lib/app-router-pathname';
-import { useAppSearchParams } from '@/lib/app-router-navigation';
+import {usePathname,useSearchParams} from 'next/navigation';
 import {ArrowLeft,LogOut,Menu,X} from 'lucide-react';
 import type {BiSection} from '@/lib/bi/contracts';
 import {SiteVersion} from '@/components/site-version';
@@ -17,7 +16,7 @@ export function AdminCenterShell({embedded=false,...props}:ShellProps){return em
 function AdminShell({active,children,deploymentsOnly=false,moduleNavigation=true}:ShellProps){
  const [fleetEnabled,setFleetEnabled]=useState(active==='deployments'),[logoutError,setLogoutError]=useState(''),[pendingTotal,setPendingTotal]=useState(0);
  const mobile=useRef<HTMLDialogElement>(null),menu=useRef<HTMLButtonElement>(null);
- const pathname=useAppPathname()||'',search=useAppSearchParams(),category=adminCategory(active);
+ const pathname=usePathname()||'',search=useSearchParams(),category=adminCategory(active);
  useEffect(()=>{const abort=new AbortController();void fetch('/api/admin/fleet/status',{cache:'no-store',signal:abort.signal}).then(async response=>{if(response.ok){const data=await response.json();if(!abort.signal.aborted)setFleetEnabled(data.enabled===true);}}).catch(()=>{});return()=>abort.abort();},[]);
  // Billing backlog badge: passive read-only summary (no exposure write); a
  // failed poll simply keeps the previous count instead of surfacing errors.
@@ -45,5 +44,5 @@ function AdminShell({active,children,deploymentsOnly=false,moduleNavigation=true
  return <div className={`${theme.theme} ${styles.shell}`} data-admin-ui="integrated"><aside className={styles.sidebar}>{navigation()}</aside>
  <dialog ref={mobile} id="admin-mobile-navigation" className={styles.mobileNavigation} aria-label="管理中心导航" onClick={e=>{if(e.target===e.currentTarget)mobile.current?.close();}} onClose={()=>menu.current?.focus()}>{navigation(true)}</dialog>
  <div className={styles.content}><header className={styles.topbar}><div className={styles.heading}><button ref={menu} type="button" className={styles.menuButton} aria-label="展开管理导航" aria-haspopup="dialog" aria-controls="admin-mobile-navigation" onClick={()=>mobile.current?.showModal()}><Menu size={21}/></button><span>{adminEntries.find(entry=>entry.id===category)?.label||'后台管理'}</span></div><div className={styles.topbarActions}><AdminPageSearch deploymentsOnly={deploymentsOnly} fleetEnabled={fleetEnabled}/><SiteVersion embedded/></div></header>
- {tabs&&<nav className={styles.subnav} aria-label="模块功能">{tabs.map(link=><Link key={link.href} href={link.href} prefetch={false} aria-current={adminLinkActive(link.href,pathname,new URLSearchParams(search.toString()))?'page':undefined}>{link.label}</Link>)}</nav>}<div className={styles.body}>{children}</div></div></div>;
+ {tabs&&<nav className={styles.subnav} aria-label="模块功能">{tabs.map(link=><Link key={link.href} href={link.href} prefetch={false} aria-current={adminLinkActive(link.href,pathname,new URLSearchParams(search?.toString()))?'page':undefined}>{link.label}</Link>)}</nav>}<div className={styles.body}>{children}</div></div></div>;
 }

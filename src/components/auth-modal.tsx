@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import { useAppSearchParams } from "@/lib/app-router-navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { X } from "lucide-react";
 import { AuthForm } from "@/components/auth-form";
 import { AuthPanel } from "@/components/supabase-auth";
@@ -20,7 +19,7 @@ export function AuthModal() {
   const { user } = useAuth();
   const { locale } = useI18n();
   const L = (z: string, e: string) => (locale === "en" ? e : z);
-  const params = useAppSearchParams();
+  const params = useSearchParams();
   const router=useRouter();
   const cardRef = useRef<HTMLDivElement>(null);
   // 防误关:只有「鼠标在遮罩本身按下」才算点遮罩关闭。否则在输入框里选中文本拖到
@@ -32,13 +31,13 @@ export function AuthModal() {
 
   // 旧 /sign-in / /sign-up 路由 redirect 到 /?auth=sign-in/sign-up,在这里捕获
   useEffect(() => {
-    const a = params.get("auth");
+    const a = params?.get("auth");
     if (a === "sign-in" || a === "sign-up") openAuth(a);
   }, [params, openAuth]);
 
   // 登录/注册成功后自动关闭弹窗
   useEffect(() => {
-    if (open && user) {closeAuth();const destination=authDestination(params.get('redirect'));if(destination)router.replace(destination);}
+    if (open && user) {closeAuth();const destination=authDestination(params?.get('redirect'));if(destination)router.replace(destination);}
   }, [open, user, closeAuth, params, router]);
 
   // Esc 关闭 + 锁定 body 滚动(带滚动条宽度补偿,防止背景右移)
