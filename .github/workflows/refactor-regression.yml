@@ -17,7 +17,8 @@ jobs:
   core:
     if: github.repository == 'JesstLe/naumi'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # The full source-bound suite extends beyond case 311; allow the tail to complete.
+    timeout-minutes: 65
     services:
       postgres:
         image: postgres:16-alpine

@@ -17,7 +17,7 @@ async function main() {
     import {SceneEditor} from ${abs('src/components/canvas/scene/scene-editor.tsx')};
     import {newSceneProject} from ${abs('src/lib/scene/project.ts')};
     const picture = color => 'data:image/svg+xml;base64,'+btoa('<svg xmlns="http://www.w3.org/2000/svg" width="480" height="640"><rect width="480" height="640" fill="'+color+'"/><circle cx="240" cy="215" r="88" fill="#eac4a7"/><path d="M80 640V470Q80 340 240 340Q400 340 400 470V640" fill="#334c6a"/><path d="M153 200Q145 80 240 100Q345 90 327 200L280 165L200 180Z" fill="#353c4b"/></svg>');
-    const scene=newSceneProject('庭院');scene.description='石阶连接木廊，石桌靠东';scene.states[0].referenceArtworkIds=['photo-a'];
+    const canonicalScene=newSceneProject('庭院');const scene=Object.fromEntries(Object.entries(canonicalScene).reverse());scene.description='石阶连接木廊，石桌靠东';scene.states[0].referenceArtworkIds=['photo-a'];
     const initial={id:'scene-fixture',projectKey:'tree:scene-fixture',revision:1,title:scene.name,x:0,y:0,width:320,height:300,scene,deletedAt:null,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
     const initialImages=[{id:'photo-a',nodeId:'photo-a',kind:'image',title:'日常肖像',value:picture('#e9edf3'),available:true},{id:'photo-b',nodeId:'photo-b',kind:'image',title:'夜晚肖像',value:picture('#d9e6e6'),available:true},{id:'pending',nodeId:'pending',kind:'image',title:'未完成',value:picture('#eee'),available:false}];
     function App(){

@@ -9,7 +9,7 @@ function fixture(driver='s3'){
  const state={putError:false,localError:false,getError:false,response:()=>new Response('remote-bytes',{headers:{'content-type':'image/png'}})};
  const local={put:async(k,b)=>{calls.push('local.put');if(state.localError)throw Error('local-write-failed');files.set(path.resolve(config.mediaDir,k),Buffer.from(b));},delete:async()=>{}};
  const remote={put:async()=>{calls.push('remote.put');if(state.putError)throw Error('remote-write-failed')},get:async()=>{calls.push('remote.get');if(state.getError)throw Error('remote-read-failed');return state.response()},delete:async()=>{}};
- const filePromises={stat:async p=>{calls.push('local.stat');const b=files.get(p);if(!b)throw Object.assign(Error('missing'),{code:'ENOENT'});return {isFile:()=>true,size:b.length}},readFile:async p=>{calls.push('local.read');return files.get(p)}};
+ const filePromises={mkdir:async()=>{},statfs:async()=>({bavail:10*1024*1024,bsize:4096}),stat:async p=>{calls.push('local.stat');const b=files.get(p);if(!b)throw Object.assign(Error('missing'),{code:'ENOENT'});return {isFile:()=>true,size:b.length}},readFile:async p=>{calls.push('local.read');return files.get(p)}};
  const {loadStorageSource}=require('./storage-source-fixture.cjs');
  const storage=loadStorageSource(sourcePath,{'fs/promises':filePromises,'path':path,
   './object-storage/config':{storageConfiguration:()=>config},
