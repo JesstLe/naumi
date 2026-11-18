@@ -2,7 +2,8 @@
 import {useEffect,useState} from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useAppPathname, useAppSearchParams } from "@/lib/app-router-navigation";
+import { useAppPathname } from "@/lib/app-router-pathname";
+import { useAppSearchParams } from "@/lib/app-router-navigation";
 import {ShieldCheck,KeyRound,Users,ImageIcon,Server,Database,LayoutGrid,MessageSquare,Shirt,Palette,FileText,Ticket,Activity} from "lucide-react";
 import {AdminUsagePanel} from "./usage/usage-panel";
 import {AdminTemplates} from "./admin-templates";

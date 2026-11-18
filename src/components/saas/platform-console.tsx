@@ -2,7 +2,8 @@
 import Link from 'next/link';
 import { TenantUsagePanel } from './tenant-usage-panel';
 import {useEffect,useRef,useState} from 'react';
-import { useAppPathname, useAppSearchParams } from '@/lib/app-router-navigation';
+import { useAppPathname } from '@/lib/app-router-pathname';
+import { useAppSearchParams } from '@/lib/app-router-navigation';
 import {Building2,Users,FileText,TriangleAlert,Plus,RefreshCw,X} from 'lucide-react';
 import {authHeader} from '@/lib/supabase';
 import {ACCESS_FEATURES} from '@/lib/feature-access/catalog';

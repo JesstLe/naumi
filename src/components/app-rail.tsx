@@ -6,7 +6,7 @@ import { useFeatureAccess } from "@/lib/feature-access/client";
 
 
 import Link from "next/link";
-import { useAppPathname } from "@/lib/app-router-navigation";
+import { useAppPathname } from "@/lib/app-router-pathname";
 import { useEffect, useRef, useState } from "react";
 import {
   Home,

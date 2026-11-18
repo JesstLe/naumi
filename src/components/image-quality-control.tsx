@@ -5,7 +5,7 @@ import { useImageQuality } from "@/lib/image-quality-context";
 import { CANVAS_QUALITIES } from "@/lib/canvas/generation-parameters";
 import { IMAGE_QUALITY_IDS } from "@/lib/image-quality";
 import { useBilling, type PublicQuote, type QuoteInput } from "@/lib/billing/client";
-import { useAppPathname } from "@/lib/app-router-navigation";
+import { useAppPathname } from "@/lib/app-router-pathname";
 import {CATEGORY_FEATURES} from "@/lib/billing/feature-map";
 import { useI18n } from "@/lib/i18n/locale-context";
 import { ImageQualitySelect } from "@/components/ui/image-quality-select";

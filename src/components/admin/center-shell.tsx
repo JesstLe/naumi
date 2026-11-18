@@ -1,7 +1,8 @@
 "use client";
 import Link from 'next/link';
 import {useEffect,useRef,useState} from 'react';
-import { useAppPathname, useAppSearchParams } from '@/lib/app-router-navigation';
+import { useAppPathname } from '@/lib/app-router-pathname';
+import { useAppSearchParams } from '@/lib/app-router-navigation';
 import {ArrowLeft,LogOut,Menu,X} from 'lucide-react';
 import type {BiSection} from '@/lib/bi/contracts';
 import {SiteVersion} from '@/components/site-version';
