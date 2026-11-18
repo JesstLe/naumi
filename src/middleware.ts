@@ -41,6 +41,12 @@ export async function middleware(req: NextRequest) {
   }
   const headers = new Headers(req.headers);
   headers.set("x-pathname", req.nextUrl.pathname);
+  // These two machine endpoints authenticate their fixed product audience in
+  // the handler. An interactive-cookie gate would break service-to-service sync.
+  if ((path==='/api/enterprise/identity/projection'&&req.method==='GET') ||
+      (path==='/api/enterprise/identity/ack'&&req.method==='POST')) {
+    return NextResponse.next({request:{headers}});
+  }
   if((['/enterprise/workflow','/enterprise/workspace'].includes(path)||dedicated&&['/enterprise','/admin'].includes(path))&&!await resolveUserEmail(req)){
     const login=enterpriseRequestUrl(req.url,req.headers.get('host'),req.headers.get('x-forwarded-proto'));login.pathname='/sign-in';login.search='?redirect='+encodeURIComponent(path);
     return NextResponse.redirect(login,{status:307,headers:ACCESS_HEADERS});

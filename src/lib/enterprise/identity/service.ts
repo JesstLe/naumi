@@ -1,6 +1,6 @@
 import 'server-only';
 import {createHash,randomUUID,timingSafeEqual} from 'node:crypto';
-import {enterpriseManageTransaction} from '../server';
+import {enterpriseIdentityTransaction} from '../server';
 import {deploymentPolicy,assertEnterpriseAllowed} from '../integration/policy';
 import {requireTeamGrant,type TeamActor} from '@/lib/teams/grants';
 import {consumersSchema} from './consumer-config';
@@ -22,7 +22,7 @@ function protectedTitle(title?:string){return ['system_admin','administrator','d
 export async function mutateIdentity(actor:TeamActor,input:IdentityCommand){
   const c=identityCommandSchema.parse(input),policy=authority();boundEnterprise(policy,c.enterpriseId);
   await ensureIdentitySchema();
-  return enterpriseManageTransaction(actor,c.enterpriseId,async(tx,scope)=>{
+  return enterpriseIdentityTransaction(actor,c.enterpriseId,async(tx,scope)=>{
     // Existing enterprise authorization remains required. A platform cookie is
     // not an alternate identity for this customer-only entry point.
     if(actor.admin||actor.consoleAdmin)throw new TeamError('请使用企业账号维护组织',403);
@@ -53,6 +53,15 @@ export async function mutateIdentity(actor:TeamActor,input:IdentityCommand){
       const version=(old?.version??0)+1;
       await tx.query(`INSERT INTO app_identity_organizations(enterprise_id,subject_id,organization,version) VALUES($1,$2,$3,$4)
         ON CONFLICT(enterprise_id,subject_id) DO UPDATE SET organization=EXCLUDED.organization,version=EXCLUDED.version,updated_at=now()`,[c.enterpriseId,subject,JSON.stringify(c.organization),version]);
+      if(c.productConfiguration){
+        const configuration=c.productConfiguration;
+        const grant=(await tx.query("SELECT version FROM app_identity_product_grants WHERE enterprise_id=$1 AND subject_id=$2 AND product_id='design-ops' FOR UPDATE",[c.enterpriseId,subject])).rows[0];
+        if((grant?.version??0)!==configuration.expectedVersion)throw new TeamError('产品授权已更新，请刷新',409);
+        if(configuration.enabled!==!!configuration.roles.length)throw new TeamError('产品启停与角色不匹配',400);
+        try{assertGrantForOrganization(c.organization,configuration.roles);}catch{throw new TeamError('产品角色超出职务或专业范围',400);}
+        await tx.query(`INSERT INTO app_identity_product_grants(enterprise_id,subject_id,product_id,enabled,roles,version) VALUES($1,$2,'design-ops',$3,$4,$5)
+          ON CONFLICT(enterprise_id,subject_id,product_id) DO UPDATE SET enabled=EXCLUDED.enabled,roles=EXCLUDED.roles,version=EXCLUDED.version,updated_at=now()`,[c.enterpriseId,subject,configuration.enabled,JSON.stringify(configuration.roles),(grant?.version??0)+1]);
+      }
       // Remove grants that no longer fit the new job. Never leave a stale
       // administrator/reviewer role behind after an organization downgrade.
       for(const grant of (await tx.query('SELECT product_id,roles FROM app_identity_product_grants WHERE enterprise_id=$1 AND subject_id=$2 FOR UPDATE',[c.enterpriseId,subject])).rows){
@@ -60,7 +69,7 @@ export async function mutateIdentity(actor:TeamActor,input:IdentityCommand){
           await tx.query("UPDATE app_identity_product_grants SET enabled=false,roles='[]',version=version+1,updated_at=now() WHERE enterprise_id=$1 AND subject_id=$2 AND product_id=$3",[c.enterpriseId,subject,grant.product_id]);
         }
       }
-      return record({subjectId:subject,version},old??null,c.organization);
+      return record({subjectId:subject,version},old??null,{organization:c.organization,productConfiguration:c.productConfiguration??null});
     }
     if(!old)throw new TeamError('请先配置组织身份',409);
     if(!root&&(legacyPrivileged||c.email===actor.email||c.email===scope.team.owner_email||protectedTitle(old.organization.title)))throw new TeamError('此管理账号的产品授权须由企业负责人维护',403);
@@ -87,13 +96,14 @@ export async function mutateIdentity(actor:TeamActor,input:IdentityCommand){
 export async function identityDirectory(actor:TeamActor,enterpriseId:string){
   boundEnterprise(authority(),enterpriseId);await ensureIdentitySchema();
   if(actor.admin||actor.consoleAdmin)throw new TeamError('请使用企业账号',403);
-  return enterpriseManageTransaction(actor,enterpriseId,async(tx,s)=>{
-    const rows=(await tx.query(`SELECT u.email,u.name,i.subject_id,o.organization,o.version AS organization_version,g.roles,g.enabled,g.version AS grant_version
+  return enterpriseIdentityTransaction(actor,enterpriseId,async(tx,s)=>{
+    const rows=(await tx.query(`SELECT u.email,u.name,u.banned,u.management_version AS account_version,i.subject_id,o.organization,o.version AS organization_version,g.roles,g.enabled,g.version AS grant_version
       FROM app_users u LEFT JOIN app_identity_subjects i ON i.account_email=u.email
       LEFT JOIN app_identity_organizations o ON o.subject_id=i.subject_id AND o.enterprise_id=$1
       LEFT JOIN app_identity_product_grants g ON g.subject_id=i.subject_id AND g.enterprise_id=$1 AND g.product_id='design-ops'
       WHERE u.email=$2 OR EXISTS(SELECT 1 FROM app_enterprise_members m WHERE m.enterprise_id=$1 AND m.email=u.email) ORDER BY u.name,u.email`,[enterpriseId,s.team.owner_email])).rows;
-    return {enterpriseId,members:rows,canManageProtected:s.team.owner_email===actor.email};
+    const sync=(await tx.query('SELECT product_id,last_success_at,applied_members,last_error FROM app_identity_consumer_acks WHERE enterprise_id=$1',[enterpriseId])).rows;
+    return {enterpriseId,members:rows,sync,canManageProtected:s.team.owner_email===actor.email};
   });
 }
 
@@ -109,7 +119,7 @@ export function identityConsumer(authorization:string|null){
   boundEnterprise(authority(),match.enterpriseId);return match;
 }
 
-export async function identityProjection(consumer:ReturnType<typeof identityConsumer>){
+export async function identityProjection(consumer:ReturnType<typeof identityConsumer>,subjectId?:string){
   const policy=authority();boundEnterprise(policy,consumer.enterpriseId);await ensureIdentitySchema();
   const tx=await getPool().connect();
   try{
@@ -129,9 +139,10 @@ export async function identityProjection(consumer:ReturnType<typeof identityCons
       FROM app_identity_product_grants g JOIN app_identity_subjects i ON i.subject_id=g.subject_id
       JOIN app_users u ON u.email=i.account_email JOIN app_identity_organizations o ON o.enterprise_id=g.enterprise_id AND o.subject_id=g.subject_id
       LEFT JOIN app_enterprise_members m ON m.enterprise_id=g.enterprise_id AND m.email=u.email
-      WHERE g.enterprise_id=$1 AND g.product_id=$2 ORDER BY i.subject_id`,[consumer.enterpriseId,consumer.productId,team.owner_email])).rows;
+      WHERE g.enterprise_id=$1 AND g.product_id=$2 AND ($4::uuid IS NULL OR i.subject_id=$4::uuid) ORDER BY i.subject_id`,[consumer.enterpriseId,consumer.productId,team.owner_email,subjectId??null])).rows;
     const revision=hash(members);
-    const body={schemaVersion:1,authority:policy.sourceInstanceId,enterpriseId:consumer.enterpriseId,productId:consumer.productId,revision,members};
+    const sequence=(await tx.query('SELECT COALESCE(max(sequence),0)::text sequence FROM app_identity_outbox WHERE enterprise_id=$1',[consumer.enterpriseId])).rows[0].sequence;
+    const body={schemaVersion:1,authority:policy.sourceInstanceId,enterpriseId:consumer.enterpriseId,productId:consumer.productId,revision,members,complete:!subjectId,sequence,issuedAt:new Date().toISOString()};
     await tx.query('COMMIT');return body;
   }catch(e){await tx.query('ROLLBACK');throw e;}finally{tx.release();}
 }

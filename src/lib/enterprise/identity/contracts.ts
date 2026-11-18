@@ -22,7 +22,9 @@ export const organizationSchema=z.object({title:z.enum(TITLES),homeGroup:z.enum(
 export type Organization=z.infer<typeof organizationSchema>;
 const common={id:z.string().uuid(),enterpriseId:z.string().uuid(),email:z.string().trim().min(1).max(254),expectedVersion:z.number().int().min(0),reason:z.string().trim().min(3).max(500)};
 export const identityCommandSchema=z.discriminatedUnion('action',[
-  z.object({...common,action:z.literal('organization'),organization:organizationSchema}).strict(),
+  z.object({...common,action:z.literal('organization'),organization:organizationSchema,
+    productConfiguration:z.object({expectedVersion:z.number().int().min(0),enabled:z.boolean(),roles:z.array(z.enum(PRODUCT_ROLES)).max(8).refine(unique)}).strict().optional(),
+  }).strict(),
   z.object({...common,action:z.literal('product-grant'),productId:z.literal('design-ops'),enabled:z.boolean(),roles:z.array(z.enum(PRODUCT_ROLES)).max(8).refine(unique)}).strict(),
 ]);
 export type IdentityCommand=z.infer<typeof identityCommandSchema>;

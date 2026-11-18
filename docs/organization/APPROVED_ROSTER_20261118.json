@@ -1,0 +1,1422 @@
+{
+  "schemaVersion": 1,
+  "status": "APPROVED_ROSTER_NOT_APPLIED",
+  "enterpriseId": "1095114e-6b57-429e-a954-7d663907e0c9",
+  "ownerEmail": "北方@username.naumi.local",
+  "members": [
+    {
+      "name": "一丹",
+      "email": "一丹@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "一笑",
+      "email": "一笑@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "万里",
+      "email": "万里@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "三七",
+      "email": "三七@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "不同",
+      "email": "不同@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "九思",
+      "email": "九思@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "云丹",
+      "email": "云丹@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "云杰",
+      "email": "云杰@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "云淇",
+      "email": "云淇@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "云舒",
+      "email": "云舒@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "云重",
+      "email": "云重@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "云飞",
+      "email": "云飞@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "云鸢",
+      "email": "云鸢@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "五枝",
+      "email": "五枝@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "ecommerce-production",
+      "create": false
+    },
+    {
+      "name": "亦柠",
+      "email": "亦柠@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "从戎",
+      "email": "从戎@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "ecommerce-production",
+      "create": false
+    },
+    {
+      "name": "仲远",
+      "email": "仲远@username.naumi.local",
+      "homeGroup": "management",
+      "create": false,
+      "title": "administrator"
+    },
+    {
+      "name": "伽罗",
+      "email": "伽罗@username.naumi.local",
+      "homeGroup": "management",
+      "create": false,
+      "title": "administrator"
+    },
+    {
+      "name": "俞舟",
+      "email": "俞舟@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "允之",
+      "email": "允之@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "元则",
+      "email": "元则@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "ecommerce-senior",
+      "create": false
+    },
+    {
+      "name": "公明",
+      "email": "公明@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "兰息",
+      "email": "兰息@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "冰儿",
+      "email": "冰儿@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "ecommerce-production",
+      "create": false
+    },
+    {
+      "name": "凤年",
+      "email": "凤年@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "函君",
+      "email": "函君@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "北方",
+      "email": "北方@username.naumi.local",
+      "homeGroup": "management",
+      "create": false,
+      "title": "system_admin"
+    },
+    {
+      "name": "北海",
+      "email": "北海@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "南华",
+      "email": "南华@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "南天",
+      "email": "南天@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "南楼",
+      "email": "南楼@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "南辞",
+      "email": "南辞@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "卫璧",
+      "email": "卫璧@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "去病",
+      "email": "去病@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "ecommerce-production",
+      "create": false
+    },
+    {
+      "name": "可钧",
+      "email": "可钧@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "ecommerce-senior",
+      "create": false
+    },
+    {
+      "name": "叶秋",
+      "email": "叶秋@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "packaging",
+      "create": false
+    },
+    {
+      "name": "司音",
+      "email": "司音@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "向羽",
+      "email": "向羽@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "嘉仪",
+      "email": "嘉仪@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "嘉怡",
+      "email": "嘉怡@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "ecommerce-production",
+      "create": false
+    },
+    {
+      "name": "坤舆",
+      "email": "坤舆@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "士元",
+      "email": "士元@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "ecommerce-production",
+      "create": false
+    },
+    {
+      "name": "夏初",
+      "email": "夏初@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "天风",
+      "email": "天风@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "太岳",
+      "email": "太岳@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "奉眠",
+      "email": "奉眠@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "妙才",
+      "email": "妙才@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "子义",
+      "email": "子义@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "子建",
+      "email": "子建@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "子晴",
+      "email": "子晴@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "子期",
+      "email": "子期@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "子涯",
+      "email": "子涯@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "子瑜",
+      "email": "子瑜@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "子远",
+      "email": "子远@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "子骞",
+      "email": "子骞@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "孔明",
+      "email": "孔明@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "孙疆",
+      "email": "孙疆@username.naumi.local",
+      "title": "design_supervisor",
+      "homeGroup": "ecommerce-senior",
+      "create": false
+    },
+    {
+      "name": "季遥",
+      "email": "季遥@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "孤城",
+      "email": "孤城@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "容九",
+      "email": "容九@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "寸心",
+      "email": "寸心@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "寻川",
+      "email": "寻川@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "ecommerce-senior",
+      "create": false
+    },
+    {
+      "name": "小莹",
+      "email": "小莹@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "ecommerce-production",
+      "create": false
+    },
+    {
+      "name": "小薇",
+      "email": "小薇@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "少商",
+      "email": "少商@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "少白",
+      "email": "少白@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "尺素",
+      "email": "尺素@username.naumi.local",
+      "title": "design_director",
+      "homeGroup": "ecommerce-senior",
+      "create": false
+    },
+    {
+      "name": "崇安",
+      "email": "崇安@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "ecommerce-production",
+      "create": false
+    },
+    {
+      "name": "左右",
+      "email": "左右@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "左权",
+      "email": "左权@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "左蓝",
+      "email": "左蓝@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "师师",
+      "email": "师师@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "希宁",
+      "email": "希宁@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "希言",
+      "email": "希言@username.naumi.local",
+      "title": "design_supervisor",
+      "homeGroup": "ecommerce-senior",
+      "create": false
+    },
+    {
+      "name": "常征",
+      "email": "常征@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "平阳",
+      "email": "平阳@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "幼平",
+      "email": "幼平@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "packaging",
+      "create": false
+    },
+    {
+      "name": "律齐",
+      "email": "律齐@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "徐偃",
+      "email": "徐偃@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "心月",
+      "email": "心月@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "packaging",
+      "create": false
+    },
+    {
+      "name": "志远",
+      "email": "志远@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "惊尘",
+      "email": "惊尘@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "惜朝",
+      "email": "惜朝@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "扶苏",
+      "email": "扶苏@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "文杰",
+      "email": "文杰@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "无双",
+      "email": "无双@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "无名",
+      "email": "无名@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "无涯",
+      "email": "无涯@username.naumi.local",
+      "homeGroup": "management",
+      "create": false,
+      "title": "administrator"
+    },
+    {
+      "name": "无羡",
+      "email": "无羡@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "明铮",
+      "email": "明铮@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "星竹",
+      "email": "星竹@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "ecommerce-production",
+      "create": false
+    },
+    {
+      "name": "昭阳",
+      "email": "昭阳@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "晏喜",
+      "email": "晏喜@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "曲飞",
+      "email": "曲飞@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "ui",
+      "create": true
+    },
+    {
+      "name": "曼音",
+      "email": "曼音@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "望海",
+      "email": "望海@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "朝辞",
+      "email": "朝辞@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "木眠",
+      "email": "木眠@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "ecommerce-production",
+      "create": false
+    },
+    {
+      "name": "本初",
+      "email": "本初@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "李牧",
+      "email": "李牧@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "林冲",
+      "email": "林冲@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "柏林",
+      "email": "柏林@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "柳原",
+      "email": "柳原@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "梁铜",
+      "email": "梁铜@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "梦桐",
+      "email": "梦桐@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "歌吟",
+      "email": "歌吟@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "段誉",
+      "email": "段誉@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "永宁",
+      "email": "永宁@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "沐嵩",
+      "email": "沐嵩@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "沙曼",
+      "email": "沙曼@username.naumi.local",
+      "title": "design_supervisor",
+      "homeGroup": "packaging",
+      "create": false
+    },
+    {
+      "name": "洛灵",
+      "email": "洛灵@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "ecommerce-senior",
+      "create": false
+    },
+    {
+      "name": "海天",
+      "email": "海天@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "海娃",
+      "email": "海娃@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "清扬",
+      "email": "清扬@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "清晨",
+      "email": "清晨@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "清露",
+      "email": "清露@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "ecommerce-production",
+      "create": false
+    },
+    {
+      "name": "清风",
+      "email": "清风@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "温倩",
+      "email": "温倩@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "ecommerce-production",
+      "create": false
+    },
+    {
+      "name": "游夏",
+      "email": "游夏@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "溪枫",
+      "email": "溪枫@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "澄心",
+      "email": "澄心@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "ecommerce-production",
+      "create": false
+    },
+    {
+      "name": "灵溪",
+      "email": "灵溪@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "ecommerce-production",
+      "create": false
+    },
+    {
+      "name": "燕云",
+      "email": "燕云@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "ecommerce-senior",
+      "create": false
+    },
+    {
+      "name": "燕飞",
+      "email": "燕飞@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "玄澄",
+      "email": "玄澄@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "玄策",
+      "email": "玄策@username.naumi.local",
+      "homeGroup": "management",
+      "create": false,
+      "title": "design_director"
+    },
+    {
+      "name": "玄霜",
+      "email": "玄霜@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "ecommerce-senior",
+      "create": false
+    },
+    {
+      "name": "玥瑶",
+      "email": "玥瑶@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "ecommerce-production",
+      "create": false
+    },
+    {
+      "name": "玲珑",
+      "email": "玲珑@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "珊瑚",
+      "email": "珊瑚@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "班昭",
+      "email": "班昭@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "ecommerce-production",
+      "create": false
+    },
+    {
+      "name": "琉璃",
+      "email": "琉璃@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "瑞秋",
+      "email": "瑞秋@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "ecommerce-production",
+      "create": false
+    },
+    {
+      "name": "瑶迦",
+      "email": "瑶迦@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "瑾轩",
+      "email": "瑾轩@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "璇玑",
+      "email": "璇玑@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "璧君",
+      "email": "璧君@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "甘宁",
+      "email": "甘宁@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "白枫",
+      "email": "白枫@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "ecommerce-production",
+      "create": false
+    },
+    {
+      "name": "白玉",
+      "email": "白玉@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "百川",
+      "email": "百川@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "ecommerce-production",
+      "create": false
+    },
+    {
+      "name": "石冬",
+      "email": "石冬@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "砚辞",
+      "email": "砚辞@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "神芒",
+      "email": "神芒@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "秋秋",
+      "email": "秋秋@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "稚圭",
+      "email": "稚圭@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "空空",
+      "email": "空空@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "ecommerce-production",
+      "create": false
+    },
+    {
+      "name": "素素",
+      "email": "素素@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "紫川",
+      "email": "紫川@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "紫葵",
+      "email": "紫葵@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "ecommerce-production",
+      "create": false
+    },
+    {
+      "name": "红叶",
+      "email": "红叶@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "红雪",
+      "email": "红雪@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "纪信",
+      "email": "纪信@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "绮文",
+      "email": "绮文@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "罗成",
+      "email": "罗成@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "羡阳",
+      "email": "羡阳@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "羽冲",
+      "email": "羽冲@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "翩然",
+      "email": "翩然@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "老白",
+      "email": "老白@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "舒隽",
+      "email": "舒隽@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "ui",
+      "create": true
+    },
+    {
+      "name": "舒靖",
+      "email": "舒靖@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "良玉",
+      "email": "良玉@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "花月",
+      "email": "花月@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "芸汐",
+      "email": "芸汐@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "苏婉",
+      "email": "苏婉@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "ecommerce-production",
+      "create": false
+    },
+    {
+      "name": "苏梦",
+      "email": "苏梦@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "苏珩",
+      "email": "苏珩@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "若兮",
+      "email": "若兮@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "若水",
+      "email": "若水@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "ecommerce-production",
+      "create": false
+    },
+    {
+      "name": "莎莎",
+      "email": "莎莎@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "萧安",
+      "email": "萧安@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "西米",
+      "email": "西米@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "ecommerce-production",
+      "create": false
+    },
+    {
+      "name": "观澜",
+      "email": "观澜@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "ecommerce-production",
+      "create": false
+    },
+    {
+      "name": "观雁",
+      "email": "观雁@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "谦益",
+      "email": "谦益@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "贝儿",
+      "email": "贝儿@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "赤兔",
+      "email": "赤兔@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "赤羽",
+      "email": "赤羽@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "ecommerce-senior",
+      "create": false
+    },
+    {
+      "name": "路雪",
+      "email": "路雪@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "ecommerce-production",
+      "create": false
+    },
+    {
+      "name": "轻云",
+      "email": "轻云@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "ecommerce-senior",
+      "create": false
+    },
+    {
+      "name": "远舟",
+      "email": "远舟@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "迟玄",
+      "email": "迟玄@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "逍遥",
+      "email": "逍遥@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "郭嘉",
+      "email": "郭嘉@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "重楼",
+      "email": "重楼@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "金名",
+      "email": "金名@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "ecommerce-senior",
+      "create": false
+    },
+    {
+      "name": "钟展",
+      "email": "钟展@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "packaging",
+      "create": false
+    },
+    {
+      "name": "长风",
+      "email": "长风@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "问天",
+      "email": "问天@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "问舟",
+      "email": "问舟@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "packaging",
+      "create": false
+    },
+    {
+      "name": "陵越",
+      "email": "陵越@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "雪竹",
+      "email": "雪竹@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "霜华",
+      "email": "霜华@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "ecommerce-senior",
+      "create": false
+    },
+    {
+      "name": "青瓷",
+      "email": "青瓷@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "青眉",
+      "email": "青眉@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "ecommerce-production",
+      "create": false
+    },
+    {
+      "name": "青繁",
+      "email": "青繁@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "青萝",
+      "email": "青萝@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "ecommerce-production",
+      "create": false
+    },
+    {
+      "name": "静悦",
+      "email": "静悦@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "韩立",
+      "email": "韩立@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "项充",
+      "email": "项充@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    },
+    {
+      "name": "风清",
+      "email": "风清@username.naumi.local",
+      "title": "designer",
+      "homeGroup": "packaging",
+      "create": false
+    },
+    {
+      "name": "飞流",
+      "email": "飞流@username.naumi.local",
+      "title": "operations",
+      "homeGroup": "operations",
+      "create": false
+    }
+  ]
+}
