@@ -156,8 +156,10 @@ export async function verifySceneInteractions(h: Awaited<ReturnType<typeof creat
       throw new Error("Scene fixture task completion timed out");
     };
     const uiTask = await finish(uiTaskId), uiFrozen = await h.taskPersistence("a", uiTaskId);
-    assert.ok(uiFrozen.parameters.request.prompt.includes("木廊暖灯照明"));
-    assert.equal(uiFrozen.parameters.request.orderedInputs[0].nodeId, `inline:scene:${id}#${state.id}@${node.revision}`);
+    const uiPlan = await h.compiledTaskEvidence("a", uiTaskId);
+    assert.equal(uiPlan.digest, uiFrozen.parameters.compiledPlanDigest);
+    assert.ok(uiPlan.renderedPrompt?.includes("木廊暖灯照明"));
+    assert.equal(uiPlan.inputs[0].nodeId, `inline:scene:${id}#${state.id}@${node.revision}`);
     const media = await h.request<ArrayBuffer>("a", "GET", uiTask.videoUrl); assert.equal(media.status, 200);
     const resultVideo = uiTask.resultAssets.find((asset: any) => asset.kind === "video");
     assert.equal(createHash("sha256").update(Buffer.from(media.body)).digest("hex"), resultVideo.sha256);
@@ -242,7 +244,9 @@ export async function verifySceneInteractions(h: Awaited<ReturnType<typeof creat
     const resumed = await h.request<any>("a", "POST", `/api/video/workflows/${intent.id}`, {action: "resume"}); assert.equal(resumed.status, 200, JSON.stringify(resumed.body));
     const bTaskId = (await run()).nodes.find((item: any) => item.id === b.id).taskId; assert.ok(bTaskId);
     await finish(bTaskId); const bFrozen = await h.taskPersistence("a", bTaskId);
-    assert.ok(bFrozen.parameters.request.prompt.includes("木廊暖灯照明")); assert.ok(!JSON.stringify(bFrozen.parameters.request).includes("LATER_ROLE_DEFINITION"));
+    const bPlan = await h.compiledTaskEvidence("a", bTaskId);
+    assert.equal(bPlan.digest, bFrozen.parameters.compiledPlanDigest);
+    assert.ok(bPlan.renderedPrompt?.includes("木廊暖灯照明")); assert.ok(!JSON.stringify(bPlan).includes("LATER_ROLE_DEFINITION"));
     assert.equal(JSON.stringify((await run()).plan), frozenPlan);
     assert.equal(JSON.stringify((await getDirector()).project),directorFrozen);
     const applyReplay=await h.request<any>("a","PATCH",`/api/canvas/director-nodes/${directorId}`,applyIntent);assert.equal(applyReplay.status,200,JSON.stringify(applyReplay.body));assert.equal(applyReplay.body.node.revision,applied.revision);

@@ -27,7 +27,11 @@ try{
     const {readTaskCompiledVideoPlan}=await import("../../src/lib/video/compiled-task");
     const row=await getVideoTask(email,sourceId);if(!row)throw new Error("Owned compiled fixture task required");
     const plan=readTaskCompiledVideoPlan(email,row);
-    process.stdout.write(JSON.stringify({digest:plan.digest,inputs:plan.inputManifest.map(input=>({kind:input.kind,nodeId:input.nodeId,...(input.kind==='text'?{text:input.text}:{artworkId:input.asset.artworkId})}))}));
+    const body=plan.wireTemplate.body;
+    const content=body && typeof body==='object' && !Array.isArray(body) ? body.content : undefined;
+    const renderedPrompt=Array.isArray(content) ? content.flatMap(part=>part && typeof part==='object' &&
+      !Array.isArray(part) && part.type==='text' && typeof part.text==='string' ? [part.text] : []).join('\n') : undefined;
+    process.stdout.write(JSON.stringify({digest:plan.digest,renderedPrompt,inputs:plan.inputManifest.map(input=>({kind:input.kind,nodeId:input.nodeId,...(input.kind==='text'?{text:input.text}:{artworkId:input.asset.artworkId})}))}));
   }else if(process.argv.includes("--prepare-queued")||process.argv.includes("--node-reservation-failure")){
     const row=(await getPool().query("SELECT * FROM app_video_tasks WHERE email=$1 AND id=$2",[email,sourceId])).rows[0];
     if(!row||row.parameters.version!==2)throw new Error("Owned versioned fixture task required");

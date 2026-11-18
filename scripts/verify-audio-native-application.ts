@@ -9,7 +9,8 @@ import { Client, Pool } from "pg";
 import {withAudioSource,audioInputIdentity} from "../src/lib/audio/project";
 import {newCharacterProject,characterInputIdentity} from "../src/lib/character/project";
 import {newSceneProject,sceneInputIdentity} from "../src/lib/scene/project";
-import { createVideoFixture, CAP_RICH } from "./video-fusion/harness";
+import { createVideoFixture } from "./video-fusion/harness";
+import { nativeApplicationVideo } from "./video-fusion/profiles";
 import {verifyAudioMatrix} from "./verify-audio-native-matrix";
 import {verifyAudioInteractions} from "./verify-audio-native-interactions";
 import { prepareVideoAssets } from "./video-fusion/assets.mjs";
@@ -72,18 +73,7 @@ async function main() {
     process.env.VIDEO_FIXTURE_ROUTER_MANAGEMENT_URL = `http://127.0.0.1:${(router.address() as { port: number }).port}`;
     process.env.VIDEO_FIXTURE_ROUTER_TOKEN = randomBytes(32).toString("hex"); process.env.VIDEO_FIXTURE_ROUTER_ENVELOPE_SECRET = randomBytes(32).toString("hex");
     const assetsRoot = path.join(out, "assets"); await prepareVideoAssets(assetsRoot, [4]);
-    const h = fixture = await createVideoFixture({ startWorker: false, databaseUrl, assetsRoot,
-      videoDefinition: { ...CAP_RICH, providerOptions: { seed: { type: "integer", minimum: 0, maximum: 9999 } } },
-      videoExecution: { schemaVersion: 1, profileId: "native-video", profileVersion: 1,
-        recipe: { layout: "ark", defaults: { ordinaryImage: "single_image", sourceVideo: "reference" }, parameters: {
-          durationSeconds: { type: "integer", default: 4, send: "semantic" },
-          resolution: { type: "string", default: "720p", send: "semantic" },
-          aspectRatio: { type: "string", default: "16:9", send: "semantic" },
-          generateAudio: { type: "boolean", default: false, wireField: "generate_audio" },
-          seed: { type: "integer", minimum: 0, maximum: 9999, wireField: "seed" },
-        }, operations: [{ intent: "text" }, { intent: "single_image" }, { intent: "reference" }] },
-      },
-    });
+    const h = fixture = await createVideoFixture({ startWorker: false, databaseUrl, assetsRoot, ...nativeApplicationVideo });
 
     if(process.argv.includes('--matrix-only')){const matrix=await verifyAudioMatrix(h,out);await writeFile(path.join(out,'result.json'),JSON.stringify({matrixOnly:true,matrix},null,2));console.log('AUDIO_MATRIX=PASS NONZERO_FROZEN=3 CANCEL_FAILURE_REFUND=PASS UNKNOWN_ACK_RESTART=ONE_JOB CONCURRENT_CAS=ONE_WINNER MIXED_HISTORY=ATOMIC FOREIGN_TENANT_MEDIA=DENIED TOTAL_CHARGED=17 PAID_CALLS=0');return;}
     if(process.argv.includes('--ui-only')){

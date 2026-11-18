@@ -9,7 +9,8 @@ import path from "node:path";
 import {Pool} from "pg";
 import {chromium,expect as originalExpect} from "@playwright/test";
 import {newDirectorProject,directorProjectSchema,directorProjectFingerprint} from "../src/lib/director/project";
-import {createVideoFixture, CAP_RICH} from "./video-fusion/harness";
+import {createVideoFixture} from "./video-fusion/harness";
+import {nativeApplicationVideo} from "./video-fusion/profiles";
 import {prepareVideoAssets} from "./video-fusion/assets.mjs";
 import {generateCanvasVideo} from "../src/lib/video/canvas-submission";
 import {prewarmNativeWriteRoutes} from './verification/native-route-readiness';
@@ -56,7 +57,7 @@ async function main() {
     process.env.NAUMI_VERIFY_ISOLATED_DB="1";process.env.VIDEO_FIXTURE_DATABASE_URL=databaseUrl;
     process.env.VIDEO_FIXTURE_ROUTER_MANAGEMENT_URL=`http://127.0.0.1:${address.port}`;process.env.VIDEO_FIXTURE_ROUTER_TOKEN=randomBytes(32).toString("hex");process.env.VIDEO_FIXTURE_ROUTER_ENVELOPE_SECRET=randomBytes(32).toString("hex");
     const assetsRoot=path.join(out,"assets");await prepareVideoAssets(assetsRoot,[4]);
-    const h=fixture=await createVideoFixture({startWorker:false,databaseUrl,assetsRoot,videoDefinition:{...CAP_RICH,providerOptions:{seed:{type:"integer",minimum:0,maximum:9999}}}});
+    const h=fixture=await createVideoFixture({startWorker:false,databaseUrl,assetsRoot,...nativeApplicationVideo});
 
     const id="director-"+randomUUID(),key=`tree:${id}`,project=newDirectorProject();project.duration=2;
     const payload={id,projectKey:key,expectedRevision:0,operationId:randomUUID(),title:"API导演",project,x:20,y:30};

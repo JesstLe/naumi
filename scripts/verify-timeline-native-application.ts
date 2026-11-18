@@ -6,7 +6,8 @@ import { createServer } from "node:http";
 import { mkdir, writeFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import { Client, Pool } from "pg";
-import { createVideoFixture, CAP_RICH } from "./video-fusion/harness";
+import { createVideoFixture } from "./video-fusion/harness";
+import { nativeApplicationVideo } from "./video-fusion/profiles";
 import {verifyTimelineInteractions} from "./verify-timeline-native-interactions";
 import {verifyTimelineMatrix} from "./verify-timeline-native-matrix";
 import {newTimelineProject,type TimelineClip} from "../src/lib/timeline/project";
@@ -70,7 +71,7 @@ async function main() {
     process.env.VIDEO_FIXTURE_ROUTER_MANAGEMENT_URL = `http://127.0.0.1:${(router.address() as { port: number }).port}`;
     process.env.VIDEO_FIXTURE_ROUTER_TOKEN = randomBytes(32).toString("hex"); process.env.VIDEO_FIXTURE_ROUTER_ENVELOPE_SECRET = randomBytes(32).toString("hex");
     const assetsRoot = path.join(out, "assets"); await prepareVideoAssets(assetsRoot, [4]);
-    const h = fixture = await createVideoFixture({ startWorker: false, databaseUrl, assetsRoot, videoDefinition: { ...CAP_RICH, providerOptions: { seed: { type: "integer", minimum: 0, maximum: 9999 } } } });
+    const h = fixture = await createVideoFixture({ startWorker: false, databaseUrl, assetsRoot, ...nativeApplicationVideo });
 
     if(process.argv.includes('--matrix-only')){
       assert.equal((await h.request('a','GET','/api/video/media-jobs')).status,200);
