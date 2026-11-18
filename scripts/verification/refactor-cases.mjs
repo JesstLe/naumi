@@ -59,6 +59,7 @@ export const refactorCases=[
  {...node('enterprise-directory-browser','foundation','scripts/verify-enterprise-directory-browser.mjs','ENTERPRISE_DIRECTORY_BROWSER=PASS'),clientReact:true},
  ts('platform-tenant-reads','foundation','scripts/verify-platform-tenant-reads.ts','PLATFORM_TENANT_READ=PASS'),
  ts('platform-tenant-activity','foundation','scripts/verify-platform-tenant-activity.ts','PLATFORM_TENANT_ACTIVITY=PASS'),
+ ts('platform-overview-index','foundation','scripts/verify-platform-overview-index.ts','PLATFORM_OVERVIEW_INDEX=PASS'),
  {...node('platform-tenant-browser','foundation','scripts/verify-platform-tenant-browser.mjs','PLATFORM_TENANT_BROWSER=PASS'),clientReact:true},
  {...node('platform-overview-browser','foundation','scripts/verify-platform-overview-browser.mjs','PLATFORM_OVERVIEW_BROWSER=PASS'),clientReact:true},
  node('native-fixture-lifecycle','runtime','scripts/verify-native-fixture-lifecycle.cjs','NATIVE_FIXTURE_LIFECYCLE=PASS'),

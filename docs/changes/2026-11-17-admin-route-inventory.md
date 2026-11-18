@@ -43,7 +43,7 @@
 | `GET /api/admin/owner-account` | `src/app/api/admin/owner-account/route.ts` | 待核查 |
 | `GET /api/admin/prompts` | `src/app/api/admin/prompts/route.ts` | 待核查 |
 | `GET /api/admin/pubkey` | `src/app/api/admin/pubkey/route.ts` | 待核查 |
-| `GET /api/admin/saas-overview` | `src/app/api/admin/saas-overview/route.ts` | 已核查：管理授权、日期、旧完整快照、20 万条趋势单扫描；独立指标不读租户名单与权益表，旧/新投影共享额度，HTTP 断开释放 SQL |
+| `GET /api/admin/saas-overview` | `src/app/api/admin/saas-overview/route.ts` | 已核查：权限、日期、旧快照、独立指标、共享报表额度和断开；六年合成历史验证近期/一年/空区间索引，生产索引与真实网关待验 |
 | `GET /api/admin/settings` | `src/app/api/admin/settings/route.ts` | 待核查 |
 | `GET /api/admin/supplier-cost` | `src/app/api/admin/supplier-cost/route.ts` | 部分：四个标签和旧合包隔离验证，共享读取额度与断开取消；48,000 条隔离流水验证长窗口、完整链前 500、旧页码减宽排序和响应一致。更大数据的精确总数、深偏移上界仍待量化 |
 | `GET /api/admin/supplier-cost/operations/[id]` | `src/app/api/admin/supplier-cost/operations/[id]/route.ts` | 部分：隔离 PG 验证权限、私有响应、共享额度、断开取消、旧五部分同快照；新版摘要与费用按 25 条翻页、单次详情按归属校验。单调用超大 JSON 和旧完整响应仍需容量验收 |
