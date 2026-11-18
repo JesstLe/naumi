@@ -35,8 +35,8 @@ async function main(){
    FROM app_creation_records c CROSS JOIN generate_series(1,8) g;
    ANALYZE app_creation_records; `);
   await f.pool.query('VACUUM ANALYZE app_creation_events');
-  const read=(page:number,tenant=false,id=root)=>creationEventsRoute(new Request(
-   'http://localhost/api/'+(tenant?'enterprise':'admin')+'/creations/'+id+'/events?eventPage='+page+'&tenantId='+tenantId,
+  const read=(page:number,tenant=false,id=root,projection=false,scope=tenantId)=>creationEventsRoute(new Request(
+   'http://localhost/api/'+(tenant?'enterprise':'admin')+'/creations/'+id+'/events?eventPage='+page+'&tenantId='+scope+(projection?'&projection=page':''),
    {headers:{cookie:'nv_user='+signUserSession(tenant?owner:admin,Date.now())}}),id,tenant);
   const tx=await f.pool.connect();
   try{
@@ -55,18 +55,44 @@ async function main(){
     assert.ok(expected.every(row=>!row.id.startsWith('foreign')));
     const adminRead=await read(page),enterpriseRead=await read(page,true);
     assert.equal(adminRead.status,200);assert.equal(enterpriseRead.status,200);
-    const a=(await adminRead.json()).items,e=(await enterpriseRead.json()).items;
+    const aBody=await adminRead.json(),eBody=await enterpriseRead.json(),a=aBody.items,e=eBody.items;
+    assert.equal(aBody.pagination,undefined);assert.equal(eBody.pagination,undefined);
     assert.deepEqual(a,expected.map(row=>({id:row.id,eventKey:row.event_key,type:row.type,status:row.status,summary:row.summary,
      occurredAt:row.occurred_at.toISOString(),observedAt:row.observed_at.toISOString()})));
     assert.deepEqual(e,a.map((item:Record<string,unknown>)=>({...item,eventKey:item.type,summary:'执行状态更新'})));
+    if(!baseline)for(const tenant of [false,true]){
+     const res=await read(page,tenant,root,true),next=await res.json();
+     assert.equal(res.status,200);assert.deepEqual(next.items,tenant?e:a);
+     assert.deepEqual(next.pagination,{page,size:evidencePageSize,total:48008});
+    }
    }
    if(!baseline){
-    const {creationEventPageSql}=await import('../src/lib/saas/creation-detail-evidence');
+    const {creationEventPageSql,creationEventPageWithTotalSql}=await import('../src/lib/saas/creation-detail-evidence');
     const now=await measure(creationEventPageSql,deep);
     assert.ok(now.temp*3<old.temp&&now.blocks<old.blocks,JSON.stringify({old,now}));
-    console.log('CREATION_EVENT_PAGE=PASS '+JSON.stringify({old,now,order:'occurred_at,id',rows:48008}));
+    const pageWithTotal=await measure(creationEventPageWithTotalSql,deep);
+    assert.ok(pageWithTotal.temp*3<old.temp&&pageWithTotal.blocks<old.blocks,JSON.stringify({old,pageWithTotal}));
+    console.log('CREATION_EVENT_PAGE=PASS '+JSON.stringify({old,now,pageWithTotal,order:'occurred_at,id',rows:48008}));
    }
   }finally{await tx.query('ROLLBACK');tx.release();}
+  if(!baseline){
+   await f.pool.query(`INSERT INTO app_image_jobs(id,email,kind,snapshot,payload,metered,billing_settled)
+    VALUES('event-linked-job',$1,'generate','{"status":"done"}','{}',false,true),
+    ('event-unlinked-job',$1,'generate','{"status":"done"}','{}',false,true)`,[owner]);
+   await f.pool.query(`INSERT INTO app_creation_links(creation_id,target_type,target_id,actor_email)
+    VALUES($1,'image:generate','event-linked-job',$2)`,[root,owner]);
+   const {legacyCreationId}=await import('../src/lib/saas/creation-history-identity');
+   const legacy=(id:string)=>legacyCreationId({table:'app_image_jobs',id,email:owner});
+   for(const tenant of [false,true]){
+    const actual=await read(2,tenant,legacy('event-linked-job'),true),body=await actual.json();
+    assert.equal(actual.status,200,JSON.stringify(body));
+    const formal=await(await read(2,tenant,root,true)).json();assert.deepEqual(body.items,formal.items);assert.deepEqual(body.pagination,formal.pagination);
+    const unlinked=await read(2,tenant,legacy('event-unlinked-job'),true),empty=await unlinked.json();
+    assert.equal(unlinked.status,200,JSON.stringify(empty));assert.deepEqual(empty.items,[]);assert.deepEqual(empty.pagination,{page:2,size:24,total:0});
+   }
+   assert.equal((await read(2,true,root,true,randomUUID())).status,404);
+   console.log('CREATION_EVENT_PAGE_COMPAT=PASS LEGACY_LINK=1 LEGACY_UNKNOWN=1 CROSS_TENANT=1');
+  }
  }finally{await f.close();}
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});

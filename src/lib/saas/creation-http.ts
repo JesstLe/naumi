@@ -1,5 +1,5 @@
 import {streamManagedMedia} from "../enterprise/media-stream";
-import {enterpriseHistory,enterpriseHistoryDetail,enterpriseHistoryAsset,enterpriseHistoryEvents} from '@/lib/enterprise/creation-history';
+import {enterpriseHistory,enterpriseHistoryDetail,enterpriseHistoryAsset,enterpriseHistoryEventProjection} from '@/lib/enterprise/creation-history';
 import 'server-only';
 import {NextResponse} from 'next/server';
 import {tenantAuthorize} from './tenants';
@@ -7,10 +7,10 @@ import {enterpriseAuthorize} from '@/lib/enterprise/access';
 import {teamJson,PRIVATE_HEADERS} from '@/lib/teams/access';
 import { TeamError } from "@/lib/teams/errors";
 import {creationFiltersSchema} from './creation-contracts';
-import {listCreations,listUnifiedCreations,listUnifiedCreationPage,listRecentEnterpriseCreations,creationDetail,creationAsset,creationEvents,type CreationReader} from './creations';
+import {listCreations,listUnifiedCreations,listUnifiedCreationPage,listRecentEnterpriseCreations,creationDetail,creationAsset,creationEventProjection,type CreationReader} from './creations';
 import {enterpriseMediaResponse} from '@/lib/enterprise/media-response';
 import {z} from 'zod';
-import {listLegacyCreations,legacyCreationDetail,legacyCreationAsset,legacyCreationEvents} from './legacy-creations';
+import {listLegacyCreations,legacyCreationDetail,legacyCreationAsset,legacyCreationEventProjection} from './legacy-creations';
 import {creationPlaybackToken,readCreationPlaybackToken,platformPlaybackToken,platformPlaybackAllowed} from './creation-playback';
 import {userFeaturePolicy} from "@/lib/feature-access/repository";
 import {allows} from '@/lib/feature-access/catalog';
@@ -50,12 +50,15 @@ export async function creationDetailRoute(request:Request,id:string,enterprise=f
 export async function creationEventsRoute(request:Request,id:string,enterprise=false){const signal=request.signal;try{
  signal.throwIfAborted();
  const reader=await creationReader(request,enterprise);if(reader instanceof NextResponse)return reader;
- const pages=detailPagesSchema.safeParse(Object.fromEntries(new URL(request.url).searchParams));
+ const query=new URL(request.url).searchParams;
+ const pages=detailPagesSchema.safeParse(Object.fromEntries(query));
  if(!pages.success)return teamJson({error:'详情分页参数无效'},400);
  const {eventPage}=pages.data;
  if(!id.startsWith('legacy-')&&!isCreationId(id))return teamJson({error:'记录不存在或无权访问'},404);
- const items=id.startsWith('legacy-')?(reader.platform?await legacyCreationEvents(id,eventPage,undefined,signal):await enterpriseHistoryEvents(reader.actor,reader.tenantId,id,eventPage,signal)):await creationEvents(reader,id,eventPage,signal);
- return teamJson({items,generatedAt:new Date().toISOString()});
+ const withTotal=query.get('projection')==='page';
+ const result=id.startsWith('legacy-')?(reader.platform?await legacyCreationEventProjection(id,eventPage,withTotal,undefined,signal):
+  await enterpriseHistoryEventProjection(reader.actor,reader.tenantId,id,eventPage,withTotal,signal)):await creationEventProjection(reader,id,eventPage,withTotal,signal);
+ return teamJson({...result,generatedAt:new Date().toISOString()});
  }catch(e){return creationFailure(e,signal);}}
 export async function creationAssetRoute(request:Request,id:string,assetId:string,enterprise=false){try{
  const signal=request.signal;signal.throwIfAborted();

@@ -15,7 +15,8 @@ import {ensureMediaSchema} from '@/lib/media-assets-schema';
 import {legacyCreationId,parseLegacyCreationId as parseId,type LegacySource as Source} from './creation-history-identity';
 export {legacyCreationId} from './creation-history-identity';
 import {linkedCreation,assertLegacySourceTenant} from './creation-history-link';
-import {creationDetailInTransaction,creationAssetInTransaction,creationEventsInTransaction,type DetailPages} from './creations';
+import {creationDetailInTransaction,creationAssetInTransaction,creationEventProjectionInTransaction,type DetailPages} from './creations';
+import {evidencePageSize} from './creation-detail-evidence';
 import {creationRequestFacts} from './creation-parameters';
 import {legacyImageChildren,legacyOutputFilter,confirmedParentCharge} from './legacy-creation-family';
 export type LegacyReadScope={client:PoolClient;allowedEmails:readonly string[];tenantId?:string};
@@ -49,16 +50,17 @@ function legacyInputMedia(ref:Source,row:Record<string,any>):LegacyMedia[]{
  if(row.source_artwork_id)add('edit-target',`artwork:${row.source_artwork_id}`);
  return media;
 }
-export async function legacyCreationEvents(id:string,page:number,access?:LegacyReadScope,signal?:AbortSignal){
+export async function legacyCreationEventProjection(id:string,page:number,withTotal:boolean,access?:LegacyReadScope,signal?:AbortSignal){
  const ref=parseId(id);if(access&&!access.allowedEmails.includes(ref.email))throw new TeamError('记录不存在或无权访问',404);
+ const empty={items:[],...(withTotal?{pagination:{page,size:evidencePageSize,total:0}}:{})};
  const run=async(tx:PoolClient)=>{
   if(access)await assertLegacySourceTenant(tx,ref,access.tenantId);
   const exists=await tx.query(`SELECT 1 FROM ${ref.table} WHERE id=$1 AND email=$2`,[ref.id,ref.email]);
   if(!exists.rowCount)throw new TeamError('记录不存在或无权访问',404);
-  if(access&&!access.tenantId)return [];
+  if(access&&!access.tenantId)return empty;
   const linked=await linkedCreation(tx,ref,access?.tenantId);
-  if(!linked)return [];
-  return creationEventsInTransaction(tx,access?{platform:false,tenantId:access.tenantId!,historyEmails:access.allowedEmails}:{platform:true},linked.id,access?.allowedEmails||null,page);
+  if(!linked)return empty;
+  return creationEventProjectionInTransaction(tx,access?{platform:false,tenantId:access.tenantId!,historyEmails:access.allowedEmails}:{platform:true},linked.id,access?.allowedEmails||null,page,withTotal);
  };
  return access?run(access.client):platformLegacyRead(run,signal);
 }

@@ -10,6 +10,7 @@ import Markdown from 'react-markdown';
 import type {CreationListPage,CreationDetail,CreationAsset,CreationFailure} from '@/lib/saas/creation-contracts';
 import styles from './saas.module.css';
 import {queueCreationPreview} from './creation-preview-queue';
+import {useCreationEvidence,type CreationEventFeedback} from './use-creation-evidence';
 const labels:Record<string,string>={queued:'排队中',running:'处理中',succeeded:'已完成',partial:'部分成功',failed:'失败',cancel_requested:'取消申请中',cancelled:'已取消',needs_review:'待核查'};
 function eventSummary(event:{type:string;summary:string}){
  if(event.type==='agent-tool'){try{const detail=JSON.parse(event.summary);if(typeof detail.tool==='string'&&typeof detail.summary==='string')return `${detail.tool} · ${detail.summary}`;}catch{}}
@@ -20,11 +21,14 @@ export function CreationBrowser(props:{tenantId?:string;enterprise?:boolean}){co
 function ScopedCreationBrowser({tenantId,enterprise=false}:{tenantId?:string;enterprise?:boolean}){
  const query=useSearchParams();const selected=query.get('creationId')||'';
  const platformHistory=!enterprise&&!tenantId;
- const [page,setPage]=useState<CreationListPage|null>(null),[detail,setDetail]=useState<CreationDetail|null>(null),[error,setError]=useState(''),[detailError,setDetailError]=useState(''),[listRevision,refreshList]=useState(0),[detailRevision,refreshDetail]=useState(0),[loading,setLoading]=useState(true);
+ const [page,setPage]=useState<CreationListPage|null>(null),[error,setError]=useState(''),[listRevision,refreshList]=useState(0),[loading,setLoading]=useState(true);
  const api=enterprise?'/api/enterprise/creations':'/api/admin/creations';
- const sessionEnded=useRef(false),listRead=useRef<AbortController|null>(null),detailRead=useRef<AbortController|null>(null);
+ const sessionEnded=useRef(false),listRead=useRef<AbortController|null>(null);
+ const evidencePages=new URLSearchParams();
+ for(const key of ['assetPage','childPage'])if(query.get(key))evidencePages.set(key,query.get(key)!);
+ if(tenantId)evidencePages.set('tenantId',tenantId);
+ const {detail,error:detailError,reload:reloadDetails,endSession:endEvidence,feedback}=useCreationEvidence(api,selected,evidencePages.toString(),query.get('eventPage')||'1',tenantId);
  const reloadList=()=>{if(!sessionEnded.current&&!listRead.current)refreshList(v=>v+1);};
- const reloadDetails=()=>{if(!sessionEnded.current&&!detailRead.current)refreshDetail(v=>v+1);};
  useEffect(()=>{
   let wasHidden=document.visibilityState==='hidden';
   const refresh=()=>{
@@ -35,22 +39,18 @@ function ScopedCreationBrowser({tenantId,enterprise=false}:{tenantId?:string;ent
     // (dialogs, file pickers, DevTools) must not restart the reads.
     if(!sessionEnded.current){
       if(!listRead.current)refreshList(v=>v+1);
-      if(!detailRead.current)refreshDetail(v=>v+1);
+      reloadDetails();
     }
   };
   const clear=()=>{
-  sessionEnded.current=true;listRead.current?.abort();detailRead.current?.abort();
-  setPage(null);setDetail(null);setLoading(false);setError('请重新登录');setDetailError('请重新登录');
+  sessionEnded.current=true;listRead.current?.abort();endEvidence();
+  setPage(null);setLoading(false);setError('请重新登录');
  };document.addEventListener('visibilitychange',refresh);window.addEventListener('naumi:cache-session-ended',clear);return()=>{document.removeEventListener('visibilitychange',refresh);window.removeEventListener('naumi:cache-session-ended',clear);};},[]);
- const evidencePages=new URLSearchParams();for(const key of ['assetPage','eventPage','childPage'])if(query.get(key))evidencePages.set(key,query.get(key)!);if(tenantId)evidencePages.set('tenantId',tenantId);const evidenceKey=evidencePages.toString();
  const update=(values:Record<string,string>)=>replaceAdminQuery(values,Object.keys(values).some(k=>['q','from','to','period','user','status','source','page'].includes(k))?['creationId','assetPage','eventPage','childPage']:[]);
  const filters=new URLSearchParams();for(const key of ['q','from','to','period','user','status','source','page'])if(query.get(key))filters.set(key,query.get(key)!);if(tenantId)filters.set('tenantId',tenantId);if(filters.get('source')==='legacy')filters.delete('source');filters.set('view','unified');filters.set('projection','list');const filterKey=filters.toString();
  useEffect(()=>{if(sessionEnded.current)return;const abort=new AbortController();listRead.current=abort;setPage(null);setError('');setLoading(true);
   void authHeader().then(headers=>fetch(`${api}?${filterKey}`,{headers,cache:'no-store',signal:abort.signal})).then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d.error||'记录读取失败');if(!abort.signal.aborted)setPage(d);}).catch(e=>{if(!abort.signal.aborted)setError(e.message);}).finally(()=>{if(listRead.current===abort)listRead.current=null;if(!abort.signal.aborted)setLoading(false);});return()=>{abort.abort();if(listRead.current===abort)listRead.current=null;};
  },[api,filterKey,listRevision]);
- useEffect(()=>{if(sessionEnded.current)return;setDetail(null);setDetailError('');if(!selected)return;const abort=new AbortController();detailRead.current=abort;
-  void authHeader().then(headers=>fetch(`${api}/${encodeURIComponent(selected)}?${evidenceKey}`,{headers,cache:'no-store',signal:abort.signal})).then(async r=>{const d=await r.json();if(!r.ok)throw new Error(d.error||'详情读取失败');if(!abort.signal.aborted)setDetail(d);}).catch(e=>{if(!abort.signal.aborted)setDetailError(e.message);}).finally(()=>{if(detailRead.current===abort)detailRead.current=null;});return()=>{abort.abort();if(detailRead.current===abort)detailRead.current=null;};
- },[api,selected,evidenceKey,detailRevision]);
  const artworkParams=new URLSearchParams({section:'artworks'});for(const key of ['q','from','to'])if(query.get(key))artworkParams.set(key,query.get(key)!);if(query.get('user'))artworkParams.set('email',query.get('user')!);
  const allDates=!query.get('from')&&!query.get('to')&&!page?.appliedFilters.from;
  const range=allDates?'全部日期':`${query.get('from')||page?.appliedFilters.from||'不限'} 至 ${query.get('to')||page?.appliedFilters.to||'不限'}`;
@@ -61,11 +61,11 @@ function ScopedCreationBrowser({tenantId,enterprise=false}:{tenantId?:string;ent
   <div className={styles.detailGrid}>
    <section className={`${styles.panel} ${styles.recordList}`} aria-label="创作记录列表">{filtersUi}<div className={styles.actions}><span className={styles.muted}>{range}</span>{platformHistory&&<a href={`/admin/center?${artworkParams}`}>图片作品</a>}{!allDates&&<button onClick={()=>update({period:'all',from:'',to:'',page:'1'})}>全部日期</button>}</div>{loading?<div className={styles.empty} role="status">正在读取记录</div>:!page?.items.length?<div className={styles.empty}><ImageIcon size={30}/>暂无匹配的创作记录</div>:page.items.map(item=><button aria-pressed={selected===item.id||detail?.id===item.id} className={`${styles.record} ${selected===item.id||detail?.id===item.id?styles.selected:''}`} key={item.id} onClick={()=>update({creationId:item.id,assetPage:"",eventPage:"",childPage:""})}><div><strong>{item.title}</strong><p>{item.actorName} · {new Date(item.acceptedAt).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}</p><CreationStatus status={item.status}/>{item.scopeKind==='legacy_unconfirmed'&&<span className={styles.muted} title="历史任务记录，保留原始归属"> · 历史记录</span>}{!enterprise&&item.failure&&<p className={styles.failureSummary}>{item.failure.title}{item.failure.code&&`（${item.failure.code}）`}</p>}</div><ChevronRight size={16}/></button>)}
    {page&&<div className={styles.pager}><span>共 {page.pagination.total} 次创作</span><div className={styles.actions}><button aria-label="上一页" disabled={page.pagination.page===1} onClick={()=>update({page:String(page.pagination.page-1)})}>‹</button><span>{page.pagination.page}</span><button aria-label="下一页" disabled={page.pagination.page*page.pagination.size>=page.pagination.total} onClick={()=>update({page:String(page.pagination.page+1)})}>›</button></div></div>}</section>
-   <section className={`${styles.panel} ${selected?styles.detail:''}`} aria-label="创作全链路详情">{selected&&<button className={styles.mobileBack} onClick={()=>update({creationId:''})}><ArrowLeft size={15}/>返回列表</button>}{detailError?<div className={styles.error} role="alert">{detailError}<button onClick={reloadDetails}>重试</button></div>:detail?<CreationDetailView detail={detail} api={api} tenantId={tenantId} onPage={(key,value)=>update({[key]:String(value)})} onChild={id=>update({creationId:id,assetPage:'',eventPage:'',childPage:''})}/>:<div className={styles.empty}>{selected?'正在读取详情':'选择创作记录查看输入、结果与费用'}</div>}</section>
+   <section className={`${styles.panel} ${selected?styles.detail:''}`} aria-label="创作全链路详情">{selected&&<button className={styles.mobileBack} onClick={()=>update({creationId:''})}><ArrowLeft size={15}/>返回列表</button>}{detailError?<div className={styles.error} role="alert">{detailError}<button onClick={reloadDetails}>重试</button></div>:detail?<CreationDetailView detail={detail} api={api} tenantId={tenantId} eventFeedback={feedback} onPage={(key,value)=>update({[key]:String(value)})} onChild={id=>update({creationId:id,assetPage:'',eventPage:'',childPage:''})}/>:<div className={styles.empty}>{selected?'正在读取详情':'选择创作记录查看输入、结果与费用'}</div>}</section>
   </div>
  </div>;
 }
-export function CreationDetailView({detail,api,tenantId,onPage,onChild}:{detail:CreationDetail;api:string;tenantId?:string;onPage?:(key:string,value:number)=>void;onChild?:(id:string)=>void}){
+export function CreationDetailView({detail,api,tenantId,eventFeedback,onPage,onChild}:{detail:CreationDetail;api:string;tenantId?:string;eventFeedback?:CreationEventFeedback;onPage?:(key:string,value:number)=>void;onChild?:(id:string)=>void}){
  const [showProcessed,setShowProcessed]=useState(false);
  useEffect(()=>setShowProcessed(false),[detail.id]);
  const outputs=detail.assets.filter(a=>a.direction==='output'&&a.role!=='reply'),replies=detail.assets.filter(a=>a.direction==='output'&&a.role==='reply'),inputs=detail.assets.filter(a=>a.direction==='input'&&a.variant!=='processed'),processed=detail.assets.filter(a=>a.direction==='input'&&a.variant==='processed');
@@ -85,7 +85,10 @@ export function CreationDetailView({detail,api,tenantId,onPage,onChild}:{detail:
  <EvidencePager label="素材" page={detail.assetPagination} onPage={value=>onPage?.('assetPage',value)}/>
  {!detail.assets.length&&<div className={styles.empty} style={{minHeight:130}}>输入与产物素材未记录</div>}
  <dl><div className={styles.facts}><dt>原始要求</dt><dd>{detail.request.state==='recorded'?detail.request.text||'已记录为空':'未记录'}</dd></div><div className={styles.facts}><dt>创作参数</dt><dd className={styles.creationParameters}>{detail.parameters.state==='recorded'?<><ParameterChips values={detail.parameters.values}/ ><ImageExecutionParameters value={detail.parameters.values.executionPlans}/></>:'未记录'}{detail.model.label&&<span className={styles.modelChip}>模型：{detail.model.label}</span>}</dd></div></dl>
- <h3 style={{marginTop:18,fontSize:16}}>执行过程</h3>{detail.events.length?<ol aria-label="执行事件" className={styles.creationTimeline}>{detail.events.map(e=><li key={e.id} className={styles.creationEvent}><strong>{eventSummary(e)}</strong><span className={styles.muted}>{new Date(e.occurredAt).toLocaleTimeString('zh-CN')}</span><CreationStatus status={e.status}/></li>)}</ol>:<div className={styles.empty} style={{minHeight:70}}>执行事件未记录</div>}
+ <h3 style={{marginTop:18,fontSize:16}}>执行过程</h3>{eventFeedback?.error?
+  <div className={styles.error} role="alert">{eventFeedback.error} <button onClick={eventFeedback.retry}>重试执行事件</button></div>:eventFeedback?.loading?
+  <div className={styles.empty} style={{minHeight:70}} role="status">正在读取执行事件</div>:
+  detail.events.length?<ol aria-label="执行事件" className={styles.creationTimeline}>{detail.events.map(e=><li key={e.id} className={styles.creationEvent}><strong>{eventSummary(e)}</strong><span className={styles.muted}>{new Date(e.occurredAt).toLocaleTimeString('zh-CN')}</span><CreationStatus status={e.status}/></li>)}</ol>:<div className={styles.empty} style={{minHeight:70}}>{(detail.eventPagination?.total??0)>0?'本页没有执行事件':'执行事件未记录'}</div>}
  <EvidencePager label="执行事件" page={detail.eventPagination} onPage={value=>onPage?.('eventPage',value)}/>
  {detail.children?.length>0&&<details className={styles.technical}><summary>关联子任务（{detail.childPagination.total}）</summary>{detail.children.map(child=><button key={child.id} className={styles.record} onClick={()=>onChild?.(child.id)}><span>{child.title}</span><CreationStatus status={child.status}/></button>)}<EvidencePager label="子任务" page={detail.childPagination} onPage={value=>onPage?.('childPage',value)}/></details>}
  <div className={styles.billing}><strong>费用结算</strong><span>报价 {count(detail.billing.quoted)}</span><span>预占 {count(detail.billing.reserved)}</span><span>实扣 <b>{count(detail.billing.charged)}</b></span><span>释放预占 {count(detail.billing.released)}</span><span>退款 {count(detail.billing.refunded)}</span></div><p className={styles.muted}>扣款账户：{detail.billing.payerAccountId||'未记录'} · {detail.billing.state==='settled'?'已结算':detail.billing.state==='pending'?'待结算':detail.billing.state==='not_applicable'?'无需扣费':'账务未记录'}</p>

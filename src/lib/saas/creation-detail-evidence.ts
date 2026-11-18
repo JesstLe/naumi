@@ -17,6 +17,19 @@ export const creationEventPageSql=`${creationFamilySql},
  SELECT e.id,e.event_key,e.type,e.status,e.summary,e.occurred_at,e.observed_at
  FROM event_page_keys k JOIN app_creation_events e ON e.id=k.id
  ORDER BY k.occurred_at,k.id`;
+// Opt-in exact pagination. The count and the page see the same family and
+// event keys; materialize only keys, never event summaries for the count.
+export const creationEventPageWithTotalSql=`${creationFamilySql},
+ event_keys AS MATERIALIZED(
+  SELECT e.id,e.occurred_at FROM app_creation_events e JOIN family f ON f.id=e.creation_id
+ ),
+ event_page AS(
+  SELECT e.id,e.event_key,e.type,e.status,e.summary,e.occurred_at,e.observed_at
+  FROM (SELECT * FROM event_keys ORDER BY occurred_at,id LIMIT $2 OFFSET $3) k
+  JOIN app_creation_events e ON e.id=k.id
+ )
+ SELECT (SELECT count(*)::int FROM event_keys) AS total,
+  COALESCE((SELECT jsonb_agg(e ORDER BY e.occurred_at,e.id) FROM event_page e),'[]'::jsonb) AS items`;
 type EvidencePages={assets:number;events:number;children:number};
 type ReadRow={
  assets:Record<string,any>[];events:Record<string,any>[];child_ids:string[];
