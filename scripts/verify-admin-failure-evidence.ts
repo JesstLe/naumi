@@ -109,8 +109,13 @@ async function main(){
    const failed=await detailRoute.GET(request('/api/admin/creations/'+root,adminEmail),{params:Promise.resolve({id:root})});
    check('evidence query failure is 503 not a healthy result',()=>assert.equal(failed.status,503));
    await pool.query("INSERT INTO app_artworks(id,email,title,category,prompt,image_url,gradient,batch_id) VALUES('fixture-image',$1,'fixture','fixture','','/media/fixture.png','',$2)",[owner,job]);
-   const media=(await legacy.legacyCreationDetail(legacyId,{diagnostics:false})).detail.assets[0];
-   const read=await legacy.legacyCreationAsset(legacyId,media.id);check('optional diagnostics never break original media lookup',()=>assert.equal(read.url,'/media/fixture.png'));
+   await pool.query("INSERT INTO app_creation_assets(id,creation_id,direction,role,storage_ref,actor_email,media_type) VALUES('fixture-canonical-asset',$1,'output','result','artwork:fixture-image',$2,'image')",[root,owner]);
+   const linked=(await legacy.legacyCreationDetail(legacyId,{diagnostics:false})).detail;
+   const historical=(await legacy.legacyCreationDetail(legacyId,{diagnostics:false,canonical:false})).detail;
+   check('diagnostics opt-out survives both historical paths',()=>{assert.equal(linked.id,root);assert.equal(linked.failure,undefined);assert.equal(historical.id,legacyId);assert.equal(historical.failure,undefined);});
+   for(const row of [linked,historical]){
+    const read=await legacy.legacyCreationAsset(legacyId,row.assets[0].id);check('optional diagnostics never break media lookup '+row.scopeKind,()=>assert.equal(read.url,'/media/fixture.png'));
+   }
   }finally{await pool.query('ALTER TABLE app_supplier_calls RENAME COLUMN fixture_hidden_evidence TO evidence');}
   console.log(`ADMIN_FAILURE_EVIDENCE=PASS CHECKS=${checks} REAL_PG=1 NEW_AND_LEGACY=1 ENTERPRISE_PRIVATE=1 SUPPLIER_POSTS=0 BUSINESS_READS_ONLY=1`);
  }finally{

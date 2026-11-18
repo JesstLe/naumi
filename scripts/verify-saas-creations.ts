@@ -279,13 +279,13 @@ async function main(){
  assert.equal(signed.status,200);const playbackWithLocator=(await signed.json()).url;assert.equal(new URL(playbackWithLocator,'https://fixture.test').searchParams.get('evidenceRecord'),workflowRecord);
  const signedBytes=await mediaRoute.GET(request(playbackWithLocator,undefined,{range:'bytes=0-6'}),{params:Promise.resolve({id:workflowRecord,assetId:videoProof.id})});
  assert.equal(signedBytes.status,206);assert.equal(await signedBytes.text(),'fixture');
+ const allJobTables=['app_image_jobs','app_video_tasks','app_canvas_image_tasks','app_imagegen_batches','app_video_workflow_runs'] as const;
+ const withTaskLocks=async(tables:readonly (typeof allJobTables)[number][],run:()=>Promise<void>)=>{
+  const locked=await pool.connect();try{await locked.query(`BEGIN; LOCK TABLE ${tables.join(',')} IN ACCESS EXCLUSIVE MODE`);await run();}
+  finally{await locked.query('ROLLBACK');locked.release();}
+ };
  const sourceBaseline=process.argv.includes('--asset-sources-baseline');
  if(sourceBaseline||process.argv.includes('--asset-sources')){
-  const allJobTables=['app_image_jobs','app_video_tasks','app_canvas_image_tasks','app_imagegen_batches','app_video_workflow_runs'] as const;
-  const withTaskLocks=async(tables:readonly (typeof allJobTables)[number][],run:()=>Promise<void>)=>{
-   const locked=await pool.connect();try{await locked.query(`BEGIN; LOCK TABLE ${tables.join(',')} IN ACCESS EXCLUSIVE MODE`);await run();}
-   finally{await locked.query('ROLLBACK');locked.release();}
-  };
   await withTaskLocks(allJobTables,async()=>{
    for(const scoped of [false,true]){
     const response=await projectedAssetPage(root,1,scoped);
@@ -355,6 +355,59 @@ async function main(){
    }finally{await pool.query('UPDATE app_billing_operations SET result_response=NULL WHERE id=$1',[operation]);}
    console.log('CREATION_ASSET_SOURCE_SCOPE=PASS NO_SOURCE=1 IMAGE=1 VIDEO=1 CANVAS=1 BATCH=1 WORKFLOW=1 MIXED=1 RELEVANT_LOCK=1 LOCATOR=1 PERSONAL_SOURCE_ISOLATION=1');
   }
+ }
+ const detailSourceBaseline=process.argv.includes('--detail-sources-baseline');
+ if(detailSourceBaseline||process.argv.includes('--detail-sources')){
+  const read=(id:string,enterprise=false,projection?:'children')=>
+   (enterprise?enterpriseDetail:adminDetail).GET(request(`/api/${enterprise?'enterprise':'admin'}/creations/${id}?${enterprise?'tenantId='+a.tenantId:''}${projection?'&projection='+projection:''}`,enterprise?ownerA:admin),detailCtx(id));
+  const failedRoot=`cr-${randomUUID()}`,failedChild=`cr-${randomUUID()}`,job=`image-only-${randomUUID()}`,oldJob=`old-image-only-${randomUUID()}`;
+  await record(failedRoot,member,a.tenantId);await record(failedChild,member,a.tenantId,failedRoot);
+  await pool.query("INSERT INTO app_image_jobs(id,email,kind,snapshot,payload,metered) VALUES($1,$3,'generate',$4,'{}',false),($2,$3,'generate',$4,'{}',false)",
+   [job,oldJob,member,{status:'failed',failureCode:'EXECUTION_FAILED'}]);
+  await pool.query("UPDATE app_creation_records SET source_kind='image:generate',source_id=$2 WHERE id=$1",[failedRoot,job]);
+  await pool.query("INSERT INTO app_creation_links(creation_id,target_type,target_id,actor_email) VALUES($1,'image:generate',$3,$4),($2,'image:generate',$3,$4)",[failedRoot,failedChild,job,member]);
+  const legacyFailureId=legacyReader.legacyCreationId({table:'app_image_jobs',id:oldJob,email:member});
+  const previous=await read(failedRoot);assert.equal(previous.status,200);const expectedFailure=await previous.json();
+  assert.equal(expectedFailure.status,'failed');assert.equal(expectedFailure.failure.diagnosis.taskId,job);assert.equal(expectedFailure.children[0].status,'failed');
+  const legacy=await read(legacyFailureId);assert.equal(legacy.status,200);const expectedLegacyFailure=await legacy.json();assert.equal(expectedLegacyFailure.failure.diagnosis.taskId,oldJob);
+  const checked=async(response:Promise<Response>,check:(body:any)=>void)=>{
+   const res=await response;assert.equal(res.status,detailSourceBaseline?503:200);if(!detailSourceBaseline)check(await res.json());
+  };
+  await withTaskLocks(allJobTables,async()=>{
+   for(const enterprise of [false,true])await checked(read(root,enterprise),body=>{assert.equal(body.status,safeFamily.status);assert.deepEqual(body.assets,safeFamily.assets);assert.deepEqual(body.billing,safeFamily.billing);});
+  });
+  await withTaskLocks(allJobTables.filter(t=>t!=='app_image_jobs'),async()=>{
+   await checked(read(failedRoot),body=>assert.deepEqual(body,expectedFailure));
+   await checked(read(failedRoot,true),body=>{assert.equal(body.status,'failed');assert.equal(body.children[0].status,'failed');assert.equal(body.failure,undefined);});
+   await checked(read(failedRoot,true,'children'),body=>assert.deepEqual(body.children,expectedFailure.children.map(({id,title,status}:any)=>({id,title,status}))));
+   await checked(read(legacyFailureId),body=>assert.deepEqual(body,expectedLegacyFailure));
+  });
+  await withTaskLocks(allJobTables.filter(t=>t!=='app_video_workflow_runs'),async()=>{
+   await checked(read(workflowRecord,true),body=>{assert.equal(body.status,'succeeded');assert.equal(body.assets[0].mediaType,'video');});
+  });
+  if(!detailSourceBaseline){
+   await withTaskLocks(['app_image_jobs'],async()=>{assert.equal((await read(failedRoot)).status,503);assert.equal((await read(legacyFailureId)).status,503);});
+   assert.equal((await read(foreign,true)).status,404);
+   const videoRoot=`cr-${randomUUID()}`,canvasRoot=`cr-${randomUUID()}`,mixedRoot=`cr-${randomUUID()}`;
+   const videoJob=`video-only-${randomUUID()}`,canvasJob=`canvas-only-${randomUUID()}`;
+   await pool.query("INSERT INTO app_video_tasks(id,email,upstream_id,status,error_code) VALUES($1,$2,'fixture','failed','EXECUTION_FAILED')",[videoJob,member]);
+   await pool.query("INSERT INTO app_canvas_image_tasks(id,email,source_artwork_id,status,error) VALUES($1,$2,'fixture','failed','raw error not for UI')",[canvasJob,member]);
+   for(const [id,type,task,stored] of [[videoRoot,'video',videoJob,'queued'],[canvasRoot,'canvas-image',canvasJob,'failed']] as const){
+    await record(id,member,a.tenantId,null,stored);
+    await pool.query('UPDATE app_creation_records SET source_kind=$2,source_id=$3 WHERE id=$1',[id,type,task]);
+    await pool.query('INSERT INTO app_creation_links(creation_id,target_type,target_id,actor_email) VALUES($1,$2,$3,$4)',[id,type,task,member]);
+    const wantedTable=type==='video'?'app_video_tasks':'app_canvas_image_tasks';
+    await withTaskLocks(allJobTables.filter(t=>t!==wantedTable),async()=>{
+     await checked(read(id),body=>{assert.equal(body.status,'failed');assert.equal(body.failure.diagnosis.taskId,task);assert.doesNotMatch(JSON.stringify(body.failure),/raw error not for UI/);});
+    });
+   }
+   await record(mixedRoot,departed,a.tenantId);
+   const mixedJob=`image-mixed-${randomUUID()}`;
+   await pool.query("INSERT INTO app_image_jobs(id,email,kind,snapshot,payload,metered) VALUES($1,$2,'generate','{\"status\":\"failed\"}','{}',false)",[mixedJob,departed]);
+   await pool.query("INSERT INTO app_creation_links(creation_id,target_type,target_id,actor_email) VALUES($1,'video-workflow',$2,$3),($1,'image:generate',$4,$3)",[mixedRoot,workflowId,departed,mixedJob]);
+   await checked(read(mixedRoot),body=>{assert.equal(body.status,'succeeded');assert.equal(body.failure,undefined);});
+  }
+  console.log(detailSourceBaseline?'CREATION_DETAIL_SOURCE_BASELINE=PASS UNRELATED_LOCKS_BLOCK=7':'CREATION_DETAIL_SOURCE_SCOPE=PASS NO_SOURCE=1 IMAGE=1 CHILD=1 LEGACY_FAILURE=1 VIDEO=1 CANVAS=1 WORKFLOW=1 MIXED_PRECEDENCE=1 RELEVANT_LOCK=1 CROSS_TENANT=1');
  }
  if(process.env.NAUMI_VERIFY_CREATION_QUERY_STATS==='1'){
   const sharing=1600;

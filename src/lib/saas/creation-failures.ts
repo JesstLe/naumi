@@ -62,8 +62,8 @@ export function creationFailureFromRow(row:Record<string,any>):CreationFailure{
 async function readFailures(tx:Reader,refs:Ref[],roots:string[],incomplete=false):Promise<Map<string,CreationFailure>>{
  const result=new Map(roots.map(id=>[id,missingCreationFailure(incomplete)]));
  if(incomplete||!refs.length)return result;
- const supplierPresent=!!(await tx.query("SELECT to_regclass('app_supplier_calls') AS name")).rows[0]?.name;
- const workflowSchema=(await tx.query("SELECT to_regclass('app_video_workflow_runs') AS runs,to_regclass('app_video_workflow_run_nodes') AS nodes")).rows[0];
+ const kinds=new Set(refs.map(ref=>ref.table_name));
+ const workflowSchema=kinds.has('app_video_workflow_runs')?(await tx.query("SELECT to_regclass('app_video_workflow_runs') AS runs,to_regclass('app_video_workflow_run_nodes') AS nodes")).rows[0]:null;
  const workflowPresent=!!workflowSchema?.runs&&!!workflowSchema?.nodes;
  // Only the requested page's exact IDs and owners. Parent-child expansion never
  // follows a child of another owner. Do not load payloads or paid result bytes.
@@ -73,24 +73,31 @@ async function readFailures(tx:Reader,refs:Ref[],roots:string[],incomplete=false
  'stage',left(COALESCE(j.snapshot#>>'{result,stage}',j.snapshot->>'stage'),60),
  'error',left(COALESCE(j.snapshot->>'error',j.snapshot#>>'{result,error,message}'),2048),
  'hasImages',jsonb_array_length(CASE WHEN jsonb_typeof(j.snapshot->'images')='array' THEN j.snapshot->'images' ELSE '[]'::jsonb END)>0)`;
- const sql=`WITH RECURSIVE refs AS (SELECT DISTINCT * FROM jsonb_to_recordset($1::jsonb) AS r(root text,table_name text,id text,email text)),
- images AS (
+ const imageSources=kinds.has('app_image_jobs');
+ const images=imageSources?`images AS (
   SELECT r.root,j.id,j.email,j.snapshot->'children' AS children,COALESCE(j.snapshot#>>'{result,status}',j.snapshot->>'status') AS status,
   COALESCE(j.snapshot->>'failureCode',j.snapshot#>>'{result,error,code}') AS failure_code,${diagnosticProjection} AS task_snapshot,j.updated_at,0 AS depth,ARRAY[j.id] AS path FROM refs r
   JOIN app_image_jobs j ON r.table_name='app_image_jobs' AND j.id=r.id AND j.email=r.email
   UNION ALL SELECT p.root,j.id,j.email,j.snapshot->'children',COALESCE(j.snapshot#>>'{result,status}',j.snapshot->>'status'),
   COALESCE(j.snapshot->>'failureCode',j.snapshot#>>'{result,error,code}'),${diagnosticProjection},j.updated_at,p.depth+1,p.path||j.id FROM images p
   CROSS JOIN LATERAL jsonb_each(CASE WHEN jsonb_typeof(p.children)='object' THEN p.children ELSE '{}'::jsonb END) child
-  JOIN app_image_jobs j ON j.id=child.value->>'jobId' AND j.email=p.email WHERE p.depth<8 AND NOT j.id=ANY(p.path)),
- task_rows AS (
-  SELECT root,id,email,status,failure_code,updated_at,depth=8 AS clipped,
+  JOIN app_image_jobs j ON j.id=child.value->>'jobId' AND j.email=p.email WHERE p.depth<8 AND NOT j.id=ANY(p.path)),`:'';
+ // SQL acquires relation locks even for a source type with no matching refs.
+ // Keep the branch allowlist in the read model; caller refs are only bind data.
+ const reads=[
+  imageSources?`SELECT root,id,email,status,failure_code,updated_at,depth=8 AS clipped,
   task_snapshot->'failureDiagnostic' AS task_diagnostic,task_snapshot->'deliveryFailure' AS delivery_failure,
   COALESCE(task_snapshot#>>'{result,stage}',task_snapshot->>'stage') AS task_stage,
   left(COALESCE(task_snapshot->>'error',task_snapshot#>>'{result,error,message}'),2048) AS task_error,
-  COALESCE((task_snapshot->>'hasImages')::boolean,false) AS recorded_output FROM images
-  UNION ALL SELECT r.root,v.id,v.email,v.status,NULLIF(to_jsonb(v)->>'error_code',''),v.updated_at,false,NULL::jsonb,NULL::jsonb,'execute',left(to_jsonb(v)->>'error',2048),false FROM refs r JOIN app_video_tasks v ON r.table_name='app_video_tasks' AND v.id=r.id AND v.email=r.email
-  UNION ALL SELECT r.root,c.id,c.email,c.status,NULL,c.updated_at,false,NULL::jsonb,NULL::jsonb,'execute',left(c.error,2048),false FROM refs r JOIN app_canvas_image_tasks c ON r.table_name='app_canvas_image_tasks' AND c.id=r.id AND c.email=r.email
- ${workflowPresent?`UNION ALL SELECT r.root,COALESCE(n.task_id,n.run_id::text||':'||n.node_id),w.email,CASE WHEN n.status='blocked' THEN 'failed' ELSE n.status END,CASE WHEN n.status='blocked' THEN 'workflow-blocked' ELSE NULL END,n.updated_at,false,NULL::jsonb,NULL::jsonb,'execute',left(n.error,2048),false FROM refs r JOIN app_video_workflow_runs w ON r.table_name='app_video_workflow_runs' AND w.id::text=r.id AND w.email=r.email JOIN app_video_workflow_run_nodes n ON n.run_id=w.id`:''}),
+  COALESCE((task_snapshot->>'hasImages')::boolean,false) AS recorded_output FROM images`:null,
+  kinds.has('app_video_tasks')?`SELECT r.root,v.id,v.email,v.status,NULLIF(to_jsonb(v)->>'error_code',''),v.updated_at,false,NULL::jsonb,NULL::jsonb,'execute'::text,left(to_jsonb(v)->>'error',2048),false FROM refs r JOIN app_video_tasks v ON r.table_name='app_video_tasks' AND v.id=r.id AND v.email=r.email`:null,
+  kinds.has('app_canvas_image_tasks')?`SELECT r.root,c.id,c.email,c.status,NULL::text,c.updated_at,false,NULL::jsonb,NULL::jsonb,'execute'::text,left(c.error,2048),false FROM refs r JOIN app_canvas_image_tasks c ON r.table_name='app_canvas_image_tasks' AND c.id=r.id AND c.email=r.email`:null,
+  workflowPresent?`SELECT r.root,COALESCE(n.task_id,n.run_id::text||':'||n.node_id),w.email,CASE WHEN n.status='blocked' THEN 'failed' ELSE n.status END,CASE WHEN n.status='blocked' THEN 'workflow-blocked' ELSE NULL END,n.updated_at,false,NULL::jsonb,NULL::jsonb,'execute'::text,left(n.error,2048),false FROM refs r JOIN app_video_workflow_runs w ON r.table_name='app_video_workflow_runs' AND w.id::text=r.id AND w.email=r.email JOIN app_video_workflow_run_nodes n ON n.run_id=w.id`:null,
+ ].filter(Boolean);
+ if(!reads.length)return result;
+ const supplierPresent=!!(await tx.query("SELECT to_regclass('app_supplier_calls') AS name")).rows[0]?.name;
+ const sql=`WITH RECURSIVE refs AS (SELECT DISTINCT * FROM jsonb_to_recordset($1::jsonb) AS r(root text,table_name text,id text,email text)),
+ ${images} task_rows(root,id,email,status,failure_code,updated_at,clipped,task_diagnostic,delivery_failure,task_stage,task_error,recorded_output) AS (${reads.join(' UNION ALL ')}),
  selected AS MATERIALIZED (SELECT DISTINCT * FROM task_rows ORDER BY root,updated_at DESC,id LIMIT 1001)
  SELECT t.*,b.state AS billing_state,b.charged_credits,b.reserved_credits${supplierPresent?',s.*':''} FROM selected t
  LEFT JOIN app_billing_operations b ON b.id=t.id AND b.email=t.email

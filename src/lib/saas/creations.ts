@@ -6,7 +6,8 @@ import {enterpriseHeavyReportRead} from '@/lib/enterprise/server';
 import { TeamError } from "@/lib/teams/errors";
 import type {TeamActor} from '@/lib/teams/grants';
 import {ensureCreationSchema} from './creation-schema';
-import {creationRecoveredAsset,creationSourceAssets,creationSourceEvidence,videoWorkflowEvidenceAvailable} from './creation-source-evidence';
+import {creationRecoveredAsset,creationSourceAssets,creationSourceEvidence} from './creation-source-evidence';
+import {creationLiveStatusSql} from './creation-live-status';
 import {publicCreationParameters} from './creation-parameters';
 import {creationRequestEvidence} from './creation-request-evidence';
 import {creationStatus,type CreationFilters,type CreationPage,type CreationListPage,type CreationSummary,type CreationDetail,type CreationAsset,type CreationEvent,type CreationEventSlice,type CreationAssetSlice,type CreationChildSlice} from './creation-contracts';
@@ -14,7 +15,6 @@ import {legacyCreationId} from './creation-history-identity';
 import {legacyCreationCandidates} from './creation-unified-query';
 import {creationFailures,legacyCreationFailuresInTransaction,hasCreationFailure} from './creation-failures';
 import {creationEventPageSql,creationEventPageWithTotalSql,evidencePageSize,readCreationDetailEvidence,readCreationAssetPage,readCreationChildPage} from './creation-detail-evidence';
-import {workflowOutcomeStagesSql} from '../video/workflow-outcome';
 import {ensureMediaSchema} from '@/lib/media-assets-schema';
 import {readImagegenInputAssetReference} from '@/lib/imagegen/input-asset-reference';
 
@@ -37,30 +37,16 @@ const normalizedLiveStatus=`CASE WHEN live_status IN ('done','completed','succes
 const pendingLiveStatuses="'queued','running','pending','processing','reviewing','generating','cancel_requested'";
 const recordProjection=`SELECT c.*,COALESCE(u.name,c.actor_email) AS actor_name,
  (SELECT a.id FROM app_creation_assets a WHERE a.creation_id=c.id AND a.direction='output' AND a.media_type='image' ORDER BY position,id LIMIT 1) thumbnail_asset_id,`;
-// A terminal result snapshot stays authoritative. A job that failed at its top
-// level only overrides a result left mid-run (47: imagegen error, result 'running').
-const recordLiveSelect=`COALESCE(j.failed_status,j.snapshot->'result'->>'status',j.snapshot->>'status',v.status,c.status) AS live_status
- FROM app_creation_records c LEFT JOIN app_users u ON u.email=c.actor_email
- LEFT JOIN LATERAL(SELECT x.snapshot,CASE WHEN x.snapshot->>'status' IN ('error','failed','cancelled','canceled') AND COALESCE(x.snapshot->'result'->>'status','') NOT IN ('succeeded','done','completed','success','partial','failed','error','cancelled','canceled') THEN x.snapshot->>'status' END AS failed_status FROM app_creation_links l JOIN app_image_jobs x ON x.id=l.target_id AND x.email=l.actor_email WHERE l.creation_id=c.id AND l.target_type LIKE 'image:%' LIMIT 1)j ON true
- LEFT JOIN LATERAL(SELECT x.status FROM app_creation_links l JOIN app_video_tasks x ON x.id=l.target_id AND x.email=l.actor_email WHERE l.creation_id=c.id AND l.target_type='video' LIMIT 1)v ON true`;
 const recordBillingJoin=` LEFT JOIN LATERAL(WITH RECURSIVE family AS(SELECT c.id,c.actor_email,c.tenant_id UNION ALL SELECT child.id,child.actor_email,child.tenant_id FROM app_creation_records child JOIN family p ON child.parent_id=p.id AND child.actor_email=p.actor_email AND child.tenant_id IS NOT DISTINCT FROM p.tenant_id), operations AS(
  SELECT DISTINCT o.id,o.state,o.charged_credits FROM family f JOIN app_creation_links l ON l.creation_id=f.id AND l.target_type='billing' JOIN app_billing_operations o ON o.id=l.target_id AND o.email=l.actor_email)
  SELECT CASE WHEN count(*)>0 AND bool_and(state IN ('settled','released')) THEN sum(charged_credits)::int WHEN count(*)=0 AND EXISTS(SELECT 1 FROM app_creation_links n WHERE n.creation_id=c.id AND n.target_type='no-charge' AND n.relation='explicit-no-charge') THEN 0 ELSE NULL END AS charged,
  CASE WHEN count(*)=0 THEN 'not_recorded' WHEN bool_and(state IN ('settled','released')) THEN 'settled' ELSE 'pending' END AS state FROM operations)b ON true`;
-function recordSelect(tx:PoolClient,includeBilling=true){
- return selectWithLiveStatus(tx,recordProjection+(includeBilling?' b.charged,b.state AS billing_state,':''),includeBilling);
+function recordSelect(tx:PoolClient,includeBilling=true,ids?:readonly string[]){
+ return selectWithLiveStatus(tx,recordProjection+(includeBilling?' b.charged,b.state AS billing_state,':''),includeBilling,ids);
 }
-async function selectWithLiveStatus(tx:PoolClient,projection:string,includeBilling=false){
- const baseRecordSelect=projection+recordLiveSelect+(includeBilling?recordBillingJoin:'');
- if(!await videoWorkflowEvidenceAvailable(tx))return baseRecordSelect;
- // Optional workflow schemas are initialized by their owning module. Its exact
- // durable node states remain authoritative if secondary evidence writing fails.
- return baseRecordSelect.replace('COALESCE(j.failed_status', 'COALESCE(wf.status,j.failed_status')+` LEFT JOIN LATERAL(
- SELECT CASE WHEN count(n.node_id)=0 THEN 'needs_review' WHEN bool_and(n.status='completed') THEN 'succeeded'
- WHEN bool_and(n.status IN ('completed','blocked','cancelled')) THEN CASE WHEN bool_or(n.status='completed') THEN 'partial' WHEN bool_or(n.status='blocked') THEN 'failed' ELSE 'cancelled' END
- WHEN bool_or(n.status IN ('needs_attention','needs_confirmation')) THEN 'needs_review' WHEN r.cancellation_requested_at IS NOT NULL THEN 'cancel_requested' ELSE 'running' END AS status
- FROM app_creation_links l JOIN app_video_workflow_runs r ON r.id::text=l.target_id AND r.email=l.actor_email
- LEFT JOIN LATERAL(${workflowOutcomeStagesSql})n ON true WHERE l.creation_id=c.id AND l.target_type='video-workflow' GROUP BY r.id LIMIT 1)wf ON true`;
+async function selectWithLiveStatus(tx:PoolClient,projection:string,includeBilling=false,ids?:readonly string[]){
+ const {status,joins}=await creationLiveStatusSql(tx,ids);
+ return `${projection}${status} AS live_status FROM app_creation_records c LEFT JOIN app_users u ON u.email=c.actor_email${joins}`+(includeBilling?recordBillingJoin:'');
 }
 function creationTitle(kind:string,title?:string|null,message?:string|null){return (title||message?.trim().split(/[\n。！？]/)[0])?.slice(0,64)||sourceLabel(kind);}
 function summary(row:Record<string,any>):CreationSummary{return {id:row.legacy_table?legacyCreationId({table:row.legacy_table,id:row.source_id,email:row.actor_email}):row.id,title:creationTitle(row.source_kind,row.request_snapshot?.title,row.request_snapshot?.text),actorEmail:row.actor_email,actorName:row.actor_name,tenantId:row.tenant_id,scopeKind:row.scope_kind,sourceKind:row.source_kind,status:creationStatus(row.live_status||row.status),acceptedAt:new Date(row.accepted_at).toISOString(),settledCredits:row.charged===null||row.charged===undefined?null:Number(row.charged),thumbnailAssetId:row.thumbnail_asset_id||null,completeness:row.request_snapshot?.state==='recorded'?'recorded':'not_recorded'};}
@@ -195,7 +181,7 @@ async function authorizedRecord(tx:PoolClient,reader:CreationDetailReader,id:str
   if(reader.platform||row.tenant_id!==null||row.scope_kind!=='personal'||!reader.historyEmails?.includes(row.actor_email)||!await hasOwnedPersonalSource(tx,row))throw missing();
  }
  if(identityOnly)return row;
- return (await tx.query(`${await recordSelect(tx,false)} WHERE c.id=$1`,[id])).rows[0];
+ return (await tx.query(`${await recordSelect(tx,false,[id])} WHERE c.id=$1`,[id])).rows[0];
 }
 const asset=(a:Record<string,any>):CreationAsset=>({id:a.id,direction:a.direction,role:a.role,...(Array.isArray(a.roles)?{roles:a.roles.filter((v:unknown)=>typeof v==='string')}:{}),position:a.position,...(Number.isInteger(a.input_position)?{inputPosition:a.input_position}:{}),...(a.execution_ref?{executionRef:a.execution_ref}:{}),...(a.id.startsWith('recovered-')?{evidenceRecordId:a.creation_id}:{}),variant:a.variant,mime:a.mime,bytes:a.byte_size===null?null:Number(a.byte_size),hash:a.hash,availability:a.availability,mediaType:a.media_type,...(a.text_content?{text:a.text_content}:{})});
 export type DetailPages={assetPage?:number;eventPage?:number;childPage?:number};
@@ -233,17 +219,17 @@ export async function creationChildPageInTransaction(tx:PoolClient,reader:Creati
  await authorizedRecord(tx,reader,id,visible,true);
  const result=await readCreationChildPage(tx,id,page);
  const {rows}=result.child_ids.length?await tx.query(`${await selectWithLiveStatus(tx,`SELECT c.id,c.status,c.source_kind,
-  c.request_snapshot->>'title' AS title,c.request_snapshot->>'text' AS message,`)} WHERE c.id=ANY($1::text[]) ORDER BY c.accepted_at,c.id`,[result.child_ids]):{rows:[]};
+  c.request_snapshot->>'title' AS title,c.request_snapshot->>'text' AS message,`,false,result.child_ids)} WHERE c.id=ANY($1::text[]) ORDER BY c.accepted_at,c.id`,[result.child_ids]):{rows:[]};
  return {children:rows.map(row=>({id:row.id,title:creationTitle(row.source_kind,row.title,row.message),status:creationStatus(row.live_status||row.status)})),
   childPagination:{page,size:evidencePageSize,total:result.child_total}};
 }
 /** Reuse the caller's authorization snapshot; no nested pool checkout. */
-export async function creationDetailInTransaction(tx:PoolClient,reader:CreationDetailReader,id:string,visible:readonly string[]|null,pages:DetailPages={}):Promise<CreationDetail>{
+export async function creationDetailInTransaction(tx:PoolClient,reader:CreationDetailReader,id:string,visible:readonly string[]|null,pages:DetailPages&{diagnostics?:boolean}={}):Promise<CreationDetail>{
  const row=await authorizedRecord(tx,reader,id,visible);const size=evidencePageSize,assetPage=pages.assetPage||1,eventPage=pages.eventPage||1,childPage=pages.childPage||1;
  const sourceEvidence=await creationSourceEvidence(tx,id);
  const evidence=await readCreationDetailEvidence(tx,id,sourceEvidence.assets,{assets:assetPage,events:eventPage,children:childPage});
  const links=reader.platform?await tx.query('SELECT target_type,target_id,relation FROM app_creation_links WHERE creation_id=$1 ORDER BY target_type,target_id LIMIT 100',[id]):{rows:[]};
- const children=evidence.child_ids.length?(await tx.query(`${await recordSelect(tx)} WHERE c.id=ANY($1::text[]) ORDER BY c.accepted_at,c.id`,[evidence.child_ids])).rows:[];
+ const children=evidence.child_ids.length?(await tx.query(`${await recordSelect(tx,true,evidence.child_ids)} WHERE c.id=ANY($1::text[]) ORDER BY c.accepted_at,c.id`,[evidence.child_ids])).rows:[];
  const ops=evidence.operations,settled=ops.length>0&&ops.every(o=>['settled','released'].includes(o.state));
  const noCharge=ops.length===0&&evidence.no_charge;
  const charged=settled?ops.reduce((n,o)=>n+Number(o.charged_credits),0):noCharge?0:null;
@@ -252,7 +238,7 @@ export async function creationDetailInTransaction(tx:PoolClient,reader:CreationD
  const recordedParams={...sourceFacts.values,...row.parameters_snapshot?.values};
  const projectedParams=reader.platform?recordedParams:publicCreationParameters(recordedParams);
  const requestText=row.request_snapshot?.state==='recorded'?row.request_snapshot.text:sourceFacts.text;
-  const failure=reader.platform&&hasCreationFailure(row.live_status||row.status)?(await creationFailures(tx,[{id:row.id,email:row.actor_email}])).get(row.id):undefined;
+  const failure=reader.platform&&pages.diagnostics!==false&&hasCreationFailure(row.live_status||row.status)?(await creationFailures(tx,[{id:row.id,email:row.actor_email}])).get(row.id):undefined;
  return {...summary(row),settledCredits:charged,evidencePending:sourceEvidence.pending,
   ...(failure?{failure}:{}),
  request:{state:typeof requestText==='string'?'recorded':row.request_snapshot?.state||'not_recorded',text:requestText??null},
