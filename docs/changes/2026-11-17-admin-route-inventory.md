@@ -27,7 +27,7 @@
 | `GET /api/admin/creations` | `src/app/api/admin/creations/route.ts` | 部分：筛选、精确计数、正式/归档列表与混合断开；高归档全站游标深页放大待解决 |
 | `GET /api/admin/creations/[id]` | `src/app/api/admin/creations/[id]/route.ts` | 部分：详情证据和费用、旧 URL 和鉴权；正式/历史详情共享读额度，历史来源、关联和诊断同一快照 |
 | `GET /api/admin/creations/[id]/assets/[assetId]` | `src/app/api/admin/creations/[id]/assets/[assetId]/route.ts` | 部分：历史深页、来源定位、Range、浏览器峰值与渲染器已测；隔离 PG 验证正式和历史元数据共用连接额度、断开会释放。真实网关与多实例待核 |
-| `GET /api/admin/creations/[id]/events` | `src/app/api/admin/creations/[id]/events/route.ts` | 部分：正式/历史投影、空历史、鉴权及混合断开释放，大任务族待核 |
+| `GET /api/admin/creations/[id]/events` | `src/app/api/admin/creations/[id]/events/route.ts` | 部分：正式/历史投影、鉴权、断开、4.8 万事件深页窄排序与逐项等价；真实网关待核 |
 | `GET /api/admin/enterprise-workbench` | `src/app/api/admin/enterprise-workbench/route.ts` | 部分：名单、成员无权不读指标、流水独立分页；隔离库验证作品/任务深页、精准计数和越界锁竞争；真实网关与高并发待核 |
 | `GET /api/admin/feature-access` | `src/app/api/admin/feature-access/route.ts` | 待核查 |
 | `GET /api/admin/fleet` | `src/app/api/admin/fleet/route.ts` | 待核查 |
@@ -65,7 +65,7 @@
 | `GET /api/enterprise/creations` | `src/app/api/enterprise/creations/route.ts` | 部分：近期固定 5 条、历史归属与统一列表，接入共享额度和取消；混合归档深页待核 |
 | `GET /api/enterprise/creations/[id]` | `src/app/api/enterprise/creations/[id]/route.ts` | 部分：证据和费用分页、历史脱敏、来源定位；混合断开释放，等待期间撤权实测 403 |
 | `GET /api/enterprise/creations/[id]/assets/[assetId]` | `src/app/api/enterprise/creations/[id]/assets/[assetId]/route.ts` | 部分：Range、旧 URL、归属、连接和页面并发通过；正式和历史元数据共享连接额度、断开取消；等素材时可撤权且原请求 403。渲染器已测，真实网关待核 |
-| `GET /api/enterprise/creations/[id]/events` | `src/app/api/enterprise/creations/[id]/events/route.ts` | 部分：分页、正式与归档脱敏、跨租户、撤权、锁竞争及 HTTP 取消；大任务族待核 |
+| `GET /api/enterprise/creations/[id]/events` | `src/app/api/enterprise/creations/[id]/events/route.ts` | 部分：分页、正式与归档脱敏、跨租户、撤权、锁竞争及 HTTP 取消；4.8 万事件深页、同时间顺序和越权子链已验 |
 | `GET /api/enterprise/health` | `src/app/api/enterprise/health/route.ts` | 部分：健康统计权限、账户行锁及隔离，`verify-enterprise-analytics.ts` |
 | `GET /api/enterprise/integration` | `src/app/api/enterprise/integration/route.ts` | 部分：实际登录、独立站、下级范围、流水精确分页及配置缺失拒绝；作品/生成历史深页、越界和具体记录读范围通过隔离库验证；真实网关待核 |
 | `GET /api/enterprise/media` | `src/app/api/enterprise/media/route.ts` | 部分：隔离 HTTP 验证共用渲染队列并发、过载、取消、镜像回退；单图的作品授权查询在断开时释放，私有权限和缓存版本回归。外围入口鉴权和真实网关待核 |

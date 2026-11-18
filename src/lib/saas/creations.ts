@@ -13,7 +13,7 @@ import {creationStatus,type CreationFilters,type CreationPage,type CreationListP
 import {legacyCreationId} from './creation-history-identity';
 import {legacyCreationCandidates} from './creation-unified-query';
 import {creationFailures,legacyCreationFailuresInTransaction,hasCreationFailure} from './creation-failures';
-import {creationFamilySql,evidencePageSize,readCreationDetailEvidence} from './creation-detail-evidence';
+import {creationEventPageSql,evidencePageSize,readCreationDetailEvidence} from './creation-detail-evidence';
 import {workflowOutcomeStagesSql} from '../video/workflow-outcome';
 import {ensureMediaSchema} from '@/lib/media-assets-schema';
 import {readImagegenInputAssetReference} from '@/lib/imagegen/input-asset-reference';
@@ -203,7 +203,7 @@ function projectEvents(rows:Record<string,any>[],reader:CreationDetailReader):Cr
  return rows.map(e=>({id:e.id,eventKey:reader.platform?e.event_key:e.type,type:e.type,status:e.status,summary:reader.platform?e.summary:publicEventSummary[e.type]||'创作事件',occurredAt:new Date(e.occurred_at).toISOString(),observedAt:new Date(e.observed_at).toISOString()}));
 }
 async function eventPageItems(tx:PoolClient,reader:CreationDetailReader,id:string,page:number):Promise<CreationEvent[]>{
- const {rows}=await tx.query(`${creationFamilySql} SELECT e.id,e.event_key,e.type,e.status,e.summary,e.occurred_at,e.observed_at FROM app_creation_events e JOIN family f ON f.id=e.creation_id ORDER BY e.occurred_at,e.id LIMIT $2 OFFSET $3`,[id,evidencePageSize,(page-1)*evidencePageSize]);
+ const {rows}=await tx.query(creationEventPageSql,[id,evidencePageSize,(page-1)*evidencePageSize]);
  return projectEvents(rows,reader);
 }
 export function creationEvents(reader:CreationReader,id:string,page:number,signal?:AbortSignal){

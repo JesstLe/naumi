@@ -7,6 +7,16 @@ export const creationFamilySql=`WITH RECURSIVE family AS(
  UNION ALL SELECT c.id,c.parent_id,c.actor_email,c.tenant_id,c.accepted_at FROM app_creation_records c
  JOIN family p ON c.parent_id=p.id AND c.actor_email=p.actor_email AND c.tenant_id IS NOT DISTINCT FROM p.tenant_id)`;
 export const evidencePageSize=24;
+/** Sort the covered event keys first. Large summaries and internal event
+ * fields should only be read for the selected page, never kept in the sort. */
+export const creationEventPageSql=`${creationFamilySql},
+ event_page_keys AS MATERIALIZED(
+  SELECT e.id,e.occurred_at FROM app_creation_events e JOIN family f ON f.id=e.creation_id
+  ORDER BY e.occurred_at,e.id LIMIT $2 OFFSET $3
+ )
+ SELECT e.id,e.event_key,e.type,e.status,e.summary,e.occurred_at,e.observed_at
+ FROM event_page_keys k JOIN app_creation_events e ON e.id=k.id
+ ORDER BY k.occurred_at,k.id`;
 type EvidencePages={assets:number;events:number;children:number};
 type ReadRow={
  assets:Record<string,any>[];events:Record<string,any>[];child_ids:string[];
