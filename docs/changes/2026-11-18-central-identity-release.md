@@ -42,16 +42,16 @@ Node端口保持内部，只有可信入口设置/覆写X-Forwarded-*，不接�
 
 ## 发布者操作（均未执行）
 
-源站镜像新增 `npm run build:identity` 打包CLI，不要求在生产镜像里装TypeScript编译器。运行容器内命令：
+源站镜像用 `npm run build:identity` 打包 CLI。将本次审核通过的人员名单和资格文件通过受保护的渠道放在容器可读的私有目录，再运行以下命令。
 
 ```sh
 node dist/identity/provision.cjs \
-  --plan docs/organization/APPROVED_ROSTER_20261118.json \
+  --plan /PRIVATE/approved-roster.json \
   --eligibility /PRIVATE/eligibility.json
 
 # 上一步仅准备；此操作才修改中央账户和组织，并写私有邀请回执：
 node dist/identity/provision.cjs \
-  --plan docs/organization/APPROVED_ROSTER_20261118.json \
+  --plan /PRIVATE/approved-roster.json \
   --eligibility /PRIVATE/eligibility.json \
   --apply --private-receipt /PRIVATE/roster-receipt.json
 ```

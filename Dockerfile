@@ -85,7 +85,6 @@ COPY --from=build --chown=nextjs:nodejs /app/scripts/worker-runtime.mjs ./script
 COPY --from=build --chown=nextjs:nodejs /app/scripts/direct-worker-settings.mjs ./scripts/direct-worker-settings.mjs
 COPY --from=build --chown=nextjs:nodejs /app/dist/worker ./dist/worker
 COPY --from=build --chown=nextjs:nodejs /app/dist/identity ./dist/identity
-COPY --from=build --chown=nextjs:nodejs /app/docs/organization/APPROVED_ROSTER_20261118.json ./docs/organization/APPROVED_ROSTER_20261118.json
 COPY --from=build --chown=nextjs:nodejs /app/scripts/release-http-observer.cjs ./scripts/release-http-observer.cjs
 COPY --from=build --chown=nextjs:nodejs /app/scripts/runtime-memory.cjs ./scripts/runtime-memory.cjs
 COPY --from=build --chown=nextjs:nodejs /app/scripts/video-media-worker.mjs ./scripts/video-media-worker.mjs
