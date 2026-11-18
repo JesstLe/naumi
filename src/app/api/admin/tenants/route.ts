@@ -11,10 +11,10 @@ export async function GET(request:Request) {
   const actor=await tenantAuthorize(request);if(actor instanceof NextResponse)return actor;
   const search=new URL(request.url).searchParams;
   try {
-    if(search.has('commandId')) {const id=z.string().uuid().safeParse(search.get('commandId'));return id.success?teamJson(await tenantCommandResult(actor,id.data)):teamJson({error:'操作编号无效'},400);}
+    if(search.has('commandId')) {const id=z.string().uuid().safeParse(search.get('commandId'));return id.success?teamJson(await tenantCommandResult(actor,id.data,signal)):teamJson({error:'操作编号无效'},400);}
     if(search.has('ownerEmail')) {
       const email=z.string().trim().email().max(254).transform(v=>v.toLowerCase()).safeParse(search.get('ownerEmail'));
-      return email.success?teamJson(await tenantOwnerLookup(email.data)):teamJson({error:'负责人邮箱无效'},400);
+      return email.success?teamJson(await tenantOwnerLookup(email.data,signal)):teamJson({error:'负责人邮箱无效'},400);
     }
     const parsed=tenantQuerySchema.safeParse(Object.fromEntries(search));
     if(!parsed.success)return teamJson({error:'租户查询参数无效',code:'INVALID_FILTERS'},400);

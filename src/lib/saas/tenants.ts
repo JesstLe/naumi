@@ -115,18 +115,20 @@ export async function tenantSupervisorOptions(id:string,query:TenantMemberPageQu
     return readPlatformSupervisors(tx,id,query);
   },signal);
 }
-export async function tenantCommandResult(actor:TeamActor,commandId:string) {
-  await ensureTenantSchema();
-  const row=(await getPool().query('SELECT actor,result FROM app_tenant_commands WHERE command_id=$1',[commandId])).rows[0];
-  if(!row||row.actor!==actor.email)throw new TeamError('操作结果尚未记录，请使用原操作编号重试',404);
-  return {...row.result,replayed:true};
+export async function tenantCommandResult(actor:TeamActor,commandId:string,signal?:AbortSignal) {
+  return tenantRead(async tx=>{
+    const row=(await tx.query('SELECT result FROM app_tenant_commands WHERE command_id=$1 AND actor=$2',[commandId,actor.email])).rows[0];
+    if(!row)throw new TeamError('操作结果尚未记录，请使用原操作编号重试',404);
+    return {...row.result,replayed:true};
+  },signal);
 }
 /** Tenant creation only needs the exact existing team and its activation bit. */
-export async function tenantOwnerLookup(email:string){
-  await ensureTenantSchema();
-  const row=(await getPool().query<{id:string;name:string;enterprise_id:string|null}>(`SELECT t.id,t.name,s.team_id AS enterprise_id
-    FROM app_account_teams t LEFT JOIN app_enterprise_settings s ON s.team_id=t.id WHERE t.owner_email=$1`,[email])).rows[0];
-  return {email,team:row?{id:row.id,name:row.name}:null,activeTenant:row?.enterprise_id??null};
+export async function tenantOwnerLookup(email:string,signal?:AbortSignal){
+  return tenantRead(async tx=>{
+    const row=(await tx.query<{id:string;name:string;enterprise_id:string|null}>(`SELECT t.id,t.name,s.team_id AS enterprise_id
+      FROM app_account_teams t LEFT JOIN app_enterprise_settings s ON s.team_id=t.id WHERE t.owner_email=$1`,[email])).rows[0];
+    return {email,team:row?{id:row.id,name:row.name}:null,activeTenant:row?.enterprise_id??null};
+  },signal);
 }
 async function replay(tx:PoolClient,actor:TeamActor,id:string,fingerprint:string) {
   const old=(await tx.query('SELECT actor,fingerprint,result FROM app_tenant_commands WHERE command_id=$1',[id])).rows[0];

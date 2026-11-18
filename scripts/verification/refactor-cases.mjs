@@ -58,6 +58,7 @@ export const refactorCases=[
  ts('enterprise-directory-pressure','foundation','scripts/verify-enterprise-directory-pressure.ts','ENTERPRISE_DIRECTORY=PASS'),
  {...node('enterprise-directory-browser','foundation','scripts/verify-enterprise-directory-browser.mjs','ENTERPRISE_DIRECTORY_BROWSER=PASS'),clientReact:true},
  ts('platform-tenant-reads','foundation','scripts/verify-platform-tenant-reads.ts','PLATFORM_TENANT_READ=PASS'),
+ ts('platform-tenant-lookups','foundation','scripts/verify-platform-tenant-lookups.ts','PLATFORM_TENANT_LOOKUPS=PASS'),
  ts('platform-tenant-activity','foundation','scripts/verify-platform-tenant-activity.ts','PLATFORM_TENANT_ACTIVITY=PASS'),
  ts('platform-overview-index','foundation','scripts/verify-platform-overview-index.ts','PLATFORM_OVERVIEW_INDEX=PASS'),
  {...node('platform-tenant-browser','foundation','scripts/verify-platform-tenant-browser.mjs','PLATFORM_TENANT_BROWSER=PASS'),clientReact:true},

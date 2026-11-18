@@ -52,7 +52,7 @@
 | `GET /api/admin/templates` | `src/app/api/admin/templates/route.ts` | 待核查 |
 | `GET /api/admin/templates/cache` | `src/app/api/admin/templates/cache/route.ts` | 待核查 |
 | `GET /api/admin/tenant-usage` | `src/app/api/admin/tenant-usage/route.ts` | 部分：混合报表额度、HTTP 断开取消、冻结归属及隔离 PG 36,000 根记录的一年范围、单日与空窗口通过；真实站容量待核 |
-| `GET /api/admin/tenants` | `src/app/api/admin/tenants/route.ts` | 部分：负责人邮箱核对、租户筛选、报表额度和断开取消；16 万条历史的期间计数与最近活动计划验证通过，命令回执及高比例子任务的计划待核 |
+| `GET /api/admin/tenants` | `src/app/api/admin/tenants/route.ts` | 部分：列表、负责人和操作结果共享读额度与断开取消；操作归属、邮箱三种结果、锁超时和同编号恢复通过；真实网关和高子任务比例计划待核 |
 | `GET /api/admin/tenants/[id]` | `src/app/api/admin/tenants/[id]/route.ts` | 部分：平台权限、按需投影、成员分页与搜索、直属上级候选分页、旧全量字段、报表队列和断开取消隔离通过；真实网关与超大租户查询计划待核 |
 | `GET /api/admin/tryon` | `src/app/api/admin/tryon/route.ts` | 待核查 |
 | `GET /api/admin/update-check` | `src/app/api/admin/update-check/route.ts` | 待核查 |
@@ -301,7 +301,7 @@
 | `页面 /admin/billing` | `src/app/admin/billing/page.tsx` | 部分：人工核对新旧深链不读现价；列表、详情及当前配置读取取消去重，切换保留草稿和原提交身份；历史翻页、预览防乱序、基线更新保留冻结目标和恢复重试已核。其他分区另核 |
 | `页面 /admin/billing/price-table` | `src/app/admin/billing/price-table/page.tsx` | 已核查：实际浏览器验证筛选和导出零请求、下载与显示同一版本、连点刷新去重、离开取消；隔离验证，非生产 |
 | `页面 /admin/billing/supplier-cost` | `src/app/admin/billing/supplier-cost/page.tsx` | 部分：调用链切换、去重、取消、分页及账务按需展开，旧服务器返回完整数据时本地分页；长窗口和深页已隔离核查。写操作与真实容量另核 |
-| `页面 /admin/center` | `src/app/admin/center/page.tsx` | 部分：双概览分口径，旧 URL 不重复 BI GET；总览组件验证租户翻页/搜索/状态不重算指标、日期取消、独立重试、撤权清空；其他面板和真实网关待复查 |
+| `页面 /admin/center` | `src/app/admin/center/page.tsx` | 部分：双概览分口径和独立读取；新建租户结果不确定时按原编号核对，离开取消且不重复提交；其他面板和真实网关待复查 |
 | `页面 /admin/creations` | `src/app/admin/creations/page.tsx` | 部分：实测可见性、重试、会话取消、预览解码、24 张图请求峰值和切换时清理；真实导航组合待核 |
 | `页面 /admin/creations/[id]` | `src/app/admin/creations/[id]/page.tsx` | 待核查 |
 | `页面 /admin/creations/resolve` | `src/app/admin/creations/resolve/page.tsx` | 待核查 |

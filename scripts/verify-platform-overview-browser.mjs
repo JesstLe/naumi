@@ -10,7 +10,8 @@ const bundle=await build({stdin:{contents:`
  import {PlatformConsole} from '@/components/saas/platform-console';
  const replace=history.replaceState.bind(history);
  history.replaceState=(...args)=>{replace(...args);dispatchEvent(new PopStateEvent('popstate'));};
- createRoot(document.getElementById('root')).render(<PlatformConsole/>);
+ const root=createRoot(document.getElementById('root'));root.render(<PlatformConsole/>);
+ window.addEventListener('fixture-unmount',()=>root.unmount(),{once:true});
 `,loader:'tsx',resolveDir:process.cwd()},bundle:true,write:false,jsx:'automatic',platform:'browser',format:'iife',
  outfile:'output/platform-overview-browser/app.js',define:{'process.env.NODE_ENV':'"development"','process.env':'{}'},
  plugins:[{name:'platform-overview-fixture',setup(plugin){
@@ -28,11 +29,23 @@ const bundle=await build({stdin:{contents:`
 
 const requests=[],aborted=[];
 let heldDate='',listError=0,metricsError=0,legacy=false;
+const submitted=[],receipts=[];let holdReceipt=false,receiptAborted=false;
 const send=(res,body,status=200)=>res.writeHead(status,{'content-type':'application/json'}).end(JSON.stringify(body));
 const server=createServer((req,res)=>{
  const url=new URL(req.url,'http://fixture');
  if(['/api/admin/tenants','/api/admin/saas-overview'].includes(url.pathname)){
   const p=url.searchParams,kind=url.pathname.endsWith('tenants')?'list':'metrics';
+  if(kind==='list'&&req.method==='POST'){
+   let text='';req.setEncoding('utf8');req.on('data',chunk=>text+=chunk);
+   req.on('end',()=>{submitted.push(JSON.parse(text).commandId);send(res,{error:'结果待核对',uncertain:true},503);});
+   return;
+  }
+  if(kind==='list'&&p.has('ownerEmail'))return send(res,{email:p.get('ownerEmail'),team:null,activeTenant:null});
+  if(kind==='list'&&p.has('commandId')){
+   receipts.push(p.get('commandId'));
+   if(!holdReceipt)return send(res,{error:'未找到操作'},404);
+   res.once('close',()=>{if(!res.writableFinished)receiptAborted=true;});return;
+  }
   const hit={kind,query:Object.fromEntries(p)};requests.push(hit);
   if(!baseline&&heldDate&&p.get('to')===heldDate){res.once('close',()=>{if(!res.writableFinished)aborted.push(kind);});return;}
   if(kind==='list'&&listError)return send(res,{error:listError===403?'平台权限已撤销':'租户服务暂不可用'},listError);
@@ -93,7 +106,22 @@ try{
 
   listError=0;legacy=true;await page.goto(origin+'/admin/center?to=2026-11-11');await trend().waitFor();await page.getByText('企业 1').waitFor();
   assert.equal(await trend().textContent(),'2026-11-11');
+  await page.getByRole('button',{name:'新建租户',exact:true}).click();
+  const editor=page.getByRole('dialog',{name:'新建租户'});
+  await editor.getByRole('textbox',{name:'企业名称'}).fill('核对测试租户');
+  await editor.getByRole('textbox',{name:/已有负责人账号/}).fill('owner@example.test');
+  await editor.getByRole('button',{name:'核对已有团队'}).click();
+  await editor.getByText('未发现既有团队，将建立新企业锚点').waitFor();
+  await editor.getByRole('button',{name:'预览修改'}).click();
+  await editor.getByRole('button',{name:'确认保存'}).click();
+  const verify=editor.getByRole('button',{name:'再次核对创建结果'});
+  await verify.click();await editor.getByText(/尚未找到已提交结果/).waitFor();
+  assert.equal(submitted.length,1);assert.deepEqual(receipts,[submitted[0]]);
+  holdReceipt=true;await verify.click();await until(()=>receipts.length===2,'second check missing');
+  await page.evaluate(()=>dispatchEvent(new Event('fixture-unmount')));
+  await until(()=>receiptAborted,'leaving editor did not cancel the receipt read');
+  assert.deepEqual(receipts,[submitted[0],submitted[0]]);assert.equal(submitted.length,1);
   assert.deepEqual(errors,[]);
-  console.log('PLATFORM_OVERVIEW_BROWSER=PASS FILTER_PAGE_ONLY=1 DATE_ABORT=2 FAILURE_ISOLATION=1 AUTH_CLEAR=1 OLD_SERVER=1 ACTUAL_REACT=1');
+  console.log('PLATFORM_OVERVIEW_BROWSER=PASS FILTER_PAGE_ONLY=1 DATE_ABORT=2 FAILURE_ISOLATION=1 AUTH_CLEAR=1 OLD_SERVER=1 RECEIPT_ABORT=1 NO_EXTRA_POST=1 ACTUAL_REACT=1');
  }
 }finally{await browser?.close();server.closeAllConnections();await new Promise(r=>server.close(r));}

@@ -144,13 +144,27 @@ function PlatformDialog({title,busy,onClose,children}:{title:string;busy:boolean
 function TenantEditor({tenant,onClose,onSaved}:{tenant:Tenant|null;onClose:()=>void;onSaved:()=>void}) {
  const [baseline,setBaseline]=useState(tenant),[name,setName]=useState(tenant?.name||''),[owner,setOwner]=useState(tenant?.owner.email||''),[until,setUntil]=useState(tenant?.validUntil?new Date(Date.parse(tenant.validUntil)+8*3600000).toISOString().slice(0,10):''),[seats,setSeats]=useState(tenant?.seatLimit?.toString()||''),[entitlement,setEntitlement]=useState(tenant?.entitlementName||''),[status,setStatus]=useState(tenant?.status==='suspended'?'suspended':'active'),[reason,setReason]=useState(''),[policy,setPolicy]=useState<Record<string,boolean>>({...tenant?.featurePolicy}),[error,setError]=useState(''),[busy,setBusy]=useState(false),[preview,setPreview]=useState(''),[uncertain,setUncertain]=useState(false),[conflict,setConflict]=useState(false);
  const [ownerCheck,setOwnerCheck]=useState<{email:string;team:{id:string;name:string}|null;activeTenant:string|null}|null>(null),[checking,setChecking]=useState(false),[reuseTeamId,setReuseTeamId]=useState(''),[latest,setLatest]=useState<Tenant|null>(null);
- const command=useRef<{key:string;id:string}|null>(null),submitted=useRef<Record<string,unknown>|null>(null),abort=useRef<AbortController|null>(null),ownerAbort=useRef<AbortController|null>(null),latestAbort=useRef<AbortController|null>(null),first=useRef<HTMLInputElement>(null);
- useEffect(()=>{first.current?.focus();return()=>{abort.current?.abort();ownerAbort.current?.abort();latestAbort.current?.abort();};},[]);
+ const command=useRef<{key:string;id:string}|null>(null),submitted=useRef<Record<string,unknown>|null>(null),abort=useRef<AbortController|null>(null),receiptAbort=useRef<AbortController|null>(null),ownerAbort=useRef<AbortController|null>(null),latestAbort=useRef<AbortController|null>(null),first=useRef<HTMLInputElement>(null);
+ useEffect(()=>{first.current?.focus();return()=>{abort.current?.abort();receiptAbort.current?.abort();ownerAbort.current?.abort();latestAbort.current?.abort();};},[]);
  const draft=useDraftClose(busy,uncertain,onClose,setError);
  const changed=()=>{setPreview('');setError('');setConflict(false);command.current=null;};
  async function checkOwner(){const email=owner.trim().toLowerCase();if(!email)return;ownerAbort.current?.abort();const controller=new AbortController();ownerAbort.current=controller;setChecking(true);setError('');setOwnerCheck(null);setReuseTeamId('');setPreview('');try{const result=await api(`/api/admin/tenants?${new URLSearchParams({ownerEmail:email})}`,{signal:controller.signal});if(!controller.signal.aborted)setOwnerCheck(result);}catch(reason:any){if(!controller.signal.aborted)setError(reason.message);}finally{if(!controller.signal.aborted)setChecking(false);}}
  function payload(){const originalUntil=baseline?.validUntil?new Date(Date.parse(baseline.validUntil)+8*3600000).toISOString().slice(0,10):'';return {name:name.trim(),...(!tenant?{ownerEmail:owner.trim().toLowerCase(),...(reuseTeamId?{reuseTeamId}:{})}:{}),validUntil:until?(baseline&&until===originalUntil?baseline.validUntil:`${until}T23:59:59+08:00`):null,seatLimit:seats?Number(seats):null,entitlementName:entitlement.trim()||null,featurePolicy:policy,...(baseline?{expectedVersion:baseline.version,status,reason:reason.trim()}:{})};}
- async function lookupResult(){setBusy(true);setError('');try{const result=await api(`/api/admin/tenants?commandId=${command.current!.id}`);if(result.tenantId){onSaved();return;}setError('操作结果尚未确认，请保留原操作编号。');}catch(reason:any){setError(reason.status===404?'尚未找到已提交结果，可继续核对或使用原操作编号重试。':reason.message);}finally{setBusy(false);}}
+ async function lookupResult(){
+  const id=command.current?.id;if(!id||receiptAbort.current)return;
+  const controller=new AbortController();receiptAbort.current=controller;
+  setBusy(true);setError('');
+  try{
+   const result=await api(`/api/admin/tenants?commandId=${id}`,{signal:controller.signal});
+   if(controller.signal.aborted)return;
+   if(result.tenantId){onSaved();return;}
+   setError('操作结果尚未确认，请保留原操作编号。');
+  }catch(reason:any){
+   if(!controller.signal.aborted)setError(reason.status===404?'尚未找到已提交结果，可继续核对或使用原操作编号重试。':reason.message);
+  }finally{
+   receiptAbort.current=null;if(!controller.signal.aborted)setBusy(false);
+  }
+ }
  async function save(replay=false){setError('');if(uncertain&&!replay){await lookupResult();return;}if(!tenant&&!replay&&(!ownerCheck||ownerCheck.email!==owner.trim().toLowerCase())){setError('请先核对负责人的已有团队。');return;}if(!tenant&&!replay&&ownerCheck?.activeTenant){setError('负责人已有已开通租户，请直接管理该租户。');return;}if(!tenant&&!replay&&ownerCheck?.team&&reuseTeamId!==ownerCheck.team.id){setError('请明确选择要复用的既有团队。');return;}
   const body=replay&&submitted.current?submitted.current:payload(),key=JSON.stringify(body);if(!replay&&preview!==key){setPreview(key);return;}if(!command.current||command.current.key!==key)command.current={key,id:crypto.randomUUID()};submitted.current=body;
   const controller=new AbortController();abort.current=controller;setBusy(true);
