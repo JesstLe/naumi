@@ -352,6 +352,52 @@ async function main(){
  await pool.query('UPDATE app_team_access_grants SET enabled=false WHERE email=$1',[ownerA]);
  assert.equal((await enterpriseList({email:manager,admin:false})).length,0);
  await pool.query('UPDATE app_team_access_grants SET enabled=true WHERE email=$1',[ownerA]);
+ const childBaseline=process.argv.includes('--child-projection-baseline');
+ if(childBaseline||process.argv.includes('--child-projection')){
+  const family=`cr-${randomUUID()}`,grandchild=`cr-${randomUUID()}`,crossTenant=`cr-${randomUUID()}`,differentActor=`cr-${randomUUID()}`;
+  const children=Array.from({length:27},()=>`cr-${randomUUID()}`).sort();
+  await record(family,member,a.tenantId);for(const id of children)await record(id,member,a.tenantId,family);
+  await pool.query("UPDATE app_creation_records SET accepted_at='2020-03-02T00:00:00Z' WHERE id=ANY($1::text[])",[children]);
+  await pool.query("UPDATE app_creation_records SET request_snapshot=$2 WHERE id=$1",[children[24],JSON.stringify({state:'recorded',title:'子任务标题',text:'另有原始要求'})]);
+  await pool.query("UPDATE app_creation_records SET request_snapshot=$2 WHERE id=$1",[children[25],JSON.stringify({state:'recorded',text:'第一行标题。第二句不在标题'})]);
+  const liveJob=`child-live-${randomUUID()}`;
+  await pool.query("INSERT INTO app_image_jobs(id,email,kind,snapshot,payload,metered) VALUES($1,$2,'generate','{\"status\":\"failed\",\"result\":{\"status\":\"running\"}}','{}',false)",[liveJob,member]);
+  await pool.query("INSERT INTO app_creation_links(creation_id,target_type,target_id,actor_email) VALUES($1,'image:generate',$2,$3)",[children[24],liveJob,member]);
+  await record(grandchild,member,a.tenantId,children[0]);await record(crossTenant,member,b.tenantId,family);await record(differentActor,manager,a.tenantId,family);
+  const childDetails=(id:string,page:number,projection=false,tenant=true,account=tenant?ownerA:admin)=>{
+   const params=`childPage=${page}${tenant?'&tenantId='+a.tenantId:''}${projection?'&projection=children':''}`;
+   return (tenant?enterpriseDetail:adminDetail).GET(request(`/api/${tenant?'enterprise':'admin'}/creations/${id}?${params}`,account),detailCtx(id));
+  };
+  const sameChildren=async(read:Promise<Response>,full:any)=>{const r=await read,body=await r.json();assert.equal(r.status,200,JSON.stringify(body));
+   assert.deepEqual(body,{children:full.children.map(({id,title,status}:any)=>({id,title,status})),childPagination:full.childPagination});};
+  const original=await childDetails(family,2);assert.equal(original.status,200);const secondPage=await original.json();
+  assert.equal(secondPage.childPagination.total,27);assert.deepEqual(secondPage.children.map((c:any)=>c.id),children.slice(24));
+  assert.deepEqual(secondPage.children.slice(0,2).map(({title,status}:any)=>[title,status]),[['子任务标题','failed'],['第一行标题','succeeded']]);
+  const blocked=await pool.connect();
+  try{
+   await blocked.query('BEGIN; LOCK TABLE app_billing_operations,app_creation_assets,app_creation_events IN ACCESS EXCLUSIVE MODE');
+   if(childBaseline){assert.equal((await childDetails(family,2,true)).status,503);console.log('CREATION_CHILD_PAGE_BASELINE=PASS UNRELATED_TABLES_BLOCK=1');}
+   else{await sameChildren(childDetails(family,2,true),secondPage);await sameChildren(childDetails(family,2,true,false),secondPage);}
+  }finally{await blocked.query('ROLLBACK');blocked.release();}
+  if(!childBaseline){
+   const outlier=await childDetails(family,3,true);assert.equal(outlier.status,200);assert.deepEqual(await outlier.json(),{children:[],childPagination:{page:3,size:24,total:27}});
+   assert.equal((await childDetails(crossTenant,1,true)).status,404);assert.equal((await childDetails(family,0,true)).status,400);
+   assert.equal((await childDetails(family,2,true,true,member)).status,403);
+   const legacyParent=`child-page-${randomUUID()}`,otherOwnerJob=`child-foreign-${randomUUID()}`,legacyIds=Array.from({length:26},(_,i)=>`${legacyParent}-${String(i).padStart(2,'0')}`);
+   await pool.query("INSERT INTO app_image_jobs(id,email,kind,snapshot,payload,metered,created_at) SELECT id,$2,'generate','{\"status\":\"done\"}','{}',false,'2020-03-02T00:00:00Z' FROM unnest($1::text[]) id",[legacyIds,member]);
+   await pool.query("INSERT INTO app_image_jobs(id,email,kind,snapshot,payload,metered) VALUES($1,$2,'generate','{}','{}',false),($3,$4,'imagegen',$5::jsonb,'{}',false)",[otherOwnerJob,ownerB,legacyParent,member,JSON.stringify({status:'done',children:Object.fromEntries([...legacyIds,legacyIds[0],otherOwnerJob,legacyParent].map((jobId,i)=>[i,{jobId}]))})]);
+   const source=legacyReader.legacyCreationId({table:'app_image_jobs',id:legacyParent,email:member});
+   const oldResponse=await childDetails(source,2,false,false);assert.equal(oldResponse.status,200);const historical=await oldResponse.json();
+   assert.equal(historical.childPagination.total,26);assert.equal(historical.children.length,2);
+   await sameChildren(childDetails(source,2,true,false),historical);await sameChildren(childDetails(source,2,true),historical);
+   await record(`cr-${randomUUID()}`,departed,a.tenantId,pendingId);
+   const linkedResponse=await childDetails(linkedHistory,1,false,false);assert.equal(linkedResponse.status,200);const linked=await linkedResponse.json();
+   assert.equal(linked.id,pendingId);assert.equal(linked.childPagination.total,1);await sameChildren(childDetails(linkedHistory,1,true,false),linked);
+   assert.equal((await childDetails(linkedHistory,1,true)).status,404);
+   console.log('CREATION_CHILD_PAGE=PASS DIRECT=1 DEEP=1 OUT_OF_RANGE=1 OLD_HISTORY=1 LINKED=1 OTHER_TABLES_LOCKED=1 CROSS_TENANT=1');
+   if(verifyAssetProjection&&!assetBaseline)console.log('CREATION_EVIDENCE_PAGES=PASS ASSETS=1 CHILDREN=1');
+  }
+ }
  await pool.query("UPDATE app_tenant_entitlements SET feature_policy=feature_policy||'{\"team\":false}'::jsonb WHERE tenant_id=$1",[a.tenantId]);
  assert.equal((await enterpriseList({email:manager,admin:false})).length,0);
  console.log('ENTERPRISE_PICKER_PASS writer_lock_nonblocking=1 management_scope=1 workflow_self=1 sponsorship=1 entitlement=1');

@@ -7,10 +7,10 @@ import {ArrowLeft,ChevronRight,ImageIcon,RefreshCw,X} from 'lucide-react';
 import {authHeader} from '@/lib/supabase';
 import {useAuth} from '@/lib/auth-context';
 import Markdown from 'react-markdown';
-import type {CreationListPage,CreationDetail,CreationAsset,CreationFailure} from '@/lib/saas/creation-contracts';
+import type {CreationListPage,CreationAsset,CreationFailure} from '@/lib/saas/creation-contracts';
 import styles from './saas.module.css';
 import {queueCreationPreview} from './creation-preview-queue';
-import {useCreationEvidence,type CreationEvidenceFeedback} from './use-creation-evidence';
+import {useCreationEvidence,type CreationEvidenceFeedback,type VisibleCreationDetail} from './use-creation-evidence';
 const labels:Record<string,string>={queued:'排队中',running:'处理中',succeeded:'已完成',partial:'部分成功',failed:'失败',cancel_requested:'取消申请中',cancelled:'已取消',needs_review:'待核查'};
 function eventSummary(event:{type:string;summary:string}){
  if(event.type==='agent-tool'){try{const detail=JSON.parse(event.summary);if(typeof detail.tool==='string'&&typeof detail.summary==='string')return `${detail.tool} · ${detail.summary}`;}catch{}}
@@ -24,10 +24,8 @@ function ScopedCreationBrowser({tenantId,enterprise=false}:{tenantId?:string;ent
  const [page,setPage]=useState<CreationListPage|null>(null),[error,setError]=useState(''),[listRevision,refreshList]=useState(0),[loading,setLoading]=useState(true);
  const api=enterprise?'/api/enterprise/creations':'/api/admin/creations';
  const sessionEnded=useRef(false),listRead=useRef<AbortController|null>(null);
- const evidencePages=new URLSearchParams();
- if(query.get('childPage'))evidencePages.set('childPage',query.get('childPage')!);
- if(tenantId)evidencePages.set('tenantId',tenantId);
- const {detail,error:detailError,reload:reloadDetails,endSession:endEvidence,eventFeedback,assetFeedback}=useCreationEvidence(api,selected,evidencePages.toString(),query.get('eventPage')||'1',query.get('assetPage')||'1',tenantId);
+ const {detail,error:detailError,reload:reloadDetails,endSession:endEvidence,eventFeedback,assetFeedback,childFeedback}=
+  useCreationEvidence(api,selected,query.get('eventPage')||'1',query.get('assetPage')||'1',query.get('childPage')||'1',tenantId);
  const reloadList=()=>{if(!sessionEnded.current&&!listRead.current)refreshList(v=>v+1);};
  useEffect(()=>{
   let wasHidden=document.visibilityState==='hidden';
@@ -61,11 +59,11 @@ function ScopedCreationBrowser({tenantId,enterprise=false}:{tenantId?:string;ent
   <div className={styles.detailGrid}>
    <section className={`${styles.panel} ${styles.recordList}`} aria-label="创作记录列表">{filtersUi}<div className={styles.actions}><span className={styles.muted}>{range}</span>{platformHistory&&<a href={`/admin/center?${artworkParams}`}>图片作品</a>}{!allDates&&<button onClick={()=>update({period:'all',from:'',to:'',page:'1'})}>全部日期</button>}</div>{loading?<div className={styles.empty} role="status">正在读取记录</div>:!page?.items.length?<div className={styles.empty}><ImageIcon size={30}/>暂无匹配的创作记录</div>:page.items.map(item=><button aria-pressed={selected===item.id||detail?.id===item.id} className={`${styles.record} ${selected===item.id||detail?.id===item.id?styles.selected:''}`} key={item.id} onClick={()=>update({creationId:item.id,assetPage:"",eventPage:"",childPage:""})}><div><strong>{item.title}</strong><p>{item.actorName} · {new Date(item.acceptedAt).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}</p><CreationStatus status={item.status}/>{item.scopeKind==='legacy_unconfirmed'&&<span className={styles.muted} title="历史任务记录，保留原始归属"> · 历史记录</span>}{!enterprise&&item.failure&&<p className={styles.failureSummary}>{item.failure.title}{item.failure.code&&`（${item.failure.code}）`}</p>}</div><ChevronRight size={16}/></button>)}
    {page&&<div className={styles.pager}><span>共 {page.pagination.total} 次创作</span><div className={styles.actions}><button aria-label="上一页" disabled={page.pagination.page===1} onClick={()=>update({page:String(page.pagination.page-1)})}>‹</button><span>{page.pagination.page}</span><button aria-label="下一页" disabled={page.pagination.page*page.pagination.size>=page.pagination.total} onClick={()=>update({page:String(page.pagination.page+1)})}>›</button></div></div>}</section>
-   <section className={`${styles.panel} ${selected?styles.detail:''}`} aria-label="创作全链路详情">{selected&&<button className={styles.mobileBack} onClick={()=>update({creationId:''})}><ArrowLeft size={15}/>返回列表</button>}{detailError?<div className={styles.error} role="alert">{detailError}<button onClick={reloadDetails}>重试</button></div>:detail?<CreationDetailView detail={detail} api={api} tenantId={tenantId} eventFeedback={eventFeedback} assetFeedback={assetFeedback} onPage={(key,value)=>update({[key]:String(value)})} onChild={id=>update({creationId:id,assetPage:'',eventPage:'',childPage:''})}/>:<div className={styles.empty}>{selected?'正在读取详情':'选择创作记录查看输入、结果与费用'}</div>}</section>
+   <section className={`${styles.panel} ${selected?styles.detail:''}`} aria-label="创作全链路详情">{selected&&<button className={styles.mobileBack} onClick={()=>update({creationId:''})}><ArrowLeft size={15}/>返回列表</button>}{detailError?<div className={styles.error} role="alert">{detailError}<button onClick={reloadDetails}>重试</button></div>:detail?<CreationDetailView detail={detail} api={api} tenantId={tenantId} eventFeedback={eventFeedback} assetFeedback={assetFeedback} childFeedback={childFeedback} onPage={(key,value)=>update({[key]:String(value)})} onChild={id=>update({creationId:id,assetPage:'',eventPage:'',childPage:''})}/>:<div className={styles.empty}>{selected?'正在读取详情':'选择创作记录查看输入、结果与费用'}</div>}</section>
   </div>
  </div>;
 }
-export function CreationDetailView({detail,api,tenantId,eventFeedback,assetFeedback,onPage,onChild}:{detail:CreationDetail;api:string;tenantId?:string;eventFeedback?:CreationEvidenceFeedback;assetFeedback?:CreationEvidenceFeedback;onPage?:(key:string,value:number)=>void;onChild?:(id:string)=>void}){
+export function CreationDetailView({detail,api,tenantId,eventFeedback,assetFeedback,childFeedback,onPage,onChild}:{detail:VisibleCreationDetail;api:string;tenantId?:string;eventFeedback?:CreationEvidenceFeedback;assetFeedback?:CreationEvidenceFeedback;childFeedback?:CreationEvidenceFeedback;onPage?:(key:string,value:number)=>void;onChild?:(id:string)=>void}){
  const [showProcessed,setShowProcessed]=useState(false);
  useEffect(()=>setShowProcessed(false),[detail.id]);
  const outputs=detail.assets.filter(a=>a.direction==='output'&&a.role!=='reply'),replies=detail.assets.filter(a=>a.direction==='output'&&a.role==='reply'),inputs=detail.assets.filter(a=>a.direction==='input'&&a.variant!=='processed'),processed=detail.assets.filter(a=>a.direction==='input'&&a.variant==='processed');
@@ -92,7 +90,11 @@ export function CreationDetailView({detail,api,tenantId,eventFeedback,assetFeedb
   <div className={styles.empty} style={{minHeight:70}} role="status">正在读取执行事件</div>:
   detail.events.length?<ol aria-label="执行事件" className={styles.creationTimeline}>{detail.events.map(e=><li key={e.id} className={styles.creationEvent}><strong>{eventSummary(e)}</strong><span className={styles.muted}>{new Date(e.occurredAt).toLocaleTimeString('zh-CN')}</span><CreationStatus status={e.status}/></li>)}</ol>:<div className={styles.empty} style={{minHeight:70}}>{(detail.eventPagination?.total??0)>0?'本页没有执行事件':'执行事件未记录'}</div>}
  <EvidencePager label="执行事件" page={detail.eventPagination} onPage={value=>onPage?.('eventPage',value)}/>
- {detail.children?.length>0&&<details className={styles.technical}><summary>关联子任务（{detail.childPagination.total}）</summary>{detail.children.map(child=><button key={child.id} className={styles.record} onClick={()=>onChild?.(child.id)}><span>{child.title}</span><CreationStatus status={child.status}/></button>)}<EvidencePager label="子任务" page={detail.childPagination} onPage={value=>onPage?.('childPage',value)}/></details>}
+ {(detail.childPagination.total>0||childFeedback?.loading||childFeedback?.error)&&<details className={styles.technical}><summary>关联子任务（{detail.childPagination.total}）</summary>
+  {childFeedback?.error?<div className={styles.error} role="alert">{childFeedback.error} <button onClick={childFeedback.retry}>重试子任务</button></div>:
+   childFeedback?.loading?<div role="status" className={styles.empty}>正在读取子任务</div>:
+   detail.children.length?detail.children.map(child=><button key={child.id} className={styles.record} onClick={()=>onChild?.(child.id)}><span>{child.title}</span><CreationStatus status={child.status}/></button>):<div className={styles.empty}>本页没有子任务</div>}
+  <EvidencePager label="子任务" page={detail.childPagination} onPage={value=>onPage?.('childPage',value)}/></details>}
  <div className={styles.billing}><strong>费用结算</strong><span>报价 {count(detail.billing.quoted)}</span><span>预占 {count(detail.billing.reserved)}</span><span>实扣 <b>{count(detail.billing.charged)}</b></span><span>释放预占 {count(detail.billing.released)}</span><span>退款 {count(detail.billing.refunded)}</span></div><p className={styles.muted}>扣款账户：{detail.billing.payerAccountId||'未记录'} · {detail.billing.state==='settled'?'已结算':detail.billing.state==='pending'?'待结算':detail.billing.state==='not_applicable'?'无需扣费':'账务未记录'}</p>
  {detail.billing.operations.length>0&&<details className={styles.technical}><summary>关联账务操作</summary>{detail.billing.operations.map(o=><p key={o.id} style={{marginTop:10,overflowWrap:'anywhere'}}>{o.id} · {o.state} · {count(o.charged)}</p>)}</details>}
  {detail.technical&&<details className={styles.technical}><summary>技术与来源信息</summary><pre>{JSON.stringify(detail.technical,null,2)}</pre></details>}</>;

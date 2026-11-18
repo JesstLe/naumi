@@ -7,6 +7,16 @@ export const creationFamilySql=`WITH RECURSIVE family AS(
  UNION ALL SELECT c.id,c.parent_id,c.actor_email,c.tenant_id,c.accepted_at FROM app_creation_records c
  JOIN family p ON c.parent_id=p.id AND c.actor_email=p.actor_email AND c.tenant_id IS NOT DISTINCT FROM p.tenant_id)`;
 export const evidencePageSize=24;
+/** A child page needs only immediate edges with the same owner and tenant. */
+export async function readCreationChildPage(tx:PoolClient,id:string,page:number){
+ const size=evidencePageSize;
+ const {rows:[result]}=await tx.query<{child_ids:string[];child_total:number}>(`WITH child_keys AS MATERIALIZED(
+  SELECT c.id,c.accepted_at FROM app_creation_records p JOIN app_creation_records c
+  ON c.parent_id=p.id AND c.actor_email=p.actor_email AND c.tenant_id IS NOT DISTINCT FROM p.tenant_id WHERE p.id=$1)
+  SELECT (SELECT count(*)::int FROM child_keys) AS child_total,
+   ARRAY(SELECT id FROM child_keys ORDER BY accepted_at,id LIMIT $2 OFFSET $3) AS child_ids`,[id,size,(page-1)*size]);
+ return result;
+}
 /** Sort the covered event keys first. Large summaries and internal event
  * fields should only be read for the selected page, never kept in the sort. */
 export const creationEventPageSql=`${creationFamilySql},

@@ -9,11 +9,11 @@ import {ensureCreationSchema} from './creation-schema';
 import {creationRecoveredAsset,creationSourceAssets,creationSourceEvidence,videoWorkflowEvidenceAvailable} from './creation-source-evidence';
 import {publicCreationParameters} from './creation-parameters';
 import {creationRequestEvidence} from './creation-request-evidence';
-import {creationStatus,type CreationFilters,type CreationPage,type CreationListPage,type CreationSummary,type CreationDetail,type CreationAsset,type CreationEvent,type CreationEventSlice,type CreationAssetSlice} from './creation-contracts';
+import {creationStatus,type CreationFilters,type CreationPage,type CreationListPage,type CreationSummary,type CreationDetail,type CreationAsset,type CreationEvent,type CreationEventSlice,type CreationAssetSlice,type CreationChildSlice} from './creation-contracts';
 import {legacyCreationId} from './creation-history-identity';
 import {legacyCreationCandidates} from './creation-unified-query';
 import {creationFailures,legacyCreationFailuresInTransaction,hasCreationFailure} from './creation-failures';
-import {creationEventPageSql,creationEventPageWithTotalSql,evidencePageSize,readCreationDetailEvidence,readCreationAssetPage} from './creation-detail-evidence';
+import {creationEventPageSql,creationEventPageWithTotalSql,evidencePageSize,readCreationDetailEvidence,readCreationAssetPage,readCreationChildPage} from './creation-detail-evidence';
 import {workflowOutcomeStagesSql} from '../video/workflow-outcome';
 import {ensureMediaSchema} from '@/lib/media-assets-schema';
 import {readImagegenInputAssetReference} from '@/lib/imagegen/input-asset-reference';
@@ -47,8 +47,11 @@ const recordBillingJoin=` LEFT JOIN LATERAL(WITH RECURSIVE family AS(SELECT c.id
  SELECT DISTINCT o.id,o.state,o.charged_credits FROM family f JOIN app_creation_links l ON l.creation_id=f.id AND l.target_type='billing' JOIN app_billing_operations o ON o.id=l.target_id AND o.email=l.actor_email)
  SELECT CASE WHEN count(*)>0 AND bool_and(state IN ('settled','released')) THEN sum(charged_credits)::int WHEN count(*)=0 AND EXISTS(SELECT 1 FROM app_creation_links n WHERE n.creation_id=c.id AND n.target_type='no-charge' AND n.relation='explicit-no-charge') THEN 0 ELSE NULL END AS charged,
  CASE WHEN count(*)=0 THEN 'not_recorded' WHEN bool_and(state IN ('settled','released')) THEN 'settled' ELSE 'pending' END AS state FROM operations)b ON true`;
-async function recordSelect(tx:PoolClient,includeBilling=true){
- const baseRecordSelect=recordProjection+(includeBilling?' b.charged,b.state AS billing_state,':'')+recordLiveSelect+(includeBilling?recordBillingJoin:'');
+function recordSelect(tx:PoolClient,includeBilling=true){
+ return selectWithLiveStatus(tx,recordProjection+(includeBilling?' b.charged,b.state AS billing_state,':''),includeBilling);
+}
+async function selectWithLiveStatus(tx:PoolClient,projection:string,includeBilling=false){
+ const baseRecordSelect=projection+recordLiveSelect+(includeBilling?recordBillingJoin:'');
  if(!await videoWorkflowEvidenceAvailable(tx))return baseRecordSelect;
  // Optional workflow schemas are initialized by their owning module. Its exact
  // durable node states remain authoritative if secondary evidence writing fails.
@@ -59,7 +62,8 @@ async function recordSelect(tx:PoolClient,includeBilling=true){
  FROM app_creation_links l JOIN app_video_workflow_runs r ON r.id::text=l.target_id AND r.email=l.actor_email
  LEFT JOIN LATERAL(${workflowOutcomeStagesSql})n ON true WHERE l.creation_id=c.id AND l.target_type='video-workflow' GROUP BY r.id LIMIT 1)wf ON true`;
 }
-function summary(row:Record<string,any>):CreationSummary{return {id:row.legacy_table?legacyCreationId({table:row.legacy_table,id:row.source_id,email:row.actor_email}):row.id,title:(row.request_snapshot?.title||row.request_snapshot?.text?.trim().split(/[\n。！？]/)[0])?.slice(0,64)||sourceLabel(row.source_kind),actorEmail:row.actor_email,actorName:row.actor_name,tenantId:row.tenant_id,scopeKind:row.scope_kind,sourceKind:row.source_kind,status:creationStatus(row.live_status||row.status),acceptedAt:new Date(row.accepted_at).toISOString(),settledCredits:row.charged===null||row.charged===undefined?null:Number(row.charged),thumbnailAssetId:row.thumbnail_asset_id||null,completeness:row.request_snapshot?.state==='recorded'?'recorded':'not_recorded'};}
+function creationTitle(kind:string,title?:string|null,message?:string|null){return (title||message?.trim().split(/[\n。！？]/)[0])?.slice(0,64)||sourceLabel(kind);}
+function summary(row:Record<string,any>):CreationSummary{return {id:row.legacy_table?legacyCreationId({table:row.legacy_table,id:row.source_id,email:row.actor_email}):row.id,title:creationTitle(row.source_kind,row.request_snapshot?.title,row.request_snapshot?.text),actorEmail:row.actor_email,actorName:row.actor_name,tenantId:row.tenant_id,scopeKind:row.scope_kind,sourceKind:row.source_kind,status:creationStatus(row.live_status||row.status),acceptedAt:new Date(row.accepted_at).toISOString(),settledCredits:row.charged===null||row.charged===undefined?null:Number(row.charged),thumbnailAssetId:row.thumbnail_asset_id||null,completeness:row.request_snapshot?.state==='recorded'?'recorded':'not_recorded'};}
 export function sourceLabel(kind:string){return ({'image:imagegen':'图像创作','image:generate':'图片生成','image:suite':'商品套图','image:aplus':'A+ 详情','video':'视频创作','canvas-image':'图片编辑','agent-turn':'智能创作','agent':'智能创作'} as Record<string,string>)[kind]||kind.replace(/^\/api\//,'')||'创作记录';}
 function where(reader:CreationReader,f:CreationFilters,visible:string[]|null){
  const values:unknown[]=[];const conditions=['c.parent_id IS NULL'];const add=(sql:string,v:unknown)=>{values.push(v);conditions.push(sql.replace('?',`$${values.length}`));};
@@ -219,6 +223,17 @@ export async function creationAssetPageInTransaction(tx:PoolClient,reader:Creati
  await authorizedRecord(tx,reader,id,visible,true);
  const result=await readCreationAssetPage(tx,id,await creationSourceAssets(tx,id),page);
  return {assets:result.assets.map(asset),assetPagination:{page,size:evidencePageSize,total:result.asset_total}};
+}
+export function creationChildPage(reader:CreationReader,id:string,page:number,signal?:AbortSignal){
+ return scoped(reader,(tx,visible,historyEmails)=>creationChildPageInTransaction(tx,reader.platform?reader:{...reader,historyEmails:historyEmails||[]},id,visible,page),'report',signal);
+}
+export async function creationChildPageInTransaction(tx:PoolClient,reader:CreationDetailReader,id:string,visible:readonly string[]|null,page:number):Promise<CreationChildSlice>{
+ await authorizedRecord(tx,reader,id,visible,true);
+ const result=await readCreationChildPage(tx,id,page);
+ const {rows}=result.child_ids.length?await tx.query(`${await selectWithLiveStatus(tx,`SELECT c.id,c.status,c.source_kind,
+  c.request_snapshot->>'title' AS title,c.request_snapshot->>'text' AS message,`)} WHERE c.id=ANY($1::text[]) ORDER BY c.accepted_at,c.id`,[result.child_ids]):{rows:[]};
+ return {children:rows.map(row=>({id:row.id,title:creationTitle(row.source_kind,row.title,row.message),status:creationStatus(row.live_status||row.status)})),
+  childPagination:{page,size:evidencePageSize,total:result.child_total}};
 }
 /** Reuse the caller's authorization snapshot; no nested pool checkout. */
 export async function creationDetailInTransaction(tx:PoolClient,reader:CreationDetailReader,id:string,visible:readonly string[]|null,pages:DetailPages={}):Promise<CreationDetail>{

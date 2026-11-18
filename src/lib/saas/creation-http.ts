@@ -1,5 +1,5 @@
 import {streamManagedMedia} from "../enterprise/media-stream";
-import {enterpriseHistory,enterpriseHistoryDetail,enterpriseHistoryAsset,enterpriseHistoryAssetPage,enterpriseHistoryEventProjection} from '@/lib/enterprise/creation-history';
+import {enterpriseHistory,enterpriseHistoryDetail,enterpriseHistoryAsset,enterpriseHistoryAssetPage,enterpriseHistoryChildPage,enterpriseHistoryEventProjection} from '@/lib/enterprise/creation-history';
 import 'server-only';
 import {NextResponse} from 'next/server';
 import {tenantAuthorize} from './tenants';
@@ -7,10 +7,10 @@ import {enterpriseAuthorize} from '@/lib/enterprise/access';
 import {teamJson,PRIVATE_HEADERS} from '@/lib/teams/access';
 import { TeamError } from "@/lib/teams/errors";
 import {creationFiltersSchema} from './creation-contracts';
-import {listCreations,listUnifiedCreations,listUnifiedCreationPage,listRecentEnterpriseCreations,creationDetail,creationAsset,creationAssetPage,creationEventProjection,type CreationReader} from './creations';
+import {listCreations,listUnifiedCreations,listUnifiedCreationPage,listRecentEnterpriseCreations,creationDetail,creationAsset,creationAssetPage,creationChildPage,creationEventProjection,type CreationReader} from './creations';
 import {enterpriseMediaResponse} from '@/lib/enterprise/media-response';
 import {z} from 'zod';
-import {listLegacyCreations,legacyCreationDetail,legacyCreationAsset,legacyCreationAssetPage,legacyCreationEventProjection} from './legacy-creations';
+import {listLegacyCreations,legacyCreationDetail,legacyCreationAsset,legacyCreationAssetPage,legacyCreationChildPage,legacyCreationEventProjection} from './legacy-creations';
 import {creationPlaybackToken,readCreationPlaybackToken,platformPlaybackToken,platformPlaybackAllowed} from './creation-playback';
 import {userFeaturePolicy} from "@/lib/feature-access/repository";
 import {allows} from '@/lib/feature-access/catalog';
@@ -49,6 +49,12 @@ export async function creationDetailRoute(request:Request,id:string,enterprise=f
   if(id.startsWith('legacy-'))return teamJson(reader.platform?await legacyCreationAssetPage(id,page,undefined,signal):await enterpriseHistoryAssetPage(reader.actor,reader.tenantId,id,page,signal));
   if(!isCreationId(id))return teamJson({error:'记录不存在或无权访问'},404);
   return teamJson(await creationAssetPage(reader,id,page,signal));
+ }
+ if(query.get('projection')==='children'){
+  const page=pages.data.childPage;
+  if(id.startsWith('legacy-'))return teamJson(reader.platform?await legacyCreationChildPage(id,page,undefined,signal):await enterpriseHistoryChildPage(reader.actor,reader.tenantId,id,page,signal));
+  if(!isCreationId(id))return teamJson({error:'记录不存在或无权访问'},404);
+  return teamJson(await creationChildPage(reader,id,page,signal));
  }
  if(id.startsWith('legacy-')&&!reader.platform)return teamJson(await enterpriseHistoryDetail(reader.actor,reader.tenantId,id,pages.data,signal));
  if(id.startsWith('legacy-')&&reader.platform)return teamJson((await legacyCreationDetail(id,pages.data,undefined,signal)).detail);

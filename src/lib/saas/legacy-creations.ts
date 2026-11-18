@@ -7,7 +7,7 @@ import {ensureBiSchema} from "@/lib/bi/schema";
 
 import {parseBiQuery} from '@/lib/bi/contracts';
 import { isManagedImageUrl } from "@/lib/object-storage/runtime";
-import {creationStatus,type CreationDetail,type CreationFilters,type CreationPage,type CreationSummary,type CreationAsset} from './creation-contracts';
+import {creationStatus,type CreationDetail,type CreationFilters,type CreationPage,type CreationSummary,type CreationAsset,type CreationChildSlice} from './creation-contracts';
 import { TeamError } from "@/lib/teams/errors";
 import {legacyCreationFailuresInTransaction,hasCreationFailure} from './creation-failures';
 import {readImagegenInputAssetReference} from '@/lib/imagegen/input-asset-reference';
@@ -15,10 +15,10 @@ import {ensureMediaSchema} from '@/lib/media-assets-schema';
 import {legacyCreationId,parseLegacyCreationId as parseId,type LegacySource as Source} from './creation-history-identity';
 export {legacyCreationId} from './creation-history-identity';
 import {linkedCreation,assertLegacySourceTenant} from './creation-history-link';
-import {creationDetailInTransaction,creationAssetInTransaction,creationAssetPageInTransaction,creationEventProjectionInTransaction,type DetailPages} from './creations';
+import {creationDetailInTransaction,creationAssetInTransaction,creationAssetPageInTransaction,creationChildPageInTransaction,creationEventProjectionInTransaction,type DetailPages} from './creations';
 import {evidencePageSize} from './creation-detail-evidence';
 import {creationRequestFacts} from './creation-parameters';
-import {legacyImageChildren,legacyOutputFilter,confirmedParentCharge} from './legacy-creation-family';
+import {legacyImageChildren,legacyImageChildPage,legacyOutputFilter,confirmedParentCharge} from './legacy-creation-family';
 export type LegacyReadScope={client:PoolClient;allowedEmails:readonly string[];tenantId?:string};
 const item=(r:Record<string,any>):CreationSummary=>({id:legacyCreationId({table:r.source_table,id:r.id,email:r.email}),title:r.content?.slice(0,120)||r.kind||'历史创作',actorEmail:r.email,actorName:r.email,tenantId:null,scopeKind:'legacy_unconfirmed',sourceKind:r.kind,status:creationStatus(r.status),acceptedAt:new Date(r.created_at).toISOString(),settledCredits:r.has_ledger_charge?Number(r.billed_credits):null,thumbnailAssetId:null,completeness:'not_recorded'});
 export async function listLegacyCreations(f:CreationFilters,access?:LegacyReadScope,signal?:AbortSignal):Promise<CreationPage>{
@@ -80,9 +80,21 @@ export async function legacyCreationAssetPage(id:string,page:number,access?:Lega
  };
  return access?run(access.client):platformLegacyRead(run,signal);
 }
-async function ownLegacyRow(tx:PoolClient,ref:Source,access?:LegacyReadScope){
+export async function legacyCreationChildPage(id:string,page:number,access?:LegacyReadScope,signal?:AbortSignal){
+ const ref=parseId(id);if(access&&!access.allowedEmails.includes(ref.email))throw new TeamError('记录不存在或无权访问',404);
+ const run=async(tx:PoolClient):Promise<CreationChildSlice>=>{
+  const parent=await ownLegacyRow(tx,ref,access,'children');
+  const linked=(!access||access.tenantId)?await linkedCreation(tx,ref,access?.tenantId):null;
+  if(linked)return creationChildPageInTransaction(tx,access?{platform:false,tenantId:access.tenantId!,historyEmails:access.allowedEmails}:{platform:true},linked.id,access?.allowedEmails||null,page);
+  const size=evidencePageSize,{total,items}=await legacyImageChildPage(tx,ref,parent,size,(page-1)*size);
+  return {children:items.map(row=>{const {id,title,status}=item({source_table:'app_image_jobs',id:row.id,email:row.email,content:creationRequestFacts(row.payload).text||'',kind:'image:'+row.kind,status:row.status,created_at:row.created_at});return {id,title,status};}),childPagination:{page,size,total}};
+ };
+ return access?run(access.client):platformLegacyRead(run,signal);
+}
+async function ownLegacyRow(tx:PoolClient,ref:Source,access?:LegacyReadScope,projection?:'children'){
  if(access)await assertLegacySourceTenant(tx,ref,access.tenantId);
- const row=(await tx.query(`SELECT * FROM ${ref.table} WHERE id=$1 AND email=$2`,[ref.id,ref.email])).rows[0];
+ const fields=projection==='children'?(ref.table==='app_image_jobs'?"kind,jsonb_build_object('children',snapshot->'children') AS snapshot":'id'):'*';
+ const row=(await tx.query(`SELECT ${fields} FROM ${ref.table} WHERE id=$1 AND email=$2`,[ref.id,ref.email])).rows[0];
  if(!row)throw new TeamError('记录不存在或无权访问',404);
  return row;
 }

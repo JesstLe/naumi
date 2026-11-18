@@ -4,7 +4,7 @@ import {TeamError} from '@/lib/teams/server';
 import {enterpriseHeavyReportRead} from './server';
 import {ensureBiSchema} from '@/lib/bi/repository';
 import {ensureMediaSchema} from '@/lib/media-assets-schema';
-import {listLegacyCreations,legacyCreationDetail,legacyCreationAsset,legacyCreationAssetPage,legacyCreationEventProjection,type LegacyReadScope} from '@/lib/saas/legacy-creations';
+import {listLegacyCreations,legacyCreationDetail,legacyCreationAsset,legacyCreationAssetPage,legacyCreationChildPage,legacyCreationEventProjection,type LegacyReadScope} from '@/lib/saas/legacy-creations';
 import {publicCreationParameters} from '@/lib/saas/creation-parameters';
 import type {DetailPages} from '@/lib/saas/creations';
 import type {CreationFilters,CreationPage} from '@/lib/saas/creation-contracts';
@@ -38,6 +38,9 @@ export function enterpriseHistoryEventProjection(actor:TeamActor,id:string,creat
 }
 export function enterpriseHistoryAssetPage(actor:TeamActor,id:string,creationId:string,page:number,signal?:AbortSignal){
   return read(actor,id,access=>legacyCreationAssetPage(creationId,page,access),signal);
+}
+export function enterpriseHistoryChildPage(actor:TeamActor,id:string,creationId:string,page:number,signal?:AbortSignal){
+  return read(actor,id,access=>legacyCreationChildPage(creationId,page,access),signal);
 }
 export async function enterpriseHistoryAsset(actor:TeamActor,id:string,creationId:string,assetId:string,signal?:AbortSignal){
   // Finish schema initialization before taking a report connection.
