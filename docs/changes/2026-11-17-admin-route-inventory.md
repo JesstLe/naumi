@@ -43,7 +43,7 @@
 | `GET /api/admin/owner-account` | `src/app/api/admin/owner-account/route.ts` | 待核查 |
 | `GET /api/admin/prompts` | `src/app/api/admin/prompts/route.ts` | 待核查 |
 | `GET /api/admin/pubkey` | `src/app/api/admin/pubkey/route.ts` | 待核查 |
-| `GET /api/admin/saas-overview` | `src/app/api/admin/saas-overview/route.ts` | 已核查：管理授权、只读快照、日期和租户筛选、20 万条合成记录的单扫描计划 |
+| `GET /api/admin/saas-overview` | `src/app/api/admin/saas-overview/route.ts` | 已核查：管理授权、只读快照、日期和租户筛选、20 万条合成记录的单扫描计划；与租户列表/详情共用连接额度，HTTP 断开释放 SQL |
 | `GET /api/admin/settings` | `src/app/api/admin/settings/route.ts` | 待核查 |
 | `GET /api/admin/supplier-cost` | `src/app/api/admin/supplier-cost/route.ts` | 部分：四个标签和旧合包隔离验证，共享读取额度与断开取消；48,000 条隔离流水验证长窗口、完整链前 500、旧页码减宽排序和响应一致。更大数据的精确总数、深偏移上界仍待量化 |
 | `GET /api/admin/supplier-cost/operations/[id]` | `src/app/api/admin/supplier-cost/operations/[id]/route.ts` | 部分：隔离 PG 验证权限、私有响应、共享额度、断开取消、旧五部分同快照；新版摘要与费用按 25 条翻页、单次详情按归属校验。单调用超大 JSON 和旧完整响应仍需容量验收 |
@@ -52,7 +52,7 @@
 | `GET /api/admin/templates` | `src/app/api/admin/templates/route.ts` | 待核查 |
 | `GET /api/admin/templates/cache` | `src/app/api/admin/templates/cache/route.ts` | 待核查 |
 | `GET /api/admin/tenant-usage` | `src/app/api/admin/tenant-usage/route.ts` | 部分：混合报表额度、HTTP 断开取消、冻结归属及隔离 PG 36,000 根记录的一年范围、单日与空窗口通过；真实站容量待核 |
-| `GET /api/admin/tenants` | `src/app/api/admin/tenants/route.ts` | 部分：按负责人邮箱核对、列表筛选与租户归属；列表共享报表额度及真实断开取消通过，历史长区间和命令回执变体待核 |
+| `GET /api/admin/tenants` | `src/app/api/admin/tenants/route.ts` | 部分：负责人邮箱核对、租户筛选、报表额度和断开取消；16 万条历史的期间计数与最近活动计划验证通过，命令回执及高比例子任务的计划待核 |
 | `GET /api/admin/tenants/[id]` | `src/app/api/admin/tenants/[id]/route.ts` | 部分：平台权限、按需投影、成员分页与搜索、直属上级候选分页、旧全量字段、报表队列和断开取消隔离通过；真实网关与超大租户查询计划待核 |
 | `GET /api/admin/tryon` | `src/app/api/admin/tryon/route.ts` | 待核查 |
 | `GET /api/admin/update-check` | `src/app/api/admin/update-check/route.ts` | 待核查 |

@@ -18,6 +18,7 @@ import type {TeamActor} from '@/lib/teams/grants';
 import {createTenantSchema,updateTenantSchema,tenantMemberSchema,type TenantDetailProjection,type TenantFilters,type TenantList,type TenantMemberPageQuery,type TenantSummary} from './tenant-contracts';
 import {readOverviewActivity,type TenantDateWindow} from './overview-activity';
 import {readPlatformMembers,readPlatformSupervisors} from './platform-member-directory';
+import {readTenantPageActivity} from './tenant-activity';
 
 
 
@@ -34,12 +35,12 @@ async function transaction<T>(run:(tx:PoolClient)=>Promise<T>) {
   await ensureTenantSchema();
   return withTransaction(getPool(),async tx=>{await tx.query("SET LOCAL statement_timeout='20s'");return run(tx);});
 }
-async function tenantRead<T>(run:(tx:PoolClient)=>Promise<T>,signal?:AbortSignal) {
+async function tenantRead<T>(run:(tx:PoolClient)=>Promise<T>,signal?:AbortSignal,statementTimeout:'5s'|'20s'='5s') {
   signal?.throwIfAborted();
   await ensureTenantSchema();
   return withOwnedReportClient(getPool(),async tx=>{
     await tx.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
-    await tx.query("SET LOCAL statement_timeout='5s'; SET LOCAL lock_timeout='1s'"+(signal?checkReadClientSocket:''));
+    await tx.query(`SET LOCAL statement_timeout='${statementTimeout}'; SET LOCAL lock_timeout='1s'`+(signal?checkReadClientSocket:''));
     const result=await run(tx);await tx.query('COMMIT');return result;
   },signal);
 }
@@ -63,9 +64,8 @@ function summary(r:Record<string,any>):TenantSummary {
 async function creationTable(tx:PoolClient) {return !!(await tx.query("SELECT to_regclass('app_creation_records') IS NOT NULL AS present")).rows[0].present;}
 async function attachTenantActivity(tx:PoolClient,items:TenantSummary[],dates:TenantDateWindow,creationExists?:boolean) {
   if(!items.length||!(creationExists??await creationTable(tx)))return;
-  const rows=(await tx.query(`SELECT tenant_id,count(*) FILTER(WHERE accepted_at>=$2 AND accepted_at<$3)::int AS n,max(accepted_at) AS last
-    FROM app_creation_records WHERE scope_kind='tenant' AND parent_id IS NULL AND tenant_id=ANY($1::uuid[]) GROUP BY tenant_id`,[items.map(t=>t.tenantId),dates.start,dates.end])).rows;
-  for(const tenant of items){const row=rows.find(r=>r.tenant_id===tenant.tenantId);tenant.creationCount=row?.n??0;tenant.lastActivityAt=iso(row?.last??null);}
+  const activity=await readTenantPageActivity(tx,items.map(t=>t.tenantId),dates);
+  for(const tenant of items){const row=activity.get(tenant.tenantId);tenant.creationCount=row?.n??0;tenant.lastActivityAt=iso(row?.last??null);}
 }
 export function tenantDates(filters:Pick<TenantFilters,'from'|'to'>) {
   const day=86400000,today=new Date(Date.now()+8*3600000).toISOString().slice(0,10);
@@ -231,17 +231,14 @@ export async function mutateTenantMember(actor:TeamActor,id:string,command:z.inf
     return result;
   });
 }
-export async function saasOverview(filters:TenantFilters) {
+export async function saasOverview(filters:TenantFilters,signal?:AbortSignal) {
   const dates=tenantDates(filters);
-  await ensureTenantSchema();
-  return withTransaction(getPool(),async tx=>{
-    await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
-    await tx.query("SET LOCAL statement_timeout='20s'; SET LOCAL lock_timeout='5s'");
+  return tenantRead(async tx=>{
     const present=await creationTable(tx),tenants=await tenantList(tx,{...filters,size:10},dates,present);
     const totals=(await tx.query(`WITH tenants AS (${projection}) SELECT count(*)::int total,
       count(*) FILTER(WHERE status='active' AND authorized_until>now() AND authorized_until<=now()+interval '7 days')::int expiring FROM tenants`)).rows[0];
     const activity=present?await readOverviewActivity(tx,dates):null;
     return {metrics:{tenants:totals.total,expiring:totals.expiring,activeTenants:activity?.active??null,creations:activity?.creations??null,
       needsReview:activity?.review??null,failed:activity?.failed??null},trend:activity?.trend??null,tenants,generatedAt:new Date().toISOString()};
-  });
+  },signal,'20s');
 }

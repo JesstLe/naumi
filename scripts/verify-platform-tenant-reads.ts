@@ -10,7 +10,7 @@ async function until<T>(read:()=>Promise<T>,match:(v:T)=>boolean,label:string){
  for(;;){const v=await read();if(match(v))return;assert.ok(Date.now()<end,label+': '+String(v));await delay(12);}
 }
 async function main(){
- const baseline=process.argv.includes('--baseline'),qty=800;
+ const baseline=process.argv.includes('--baseline'),overviewBaseline=process.argv.includes('--overview-baseline'),qty=800;
  Object.assign(process.env,{SETTINGS_SECRET:'fixture-platform-tenants-0123456789abcdef01234567',NAUMI_MULTI_USER:'1',PGPOOL_MAX:'5'});
  const f=await (await import('./billing-fixture')).createBillingFixture({freshSchema:true});
  const guard=new Client({connectionString:process.env.DATABASE_URL,connectionTimeoutMillis:2000});
@@ -42,13 +42,14 @@ async function main(){
   await f.pool.query("INSERT INTO app_billing_operations(id,email,feature,quote,request_fingerprint,state,charged_credits,ledger_id) VALUES('fixture-settled',$1,'fixture','{}','fixture','settled',7,'tenant-ledger')",[owner]);
   await f.pool.query("INSERT INTO app_creation_links(creation_id,target_type,target_id,actor_email) VALUES('tenant-root','billing','fixture-settled',$1)",[owner]);
   const {GET:detail}=await import('../src/app/api/admin/tenants/[id]/route'),{GET:list}=await import('../src/app/api/admin/tenants/route'),
-   {signUserSession}=await import('../src/lib/native-auth');
-  const get=(kind:'detail'|'list',query='',signal?:AbortSignal,email=admin)=>{
-   const r=new Request('http://localhost/api/admin/tenants'+(kind==='detail'?'/'+id:'')+(query?'?'+query:''),{signal,headers:{cookie:'nv_user='+signUserSession(email,Date.now())}});
-   return kind==='detail'?detail(r,{params:Promise.resolve({id})}):list(r);
+   {GET:overview}=await import('../src/app/api/admin/saas-overview/route'),{signUserSession}=await import('../src/lib/native-auth');
+  const get=(kind:'detail'|'list'|'overview',query='',signal?:AbortSignal,email=admin)=>{
+   const r=new Request('http://localhost/api/admin/'+(kind==='overview'?'saas-overview':'tenants'+(kind==='detail'?'/'+id:''))+(query?'?'+query:''),{signal,headers:{cookie:'nv_user='+signUserSession(email,Date.now())}});
+   return kind==='overview'?overview(r):kind==='detail'?detail(r,{params:Promise.resolve({id})}):list(r);
   };
   assert.equal((await get('detail','',undefined,owner)).status,403);
   assert.equal((await get('list','',undefined,owner)).status,403);
+  assert.equal((await get('overview','',undefined,owner)).status,403);
   const full=await get('detail'),text=await full.text(),payload=JSON.parse(text);
   assert.equal(full.status,200,text.slice(0,150));assert.equal(payload.tenant.activeMembers,qty);
   assert.equal(payload.members.length,qty);assert.equal(payload.roles.length,1);assert.equal(payload.audit.length,1);
@@ -102,20 +103,23 @@ async function main(){
   const active=new Set<string>(),done=new Map<string,number>();
   server=createServer(async(req,res)=>{
    const i=String(req.headers['x-fixture-id']);active.add(i);
-   try{const out=await get(Number(i)%2===0?'detail':'list','',signalFromNodeResponse(res));done.set(i,out.status);
+   const kind=baseline?(Number(i)%2===0?'detail':'list'):Number(i)<3?'overview':Number(i)===3?'list':'detail';
+   try{const out=await get(kind,'',signalFromNodeResponse(res));done.set(i,out.status);
     if(!res.destroyed){res.statusCode=out.status;res.end(await out.text());}}finally{active.delete(i);}
   });
   await new Promise<void>(resolve=>server!.listen(0,'127.0.0.1',resolve));
   const endpoint='http://127.0.0.1:'+(server.address() as {port:number}).port;
   for(let i=0;i<5;i++){const ac=new AbortController();aborters.push(ac);calls.push(fetch(endpoint,{headers:{'x-fixture-id':String(i)},signal:ac.signal}).catch(e=>e));}
-  await until(waiting,n=>n===(baseline?5:2),'mixed lock wait');await until(async()=>active.size,n=>n===5,'requests active');
-  if(!baseline){const probe=await Promise.race([f.pool.query('SELECT 1 AS n'),delay(350).then(()=>null)]);assert.equal(probe?.rows[0].n,1);}
+  await until(waiting,n=>n===(baseline||overviewBaseline?5:2),'mixed lock wait');await until(async()=>active.size,n=>n===5,'requests active');
+  if(!baseline&&!overviewBaseline){const probe=await Promise.race([f.pool.query('SELECT 1 AS n'),delay(350).then(()=>null)]);assert.equal(probe?.rows[0].n,1);}
   for(const ac of aborters)ac.abort();await Promise.all(calls);
   if(baseline){assert.equal(await waiting(),5);await unlock();}
+  else if(overviewBaseline){await until(waiting,n=>n===3,'overview SQL should remain after disconnect');await unlock();}
   else{await until(waiting,n=>n===0,'cancelled SQL retained');assert.equal(locked,true);}
-  await until(async()=>done.size,n=>n===5,'unfinished handlers');if(!baseline)assert.deepEqual([...done.values()],Array(5).fill(499));
+  await until(async()=>done.size,n=>n===5,'unfinished handlers');if(!baseline&&!overviewBaseline)assert.deepEqual([...done.values()],Array(5).fill(499));
   console.log(baseline?'PLATFORM_TENANT_READ_BASELINE=PASS ALL_SECTIONS=1 WAITS=5 DISCONNECT_RETAINS_SQL=1':
-   'PLATFORM_TENANT_READ=PASS SCOPED_PROJECTIONS=1 OLD_FIELDS=1 WAITS=2 DISCONNECT_RELEASE=1 REAL_PG=1');
+   overviewBaseline?'PLATFORM_OVERVIEW_PRESSURE_BASELINE=PASS WAITS=5 DISCONNECTED_OVERVIEWS_RETAINED=3':
+   'PLATFORM_TENANT_READ=PASS SCOPED_PROJECTIONS=1 OLD_FIELDS=1 OVERVIEW_IN_SHARED_QUOTA=1 WAITS=2 DISCONNECT_RELEASE=1 REAL_PG=1');
  }finally{
   for(const ac of aborters)ac.abort();
   if(locked)await guard.query('ROLLBACK').catch(()=>{});
