@@ -127,3 +127,11 @@ node dist/identity/provision.cjs \
 ACK修复轮锁释放后实际systemd于10:18:49～10:18:51 CST完成，Result=success/ExecMainStatus0，全部readiness=true、unknownTicks0；timer active/enabled。中央三锁+lifecycle内核对后仅更新监督验收元数据，最终revision2549、TIMER_ACTIVE_SERVICE_POSTFLIGHT_VERIFIED，业务固定版本及历史pending保持。
 
 中央独立只读Nginx access日志还确认消费真实POST `/api/enterprise/identity/ack` 在10:18:16、10:19:33 CST均HTTP200（不是仅看到表已写入就推断HTTP成功），私有证据`release47-central-ack-20261119-r1/20-ack-http-access.json`。中央只读SQL回执与公网HTTP回执相互对应；消费周期/前端验收由消费owner维护，真人正常登录成功回调仍待用户本人反馈。
+
+### admin 正常中央网页登录已验收（2026-11-19）
+
+消费owner提供普通网页登录证据：实际返回`/workbench`，浏览器`/api/workspace` HTTP200，actor.name=admin、roles=[admin]、centralManaged=true、centralTitle=administrator。中央只读核验47私有`/opt/naumi-design-ops-test/private/final-sso-session-metadata.json`（0600）：单一admin会话created_at=2026-11-19T07:55:33.945Z，central_auth_time=2026-11-19T07:55:33Z，expires_at=2026-11-26T07:55:33.945Z；stable_subject_matches=true、enabled=true、authority=naumi47-tdh、issuer=https://47.105.59.142/api/identity。未读取或借用token。本次仅记**admin正常中央SSO通过**，不把它记作其他具名账号组合成功；具体“无涯”组合的密码表述仍由用户与消费侧澄清，不据此猜测或修改密码。
+
+中央三锁+lifecycle内仅更新验收元数据：revision2551，当前release仍COMPLETE，centralOidc.humanSsoLogin=VERIFIED_ADMIN_NORMAL_BROWSER；原根历史MIGRATED_CLEANUP_PENDING保留，应用、Worker、密钥、名册及业务配置不动。回执为本轮证据目录`acceptance-admin-session-20261119/01-admin-sso-verified.json`；所有锁已释放。
+
+同次核验最新真实消费ACK私有receipt：HTTP200/body={"ok":true}、sequence205、appliedMembers204、error=null、revision=0e966028a0134eed9d7a9c8f2e8082dc695257972acac383ee5658b0d9fe0542。这是原202名册基线之后的源授权推进，保留202历史基线，不倒退或重apply；消费忠实同步不等于消费写中央授权。消费owner报告225项隔离PG全PASS/0skip、21组真实隔离HTTP的264请求/54命令通过，分角色页面扫描仍在进行；这些消费回归数字明确为消费owner回告，不冒称中央重复执行。
