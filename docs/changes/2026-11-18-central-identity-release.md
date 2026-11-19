@@ -111,3 +111,13 @@ node dist/identity/provision.cjs \
 ### 真实ACK 500的中央SQL修正（2026-11-19）
 
 消费已提交binding202后，02:01:01UTC真实POST `/api/enterprise/identity/ack`（revision f1bc2845...、sequence202、appliedMembers202、error=null）返回500/uncertain，中央ACK表仍空。无执行PG PREPARE按原始SQL复现`42P08: could not determine data type of parameter $6`（exit3）。将last_error值和CASE中的同一个$6均显式转为text；修改SQL PREPARE通过（PARSE_OK_NO_EXECUTION、exit0）。未手写/伪造消费ACK、未执行INSERT来替代消费重试。新增只读PREPARE回归脚本，真实POST/周期调用在固定新镜像蓝绿后由消费方同body完成。现有已上线中央服务继续运行；新发布仍需三锁、旁路、自然排空，不原位替换bundle。
+
+### ACK修复已真实上线并读回（2026-11-19）
+
+- 固定应用source `02cce26857ac74b2a8dccbed59074cd3a0c2d744`、build1795053797，Web/Worker同Image `sha256:932676bf822e3bb754950b2f33b925f17c979efb0d4a82952ee874cf13d95f1a`，本轮journal `release47-central-ack-20261119-r1`。
+- 只修ACK SQL中last_error与CASE两处`$6::text`，原始SQL真实PG只读PREPARE复现42P08/exit3，修改后PARSE_OK_NO_EXECUTION/exit0，副本回滚恢复同42P08/exit3。未执行虚构ACK或用SQL补写回执。
+- 完整Next编译/内置类型、Worker/identity bundle与standalone package通过；5428构建输入逐SHA匹配固定main。构建/切流复核发现后续574fa7db只增加独立热更新操作脚本和文档，无应用runtime变更；未安装或执行该工具、未改模型配置。
+- 同三部署锁+lifecycle锁：新完整备份、旁路Web+同Image Worker、discovery/JWKS/投影200且kid不变。原在途共享域工作先保持旧Worker运行等待自然完成，再切流；旧中央连接约6分55秒后自然排空，旧Web/Worker停止且restart=no。没有轮换clientSecret/JWKS/service token，不重apply202人名册，不改消费app/DB/ingress。
+- 669次跨切流实际HTTPS version/health/既有session请求全200、0错误；7347份新旧静态资源union保留，实际Worker恢复完成tick，原任务/账本/供应商绑定的索引不可变字段读回保持。
+- 消费方真实周期重试后，中央只读读回`app_identity_consumer_acks`：revision=f1bc2845984f8da661dd9e129250eb201d8e3999ec8cc5c05cb263f97e45bed7、sequence202、applied_members202、last_error=NULL，last_success_at=2026-11-19T02:17:05.386243Z。私有实际证据：`/opt/naumi-staging/evidence/release47-central-ack-20261119-r1/16-real-consumer-ack.json`。
+- 本轮COMPLETE、canonical revision2548；原根历史MIGRATED_CLEANUP_PENDING/legacyDrainProven=false保留。`deploy-release.sh --lifecycle status`实际exit0。监督器重绑新pair、timer恢复active/enabled，三锁+lifecycle于02:17:43UTC释放；锁释放后systemd postflight继续核对。不将真人未登录303或机器ACK当作真人SSO成功回调。
