@@ -131,6 +131,7 @@ import {submitCanvasCreationRequest,type CanvasCreationRequestInit} from "@/lib/
 import {ImagegenPendingRecovery} from "./imagegen-pending-recovery";
 import {updateCanvasImagegenPlacement} from "@/lib/imagegen/client-recovery";
 import {FrameRatioDialog,useCanvasFrameChoice} from "./frame-ratio-dialog";
+import type {LayeredPsdSelection} from "./layered-psd-dialog";
 import type {CanvasEditRequest} from "@/lib/canvas/edit-task";
 import {runCanvasEdit} from "@/lib/canvas/edit-run";
 import {runCanvasDetail} from "@/lib/canvas/detail-run";
@@ -248,6 +249,7 @@ import { BRAND, BRAND_CANVAS_LOGO } from "@/lib/brand";
 const panelLoading = () => <div role="status" className="p-4 text-sm text-slate-500">加载中…</div>;
 const AssistantRichText = dynamic(() => import("./assistant-richtext").then(module => module.AssistantRichText), { ssr: false, loading: panelLoading });
 const ImageCropDialog = dynamic(() => import("./image-crop-dialog").then(module => module.ImageCropDialog), { ssr: false, loading: panelLoading });
+const LayeredPsdDialog = dynamic(() => import("./layered-psd-dialog").then(module => module.LayeredPsdDialog), { ssr: false, loading: panelLoading });
 const NodePropertiesPanel = dynamic(() => import("./node-properties-panel").then(module => module.NodePropertiesPanel), { ssr: false, loading: panelLoading });
 const AnnotateEditorModal = dynamic(() => import("./annotate-editor").then(module => module.AnnotateEditorModal), { ssr: false, loading: panelLoading });
 const CanvasComfyDialog = dynamic(() => import("./canvas-comfy-dialog").then(module => module.CanvasComfyDialog), { ssr: false, loading: panelLoading });
@@ -359,6 +361,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const collaboration = useCollaboration();
   const projectSearchParams = useSearchParams();
   const requestedProject = initialProject || projectSearchParams?.get("project") || undefined;
+  const layeredPsdPilot = projectSearchParams?.get("layered-psd") === "pilot";
   const { can: canFeature } = useFeatureAccess();
   const billing=useBilling();
   function privateFetch(input:RequestInfo|URL,init:CanvasCreationRequestInit={}){
@@ -393,10 +396,23 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const canvasOwnerEpochRef=useRef({key:canvasOwner,revision:0});
   if(canvasOwnerEpochRef.current.key!==canvasOwner)canvasOwnerEpochRef.current={key:canvasOwner,revision:canvasOwnerEpochRef.current.revision+1};
   const [propertiesOpen, setPropertiesOpen] = useState(false);
+  const [layeredPsd, setLayeredPsd] = useState<LayeredPsdSelection | null>(null);
   const replaceInputRef = useRef<HTMLInputElement>(null);
   const L = (zh: string, en: string) => locale === "en" ? en : zh;
   const canvasArtworkDocument = useCanvasArtworkDocument({account:canvasAccountRef.current,actor:user?.email||"",owner:targetEmail||user?.email||"",
     project:activeKey,enabled:ready&&!!user&&!!targetEmail,readOnly});
+  const pilotScope = canvasArtworkDocument.scope;
+  const [layeredPsdPilotScope, setLayeredPsdPilotScope] = useState<typeof pilotScope | null>(null);
+  useEffect(() => {
+    if (!layeredPsdPilot || !ready || !user?.email || readOnly || !pilotScope.project) return;
+    const controller = new AbortController();
+    void canvasDocumentFetch(pilotScope, "/api/canvas/layered-psd", { signal: controller.signal }, true)
+      .then(async response => response.ok ? await response.json() : null)
+      .then(quote => {
+        if (quote?.pilotOperationId && !controller.signal.aborted && pilotScope.viewCurrent()) setLayeredPsdPilotScope(pilotScope);
+      }).catch(() => {});
+    return () => controller.abort();
+  }, [layeredPsdPilot, ready, user?.email, readOnly, pilotScope]);
   const nodePreferences=useCanvasNodePreferences(canvasArtworkDocument.scope,{owner:targetEmail||user?.email||"",enabled:ready&&!!user,
     notice:flashTip,failed:L("节点属性读取失败，请刷新重试","Properties failed to load. Refresh to retry.")});
   const nodeSettings=nodePreferences.settings,nodeSettingsReady=nodePreferences.ready,settingsFor=nodePreferences.get,isNodeLocked=nodePreferences.locked;
@@ -2669,6 +2685,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       </div>}
 
       {frameChoice.pending&&<FrameRatioDialog key={frameChoice.pending.id} choices={frameChoice.pending.choices} english={locale==="en"} onChoose={id=>frameChoice.choose(frameChoice.pending!.id,id)}/>}
+      {layeredPsd?.scope.viewCurrent() && !readOnly && <LayeredPsdDialog selection={layeredPsd} english={locale==="en"}
+        onClose={()=>setLayeredPsd(null)} onSettled={()=>void refreshCredits()}/>}
       {/* 占位节点上传用的隐藏 input */}
       <input
         ref={pendUploadRef}
@@ -3491,6 +3509,14 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                             void downloads.image(node.image)
                           }
                         />
+                        {!readOnly && canFeature("generate") && ((layeredPsdPilot && layeredPsdPilotScope === pilotScope) || billing?.catalog?.features["canvas.layered-psd"]?.enabled)
+                          && node.status === "completed" && !node.videoUrl && node.category !== "audio"
+                          && !["workflow-decoration", "workflow-placeholder"].includes(node.source || "") && hasRenderableImage(node.image) && (
+                          <Item label={L("智能拆层", "Separate layers")} onClick={() => {
+                            const scope = canvasArtworkDocument.scope;
+                            if (scope.project && scope.viewCurrent()) setLayeredPsd({ id: node.id, title: node.title, image: node.image, scope });
+                          }}/>
+                        )}
                         {!readOnly && canFeature("generate") && (
                           <Item
                             label={t("canvas.ctxGenerate")}

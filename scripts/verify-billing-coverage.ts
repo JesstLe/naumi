@@ -31,7 +31,14 @@ for (const feature of FEATURE_IDS) {
         assert.match(audio,/runAudioOperation\(actor,kind,input,request\.signal\)/);
         assert.equal(config.features[feature].enabled,false,`${feature} requires explicit publication`);
     }
-    if(feature==="image.generate"){
+    if(feature==="canvas.layered-psd"){
+        assert.match(text,/runLayerDecomposition\(email, input\.data\)/);
+        const service=readFileSync("src/lib/canvas/layered-psd-service.ts","utf8");
+        assert.match(service,/const FEATURE = "canvas\.layered-psd"/);
+        assert.match(service,/withSynchronousOperation\(\{ email, operationId: input\.operationId, path: PATH, feature: FEATURE/);
+        assert.match(service,/await configuredToolCost\(\);[\s\S]*await api\.submit\(/);
+        assert.equal(config.features[feature].enabled,false,`${feature} requires explicit publication`);
+    }else if(feature==="image.generate"){
         assert.equal(featureForRequest("/api/generate-image",{}),feature);
         assert.equal(featureForRequest("/api/generate-image",{origin:"canvas"}),"canvas.image");
         assert.match(text,/feature:featureForRequest\("\/api\/generate-image",p\)/,"shared image entry must select the actual image/canvas feature");
@@ -39,8 +46,8 @@ for (const feature of FEATURE_IDS) {
     if(feature==="video.process"){
         assert.match(text,/\bquote\(/);const jobs=readFileSync("src/lib/video/media-jobs.ts","utf8");
         for(const functionName of ["mediaBillingQuote","confirmMediaQuote","reserveTaskBillingTx","settleTaskBillingTx"])assert.ok(jobs.includes(functionName),`media jobs retain ${functionName}`);
-    }else if(feature!=="video.generate"&&!audioKind)assert.match(text, feature.startsWith("tool.") || ["canvas.expand", "canvas.annotate", "canvas.text-edit", "canvas.text-generate", "canvas.assistant", "canvas.ocr", "competitor.action"].includes(feature) ? /withBillingRequest/ : /quoteFor(Request|Actor)/,`${feature} retains its billing entry`);
-    const baseline = quote({ version: 1, config }, facts({ feature })), expected = ["tool.cutout", "tool.upscale", "tool.ipcheck"].includes(feature) ? 1 : audioKind||["tool.printfile", "canvas.text-generate", "canvas.assistant", "canvas.ocr","video.process"].includes(feature) ? 0 : feature === "video.generate" ? 20 : 6;
+    }else if(feature!=="video.generate"&&feature!=="canvas.layered-psd"&&!audioKind)assert.match(text, feature.startsWith("tool.") || ["canvas.expand", "canvas.annotate", "canvas.text-edit", "canvas.text-generate", "canvas.assistant", "canvas.ocr", "competitor.action"].includes(feature) ? /withBillingRequest/ : /quoteFor(Request|Actor)/,`${feature} retains its billing entry`);
+    const baseline = quote({ version: 1, config }, facts({ feature })), expected = ["tool.cutout", "tool.upscale", "tool.ipcheck"].includes(feature) ? 1 : audioKind||["tool.printfile", "canvas.text-generate", "canvas.assistant", "canvas.ocr","canvas.layered-psd","video.process"].includes(feature) ? 0 : feature === "video.generate" ? 20 : 6;
     assert.equal(baseline.requestedCredits, expected, `${feature} preserves the characterized default`);
     const changed = structuredClone(config);
     changed.features[feature].enabled = true;

@@ -41,7 +41,7 @@ export function requestRequirement(path: string, method = "GET"): AccessRequirem
   if(path==='/api/canvas/storyboards'||path.startsWith('/api/canvas/storyboards/'))return {all:['canvas','video']};
   if(path==='/api/canvas/video-workflows'&&method==='POST')return {all:['canvas','video']};
   if (/^\/api\/canvas\/video-nodes\/[^/]+\/(?:generate|batch)$/.test(path) && method === "POST") return { all: ["canvas", "video"] };
-  if (/^\/api\/canvas\/(image-tasks|expand|annotate|text-edit)(\/|$)/.test(path)) return { all: ["canvas", "generate"] };
+  if (/^\/api\/canvas\/(image-tasks|expand|annotate|text-edit|layered-psd)(\/|$)/.test(path)) return { all: ["canvas", "generate"] };
   if (path.startsWith("/api/canvas/")) return { all: ["canvas"] };
   const root = path.split("/")[2];
   if(root==="reference-workbench")return {all:["batchshot"]};

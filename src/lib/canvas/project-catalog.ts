@@ -25,11 +25,13 @@ export type CanvasProject = {
 };
 export type CanvasWorkflowKey="hero"|"detail"|"views"|"copy";
 
-function rootOf(a: Artwork, byId: Map<string, Artwork>): Artwork {
+type ProjectArtwork = Pick<Artwork, "id" | "parentId" | "batchId" | "groupId">;
+
+function rootOf<T extends ProjectArtwork>(a: T, byId: ReadonlyMap<string, T>): T {
   let cur = a;
   let guard = 0;
   while (cur.parentId && byId.has(cur.parentId) && guard++ < 200) {
-    cur = byId.get(cur.parentId) as Artwork;
+    cur = byId.get(cur.parentId)!;
   }
   return cur;
 }
@@ -38,7 +40,7 @@ function isSuiteBatch(id?: string | null): boolean {
   return !!id && id.startsWith("suite-");
 }
 
-function projectKey(a: Artwork, byId: Map<string, Artwork>, resolveRoot = (art: Artwork) => rootOf(art, byId)): string {
+function projectKey<T extends ProjectArtwork>(a: T, byId: ReadonlyMap<string, T>, resolveRoot = (art: T) => rootOf(art, byId)): string {
   const r = resolveRoot(a);
   if (isSuiteBatch(r.batchId)) return `batch:${r.batchId}`;
   // 稳定分组:优先用 group_id(删中间节点也不变,下游节点不会跑去别的项目);
