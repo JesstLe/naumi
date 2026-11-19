@@ -121,3 +121,9 @@ node dist/identity/provision.cjs \
 - 669次跨切流实际HTTPS version/health/既有session请求全200、0错误；7347份新旧静态资源union保留，实际Worker恢复完成tick，原任务/账本/供应商绑定的索引不可变字段读回保持。
 - 消费方真实周期重试后，中央只读读回`app_identity_consumer_acks`：revision=f1bc2845984f8da661dd9e129250eb201d8e3999ec8cc5c05cb263f97e45bed7、sequence202、applied_members202、last_error=NULL，last_success_at=2026-11-19T02:17:05.386243Z。私有实际证据：`/opt/naumi-staging/evidence/release47-central-ack-20261119-r1/16-real-consumer-ack.json`。
 - 本轮COMPLETE、canonical revision2548；原根历史MIGRATED_CLEANUP_PENDING/legacyDrainProven=false保留。`deploy-release.sh --lifecycle status`实际exit0。监督器重绑新pair、timer恢复active/enabled，三锁+lifecycle于02:17:43UTC释放；锁释放后systemd postflight继续核对。不将真人未登录303或机器ACK当作真人SSO成功回调。
+
+### 最终监督与HTTP回执
+
+ACK修复轮锁释放后实际systemd于10:18:49～10:18:51 CST完成，Result=success/ExecMainStatus0，全部readiness=true、unknownTicks0；timer active/enabled。中央三锁+lifecycle内核对后仅更新监督验收元数据，最终revision2549、TIMER_ACTIVE_SERVICE_POSTFLIGHT_VERIFIED，业务固定版本及历史pending保持。
+
+中央独立只读Nginx access日志还确认消费真实POST `/api/enterprise/identity/ack` 在10:18:16、10:19:33 CST均HTTP200（不是仅看到表已写入就推断HTTP成功），私有证据`release47-central-ack-20261119-r1/20-ack-http-access.json`。中央只读SQL回执与公网HTTP回执相互对应；消费周期/前端验收由消费owner维护，真人正常登录成功回调仍待用户本人反馈。
