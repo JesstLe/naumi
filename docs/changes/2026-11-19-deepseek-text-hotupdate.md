@@ -39,4 +39,8 @@ DeepSeek 官方 [1017 更新说明](https://api-docs.deepseek.com/updates/#deeps
 
 先保存原模型与计费快照、请求 UUID，再发布；存在请求时必须查询原 publication，禁止重放。ROLLBACK 仅恢复自有 target/channel 字段并移除仍完全由本任务拥有的新上游；保留后来前端命名和其他配置，发现后来引用或自有字段冲突则停止。
 
-当前：PROBE/PLAN 已通过，待合入 main 后 APPLY/VERIFY；实际配置版本和公网读回待补。发布计数不增加应用蓝绿轮次。本任务的通道切换不代表此前尚未发布的前端空画布补丁已上线。
+工具已普通 merge main 至 `574fa7db9bce47113883cf9177656707142c928a`。PROBE/PLAN 已通过；APPLY 与紧接的 VERIFY 在进入应用操作之前均被三锁拒绝，没有创建 APPLY_REQUEST 或改变当前模型配置。
+
+02:05 UTC 起，`release47-central-ack-20261119-r1` 的独立发布窗口持三锁，最近完成 `02-backup`。不改它的固定模型基线，不抢锁、不终止发布。窗口结束后核对新的运行 Web；执行器支持将原 PLAN、原 UUID、探测证据和未知请求回执迁到继任 Web，不重跑供应商探测或盲目重放请求。新增的两个离线交接测试通过，覆盖已存在请求保留、禁止重做探测、bundle hash 拒绝和 PROBE→PLAN 迁移。
+
+当前待 APPLY/VERIFY；实际配置版本和公网读回待补。发布计数不增加应用蓝绿轮次。本任务的通道切换不代表其他前端补丁已经上线。
