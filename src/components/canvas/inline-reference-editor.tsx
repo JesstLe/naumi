@@ -24,7 +24,10 @@ type Props = {
 /** The editable DOM is a projection, never the persisted document or raw HTML. */
 export const InlineReferenceEditor = forwardRef<InlineReferenceEditorHandle, Props>(function InlineReferenceEditor(props, ref) {
   const root = useRef<HTMLDivElement>(null), current = useRef<Entry>({ value: props.value, selection: { start: props.value.length, end: props.value.length } });
-  const composing = useRef(false), past = useRef<Entry[]>([]), future = useRef<Entry[]>([]), lastEdit = useRef({ kind: "", time: 0 });
+  const composing = useRef(false), past = useRef<Entry[]>([]), future = useRef<Entry[]>([]);
+  const lastTyping = useRef<{ caret: number; time: number } | null>(null);
+  const beforeInput = useRef<{ selection: InlineSelection; typing: boolean } | null>(null);
+  const compositionSelection = useRef<InlineSelection | null>(null);
   const latest = useRef(props); latest.current = props;
   const rendered = useRef("");
   const [thumbnails, setThumbnails] = useState<InlineThumbnailSlot[]>([]);
@@ -48,21 +51,24 @@ export const InlineReferenceEditor = forwardRef<InlineReferenceEditorHandle, Pro
     if (focus) element.focus();
     if (changed && selected || focus) setInlineSelection(element, entry.selection);
   }
-  function change(value: string, selection: InlineSelection, kind = "edit") {
+  function change(value: string, selection: InlineSelection, typing = false, previousSelection = current.current.selection) {
     if (latest.current.readOnly) return;
     const before = current.current;
     if (value !== before.value) {
-      const time = Date.now(), coalesce = kind === "typing" && lastEdit.current.kind === kind && time - lastEdit.current.time < 650 && before.selection.start === before.selection.end;
-      if (!coalesce) { past.current.push({ value: before.value, selection: { ...before.selection } }); if (past.current.length > 100) past.current.shift(); }
-      future.current = []; lastEdit.current = { kind, time };
+      const time = Date.now(), previousTyping = lastTyping.current;
+      const coalesce = typing && previousTyping && time - previousTyping.time < 650
+        && previousSelection.start === previousSelection.end && previousSelection.start === previousTyping.caret;
+      if (!coalesce) { past.current.push({ value: before.value, selection: previousSelection }); if (past.current.length > 100) past.current.shift(); }
+      future.current = [];
+      lastTyping.current = typing && selection.start === selection.end ? { caret: selection.end, time } : null;
     }
     current.current = { value, selection }; project(current.current, true);
     latest.current.onChange(value); notify();
   }
-  function replace(text: string, at = readInlineSelection(root.current!) || current.current.selection, kind = "edit") {
+  function replace(text: string, at = readInlineSelection(root.current!) || current.current.selection) {
     const selection = wholeInlineSelection(at, latest.current.tokens(current.current.value));
     const value = current.current.value.slice(0, selection.start) + text + current.current.value.slice(selection.end), caret = selection.start + text.length;
-    change(value, { start: caret, end: caret }, kind);
+    change(value, { start: caret, end: caret }, false, at);
   }
   function remove(backward: boolean) {
     const selection = readInlineSelection(root.current!) || current.current.selection;
@@ -77,7 +83,7 @@ export const InlineReferenceEditor = forwardRef<InlineReferenceEditorHandle, Pro
   function history(redo: boolean) {
     if (latest.current.readOnly) return;
     const from = redo ? future : past, to = redo ? past : future, next = from.current.pop(); if (!next) return;
-    to.current.push(current.current); current.current = next; lastEdit.current = { kind: "", time: 0 };
+    to.current.push(current.current); current.current = next; lastTyping.current = null;
     project(next, true); latest.current.onChange(next.value); notify();
   }
   const handlers = useRef({ replace, remove, history }); handlers.current = { replace, remove, history };
@@ -90,7 +96,7 @@ export const InlineReferenceEditor = forwardRef<InlineReferenceEditorHandle, Pro
     if (!root.current || composing.current) return;
     const old = current.current;
     if (props.value !== propValue.current && props.value !== old.value) {
-      past.current.push(old); future.current = []; lastEdit.current = { kind: "", time: 0 };
+      past.current.push(old); future.current = []; lastTyping.current = null; beforeInput.current = null;
       current.current = { value: props.value, selection: { start: Math.min(props.value.length, old.selection.start), end: Math.min(props.value.length, old.selection.end) } };
     }
     propValue.current = props.value;
@@ -100,11 +106,18 @@ export const InlineReferenceEditor = forwardRef<InlineReferenceEditorHandle, Pro
   useEffect(() => {
     const element = root.current!;
     const before = (event: InputEvent) => {
+      beforeInput.current = null;
       if (latest.current.readOnly) { event.preventDefault(); return; }
       if (composing.current || event.isComposing) return;
       if (event.inputType === "historyUndo" || event.inputType === "historyRedo") { event.preventDefault(); handlers.current.history(event.inputType === "historyRedo"); }
       else if (event.inputType === "insertParagraph" || event.inputType === "insertLineBreak") { event.preventDefault(); handlers.current.replace("\n"); }
       else if (event.inputType === "deleteContentBackward" || event.inputType === "deleteContentForward") { event.preventDefault(); handlers.current.remove(event.inputType === "deleteContentBackward"); }
+      // selectionchange can arrive after the edit, especially when a user
+      // immediately types over a selection. Read the DOM before it changes.
+      else {
+        const selection = readInlineSelection(element);
+        if (selection) beforeInput.current = { selection, typing: event.inputType === "insertText" };
+      }
     };
     element.addEventListener("beforeinput", before); element.ownerDocument.addEventListener("selectionchange", notify);
     return () => { element.removeEventListener("beforeinput", before); element.ownerDocument.removeEventListener("selectionchange", notify); };
@@ -125,10 +138,26 @@ export const InlineReferenceEditor = forwardRef<InlineReferenceEditorHandle, Pro
     contentEditable={!props.readOnly} suppressContentEditableWarning spellCheck={false} data-testid={props.testId}
     data-placeholder={props.readOnly ? "" : props.placeholder} tabIndex={0}
     className={`nodrag nopan nowheel whitespace-pre-wrap break-words outline-none [&[data-empty=true]]:before:pointer-events-none [&[data-empty=true]]:before:float-left [&[data-empty=true]]:before:text-[var(--canvas-ui-muted)] [&[data-empty=true]]:before:content-[attr(data-placeholder)] ${props.className || ""}`}
-    onFocus={notify} onBlur={() => { lastEdit.current.kind = ""; props.onBlur?.(); }}
-    onCompositionStart={() => { composing.current = true; props.onSelection?.(current.current.value, current.current.selection, true); }}
-    onCompositionEnd={() => { composing.current = false; rendered.current = ""; const value = inlineText(root.current!), selection = readInlineSelection(root.current!) || current.current.selection; change(value, selection, "composition"); }}
-    onInput={() => { if (composing.current) return; rendered.current = ""; const value = inlineText(root.current!), selection = readInlineSelection(root.current!) || current.current.selection; change(value, selection, "typing"); }}
+    onFocus={notify} onBlur={() => { lastTyping.current = null; beforeInput.current = null; props.onBlur?.(); }}
+    onCompositionStart={() => {
+      composing.current = true;
+      compositionSelection.current = readInlineSelection(root.current!);
+      props.onSelection?.(current.current.value, current.current.selection, true);
+    }}
+    onCompositionEnd={() => {
+      composing.current = false; rendered.current = "";
+      const previousSelection = compositionSelection.current;
+      compositionSelection.current = null; beforeInput.current = null;
+      const value = inlineText(root.current!), selection = readInlineSelection(root.current!) || current.current.selection;
+      change(value, selection, false, previousSelection ?? undefined);
+    }}
+    onInput={() => {
+      if (composing.current) return;
+      const previous = beforeInput.current; beforeInput.current = null;
+      rendered.current = "";
+      const value = inlineText(root.current!), selection = readInlineSelection(root.current!) || current.current.selection;
+      change(value, selection, previous?.typing, previous?.selection);
+    }}
     onKeyDown={event => {
       event.stopPropagation(); props.onKeyDown?.(event);
       if (event.defaultPrevented || composing.current || event.nativeEvent.isComposing || props.readOnly) return;
