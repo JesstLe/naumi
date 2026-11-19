@@ -122,8 +122,10 @@ class IdentityAdapter {
   }
   async revokeByGrantId(id: string) {
     await getPool().query(
-      "DELETE FROM app_identity_oidc_store WHERE grant_id=$1 OR (model=$2 AND id=$1)",
-      [id, "Grant"],
+      // Provider revokes token models separately and destroys the Grant explicitly.
+      // An account-switch Interaction can still reference that Grant while resuming.
+      "DELETE FROM app_identity_oidc_store WHERE model=$1 AND grant_id=$2",
+      [this.model, id],
     );
   }
 }

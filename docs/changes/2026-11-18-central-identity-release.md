@@ -135,3 +135,11 @@ ACK修复轮锁释放后实际systemd于10:18:49～10:18:51 CST完成，Result=s
 中央三锁+lifecycle内仅更新验收元数据：revision2551，当前release仍COMPLETE，centralOidc.humanSsoLogin=VERIFIED_ADMIN_NORMAL_BROWSER；原根历史MIGRATED_CLEANUP_PENDING保留，应用、Worker、密钥、名册及业务配置不动。回执为本轮证据目录`acceptance-admin-session-20261119/01-admin-sso-verified.json`；所有锁已释放。
 
 同次核验最新真实消费ACK私有receipt：HTTP200/body={"ok":true}、sequence205、appliedMembers204、error=null、revision=0e966028a0134eed9d7a9c8f2e8082dc695257972acac383ee5658b0d9fe0542。这是原202名册基线之后的源授权推进，保留202历史基线，不倒退或重apply；消费忠实同步不等于消费写中央授权。消费owner报告225项隔离PG全PASS/0skip、21组真实隔离HTTP的264请求/54命令通过，分角色页面扫描仍在进行；这些消费回归数字明确为消费owner回告，不冒称中央重复执行。
+
+### 普通员工账号切换 interaction 恢复链诊断（2026-11-19）
+
+admin既有正常中央SSO验收保留；普通员工无涯native登录成功之后的新OIDC流，真实导航链17:00:39 CST为auth303→interaction303→resume200（自动form）→session/end/confirm303→同resume400，正文interaction session not found。并非消费旧回调超时；对应Interaction已不在持久库。未重跑真人登录、未读取cookie/token，也未改密码或名册。
+
+根因与最小修复：oidc-provider在原OIDC账号与当前native账号不同的情况下，先进行旧Session/Grant撤销后再恢复同一Interaction。原PG Adapter `revokeByGrantId`跨所有model按grant_id删除，连携带旧grantId的新Interaction也删除。库自己的撤销器本来逐凭证model调用revokeByGrantId并显式destroy Grant；修复将SQL收敛到当前adapter model与grant_id，不删除Interaction/Session，不扩大或保留已撤销的凭证。
+
+集中隔离验证使用真实oidc-provider@9.15.0、独立PostgreSQL容器/随机schema、RFC路径cookie jar和真实HTTP重定向/自动form，无生产账号/凭据。旧源码成功完成A登录后切B稳定复现ACCOUNT_SWITCH_FAILED=interaction session not found/exit1；修改后完整A→B回调账号绑定正确、旧Grant/旧授权码已撤销、6种凭证model按库调用逐个撤销，Interaction/Session保留/Grant显式销毁约束通过/exit0。该fixture不替代无涯真实浏览器复测；后续按三锁单候选蓝绿、沿用持久JWKS/客户端配置/名册再交消费方重试一次。
