@@ -72,3 +72,13 @@ node dist/identity/provision.cjs \
 加入 Pages API 后，Next 导航钩子的返回值可以为空。原组件继续直接使用 Next 钩子，按页面需要处理未就绪的查询参数或路径名。计费入口和工作台会话恢复均经过浏览器回归，固定镜像验证和线上验收另行记录。
 
 企业连接池回归使用真实身份事件模块，数据库端口仍由工作负载替身控制。企业列表、详情、素材回包和连接占用用例通过，读取链路未触发建表。
+
+## 2026-11-19 Pages API 运行边界修复与中央接通
+
+- 本次起点：独立工作树由1573d7e6快进至origin/main 8050397d；共享E:/Workspace/naumi不切分支、不写文件。
+- 线上基线：2778285e / sha256:c52f7b2b6da332fddba7cf8028241dbf7d35afcfa62bf40b72399e1c505230e4；revision2414的全局MIGRATED_CLEANUP_PENDING/legacyDrainProven=false保留，当前reconciledMainRelease已COMPLETE，与历史债务分别处理。
+- 根因：Next Pages API的api-node层将server-only外部化，生成require("server-only")，在handler执行前抛错。只将server-only加入transpilePackages，使Next既有按layer别名生效；不删除领域标记、不全局改alias、不修改客户端保护或oidc-provider/pg/sharp外部依赖。
+- 集中边界回归：scripts/verify-identity-pages-boundary.mjs使用Next自身makeExternalHandler和标记别名；基线应exit1/externalized，修改后exit0，服务端marker加载且客户端marker仍拒绝。生产镜像HTTP/OIDC、名册普通事务、私有配置及蓝绿验收结果在本节后续追加。
+- 职责：只中央代码、中央身份配置、中央名册provision与Naumi蓝绿。消费app/DB/ingress由设计协作线程负责。
+- 持久JWKS与独立客户端/服务秘密只写47私有配置；源只保存服务token摘要。202人批准名册与200人真实资格匹配；舒隽/曲飞只生成一次性私有邀请，不兑换、不改真人密码，不删除其余成员。
+- 当前状态：边界单元验证通过、provision包构建通过；镜像构建、47启用与消费联调尚未完成。此变更为中央认证运行边界维护，不新增公开内部技术说明。

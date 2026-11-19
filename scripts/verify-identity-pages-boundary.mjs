@@ -1,0 +1,22 @@
+import assert from 'node:assert/strict';
+import {createRequire} from 'node:module';
+import {resolve} from 'node:path';
+import {pathToFileURL} from 'node:url';
+import {spawnSync} from 'node:child_process';
+const require=createRequire(import.meta.url);
+const {makeExternalHandler}=require('next/dist/build/handle-externals.js');
+const {createServerOnlyClientOnlyAliases}=require('next/dist/build/create-compiler-aliases.js');
+const file=resolve(process.argv[2]||'next.config.mjs');
+const {default:config}=await import(pathToFileURL(file));
+const handler=makeExternalHandler({dir:process.cwd(),config,optOutBundlingPackageRegex:/$^/,transpiledPackages:config.transpilePackages});
+const decision=await handler(process.cwd(),'server-only','esm','api-node',()=>async(_context,request)=>[require.resolve(request),false]);
+if(decision){console.log('PAGES_API_SERVER_ONLY_EXTERNALIZED='+decision);process.exit(1);}
+const serverAlias=createServerOnlyClientOnlyAliases(true)['server-only$'];
+const server=spawnSync(process.execPath,['-e',`require(${JSON.stringify(require.resolve(serverAlias))})`],{encoding:'utf8'});
+assert.equal(server.status,0);
+const clientAlias=createServerOnlyClientOnlyAliases(false)['server-only$'];
+const client=spawnSync(process.execPath,['-e',`require(${JSON.stringify(require.resolve(clientAlias))})`],{encoding:'utf8'});
+assert.notEqual(client.status,0);
+assert.match(client.stderr,/cannot be imported from a Client Component/);
+assert.deepEqual(config.serverExternalPackages,['sharp','pg','oidc-provider']);
+console.log('PASS pages-api marker bundled; server runtime loads; client import rejected; external runtime packages unchanged');
