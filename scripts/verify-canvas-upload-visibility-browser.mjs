@@ -14,7 +14,63 @@ const zoom=()=>page.locator('.react-flow__viewport').evaluate(n=>new DOMMatrix(n
 const node=id=>page.locator('.react-flow__node[data-id="'+id+'"]');
 const coords=s=>Object.fromEntries(s.artworks.filter(a=>!a.id.startsWith('uploaded-')).map(a=>[a.id,[a.canvasX,a.canvasY]]));
 const pass=s=>{checks.push(s);console.log('PASS '+s)};
+async function firstPaste({url='/canvas',beforeOpen=false,refresh=true}={}){
+ await fetch(base+'/__fixture/reset');
+ let releaseRead;
+ const gate=new Promise(resolve=>{releaseRead=resolve});
+ const reads=[];
+ const textRead=route=>{const read=gate.then(()=>route.continue()).catch(error=>{if(!String(error).includes('Route is already handled'))throw error;});reads.push(read);return read;};
+ if(beforeOpen){
+  await page.addInitScript(()=>{for(const key of Object.keys(localStorage))if(key.startsWith('nv:canvas:last:v2:'))localStorage.removeItem(key);localStorage.setItem('nv:canvas:last:scope:v1','fixture-ignore-legacy');});
+  await page.route('**/api/canvas/text-nodes?*',textRead);
+ }
+ try{
+  await page.goto(base+url,{waitUntil:'domcontentloaded',timeout:90000});
+  if(beforeOpen){
+   // The shared project link has requested fresh data but its text read is
+   // outstanding. The user can still explicitly start a different canvas.
+   await expect.poll(()=>reads.length).toBeGreaterThan(0);
+   await page.getByTestId('canvas-project-browser').getByRole('button',{name:'创建新项目',exact:true}).click();
+  }else{
+   await expect(node('placement-root')).toBeVisible();
+   await page.getByTestId('canvas-project-chrome').locator('button').first().click();
+   await page.locator('aside').getByRole('button',{name:'创建新项目',exact:true}).click();
+  }
+  await expect(page.locator('.react-flow__node')).toHaveCount(0);
+  const pixels=await sharp({create:{width:240,height:180,channels:3,background:'#3b82f6'}}).png().toBuffer();
+  await page.getByTestId('canvas-drop-zone').evaluate((target,bytes)=>{
+   const data=new DataTransfer();
+   data.items.add(new File([new Uint8Array(bytes)],'first-paste.png',{type:'image/png'}));
+   target.dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:data}));
+  },[...pixels]);
+  await expect.poll(async()=>(await state()).submissions).toHaveLength(1);
+  await expect(page.getByTestId('canvas-import-status')).toContainText('完成 1 / 1 · 成功 1');
+  const pasted=node('uploaded-1');
+  await expect(pasted).toBeInViewport({timeout:8000});
+  await expect.poll(()=>pasted.locator('img').evaluate(image=>image.naturalWidth)).toBe(240);
+  assert.equal((await state()).submissions[0].parentId,null);
+  await expect(node('placement-root')).toHaveCount(0);
+  pass(`first pasted image opens the new canvas immediately (${url})`);
+  if(refresh){
+   await page.reload({waitUntil:'domcontentloaded'});
+   await expect(node('uploaded-1')).toBeInViewport({timeout:8000});
+   assert.equal((await state()).submissions.length,1);
+   pass('refresh restores the same image without another upload');
+  }
+ }finally{
+  if(beforeOpen)await page.unroute('**/api/canvas/text-nodes?*',textRead);
+  releaseRead();
+  await Promise.all(reads);
+ }
+}
 try{
+ if(process.argv.includes('--first-paste')){
+  await firstPaste();
+  await firstPaste({url:'/canvas?project=tree%3Aplacement-root',beforeOpen:true,refresh:false});
+  assert.deepEqual(errors,[]);
+  assert.deepEqual(failures,[]);
+  await writeFile(path.join(out,'first-paste-verification.json'),JSON.stringify({checks,errors,failures,state:await state()},null,2));
+ }else{
  await fetch(base+'/__fixture/reset');
  await page.goto(base+'/canvas?node=placement-root',{waitUntil:'domcontentloaded',timeout:90000});
  await expect(node('placement-root')).toBeVisible();
@@ -47,4 +103,5 @@ try{
  assert.deepEqual(errors,[]);assert.deepEqual(failures,[]);assert.equal((await state()).paidCalls,0);
  await writeFile(path.join(out,'browser-verification.json'),JSON.stringify({checks,errors,failures,viewportBeforeManualFocus:before,state:await state()},null,2));
  console.log('BROWSER=PASS CHECKS='+checks.length+' PAGEERRORS=0 HTTP_ERRORS=0 PAID_CALLS=0 EXIT=0');
+ }
 }catch(e){await page.screenshot({path:path.join(out,'browser-failure.png')}).catch(()=>{});await writeFile(path.join(out,'browser-failure.json'),JSON.stringify({error:e.stack,checks,errors,failures,text:(await page.locator('body').innerText()).slice(-5000)},null,2));throw e}finally{await browser.close()}
