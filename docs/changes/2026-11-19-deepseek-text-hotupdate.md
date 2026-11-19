@@ -45,4 +45,10 @@ DeepSeek 官方 [1017 更新说明](https://api-docs.deepseek.com/updates/#deeps
 
 另一发布于 02:17:25 UTC 记录 COMPLETE，02:17:43 释放锁，公网程序切至 `02cce26857ac74b2a8dccbed59074cd3a0c2d744` / `1795053797`。继任容器的一次 exists 辅助检查遗漏清空 NODE_OPTIONS，继承 Web observer preload 后自行 exit143，发生在安装 tmp 或创建 APPLY_REQUEST 前。随后核对公网所有目录/version/health 均 200、版本未变、模型仍 v156；仅为一次性 CLI 清空 preload 并禁用 CLI release runtime，在线容器/主进程/配置不变。
 
-当前待 APPLY/VERIFY；实际配置版本和公网读回待补。发布计数不增加应用蓝绿轮次。
+现已 APPLY/VERIFY 成功：publication `ad9d0a22-42fb-408a-98ce-7e3e4a18407a`，配置 **v157**，digest `cffdc9485c1d0517b45f826a20a54e6fb1cc3096019d295250673ec692fbd082`，phase `applied`。继任 Web 使用原计划、原 UUID 和已完成的三条探测证据，没有重复发起供应商请求。
+
+七个现有绑定和四个公开模型的新 target/channel 读回通过；完整计费快照相等。公网 canvas.text-generate、canvas.assistant、canvas.ocr、tool.ipcheck、canvas.image 及 text-models 全部 200，去掉配置版本号后响应与切换前逐字段相等：仍显示 `GPT-6 Astra`，模型 ID/售价和两种香蕉全部 10 个画幅的 14 图上限不变。version/health 也为 200，程序仍 `02cce26857ac74b2a8dccbed59074cd3a0c2d744` / `1795053797`，Web/Worker Image、StartedAt 均未变化。
+
+三锁已释放，本任务没有额外服务或运行中的探测。PLAN、回执和精确选择性回滚工具保留在上述私有证据目录；本任务分支/worktree 清理后，本机可续接材料在 `E:/workspace/naumi/output/deepseek-text-hotupdate-20261119/`。本次不增加应用蓝绿轮次；仅此 hot-update 并未重发应用。
+
+尚未确认的边界：APIB 对外 ID 和返回 model 均不含 1017，因此未独立证明供应商固定运行 1017 权重；用户原失败任务未重放，真实复杂业务质量不能由这三条最小探测替代。后续新请求使用新配置；已受理执行继续保留旧冻结上下文。
