@@ -2085,7 +2085,10 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // receipt synchronization are owned by the shared importer.
   function canvasImportContext():CanvasImageImportContext {
     const scope=canvasArtworkDocument.scope;
-    return {owner:user!.email,account:canvasAccountRef.current,workspace:scope.workspace,project:scope.project,
+    // Keep the empty view's old key for undo, but the next import starts a new
+    // root when deleting its last node removed the physical project entirely.
+    const project=creatingNew&&!activeProjectRef.current?null:scope.project;
+    return {owner:user!.email,account:canvasAccountRef.current,workspace:scope.workspace,project,
       documentCurrent:scope.documentCurrent,viewCurrent:scope.viewCurrent,
       rects:()=>((scope.viewCurrent()?rfRef.current?.getNodes():undefined)??rfNodes).map(node=>({...node.position,...flowNodeSize(node)})),
       merge:ids=>mergeWorks(ids),history:pushAddUndoMany,
