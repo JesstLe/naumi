@@ -361,6 +361,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const collaboration = useCollaboration();
   const projectSearchParams = useSearchParams();
   const requestedProject = initialProject || projectSearchParams?.get("project") || undefined;
+  const layeredPsdPilot = projectSearchParams?.get("layered-psd") === "pilot";
   const { can: canFeature } = useFeatureAccess();
   const billing=useBilling();
   function privateFetch(input:RequestInfo|URL,init:CanvasCreationRequestInit={}){
@@ -400,6 +401,18 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const L = (zh: string, en: string) => locale === "en" ? en : zh;
   const canvasArtworkDocument = useCanvasArtworkDocument({account:canvasAccountRef.current,actor:user?.email||"",owner:targetEmail||user?.email||"",
     project:activeKey,enabled:ready&&!!user&&!!targetEmail,readOnly});
+  const pilotScope = canvasArtworkDocument.scope;
+  const [layeredPsdPilotScope, setLayeredPsdPilotScope] = useState<typeof pilotScope | null>(null);
+  useEffect(() => {
+    if (!layeredPsdPilot || !ready || !user?.email || readOnly || !pilotScope.project) return;
+    const controller = new AbortController();
+    void canvasDocumentFetch(pilotScope, "/api/canvas/layered-psd", { signal: controller.signal }, true)
+      .then(async response => response.ok ? await response.json() : null)
+      .then(quote => {
+        if (quote?.pilotOperationId && !controller.signal.aborted && pilotScope.viewCurrent()) setLayeredPsdPilotScope(pilotScope);
+      }).catch(() => {});
+    return () => controller.abort();
+  }, [layeredPsdPilot, ready, user?.email, readOnly, pilotScope]);
   const nodePreferences=useCanvasNodePreferences(canvasArtworkDocument.scope,{owner:targetEmail||user?.email||"",enabled:ready&&!!user,
     notice:flashTip,failed:L("节点属性读取失败，请刷新重试","Properties failed to load. Refresh to retry.")});
   const nodeSettings=nodePreferences.settings,nodeSettingsReady=nodePreferences.ready,settingsFor=nodePreferences.get,isNodeLocked=nodePreferences.locked;
@@ -3496,7 +3509,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                             void downloads.image(node.image)
                           }
                         />
-                        {!readOnly && canFeature("generate") && billing?.catalog?.features["canvas.layered-psd"]?.enabled
+                        {!readOnly && canFeature("generate") && ((layeredPsdPilot && layeredPsdPilotScope === pilotScope) || billing?.catalog?.features["canvas.layered-psd"]?.enabled)
                           && node.status === "completed" && !node.videoUrl && node.category !== "audio"
                           && !["workflow-decoration", "workflow-placeholder"].includes(node.source || "") && hasRenderableImage(node.image) && (
                           <Item label={L("智能拆层", "Separate layers")} onClick={() => {

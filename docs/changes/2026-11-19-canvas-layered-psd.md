@@ -30,3 +30,9 @@
 - 基线 `5aac42a2cff79080ba6f9bf20a46825c6ae1d2c9`，任务分支 `codex/canvas-layered-psd`，工作区 `E:/workspace/naumi-layered-psd-20261119`。真实任务验收前保留独立分支。没有构建生产镜像或在 47 启用功能，未占用发布锁。默认关闭的计费配置需在真实验收后按现行发布流程配置。
 
 供应商约定见 [Seedream 5.0 Pro 拆层](https://docs.apimart.ai/en/api-reference/images/seedream-5-0-pro/generation) 和 [任务状态接口](https://docs.apimart.ai/en/api-reference/tasks/status)。
+
+## 受限真实试用
+
+用户选择用自己的图片验收。配置 `NAUMI_CANVAS_LAYERED_PSD_PILOT_EMAIL` 后，该账号可在 `/canvas?layered-psd=pilot` 中右键已完成的图片并确认「开始真实拆层」。链接只请求当前账号试用资格，用户所选图片在明确提交时才进入既有供应商执行流程。
+
+试用使用服务端为账号固定的操作号，限定一次真实供应商任务，试用不扣站内积分。权限、源图版本和画布归属仍使用现有校验。没有试用配置的环境维持默认关闭，已有正常生产计价逻辑继续由发布的计费配置管理。隔离 PostgreSQL 追加验收通过，覆盖单账号报价、不同操作号拒绝、同一操作号重查和零站内积分结算，供应商回包为夹具。

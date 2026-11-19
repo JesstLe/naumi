@@ -56,6 +56,13 @@ async function main() {
     };
 
     assert.equal((await api.GET(auth())).status, 503);
+    process.env.NAUMI_CANVAS_LAYERED_PSD_PILOT_EMAIL = owner;
+    const pilot = await (await api.GET(auth())).json();
+    assert.equal(pilot.credits, 0);
+    assert.match(pilot.pilotOperationId, /^[a-f0-9-]{36}$/);
+    assert.equal((await (await api.GET(auth())).json()).pilotOperationId, pilot.pilotOperationId);
+    assert.equal((await api.GET(auth("", other, "foreign-root"))).status, 503);
+    delete process.env.NAUMI_CANVAS_LAYERED_PSD_PILOT_EMAIL;
     const billing = await getBillingRuntime(), previous = await billing.config.current();
     const config = structuredClone(previous.config);
     config.switches.metering = "on";
@@ -67,7 +74,7 @@ async function main() {
     assert.deepEqual(await quote.json(), { credits: 12, version: published.version });
 
     const calls: string[] = [];
-    let behavior: "success" | "unknown" | "failed" = "success";
+    let behavior: "success" | "unknown" | "failed" | "pilot" = "success";
     const transport: typeof fetch = async (input, init = {}) => {
       const url = new URL(String(input));
       if (url.origin === "https://fixture-media.example") {
@@ -139,7 +146,16 @@ async function main() {
     assert.deepEqual(outcome(failedId), ["settled", 0]);
     const supplier = (await dbPool.query("SELECT state,task_id,cost_status,amount_micros FROM app_supplier_calls WHERE operation_id=$1", ["tool-" + id])).rows[0];
     assert.deepEqual([supplier.state, supplier.task_id, supplier.cost_status, Number(supplier.amount_micros)], ["completed", "psd-success", "reported", 90_000]);
-    console.log("LAYERED_PSD_PG=PASS explicit_quote=1 concurrent_posts=1 private_scope=1 actual_storage=1 reserve_unknown=1 failure_refund=1 fixture_supplier_only=1");
+    process.env.NAUMI_CANVAS_LAYERED_PSD_PILOT_EMAIL = owner;
+    behavior = "pilot";
+    assert.equal((await run(randomUUID(), { credits: 0 })).status, 409);
+    assert.equal((await run(pilot.pilotOperationId, { credits: 0 })).status, 200);
+    assert.equal((await run(pilot.pilotOperationId, { credits: 0 })).status, 200);
+    assert.equal(calls.filter(item => item === "/v1/images/generations").length, 4);
+    const pilotWallet = (await dbPool.query("SELECT charged_credits FROM app_billing_operations WHERE id=$1", ["tool-" + pilot.pilotOperationId])).rows[0];
+    assert.equal(Number(pilotWallet.charged_credits), 0);
+    delete process.env.NAUMI_CANVAS_LAYERED_PSD_PILOT_EMAIL;
+    console.log("LAYERED_PSD_PG=PASS explicit_quote=1 concurrent_posts=1 private_scope=1 actual_storage=1 reserve_unknown=1 failure_refund=1 pilot_owner_only=1 pilot_limit=1 fixture_supplier_only=1");
   } finally {
     globalThis.fetch = originalFetch;
     await db.getPool().end();

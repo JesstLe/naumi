@@ -11,7 +11,7 @@ import { canvasDocumentFetch, type CanvasDocumentScope } from "@/lib/canvas/docu
 import { canvasDownloadBrowser } from "@/lib/canvas/download-browser";
 
 const PATH = "/api/canvas/layered-psd";
-type Quote = { version: number; credits: number };
+type Quote = { version: number; credits: number; pilotOperationId?: string };
 type Preview = {
   width: number;
   height: number;
@@ -158,7 +158,7 @@ export function LayeredPsdDialog({ selection, english, onClose, onSettled }: {
     setState(undefined);
     setBusy("submit");
     try {
-      const operationId = browserRandomUUID();
+      const operationId = quote.pilotOperationId || browserRandomUUID();
       try { window.sessionStorage.setItem(storageKey, operationId); }
       catch { setState("storage"); return; }
       setOperation(operationId);
@@ -166,7 +166,7 @@ export function LayeredPsdDialog({ selection, english, onClose, onSettled }: {
         const response = await request(PATH, signal, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ artworkId: id, sourceImage, operationId, ...quote }),
+          body: JSON.stringify({ artworkId: id, sourceImage, operationId, credits: quote.credits, version: quote.version }),
         });
         const receipt = await readBillingSubmissionResponse(response, operationId);
         if (isTerminalBillingFailure(receipt.data, operationId)
@@ -252,7 +252,8 @@ export function LayeredPsdDialog({ selection, english, onClose, onSettled }: {
         {preview ? <button type="button" className="canvas-ui-primary rounded-lg px-4 py-2" onClick={download}>{L("下载分层 PSD", "Download layered PSD")}</button>
           : operation && !busy ? <button type="button" className="canvas-ui-control rounded-lg border px-4 py-2" onClick={() => void check()}>{L("查询原任务", "Check request")}</button>
           : quote && !operation && !busy ? <button type="button" className="canvas-ui-primary rounded-lg px-4 py-2" onClick={() => void start()}>
-            {L(`开始拆层 · ${quote.credits} 积分`, `Separate layers · ${quote.credits} credits`)}
+            {quote.pilotOperationId ? L("开始真实拆层 · 试用 1 次", "Separate layers · one trial")
+              : L(`开始拆层 · ${quote.credits} 积分`, `Separate layers · ${quote.credits} credits`)}
           </button> : null}
       </footer>
     </dialog>, document.body,

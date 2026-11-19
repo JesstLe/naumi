@@ -34,8 +34,8 @@ export function GET(request: Request) {
     if (!params.has("operationId")) {
       try {
         await assertCurrentCreationFeature("/api/canvas/layered-psd");
-        const price = await layerPrice();
-        return reply({ version: price.billing.version, credits: price.frozen.authorizedCredits });
+        const price = await layerPrice(email);
+        return reply({ version: price.billing.version, credits: price.frozen.authorizedCredits, pilotOperationId: price.pilotOperationId });
       } catch { return notReady(); }
     }
     const parsed = operationId.safeParse(params.get("operationId"));

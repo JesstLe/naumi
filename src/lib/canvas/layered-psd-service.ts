@@ -14,6 +14,7 @@ import { creationLinkTx } from "@/lib/saas/creation-writer";
 import { createCredentialReader } from "@/lib/model-config/credential-reader";
 import { readPublishedModelSnapshot } from "@/lib/model-config/published";
 import { getBillingRuntime, meteringFor } from "@/lib/billing/runtime";
+import { freeCanvasTariff } from "@/lib/billing/canvas-defaults";
 import { quote } from "@/lib/billing/quote";
 import { BillingError } from "@/lib/billing/types";
 import { configuredToolCost, currentSynchronousBilling, markBillingUpstream, withSynchronousOperation } from "@/lib/billing/synchronous-operation";
@@ -41,20 +42,27 @@ async function channel() {
   return { version: snapshot.version, provider: { ...provider, credentialRef: provider.credentialRef } };
 }
 
-export async function layerPrice() {
+export async function layerPrice(email: string) {
   const channelPin = await channel();
   const billing = await (await getBillingRuntime()).config.current();
   const pricing = billing.config.features[FEATURE];
+  const pilotEmail = process.env.NAUMI_CANVAS_LAYERED_PSD_PILOT_EMAIL?.trim().toLowerCase();
+  const pilot = !!pilotEmail && email.toLowerCase() === pilotEmail;
   // Independent tariff. Never reuse the ordinary image price or silently start
   // a supplier operation while the administrator has not published this tool.
-  if (!pricing?.enabled || pricing.unit !== "task" || pricing.pricing.mode !== "fixed"
+  if (!pilot && (!pricing?.enabled || pricing.unit !== "task" || pricing.pricing.mode !== "fixed"
       || pricing.rules.length || pricing.settlement.unknown !== "hold" || pricing.settlement.reserveBps !== 10_000 || pricing.settlement.failureBps !== 0
-      || !await meteringFor(billing)) {
+      || !await meteringFor(billing))) {
     throw new BillingError("CONFIG_UNAVAILABLE", "智能拆层尚未开放", 503);
   }
-  const frozen = quote(billing, { feature: FEATURE, quantity: 1, quality: "medium", resolution: "1K", paidFen: 0,
+  const digest = pilot ? sha256(`canvas-layered-psd-pilot-v1:${pilotEmail}`) : "";
+  const pilotOperationId = pilot ? `${digest.slice(0, 8)}-${digest.slice(8, 12)}-4${digest.slice(13, 16)}-a${digest.slice(17, 20)}-${digest.slice(20, 32)}` : undefined;
+  const pricingSnapshot = pilot ? { ...billing, config: { ...billing.config, features: {
+    ...billing.config.features, [FEATURE]: { ...freeCanvasTariff("画布智能拆层试用"), enabled: true },
+  } } } : billing;
+  const frozen = quote(pricingSnapshot, { feature: FEATURE, quantity: 1, quality: "medium", resolution: "1K", paidFen: 0,
     providerId: channelPin.provider.id, modelId: MODEL, userGroup: "default", byok: false, metered: true });
-  return { channelPin, billing, frozen };
+  return { channelPin, billing, frozen, pilotOperationId };
 }
 
 async function ownedCanvasSource(email: string, id: string) {
@@ -91,7 +99,10 @@ export async function runLayerDecomposition(email: string, input: {
   let price: Awaited<ReturnType<typeof layerPrice>>;
   return withSynchronousOperation({ email, operationId: input.operationId, path: PATH, feature: FEATURE,
     identity: async () => ({ hash }), snapshot: async () => {
-      price = await layerPrice();
+      price = await layerPrice(email);
+      if (price.pilotOperationId && price.pilotOperationId !== input.operationId) {
+        throw new BillingError("OPERATION_CONFLICT", "试用操作已变更，请重新打开拆层", 409);
+      }
       if (price.billing.version !== input.version || price.frozen.authorizedCredits !== input.credits) {
         throw new BillingError("OPERATION_CONFLICT", "拆层价格已更新，请刷新报价后重新确认", 409);
       }
