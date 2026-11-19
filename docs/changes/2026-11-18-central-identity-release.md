@@ -86,3 +86,16 @@ node dist/identity/provision.cjs \
 ### 名册准备阶段实测修正
 
 首个生产候选discovery/JWKS实际HTTP200（无私钥字段）；名册CLI在任何人员写入前停于display name比较。徐偃的批准花名规范email与中央、消费真实资格email完全一致；后两者display name也完全一致，但含既有姓名后缀。修正CLI用已验证的批准花名规范email绑定身份，并要求中央与消费真实姓名互相一致；不修改姓名、email、成员绑定或密码。新增7个纯身份匹配用例覆盖后缀、真实姓名不一致、不同email和缺失记录。旧候选不接公网，更新固定main制品后再普通provision。
+
+### 2026-11-19 中央侧实际发布与对接回执
+
+- 修复均已合main：f9ab4e94（Pages API marker编译边界）、9c8fc057c70bdf729af2bfa96f790eb2da9189c8（批准花名规范email与双侧真实display name匹配）。发布固定source=9c8fc057、build=1795051987，Web/Worker同Image ID `sha256:0ecca138be05226efb2780492bce5b62f991748c0fadbb676b8b3beec9100b34`。
+- 新Web `naumi47-web-central-identity-20261119-r2`，Worker同后缀；release journal `release47-central-identity-20261119-r1`内保留首个未切流候选的自然退役记录（不是第二个并行发布）。旁路最终候选峰值预算4096MiB，实测MemAvailable12118MiB，未计Swap。
+- 完整Next编译/内置类型检查、Worker/identity bundle及standalone依赖校验通过。Debian apt下载失败后，media-runtime复用固定62b2332d镜像；sandbox.c/prepare-runtime.sh相对96a2393d无diff。其余应用完整重编；5423个非docs tracked构建输入逐SHA核对固定main无差异。未以编译通过代替OIDC/业务验收。
+- 持三部署锁+lifecycle锁完成备份→旁路就绪→整站nginx语法/CAS/平滑切流→旧任务/连接自然排空→旧Web/Worker停止且restart=no→同版本Worker恢复完成tick→supervisor绑定。旧连接等待约4分38秒；没有强杀、删UNKNOWN或重放生成。7338份新旧静态资源union保留，精确旧alias保持。507次跨切流version/health/既有session实际HTTPS请求全200，0错误，不强刷页面。
+- 本轮COMPLETE，canonical revision2491；根历史phase=MIGRATED_CLEANUP_PENDING、legacyDrainProven=false及原历史记录保留。`bash scripts/deploy-release.sh --lifecycle status --state-dir /opt/naumi-staging/releases/release-lifecycle`实际exit0；不把本轮完成改写成历史全局债务清零。
+- 公网issuer `https://47.105.59.142/api/identity`，discovery/JWKS实际HTTP200、TLS正常、公开JWKS无私钥；带独立服务令牌的公网projection HTTP200/complete=true/members202/active200。未登录PKCE授权303进入native interaction；匿名/错误机器令牌401。真人成功SSO仍待正常用户登录，不使用伪造native cookie或兑换真人邀请。
+- 普通授权CLI `APPLIED_AND_READ_BACK`：批准202人，新增舒隽/曲飞2普通UI设计师、邀请未兑换；名册外7个企业成员保持。原252账号password_hash+原生role逐项哈希保持；产品/岗位角色仅写中央身份域。徐偃保留原始真实display name与账号绑定。
+- 原中央DB872470100字节备份已sha256+pg_restore --list读回，不回灌。持久私有JWKS/中央authority.env与独立consumer.env均0600并有受保护私有备份，源只保存service token摘要，配置未入Git/聊天。
+- 消费配置：`/opt/naumi-design-ops-test/private/central-identity-consumer.env`（0600）；邀请回执：`/opt/naumi-staging/evidence/release47-central-identity-20261119-r1/roster-invitations.private.json`（0600，仅47私有文件）。公开交付回执：同目录`PUBLICATION_RECEIPT.json`。中央侧不改消费app、DB或ingress。
+- 主发布锁已于2026-11-19 01:46:37UTC释放。supervisor锁释放后service实际ExecMainStatus0/Resultsuccess，全部readiness=true、unknown ticks0。消费线程随后遇到周期监督器非抢占锁exit75，双方协调中央三锁内仅暂停timer，给消费共享nginx切流明确窗口；业务容器不动。消费切流回执到达后须核验唯一消费文件变化，重绑中央supervisor全局gateway摘要并恢复timer，随后补充该状态。
