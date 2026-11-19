@@ -5,7 +5,7 @@ export const QUALITY_LABELS: Record<string, string> = { low: "快速", medium: "
 export const BUSINESS_GROUPS: { id: string; label: string; description: string; features: FeatureId[] }[] = [
     { id: "images", label: "图片生成", description: "普通生图、商品套图、详情页与竞品衍生图", features: ["image.generate", "image.suite", "image.aplus", "competitor.action"] },
     { id: "tools", label: "图片工具", description: "抠图、放大、精修、换色及其他图片处理", features: ["tool.cutout", "tool.upscale", "tool.printfile", "tool.ipcheck", "tool.garment", "tool.avatar", "tool.dewrinkle", "tool.dewatermark", "tool.style", "tool.tryon", "tool.retouch", "tool.recolor", "tool.replicate", "tool.inpaint", "tool.extract", "tool.garment3d", "tool.packaging3d"] },
-    { id: "canvas", label: "画布", description: "画布 AI 操作集中查看；生图、抠图和视频沿用对应功能的价格", features: ["canvas.image", "canvas.expand", "canvas.text-edit", "canvas.annotate", "canvas.text-generate", "canvas.assistant", "canvas.ocr", "image.generate", "image.aplus", "tool.cutout", "video.generate"] },
+    { id: "canvas", label: "画布", description: "画布 AI 操作集中查看；生图、抠图和视频沿用对应功能的价格", features: ["canvas.image", "canvas.expand", "canvas.text-edit", "canvas.annotate", "canvas.text-generate", "canvas.assistant", "canvas.ocr", "canvas.layered-psd", "image.generate", "image.aplus", "tool.cutout", "video.generate"] },
     { id: "video", label: "视频", description: "视频工作台和画布中的视频生成使用同一套价格", features: ["video.generate"] },
 ];
 export const FEATURE_DESCRIPTIONS: Partial<Record<FeatureId, string>> = {
@@ -20,6 +20,7 @@ export const FEATURE_DESCRIPTIONS: Partial<Record<FeatureId, string>> = {
     "canvas.text-generate": "画布文字节点生成、反推提示词和智能帮写。默认免费；这些入口共用本项价格。",
     "canvas.assistant": "画布助手每轮回复。助手回复后点击生成图片，另按普通生图收费。",
     "canvas.ocr": "每次识别图片中的文字和位置算一次操作，不按识别出的文字段数扣费。随后提交改字任务会另按画布图片改字收费。",
+    "canvas.layered-psd": "独立按一次拆层任务配置固定积分。预览、重新下载和切换可见图层不扣积分。",
     "video.generate": "视频工作台和画布生成视频。计费按结果数量或整笔任务，由下方单位决定。",
 };
 export function unitLabel(unit: FeatureTariff["unit"]) { return unit === "image" ? "张" : unit === "item" ? "个结果" : "次任务"; }

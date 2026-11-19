@@ -811,6 +811,24 @@
       },
       "rules": []
     },
+    "canvas.layered-psd": {
+      "label": "画布智能拆层",
+      "enabled": false,
+      "unit": "task",
+      "pricing": {
+        "mode": "fixed",
+        "credits": 0
+      },
+      "settlement": {
+        "qualityBasis": "requested",
+        "successBasis": "successful-units",
+        "failureBps": 0,
+        "byokBps": 10000,
+        "reserveBps": 10000,
+        "unknown": "hold"
+      },
+      "rules": []
+    },
     "audio.speech": {
       "label": "生成配音",
       "enabled": false,
