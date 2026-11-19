@@ -52,6 +52,43 @@ if(req.url==='/bundle.js'){res.setHeader('content-type','text/javascript');retur
   if(mode==='BASELINE'||mode==='ROLLBACK'){await expect(edit).toHaveValue('让【图1】飞过【图2】。');assert.equal(await chip.count(),0);console.log('INLINE_UI_BASELINE=REPRODUCED textareas=2 inline_chips=0 suppliers=0');return;}
   await expect(edit.locator('[data-reference-key]')).toHaveCount(2);await expect.poll(()=>edit.locator('[data-reference-key] img').evaluateAll(images=>images.every(image=>image.complete&&image.naturalWidth===128))).toBe(true);assert.equal(await edit.getAttribute('contenteditable'),'true');checks.push('image inline chips');
   await expect(v.locator('[data-reference-key]')).toHaveCount(1);assert.equal(await video(),'让{{ref 1}}飞过山谷');checks.push('video projection keeps wire format');
+  for (const [field, value, setup, shortcut, redo] of [
+    [edit, prompt, 'reset', 'Control+z', 'Control+y'],
+    [v, video, 'video', 'Meta+z', 'Meta+Shift+z'],
+  ]) {
+    await page.evaluate(key => qa[key](''), setup);
+    await field.click();
+    await page.keyboard.type('original prompt');
+    assert.equal(await value(), 'original prompt');
+    // selectionchange is asynchronous. Replace the selection within the same
+    // key event so the editor must read it before the browser mutates the DOM.
+    await field.evaluate(el => el.addEventListener('keydown', () => {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      getSelection().removeAllRanges();
+      getSelection().addRange(range);
+    }, { once: true }));
+    await page.keyboard.press('x');
+    assert.equal(await value(), 'x');
+    await field.press(shortcut);
+    assert.equal(await value(), 'original prompt');
+    assert.equal(await field.evaluate(() => getSelection().toString()), 'original prompt');
+    await field.press(redo);
+    assert.equal(await value(), 'x');
+  }
+  checks.push('same-event selected prompt replacement undo and redo on both composers');
+  await page.evaluate(() => qa.reset());
+  await edit.click();
+  await page.keyboard.type('abc');
+  await edit.press('Home');
+  await edit.press('x');
+  assert.equal(await prompt(), 'xabc');
+  await edit.press('Control+z');
+  assert.equal(await prompt(), 'abc');
+  await edit.press('Control+z');
+  assert.equal(await prompt(), '');
+  checks.push('caret jump splits typing while continuous typing stays grouped');
+  await page.evaluate(() => { qa.reset(); qa.prompt('让【图1】飞过【图2】。'); qa.video('让{{ref 1}}飞过山谷'); });
   await edit.locator('[data-reference-key="node:plane"]').click();assert.equal(await page.evaluate(()=>qa.get().preview),'node:plane');checks.push('chip preview');
   await page.evaluate(()=>qa.reset());await edit.fill('@小');await expect(page.getByRole('listbox',{name:'选择图片引用'}).getByRole('option')).toHaveCount(2);await edit.press('ArrowDown');await edit.press('Enter');assert.equal(await prompt(),'【图3】');checks.push('duplicate titles identity keyboard');
   await edit.press('End');await edit.press('Backspace');assert.equal(await prompt(),'');await edit.press('Control+z');assert.equal(await prompt(),'【图3】');await edit.press('Control+Shift+z');assert.equal(await prompt(),'');checks.push('atomic deletion undo redo');
