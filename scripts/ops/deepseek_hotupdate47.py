@@ -30,7 +30,7 @@ def main():
         canonical=pathlib.Path('/opt/naumi-staging/releases/release-lifecycle/current.json');before=canonical.read_bytes()
         state=json.loads(before);manifest=json.loads(pathlib.Path(state['runtimeRecovery']['manifestPath']).read_bytes());web=manifest['web'];worker=manifest['worker']
         identities=json.loads(run(['docker','inspect',web['id'],worker['id']]));assert all(i['State']['Running'] for i in identities);assert identities[0]['Image']==identities[1]['Image']
-        present=run(['docker','exec',web['id'],'node','-e',"console.log(require('fs').existsSync(process.argv[1]))",TMP]).strip()==b'true'
+        present=run(['docker','exec','-e','NODE_OPTIONS=','-e','NAUMI_RELEASE_RUNTIME=0',web['id'],'node','-e',"console.log(require('fs').existsSync(process.argv[1]))",TMP]).strip()==b'true'
         if not present:
             # A different application release may have completed between PLAN
             # and APPLY. Carry the exact durable operation, never rerun probes
@@ -41,7 +41,7 @@ def main():
                 run(['docker','cp',str(source/name),web['id']+':'+TMP+'/'+name]);run(['docker','exec','--user','0',web['id'],'chown','1001:1001',TMP+'/'+name]);run(['docker','exec',web['id'],'chmod','600',TMP+'/'+name])
         assert run(['docker','exec',web['id'],'sha256sum',TMP+'/deepseek-text-hotupdate.cjs']).decode().split()[0]==digest
         export=ROOT/('export-'+mode+'-'+str(uuid.uuid4()));export.mkdir(mode=0o700)
-        try:out=run(['docker','exec','-e','NODE_OPTIONS=--max-old-space-size=512','-e','NODE_PATH=/app/node_modules',web['id'],'node',TMP+'/deepseek-text-hotupdate.cjs',mode,TMP],timeout=290 if mode=='PROBE' else 45)
+        try:out=run(['docker','exec','-e','NODE_OPTIONS=--max-old-space-size=512','-e','NAUMI_RELEASE_RUNTIME=0','-e','NODE_PATH=/app/node_modules',web['id'],'node',TMP+'/deepseek-text-hotupdate.cjs',mode,TMP],timeout=290 if mode=='PROBE' else 45)
         finally:run(['docker','cp',web['id']+':'+TMP+'/.',str(export)])
         assert canonical.read_bytes()==before,'PROGRAM_RELEASE_STATE_CHANGED'
         after=json.loads(run(['docker','inspect',web['id'],worker['id']]));assert all(a['State']['StartedAt']==b['State']['StartedAt'] and a['Image']==b['Image'] for a,b in zip(identities,after))

@@ -43,4 +43,6 @@ DeepSeek 官方 [1017 更新说明](https://api-docs.deepseek.com/updates/#deeps
 
 02:05 UTC 起，`release47-central-ack-20261119-r1` 的独立发布窗口持三锁，最近完成 `02-backup`。不改它的固定模型基线，不抢锁、不终止发布。窗口结束后核对新的运行 Web；执行器支持将原 PLAN、原 UUID、探测证据和未知请求回执迁到继任 Web，不重跑供应商探测或盲目重放请求。新增的两个离线交接测试通过，覆盖已存在请求保留、禁止重做探测、bundle hash 拒绝和 PROBE→PLAN 迁移。
 
-当前待 APPLY/VERIFY；实际配置版本和公网读回待补。发布计数不增加应用蓝绿轮次。本任务的通道切换不代表其他前端补丁已经上线。
+另一发布于 02:17:25 UTC 记录 COMPLETE，02:17:43 释放锁，公网程序切至 `02cce26857ac74b2a8dccbed59074cd3a0c2d744` / `1795053797`。继任容器的一次 exists 辅助检查遗漏清空 NODE_OPTIONS，继承 Web observer preload 后自行 exit143，发生在安装 tmp 或创建 APPLY_REQUEST 前。随后核对公网所有目录/version/health 均 200、版本未变、模型仍 v156；仅为一次性 CLI 清空 preload 并禁用 CLI release runtime，在线容器/主进程/配置不变。
+
+当前待 APPLY/VERIFY；实际配置版本和公网读回待补。发布计数不增加应用蓝绿轮次。
