@@ -14,7 +14,7 @@ const legacy='nv:canvas:last',claim='nv:canvas:last:scope:v1';
 export function createCanvasProjectNavigation(identity:string,ports:Ports){
  const storedKey=`nv:canvas:last:v2:${encodeURIComponent(identity)}`;
  let state:CanvasProjectView={activeKey:null,browsing:true,creatingNew:false,pinnedNode:null,pendingNode:null};
- let pending:Pending|undefined,restored=false,lastSaved:string|null|undefined,desktop:string|undefined,requestedProject:string|undefined,pushed=false,epoch=0,cancel:(()=>void)|undefined;
+ let pending:Pending|undefined,restored=false,lastSaved:string|null|undefined,observedProject:string|undefined,requestedProject:string|undefined,pushed=false,epoch=0,cancel:(()=>void)|undefined;
  const listeners=new Set<()=>void>();
  const publish=(patch:Partial<CanvasProjectView>)=>{if(!ports.current())return;const next={...state,...patch};if((Object.keys(next) as Array<keyof CanvasProjectView>).every(key=>next[key]===state[key]))return;state=next;for(const fn of listeners)fn();};
  const invalidate=()=>{epoch++;cancel?.();cancel=undefined;};
@@ -27,6 +27,10 @@ export function createCanvasProjectNavigation(identity:string,ports:Ports){
  const history=()=>{if(!state.browsing&&!pushed){pushed=true;ports.push();}else if(state.browsing)pushed=false;};
  const open=(project:string|null)=>{if(!ports.current())return;invalidate();pending=undefined;publish({activeKey:project,browsing:false,creatingNew:false,pendingNode:null});remember();history();};
  const browse=(clearProject=false)=>{if(!ports.current())return;invalidate();pending=undefined;publish({browsing:true,creatingNew:false,pendingNode:null,...(clearProject?{activeKey:null}:{})});save(null);history();};
+ const requestProject=(project?:string)=>{
+  if(!ports.current()||observedProject===project)return;
+  observedProject=project;requestedProject=project;
+ };
  return {
   getSnapshot:()=>state,subscribe(fn:()=>void){listeners.add(fn);return()=>{listeners.delete(fn);};},
   initialize(node:string|null){
@@ -37,13 +41,20 @@ export function createCanvasProjectNavigation(identity:string,ports:Ports){
    if(last)open(last);
   },
   open,browse,
-  start(){if(!ports.current())return;invalidate();pending=undefined;publish({activeKey:null,creatingNew:true,browsing:false,pendingNode:null});history();},
+  start(){
+   if(!ports.current())return;
+   invalidate();pending=undefined;
+   // An explicit new canvas supersedes a link that is still loading. Keep the
+   // observed link so subsequent renders cannot requeue that same request.
+   requestedProject=undefined;
+   publish({activeKey:null,creatingNew:true,browsing:false,pendingNode:null});history();
+  },
   empty(){if(ports.current())publish({creatingNew:true});},
   requestNode(id:string|null,select=true){if(!ports.current())return;invalidate();pending=id?{id,select,focus:false}:undefined;publish({pendingNode:id});},
-  requestProject(project?:string){if(ports.current())requestedProject=project&&desktop!==project?project:undefined;},
+  requestProject,
   reconcile(projects:readonly CanvasProject[],loaded:boolean,initialProject?:string){
    if(!restored||!ports.current())return;
-   if(initialProject&&desktop!==initialProject)requestedProject=initialProject;
+   if(initialProject)requestProject(initialProject);
    if(!pending&&!state.creatingNew&&!state.browsing&&loaded&&state.activeKey&&!projects.some(p=>p.key===state.activeKey)){browse(true);ports.missing();}
    if(pending&&(!requestedProject||loaded)){
     const intent=pending,project=projects.find(p=>p.members.some(n=>n.id===intent.id)||p.textNodes.some(n=>n.id===intent.id)||[p.videoNodes,p.directorNodes,p.characterNodes,p.sceneNodes,p.audioNodes,p.timelineNodes,p.comfyNodes].some(nodes=>nodes?.some(n=>n.id===intent.id)));
@@ -52,7 +63,7 @@ export function createCanvasProjectNavigation(identity:string,ports:Ports){
    }
    // Warm catalogue presence alone does not authorize opening a shared project.
    if(requestedProject&&loaded&&projects.some(p=>p.key===requestedProject)){
-    const project=requestedProject;requestedProject=undefined;desktop=project;ports.select(project,null);open(project);
+    const project=requestedProject;requestedProject=undefined;ports.select(project,null);open(project);
    }
    if(state.creatingNew&&state.activeKey&&projects.some(p=>p.key===state.activeKey))publish({creatingNew:false});
    remember();
