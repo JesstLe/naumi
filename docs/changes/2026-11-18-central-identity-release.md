@@ -107,3 +107,7 @@ node dist/identity/provision.cjs \
 中央独立核验47私有receipt与实际nginx -T：唯一消费文件`/etc/nginx/sites-enabled/zz-naumi-design-ops-test`最终字节恢复原始hash75f08a5e；完整dump恢复30338012，与中央发布后固定摘要完全相同，故**无需修改中央gateway pin**。中央三锁+lifecycle锁内实际Supervisor.once通过、readiness全true、unknownTicks0，timer恢复active/enabled；revision2492、runtimeRecovery状态TIMER_ACTIVE_POST_CONSUMER_VERIFIED。三锁随事务退出释放。协调回执：本轮证据目录`consumer-coordination/02-consumer-convergence-timer-restored.json`。
 
 持久中央签名与authority配置备份为0600私有tar且读回通过；consumer.env只交给消费侧私有目录，本轮中央备份不包含其原始service token。消费投影/ACK/定时同步与真人登录最终结果由消费集中验收继续回告；不把未登录303当真人SSO成功。发布后main已新增同事Canvas与文档提交，中央实际运行仍为固定9c8fc057，不声称这些后续提交已部署。
+
+### 真实ACK 500的中央SQL修正（2026-11-19）
+
+消费已提交binding202后，02:01:01UTC真实POST `/api/enterprise/identity/ack`（revision f1bc2845...、sequence202、appliedMembers202、error=null）返回500/uncertain，中央ACK表仍空。无执行PG PREPARE按原始SQL复现`42P08: could not determine data type of parameter $6`（exit3）。将last_error值和CASE中的同一个$6均显式转为text；修改SQL PREPARE通过（PARSE_OK_NO_EXECUTION、exit0）。未手写/伪造消费ACK、未执行INSERT来替代消费重试。新增只读PREPARE回归脚本，真实POST/周期调用在固定新镜像蓝绿后由消费方同body完成。现有已上线中央服务继续运行；新发布仍需三锁、旁路、自然排空，不原位替换bundle。

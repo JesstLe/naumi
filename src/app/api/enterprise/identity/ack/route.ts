@@ -24,7 +24,7 @@ export async function POST(request: Request) {
     const d = body.data;
     await getPool().query(
       `INSERT INTO app_identity_consumer_acks(enterprise_id,product_id,revision,last_sequence,applied_members,last_error,last_success_at)
-    VALUES($1,$2,$3,$4,$5,$6,CASE WHEN $6 IS NULL THEN now() ELSE to_timestamp(0) END)
+    VALUES($1,$2,$3,$4,$5,$6::text,CASE WHEN $6::text IS NULL THEN now() ELSE to_timestamp(0) END)
     ON CONFLICT(enterprise_id,product_id) DO UPDATE SET revision=EXCLUDED.revision,last_sequence=EXCLUDED.last_sequence,applied_members=EXCLUDED.applied_members,
     last_error=EXCLUDED.last_error,last_success_at=CASE WHEN EXCLUDED.last_error IS NULL THEN now() ELSE app_identity_consumer_acks.last_success_at END
     WHERE app_identity_consumer_acks.last_sequence<=EXCLUDED.last_sequence`,
