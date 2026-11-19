@@ -32,4 +32,10 @@ APIB 关联的 APIMart 文档分别声明最多 14 张；关联契约不等同�
 
 恢复使用 `ROLLBACK` 模式，仅对当前两个仍为 14 的自有字段恢复为 1；保留之后无关配置，遇到字段冲突停止。程序镜像、入口、业务数据库和媒体不回滚。
 
-实际配置发布版本及公网读回：待执行 APPLY/VERIFY 后补充。当前运行程序仍为上述基线，构建版本 `1794993463`；本次属于后台配置发布，无 CI、无新应用构建或容器重启。
+已发布配置 **v156**，publication `703dc309-9eea-498b-a9cf-faa390772596`，phase `applied`，digest `9d331d4a1f1e70f066071e8930d40efa672f143b82c2b084adef0bca6477f022`。VERIFY 再次通过上述 120 例，计费快照完整相等。公网 `/api/models?feature=canvas.image` HTTP 200、version 156，10 个香蕉别名均返回 `maxReferenceImages:14`；公网 `/api/health` 和 `/api/version` HTTP 200。
+
+工具已普通 merge 并推送 main，整合提交 `8f17df8382305ad6152faf71ff0d1093068f01ef`。当前运行程序仍为基线 `2778285e15ca66f0082e16f6e4270a2622b8f1e3`，构建版本 `1794993463`；本次属于后台配置发布，无 CI、无新应用构建或容器重启。
+
+最终服务器恢复材料位于 `/opt/naumi-staging/evidence/banana-reference14-20261119-r4/`，容器内 `/tmp/banana-reference14-20261119-r4/` 保留当前 PLAN、请求及回执以供选择性恢复；不含明文凭据。初始失败包为纯 JS 依赖打包问题，第三次仍因 React server 条件入口缺失失败，最终包使用默认 React 入口后通过。旧失败容器临时包按精确路径清理，失败日志及服务器证据保留。三把部署锁已在每次操作退出时释放；没有测试宿主、额外容器、服务或付费任务需要关闭。
+
+本机公开读回及操作日志位于 `E:/workspace/naumi/output/banana-reference14-20261119/`。未完成项仅为 APIB 当前通道真实 14 图输出验收；当前发布依据关联供应商契约，保留能力未实测标记。
