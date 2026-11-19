@@ -53,5 +53,7 @@ node node_modules/typescript/bin/tsc --noEmit --strict --skipLibCheck --target e
 - 用户随后明确指定「天地合」及「企业管理员」。已将其匹配到正式企业「天地合大健康」，使用一次性操作员事务补充这一个既有账号的 active membership、subject、administrator 组织身份及 design-ops/admin 产品授权；不改负责人，不授予业务 owner。
 - 现有 `mutateIdentity` 要求目标已经是企业成员，现有 create 入口拒绝覆盖既有账号；因此本次不伪造登录或修改原生角色，采用明确用户批准的一账号运维事务。复用原 organization schema、产品角色校验和 hierarchy 校验，持原管理 advisory lock，检查企业、负责人准入、账号、唯一归属、席位及 CAS；同事务记录中央 receipt/outbox 与 enterprise audit。先只读准备，再在影子 temp 表完整执行并回滚，最后真实 apply+readback。操作 UUID `b362576b-8d5a-465d-927a-fd1e117f1b58`、outbox sequence 204，保留幂等读回入口。该运维 adapter 不注册为产品 API，不作为普通用户绕过登录或自动赋权机制。
 - 用户密码、原生 role/management_version、全部原生账号、其他成员/组织/产品授权及负责人在事务内摘要逐项保持。未重放批准名册，未创建业务目标或任务。
+- 协作端原定时器已自动消费新授权：目标 active=true、roles=[admin]、title=administrator、subject_enabled=true、组织/授权版本均为 1。中央真实 ACK sequence=204、applied_members=203、last_error=NULL；不是手写消费端记录或伪造 ACK。Web/消费进程启动时间保持，无服务重启。
+- 错误页源码首次普通 merge/push 到 main `08790670`。后续本段只补授权和同步证据，不构建或部署中央镜像。
 - 真人从账号密码提交到企业工作台的完整 SSO 验收仍待正式产品授权和错误页部署，不能把机器投影 / ACK 或隔离测试当作本人登录成功。
 - Desktop 安装、3080、202 人名册和模型配置未修改；协作消费端使用既有定时同步消费新授权，不手写消费身份或会话。
