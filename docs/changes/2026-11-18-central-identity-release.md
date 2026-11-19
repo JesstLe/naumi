@@ -99,3 +99,11 @@ node dist/identity/provision.cjs \
 - 原中央DB872470100字节备份已sha256+pg_restore --list读回，不回灌。持久私有JWKS/中央authority.env与独立consumer.env均0600并有受保护私有备份，源只保存service token摘要，配置未入Git/聊天。
 - 消费配置：`/opt/naumi-design-ops-test/private/central-identity-consumer.env`（0600）；邀请回执：`/opt/naumi-staging/evidence/release47-central-identity-20261119-r1/roster-invitations.private.json`（0600，仅47私有文件）。公开交付回执：同目录`PUBLICATION_RECEIPT.json`。中央侧不改消费app、DB或ingress。
 - 主发布锁已于2026-11-19 01:46:37UTC释放。supervisor锁释放后service实际ExecMainStatus0/Resultsuccess，全部readiness=true、unknown ticks0。消费线程随后遇到周期监督器非抢占锁exit75，双方协调中央三锁内仅暂停timer，给消费共享nginx切流明确窗口；业务容器不动。消费切流回执到达后须核验唯一消费文件变化，重绑中央supervisor全局gateway摘要并恢复timer，随后补充该状态。
+
+### 消费切流协作收尾（2026-11-19）
+
+消费线程报告并提供完整receipt：最终消费main e75bc48635fef02c5423dc24fbf9ba7746d7f98a、Image sha256:e9187e19b6de44bcf3c656699d5fa335ec9a832d6fcfa1b89707c34e16929274，202人激活同中央revision。消费侧修复了审计INSERT占位符UUID/text类型冲突；失败事务先前已回滚，未切流。最终13153候选→13152 canonical同固定镜像收敛，旧消费/候选自然排空停止。该部分由消费线程实施，不由中央侧写消费app/DB/ingress。
+
+中央独立核验47私有receipt与实际nginx -T：唯一消费文件`/etc/nginx/sites-enabled/zz-naumi-design-ops-test`最终字节恢复原始hash75f08a5e；完整dump恢复30338012，与中央发布后固定摘要完全相同，故**无需修改中央gateway pin**。中央三锁+lifecycle锁内实际Supervisor.once通过、readiness全true、unknownTicks0，timer恢复active/enabled；revision2492、runtimeRecovery状态TIMER_ACTIVE_POST_CONSUMER_VERIFIED。三锁随事务退出释放。协调回执：本轮证据目录`consumer-coordination/02-consumer-convergence-timer-restored.json`。
+
+持久中央签名与authority配置备份为0600私有tar且读回通过；consumer.env只交给消费侧私有目录，本轮中央备份不包含其原始service token。消费投影/ACK/定时同步与真人登录最终结果由消费集中验收继续回告；不把未登录303当真人SSO成功。发布后main已新增同事Canvas与文档提交，中央实际运行仍为固定9c8fc057，不声称这些后续提交已部署。
