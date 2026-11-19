@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import {existingRosterIdentityMatches as matches} from './lib/central-roster-identity';
+const approved={email:'approved@username.naumi.local'};
+assert.equal(matches(approved,{...approved,name:'Alias'},{...approved,name:'Alias'}),true);
+assert.equal(matches(approved,{...approved,name:'Alias - full display name'},{...approved,name:'Alias - full display name'}),true);
+assert.equal(matches(approved,{...approved,name:'Original'},{...approved,name:'Someone else'}),false);
+assert.equal(matches(approved,{email:'other@username.naumi.local',name:'Alias'},{...approved,name:'Alias'}),false);
+assert.equal(matches(approved,{...approved,name:'Alias'},{email:'other@username.naumi.local',name:'Alias'}),false);
+assert.equal(matches(approved,undefined,{...approved,name:'Alias'}),false);
+assert.equal(matches(approved,{...approved,name:'Alias'},undefined),false);
+console.log('PASS approved canonical email; matching live display names; mismatched identities/names and missing records rejected (7 cases)');

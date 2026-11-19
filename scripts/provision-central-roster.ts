@@ -15,6 +15,7 @@ import {
   type Organization,
   PRODUCT_ROLES,
 } from "../src/lib/enterprise/identity/contracts";
+import { existingRosterIdentityMatches } from "./lib/central-roster-identity";
 import { loginIdentifierToEmail } from "../src/lib/account-identity";
 const planSchema = z.object({
   enterpriseId: z.string().uuid(),
@@ -132,7 +133,7 @@ async function main() {
       e = eligibility.members.find((e) => e.email === m.email);
     if (
       !m.create &&
-      (!current || current.name !== m.name || !e || e.name !== m.name)
+      !existingRosterIdentityMatches(m, current as {email: string; name: string} | undefined, e)
     )
       throw Error("EXISTING_PERSON_IDENTITY_MISMATCH:" + m.name);
     if (m.create && current && !current.organization)
