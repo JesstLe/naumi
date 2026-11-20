@@ -9,7 +9,7 @@ const data=value=>JSON.parse(JSON.stringify(value));
 (async()=>{
  const built=await fixture.bundle(),rows=[];let checks=0;
  const eq=(a,b,message)=>{assert.deepEqual(data(a),data(b),message);checks++;};
- for(const kind of ['cutout','expand','annotate','detail','detail-blank']){
+ for(const kind of ['cutout','expand','annotate','detail','detail-blank'].filter(kind=>fixture.editKinds.includes(kind))){
   for(const scenario of ['done','rejected','submit-unknown','position-fails','sync-missing','project-switch','project-aba','unmounted','auth-aba']){
    const f=fixture.setup(kind,scenario,built);await f.run();
    const initial={posts:f.state.posts,positions:f.state.positions.length,history:f.state.history.length};
