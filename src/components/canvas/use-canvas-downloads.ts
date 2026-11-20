@@ -17,6 +17,7 @@ export function useCanvasDownloads(scope:CanvasDocumentScope,feedback:CanvasDown
     const entry={scope,owner};pending.current.add(entry);try{await run();}finally{pending.current.delete(entry);}
   };
   const snapshot=useSyncExternalStore(owner.subscribe,owner.getSnapshot,()=>EMPTY_CANVAS_DOWNLOADS);
-  return{zipping:snapshot.zipping,image:(source:string)=>track(()=>owner.image(source,feedback)),
+  return{zipping:snapshot.zipping,compressing:snapshot.compressing,image:(source:string)=>track(()=>owner.image(source,feedback)),
+    compressImage:(source:string,title:string)=>track(()=>owner.compressImage(source,title,feedback)),
     archive:(members:Parameters<typeof owner.archive>[0],name:string)=>track(()=>owner.archive(members,name,feedback)),video:owner.video};
 }

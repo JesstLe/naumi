@@ -11,6 +11,7 @@ export const refactorCases=[
  {...ts('native-edit-callers','unified-image-edit','scripts/verify-imagegen-pipeline-callers.ts','CALLERS=PASS'),pg:false},
  {...ts('native-edit-recovery','unified-image-edit','scripts/verify-imagegen-requote-recovery.ts','REQUOTING_RECOVERY=PASS CHECKS=126'),pg:false},
  ts('native-edit-receipts','unified-image-edit','scripts/verify-imagegen-receipts.ts','PASS imagegen receipts'),
+ node('canvas-image-node-ux','canvas-image-ux','scripts/verify-canvas-image-ux.cjs','CANVAS_IMAGE_UX=PASS'),
  node('canvas-progress-curves','canvas-progress','scripts/verify-canvas-generation-progress.cjs','MODIFIED=PASS'),
  {...node('canvas-progress-browser','canvas-progress','scripts/render-canvas-generation-progress-test.cjs','COMPONENT_DYNAMIC=PASS'),clientReact:true},
  {...node('canvas-progress-batch','canvas-progress','scripts/verify-canvas-batch-placeholders.cjs','BATCH_PLACEHOLDERS=PASS'),clientReact:true},

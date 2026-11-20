@@ -211,7 +211,7 @@ export function PsdNodeEditor({
     if (dirty) setDiscard(true);
     else onClose();
   }
-  async function action(download: boolean) {
+  async function action(download: "document" | "png" | "psd" | null) {
     if (!paint || busyRef.current || !session.current) return;
     busyRef.current = true;
     setBusy(true);
@@ -240,11 +240,19 @@ export function PsdNodeEditor({
         await onSaved();
       }
       if (download) {
-        const r = await canvasDocumentFetch(scope, url + "&export=1&revision=" + exportRevision, { signal }, true);
+        const params = new URLSearchParams({ export: "1", revision: String(exportRevision) });
+        let filename = node.title + ".psd";
+        if (download !== "document") {
+          params.set("layer", String(selected));
+          params.set("format", download);
+          const name = base!.children![selected].name || L("图层", "Layer");
+          filename = `${selected + 1}-${name}.${download}`;
+        }
+        const r = await canvasDocumentFetch(scope, url + "&" + params, { signal }, true);
         if (!r.ok) throw Error((await r.json()).error);
         const blob = await r.blob();
         scope.assertView();
-        canvasDownloadBrowser(scope).save(blob, node.title.replace(/[\\/:*?"<>|]/g, "_") + ".psd");
+        canvasDownloadBrowser(scope).save(blob, filename.replace(/[\\/:*?"<>|]/g, "_"));
       }
     } catch (e) {
       if (!signal.aborted) setError(e instanceof Error ? e.message : L("操作失败", "Operation failed"));
@@ -385,6 +393,7 @@ export function PsdNodeEditor({
                       />
                       <button
                         aria-pressed={selected === l.index}
+                        disabled={busy}
                         onClick={() => select(l.index)}
                         className={
                           "min-w-0 flex-1 truncate rounded px-2 py-1 text-left text-sm " +
@@ -396,6 +405,19 @@ export function PsdNodeEditor({
                     </li>
                   ))}
               </ul>
+              <fieldset disabled={busy || !paint || !active} className="mt-3 flex gap-2 border-t pt-2">
+                <legend className="pr-2 text-sm font-medium">
+                  {dirty
+                    ? L("保存并导出选中图层", "Save and export selected layer")
+                    : L("导出选中图层", "Export selected layer")}
+                </legend>
+                <button className={control} onClick={() => void action("png")}>
+                  PNG
+                </button>
+                <button className={control} onClick={() => void action("psd")}>
+                  PSD
+                </button>
+              </fieldset>
             </aside>
           </div>
           <div className="my-3 flex flex-wrap items-center gap-2">
@@ -442,14 +464,14 @@ export function PsdNodeEditor({
             <button
               className={control}
               disabled={busy || !paint || !dirty || readOnly}
-              onClick={() => void action(false)}
+              onClick={() => void action(null)}
             >
               {L("保存", "Save")}
             </button>
             <button
               className="canvas-ui-primary rounded-md px-3 py-2 text-sm"
               disabled={busy || !paint}
-              onClick={() => void action(true)}
+              onClick={() => void action("document")}
             >
               {dirty ? L("保存并导出 PSD", "Save and export PSD") : L("导出 PSD", "Export PSD")}
             </button>

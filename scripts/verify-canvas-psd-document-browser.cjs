@@ -43,6 +43,13 @@ async function verify(page) {
   await expect(list.getByRole("listitem")).toHaveCount(11);
   await expect(surface).toBeVisible();
   const names = await list.getByRole("button").allTextContents();
+  async function downloadLayer(index, format, filename) {
+    const pending = page.waitForEvent("download");
+    await button(modal.getByRole("group", { name: /导出选中图层/ }), format.toUpperCase()).click();
+    const file = await pending;
+    assert.equal(file.suggestedFilename(), index + 1 + "-" + names[10 - index] + "." + format);
+    await file.saveAs(path.join(folder, filename));
+  }
   const capture = () => surface.evaluate((el) => el.toDataURL("image/png"));
   const png = async () =>
     require("node:crypto")
@@ -75,9 +82,11 @@ async function verify(page) {
   assert.equal(await png(), erased, "redo");
   await button(modal, "蒙版恢复").click();
   await draw([415, 848], [425, 854]);
+  const restored = await png();
+  assert.notEqual(restored, erased, "restore");
+  assert.notEqual(restored, beforeMask, "remaining mask");
+  await list.getByRole("checkbox", { name: "显示 " + names[1], exact: true }).uncheck();
   const edited = await png();
-  assert.notEqual(edited, erased, "restore");
-  assert.notEqual(edited, beforeMask, "remaining mask");
   await fs.writeFile(
     path.join(folder, "edited-canvas.png"),
     Buffer.from((await capture()).split(",")[1], "base64"),
@@ -85,7 +94,7 @@ async function verify(page) {
   const saved = page.waitForResponse(
     (r) => r.request().method() === "PATCH" && r.url().includes("/layered-psd/document"),
   );
-  await button(modal, "保存").click();
+  await downloadLayer(10, "png", "dirty-bottle.png");
   const response = await saved;
   assert.equal(response.status(), 200, await response.text());
   const receipt = await response.json();
@@ -112,11 +121,26 @@ async function verify(page) {
   const download = page.waitForEvent("download");
   await button(modal, "导出 PSD").click();
   await (await download).saveAs(path.join(folder, "browser-export.psd"));
+  for (const [position, name] of names.entries()) {
+    const index = 10 - position;
+    await button(list, name).click();
+    for (const format of ["png", "psd"]) await downloadLayer(index, format, "layer-" + index + "." + format);
+  }
+  await expect(list.getByRole("checkbox", { name: "显示 " + names[1], exact: true })).not.toBeChecked();
   const endpoint = origin.origin + "/api/canvas/layered-psd/document";
   const headers = { origin: origin.origin, "x-naumi-workspace": "personal", "x-naumi-project-context": project };
   const current = await page.request.get(endpoint + "?nodeId=" + node, { headers });
   assert.equal(current.status(), 200);
   const { edits, revision } = await current.json();
+  const exportUrl = endpoint + "?nodeId=" + node + "&export=1";
+  for (const [query, status] of [
+    ["&revision=1&format=png", 400],
+    ["&revision=1&layer=99&format=psd", 400],
+    ["&revision=0&layer=10&format=png", 409],
+  ]) {
+    assert.equal((await page.request.get(exportUrl + query, { headers })).status(), status);
+  }
+  assert.equal((await fetch(exportUrl + "&revision=1&layer=1&format=png", { headers })).status, 401);
   assert.equal(revision, 1);
   const replay = await page.request.patch(endpoint, { headers, data: { nodeId: node, revision: 0, edits } });
   assert.equal(replay.status(), 200);

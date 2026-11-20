@@ -44,6 +44,7 @@ export type CanvasArtNodeData = {
     ) => void;
     onCanvasRatioRepair?: (id: string, width: number, height: number) => void;
     onRenameRequest?: (id: string, label: string) => void;
+    onRenameCommit?: (id:string,title:string)=>Promise<void>;
     onVideoExtract?: (id: string, action: VideoPlayerAction) => void;
     onCutout?: (id: string) => void;
     regenerating?:boolean;regenerationFailure?:boolean;
@@ -151,6 +152,7 @@ export type CanvasSceneActions={
   resize:(id:string,bounds:CanvasBounds)=>void;
   ratioRepair:(id:string,width:number,height:number)=>void;
   rename:(id:string,label:string)=>void;
+  renameArtwork?:(id:string,title:string)=>Promise<void>;
   videoProcess:(id:string,action:VideoPlayerAction)=>void;
   cutout:(id:string)=>void;
   generatePending:(id:string)=>unknown;

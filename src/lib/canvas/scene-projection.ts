@@ -455,7 +455,7 @@ export function projectCanvasScene(input:CanvasSceneInput):{displayNodes:Node[];
     }
     const nSeen = new Set<string>();
     const finalNodes = displayNodes.map(node => node.type === "art" && !node.data.videoUrl && !node.data.pending ? {
-      ...node, data: { ...node.data, onCutout: actions.cutout,
+      ...node, data: { ...node.data, onCutout: actions.cutout, onRenameCommit: actions.renameArtwork,
         cutoutBusy: busyArtworkIds.has(node.id),
         cutoutBlocked: !cutoutAvailable || operations.has(`node:${node.id}`) }
     } : node).filter((n) =>
