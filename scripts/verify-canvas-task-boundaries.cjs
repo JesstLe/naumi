@@ -4,6 +4,8 @@ const root=path.resolve(process.env.TASK_SOURCE_ROOT||process.cwd()),out=path.re
 const source=fs.readFileSync(path.join(root,'src/components/canvas/canvas-client.tsx'),'utf8'),ast=ts.createSourceFile('canvas.tsx',source,99,true,4),functions={};
 function walk(node){if(ts.isFunctionDeclaration(node)&&node.name)functions[node.name.text]=node.getText(ast);ts.forEachChild(node,walk);}walk(ast);
 const names=['canvasGenerationRunContext','privateFetch','landEditResult','generateDetailSequence','runCutout','onExpand','submitAnnotations','restoreEditTasks','rememberGenerationDrag','onPendRemove','appendComposerReferences','artworkNodeSize','artworkImageSize','imageToolState','rewirePendingBranchSources'];
+const nativeCutout=/\breturn runGen\(/.test(functions.runCutout||'');
+const editKinds=['detail','detail-blank',...(nativeCutout?[]:['cutout']),'expand','annotate'];
 const compile=text=>ts.transpileModule(text,{compilerOptions:{target:9,module:1}}).outputText;
 const billingSource=fs.readFileSync(path.join(root,'src/lib/billing/client.tsx'),'utf8'),billingAst=ts.createSourceFile('client.tsx',billingSource,99,true,4),callbacks={};
 (function walk(n){if(ts.isVariableDeclaration(n)&&['submit','quoteAndSubmit'].includes(n.name.getText(billingAst))&&n.initializer)callbacks[n.name.getText(billingAst)]=n.initializer.getText(billingAst);ts.forEachChild(n,walk);})(billingAst);
@@ -98,11 +100,11 @@ function setup(kind,scenario,built){
  const restore=()=>{c.activeProjectRef.current={key:'tree:source'};c.canvasContextEpochRef.current++;c.batchRunMountedRef.current=true;presentation?.render();c.restoreEditTasks();};
  return {c,state,run,retry,restore,ports,presentation};
 }
-module.exports={bundle,setup,root};
+module.exports={bundle,setup,root,editKinds};
 if(require.main===module)(async()=>{
  const built=await bundle(),rows=[];
  const scenarios=['done','reference-fails','rejected','submit-unknown','identity-collision','pending','receipt-malformed','receipt-body-fails','receipt-timeout','position-fails','sync-missing','project-switch','project-aba','unmounted','auth-aba'];
- for(const kind of ['detail','detail-blank','cutout','expand','annotate'])for(const scenario of [...scenarios,...(kind==='cutout'?['receipt-incomplete']:[]),...(kind.startsWith('detail')?['poll-fails','poll-malformed','metadata-fails','partial','short-done','terminal','roles','cancelled']:[])]){
+ for(const kind of editKinds)for(const scenario of [...scenarios,...(kind==='cutout'?['receipt-incomplete']:[]),...(kind.startsWith('detail')?['poll-fails','poll-malformed','metadata-fails','partial','short-done','terminal','roles','cancelled']:[])]){
   if(scenario==='reference-fails'&&['expand','annotate'].includes(kind))continue;
   const f=setup(kind,scenario,built),{c,state}=f;await f.run();
   eq(c.generationOperationRef.current.size,0,kind+'/'+scenario+' unlock');eq(state.intervals.size,0,'no leaked intervals');eq(state.timeouts.size,0,'no leaked poll/body timers');
@@ -143,6 +145,26 @@ if(require.main===module)(async()=>{
   if(baseline&&scenario==='partial')eq(state.history.length,2,'baseline repeats partial undo');
   eq(state.timeouts.size,0,'retry disposes body and poll timers');
   rows.push({kind,scenario,first,receiptDeadlines:state.receiptDeadlines,receiptCancellations:state.receiptCancellations,posts:state.posts,supplier:state.supplier,quotes:state.quotes,polls:state.polls,history:state.history,positions:state.positions,forms:state.forms,retryError});
+ }
+ if(nativeCutout){
+  process.env.CANVAS_IMAGE_SOURCE_ROOT=root;
+  const image=require('./verify-canvas-image-task-refactor.cjs'), imageBundle=await image.bundle();
+  for(const scenario of ['done','readonly','locked','denied','not-ready']){
+   const f=image.setup('cutout',scenario,imageBundle);
+   if(scenario==='readonly')f.c.readOnly=true;
+   if(scenario==='locked')f.c.isNodeLocked=()=>true;
+   if(scenario==='denied')f.c.canFeature=()=>false;
+   if(scenario==='not-ready')f.c.cutoutReady=false;
+   await f.run();
+   eq(f.state.post,scenario==='done'?1:0,'native cutout admission '+scenario);
+   if(scenario==='done'){
+    const input=Object.fromEntries(f.state.forms[0]);
+    eq(input.transparent,'1','native cutout submits transparent output through the image owner');
+    eq(input.count,'1','native cutout requests one variant');
+    eq(f.state.history,[['result-1']],'native cutout attaches once');
+   }
+   rows.push({kind:'cutout',scenario,posts:f.state.post,history:f.state.history,forms:f.state.forms});
+  }
  }
  fs.writeFileSync(path.join(out,`${baseline?'BASELINE':'MODIFIED'}_RESULT.json`),JSON.stringify({root,checks,cases:rows.length,rows},null,2));
  console.log(`CANVAS_TASK_BOUNDARIES=PASS mode=${baseline?'BASELINE':'MODIFIED'} cases=${rows.length} checks=${checks} ACTUAL_CANVAS=1 ACTUAL_BILLING_CLIENT=1 KNOWN_RETRY=${baseline?'REPOST_OR_UNHANDLED':'RESUME'} SUPPLIER=FIXTURE EXTERNAL=0`);
