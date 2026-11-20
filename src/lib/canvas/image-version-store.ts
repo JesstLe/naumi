@@ -19,6 +19,13 @@ function snapshot(row: Row): Omit<CanvasImageVersion, "id" | "createdAt"> {
     ratio: row.ratio || null, resolution: row.resolution || null, style: row.style || null };
 }
 const currentAsset = (row: Row) => row.canvas_image_version || { id: "initial", ...snapshot(row) };
+/** The document transaction holds the artwork lock and updates its original display version. */
+export async function updateLayeredCanvasPreviewTx(tx: PoolClient, owner: string, nodeId: string, image: string) {
+  await tx.query(`UPDATE app_artworks SET image_url=$1,canvas_image_version=NULL,canvas_image_revision=canvas_image_revision+1
+    WHERE id=$2 AND email=$3 AND source_url='canvas-layered-psd'`,[image,nodeId,owner]);
+  await tx.query(`UPDATE app_canvas_image_versions SET asset=jsonb_set(asset,'{image}',to_jsonb($1::text))
+    WHERE node_id=$2 AND email=$3 AND version_id='initial'`,[image,nodeId,owner]);
+}
 async function authorize(owner: string, row: Row, tx: Query, allowDeleted = false) {
   if (!row || row.email !== owner || (!allowDeleted && row.deleted_at) || row.video_url || !row.image_url || row.source_url === CANVAS_IMAGE_VERSION_SOURCE)
     throw new Error("图片节点不存在或无权访问");

@@ -250,6 +250,7 @@ const panelLoading = () => <div role="status" className="p-4 text-sm text-slate-
 const AssistantRichText = dynamic(() => import("./assistant-richtext").then(module => module.AssistantRichText), { ssr: false, loading: panelLoading });
 const ImageCropDialog = dynamic(() => import("./image-crop-dialog").then(module => module.ImageCropDialog), { ssr: false, loading: panelLoading });
 const LayeredPsdDialog = dynamic(() => import("./layered-psd-dialog").then(module => module.LayeredPsdDialog), { ssr: false, loading: panelLoading });
+const PsdNodeEditor = dynamic(() => import("./psd-node-editor").then(module => module.PsdNodeEditor), { ssr:false, loading:panelLoading });
 const NodePropertiesPanel = dynamic(() => import("./node-properties-panel").then(module => module.NodePropertiesPanel), { ssr: false, loading: panelLoading });
 const AnnotateEditorModal = dynamic(() => import("./annotate-editor").then(module => module.AnnotateEditorModal), { ssr: false, loading: panelLoading });
 const CanvasComfyDialog = dynamic(() => import("./canvas-comfy-dialog").then(module => module.CanvasComfyDialog), { ssr: false, loading: panelLoading });
@@ -397,6 +398,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   if(canvasOwnerEpochRef.current.key!==canvasOwner)canvasOwnerEpochRef.current={key:canvasOwner,revision:canvasOwnerEpochRef.current.revision+1};
   const [propertiesOpen, setPropertiesOpen] = useState(false);
   const [layeredPsd, setLayeredPsd] = useState<LayeredPsdSelection | null>(null);
+  const [psdEditor,setPsdEditor]=useState<LayeredPsdSelection|null>(null);
   const replaceInputRef = useRef<HTMLInputElement>(null);
   const L = (zh: string, en: string) => locale === "en" ? en : zh;
   const canvasArtworkDocument = useCanvasArtworkDocument({account:canvasAccountRef.current,actor:user?.email||"",owner:targetEmail||user?.email||"",
@@ -2686,7 +2688,9 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
       {frameChoice.pending&&<FrameRatioDialog key={frameChoice.pending.id} choices={frameChoice.pending.choices} english={locale==="en"} onChoose={id=>frameChoice.choose(frameChoice.pending!.id,id)}/>}
       {layeredPsd?.scope.viewCurrent() && !readOnly && <LayeredPsdDialog selection={layeredPsd} english={locale==="en"}
-        onClose={()=>setLayeredPsd(null)} onSettled={()=>void refreshCredits()}/>}
+        onClose={()=>setLayeredPsd(null)} onSettled={()=>void refreshCredits()} onChild={async id=>{await mergeWorks([id],layeredPsd.scope.viewCurrent)}}/>}
+      {psdEditor?.scope.viewCurrent()&&<PsdNodeEditor key={psdEditor.id} node={psdEditor} scope={psdEditor.scope} english={locale==="en"}
+        readOnly={readOnly||isNodeLocked(psdEditor.id)} onClose={()=>setPsdEditor(null)} onSaved={async()=>{await mergeWorks([psdEditor.id],psdEditor.scope.viewCurrent)}}/>}
       {/* 占位节点上传用的隐藏 input */}
       <input
         ref={pendUploadRef}
@@ -2880,6 +2884,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 if(directorNodesStore.nodes.some(item=>item.id===node.id)){openDirectorEditor(node.id);return;}
                 if(videoNodesStore.nodes.some(item=>item.id===node.id)){openVideoEditor(node.id);return;}
                 const m = active?.members.find((x) => x.id === node.id);
+                if(m?.source==="canvas-layered-psd" && m.id.startsWith("psd-")){setPsdEditor({id:m.id,title:m.title,image:m.image,scope:canvasArtworkDocument.scope});return;}
                 if (m) setLightbox({ src: m.image, alt: m.title });
               }}
               // 连线交互:悬停出剪刀提示可剪断;点击=选中(RF 原生连线选择),

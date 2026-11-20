@@ -65,7 +65,7 @@ export async function layerPrice(email: string) {
   return { channelPin, billing, frozen, pilotOperationId };
 }
 
-async function ownedCanvasSource(email: string, id: string) {
+export async function ownedCanvasSource(email: string, id: string) {
   const scope = currentCreationContext();
   if (!scope?.parentContext) throw new BillingError("INVALID_RESULT", "缺少当前画布项目", 400);
   const [source] = await listArtworksByIds(email, [id]);
