@@ -253,11 +253,25 @@ test("canvas image plans and toolbox submit once without native fee dialogs",asy
  await expect(page.getByRole("button",{name:"图像创作",exact:true})).toHaveCount(0);await expect(page.getByRole("dialog",{name:"图像创作",exact:true})).toHaveCount(0);
  let inputUploads=0;await page.route("**/api/imagegen/inputs",route=>{inputUploads++;return route.fulfill({contentType:"application/json",body:JSON.stringify({artworkId:`asset-dock-${inputUploads}`,url:"/media/billing-ui-fixture.png",width:512,height:512})});});
  await page.getByLabel("节点提示词",{exact:true}).fill("Canvas retained image edit");await page.getByRole("button",{name:"生成",exact:true}).click();await expect.poll(()=>attempts.filter(a=>a.path==="imagegen").length).toBe(1);
- await Promise.all([page.waitForResponse(response=>new URL(response.url()).pathname==="/api/billing/quote"&&response.request().method()==="POST"&&response.request().postDataJSON().feature==="tool.cutout"),page.goto("/cutout")]);await page.locator('input[type="file"]').first().setInputFiles({name:"reference.png",mimeType:"image/png",buffer:Buffer.from(fixture.imageBase64,"base64")});await expect(page.getByRole("button",{name:"移除图片",exact:true})).toBeVisible();
- await page.getByRole("button",{name:/开始抠图.*消耗 6 积分/}).click();await expect.poll(()=>attempts.filter(a=>a.path==="cutout").length).toBe(1);
+ await Promise.all([
+  page.waitForResponse(response=>new URL(response.url()).pathname==="/api/billing/quote"&&response.request().method()==="POST"&&response.request().postDataJSON().feature==="image.generate"),
+  page.goto("/cutout"),
+ ]);
+ await page.getByTestId("tool-upload-input").setInputFiles({name:"reference.png",mimeType:"image/png",buffer:Buffer.from(fixture.imageBase64,"base64")});
+ await expect(page.getByRole("button",{name:"移除图片",exact:true})).toBeVisible();
+ await page.getByRole("button",{name:/开始抠图.*消耗 6 积分/}).click();
+ await expect.poll(()=>attempts.filter(a=>a.path==="imagegen"&&a.body.entry==="workbench").length).toBe(1);
  expect(confirmations).toBe(0);expect(attempts).toHaveLength(2);
- const image=attempts.find(attempt=>attempt.path==="imagegen")!;expect(plans).toHaveLength(1);expect(image.body.operationId).toBe(plans[0].operationId);expect(image.body.confirmation).toEqual({modelVersion:1,billingVersion:version,credits:6,confirmed:true});expect(inputUploads).toBe(1);expect(image.body.inputs[0].artworkId).toBe("asset-dock-1");expect(image.body.prompt).toBe("Canvas retained image edit");
- const cutout=attempts.find(attempt=>attempt.path==="cutout")!;expect(cutout.headers["x-naumi-billing-version"]).toBe(String(version));expect(cutout.headers["x-naumi-billing-credits"]).toBe("6");expect(cutout.headers["x-naumi-billing-operation-id"]).toBeTruthy();
+ const [image,cutout]=attempts;
+ expect(plans).toHaveLength(2);expect(inputUploads).toBe(2);
+ expect(image.body.inputs[0].artworkId).toBe("asset-dock-1");expect(image.body.prompt).toBe("Canvas retained image edit");
+ expect(cutout.body).toMatchObject({entry:"workbench",mode:"edit",output:{background:"transparent"},inputs:[{artworkId:"asset-dock-2",role:"edit-target"}]});
+ expect(image.body.operationId).not.toBe(cutout.body.operationId);
+ for(const [index,attempt] of attempts.entries()){
+  expect(attempt.path).toBe("imagegen");
+  expect(attempt.body.operationId).toBe(plans[index].operationId);
+  expect(attempt.body.confirmation).toEqual({modelVersion:1,billingVersion:version,credits:6,confirmed:true});
+ }
 });
 
 test("business groups expose canvas prices, free controls and shared entries", async({page})=>{
