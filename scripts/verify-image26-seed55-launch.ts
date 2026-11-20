@@ -9,11 +9,13 @@ import {apimartImageParameters} from '../src/lib/model-config/apimart-image-para
 import {quote} from '../src/lib/billing/quote';
 import {seedreamPreflight} from '../src/lib/model-config/seedream-preflight';
 import {simulateModel} from '../src/lib/model-config/runtime';
+import {featureDefaultModel,FEATURE_BINDINGS} from '../src/lib/model-config/feature-model-policy';
+import {businessBillingSnapshot} from '../src/lib/model-config/business-billing';
 
 async function main(){
  const data=JSON.parse(readFileSync(process.argv[2],'utf8'));
  const manifest=JSON.parse(readFileSync('docs/providers/apib-image26-preparation-20261110.json','utf8'));
- const original=data.snapshot.config,ids=data.catalog.data.map((m:any)=>m.id),config=prepareImageLaunch(original,manifest,ids);
+ const original=data.snapshot.config,ids=data.catalog.data.map((m:any)=>m.id),featureDefaults=Object.fromEntries(Object.entries(FEATURE_BINDINGS).map(([feature,binding])=>[feature,featureDefaultModel(original,feature,binding)])),featurePricing=Object.fromEntries(Object.entries(data.billing.config.features).map(([id,feature]:[string,any])=>[id,feature.pricing])),config=prepareImageLaunch(original,manifest,ids,{featureDefaults,featurePricing});
  const trustedOrigins=original.providers.map((p:any)=>new URL(p.baseUrl).origin);
  validateModelConfig(config,{trustedOrigins});assert.deepEqual(rollbackImageLaunch(config,original,config),original);
  assert.throws(()=>prepareImageLaunch(config,manifest,ids),/COLLISION/);
@@ -38,7 +40,7 @@ async function main(){
    if(family.id==='jimeng-image-5.5'){assert.equal(model.maxReferenceImages,10);assert.deepEqual(model.generationParameters!.ratios,SEED55_RATIOS);assert.deepEqual(model.nativeResolutions,['1K','2K']);}
    for(const resolution of model.nativeResolutions)for(const quality of model.qualities){
     const facts={feature,modelId:family.id,providerId:'apib-image',quality,resolution,quantity:1,metered:true,byok:false,paidFen:0,userGroup:'user'} as any;
-    const current=quote(data.billing,facts),old=quote(data.billing,{...facts,modelId:family.id==='gpt-image-2.6'?'gpt-image-2':'jimeng-image-5.0-pro'});
+    const current=quote(businessBillingSnapshot(data.billing,{...data.snapshot,config},facts),facts),old=quote(data.billing,{...facts,modelId:family.id==='gpt-image-2.6'?'gpt-image-2':'jimeng-image-5.0-pro'});
     assert.equal(current.requestedCredits,old.requestedCredits);
    }
   }

@@ -7,6 +7,7 @@ import {prepareImageLaunch,rollbackImageLaunch,LAUNCH_MODELS} from '../lib/image
 import {validateModelConfig} from '../../src/lib/model-config/schema';
 import {modelConfigDigest,canonicalConfig} from '../../src/lib/model-config/snapshot-value';
 import {publicModelCatalog} from '../../src/lib/model-config/public-catalog';
+import {featureDefaultModel,FEATURE_BINDINGS} from '../../src/lib/model-config/feature-model-policy';
 import {ingestSupplierSources} from '../../src/lib/supplier-models/repository';
 
 const [mode,root]=process.argv.slice(2);
@@ -27,7 +28,9 @@ async function main(){
    const key=await a.credentials.read(provider.credentialRef!,provider.id);
    const response=await fetch(provider.baseUrl+'/models',{headers:{Authorization:'Bearer '+key},redirect:'error',signal:AbortSignal.timeout(20000)});
    assert.equal(response.status,200);const catalog=await response.json();assert(Array.isArray(catalog.data));
-   const config=prepareImageLaunch(current.config,read('CONTRACT.json'),catalog.data.map((m:any)=>m.id));
+   const featureDefaults=Object.fromEntries(Object.entries(FEATURE_BINDINGS).map(([feature,binding])=>[feature,featureDefaultModel(current.config,feature,binding)]));
+   const featurePricing=Object.fromEntries(Object.entries(billing.config.features).map(([id,feature])=>[id,feature.pricing]));
+   const config=prepareImageLaunch(current.config,read('CONTRACT.json'),catalog.data.map((m:any)=>m.id),{mode:'balanced',featureDefaults,featurePricing});
    validateModelConfig(config,{trustedOrigins:a.trustedOrigins});assert.deepEqual(rollbackImageLaunch(config,current.config,config),current.config);
    const sources=read('SOURCES.json');const wires=LAUNCH_MODELS.flatMap(m=>m.wires);
    assert(wires.every(w=>sources.results.some((s:any)=>s.http===200&&s.success&&s.data.model_name===w)));
@@ -65,7 +68,7 @@ async function main(){
   }
   const actor='ops:image26-seed55:'+id,draft=await a.repo.draft(actor);assert.equal(draft.basedOnVersion,current.version);
   const saved=await a.repo.saveDraft({id:draft.id,expectedRevision:draft.revision,config,actor});
-  const request={id,draftId:saved.id,expectedRevision:saved.revision,expectedVersion:current.version,actor,reason:rollback?'Remove only the image26/seedream55 launch additions':'User requested one GPT-Image-2.6 family with equal random Flare/Sunburst and separate 即梦 5.5; preserve names/defaults/billing/history'};
+  const request={id,draftId:saved.id,expectedRevision:saved.revision,expectedVersion:current.version,actor,reason:rollback?'Remove only the image26/seedream55 launch additions':'User requested immediate hot launch: one GPT-Image-2.6 family with equal balanced Flare/Sunburst and separate 即梦 5.5; preserve names/defaults/billing/history'};
   save(filename,request);const publication=await a.runtime.publish(request);save(mode+'_PUBLICATION.json',publication);assert.equal(publication.phase,'applied');console.log(JSON.stringify({mode,publication}));
  }finally{await a.pool.end()}
 }
