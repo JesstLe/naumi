@@ -5,7 +5,7 @@ export const MAX_LAYER_SIZE = 4096;
 const MAX_LAYER_BYTES = 64 * 1024 * 1024;
 const MAX_LAYER_PIXELS = 24 * 1024 * 1024;
 
-export type ImageLayer = { name: string; left: number; top: number; width: number; height: number; bytes: Buffer };
+export type ImageLayer = { name: string; left: number; top: number; width: number; height: number; placedWidth?: number; placedHeight?: number; bytes: Buffer };
 export type LayerStack = { width: number; height: number; layers: ImageLayer[] };
 
 export function layerName(value: string, index: number) {
@@ -30,14 +30,16 @@ export async function encodeLayeredPsd(stack: LayerStack): Promise<Buffer> {
     if (!Number.isInteger(left) || !Number.isInteger(top) || left < 0 || top < 0) throw new Error("图层位置无效");
     const image = sharp(bytes, { failOn: "error", limitInputPixels: MAX_LAYER_SIZE ** 2 });
     const meta = await image.metadata();
-    const w = meta.width ?? 0, h = meta.height ?? 0;
-    if (!w || !h || w !== layer.width || h !== layer.height || left + w > width || top + h > height || (meta.pages ?? 1) !== 1
-        || (index === 0 && (left !== 0 || top !== 0 || w !== width || h !== height))
+    const w = layer.placedWidth ?? layer.width, h = layer.placedHeight ?? layer.height;
+    if (!Number.isInteger(w) || !Number.isInteger(h) || w < 1 || h < 1 || meta.width !== layer.width || meta.height !== layer.height
+        || left + w > width || top + h > height || (meta.pages ?? 1) !== 1
+        || (index === 0 && (left !== 0 || top !== 0 || w !== width || h !== height || layer.width !== w || layer.height !== h))
         || (index !== 0 && (meta.format !== "png" || !meta.hasAlpha))) {
       throw new Error("背景尺寸或透明图层格式无效");
     }
-    pixelCount += w * h;
+    pixelCount += Math.max(w * h, layer.width * layer.height);
     if (pixelCount > MAX_LAYER_PIXELS) throw new Error("图层像素总量超出导出范围");
+    if (layer.width !== w || layer.height !== h) image.resize(w, h, { fit: "fill" });
     const data = await image.toColourspace("srgb").ensureAlpha().raw().toBuffer();
     let visible = false, transparent = false;
     for (let offset = 3; offset < data.length && (!visible || !transparent); offset += 4) {

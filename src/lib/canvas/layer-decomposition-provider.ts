@@ -9,7 +9,7 @@ import { MAX_LAYER_COUNT, MAX_LAYER_SIZE, type LayerStack } from "./layered-psd"
 const MAX_DOWNLOAD_BYTES = 64 * 1024 * 1024;
 export const DECOMPOSITION_PROMPT = "拆分原图的背景、商品主体和主要装饰或文案，保留原构图、颜色和细节。将遮挡主体后的背景自然补全，商品和装饰分别以透明图层返回。";
 
-type OutputLayer = { url: string; name: string; left: number; top: number; width: number; height: number; z: number };
+type OutputLayer = Omit<LayerStack["layers"][number], "bytes"> & { url: string; z: number };
 type ProviderLayer = { z_index?: number | string; name?: string; bounding_box?: { absolute?: (number | string)[] } };
 type ProviderResult = { images?: { layer_decomposition?: boolean; url?: string[]; sizes?: string[]; layers?: ProviderLayer[] }[] };
 
@@ -38,11 +38,14 @@ export function readLayerReceipt(result: unknown) {
     if (!Array.isArray(bounds) || bounds.length !== 4 || !bounds.every(Number.isInteger)) throw new Error("拆层结果缺少图层坐标");
     const [left, top, right, bottom] = bounds;
     const { w, h } = sizes[index];
-    // The supplier's documented example uses both inclusive and exclusive
-    // right/bottom edges. The encoded dimensions decide the physical extent.
-    if (left < 0 || top < 0 || left + w > width || top + h > height
-        || ![w, w - 1].includes(right - left) || ![h, h - 1].includes(bottom - top)) throw new Error("拆层结果坐标超出原图");
-    return { url: url.href, z, left, top, width: w, height: h, name: typeof layer.name === "string" ? layer.name : "" };
+    // Some native-size receipts use inclusive endpoints. Upsampled cutouts
+    // instead carry an independent placement rectangle on the base canvas.
+    const nativeBox = [w, w - 1].includes(right - left) && [h, h - 1].includes(bottom - top);
+    const placedWidth = nativeBox ? w : right - left;
+    const placedHeight = nativeBox ? h : bottom - top;
+    if (left < 0 || top < 0 || placedWidth < 1 || placedHeight < 1
+        || left + placedWidth > width || top + placedHeight > height) throw new Error("拆层结果坐标超出原图");
+    return { url: url.href, z, left, top, width: w, height: h, placedWidth, placedHeight, name: typeof layer.name === "string" ? layer.name : "" };
   });
   if (new Set(layers.map(layer => layer.z)).size !== layers.length) throw new Error("拆层结果层级重复");
   return { width, height, layers: layers.sort((a, b) => a.z - b.z) };
@@ -117,7 +120,8 @@ export async function downloadLayerStack(result: unknown, signal: AbortSignal, f
     }
     const bytes = await readBoundedBytes(response, remaining);
     remaining -= bytes.length;
-    layers.push({ name: layer.name, left: layer.left, top: layer.top, width: layer.width, height: layer.height, bytes });
+    layers.push({ name: layer.name, left: layer.left, top: layer.top, width: layer.width, height: layer.height,
+      placedWidth: layer.placedWidth, placedHeight: layer.placedHeight, bytes });
   }
   return { width: receipt.width, height: receipt.height, layers };
 }
