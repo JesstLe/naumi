@@ -39,6 +39,7 @@ function scenarios(){const rows=[fixture({name:'empty-focus'})];
  rows.push(fixture({name:'independent-focus-ids',selectedId:'art-a',selectedTextId:'text-a',selectedPendId:'pend-a',ctxId:'video-a'}));
  for(const kind of ['art','text',...kinds])for(const mode of ['readOnly','notReady','historyBusy','localBusy'])rows.push(fixture({name:kind+'-'+mode,[kind==='text'?'selectedTextId':'selectedId']:kind+'-a',ctxId:kind+'-a',readOnly:mode==='readOnly',ready:mode!=='notReady',historySaving:mode==='historyBusy',localEditBusy:mode==='localBusy'}));
  rows.push(fixture({name:'image-result-video',artworks:[art('art-a',{videoUrl:'/video.mp4'})],selectedId:'art-a',ctxId:'art-a'}));
+ if(source.includes('layeredPsdPilotScope'))rows.push(fixture({name:'layered-psd-pilot',ctxId:'art-a',psdPilot:true,artworks:[art('art-a',{status:'completed'})]}));
  rows.push(fixture({name:'no-original-size',artworks:[art('art-a',{width:0,height:0})],selectedId:'art-a',ctxId:'art-a'}));
  rows.push(fixture({name:'intrinsic-size-only',artworks:[art('art-a',{canvasWidth:null,canvasHeight:null,width:800,height:1600})],selectedId:'art-a',ctxId:'art-a'}));
  rows.push(fixture({name:'first-match-art',artworks:[art('art-a',{title:'first'}),art('art-a',{title:'second'})],selectedId:'art-a',ctxId:'art-a'}));
@@ -66,12 +67,15 @@ async function main(){
  for(const config of scenarios()){
   freeze(config);const originalInput=JSON.stringify(config);
   const calls=[],record=(name,...values)=>{calls.push([name,...values]);return Promise.resolve(true);};
+  const pilotScope={project:config.project,viewCurrent:()=>true};
   const c={React,console,Map,Set,...api,Item:api.ContextMenuItem,useMemo:f=>f(),activeKey:config.project,active:config.noActive?null:{members:config.artworks},textNodes:config.text,pendNodes:config.pending,selectedId:config.selectedId,selectedTextId:config.selectedTextId,selectedPendId:config.selectedPendId,
    propertiesOpen:config.propertiesOpen,browsing:config.browsing,readOnly:config.readOnly,nodeSettingsReady:config.ready,textNodesReady:config.ready,historySaving:config.historySaving,localEditBusy:config.localEditBusy,batchRunBusy:false,selectionRunCount:config.multi.length,
    ctxMenu:{nodeId:config.ctxId,x:10,y:20,cx:30,cy:40},generationTasks:config.tasks||[],multiSel:config.multi,
    selectedBatchArts:config.multi.length>1?config.artworks.filter(a=>config.multi.includes(a.id)):[],selectedBatchIds:config.multi.filter(id=>config.artworks.some(a=>a.id===id)),selectedBatchAllMarked:false,selectedBatchCanvasGroupId:null,
    nodeSettings:{},DEFAULT_CANVAS_SETTINGS:api.defaultNodeSettings(),lightCanvas:true,locale:config.english?'en':'zh',isMac:false,hasClip:true,undoStack:[],redoStack:[],promptMining:false,stitching:false,zipping:false,assistBusy:false,videoNodeCreateDisabled:false,
    t:k=>k,L:(zh,en)=>config.english?en:zh,shortcut:k=>'Ctrl+'+k,canFeature:()=>true,isNodeLocked:id=>!!config.locked,
+   layeredPsdPilot:!!config.psdPilot,layeredPsdPilotScope:config.psdPilot?pilotScope:null,pilotScope,billing:undefined,hasRenderableImage:value=>!!value,
+   canvasArtworkDocument:{scope:pilotScope},setLayeredPsd:selection=>record('layered-psd',selection.id),
    FeatureVisible:({children})=>children,commitNodeSettings:(id,settings)=>record('save-settings',id,settings),setPropertiesOpen:value=>record('properties-open',value),setCtxMenu:value=>record('context-close',value),
    localEdits:{openCrop:a=>record('crop',a.id)},canvasLocalEditContext:()=>({scope:'fixture'}),requestReplace:a=>record('replace',a.id),
    nodeManagementItems:id=>[{id:'manage',label:'manage:'+id,onSelect:()=>record('manage',id)}],
@@ -91,6 +95,7 @@ async function main(){
   const before=calls.length;if(panel){await panel.props.onSave(api.defaultNodeSettings());panel.props.onCrop();panel.props.onReplace();panel.props.onClose();}
   for(const item of actions)if(!item.disabled)await item.onClick?.();
   const row={name:config.name,targets:plain(c.__targets),properties:plain(propertyProps),propertyHtml,menuHtml,actions:actions.map(({label,disabled,danger,hk})=>({label,disabled:!!disabled,danger:!!danger,hk})),calls:plain(calls.slice(before)),kinds:[...c.__kinds]};rows.push(row);
+  eq(row.calls.filter(([name])=>name==='layered-psd'),config.psdPilot?[['layered-psd','art-a']]:[],'PSD opens only for the enabled fixture scope');
   eq(JSON.stringify(config),originalInput,'catalogue input remains immutable');
   if(panel)ok(row.calls.some(x=>x[0]==='save-settings'&&x[1]===panel.key),'actual property callback uses panel target');
   checks++;console.log('PASS '+config.name);

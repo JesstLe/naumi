@@ -147,7 +147,15 @@ try {
         [generation,generationHook,generationOwner,client.replace('billing.submit(url, init, current, beforeSubmit)','billing.submit(url, init, current)')],
         [generation,generationHook+'\nwindow.confirm("fee");',generationOwner,client],
     ]){assert.throws(()=>generationSessionSubmission(page,hook,owner,billing));checks++;}
-    for (const name of ['cutout', 'retouch', 'replicate', 'garment3d', 'tryon', 'suite', 'aplus']) {
+    const cutout = read('src/components/cutout/cutout-client.tsx');
+    const toolEdit = read('src/lib/imagegen/tool-image-edit.ts');
+    const runToolEdit = importedName(parsed(cutout), '@/lib/imagegen/tool-image-edit', 'runToolImageEdit');
+    const submitToolEdit = importedName(parsed(toolEdit), './canvas-client', 'submitCanvasImagegen');
+    assert.ok(hasCall(cutout, runToolEdit), 'cutout must delegate to the existing image edit owner');
+    assert.ok(hasCall(toolEdit, submitToolEdit), 'cutout must use the receipt-first image submission');
+    for (const file of [cutout, toolEdit]) noFeeConfirmation(file);
+    checks += 2;
+    for (const name of ['retouch', 'replicate', 'garment3d', 'tryon', 'suite', 'aplus']) {
         assert.ok(hasCall(read(`src/components/${name}/${name}-client.tsx`), 'billing.submit'), name + ' quoted direct submission owner missing');
         checks++;
     }
