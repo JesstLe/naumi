@@ -6,7 +6,7 @@ export const activityErrorMessages = {
 export type ActivityErrorCode = keyof typeof activityErrorMessages;
 export type AcceptanceWindow = { total: number; accepted: number; rejected: number; failed: number; unknown: number; processing: number };
 export type ProviderActivity = {
-  id: string; name: string; enabled: boolean; maxConcurrent: number; timeoutMs: number; routingModes: ('priority' | 'balanced')[] | null;
+  id: string; name: string; enabled: boolean; maxConcurrent: number; timeoutMs: number; routingModes: import('./channel-policy').ChannelPolicy['mode'][] | null;
   stats: { h1: AcceptanceWindow | null; h24: AcceptanceWindow | null; errorCode: ActivityErrorCode | null };
   circuit: { configuredChannels: number | null; observedChannels: number | null; openChannels: number | null; recoveringChannels: number | null; unobservedChannels: number | null; errorCode: ActivityErrorCode | null };
 };

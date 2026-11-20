@@ -48,7 +48,7 @@ export function ModelMappingCard({ row, actions, scopeDisabled, onScope, onManag
       return <li key={`${route.upstreamId}-${route.kind}`} data-enabled={route.enabled}>
         <span className={styles.routeOrder}>{route.enabled ? String(index + 1).padStart(2, "0") : "—"}</span>
         <div className={styles.routeIdentity}><b>{route.provider}</b><span>实际模型 <code>{route.model}</code></span></div>
-        <span className={styles.routeKind}>{!route.enabled ? "已停用" : policy ? <>优先级 {policy.priority}{row.supplierRouting?.mode === "balanced" && <small>同级权重 {policy.weight}</small>}</> : route.kind}</span>
+        <span className={styles.routeKind}>{!route.enabled ? "已停用" : policy ? <>优先级 {policy.priority}{row.supplierRouting?.mode !== "priority" && <small>同级权重 {policy.weight}</small>}</> : route.kind}</span>
       </li>;
     })}
   </ul>;
@@ -80,7 +80,7 @@ export function ModelMappingCard({ row, actions, scopeDisabled, onScope, onManag
     </div>
     {expanded && <div id={panelId} className={styles.panel}>
       <section className={styles.connectionPanel} aria-label={`${row.label} 的调用通道`}>
-        <div className={styles.sectionHeading}><h3>调用通道</h3><span>{row.supplierRouting?.mode === "balanced" ? "同级分流" : row.supplierRouting?.mode === "priority" ? "主备优先" : row.conditional ? "条件路由 / 回退" : row.preset ? "默认预设" : row.publicIds.length > 1 ? "按比例选择" : "固定调用"}</span></div>
+        <div className={styles.sectionHeading}><h3>调用通道</h3><span>{row.supplierRouting?.mode === "random" ? "同级随机" : row.supplierRouting?.mode === "balanced" ? "同级分流" : row.supplierRouting?.mode === "priority" ? "主备优先" : row.conditional ? "条件路由 / 回退" : row.preset ? "默认预设" : row.publicIds.length > 1 ? "按比例选择" : "固定调用"}</span></div>
         {enabled.length ? <RouteList routes={enabled} /> : <p className={styles.empty}>当前没有启用的调用通道。</p>}
         {disabled.length > 0 && <details className={styles.disabledRoutes}><summary>已停用通道 · {disabledChannels}</summary><RouteList routes={disabled} /></details>}
       </section>

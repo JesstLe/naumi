@@ -9,7 +9,7 @@ if(mode==='baseline'){
 }else{
  assert((modular?owners:source).includes('<ChannelPolicyEditor row={row}'));
  const editor=fs.readFileSync('src/components/admin/model-management/channel-policy-editor.tsx','utf8');
- assert(editor.includes('mode === "balanced" && <label>'));
+ assert(editor.includes('mode !== "priority" && <label>'));
  assert(editor.includes('<details className={styles.inactive}>'));
  assert(editor.includes('<details className={styles.runtime}>'));
  const original=cp.execFileSync('git',['show',(modular?'70c50b2243a1789e0666a5f6d0786eccdc708203':'e99e1d2b827ba41448178d75cfa874776bda3f37')+':src/components/admin/model-management/model-management.tsx'],{encoding:'utf8'}).replace(/\r\n/g,'\n');
