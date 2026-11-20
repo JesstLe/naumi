@@ -4,7 +4,7 @@ import type {CanvasPendingNode} from "./scene-types";
 import type {createCanvasPendingPresentation} from "./pending-presentation";
 import {prepareImageUploads,uploadFormData} from "../client-image-upload";
 import type {Artwork} from "../mock-data";
-import {adaptiveCanvasImageSize} from "./image-size";
+import {adaptiveCanvasImageSize,canvasImageImportGrid} from "./image-size";
 import {NODE_W,NODE_H,NODE_LABEL_H} from "./node-geometry";
 import {placeGenerationPreview} from "./generation-feedback";
 import {synchronizeCanvasArtworks} from "./input-references";
@@ -120,25 +120,8 @@ export function createCanvasImageImports(){
       const preparedCanvasSizes = prepared.map((item) =>
         adaptiveCanvasImageSize(item.width, item.height)
       );
-      const rowCount = Math.max(1, columns);
-      let batchWidth = 0;
-      let batchHeight = 0;
-      const relative: { x: number; y: number }[] = [];
-      for (let start = 0; start < prepared.length; start += rowCount) {
-        const row = preparedCanvasSizes.slice(start, start + rowCount);
-        let rowX = 0;
-        const rowHeight = Math.max(
-          ...row.map((item) => item.height + NODE_LABEL_H),
-          NODE_H
-        );
-        row.forEach((item, offset) => {
-          relative[start + offset] = { x: rowX, y: batchHeight };
-          rowX += item.width + X_GAP;
-        });
-        batchWidth = Math.max(batchWidth, Math.max(0, rowX - X_GAP));
-        batchHeight += rowHeight + Y_GAP;
-      }
-      batchHeight = Math.max(0, batchHeight - Y_GAP);
+      const {width:batchWidth,height:batchHeight,positions:relative}=canvasImageImportGrid(preparedCanvasSizes,columns,
+        {x:X_GAP,y:Y_GAP,title:NODE_LABEL_H,minimumRow:NODE_H});
       const firstCanvasSize = preparedCanvasSizes[0] ?? { width: NODE_W, height: NODE_H - NODE_LABEL_H };
       const baseX = ctx.x + NODE_W / 2 - firstCanvasSize.width / 2;
       const baseY = ctx.y + NODE_H / 2 - (firstCanvasSize.height + NODE_LABEL_H) / 2;

@@ -4,6 +4,7 @@ import path from "node:path";
 const ts=(id,group,file,expect,args=[])=>({id,group,file,args,expect,pg:true,tsx:true});
 const node=(id,group,file,expect,args=[])=>({id,group,file,args,expect,pg:false,tsx:false});
 export const refactorCases=[
+ node('canvas-image-node-ux','canvas-image-ux','scripts/verify-canvas-image-ux.cjs','CANVAS_IMAGE_UX=PASS'),
  node('canvas-progress-curves','canvas-progress','scripts/verify-canvas-generation-progress.cjs','MODIFIED=PASS'),
  {...node('canvas-progress-browser','canvas-progress','scripts/render-canvas-generation-progress-test.cjs','COMPONENT_DYNAMIC=PASS'),clientReact:true},
  {...node('canvas-progress-batch','canvas-progress','scripts/verify-canvas-batch-placeholders.cjs','BATCH_PLACEHOLDERS=PASS'),clientReact:true},

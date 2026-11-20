@@ -11,6 +11,7 @@ export function useCanvasSceneActions(actions:CanvasSceneActions):CanvasSceneAct
     resize:(...args)=>current.current.resize(...args),
     ratioRepair:(...args)=>current.current.ratioRepair(...args),
     rename:(...args)=>current.current.rename(...args),
+    renameArtwork:async(...args)=>{await current.current.renameArtwork?.(...args);},
     videoProcess:(...args)=>current.current.videoProcess(...args),
     cutout:(...args)=>current.current.cutout(...args),
     generatePending:(...args)=>current.current.generatePending(...args),
