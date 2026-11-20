@@ -8,9 +8,11 @@ import type { GenerationStage } from "@/lib/canvas/generation-feedback";
 import { generationDisplayProgress, generationProgressHint } from "@/lib/canvas/generation-progress";
 import styles from "./generation-placeholder.module.css";
 
-export function GenerationPlaceholder({ stage = "generating", startedAt, count = 1, completed, kind = "image", failure, onRetry }: {
+export function GenerationPlaceholder({ stage = "generating", startedAt, taskId, count = 1, completed, kind = "image", failure, onRetry }: {
   stage?: GenerationStage;
   startedAt?: number;
+  /** Stable presentation attempt identity; stage clocks may restart after admission. */
+  taskId?: string;
   count?: number;
   completed?: number;
   kind?: "image" | "video";
@@ -31,8 +33,9 @@ export function GenerationPlaceholder({ stage = "generating", startedAt, count =
   }, [failure]);
   const seconds = Math.max(0, Math.floor((now - start) / 1000));
   const candidate = generationDisplayProgress(stage, seconds, completed, count, start);
-  const displayed = useRef({ start, percent: candidate });
-  if (displayed.current.start !== start) displayed.current = { start, percent: candidate };
+  const identity = taskId ?? start;
+  const displayed = useRef({ identity, percent: candidate });
+  if (displayed.current.identity !== identity) displayed.current = { identity, percent: candidate };
   else displayed.current.percent = Math.max(displayed.current.percent, candidate);
   const percent = displayed.current.percent;
   const labels = english ? ["Prepare", "Generate", "Save"] : ["准备", "生成", "保存"];

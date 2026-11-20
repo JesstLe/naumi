@@ -25,11 +25,14 @@ export function generationDisplayProgress(stage: GenerationStage, seconds: numbe
     const wobble = 0.5 * Math.sin(elapsed / (4 + 2 * taskNoise(seed, 10)) + 6.2832 * taskNoise(seed, 11));
     return Math.max(1, Math.min(Math.floor(cap), Math.floor(kick * kicked + (cap - kick) * drift + wobble)));
   }
-  // Optimistic ramp: each task reaches 99% within a per-task 18-32s window, then
-  // holds there until the supplier actually returns — 99 reads as "only the final
-  // result is pending" instead of a countdown that stalls near the end.
-  const ramp = 18 + 14 * taskNoise(seed, 0);
-  const base = 6 + 93 * Math.pow(Math.min(1, elapsed / ramp), 1.15);
+  // Fast front/middle, slow final stretch. Task-specific duration/easing keeps
+  // pacing varied without oscillating backwards. Only real results end the UI.
+  const fastSeconds = 6 + 4 * taskNoise(seed, 0);
+  const finishSeconds = 45 + 30 * taskNoise(seed, 2);
+  const fast = Math.pow(Math.min(1, elapsed / fastSeconds), 0.8 + 0.2 * taskNoise(seed, 3));
+  const finish = Math.min(1, Math.max(0, (elapsed - fastSeconds) / finishSeconds));
+  const base = elapsed < fastSeconds ? 6 + 84 * fast
+    : 90 + 9 * (1 - Math.pow(1 - finish, 1.5 + 0.5 * taskNoise(seed, 4)));
   if (stage === "preparing") {
     const cap = 12 + 4 * taskNoise(seed, 1);
     return Math.min(Math.floor(cap), Math.floor(base));
@@ -37,11 +40,7 @@ export function generationDisplayProgress(stage: GenerationStage, seconds: numbe
   if (stage === "saving") return Math.min(100, Math.floor(base + 2));
   const observed = typeof completed === "number" && Number.isFinite(completed) && count > 1
     ? Math.floor(Math.max(0, Math.min(count, completed)) / count * 98) : 0;
-  // Small uneven per-second deltas while climbing; at the 99% plateau the clamp
-  // pins the value so the wait reads as a steady "finalizing" state.
-  const wobble = 1.8 * Math.sin(elapsed / (5 + 3 * taskNoise(seed, 2)) + 6.2832 * taskNoise(seed, 3))
-               + 1.2 * Math.sin(elapsed / (2.4 + 1.8 * taskNoise(seed, 4)) + 6.2832 * taskNoise(seed, 5));
-  return Math.min(99, Math.max(observed, Math.floor(base + wobble)));
+  return Math.min(99, Math.max(observed, Math.floor(base)));
 }
 
 export function generationProgressHint(stage: GenerationStage, seconds: number, english = false) {

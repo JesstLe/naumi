@@ -4,6 +4,9 @@ import path from "node:path";
 const ts=(id,group,file,expect,args=[])=>({id,group,file,args,expect,pg:true,tsx:true});
 const node=(id,group,file,expect,args=[])=>({id,group,file,args,expect,pg:false,tsx:false});
 export const refactorCases=[
+ node('canvas-progress-curves','canvas-progress','scripts/verify-canvas-generation-progress.cjs','MODIFIED=PASS'),
+ {...node('canvas-progress-browser','canvas-progress','scripts/render-canvas-generation-progress-test.cjs','COMPONENT_DYNAMIC=PASS'),clientReact:true},
+ {...node('canvas-progress-batch','canvas-progress','scripts/verify-canvas-batch-placeholders.cjs','BATCH_PLACEHOLDERS=PASS'),clientReact:true},
  ts('enterprise-central-identity','central-identity','scripts/verify-central-identity.ts','CENTRAL_IDENTITY_PASS'),
  node('agent-desktop-client','agent-desktop','scripts/verify-agent-desktop-client.mjs','AGENT_DESKTOP_CLIENT=PASS'),
  ts('agent-desktop-scope-pg','agent-desktop','scripts/verify-agent-desktop-scope-pg.ts','AGENT_DESKTOP_SCOPE_PG=PASS'),

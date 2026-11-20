@@ -55,6 +55,16 @@ function setup(c,scenario){
   if(scenario==='invisible-task')eq(result.displayNodes.find(n=>n.id==='a').data.cutoutBusy,baseline,'hidden task does not block visible artwork');
   if(scenario==='readonly'||scenario==='settings-pending')ok(result.displayNodes.every(n=>!n.draggable),'no edit projection');
   if(scenario==='locked')eq(result.displayNodes.find(n=>n.id==='a').draggable,false,'locked retained');
+  if(!baseline&&scenario==='task'){
+   eq(result.displayNodes.find(n=>n.id==='task-a').data.generationTaskId,'task-a','derived placeholder uses stable attempt identity');
+   const task=input.generationTasks[0];task.startedAt=999;task.stage='queued';
+   const updated=c.projectCanvasScene(input);eq(updated.displayNodes.find(n=>n.id==='task-a').data.generationTaskId,'task-a','stage clock does not replace identity');
+   task.replaceNode=true;const replacement=c.projectCanvasScene(input);eq(replacement.displayNodes.find(n=>n.id==='a').data.generationTaskId,'task-a','in-place regeneration uses same identity');
+  }
+  if(!baseline&&scenario==='pending'){
+   input.pendNodes[0].generationTaskId='blank-attempt';input.pendNodes[0].generating=true;
+   eq(c.projectCanvasScene(input).displayNodes.find(n=>n.id==='pend-a').data.generationTaskId,'blank-attempt','blank placeholder forwards attempt identity');
+  }
   if(scenario==='task-failed'){result.displayNodes.find(n=>n.id==='task-a').data.onGenerationRetry();eq(events,[['retry']],'retained retry identity');}
   const arts=result.displayNodes.filter(n=>n.type==='art'&&!n.data.pending&&!n.data.videoUrl);if(arts[0]){arts[0].data.onCutout('a');eq(events.at(-1),['cutout','a'],'command by id');}
   if(scenario==='workflow'){const group=result.displayNodes.find(n=>n.type==='workflowGroup');if(baseline)group.data.onSelect();else group.data.onSelect(group.data.members);eq(events.at(-1),['workflowSelect',['a','text-a']],'group command retained');}
