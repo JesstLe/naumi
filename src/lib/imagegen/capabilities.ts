@@ -10,6 +10,7 @@ export const imagegenCapabilitySetSchema=z.strictObject({
   outputFormat:evidenceSchema.optional(),outputCompression:evidenceSchema.optional(),moderation:evidenceSchema.optional(),pixelSize:evidenceSchema.optional(),
 });
 export const imagegenRequirementsSchema=z.strictObject({background:z.enum(["transparent","opaque"]).nullable(),
+  backgroundRemoval:z.boolean().optional(),
   operation:z.enum(["generate","edit","cutout","postprocess"]),useCase:z.enum(IMAGEGEN_USE_CASES.map(x=>x.id) as [typeof IMAGEGEN_USE_CASES[number]["id"],...typeof IMAGEGEN_USE_CASES[number]["id"][]]).optional(),
   conflicts:z.array(z.string().max(300)).max(20),requirements:z.array(z.strictObject({name:z.string().max(100),value:z.string().max(100),source:z.enum(["prompt","ui","skill"])})).max(30)});
 export const IMAGEGEN_WIRE_FIELDS=["background","input_fidelity","output_format","output_compression","moderation","size","resolution","image_size","omit"] as const;

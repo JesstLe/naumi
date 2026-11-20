@@ -4,6 +4,13 @@ import path from "node:path";
 const ts=(id,group,file,expect,args=[])=>({id,group,file,args,expect,pg:true,tsx:true});
 const node=(id,group,file,expect,args=[])=>({id,group,file,args,expect,pg:false,tsx:false});
 export const refactorCases=[
+ {...ts('native-edit-intent','unified-image-edit','scripts/verify-imagegen-intent.ts','PASS imagegen intent'),pg:false},
+ {...ts('native-edit-contract','unified-image-edit','scripts/verify-imagegen-contract.ts','PASS imagegen contract'),pg:false},
+ {...ts('native-edit-capabilities','unified-image-edit','scripts/verify-imagegen-capabilities.ts','PASS imagegen capabilities'),pg:false},
+ {...ts('native-edit-pixels','unified-image-edit','scripts/verify-imagegen-postprocess.ts','PASS imagegen pixels'),pg:false},
+ {...ts('native-edit-callers','unified-image-edit','scripts/verify-imagegen-pipeline-callers.ts','CALLERS=PASS'),pg:false},
+ {...ts('native-edit-recovery','unified-image-edit','scripts/verify-imagegen-requote-recovery.ts','REQUOTING_RECOVERY=PASS CHECKS=126'),pg:false},
+ ts('native-edit-receipts','unified-image-edit','scripts/verify-imagegen-receipts.ts','PASS imagegen receipts'),
  node('canvas-progress-curves','canvas-progress','scripts/verify-canvas-generation-progress.cjs','MODIFIED=PASS'),
  {...node('canvas-progress-browser','canvas-progress','scripts/render-canvas-generation-progress-test.cjs','COMPONENT_DYNAMIC=PASS'),clientReact:true},
  {...node('canvas-progress-batch','canvas-progress','scripts/verify-canvas-batch-placeholders.cjs','BATCH_PLACEHOLDERS=PASS'),clientReact:true},
@@ -208,7 +215,7 @@ export const refactorCases=[
  {...ts('canvas-cutout-readiness','generation','scripts/verify-canvas-cutout-readiness.ts','CANVAS_CUTOUT_READINESS=PASS'),pg:false},
  node('cutout-transparent-output','generation','scripts/verify-cutout-transparency.cjs','CUTOUT_TRANSPARENCY=PASS'),
  node('cutout-provider-alpha','generation','scripts/verify-cutout-provider-alpha.cjs','CUTOUT_PROVIDER_ALPHA=PASS'),
- node('cutout-quoted-default','generation','scripts/verify-imagegen-hidden-cutout.cjs','MODIFIED=PASS CHECKS=33'),
+ node('cutout-quoted-default','generation','scripts/verify-imagegen-hidden-cutout.cjs','MODIFIED=PASS CHECKS=38'),
  ts('cutout-quoted-http-pg','generation','scripts/verify-canvas-cutout-parameters.ts','QUOTED_CUTOUT_PG=PASS',['--transparency']),
  {...node('cutout-receipt','pricing','scripts/verify-cutout-receipt-recovery.cjs','CUTOUT_RECEIPT=PASS'),pg:true},
  node('primary-generation','canvas','scripts/verify-canvas-primary-generation.cjs','CANVAS_PRIMARY_GENERATION=PASS'),

@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { imagegenRequestSchema } from "../src/lib/imagegen/schema";
-import { resolveImagegenIntent } from "../src/lib/imagegen/intent";
+import { resolveImagegenIntent,removesImageBackground } from "../src/lib/imagegen/intent";
 import { compileImagegenPrompt } from "../src/lib/imagegen/prompt";
+import { REMOVE_BACKGROUND_PROMPT } from "../src/lib/imagegen/background-removal";
 const base={version:1,operationId:"1472c152-3faa-4f06-a047-815e3f34848f",entry:"canvas",mode:"generate"};
 const parse=(prompt:string,options:Record<string,unknown>={})=>imagegenRequestSchema.parse({...base,prompt,...options});
 for(const [prompt,background] of [
@@ -19,6 +20,8 @@ assert.ok(resolveImagegenIntent(parse("透明底，同时白底")).conflicts.len
 assert.ok(resolveImagegenIntent(parse("透明底",{output:{format:"png",background:"opaque",backgroundOrigin:"current-ui"}})).conflicts.length);
 assert.equal(resolveImagegenIntent(parse("不要透明，改白底",{output:{format:"png",background:"transparent",backgroundOrigin:"inherited"}})).background,"opaque");
 const target=[{artworkId:"owned-image",role:"edit-target"}];
+const shortcut=resolveImagegenIntent(parse(REMOVE_BACKGROUND_PROMPT,{mode:"edit",inputs:target,output:{background:"transparent",backgroundOrigin:"current-ui"}}));
+assert.deepEqual(shortcut.conflicts,[]);assert.equal(removesImageBackground(shortcut),true);
 for(const prompt of [
   "去掉白底，输出透明背景", "去掉白色背景，保留不透明主体", "移除原图中的白色背景，主体不透明", "背景透明，商品不透明",
   "背景透明，瓶身保持不透明", "保持背景透明，不要把主体变透明", "不要白底或棋盘格，输出透明PNG",
@@ -34,10 +37,19 @@ for(const prompt of ["透明背景，同时保留白底", "白底且透明背景
   assert.ok(resolveImagegenIntent(parse(prompt)).conflicts.length,prompt);
 for(const prompt of ["不要移除白色背景", "don't remove the white background", "不要没有背景的图"])
   assert.equal(resolveImagegenIntent(parse(prompt,{inputs:target})).background,"opaque",prompt);
-assert.equal(resolveImagegenIntent(parse("去掉白底，主体不透明",{mode:"edit",inputs:target})).operation,"cutout");
-assert.equal(resolveImagegenIntent(parse("去掉这张图的背景",{inputs:target})).operation,"cutout");
+assert.equal(resolveImagegenIntent(parse("去掉白底，主体不透明",{mode:"edit",inputs:target})).operation,"edit");
+assert.equal(resolveImagegenIntent(parse("去掉这张图的背景",{inputs:target})).operation,"edit");
 assert.ok(resolveImagegenIntent(parse("去掉这张图的背景")).conflicts.length);
 assert.equal(resolveImagegenIntent(parse("不要去掉背景",{inputs:target})).operation,"generate");
+// A later purpose is not a present cutout command or a reason to switch models.
+const qingyun=resolveImagegenIntent(parse("图片高清一些，去除下方的文字，背景变成红色，干净些，方便我抠图",{mode:"edit",inputs:target}));
+assert.equal(qingyun.operation,"edit");assert.equal(qingyun.background,"opaque");assert.notEqual(qingyun.useCase,"background-extraction");assert.deepEqual(qingyun.conflicts,[]);
+for(const prompt of ["去除原背景，换成红色背景", "移除背景，背景变成蓝色", "去掉背景，输出白底"]){
+ const result=resolveImagegenIntent(parse(prompt,{mode:"edit",inputs:target}));assert.equal(result.background,"opaque",prompt);assert.equal(result.operation,"edit",prompt);assert.deepEqual(result.conflicts,[],prompt);
+}
+for(const options of [{},{useCase:"product-mockup"}])for(const prompt of ["抠图，输出透明PNG","商品样机，抠图，输出透明PNG"]){const result=resolveImagegenIntent(parse(prompt,{mode:"edit",inputs:target,...options}));assert.equal(removesImageBackground(result),true);}
+assert.ok(resolveImagegenIntent(parse("移除背景，同时不要去掉背景",{mode:"edit",inputs:target})).conflicts.length);
+assert.ok(resolveImagegenIntent(parse("背景变成红色",{mode:"edit",inputs:target,useCase:"background-extraction"})).conflicts.length);
 const roleOnly=[{artworkId:"style-image",role:"style"}];
 assert.ok(resolveImagegenIntent(parse("给图片换成漫画风格",{inputs:roleOnly})).conflicts.length);
 assert.equal(resolveImagegenIntent(parse("绘制界面样机")).useCase,"ui-mockup");

@@ -55,7 +55,7 @@ export async function resolveCanvasDetailFrame(form:FormData,chooseFrame:(choice
  }finally{choices.forEach(choice=>URL.revokeObjectURL(choice.url));}
 }
 /** Ordinary node prompts use the same read-only plan; specialized old recipes retain their adapter. */
-export async function submitCanvasImagegen(form:FormData,sourceNodeId:string|undefined,onPlan:((message:string)=>void)|undefined,scope:{owner:string;project:string;headers?:Record<string,string>;isCurrent?:()=>boolean;chooseFrame?:(choices:CanvasFrameChoice[])=>Promise<string|null>}){
+export async function submitCanvasImagegen(form:FormData,sourceNodeId:string|undefined,onPlan:((message:string)=>void)|undefined,scope:{owner:string;project:string;entry?:"canvas"|"workbench";headers?:Record<string,string>;isCurrent?:()=>boolean;chooseFrame?:(choices:CanvasFrameChoice[])=>Promise<string|null>}){
  const workspace=currentWorkspace(),capturedHeaders=scope.headers?imagegenScopeHeaders(scope.headers):undefined,context={workspace,...capturedHeaders?{headers:capturedHeaders}:{},...scope.project!=='workspace'?{projectContext:scope.project}:{},isCurrent:()=>currentWorkspace()===workspace&&(!scope.isCurrent||scope.isCurrent())};
  const assertCurrent=()=>{if(currentWorkspace()!==workspace||scope.isCurrent&&!scope.isCurrent())throw new Error("画布账号、项目或工作空间已切换，未提交新任务");};assertCurrent();
  const actionKey=await canvasImagegenActionKey(form,sourceNodeId);assertCurrent();
@@ -74,7 +74,7 @@ export async function submitCanvasImagegen(form:FormData,sourceNodeId:string|und
   assertCurrent();
   if(result.jobId!==`imagegen-${pending.operationId}`||result.operationId&&result.operationId!==pending.operationId)throw new ImagegenHttpError('原任务回执尚未核实，请稍后重试',0);
   pending={...pending,accepted:'accepted',jobId:result.jobId};savePendingAttempt(key,pending);
-  return Response.json({jobId:result.jobId});
+  return Response.json({jobId:result.jobId,...scope.entry==='workbench'?{replayed:true}:{}});
  }
  let request:ImagegenRequest;
  if(pending)request=pending.request;
@@ -90,7 +90,7 @@ export async function submitCanvasImagegen(form:FormData,sourceNodeId:string|und
  const value=(name:string)=>String(form.get(name)||"");
  const style=value("style"),raw=value("userPrompt")||value("prompt"),prompt=raw+(style&&!/默认|default/i.test(style)?`\n用户选择的视觉风格：${style}`:"");
  const canvasTarget=value("canvasTargetNode")?{nodeId:value("canvasTargetNode"),expectedRevision:Number(value("canvasTargetRevision")||0),expectedImage:value("canvasTargetImage")}:undefined;
- request=imagegenRequestSchema.parse({version:1,operationId:browserRandomUUID(),entry:"canvas",mode:inputs.some(input=>input.role==="edit-target")?"edit":"generate",prompt,sourceNodeId:canvasTarget?.nodeId||value("parentId")||sourceNodeId,canvasTarget,inputs,framePolicy:"all-inputs",modelId:value("model")||undefined,variants:Number(value("count")||1),parameters:{quality:value("quality")||"medium",resolution:value("resolution")||"1K",ratio:value("ratio")||"auto"},output:value("transparent")==="1"?{background:"transparent",backgroundOrigin:"current-ui"}:{format:"png"}});
+ request=imagegenRequestSchema.parse({version:1,operationId:browserRandomUUID(),entry:scope.entry||"canvas",mode:inputs.some(input=>input.role==="edit-target")?"edit":"generate",prompt,sourceNodeId:canvasTarget?.nodeId||value("parentId")||sourceNodeId,canvasTarget,inputs,framePolicy:"all-inputs",modelId:value("model")||undefined,variants:Number(value("count")||1),parameters:{quality:value("quality")||"medium",resolution:value("resolution")||"1K",ratio:value("ratio")||"auto"},output:value("transparent")==="1"?{background:"transparent",backgroundOrigin:"current-ui"}:{format:"png"}});
  // A rounded derivative is transport, not the original composition. Resolve the
  // user's automatic frame before asking the server to inspect prepared pixels;
  // genuinely ambiguous mixed ratios ask once instead of guessing.
@@ -139,7 +139,7 @@ export async function submitCanvasImagegen(form:FormData,sourceNodeId:string|und
  assertCurrent();
  if(!('jobId' in result)||result.jobId!==`imagegen-${request.operationId}`||'operationId' in result&&result.operationId!==request.operationId)throw new ImagegenHttpError('任务提交回执尚未核实，请稍后重试',0);
  pending={...pending!,accepted:'accepted',jobId:result.jobId};savePendingAttempt(key,pending);
- return Response.json({jobId:result.jobId});
+ return Response.json({jobId:result.jobId,...scope.entry==='workbench'?{replayed:false}:{}});
  } catch(error) {
   if(error instanceof ImagegenPreparationCancelled)throw error;
   // Upload/plan/storage failures precede the only paid POST. Mark them as

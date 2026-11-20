@@ -13,6 +13,12 @@ export async function decodeImagegenPixels(bytes:Buffer,purpose:"input"|"output"
 
 export type DecodedImagegenPixels = Awaited<ReturnType<typeof decodeImagegenPixels>>;
 
+/** The existing cutout integrity floor, shared by native background-removal
+ * delivery. A nearly opaque checkerboard or one cleared pixel is not enough. */
+export function hasTransparentSubject(pixels:{totalPixels:number;fullyTransparentPixels?:number;visiblePixels?:number}){
+  return (pixels.fullyTransparentPixels||0)>=Math.ceil(pixels.totalPixels/1000)&&(pixels.visiblePixels||0)>0;
+}
+
 /** Inspect owned, normalized RGBA without an intermediate encode/decode. */
 export function inspectDecodedImagegenPixels({data,info}:DecodedImagegenPixels){
   let transparentPixels=0,fullyTransparentPixels=0;

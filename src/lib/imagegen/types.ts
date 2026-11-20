@@ -4,7 +4,7 @@ import type { ImagegenUseCase } from "./catalog";
 export type ImagegenRequest=z.infer<typeof imagegenRequestSchema>;
 export type InputRole=ImagegenRequest["inputs"][number]["role"];
 export type Intent={background:"transparent"|"opaque"|null;operation:"generate"|"edit"|"cutout"|"postprocess";
-  useCase?:ImagegenUseCase;conflicts:string[];requirements:{name:string;value:string;source:"prompt"|"ui"|"skill"}[]};
+  backgroundRemoval?:boolean;useCase?:ImagegenUseCase;conflicts:string[];requirements:{name:string;value:string;source:"prompt"|"ui"|"skill"}[]};
 export type CapabilityKey="edit"|"mask"|"transparent"|"inputFidelity"|"outputFormat"|"outputCompression"|"moderation"|"pixelSize";
 export type CapabilityEvidence={state:"supported"|"unsupported"|"unknown";values?:string[];source:string;checkedAt:string};
 export type CapabilitySet=Partial<Record<CapabilityKey,CapabilityEvidence>>;

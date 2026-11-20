@@ -5,7 +5,7 @@ import "server-only";
 import {compileImageParameterPlan,imagePlanSelection,configuredImageCapabilities} from '../model-config/image-parameter-plan';
 import {createHash} from "node:crypto";
 import {imagegenRequestSchema} from "./schema";
-import {resolveImagegenIntent} from "./intent";
+import {resolveImagegenIntent,removesImageBackground} from "./intent";
 import {readImagegenInputs} from "./inputs";
 import { automaticFrameRatio } from "./frame-ratio";
 import { REVERSE_HUB_RATIO_MESSAGE } from "./ratio-support";
@@ -41,7 +41,7 @@ export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{m
  await assertCanvasRegeneration(owner,request);
  const access=featureAccess?.actorEmail===owner.toLowerCase()?featureAccess.policy:await userFeaturePolicy(owner),imageAllowed=["generate","batchshot","variations","fuse"].some(id=>allows(access,id));
  if(request.entry==="canvas"&&!allows(access,"canvas")||request.entry==="agent"&&!allows(access,"agent")||intent.operation!=="postprocess"&&!imageAllowed||intent.operation==="postprocess"&&!["canvas","works","generate"].some(id=>allows(access,id)))throw new FeatureAccessError("此图像功能尚未授权");
- if(intent.operation==="cutout"&&!allows(access,"cutout"))throw new FeatureAccessError("抠图功能尚未授权");
+ if(removesImageBackground(intent)&&!allows(access,"cutout"))throw new FeatureAccessError("抠图功能尚未授权");
  if(request.output.format==="jpeg"&&(intent.background==="transparent"||!request.output.flattenColor))throw new ImagegenPlanError("JPEG不保留透明度，请选择PNG/WebP，或明确不透明背景和扁平化颜色");
  const inputs=await readImagegenInputs(request,owner);
  // Keep the caller fingerprint for retry lookup; persist the resolved frame in the frozen plan.
@@ -91,22 +91,20 @@ export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{m
   request.parameters.resolution=resolutionChoice.effective as "1K"|"2K"|"4K";
   intent.requirements=resolutionFacts(facts(intent),resolutionChoice.effective).imagegenRequirements!.requirements;
  }
- const simulate=(modelId:string,requirements:Intent)=>simulateModel(models,billing,modelId,requirements.operation==="cutout"?{...facts(requirements),needsEdit:true,references:1,quantity:1}:facts(requirements),options);
+ const simulate=(modelId:string,requirements:Intent)=>simulateModel(models,billing,modelId,facts(requirements),options);
  const steps:ImagegenPlan["steps"]=[],warnings:string[]=maskedTarget?["模型编辑后按蒙版合成，未选区保留原图；原生成版本也会保留。"]:[];
  if(qualityChoice.reason)warnings.push("本次质量标签已按模型默认档处理。");
  if(frameChoice)warnings.push(frameChoice.method==='nearest'?`本次按最接近${frameChoice.source==='reference'?'参考图':'所选'}画幅的 ${frameChoice.effective} 生成`:'本次自适应跟随参考画幅，结果保留完整画面');
  if(resolutionChoice?.changed)warnings.push(resolutionFallbackMessage(resolutionChoice));
  const selectedImagePresetForPlan=(modelId:string)=>selectedImagePreset(models.config,feature,modelId);
- const append=async(key:string,operation:Intent["operation"],modelId:string,requirements:Intent,featureId:"image.generate"|"canvas.image"|"tool.cutout")=>{
-  const stageInputFacts=operation==="cutout"?{...facts(requirements),needsEdit:true,references:1,quantity:1}:facts(requirements);
-  const binding=operation==="cutout"?"image.cutout":stageInputFacts.needsEdit?"image.edit":"image.generate";
-  // Cutout stages use the server-configured processor, not a public user choice.
-  // Preparation and quotation resolve that default from the same frozen snapshot.
-  const requestedModelId=operation==="cutout"?undefined:modelId;
-  const preparedImage=prepareImageOperation({path:operation==="cutout"?"/api/cutout":"/api/generate-image",binding,feature:featureId,featureModel:requestedModelId,references:stageInputFacts.references,allowResolutionFallback:!request.parameters.width&&!request.parameters.height&&!versions,
+ const append=async(key:string,operation:Exclude<Intent["operation"],"cutout">,modelId:string,requirements:Intent,featureId:"image.generate"|"canvas.image")=>{
+  const stageInputFacts=facts(requirements);
+  const binding=stageInputFacts.needsEdit?"image.edit":"image.generate";
+  const requestedModelId=modelId;
+  const preparedImage=prepareImageOperation({path:"/api/generate-image",binding,feature:featureId,featureModel:requestedModelId,references:stageInputFacts.references,allowResolutionFallback:!request.parameters.width&&!request.parameters.height&&!versions,
    body:{model:requestedModelId,prompt:request.prompt,origin:featureId==="canvas.image"?"canvas":"",quality:request.parameters.quality||"medium",resolution:request.parameters.resolution||"1K",ratio:request.parameters.ratio||"1:1",needsMask:stageInputFacts.needsMask,...(request.parameters.width?{targetWidth:request.parameters.width,targetHeight:request.parameters.height}:{})},
    advanced:{intent:requirements},resolvedFrame:{ratio:request.parameters.ratio,preserveModelIdentity:true}},models,billing);
-  preparedImage.facts.quantity=operation==="cutout"?1:request.variants;
+  preparedImage.facts.quantity=request.variants;
   const effectiveResolution=preparedImage.facts.requestedResolution||preparedImage.facts.resolution;
   const stageFacts={...preparedImage.facts,resolution:effectiveResolution};
   const stageResolution={requested:request.parameters.resolution||"1K",effective:effectiveResolution,supported:[],changed:effectiveResolution!==(request.parameters.resolution||"1K")};
@@ -142,31 +140,27 @@ export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{m
    const excluded=candidates.excluded.filter(c=>!c.codes.includes('DISABLED'));
    if(excluded.length&&excluded.every(c=>c.codes.includes('IMAGEGEN_EDIT_UNSUPPORTED')||c.codes.includes('EDIT_UNSUPPORTED')))throw new ImagegenPlanError('所选模型的参考图编辑尚未开放，请选择支持编辑的模型或联系管理员核对配置','IMAGEGEN_EDIT_UNSUPPORTED',409);
    if(excluded.length&&excluded.every(c=>c.codes.includes('IMAGEGEN_RATIO_UNSUPPORTED')||c.codes.includes('ADAPTER_RATIO_UNSUPPORTED')))throw new ImagegenPlanError(`所选模型尚未配置${request.parameters.ratio==='auto'?'自适应画幅':` ${request.parameters.ratio} 比例`}，请选择已支持的比例`,'IMAGEGEN_RATIO_UNSUPPORTED',422);
-   if(exactRatioRejected)throw new ExactImageSizeError(request.parameters.ratio||"1:1");if(hubRatioRejected)throw new ImagegenPlanError(REVERSE_HUB_RATIO_MESSAGE, "IMAGEGEN_RATIO_UNSUPPORTED", 422);if(operation==="cutout"&&candidates.excluded.length&&candidates.excluded.every(c=>c.codes.includes("IMAGEGEN_TRANSPARENT_UNSUPPORTED")))throw new ImagegenPlanError("当前抠图模型没有支持透明输出的可用通道，请联系管理员检查模型配置", "IMAGEGEN_CUTOUT_UNAVAILABLE", 409);throw new ImagegenPlanError("所选模型没有支持本次生成参数的可用通道，请调整参数或选择其他模型", "IMAGEGEN_NO_CHANNEL", 409);}
+   if(exactRatioRejected)throw new ExactImageSizeError(request.parameters.ratio||"1:1");if(hubRatioRejected)throw new ImagegenPlanError(REVERSE_HUB_RATIO_MESSAGE, "IMAGEGEN_RATIO_UNSUPPORTED", 422);throw new ImagegenPlanError("所选模型没有支持本次生成参数的可用通道，请调整参数或选择其他模型", "IMAGEGEN_NO_CHANNEL", 409);}
   const model=models.config.publicModels.find(m=>m.id===modelId)!;
   if(model.target.type==="pool"&&!model.supplierRouting&&(request.parameters.inputFidelity!==undefined||request.parameters.moderation!==undefined||request.parameters.width!==undefined||request.output.compressionMode==="native"&&request.output.compression!==undefined))throw new ImagegenPlanError("外部Router尚未开放这些原生参数的发送，请选择已发布参数映射的直连供应通道");
   assertToolScope(models.config,featureId,modelId);
   if(model.target.type!=="upstream"&&!model.supplierRouting&&candidates.excluded.length)throw new ImagegenPlanError("当前聚合通道尚不能限制高级参数候选，请管理员维护全部候选能力");
-  const q=await runExecutionBundle({frozen:{modelVersion:models.version,billingVersion:billing.version},billing,models},()=>quoteForActor(owner,{feature:featureId,quantity:operation==="cutout"?1:request.variants,modelId:requestedModelId,quality:requestedQuality,resolution:requestedResolution,ratio:targetRatio},{effectiveResolution:stageFacts.resolution,...(frameChoice?{effectiveRatio:request.parameters.ratio}:{})}));
+  const q=await runExecutionBundle({frozen:{modelVersion:models.version,billingVersion:billing.version},billing,models},()=>quoteForActor(owner,{feature:featureId,quantity:request.variants,modelId:requestedModelId,quality:requestedQuality,resolution:requestedResolution,ratio:targetRatio},{effectiveResolution:stageFacts.resolution,...(frameChoice?{effectiveRatio:request.parameters.ratio}:{})}));
   if(preparedImage.modelId!==modelId||q.facts.modelId!==modelId)throw new ImagegenPlanError("图片步骤与报价模型不一致，请重新准备", "IMAGEGEN_MODEL_MISMATCH", 409);
-  if(q.imageParameterPlanVersion===1)q.imageParameterPlans=Object.fromEntries(candidates.eligible.map(c=>{const u=models.config.upstreamModels.find(u=>u.id===c.upstreamId)!,p=models.config.providers.find(p=>p.id===u.providerId)!;return [u.id,compileImageParameterPlan(u,imagePlanSelection({...stageFacts,requestedResolution:stageFacts.resolution},{...request,output:{...request.output,background:operation==="cutout"?"transparent":requirements.background||undefined}}),{publicModelId:parameterModelIdentity(models.config,modelId),protocol:p.protocol,modelVersion:models.version,adapter:p.options?.imageAdapter})];}));
+  if(q.imageParameterPlanVersion===1)q.imageParameterPlans=Object.fromEntries(candidates.eligible.map(c=>{const u=models.config.upstreamModels.find(u=>u.id===c.upstreamId)!,p=models.config.providers.find(p=>p.id===u.providerId)!;return [u.id,compileImageParameterPlan(u,imagePlanSelection({...stageFacts,requestedResolution:stageFacts.resolution},{...request,output:{...request.output,background:requirements.background||undefined}}),{publicModelId:parameterModelIdentity(models.config,modelId),protocol:p.protocol,modelVersion:models.version,adapter:p.options?.imageAdapter})];}));
   if(stageResolution?.changed)warnings.push(resolutionFallbackMessage(stageResolution));
   const eligibleUpstreamIds=candidates.eligible.map(c=>c.upstreamId);
   preparedImage.eligibleUpstreamIds=eligibleUpstreamIds;
   if(q.requestedParameters)preparedImage.requestedParameters=q.requestedParameters;
   steps.push({key,operation,modelId,eligibleUpstreamIds,parameters:{quality:preparedImage.facts.quality,resolution:stageFacts.resolution,ratio:request.parameters.ratio||"1:1"},credits:q.tariff.pricing.mode==="api-cost-plus"?q.authorizedCredits:q.requestedCredits,billingQuote:q,preparedImage});
  };
- if(intent.operation==="cutout"){
-  if(request.variants!==1)throw new ImagegenPlanError("抠图对单个目标输出一个透明版本，多个目标请使用批次");
-  const cutout=featureDefaultModel(models.config,"tool.cutout","image.cutout");if(!cutout)throw new ImagegenPlanError("透明抠图模型尚未配置，请管理员维护");
-  await append("cutout","cutout",cutout,intent,"tool.cutout");
- }else if(intent.background==="transparent"&&!simulate(id,intent).eligible.length){
-  if(!allows(access,"cutout"))throw new FeatureAccessError("所选模型需使用抠图步骤，但抠图功能尚未授权");
-  const cutout=featureDefaultModel(models.config,"tool.cutout","image.cutout");if(!cutout)throw new ImagegenPlanError("所选模型不支持原生透明，且未配置已核实的AI抠图路径；不会静默更换模型");
-  const first={...intent,background:null,requirements:intent.requirements.filter(r=>r.name!=="background")};
-  await append("generate",intent.operation,id,first,feature);
-  for(let i=0;i<request.variants;i++)await append(`cutout-${i}`,"cutout",cutout,{...intent,operation:"cutout"},"tool.cutout");
-  warnings.push("所选模型先生成，再通过后台指定的抠图模型生成透明图；两步积分已合计，原图保留。");
- }else await append("generate",intent.operation,id,intent,feature);
+ // New requests always use the chosen image model and its ordinary execution
+ // owner. Frozen historical cutout steps remain recoverable in adapters.ts;
+ // never append a hidden second model/cost to a new transparent request.
+ if(intent.background==="transparent"){
+  const candidates=simulate(id,intent),active=candidates.excluded.filter(c=>!c.codes.includes("DISABLED"));
+  if(!candidates.eligible.length&&active.length&&active.every(c=>c.codes.includes("IMAGEGEN_TRANSPARENT_UNSUPPORTED")))throw new ImagegenPlanError("所选生图模型的当前通道未开放真实透明输出，请选择支持透明背景的模型", "IMAGEGEN_TRANSPARENT_UNSUPPORTED",409);
+ }
+ await append("generate",intent.operation,id,intent,feature);
  return {imageParameterPlanVersion:1,...(frameChoice?{frameChoice}:{}),...((qualityChoice.reason||frameChoice||resolutionChoice?.changed||steps.some(s=>s.parameters.resolution!==requestedResolution))?{requestedParameters:{quality:requestedQuality,resolution:requestedResolution,ratio:targetRatio}}:{}),channelContractVersion:1,ratioContractVersion:2,request,intent,fingerprint,modelVersion:models.version,billingVersion:billing.version,skillInstructions:skill?.instructions,steps,totalCredits:steps.reduce((n,s)=>n+s.credits,0),confirmationRequired:false,warnings};
 }

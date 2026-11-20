@@ -32,6 +32,8 @@ async function main() {
     'src/lib/imagegen/inputs.ts': 'export async function readImagegenInputs(request){return request.inputs.map(i=>({...i,width:1024,height:1024}))}',
   };
   const entry = `export {planImagegen} from './src/lib/imagegen/plan';
+    export {quoteForActor} from './src/lib/billing/quotation';
+    export {runExecutionBundle} from './src/lib/model-config/context';
     export {createModelExecutor} from './src/lib/model-config/execution';
     export {prepareImageOperation} from './src/lib/model-config/image-preparation';
     export {selectFeatureModel} from './src/lib/model-config/model-selection';
@@ -60,6 +62,7 @@ async function main() {
   config.bindings['image.cutout']='image-cutout-verified';
   config.publicModels[0].toolScope={features:['image.generate','canvas.image'],defaultFor:['image.generate']};
   config.publicModels.push({...structuredClone(config.publicModels[1]),id:'visible-cutout',visible:true});
+  config.upstreamModels[0].capabilities.transparent=true;config.upstreamModels[0].parameterMap.imagegen={transparent:'background'};
   state.models={version:153,digest:'0'.repeat(64),config};state.billing={version:8,config:api.fixtureConfig()};
   const req={version:1,operationId:'1472c152-3faa-4f06-a047-815e3f34848f',entry:'agent',mode:'generate',prompt:'Draw a product',output:{format:'png',background:'transparent'},parameters:{quality:'medium',resolution:'1K',ratio:'1:1'}};
   if(baseline){
@@ -70,8 +73,8 @@ async function main() {
   const check=(ok,label)=>{assert.ok(ok,label);checks++};
   const executor=api.createModelExecutor({runtime:{byVersion:async()=>state.models,prepareExecution:async()=>{throw Error('Unexpected router call')}},credentials:{read:async()=> 'fixture-only'},gateway:()=>({})});
   const plan=await api.planImagegen(req,'fixture@example.test');
-  check(plan.steps.length===2,'transparent generation composes two steps');
-  check(plan.steps[0].modelId==='image-a'&&plan.steps[1].modelId==='image-cutout-verified','default and hidden binding identities');
+  check(plan.steps.length===1,'transparent generation uses one native step');
+  check(plan.steps[0].modelId==='image-a'&&plan.steps[0].operation==='generate','selected public model preserved');
   for(const step of plan.steps){
     check(step.modelId===step.preparedImage.modelId&&step.modelId===step.billingQuote.facts.modelId,'prepared and quoted identity agree');
     check(step.preparedImage.modelVersion===153&&step.billingQuote.modelVersion===153,'frozen model version');
@@ -81,14 +84,14 @@ async function main() {
     const resumed=await executor.describe(execution);
     check(resumed.frozen.publicModelId===step.modelId&&resumed.connection.wireModel===(step.operation==='cutout'?'cutout-wire':'wire-image-one'),'frozen execution resolves the correct supplier model');
   }
-  check(plan.totalCredits===plan.steps.reduce((sum,s)=>sum+s.credits,0),'both steps priced exactly once');
+  check(plan.totalCredits===plan.steps.reduce((sum,s)=>sum+s.credits,0),'native step priced exactly once');
   const multi=await api.planImagegen({...req,variants:3},'fixture@example.test');
-  check(multi.steps.length===4&&multi.steps.slice(1).every(s=>s.billingQuote.facts.quantity===1),'one cutout per variant');
+  check(multi.steps.length===1&&multi.steps[0].billingQuote.facts.quantity===3,'native variants quoted together without extra cutout steps');
   const direct=await api.planImagegen({...req,mode:'edit',prompt:'Remove background',inputs:[{artworkId:'fixture-source',role:'edit-target'}]},'fixture@example.test');
-  check(direct.steps.length===1&&direct.steps[0].modelId==='image-cutout-verified','standalone Agent cutout');
+  check(direct.steps.length===1&&direct.steps[0].modelId==='image-a'&&direct.steps[0].operation==='edit','Agent background removal uses selected native image editor');
   const prep={path:'/api/cutout',binding:'image.cutout',feature:'tool.cutout',references:1,body:{quality:'medium',resolution:'1K',ratio:'1:1'}};
   check(api.prepareImageOperation(prep,state.models,state.billing).modelId==='image-cutout-verified','implicit default preparation');
-  const quoted=direct.steps[0].billingQuote;
+  const quoted=await api.runExecutionBundle({frozen:{modelVersion:153,billingVersion:8},models:state.models,billing:state.billing},()=>api.quoteForActor('fixture@example.test',{feature:'tool.cutout',quantity:1,quality:'medium',resolution:'1K',ratio:'1:1'}));
   check(api.prepareImageOperation({...prep,quote:quoted},state.models,state.billing).modelId==='image-cutout-verified','owner-bound quoted default remains implicit');
   const echoedQuote=()=>api.prepareImageOperation({...prep,quote:quoted,featureModel:'image-cutout-verified'},state.models,state.billing);
   if(quotedHeaderBaseline){
@@ -111,17 +114,28 @@ async function main() {
     await assert.rejects(()=>api.managedBillingSelection({},'tool.cutout',id,state.models),unavailable);checks++;
     await assert.rejects(()=>executor.resolve({feature:'tool.cutout',binding:'image.cutout',requestedModelId:id,snapshot:state.models,billing:state.billing}),unavailable);checks++;
   }
-  await assert.rejects(()=>executor.resolve({preparedImage:{...plan.steps[1].preparedImage,modelVersion:152},feature:'tool.cutout',binding:'image.cutout',snapshot:state.models,billing:state.billing}),e=>e.code==='EXECUTION_MISMATCH');checks++;
+  await assert.rejects(()=>executor.resolve({preparedImage:{...api.prepareImageOperation(prep,state.models,state.billing),modelVersion:152},feature:'tool.cutout',binding:'image.cutout',snapshot:state.models,billing:state.billing}),e=>e.code==='EXECUTION_MISMATCH');checks++;
   config.publicModels[1].enabled=false;
-  await assert.rejects(()=>api.planImagegen(req,'fixture@example.test'),/用途绑定无效|模型不可用/);checks++;
+  assert.throws(()=>api.prepareImageOperation(prep,state.models,state.billing),/用途绑定无效|模型不可用/);checks++;
   config.publicModels[1].enabled=true;config.publicModels[1].toolScope.features=['canvas.image'];
-  await assert.rejects(()=>api.planImagegen(req,'fixture@example.test'),/工具范围|当前工具/);checks++;
+  assert.throws(()=>api.prepareImageOperation(prep,state.models,state.billing),/工具范围|当前工具/);checks++;
   config.publicModels[1].toolScope.features=['tool.cutout'];state.denied=true;
-  await assert.rejects(()=>api.planImagegen(req,'fixture@example.test'),/抠图功能尚未授权/);checks++;state.denied=false;
+  await assert.rejects(()=>api.planImagegen({...req,mode:'edit',prompt:'抠图',inputs:[{artworkId:'fixture-source',role:'edit-target'}]},'fixture@example.test'),/抠图功能尚未授权/);checks++;
+  for(const extra of [{useCase:'product-mockup'},{prompt:'商品样机，抠图，输出透明PNG'}]){await assert.rejects(()=>api.planImagegen({...req,mode:'edit',prompt:'抠图，输出透明PNG',inputs:[{artworkId:'fixture-source',role:'edit-target'}],...extra},'fixture@example.test'),/抠图功能尚未授权/);checks++;}
+  state.denied=false;
   config.upstreamModels[0].capabilities.transparent=true;
   check((await api.planImagegen(req,'fixture@example.test')).steps.length===1,'native transparency skips cutout');
+  const red=await api.planImagegen({...req,entry:'canvas',mode:'edit',output:{format:'png'},prompt:'图片高清一些，去除下方的文字，背景变成红色，干净些，方便我抠图',parameters:{quality:'medium',resolution:'1K',ratio:'auto'},inputs:[{artworkId:'fixture-source',role:'edit-target'}]},'fixture@example.test');
+  check(red.intent.background==='opaque'&&red.intent.operation==='edit'&&red.steps.length===1&&red.steps[0].modelId==='image-a','Qingyun red-background purpose remains ordinary editing');
+  check(red.request.parameters.ratio!=='auto','Qingyun automatic reference frame resolved before admission');
+  const automatic=await api.planImagegen({...req,mode:'edit',prompt:'抠图，输出透明PNG',parameters:{quality:'medium',resolution:'1K',ratio:'auto'},inputs:[{artworkId:'fixture-source',role:'edit-target'}]},'fixture@example.test');
+  check(automatic.request.parameters.ratio!=='auto'&&automatic.steps[0].modelId==='image-a','native cutout shortcut follows reference frame');
+  const oldBinding=config.bindings['image.cutout'];delete config.bindings['image.cutout'];check((await api.planImagegen(req,'fixture@example.test')).steps[0].modelId==='image-a','native execution does not need a cutout binding');config.bindings['image.cutout']=oldBinding;
+  config.upstreamModels[0].capabilities.transparent=false;config.upstreamModels[0].capabilities.imagegen={transparent:{state:'unsupported',source:'fixture explicit refusal',checkedAt:'2026-11-20'}};
+  await assert.rejects(()=>api.planImagegen(req,'fixture@example.test'),e=>e.code==='IMAGEGEN_TRANSPARENT_UNSUPPORTED');checks++;
+  config.upstreamModels[0].capabilities.transparent=true;delete config.upstreamModels[0].capabilities.imagegen;
   check(api.creationToolArguments('generate_image',{model:'image-a'},{image:{}}).model==='image-a','smart is not a model ID');
   check(api.creationToolArguments('generate_image',{model:'other'},{image:{modelId:'image-a'}}).model==='image-a','user creation setting wins');
-  console.log(`MODIFIED=PASS CHECKS=${checks} TRANSPARENT=generate+cutout DIRECT_CUTOUT=PASS EXPLICIT_HIDDEN=REJECTED QUOTE_PREPARED=IDENTICAL SUPPLIER_CALLS=0`);
+  console.log(`MODIFIED=PASS CHECKS=${checks} TRANSPARENT=native-only DIRECT_CUTOUT=PASS EXPLICIT_HIDDEN=REJECTED QUOTE_PREPARED=IDENTICAL SUPPLIER_CALLS=0`);
 }
 main().catch(e=>{console.error(e);process.exitCode=1});

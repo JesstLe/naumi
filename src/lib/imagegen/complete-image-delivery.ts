@@ -16,7 +16,7 @@ import type {GenParams,GeneratedImage} from "./generation-types";
 import type {StoredImage} from "./delivery-checkpoint";
 import type {ImagegenResult} from "./types";
 import {finishStoredImage} from "./finish-stored-image";
-import {inspectImagegenPixels} from "./postprocess";
+import {inspectImagegenPixels,hasTransparentSubject} from "./postprocess";
 import {imageOutputNotice,imageRatioWarning} from "./output-advisory";
 import {JOBS} from "./generation-jobs";
 import {readDeliveryBilling} from "./delivery-billing";
@@ -63,7 +63,7 @@ export async function completeImageDelivery(input:DeliveryInput){
     const source=await readCanvasOutput(input.final&&existing?existing.image_url:image.url,"http://internal",owner,deliveryBytes);
     let bytes=source.buffer,processingKind=metadata.processingKind,postprocessStatus=metadata.postprocessStatus;
     const transparent=input.transparent??p.transparent;
-    if(transparent){const pixels=await inspectImagegenPixels(bytes);if(!pixels.transparentPixels||!pixels.visiblePixels){imagegenOutputError="模型未返回有效透明主体；已生成原图保留，请调整透明能力配置";complete=false;}}
+    if(transparent){const pixels=await inspectImagegenPixels(bytes);if(p.category==="cutout"?!hasTransparentSubject(pixels):!pixels.transparentPixels||!pixels.visiblePixels){imagegenOutputError="模型未返回有效透明主体；已生成原图保留，请检查原任务结果";complete=false;}}
     const nativeRatio=!policy.post?.enabled&&!policy.preset&&!(p.targetWidth&&p.targetHeight);
     if(!input.final&&nativeRatio&&p.ratioContractVersion&&p.origin==="canvas"){
       const warning=imageRatioWarning(p.ratio||"",await dimensions(bytes),policy.ratio);if(warning)warnings.add(warning);

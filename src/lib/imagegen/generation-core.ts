@@ -11,6 +11,7 @@ import {assertCreationProjectInput} from "@/lib/saas/creation-access";
 import type {ImagegenPlan,ImagegenRequest} from "./types";
 export {imagegenStepId} from "./operation-id";
 import {imagegenStepIntent} from "./step-intent";
+import {removesImageBackground} from "./intent";
 export {imagegenStepIntent} from "./step-intent";
 /** Resolve only an owned text anchor; project placement is metadata, not a new execution plan. */
 export async function canvasTextImageProjectPlacement(owner:string,sourceNodeId?:string):Promise<{groupId?:string;parentId?:string}|undefined>{
@@ -43,6 +44,7 @@ export async function submitGenerationCore(plan:ImagegenPlan,key:string,owner:st
  const frameInstructions=plan.frameChoice?.method==='provider-auto'?`画幅跟随${plan.frameChoice.source==='reference'?'所选参考图':'用户选择'}的 ${plan.frameChoice.target}，完整保留主体，不裁切或拉伸。`:undefined;
  const prompt=[compileImagegenPrompt(request,intent,plan.skillInstructions),frameInstructions].filter(Boolean).join("\n\n");
  const fields:Record<string,string>={prompt,userPrompt:request.prompt,model:step.modelId||"",origin:request.entry==="canvas"?"canvas":"",entry:"imagegen",quality:request.parameters.quality||"medium",resolution:request.parameters.resolution||"1K",ratio:request.parameters.ratio||"1:1",count:String(request.variants),transparent:intent.background==="transparent"?"1":"0",parentId:inputs.find(i=>i.role==="edit-target")?.artworkId||""};
+ fields.category=removesImageBackground(intent)?"cutout":"main";
  if(step.modelId===undefined)delete fields.model;
  if(request.parameters.width)fields.targetWidth=String(request.parameters.width);
  if(request.parameters.height)fields.targetHeight=String(request.parameters.height);
@@ -53,7 +55,7 @@ export async function submitGenerationCore(plan:ImagegenPlan,key:string,owner:st
  if(textPlacement?.parentId&&!parentId)fields.parentId=textPlacement.parentId;
  for(const key of Object.keys(fields))fields[key]=multipartFieldText(fields[key]);
  const files=inputs.map(i=>({field:i.role==="mask"?"mask" as const:"image" as const,name:`${i.artworkId}.png`,mimeType:i.mimeType,buffer:i.buffer}));
- const parameters:GenParams={prompt:fields.prompt.trim(),userPrompt:fields.userPrompt.trim(),category:"main",style:"",email:owner,
+ const parameters:GenParams={prompt:fields.prompt.trim(),userPrompt:fields.userPrompt.trim(),category:fields.category,style:"",email:owner,
   ratio:fields.ratio,resolution:fields.resolution,quality:fields.quality,count:request.variants,transparent:fields.transparent==="1",ratiogen:false,
   images:inputs.filter(i=>i.role!=="mask").map(i=>({buf:i.buffer,type:i.mimeType})),
   ...(inputs.find(i=>i.role==="mask")?{mask:{buf:inputs.find(i=>i.role==="mask")!.buffer,type:inputs.find(i=>i.role==="mask")!.mimeType}}:{}),

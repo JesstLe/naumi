@@ -1,5 +1,5 @@
 "use client";
-import {featureExecutionBlock} from "@/lib/model-config/feature-availability";
+import {REMOVE_BACKGROUND_PROMPT} from "@/lib/imagegen/background-removal";
 import {CanvasCollaborationActions} from "@/components/collaboration/collaboration-entry";
 import {useCollaboration} from "@/components/collaboration/collaboration-context";
 import {useImagePromptSync} from "./use-image-prompt-sync";
@@ -272,7 +272,7 @@ import {
 } from "@/lib/mock-data";
 
 import { adminConfiguredFeature } from "@/lib/model-config/selection-policy";
-import { chosenFeatureModel, useFeatureModels } from "@/lib/model-config/feature-client";
+import { chosenFeatureModel } from "@/lib/model-config/feature-client";
 import { FeatureModelSelect } from "@/components/tools/feature-model-select";
 import { TextModelSelect } from "@/components/ui/text-model-select";
 import { useTextModel } from "@/lib/text-model-context";
@@ -451,8 +451,8 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   const textEditQuality = useImageQuality("canvas.text-edit").quality;
   const annotateQuality = useImageQuality("canvas.annotate").quality;
   const canvasToolQualities: Partial<Record<FeatureId,string>> = {"canvas.expand":expandQuality,"canvas.text-edit":textEditQuality,"canvas.annotate":annotateQuality};
-  const { catalog: cutoutCatalog, error: cutoutCatalogError } = useFeatureModels("tool.cutout");
-  const cutoutReady = featureExecutionBlock(cutoutCatalog, cutoutCatalogError) === null;
+  const cutoutCatalogError = canvasImageCatalogError;
+  const cutoutReady = !canvasImageCatalogError && imageModels.some(model=>model.id===genModel&&model.supportsEdit);
   const [imageComposerMenuOpen,setImageComposerMenuOpen]=useState(false);
   const [genStyle, setGenStyle] = useState(GENERATION_STYLES[0]);
   const [genCount, setGenCount] = useState(1);
@@ -1409,12 +1409,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
       succeeded:()=>{if(selectedIdRef.current===source.id&&visibleAttempt())setGenError(null);}},canvasImageRunContext(opts?.isCurrent));
   }
 
-  // 抠图使用管理员配置的处理器；旧 fast/fine 不是图片模型的质量档位。
-  // 同步返回,新节点落在生成占位处,挂在源节点下。
+  // A shortcut to the ordinary image editor; use the same model, quality,
+  // asynchronous task, placement and receipt recovery as any other edit.
   async function runCutout(source: Artwork, _quality: "fast" | "fine" = "fine") {
     if (readOnly || !user || !canFeature("cutout") || isNodeLocked(source.id)) return;
     if (!cutoutReady) { setGenError(cutoutCatalogError || "抠图执行配置尚未就绪，请稍后再试"); return; }
-    return landEditResult(source,{kind:"cutout",source},"抠图");
+    return runGen(source,REMOVE_BACKGROUND_PROMPT,{count:1,ratio:"auto",resolution:genResolution,transparent:true,taskLabel:"去背景",operationKey:`remove-background:${source.id}`});
   }
 
   const [textComposerFocusRevision,setTextComposerFocusRevision]=useState(0);

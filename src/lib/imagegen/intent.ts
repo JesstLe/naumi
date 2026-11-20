@@ -30,7 +30,7 @@ const aliases:readonly [ImagegenUseCase,RegExp][]=[
   ["sketch-to-render",/草图转渲染|渲染草图|sketch.to.render/i],
 ];
 const negative=/不要|无需|别|不需要|禁止|\b(?:don't|do not|no need|without)\b/i;
-export function resolveImagegenIntent(request:ImagegenRequest):Intent {
+export function resolveImagegenIntent(request:ImagegenRequest):Omit<Intent,"operation">&{operation:Exclude<Intent["operation"],"cutout">} {
   const clauses=instructions(request.prompt), { backgrounds, cutout }=resolveBackgroundInstructions(clauses);
   const conflicts:string[]=[];
   if(backgrounds.size>1)conflicts.push("提示词同时要求透明和不透明背景，请明确保留哪一种");
@@ -39,18 +39,25 @@ export function resolveImagegenIntent(request:ImagegenRequest):Intent {
   if(promptBackground&&uiBackground&&promptBackground!==uiBackground&&request.output.backgroundOrigin==="current-ui")conflicts.push("提示词背景要求与本次选择的背景选项冲突");
   const background=promptBackground??uiBackground;
   const positiveClauses=clauses.filter(s=>!negative.test(s));
-  const candidates=aliases.filter(([,pattern])=>positiveClauses.some(s=>pattern.test(s)));
+  const candidates=aliases.filter(([name,pattern])=>(name!=="background-extraction"||cutout&&background==="transparent")&&positiveClauses.some(s=>pattern.test(s)));
   // Multiple stylistic categories are valid; useCase is a workflow hint, never a permission.
   const useCase=request.useCase??candidates[0]?.[0];
+  if(useCase==="background-extraction"&&background==="opaque")conflicts.push("去背景用途与不透明背景要求冲突，请保留一种要求");
   const target=request.inputs.some(i=>i.role==="edit-target");
-  let operation:Intent["operation"]=request.mode==="batch"?"generate":request.mode;
-  if(cutout&&request.mode!=="postprocess")operation="cutout";
+  let operation:Exclude<Intent["operation"],"cutout">=request.mode==="batch"?"generate":request.mode;
+  if(cutout&&request.mode!=="postprocess")operation="edit";
   else if(imagegenUseCase(useCase)?.mode==="edit"&&target&&request.mode!=="postprocess")operation="edit";
-  if((operation==="cutout"||imagegenUseCase(useCase)?.mode==="edit")&&!target)conflicts.push("该编辑要求需要一个编辑目标，请选择要修改的图片");
+  if((cutout||imagegenUseCase(useCase)?.mode==="edit")&&!target)conflicts.push("该编辑要求需要一个编辑目标，请选择要修改的图片");
   const requirements:Intent["requirements"]=[];
   if(background)requirements.push({name:"background",value:background,source:promptBackground?"prompt":request.output.backgroundOrigin==="skill"?"skill":"ui"});
   if(useCase)requirements.push({name:"useCase",value:useCase,source:request.useCase?"ui":"prompt"});
   if(request.inputs.some(i=>i.role==="mask"))requirements.push({name:"mask",value:"required",source:"ui"});
   for(const [name,value] of Object.entries(request.parameters))if(value!==undefined)requirements.push({name,value:String(value),source:"ui"});
-  return {background,operation,useCase,conflicts,requirements};
+  return {background,backgroundRemoval:background==="transparent"&&(cutout||useCase==="background-extraction"),operation,useCase,conflicts,requirements};
+}
+
+/** Execution fact, independent of the optional stylistic workflow hint.
+ * The fallback reads frozen plans created before this fact was persisted. */
+export function removesImageBackground(intent:Intent){
+  return intent.background==="transparent"&&(intent.backgroundRemoval??(intent.operation==="cutout"||intent.useCase==="background-extraction"));
 }

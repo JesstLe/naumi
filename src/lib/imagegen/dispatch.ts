@@ -1,4 +1,5 @@
 import {hasProvenImagegenRejection} from './retry-eligibility';
+import {removesImageBackground} from './intent';
 import {attachCanvasImageVersions,assertCanvasRegeneration} from "../canvas/image-version-store";
 import {taskFailureDiagnostic,type TaskFailureDiagnostic} from "./task-diagnostics";
 import "server-only";
@@ -7,7 +8,7 @@ import {getPool, dbEnabled} from "@/platform/db/pool";
 import {listArtworksByIds} from "@/lib/artworks/repository";
 import {addArtworks} from "@/lib/artworks/writer";
 import {readCanvasOutput} from "../canvas-image-input";
-import {inspectImagegenPixels} from "./postprocess";
+import {inspectImagegenPixels,hasTransparentSubject} from "./postprocess";
 import {saveCanvasLocalEdit} from "../canvas-local-image-edit";
 import {planImagegen,imagegenFingerprint} from "./plan";
 import {assertImagegenQuoteReference,frozenImagegenQuote,latestImagegenQuote,type ImagegenSubmissionConfirmation} from "./quotes";
@@ -125,7 +126,7 @@ async function runParent(id:string,payload:Record<string,unknown>,snapshot:Paren
    ids=processed;
   }
   const result=await artifacts(ids,owner);
-  if(plan.intent.background==="transparent"&&result.some(a=>a.transparentPixels===0||a.visiblePixels===0))throw new Error("结果没有有效透明主体；原生成版本已保留，请调整模型能力或抠图设置");
+  if(plan.intent.background==="transparent"&&result.some(a=>removesImageBackground(plan.intent)?!hasTransparentSubject(a):a.transparentPixels===0||a.visiblePixels===0))throw new Error("结果没有有效透明主体；原生成版本已保留，请检查原任务结果");
   const canvasAttachment=await attachCanvasImageVersions(owner,plan.request,ids,deliveryComplete&&result.length===plan.request.variants);
   if(canvasAttachment&&!canvasAttachment.applied)warnings.add(deliveryComplete?"节点已更新或锁定，新结果已保存在历史版本，未覆盖当前图片":"已保留生成结果，当前图片保持不变，请检查原任务");
   const billing=await readImagegenBilling(owner,state.children,plan);

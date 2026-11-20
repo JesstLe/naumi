@@ -27,7 +27,7 @@ const root = path.resolve(process.env.IMAGEGEN_REQUOTE_ROOT || ".");
 const override = process.env.IMAGEGEN_REQUOTE_OVERRIDE_ROOT;
 const checks: string[] = [];
 const sourcePaths = [
-  "src/lib/imagegen/canvas-client.ts", "src/lib/imagegen/client.ts",
+  "src/lib/imagegen/canvas-client.ts", "src/lib/imagegen/tool-image-edit.ts", "src/lib/imagegen/client.ts",
   "src/lib/imagegen/http.ts", "src/lib/imagegen/client-recovery.ts",
   "src/lib/saas/workspace-client.ts",
 ];
@@ -41,7 +41,7 @@ async function main() {
     return { file, sha256: createHash("sha256").update(await readFile(file)).digest("hex") };
   }));
   const bundle = await build({
-    stdin: { contents: "export * from './src/lib/imagegen/canvas-client';export * from './src/lib/imagegen/client';export * from './src/lib/saas/workspace-client';", resolveDir: root },
+    stdin: { contents: "export * from './src/lib/imagegen/tool-image-edit';export * from './src/lib/imagegen/canvas-client';export * from './src/lib/imagegen/client';export * from './src/lib/saas/workspace-client';", resolveDir: root },
     bundle: true, platform: "node", format: "cjs", write: false,
     plugins: [{
       name: "declared-browser-and-auth-boundaries",
@@ -55,6 +55,7 @@ async function main() {
   });
   const storage = new MemoryStorage(), localStorage = new MemoryStorage();
   let calls: Call[] = [], plans = 0, confirms = 0, prices = [12], paidMode = "success";
+  let receiptStatus="succeeded",toolArtifacts=false,switchScope=false;
   let receipt404 = false, accepted = new Map<string, Accepted>(), quotes = new Map<string, { request: any; credits: number }>();
   const acceptedOrder: string[] = [];
   const posts = () => calls.filter(x => x.path === "/api/imagegen" && x.method === "POST");
@@ -99,7 +100,8 @@ async function main() {
     if (receipt404) return Response.json({ error: "not visible", accepted: false }, { status: 404 });
     const id = new URL(url, "http://fixture").searchParams.get("operationId")!;
     const entry = accepted.get(id);
-    return Response.json({ jobId: "imagegen-" + id, operationId: id, status: "succeeded", chargedCredits: entry?.credits ?? saved().authorizedCredits, artifacts: [] });
+    if(switchScope)client.selectWorkspace("other-workspace");
+    return Response.json({ jobId: "imagegen-" + id, operationId: id, status: receiptStatus, chargedCredits: entry?.credits ?? saved().authorizedCredits, artifacts: toolArtifacts?[{artworkId:"fixture-output",url:"/fixture.png"}]:[] });
   }
   function load(): Record<string, any> {
     const loadedModule = { exports: {} }, events = new EventTarget();
@@ -121,7 +123,7 @@ async function main() {
   }
   const run = (prompt?: string) => client.submitCanvasImagegen(form(prompt), undefined, undefined, scope);
   function reset() {
-    storage.clear(); localStorage.clear(); calls = []; plans = 0; confirms = 0; prices = [12]; paidMode = "success";
+    receiptStatus="succeeded";toolArtifacts=false;switchScope=false;storage.clear(); localStorage.clear(); calls = []; plans = 0; confirms = 0; prices = [12]; paidMode = "success";
     receipt404 = false; accepted = new Map(); quotes = new Map(); acceptedOrder.length = 0; client = load();
   }
 
@@ -184,6 +186,26 @@ async function main() {
 
   reset(); await Promise.all([run(), run()]);
   eq([plans, posts().length, accepted.size], [1, 1, 1], "same in-flight action shares one quote and one POST");
+  reset();toolArtifacts=true;
+  const toolScope={owner:scope.owner,isCurrent:()=>true};
+  const tool=await client.runToolImageEdit(form(),toolScope);
+  eq([tool.url,tool.creditsUsed,tool.replayed,storage.length,posts().length],["/fixture.png",12,false,0,1],"tool ordinary success delivers once and clears exact receipt");
+  reset();await client.submitCanvasImagegen(form(),undefined,undefined,{...toolScope,entry:"workbench",project:"workspace"});toolArtifacts=true;
+  const replay=await client.runToolImageEdit(form(),toolScope);
+  eq([replay.replayed,posts().length,storage.length],[true,1,0],"tool replay does not purchase or debit twice");
+  for(const status of ["failed","cancelled"]){
+    reset();receiptStatus=status;let failed:any;try{await client.runToolImageEdit(form(),toolScope);}catch(error){failed=error;}
+    eq([failed instanceof client.ToolImageEditFailed,posts().length,storage.length],[true,1,1],"tool terminal "+status+" keeps receipt until explicit retry");
+    const original=posts()[0].body.operationId;await failed.retry();
+    eq([posts().length,storage.length],[1,0],"explicit terminal release rechecks original without POST");
+    receiptStatus="succeeded";toolArtifacts=true;await client.runToolImageEdit(form(),toolScope);
+    eq([posts().length,posts()[1].body.operationId!==original],[2,true],"explicit next action receives a new paid identity");
+  }
+  for(const status of ["partial","needs_attention"]){reset();receiptStatus=status;await assert.rejects(client.runToolImageEdit(form(),toolScope),(e:any)=>!(e instanceof client.ToolImageEditFailed));eq([posts().length,storage.length],[1,1],"tool "+status+" never offers another purchase");}
+  reset();switchScope=true;toolArtifacts=true;await assert.rejects(client.runToolImageEdit(form(),toolScope),/工作空间已切换/);
+  eq([posts().length,storage.length],[1,1],"scope switch preserves original receipt and prevents foreign delivery");
+  reset();receiptStatus="failed";let stale:any;try{await client.runToolImageEdit(form(),toolScope);}catch(e){stale=e;}
+  client.selectWorkspace("other-workspace");await assert.rejects(stale.retry(),/工作空间已切换/);eq([posts().length,storage.length],[1,1],"stale terminal retry cannot clear another scope receipt");
   console.log("REQUOTING_RECOVERY=PASS CHECKS=" + checks.length +
     " AUTOMATIC_QUOTE=ONCE EXPLICIT_UNACCEPTED_REQUOTE_MAX=1 ORIGINAL_ID=PRESERVED UNKNOWN_REPOSTS=0 ACCEPTED_PRICE=FROZEN EXTERNAL_CALLS=0 REAL_WALLET=NOT_RUN");
   console.log("SOURCE_HASHES=" + JSON.stringify(sourceHashes));

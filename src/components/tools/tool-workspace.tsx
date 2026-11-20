@@ -584,7 +584,7 @@ export function ToolWorkspace({
         </div>
 
         {/* 右:本工具记录 */}
-        <aside className="tool-history rounded-card border border-c-border bg-c-card p-4 shadow-card xl:h-full">
+        <aside className="tool-history min-h-0 rounded-card border border-c-border bg-c-card p-4 shadow-card xl:h-full">
           <div className="mb-3 flex min-h-[28px] items-center gap-1.5">
             <Clock className="h-4 w-4 text-c-text3" />
             <span className="text-[13px] font-semibold text-c-text">{L("本工具记录", "Tool history")}</span>

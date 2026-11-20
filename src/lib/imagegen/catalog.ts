@@ -16,7 +16,7 @@ export const IMAGEGEN_USE_CASES = [
   {id:"identity-preserve",label:"身份保持与试穿",mode:"edit",category:"编辑",tool:"generate_image",existingSkillIds:[],instructions:"确认目标和需保留的身份、姿态与身体特征，只修改明确指定区域；参考图角色不能混淆。"},
   {id:"precise-object-edit",label:"精确物体编辑",mode:"edit",category:"编辑",tool:"generate_image",existingSkillIds:["product-retouch","product-angle","product-color"],instructions:"确认目标、修改对象和不变量；有用户蒙版时使用蒙版局部编辑，未指定区域保持不变。"},
   {id:"lighting-weather",label:"光照与天气",mode:"edit",category:"编辑",tool:"generate_image",existingSkillIds:[],instructions:"只调整指定光照或天气，保留主体、几何结构、构图和已有文案。"},
-  {id:"background-extraction",label:"透明背景与抠图",mode:"edit",category:"编辑",tool:"cutout_image",existingSkillIds:[],instructions:"对明确编辑目标移除背景，使用真实alpha输出；生成透明图采用合格原生通道或已报价的生成后抠图步骤。"},
+  {id:"background-extraction",label:"透明背景与抠图",mode:"edit",category:"编辑",tool:"cutout_image",existingSkillIds:[],instructions:"对明确编辑目标移除背景，保留主体、文字、颜色和细节，直接使用当前生图模型输出真实alpha透明图；不要绘制棋盘格或模拟透明底板。"},
   {id:"style-transfer",label:"风格迁移",mode:"edit",category:"编辑",tool:"apply_style",existingSkillIds:[],instructions:"分别确认编辑目标和风格参考，只迁移要求的风格，保留目标主体与结构。"},
   {id:"compositing",label:"多图合成",mode:"edit",category:"编辑",tool:"fuse_images",existingSkillIds:[],instructions:"给每张图分配目标、插入或参考角色，确认位置、比例、透视和光线，再合成并复核。"},
   {id:"sketch-to-render",label:"草图转渲染",mode:"edit",category:"编辑",tool:"generate_image",existingSkillIds:[],instructions:"使用草图作为明确目标或结构参考，保留布局、比例和透视，按要求生成真实材质与光线。"},

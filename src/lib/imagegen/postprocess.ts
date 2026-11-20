@@ -4,6 +4,7 @@ import { imagegenChromaSchema, imagegenOutputSchema } from "./schema";
 import { decodeImagegenPixels, inspectDecodedImagegenPixels } from "./pixels";
 import { applyChromaToPixels } from "./chroma";
 import type { ImagegenRequest } from "./types";
+export {hasTransparentSubject} from "./pixels";
 export async function inspectImagegenPixels(bytes:Buffer){
   return inspectDecodedImagegenPixels(await decodeImagegenPixels(bytes,"output"));
 }

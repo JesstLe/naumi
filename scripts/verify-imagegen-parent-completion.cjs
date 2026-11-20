@@ -411,6 +411,9 @@ function fixture({runtime = true} = {}) {
   dependencies['src/lib/release-runtime/background-activity.ts']['../worker/inflight']=()=>load('src/lib/worker/inflight.ts');
   dependencies['src/lib/imagegen/generation-core.ts']['./operation-id']=()=>load('src/lib/imagegen/operation-id.ts');
   dependencies['src/lib/imagegen/generation-core.ts']['./step-intent']=()=>load('src/lib/imagegen/step-intent.ts');
+  dependencies['src/lib/imagegen/generation-core.ts']['./intent']=()=>load('src/lib/imagegen/intent.ts');
+  dependencies['src/lib/imagegen/dispatch.ts']['./intent']=()=>load('src/lib/imagegen/intent.ts');
+  dependencies['src/lib/imagegen/intent.ts']={'./catalog':()=>load('src/lib/imagegen/catalog.ts'),'./background-intent':()=>load('src/lib/imagegen/background-intent.ts')};
   dependencies['src/lib/imagegen/generation-core.ts']['./generation-operation']={submitGenerationOperation:fail('generation-business-entry')};
   dependencies['src/lib/imagegen/generation-core.ts']['../billing/submission-identity']={multipartFieldText:value=>value};
   dependencies['src/lib/imagegen/generation-core.ts']['@/lib/artworks/repository']={listArtworksByIds:async()=>[]};
