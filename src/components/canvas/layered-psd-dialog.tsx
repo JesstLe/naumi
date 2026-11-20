@@ -51,11 +51,12 @@ async function readPreview(response: Response, signal: AbortSignal): Promise<Pre
   return { file, width: psd.width, height: psd.height, scale, layers };
 }
 
-export function LayeredPsdDialog({ selection, english, onClose, onSettled }: {
+export function LayeredPsdDialog({ selection, english, onClose, onSettled, onChild }: {
   selection: LayeredPsdSelection;
   english: boolean;
   onClose: () => void;
   onSettled: () => void;
+  onChild?: (id:string)=>Promise<void>;
 }) {
   const { id, image, title, scope } = selection;
   const L = (zh: string, en: string) => english ? en : zh;
@@ -70,6 +71,7 @@ export function LayeredPsdDialog({ selection, english, onClose, onSettled }: {
   const [quote, setQuote] = useState<Quote>();
   const [operation, setOperation] = useState<string>();
   const [preview, setPreview] = useState<Preview>();
+  const [attachment,setAttachment]=useState<"saved"|"failed"|"saving">();
   const [hidden, setHidden] = useState<Set<number>>(() => new Set());
   const [busy, setBusy] = useState<"read" | "submit" | null>("read");
   const [state, setState] = useState<"pending" | "export_incomplete" | "failed" | "unavailable" | "file" | "storage">();
@@ -84,12 +86,31 @@ export function LayeredPsdDialog({ selection, english, onClose, onSettled }: {
       const response = await request(PATH, signal);
       const value = await response.json();
       if (!response.ok || !Number.isSafeInteger(value.version) || !Number.isSafeInteger(value.credits)) throw new Error("Quote unavailable");
-      if (!signal.aborted && scope.viewCurrent()) setQuote(value);
+      if (!signal.aborted && scope.viewCurrent()) {
+        setQuote(value);
+        if(value.pilotOperationId && onChild){
+          const prior=await request(PATH+"?operationId="+encodeURIComponent(value.pilotOperationId)+"&sourceId="+encodeURIComponent(id),signal);
+          if(prior.ok && (await prior.json()).state==="ready" && !signal.aborted && scope.viewCurrent()){
+            setOperation(value.pilotOperationId);
+            await inspect(value.pilotOperationId,signal);
+          }
+        }
+      }
     } catch {
       if (!signal.aborted && scope.viewCurrent()) setState("unavailable");
     }
   }
 
+  async function attach(operationId:string,signal:AbortSignal){
+    if(!onChild)return;
+    setAttachment("saving");
+    try{
+      const r=await request(PATH+"/document",signal,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({sourceId:id,operationId})});
+      const result=await r.json();if(!r.ok||!result.nodeId)throw Error();
+      scope.assertView();await onChild(result.nodeId);
+      if(!signal.aborted)setAttachment("saved");
+    }catch{if(!signal.aborted)setAttachment("failed")}
+  }
   async function inspect(operationId: string, signal: AbortSignal) {
     const url = `${PATH}?operationId=${encodeURIComponent(operationId)}`;
     let fileAvailable = false;
@@ -104,6 +125,7 @@ export function LayeredPsdDialog({ selection, english, onClose, onSettled }: {
         setHidden(new Set());
         setPreview(data);
         setState(undefined);
+        await attach(operationId,signal);
         onSettled();
       } else if (response.ok && body.state === "failed") {
         forget();
@@ -247,6 +269,9 @@ export function LayeredPsdDialog({ selection, english, onClose, onSettled }: {
         </ul>}
       </div>
       <footer className="flex flex-wrap items-center justify-end gap-3 border-t border-[var(--canvas-ui-border)] px-5 py-4 text-sm">
+        {attachment==="saved"&&<span role="status" className="mr-auto">{L("已添加分层子节点，双击可编辑","Layered child added. Double-click to edit.")}</span>}
+        {attachment==="saving"&&<span role="status">{L("正在添加子节点…","Adding layered child…")}</span>}
+        {attachment==="failed"&&operation&&<button className="canvas-ui-control rounded-lg border px-3 py-2" onClick={()=>connection.current&&void attach(operation,connection.current.signal)}>{L("重试添加分层子节点","Retry adding child")}</button>}
         {status && <p role="status" className="canvas-ui-muted mr-auto flex items-center gap-2">
           {busy && <LoaderCircle size={16} aria-hidden className="motion-safe:animate-spin"/>}{status}
         </p>}

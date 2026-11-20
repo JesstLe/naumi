@@ -8,6 +8,7 @@ import { assertCurrentCreationFeature } from "@/lib/saas/creation-access";
 import { billingFailure } from "@/lib/billing/failure";
 import { readManagedObject } from "@/lib/object-storage/managed-read";
 import { readBounded } from "@/lib/supplier-cost/io";
+import { attachPsdDocument, verifiedPsdSource } from "@/lib/canvas/psd-document-store";
 import { layerPrice, layeredPsdReceipt, MAX_PSD_BYTES, PSD_TYPE, runLayerDecomposition } from "@/lib/canvas/layered-psd-service";
 
 export const runtime = "nodejs";
@@ -42,6 +43,10 @@ export function GET(request: Request) {
     if (!parsed.success) return reply({ error: "拆层任务编号无效" }, 400);
     const receipt = await layeredPsdReceipt(email, parsed.data);
     if (!receipt) return reply({ state: "missing" }, 404);
+    if (receipt.state === "ready" && params.has("sourceId")) {
+      try { await verifiedPsdSource(email, parsed.data, params.get("sourceId")!); }
+      catch { return reply({ state: "missing" }, 404); }
+    }
     if (receipt.state !== "ready" || params.get("file") !== "1") return reply({ state: receipt.state });
     try {
       const file = await readManagedObject(`/media/${receipt.fileKey}`, MAX_PSD_BYTES, AbortSignal.timeout(30_000));
@@ -66,7 +71,11 @@ export function POST(request: Request) {
       if (admission instanceof Response) return admission;
       if (!admission) return reply({ error: "操作过于频繁，请稍后重试", operationId: input.data.operationId, accepted: false }, 429);
       const result = await runLayerDecomposition(email, input.data);
-      if (result.body?.ok) return reply({ ok: true, operationId: input.data.operationId });
+      if (result.body?.ok) {
+        // A materialization failure can be retried separately from the paid operation.
+        const nodeId = await attachPsdDocument(email,input.data.operationId,input.data.artworkId).catch(()=>null);
+        return reply({ ok:true, operationId:input.data.operationId, nodeId });
+      }
       if ([400, 402, 404].includes(result.status) || result.body?.code === "OPERATION_CONFLICT") {
         return reply({ ...result.body, operationId: input.data.operationId, accepted: false }, result.status);
       }
