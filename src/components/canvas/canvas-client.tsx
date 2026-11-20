@@ -459,6 +459,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   // 自由拖动是默认；用户主动开启磁铁时才吸附网格。全局整理仅由手动动作触发。
   const [genError, setGenError] = useState<string | null>(null);
   const downloads=useCanvasDownloads(canvasArtworkDocument.scope,{notice:flashTip,
+    compressionSkipped:L("图片未进一步缩小，原图已保留","No further size reduction; the original is unchanged"),compressionFailed:L("压缩失败，请重试","Compression failed. Please try again."),
     imageFailed:L("下载失败，请重试","Download failed. Please try again."),archiveFailed:L("打包下载失败，请重试","Download failed. Please try again.")});
   const zipping=downloads.zipping;
 
@@ -970,6 +971,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
 
   const sceneActions=useCanvasSceneActions({
     dimensions:onNodeDimensions,resize:onArtworkCanvasResize,ratioRepair:onArtworkCanvasRatioRepair,rename:requestNodeRename,
+    renameArtwork:async(id,title)=>{await saveNodeRename(id,title,true);},
     videoProcess:extractVideoToCanvas,cutout:id=>{const art=worksRef.current?.find(item=>item.id===id);if(art)void runCutout(art);},
     generatePending:id=>{const pend=pendNodesRef.current.find(node=>node.id===id);if(pend)return generatePend({pend});},
     directorEdit:openDirectorEditor,characterEdit:openCharacterEditor,sceneEdit:openSceneEditor,audioEdit:openAudioEditor,timelineEdit:openTimelineEditor,videoEdit:openVideoEditor,videoHistory:setVideoHistoryId,
@@ -1298,11 +1300,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     contextKey:JSON.stringify([canvasArtworkDocument.scope.key,canvasContextEpochRef.current]),syncZoom:viewControls.syncZoom});
 
   // 重命名节点:本地改标题 + 落库(节点标签 = 作品 title)
-  async function saveNodeRename() {
-    const id = renamingNodeId;
-    const name = nodeRenameValue.trim();
-    setRenamingNodeId(null);
-    if (!id || !user || readOnly || !name || isNodeLocked(id)) return;
+  async function saveNodeRename(id=renamingNodeId,value=nodeRenameValue,inline=false) {
+    const name = value.trim();
+    if(!inline)setRenamingNodeId(null);
+    if (!id || !user || readOnly || !name || isNodeLocked(id)) {
+      if(inline)throw new Error(L("当前节点不可编辑","This node cannot be edited"));
+      return;
+    }
     const comfy=comfyNodesStore.getNode(id);if(comfy){if(comfy.title!==name)try{await canvasHistory.submit(canvasHistory.scope,()=>({kind:"comfy-patch",id,from:{title:comfy.title},to:{title:name}}));}catch(error){flashTip(error instanceof Error?error.message:t("canvas.genFail"));}return;}
     const character=characterNodesStore.getNode(id);if(character){if(character.title!==name)try{await patchCharacterNode(id,{title:name,character:{...character.character,name}});}catch(error){flashTip(error instanceof Error?error.message:t("canvas.genFail"));}return;}
     const audio=audioNodesStore.getNode(id);if(audio){if(audio.title!==name)try{await patchAudioNode(id,{title:name});}catch(error){flashTip(error instanceof Error?error.message:t("canvas.genFail"));}return;}
@@ -1314,7 +1318,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
     if(canvasTextDocument.getSnapshot().nodes.some(node=>node.id===id)){await textEditing.rename(id,name);return;}
     const scope=canvasHistory.scope;
     try{await canvasHistory.submit(scope,()=>{const cur=canvasArtworkDocument.getSnapshot().nodes?.find(w=>w.id===id);return cur&&cur.title!==name?{kind:"rename",id,from:cur.title,to:name}:null;});}
-    catch(error){if(scope.viewCurrent())flashTip(error instanceof Error?error.message:t("canvas.genFail"));}
+    catch(error){if(inline)throw error;if(scope.viewCurrent())flashTip(error instanceof Error?error.message:t("canvas.genFail"));}
   }
 
   async function renameGeneratedArtwork(id:string,title:string){
@@ -2781,6 +2785,13 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
         <div
           ref={canvasAreaRef}
           data-testid="canvas-drop-zone"
+          onDoubleClick={event=>{
+            if(readOnly||browsing||loading||!user||canvasTool==='hand'||event.button!==0||
+              !(event.target instanceof Element)||!event.target.classList.contains('react-flow__pane'))return;
+            event.preventDefault();event.stopPropagation();
+            const box=event.currentTarget.getBoundingClientRect();setCtxMenu(null);setSpawnMenu(null);
+            addPendAtScreen(event.clientX-box.left,event.clientY-box.top,activeRootId(),false);
+          }}
           className={cn("canvas-stage relative min-w-0 flex-1 overflow-clip", lightCanvas && "canvas-light")}
           onDragEnter={(event) => {
             if (!event.dataTransfer.types.includes("Files")) return;
@@ -2848,6 +2859,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                 linking && "canvas-linking"
               )}
               connectionRadius={32}
+              zoomOnDoubleClick={readOnly||canvasTool==='hand'}
               nodes={rfNodes}
               elevateNodesOnSelect={false}
               edges={rfEdges}
@@ -3873,6 +3885,12 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
                   className="canvas-ui-action flex h-[34px] items-center gap-1.5 whitespace-nowrap rounded-[9px] px-2.5 text-[13px] font-semibold disabled:opacity-40"><Crop className="h-4 w-4" />{L("裁剪","Crop")}</button>
 
               </>}
+              <button type="button" data-action="compress" title={L("下载压缩副本","Download compressed copy")}
+                aria-label={L("下载压缩副本","Download compressed copy")} aria-busy={downloads.compressing}
+                disabled={!selectedImageTools.canView||downloads.compressing} onClick={()=>selected&&void downloads.compressImage(selected.image,selected.title)}
+                className="canvas-ui-action flex h-[34px] items-center gap-1.5 rounded-[9px] px-2.5 text-[12px] font-semibold disabled:opacity-40">
+                {downloads.compressing?<Loader2 className="h-4 w-4 animate-spin"/>:<Download className="h-4 w-4"/>}{L("压缩","Compress")}
+              </button>
               <button
                 type="button"
                 title={t("canvas.toolbar.downloadImage")}

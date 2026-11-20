@@ -9,6 +9,7 @@ import type {CanvasArtNodeData} from "@/lib/canvas/scene-types";
 import {CanvasImage} from "../canvas-image";
 import {ImagePixelSize} from "../image-pixel-size";
 import {GenerationPlaceholder} from "../generation-placeholder";
+import {ImageNodeTitle} from './image-node-title';
 import {VideoPlayer,mediaDownloadHref,type VideoPlayerAction} from "../video/player";
 function VideoNodeSurface({url,selected,kind,onExtract}:{url:string;selected:boolean;kind:"video"|"audio";onExtract?:(action:VideoPlayerAction)=>void}) {
   return <VideoPlayer url={url} selected={selected} kind={kind} compact onProcess={onExtract}/>;
@@ -94,18 +95,10 @@ const ArtworkContent=memo(function ArtworkContent({ data, selected, id: nodeId }
       />
 
       {/* 标题悬在图片上方(节点边界外):选中框/缩放框只框图片,不框标题。未选中时仅显示文件名,点击后显示标记/分组/版本。 */}
-      <div className="art-title absolute -top-[38px] left-0 right-0 z-10 flex h-[30px] items-center gap-1.5 truncate pl-0.5 text-[clamp(14px,0.85vw,18px)] font-semibold leading-none text-[#e2e6ed]">
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
-        <span
-          className="nodrag min-w-0 flex-1 cursor-text truncate"
-          title={`${d.label} · 双击编辑`}
-          onDoubleClick={(event) => {
-            event.stopPropagation();
-            d.onRenameRequest?.(d.id, d.label);
-          }}
-        >
-          {d.label}
-        </span>
+      <div className="art-title absolute -top-[38px] left-0 right-0 z-10 flex h-[30px] min-w-0 items-center gap-1.5 pl-0.5 text-[clamp(14px,0.85vw,18px)] font-semibold leading-none text-[#e2e6ed]">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+        <ImageNodeTitle id={d.id} title={d.label} disabled={d.readOnly||d.settings?.locked||d.pending}
+          onCommit={d.onRenameCommit} onRequest={d.onRenameRequest}/>
         {selected && d.marked && (
           <MapPin className="h-3 w-3 flex-none fill-amber-400 text-amber-400" />
         )}

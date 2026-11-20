@@ -27,7 +27,7 @@ function webpName(name: string) {
  */
 export async function prepareImageUpload(
   original: File,
-  options: { maxEdge?: number; quality?: number } = {}
+  options: { maxEdge?: number; quality?: number; force?:boolean } = {}
 ): Promise<PreparedUpload> {
   if (typeof createImageBitmap !== "function") {
     return { file: original, originalBytes: original.size, uploadBytes: original.size, optimized: false, width: 0, height: 0 };
@@ -37,7 +37,7 @@ export async function prepareImageUpload(
     bitmap = await createImageBitmap(original);
     const sourceWidth = bitmap.width;
     const sourceHeight = bitmap.height;
-    if (original.size < MIN_OPTIMIZE_BYTES) {
+    if (!options.force && original.size < MIN_OPTIMIZE_BYTES) {
       return { file: original, originalBytes: original.size, uploadBytes: original.size, optimized: false, width: sourceWidth, height: sourceHeight };
     }
     const maxEdge = options.maxEdge ?? DEFAULT_MAX_EDGE;
@@ -56,7 +56,7 @@ export async function prepareImageUpload(
       canvas.toBlob(resolve, "image/webp", options.quality ?? 0.88)
     );
     // Keep the source if the browser cannot encode WebP or savings are negligible.
-    if (!blob || blob.size >= original.size * 0.92) {
+    if (!blob || blob.type !== "image/webp" || blob.size >= original.size * 0.92) {
       return { file: original, originalBytes: original.size, uploadBytes: original.size, optimized: false, width: sourceWidth, height: sourceHeight };
     }
     const file = new File([blob], webpName(original.name), {
