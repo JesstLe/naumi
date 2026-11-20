@@ -64,7 +64,9 @@ try{
  const require=createRequire(import.meta.url);process.env.TASK_SOURCE_ROOT=root;process.env.TASK_EVIDENCE=path.join(out,'actual-callers');
  const detail=require('./verify-canvas-task-boundaries.cjs'),db=await detail.bundle(),callers=[];let checks=react.checks;
  const eq=(a,b,label)=>{assert.deepEqual(a,b,label);checks++;};
- for(const kind of ['cutout','detail-blank']){
+ // Native cutout now uses the generation-task view. Exercise the pending edit
+ // view with expand, whose scoped recovery still owns a pending edit card.
+ for(const kind of [detail.editKinds.includes('cutout')?'cutout':'expand','detail-blank']){
   const f=detail.setup(kind,'position-fails',db);await f.run();const failed=f.c.pendNodes[0],retry=failed?.onGenerationRetry;eq(typeof retry,'function','actual edit/detail retains original task continuation');
   f.c.activeProjectRef.current={key:'tree:B'};f.c.canvasContextEpochRef.current++;f.presentation?.render();if(!baseline)eq(f.c.pendNodes.length,0,'actual caller no foreign failed card');
   f.restore();eq(f.c.pendNodes[0].id,failed.id,'same failed placeholder restored');f.state.retried=true;await Promise.all([retry(),retry()]);eq(f.state.posts,1,'known result continuation zero paid resubmit');eq(f.state.quotes,1,'known result continuation zero requote');eq(f.state.history.length,1,'one attachment/history');
