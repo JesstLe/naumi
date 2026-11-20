@@ -44,8 +44,21 @@ export function GET(req: Request) {
         .regex(/^\d{1,10}$/)
         .transform(Number)
         .parse(params.get("revision"));
-      const data = await exportPsdDocument(email, node, revision);
-      return new Response(new Uint8Array(data), { headers: { ...headers, "Content-Type": PSD_TYPE } });
+      const layer =
+        params.has("layer") || params.has("format")
+          ? {
+              index: z
+                .string()
+                .regex(/^\d{1,2}$/)
+                .transform(Number)
+                .parse(params.get("layer")),
+              format: z.enum(["psd", "png"]).parse(params.get("format")),
+            }
+          : undefined;
+      const data = await exportPsdDocument(email, node, revision, layer);
+      return new Response(new Uint8Array(data), {
+        headers: { ...headers, "Content-Type": layer?.format === "png" ? "image/png" : PSD_TYPE },
+      });
     }
     const { baseKey, ...doc } = await getPsdDocument(email, node);
     return reply({ ...doc, baseUrl: "/media/" + baseKey });
