@@ -181,7 +181,9 @@ export async function layeredPsdReceipt(email: string, operationId: string) {
   const context = currentCreationContext();
   if (!context?.parentContext) return null;
   const billingId = `tool-${operationId}`;
-  const record = (await getPool().query(`SELECT b.state, b.result_response, b.settlement_result FROM app_billing_operations b
+  const record = (await getPool().query(`SELECT b.state, b.result_response, b.settlement_result,
+    EXISTS (SELECT 1 FROM app_supplier_calls s WHERE s.operation_id=b.id AND s.user_email=b.email AND s.feature=b.feature
+      AND s.state IN ('completed','success','succeeded')) AS supplier_completed FROM app_billing_operations b
     JOIN app_creation_records c ON c.source_kind=$3 AND c.source_id=b.id AND c.actor_email=b.email
     JOIN app_creation_links l ON l.creation_id=c.id AND l.target_type='canvas-project' AND l.relation='input' AND l.actor_email=c.actor_email
     WHERE b.id=$1 AND b.email=$2 AND b.feature=$3 AND c.scope_kind=$4 AND c.tenant_id IS NOT DISTINCT FROM $5::uuid AND l.target_id=$6`,
@@ -192,5 +194,6 @@ export async function layeredPsdReceipt(email: string, operationId: string) {
       && result.fileKey === `layered-psd/${sha256(email + "\0" + billingId)}.psd`) {
     return { state: "ready" as const, fileKey: result.fileKey };
   }
+  if (record.state === "settled" && record.supplier_completed && !result?.ok) return { state: "export_incomplete" as const };
   return { state: record.state === "settled" && record.settlement_result?.state === "failed" ? "failed" as const : "pending" as const };
 }

@@ -72,7 +72,7 @@ export function LayeredPsdDialog({ selection, english, onClose, onSettled }: {
   const [preview, setPreview] = useState<Preview>();
   const [hidden, setHidden] = useState<Set<number>>(() => new Set());
   const [busy, setBusy] = useState<"read" | "submit" | null>("read");
-  const [state, setState] = useState<"pending" | "failed" | "unavailable" | "file" | "storage">();
+  const [state, setState] = useState<"pending" | "export_incomplete" | "failed" | "unavailable" | "file" | "storage">();
 
   function request(url: string, signal: AbortSignal, init?: RequestInit) {
     return canvasDocumentFetch(scope, url, { ...init, signal }, true);
@@ -111,7 +111,7 @@ export function LayeredPsdDialog({ selection, english, onClose, onSettled }: {
         onSettled();
         await loadQuote(signal);
       } else {
-        setState("pending");
+        setState(response.ok && body.state === "export_incomplete" ? "export_incomplete" : "pending");
       }
     } catch {
       if (!signal.aborted && scope.viewCurrent()) setState(fileAvailable ? "file" : "pending");
@@ -201,7 +201,8 @@ export function LayeredPsdDialog({ selection, english, onClose, onSettled }: {
 
   const status = busy === "submit" ? L("正在拆层，可关闭后从这张图查看原任务。", "Separating layers. You can close this window and return to this image.")
     : busy === "read" ? L("正在读取…", "Loading…")
-    : state === "pending" ? L("任务状态待确认，请查询原任务。", "The result is unconfirmed. Check the original request.")
+    : state === "export_incomplete" ? L("图层已生成，PSD 导出未完成。请保留原任务编号：" + operation, "Layers generated. PSD export is incomplete. Keep request " + operation)
+    : state === "pending" ? L("本次查询尚未取得结果，可稍后再查。", "The result is not available yet. Check again later.")
     : state === "file" ? L("图层文件暂时无法打开，请重新查询。", "The layered file could not be opened. Check the original request again.")
     : state === "failed" ? L("拆层未完成。", "Layers could not be generated.")
     : state === "unavailable" ? L("智能拆层暂未开放或暂不可用。", "Layer separation is currently unavailable.")
@@ -250,7 +251,7 @@ export function LayeredPsdDialog({ selection, english, onClose, onSettled }: {
           {busy && <LoaderCircle size={16} aria-hidden className="motion-safe:animate-spin"/>}{status}
         </p>}
         {preview ? <button type="button" className="canvas-ui-primary rounded-lg px-4 py-2" onClick={download}>{L("下载分层 PSD", "Download layered PSD")}</button>
-          : operation && !busy ? <button type="button" className="canvas-ui-control rounded-lg border px-4 py-2" onClick={() => void check()}>{L("查询原任务", "Check request")}</button>
+          : operation && busy !== "submit" ? <button type="button" disabled={!!busy} className="canvas-ui-control rounded-lg border px-4 py-2 disabled:opacity-50" onClick={() => void check()}>{busy ? L("正在查询…", "Checking…") : L("查询原任务", "Check request")}</button>
           : quote && !operation && !busy ? <button type="button" className="canvas-ui-primary rounded-lg px-4 py-2" onClick={() => void start()}>
             {quote.pilotOperationId ? L("开始真实拆层 · 试用 1 次", "Separate layers · one trial")
               : L(`开始拆层 · ${quote.credits} 积分`, `Separate layers · ${quote.credits} credits`)}

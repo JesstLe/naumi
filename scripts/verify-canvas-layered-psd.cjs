@@ -83,6 +83,15 @@ async function main() {
   const psd = await encodeLayeredPsd(stack);
   assert.equal(psd.subarray(0, 4).toString(), "8BPS");
   assert.deepEqual(stack.layers.map(layer => layer.name), ["背景", "商品", "装饰"]);
+  const enlarged = structuredClone(result);
+  enlarged.images[0].sizes[2] = "192x280";
+  const enlargedProduct = await sharp(product).resize(192, 280).png().toBuffer();
+  const placed = await downloadLayerStack(enlarged, signal, async (url, init) => new URL(url).pathname === "/product.png"
+    ? new Response(enlargedProduct, { headers: { "content-type": "image/png" } }) : mockCdn(url, init));
+  assert.deepEqual([placed.layers[1].placedWidth, placed.layers[1].placedHeight], [96, 140]);
+  assert.equal((await encodeLayeredPsd(placed)).subarray(0, 4).toString(), "8BPS");
+  enlarged.images[0].layers[2].bounding_box.absolute[2] = 321;
+  assert.throws(() => readLayerReceipt(enlarged), /坐标/);
   assert.throws(() => readLayerReceipt({ images: [{ ...result.images[0], sizes: ["320x240"] }] }), /图层数/);
   await assert.rejects(encodeLayeredPsd({ ...stack, layers: [stack.layers[0], { ...stack.layers[1], width: 95 }] }), /格式/);
   assert.deepEqual(vendorCalls, [["/v1/uploads/images", "POST"], ["/v1/images/generations", "POST"], ["/v1/tasks/task_layered_fixture", "GET"]]);
