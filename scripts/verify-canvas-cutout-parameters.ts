@@ -38,18 +38,19 @@ async function main(){
   const cookie="nv_user="+(await import("../src/lib/native-auth")).signUserSession(email,Date.now());
   const {POST}=await import("../src/app/api/cutout/route"),quoteApi=await import("../src/app/api/billing/quote/route");
   const quote=async(quality:string)=>{const r=await quoteApi.POST(new Request(f.origin+"/api/billing/quote",{method:"POST",headers:{cookie,"content-type":"application/json","x-naumi-canvas":"1"},body:JSON.stringify({feature:"tool.cutout",quantity:1,quality,resolution:"1K",ratio:"3:4"})}));assert.equal(r.status,200,await r.clone().text());return r.json();};
-  const request=(quality:string,operationId:string=randomUUID(),headerQuality=quality)=>{
+  const request=(quality:string,operationId:string=randomUUID(),headerQuality=quality,explicitModel?:string)=>{
    const form=new FormData();form.append("image",new File([new Uint8Array(input)],"original.png",{type:"image/png"}));form.set("email","forged-owner@fixture.test");form.set("parentId","cutout-source");form.set("quality",quality);form.set("resolution","1K");form.set("ratio","3:4");form.set("title","去背景结果");
+   if(explicitModel)form.set("model",explicitModel);
    return new Request(f.origin+"/api/cutout",{method:"POST",headers:{cookie,"x-naumi-image-quality":headerQuality,"x-naumi-canvas":"1","x-naumi-client-entry":"canvas","x-naumi-billing-operation-id":operationId,"x-naumi-billing-version":String(price.version),"x-naumi-billing-credits":"1"},body:form});
   };
   if(process.argv.includes('--transparency')){
    const q=await quote('medium');assert(q.quote?.id,'real owner-bound quote is issued');
-   const quotedRequest=(id:string,explicit=false)=>{const r=request('medium',id);r.headers.set('x-naumi-image-quote',q.quote.id);if(explicit)r.headers.set('x-naumi-feature-model','image-a');return r;};
+   const quotedRequest=(id:string,explicitModel?:string)=>{const r=request('medium',id,'medium',explicitModel);r.headers.set('x-naumi-image-quote',q.quote.id);r.headers.set('x-naumi-feature-model',q.modelId);return r;};
    const operation=randomUUID(),r=await POST(quotedRequest(operation)),body=await r.json();
    if(process.argv.includes('--baseline-transparency')){assert.equal(r.status,409);assert.equal(body.code,'MODEL_UNAVAILABLE');assert.equal(supplierPosts,0);console.log('QUOTED_CUTOUT_BASELINE=REPRODUCED HTTP=409 CODE=MODEL_UNAVAILABLE SUPPLIER_POSTS=0');return;}
    assert.equal(r.status,200,JSON.stringify(body));assert(body.id);assert.equal(supplierPosts,1);
    const replay=await POST(quotedRequest(operation));assert.equal(replay.status,200);assert.equal((await replay.json()).id,body.id);assert.equal(supplierPosts,1);
-   const explicit=await POST(quotedRequest(randomUUID(),true));assert.equal(explicit.status,409);assert.equal(supplierPosts,1,'explicit hidden selection still rejected');
+   const explicit=await POST(quotedRequest(randomUUID(),'image-a'));assert.equal(explicit.status,409);assert.equal(supplierPosts,1,'a matching frozen quote allows its transport header but does not authorize explicit hidden selection');
    const saved=await db.listArtworksByIds(email,[body.id]);assert.equal(saved.length,1);assert.equal(saved[0].parentId,'cutout-source');assert.equal((await db.listArtworksByIds('forged-owner@fixture.test',[body.id])).length,0);
    const initialCount=(await db.getPool().query('SELECT count(*)::int n FROM app_artworks WHERE email=$1',[email])).rows[0].n;
    supplierOutput=await sharp({create:{width:48,height:64,channels:4,background:{r:220,g:220,b:220,alpha:254/255}}}).png().toBuffer();

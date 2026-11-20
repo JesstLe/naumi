@@ -22,7 +22,7 @@ async function main(){
   eq(f.state.post??f.state.posts,0,kind+' setup exception never submits');
   rows.push({name:kind+'-setup-exception',busy:f.c.generationOperationRef.current.size,posts:f.state.post??f.state.posts});
  }
- for(const kind of ['derived','blank'])for(const scenario of ['done','poll-transient','position-fails','sync-missing','partial','submit-unknown','workspace-aba']){
+ for(const kind of ['derived','blank',...(image.nativeCutout?['cutout']:[])])for(const scenario of ['done','poll-transient','position-fails','sync-missing','partial','submit-unknown','workspace-aba','switch-project']){
   const f=image.setup(kind,scenario,ib);await f.run();
   eq(f.c.generationOperationRef.current.size,0,kind+' releases after '+scenario);
   if(scenario==='poll-transient'&&image.boundedReceipt){eq(f.state.post,1,'automatic GET retry keeps original paid intent');eq(f.state.polls,2,'same job after one transient GET');eq(f.state.history.length,1,'one completed attachment');}
@@ -32,9 +32,10 @@ async function main(){
    eq(f.state.history.length,1,'result attachment commits history once');eq(f.c.generationOperationRef.current.size,0,'retry releases');
   }
   if(scenario==='submit-unknown')eq(f.state.post,1,'unknown keeps original submission, no automatic second POST');
+  if(scenario==='switch-project')eq(f.state.positions.length,0,'late result does not write another project');
   rows.push({name:kind+'-'+scenario,posts:f.state.post,polls:f.state.polls,history:f.state.history.length});
  }
- for(const kind of ['detail','detail-blank','cutout','expand','annotate'])for(const scenario of ['done','position-fails','submit-unknown','project-switch']){
+ for(const kind of detail.editKinds)for(const scenario of ['done','position-fails','submit-unknown','project-switch']){
   const f=detail.setup(kind,scenario,db);await f.run();eq(f.c.generationOperationRef.current.size,0,'detail/edit release');
   if(scenario==='position-fails'){
    eq(f.state.positions.length,1,kind+' known result reaches failing position port');eq(f.state.history.length,0,'failed attachment has no undo');

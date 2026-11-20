@@ -4,6 +4,9 @@ const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),asse
 const root=path.resolve(process.env.CANVAS_IMAGE_SOURCE_ROOT||process.cwd()),baseline=process.argv.includes('--baseline'),out=path.resolve(process.env.R3_EVIDENCE||'output/refactor-r3a-20261024');fs.mkdirSync(out,{recursive:true});
 const source=fs.readFileSync(path.join(root,'src/components/canvas/canvas-client.tsx'),'utf8'),ast=ts.createSourceFile('canvas.tsx',source,99,true,4),fns={};
 function walk(node){if(ts.isFunctionDeclaration(node)&&['runGen','generatePend','generatePreparedPend','prepareImageText','canvasImageRunContext','appendComposerReferences','generatePendingImage','rewirePendingBranchSources','imageToolState'].includes(node.name?.text))fns[node.name.text]=node.getText(ast);ts.forEachChild(node,walk);}walk(ast);
+const cutout=ast.statements.flatMap(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='CanvasClient'?(node.body?.statements||[]):[]).find(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='runCutout');
+const nativeCutout=/\breturn runGen\(/.test(cutout?.getText(ast)||'');
+if(nativeCutout)fns.runCutout=cutout.getText(ast);
 const declarations=ts.transpileModule(Object.values(fns).join('\n'),{compilerOptions:{target:9,module:1}}).outputText;
 const boundedReceipt=fs.existsSync(path.join(root,'src/lib/canvas/generation-receipt.ts'));
 const shared=fs.existsSync(path.join(root,'src/lib/canvas/image-task-controller.ts'));assert.equal(shared,!baseline,'mode must match whole source tree');
@@ -11,7 +14,7 @@ let checks=0;const eq=(a,b,label)=>{assert.deepEqual(a,b,label);checks++;};
 const plain=x=>JSON.parse(JSON.stringify(x));
 async function bundle(){
  const entry=[...(fs.existsSync(path.join(root,'src/lib/canvas/image-tool-state.ts'))?['export * from "./src/lib/canvas/image-tool-state";']:[]),...(['linked-image-text','prepare-linked-image-text'].filter(name=>fs.existsSync(path.join(root,`src/lib/canvas/${name}.ts`))).map(name=>`export * from "./src/lib/canvas/${name}";`)),...(fs.existsSync(path.join(root,'src/lib/canvas/generation-fanout.ts'))?['export * from "./src/lib/canvas/generation-fanout";']:[]),...(fs.existsSync(path.join(root,'src/lib/canvas/image-runs.ts'))?['export * from "./src/lib/canvas/image-runs";']:[]),...(fs.existsSync(path.join(root,'src/lib/canvas/pending-presentation.ts'))?['export * from "./src/lib/canvas/pending-presentation";']:[]),...(fs.existsSync(path.join(root,'src/lib/canvas/generation-presentation.ts'))?['export * from "./src/lib/canvas/generation-presentation";']:[]),...(fs.existsSync(path.join(root,'src/lib/canvas/generation-activity.ts'))?['export * from "./src/lib/canvas/generation-activity";']:[]),'export * from "./src/lib/imagegen/http";','export * from "./src/lib/canvas/generation-failure";','export * from "./src/lib/canvas/generation-feedback";','export * from "./src/lib/canvas/generation-parameters";','export * from "./src/lib/imagegen/output-advisory";','export * from "./src/lib/imagegen/client-recovery";','export * from "./src/lib/canvas/image-references";','export * from "./src/lib/imagegen/reference-labels";',...(shared?['export * from "./src/lib/canvas/image-task-controller";',...(fs.existsSync(path.join(root,'src/lib/canvas/image-creation.ts'))?['export * from "./src/lib/canvas/image-creation";']:[]),'export * from "./src/lib/canvas/image-task-request";','export * from "./src/lib/canvas/image-task-scope";','export * from "./src/lib/canvas/background-generation";','export * from "./src/lib/canvas/image-draft-completion";','export * from "./src/lib/canvas/image-node-drafts";']:[])].join('\n');
- return (await build({stdin:{contents:entry,resolveDir:root,loader:'ts'},bundle:true,write:false,platform:'node',format:'cjs',nodePaths:[path.resolve(__dirname,'../node_modules')],plugins:[{name:'local-browser-ports',setup(b){
+ return (await build({stdin:{contents:entry+(nativeCutout?'\nexport * from "./src/lib/imagegen/background-removal";':''),resolveDir:root,loader:'ts'},bundle:true,write:false,platform:'node',format:'cjs',nodePaths:[path.resolve(__dirname,'../node_modules')],plugins:[{name:'local-browser-ports',setup(b){
   b.onResolve({filter:/supabase$/},()=>({path:'auth',namespace:'fixture'}));
   b.onResolve({filter:/browser-image-cache$/},()=>({path:'image',namespace:'fixture'}));
   b.onResolve({filter:/saas\/workspace-client$/},()=>({path:'workspace',namespace:'fixture'}));
@@ -21,6 +24,7 @@ async function bundle(){
 function setup(kind,scenario,built){
  const src={id:'source',image:'/media/source.png',prompt:'source recipe',title:'source',category:'main',ratio:'3:4',resolution:'2K'},pend={id:'pend-A',label:'blank A',inputs:['source'],x:500,y:200};
  const results=[{id:'result-1',url:'/media/result-1.png',width:400,height:600},{id:'result-2',url:'/media/result-2.png',width:500,height:300}];
+ if(kind==='cutout')results.length=1;
  const variations={
   'base-file':{baseFile:new File(['base fixture'],'chosen.png',{type:'image/png'}),extra:[new File(['extra fixture'],'extra.png',{type:'image/png'})]},
   'ref-urls':{refUrls:['/media/ref1.png','/media/ref2.png'],parentId:'source',parentIds:['other-source']},
@@ -80,10 +84,13 @@ function setup(kind,scenario,built){
   c.savePendingAttempt(c.pendingAttemptKey(receipt.owner,receipt.workspace,receipt.project,receipt.actionKey),receipt);
   return Response.json({jobId});
  };
- vm.runInContext(declarations+'\nglobalThis.entry={runGen,generatePend,generatePendingImage};',c);
- return {c,state,src,pend,presentation,run:()=>kind==='derived'?c.entry.runGen(src,'fixture prompt',{ratio:'3:4',count:2,resolution:'2K',style:'default',...(variations[scenario]||{})}):c.entry.generatePend({referenceInputs:variations[scenario]?.referenceInputs}),retry:()=>{const item=kind==='derived'?c.generationTasks[0]:c.pendNodes[0];return kind==='derived'?item?.onRetry:item?.onGenerationRetry;}};
+ if(kind==='cutout')Object.assign(c,{canFeature:()=>true,cutoutReady:true});
+ vm.runInContext(declarations+'\nglobalThis.entry={runGen,generatePend,generatePendingImage'+(nativeCutout?',runCutout':'')+'};',c);
+ const run=()=>kind==='cutout'?c.entry.runCutout(src):kind==='derived'?c.entry.runGen(src,'fixture prompt',{ratio:'3:4',count:2,resolution:'2K',style:'default',...(variations[scenario]||{})}):c.entry.generatePend({referenceInputs:variations[scenario]?.referenceInputs});
+ const retry=()=>kind==='blank'?c.pendNodes[0]?.onGenerationRetry:c.generationTasks[0]?.onRetry;
+ return {c,state,src,pend,presentation,run,retry};
 }
-module.exports={bundle,setup,root,boundedReceipt};
+module.exports={bundle,setup,root,boundedReceipt,nativeCutout};
 if(require.main===module)(async()=>{
  const built=await bundle(),report=[];
  for(const kind of ['derived','blank'])for(const scenario of ['done','partial','reference-fails','cancelled','poll-transient','position-fails','sync-missing','workspace-aba','switch-project','unmounted','prepare-rejected','submit-unknown','terminal-failed','partial-error','needs-review','stored-recovery','malformed-query','ratio-warning','base-file','ref-urls','explicit-roles','transparent','ratiogen']){
