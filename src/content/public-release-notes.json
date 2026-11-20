@@ -1,5 +1,28 @@
 [
   {
+    "version": "1795147558",
+    "title": {
+      "zh": "画布图层与图片编辑",
+      "en": "Canvas layers and image editing"
+    },
+    "improvements": [
+      {
+        "zh": "双击拆层结果可移动图层、调整顺序和用蒙版修边，并可单独导出每层的透明 PNG 或可编辑 PSD。",
+        "en": "Double-click a layered result to move layers, reorder them, and refine edges with a mask. Export any layer as a transparent PNG or editable PSD."
+      },
+      {
+        "zh": "多图导入会对齐排列。双击空白处添加节点，双击标题原位改名，还可以下载图片压缩副本。",
+        "en": "Import multiple images in an aligned grid. Double-click empty space to add a node or a title to rename it. Images can also be downloaded as compressed copies."
+      }
+    ],
+    "fixes": [
+      {
+        "zh": "改进透明图片和生成进度的显示，并减少换底色等编辑被误判为去背景的情况。",
+        "en": "Improved transparent image rendering and progress display. Background color edits are less likely to trigger background removal."
+      }
+    ]
+  },
+  {
     "version": "1795138583",
     "title": {
       "zh": "ͼƬ���������޸�",
