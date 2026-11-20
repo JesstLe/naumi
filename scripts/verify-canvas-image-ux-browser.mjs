@@ -33,9 +33,20 @@ try{
  const agent=page.getByRole('button',{name:'收起助手',exact:true});if(await agent.isVisible())await agent.click();
  await page.screenshot({path:path.join(out,'INITIAL.png')});
  const empty=await page.locator('.react-flow__pane').evaluate(el=>{const r=el.getBoundingClientRect();for(let y=.55;y<.9;y+=.1)for(let x=.55;x<.95;x+=.1){const p={x:r.left+r.width*x,y:r.top+r.height*y};if(document.elementFromPoint(p.x,p.y)===el)return p;}throw Error('no empty canvas point');});
- const beforeCount=await page.locator('.react-flow__node[data-id^="pend-"]').count();await page.mouse.dblclick(empty.x,empty.y);
- if(baseline){assert.equal(await page.locator('.react-flow__node[data-id^="pend-"]').count(),beforeCount);pass('BASELINE empty double click does not create node');}
- else{await expect(page.locator('.react-flow__node[data-id^="pend-"]')).toHaveCount(beforeCount+1);const undo=page.getByTestId('canvas-main-toolbar').locator('[data-tool=undo]');await undo.click();await expect(page.locator('.react-flow__node[data-id^="pend-"]')).toHaveCount(beforeCount);pass('empty double click creates one image node; one undo removes it');}
+ const beforeCount=await page.locator('.react-flow__node[data-id^="pend-"]').count();
+ if(baseline){await page.mouse.dblclick(empty.x,empty.y);assert.equal(await page.locator('.react-flow__node[data-id^="pend-"]').count(),beforeCount);pass('BASELINE empty double click does not create node');}
+ else{
+  const menu=page.getByTestId('canvas-context-menu'),types=page.getByTestId('canvas-node-type-menu');
+  const items=locator=>locator.getByRole('menuitem').evaluateAll(els=>els.map(el=>({label:el.textContent.trim(),disabled:el.disabled})));
+  await page.mouse.click(empty.x,empty.y,{button:'right'});await expect(menu).toBeVisible();const rightItems=await items(menu),rightBox=await menu.boundingBox();
+  await menu.getByRole('menuitem',{name:'添加节点',exact:true}).hover();await expect(types).toBeVisible();const rightTypes=await items(types);
+  await page.keyboard.press('Escape');await page.keyboard.press('Escape');await expect(menu).toHaveCount(0);
+  await page.mouse.dblclick(empty.x,empty.y);assert.equal(await page.locator('.react-flow__node[data-id^="pend-"]').count(),beforeCount,'opening the double-click menu must not create a node');await expect(menu).toBeVisible();assert.deepEqual(await items(menu),rightItems,'double click and right click share ordered actions/disabled states');
+  const doubleBox=await menu.boundingBox();assert.ok(Math.abs(doubleBox.x-rightBox.x)<=1&&Math.abs(doubleBox.y-rightBox.y)<=1,'same screen anchor');
+  await menu.getByRole('menuitem',{name:'添加节点',exact:true}).hover();await expect(types).toBeVisible();assert.deepEqual(await items(types),rightTypes,'identical node choices and availability');await page.screenshot({path:path.join(out,'DOUBLE_CLICK_MENU.png')});
+  await types.getByRole('menuitem',{name:'图片',exact:true}).click();await expect(menu).toHaveCount(0);await expect(page.locator('.react-flow__node[data-id^="pend-"]')).toHaveCount(beforeCount+1);
+  await page.getByTestId('canvas-main-toolbar').locator('[data-tool=undo]').click();await expect(page.locator('.react-flow__node[data-id^="pend-"]')).toHaveCount(beforeCount);pass('double click equals right-click menu/actions/anchor; only a menu choice creates a node, undo retained');
+ }
  if(!baseline){
   await page.getByTestId('canvas-main-toolbar').locator('[data-tool=hand]').click();
   const point=await page.locator('.react-flow__pane').evaluate(el=>{const r=el.getBoundingClientRect();for(let y=.55;y<.9;y+=.1)for(let x=.55;x<.95;x+=.1){const p={x:r.left+r.width*x,y:r.top+r.height*y};if(document.elementFromPoint(p.x,p.y)===el)return p;}throw Error('no blank point');});
