@@ -107,7 +107,7 @@ async function main(){
   await guardChannelSubmission(f.sql,hubScope);
   assert.equal((await f.sql.query('SELECT upstream_id FROM app_model_channel_operations WHERE operation_key=$1',[op])).rows[0].upstream_id,'u1');
   await publish(off);await recordChannelOutcome(f.sql,t,false,429);
-  const resume=await claimChannel(f.sql,'image-a',p.policy,p.targets,new Set(),op);assert.equal(resume.target.upstreamId,'u1');assert.equal(resume.recovering,true);await resume.release();
+  for(const mode of ['priority','balanced','random'] as const){const resume=await claimChannel(f.sql,'image-a',{...p.policy,mode},p.targets,new Set(),op);assert.equal(resume.target.upstreamId,'u1');assert.equal(resume.recovering,true);await resume.release();}
   await assert.rejects(guardChannelSubmission(f.sql,hubScope),ImageOperationPending);
   await wire(f.origin+'/v1/tasks/known');assert.equal(gets,2);assert.equal(posts,0);
   assert.equal((await f.sql.query('SELECT count(*)::int n FROM app_model_provider_leases')).rows[0].n,0);

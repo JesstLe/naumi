@@ -33,7 +33,7 @@ export function ChannelPolicyEditor({ row, state, channels, mode, locked, onMode
       </div>
       <div className={styles.rules}>
         <label>优先级<input aria-label={`通道优先级 ${channel.upstreamId}`} type="number" min={1} max={100} value={channel.priority} onChange={e => onUpdate(channel.upstreamId, { priority: Number(e.target.value) })} /></label>
-        {mode === "balanced" && <label>同级权重<input aria-label={`通道权重 ${channel.upstreamId}`} type="number" min={1} max={1000} value={channel.weight} onChange={e => onUpdate(channel.upstreamId, { weight: Number(e.target.value) })} /></label>}
+        {mode !== "priority" && <label>同级权重<input aria-label={`通道权重 ${channel.upstreamId}`} type="number" min={1} max={1000} value={channel.weight} onChange={e => onUpdate(channel.upstreamId, { weight: Number(e.target.value) })} /></label>}
         <details className={styles.runtime}><summary>运行信息</summary><dl>
           <div><dt>调用状态</dt><dd>{({ available: "最近调用成功", cooldown: "暂停，等待恢复", recovering: "恢复探测中", failed: "最近调用失败", unobserved: "尚未调用" } as Record<string, string>)[health?.state || ""] || "调用状态未取得"}</dd></div>
           <div><dt>上游并发</dt><dd>{capacity ? `${capacity.inFlight} / ${capacity.unlimited ? "不限" : capacity.maxConcurrent}` : "运行占用未取得"}</dd></div>
@@ -47,8 +47,8 @@ export function ChannelPolicyEditor({ row, state, channels, mode, locked, onMode
   return <div className={styles.editor}>
     <header className={styles.heading}><div><span>前端模型</span><h3>{row.label}</h3></div><span>{active.length} 个启用 / {channels.length} 个已配置</span></header>
     <div className={styles.mode}>
-      <label>调度方式<select aria-label="调度方式" value={mode} disabled={locked} onChange={e => onMode(e.target.value as ChannelPolicy["mode"])}><option value="priority">主备优先</option><option value="balanced">同级分流</option></select></label>
-      <p>{mode === "priority" ? "优先级数字越小越先用；同级按原配置顺序。" : "先选优先级，数字越小越优先；同级按权重分流。"}</p>
+      <label>调度方式<select aria-label="调度方式" value={mode} disabled={locked} onChange={e => onMode(e.target.value as ChannelPolicy["mode"])}><option value="priority">主备优先</option><option value="balanced">同级分流</option><option value="random">同级随机</option></select></label>
+      <p>{mode === "priority" ? "优先级数字越小越先用；同级按原配置顺序。" : mode === "random" ? "先选优先级，同级按权重随机选择；已受理任务保留原通道。" : "先选优先级，数字越小越优先；同级按权重分流。"}</p>
     </div>
     <div className={styles.sectionTitle}><h4>启用通道</h4><span>{mode === "priority" ? "按配置优先顺序排列" : "按优先级排列 · 同级按权重分配"}</span></div>
     <div className={styles.channelList}>{active.map(renderChannel)}</div>

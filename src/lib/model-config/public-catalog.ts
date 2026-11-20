@@ -33,6 +33,8 @@ export function publicModelCatalog(snapshot: ModelSnapshot, modality: Modality, 
     const references={maxReferenceImages:referenceChannels.length?Math.max(...referenceChannels.map(u=>u.capabilities.maxReferenceImages)):0,referenceLimitVerified:referenceChannels.length>0&&referenceChannels.every(u=>u.capabilities.verified)};
     const option = f?.options.find(o => o.modelId === m.id);
     const adapterRatios = upstreams.map(u => config.providers.find(p => p.id === u.providerId)?.options?.imageRatios).find(Boolean)
+      || (m.supplierRouting?.mode === "random" && upstreams.length && upstreams.every(u=>config.providers.find(p=>p.id===u.providerId)?.protocol==="apimart-images" && u.parameterMap.apimartImages)
+        ? upstreams[0].parameterMap.apimartImages!.ratios.filter(ratio=>upstreams.every(u=>u.parameterMap.apimartImages!.ratios.includes(ratio))) : undefined)
       || (!m.supplierRouting && !option?.parameters?.ratios
         ? upstreams.find(u => isSeedreamWire(u.model) && config.providers.find(p => p.id === u.providerId)?.protocol === "apimart-images")?.parameterMap.apimartImages?.ratios
         : undefined);

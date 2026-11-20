@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { ModelConfig, PublicModel } from "./types";
 import { ModelConfigError } from "./types";
 import { imageModelDisplayId } from "../image-model-routing";
-export const channelPolicySchema = z.strictObject({ mode: z.enum(["priority", "balanced"]), channels: z.array(z.strictObject({ upstreamId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/), enabled: z.boolean(), priority: z.number().int().min(1).max(100), weight: z.number().int().min(1).max(1000) })).min(1).max(20) });
+export const channelPolicySchema = z.strictObject({ mode: z.enum(["priority", "balanced", "random"]), channels: z.array(z.strictObject({ upstreamId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/), enabled: z.boolean(), priority: z.number().int().min(1).max(100), weight: z.number().int().min(1).max(1000) })).min(1).max(20) });
 export type ChannelPolicy = z.infer<typeof channelPolicySchema>;
 export const CHANNEL_PROTOCOLS = ["openai-images", "new-api-flow", "openai-chat"];
 export function channelProtocol(protocol: string, parameterMap?: {apimartImages?: unknown}) { return CHANNEL_PROTOCOLS.includes(protocol) || applicationAPIMartImages(protocol,parameterMap); }
