@@ -2793,8 +2793,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
             if(readOnly||browsing||loading||!user||canvasTool==='hand'||event.button!==0||
               !(event.target instanceof Element)||!event.target.classList.contains('react-flow__pane'))return;
             event.preventDefault();event.stopPropagation();
-            const box=event.currentTarget.getBoundingClientRect();setCtxMenu(null);setSpawnMenu(null);
-            addPendAtScreen(event.clientX-box.left,event.clientY-box.top,activeRootId(),false);
+            onPaneContextMenu(event);
           }}
           className={cn("canvas-stage relative min-w-0 flex-1 overflow-clip", lightCanvas && "canvas-light")}
           onDragEnter={(event) => {
