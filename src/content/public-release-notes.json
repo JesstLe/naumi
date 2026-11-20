@@ -1,5 +1,19 @@
 [
   {
+    "version": "1795138583",
+    "title": {
+      "zh": "ͼƬ���������޸�",
+      "en": "Image tool fixes"
+    },
+    "improvements": [],
+    "fixes": [
+      {
+        "zh": "�޸����������ͼʱ������ʾģ�Ͳ����õ����⡣",
+        "en": "Fixed an unavailable-model error when removing an image background on the canvas."
+      }
+    ]
+  },
+  {
     "version": "1794458731",
     "title": {
       "zh": "创作界面体验更新",

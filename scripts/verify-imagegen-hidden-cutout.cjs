@@ -6,6 +6,8 @@ const vm = require('node:vm');
 const {build} = require('esbuild');
 const root = process.cwd();
 const baseline = process.argv.includes('--baseline');
+const quotedHeaderBaseline = process.argv.includes('--quoted-header-baseline');
+const preparationSource = process.env.CUTOUT_PREPARATION_SOURCE;
 
 async function main() {
   const state = {denied: false};
@@ -39,6 +41,7 @@ async function main() {
     export {fixtureModelConfig} from './scripts/model-config-unit-fixture';
     export {fixtureConfig} from './scripts/billing-unit-fixture';`;
   const result = await build({stdin:{contents:entry,resolveDir:root,loader:'ts'},bundle:true,platform:'node',format:'cjs',write:false,packages:'external',plugins:[{name:'io-fixtures',setup(b){
+    if(preparationSource)b.onLoad({filter:/[\\/]model-config[\\/]image-preparation\.ts$/},()=>({contents:fs.readFileSync(preparationSource,'utf8'),loader:'ts'}));
     b.onResolve({filter:/^server-only$/},()=>({path:'empty',namespace:'fixture'}));
     b.onResolve({filter:/.*/},args=>{
       const candidate=args.path.startsWith('@/')?path.join(root,'src',args.path.slice(2)):args.path.startsWith('.')?path.resolve(args.resolveDir,args.path):'';
@@ -87,7 +90,16 @@ async function main() {
   check(api.prepareImageOperation(prep,state.models,state.billing).modelId==='image-cutout-verified','implicit default preparation');
   const quoted=direct.steps[0].billingQuote;
   check(api.prepareImageOperation({...prep,quote:quoted},state.models,state.billing).modelId==='image-cutout-verified','owner-bound quoted default remains implicit');
-  assert.throws(()=>api.prepareImageOperation({...prep,quote:quoted,featureModel:'image-cutout-verified'},state.models,state.billing),e=>e.code==='MODEL_UNAVAILABLE');checks++;
+  const echoedQuote=()=>api.prepareImageOperation({...prep,quote:quoted,featureModel:'image-cutout-verified'},state.models,state.billing);
+  if(quotedHeaderBaseline){
+    assert.throws(echoedQuote,e=>e.code==='MODEL_UNAVAILABLE');
+    console.log('QUOTED_HEADER_BASELINE=REPRODUCED MODEL_UNAVAILABLE HTTP409 BEFORE_SUPPLIER=YES');return;
+  }
+  check(echoedQuote().modelId==='image-cutout-verified','browser echo of owner-bound default quote remains implicit');
+  for(const body of [{model:'image-cutout-verified'},{modelId:'image-cutout-verified'}]){
+    assert.throws(()=>api.prepareImageOperation({...prep,body:{...prep.body,...body},quote:quoted,featureModel:'image-cutout-verified'},state.models,state.billing),e=>e.code==='MODEL_UNAVAILABLE');checks++;
+  }
+  assert.throws(()=>api.prepareImageOperation({...prep,quote:quoted,featureModel:'visible-cutout'},state.models,state.billing),e=>e.code==='MODEL_UNAVAILABLE');checks++;
   const foreign=structuredClone(config.publicModels[1]);foreign.id='hidden-not-default';config.publicModels.push(foreign);
   assert.throws(()=>api.prepareImageOperation({...prep,quote:{...quoted,facts:{...quoted.facts,modelId:'hidden-not-default'}}},state.models,state.billing),e=>e.code==='MODEL_UNAVAILABLE');checks++;
   config.publicModels.pop();

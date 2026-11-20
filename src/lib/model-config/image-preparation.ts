@@ -39,11 +39,14 @@ export function prepareImageOperation(input:ImagePreparationInput,snapshot:Model
     );
     // A configured default is not a user selection. Keep it implicit so enabled
     // internal processors can remain hidden; explicit IDs still require visibility.
-    // Quotation records the server-selected identity, not a user selection.
-    // Only the same default in this frozen snapshot can remain implicit;
-    // explicit hidden IDs and quotes for any other identity still fail closed.
-    const quotedDefault = !!quotedImage && !explicitModelId && configuredModelId === canonicalPublicModelId(snapshot.config.publicModels,featureDefault);
-    const requestedModelId = requestedFeatureModel(mainFeature, (quotedImage && !quotedDefault || explicitModelId || routedModelId !== configuredModelId) ? routedModelId : undefined);
+    // The browser echoes the priced model in x-naumi-feature-model, even when
+    // the original selection was implicit. Only an owner-bound server quote
+    // for this frozen default can authorize that echo; a body selection or a
+    // different header is still explicit and must pass catalogue visibility.
+    const quotedDefault = !!quotedImage && !selected &&
+      (!input.featureModel || canonicalPublicModelId(snapshot.config.publicModels,input.featureModel) === configuredModelId) &&
+      configuredModelId === canonicalPublicModelId(snapshot.config.publicModels,featureDefault);
+    const requestedModelId = requestedFeatureModel(mainFeature, quotedDefault ? undefined : (quotedImage || explicitModelId || routedModelId !== configuredModelId) ? routedModelId : undefined);
     const selection=selectFeatureModel(snapshot.config,{feature:mainFeature,binding:purpose.image!,requestedModelId,scopeSystem:parsed.body.origin==="canvas"?"canvas":undefined})!;
     const {preset,option,model}=selection;
     if (option?.parameters?.inputTypes && ((parsed.references > 0 && !option.parameters.inputTypes.includes("image")) || (parsed.body.needsMask && !option.parameters.inputTypes.includes("mask")))) throw new ModelConfigError("MODEL_INCOMPATIBLE", "本功能模型未开放该输入类型", 400);
