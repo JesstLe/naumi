@@ -12,7 +12,7 @@ import { registerPrivateMediaTx } from "@/lib/media-assets/writer";
 import { readManagedObject } from "@/lib/object-storage/managed-read";
 import { writeStoredObject, storageDriver } from "@/lib/object-storage/runtime";
 import { layeredPsdReceipt, MAX_PSD_BYTES, ownedCanvasSource } from "./layered-psd-service";
-import { composePsd, initialPsdEdits, type PsdEdits } from "./psd-document";
+import { composePsd, initialPsdEdits, InvalidLayerEdit, type PsdEdits } from "./psd-document";
 import { ensureCanvasImageVersions, updateLayeredCanvasPreviewTx } from "./image-version-store";
 
 const digest = (bytes: Buffer | string) => createHash("sha256").update(bytes).digest("hex");
@@ -44,13 +44,16 @@ async function decode(key: string) {
   );
   return readPsd(file.bytes, { useImageData: true, skipCompositeImageData: true, skipThumbnail: true });
 }
-async function thumbnail(node: string, doc: ReturnType<typeof composePsd>) {
+function encodePng(doc: ReturnType<typeof composePsd>) {
   const image = doc.imageData!;
-  const bytes = await sharp(Buffer.from(image.data.buffer, image.data.byteOffset, image.data.byteLength), {
+  return sharp(Buffer.from(image.data.buffer, image.data.byteOffset, image.data.byteLength), {
     raw: { width: doc.width, height: doc.height, channels: 4 },
   })
     .png()
     .toBuffer();
+}
+async function thumbnail(node: string, doc: ReturnType<typeof composePsd>) {
+  const bytes = await encodePng(doc);
   const sha256 = digest(bytes),
     key = `layered-psd/previews/${node}/${sha256}.png`;
   const file = await writeStoredObject(bytes, "image/png", key);
@@ -201,9 +204,24 @@ export async function savePsdDocument(email: string, node: string, revision: num
     return { revision: Number(updated.rows[0].revision), image };
   });
 }
-export async function exportPsdDocument(email: string, node: string, revision: number) {
+export async function exportPsdDocument(
+  email: string,
+  node: string,
+  revision: number,
+  layer?: { index: number; format: "png" | "psd" },
+) {
   const doc = await getPsdDocument(email, node);
   if (revision !== doc.revision)
     throw new BillingError("OPERATION_CONFLICT", "文档版本已更新，请重新打开后导出", 409);
-  return writePsdBuffer(composePsd(await decode(doc.baseKey), doc.edits));
+  const base = await decode(doc.baseKey);
+  if (!layer) return writePsdBuffer(composePsd(base, doc.edits));
+  const edit = doc.edits.find((item) => item.index === layer.index);
+  const source = base.children?.[layer.index];
+  if (!edit || !source?.imageData) throw new InvalidLayerEdit("找不到选中的图层");
+  // Export the whole layer in its own coordinates, including any pixels outside the poster.
+  const { width, height } = source.imageData;
+  const solo = composePsd({ width, height, children: [source] }, [
+    { ...edit, index: 0, x: 0, y: 0, visible: true },
+  ]);
+  return layer.format === "png" ? encodePng(solo) : writePsdBuffer(solo, { noBackground: true });
 }
