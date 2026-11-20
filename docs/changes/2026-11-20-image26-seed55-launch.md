@@ -8,6 +8,22 @@
 
 热发布仍使用三锁、固定管理操作源码、原模型/计费备份、PLAN/APPLY/VERIFY 和 CAS；运行 Web/Worker 身份、镜像、启动时间及生命周期原文必须保持。后续章节中的随机模式与程序发布方案作为已准备能力，不能写成本次已上线。
 
+## 本轮实际交付结果
+
+- 已完成 47 模型热发布 **v158**，publication `3ebd705a-d096-4787-99ca-64ad1d28f056`，digest `c844bd30bbd36b68f731cfcb9444741a752f207067db11c168e7b1cab394987f`，阶段 `applied`。管理操作固定来源 main `2c7719ca8212fa6a967802dcf27d7311d992afeb`。
+- `GPT-Image-2.6` 仅一个公开入口，两个 exact wire ID 均启用，同 priority / weight=1，**balanced**；`即梦 5.5` 独立入口。新家族沿用标准 1K 6 积分/张等现有规格报价，未覆盖旧价表。21 个原创作功能继承旧选项；357 组新模型规格按实际 businessBillingSnapshot 验证与旧功能报价等值。
+- 用与实际部署源码 `7aece11f` 相同的旧 schema / public-catalog / 参数与计费模块验证候选，通过；不以新代码的模拟冒充旧服务可读。真实公网 nginx 路由 `/api/models?feature=canvas.image`、`image.generate`、`tool.retouch` 均读回 v158、两个准确名称、参考数和支持规格；无 Flare/Sunburst 前端单独入口。标准画布默认仍为 GPT-Image-2.5；主生图入口保留原 settings 层的 Nano Banana Pro 默认。
+- 首次公网检查把所有功能默认均误写成 `gpt-image-2` 而失败；只读定位确认原生图设置层仍选择 Nano Banana Pro，修正验证器的错误假设后通过，没有为了验证器更改生产默认项。
+- 实际程序仍为 `7aece11f282d743542e3c468374a7780954158c7` / `1795151944`，原 Web `c775bb00…` / Worker `e888c15c…`，镜像 `35a8ace40abc…`，各阶段核对镜像、启动时间与生命周期原文不变。公网健康 DB ok。没有发布新程序、重启、切流、清理服务器备份或增记程序发布次数。
+- 私有服务器证据 `/opt/naumi-staging/evidence/image26-seed55-hot-20261120-r1/` 含原配置/计费、PLAN、持久请求及发布回执、各阶段 export；辅助 tmp `/tmp/image26-seed55-launch-hot-20261120-r1` 在现有 Web 内保留为本轮即时逆操作材料，无新进程。三把部署锁在每个阶段退出时释放。
+- 本机完整读回位于 `E:/workspace/naumi/output/image26-seed55-launch-20261120/`：`HOT_PLAN.log`、`HOT_APPLY.log`、`HOT_VERIFY.log`、`PUBLIC_VERIFIED.json`、`CANDIDATE.private.json`。原始参数/源码类型检查通过。独立 PG 已按唯一 label 核验并删除，fixture schema 已清理；取消的程序构建没有上线或重新启动。原主工作区及共享依赖保持，清理本任务 worktree 时只删 Junction 链接。
+
+**验收边界**：本轮真实供应商收费 POST 为 0，没有把目录出现、配置 applied、参数验证或公开列表读回称为真实图片生成/上传编辑/作品存储/账务结算完成。用户已获知可刷新选择，也已明确告知尚未做真实出图核验。随机调度实现已在 main，尚未部署或启用；后续单独按用户安排使用。
+
+### 逆操作交接
+
+现有 Web 未切换时，使用原私有 helper 的 `ROLLBACK` 模式（相同 ops.cjs hash，SPEC 中已固定 rollbackOperationId），在三锁下选择性移除本次添加项；先检查当前模型版本和任何新依赖，不回滚 billing、数据库、媒体或供应商来源历史。若 Web 的 tmp 已因后续程序发布清理，先从最近一个 `export-VERIFY-*` 恢复整份原 PLAN / SPEC / bundle 到当前 Web 的同一私有 tmp，再使用相同逆操作身份；不能重新 PLAN 或改 ID。任何本轮字段被他人编辑/出现新依赖/计费已变化均保留现场并复核。旧 v157 与新 v158 的已受理任务均保留冻结上下文，不重新调用供应商。
+
 ## 目标与边界
 
 用户要求 Flare/Sunburst 合为一个前端家族，后台随机选择，并增加 Seedream 5.5；随后明确前端命名与 Image 2.5 对齐。47 只读核对模型配置 v157 / 计费 v8，现有名称为 `GPT-Image-2.5` 和 `即梦 5.0 Pro`，故新增 `GPT-Image-2.6`（公开 ID `gpt-image-2.6`）及 `即梦 5.5`（`jimeng-image-5.5`）。不改旧名称、默认、报价、14 张香蕉参考图配置或已受理任务。
