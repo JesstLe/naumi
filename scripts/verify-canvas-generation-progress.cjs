@@ -15,13 +15,19 @@ let curves=new Set();for(const seed of [0,1,2,9,99,1000,1793021601]){
   if(stage==='generating')assert.equal(displayed,99);
   for(const t of [NaN,Infinity,-20])assert.ok(Number.isFinite(progress(stage,t,undefined,1,seed)));
  }
- assert.equal(progress('queued',3600,undefined,1,seed),0);assert.equal(progress('saving',3600,undefined,1,seed),100);
+ assert.ok(progress('queued',3600,undefined,1,seed)>=1&&progress('queued',3600,undefined,1,seed)<=25);assert.equal(progress('saving',3600,undefined,1,seed),100);
+ assert.ok(progress('generating',5,undefined,1,seed)>=45,'front/middle moves quickly');
+ assert.ok(progress('generating',10,undefined,1,seed)>=90,'90 reached within ten seconds');
+ assert.ok(progress('generating',35,undefined,1,seed)<99,'final stretch is slower, not an early 99 plateau');
+ assert.equal(progress('generating',90,undefined,1,seed),99,'hold below completion until real result');
+ let previous=0;for(let sec=0;sec<=100;sec+=.1){const next=progress('generating',sec,undefined,1,seed);assert.ok(next>=previous,'curve cannot oscillate backwards');previous=next;}
  curves.add(Array.from({length:35},(_,t)=>progress('generating',t,undefined,1,seed)).join(','));
 }
 assert.ok(curves.size>1);assert.ok(progress('preparing',3600)<progress('generating',3600));
 assert.ok(progress('generating',0,3,4)>=67);
 assert.match(component,/aria-valuenow=\{percent\}/);assert.match(component,/aria-valuemin=\{0\}/);assert.match(component,/aria-valuemax=\{100\}/);
-assert.match(component,/Math.max\(displayed.current.percent, candidate\)/);assert.match(component,/displayed.current.start !== start/);
+assert.match(component,/Math.max\(displayed.current.percent, candidate\)/);assert.match(component,/displayed.current.identity !== identity/);
+assert.match(component,/const identity = taskId \?\? start/);
 assert.doesNotMatch(component,/已等待|s elapsed|预估|预计|estimated/i);
 assert.doesNotMatch(component,/Image ready|图片已生成|Video ready|视频已生成/);
 assert.doesNotMatch(hint('generating',400),/马上|即将|已完成|细化/);

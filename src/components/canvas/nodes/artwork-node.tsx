@@ -135,7 +135,7 @@ const ArtworkContent=memo(function ArtworkContent({ data, selected, id: nodeId }
         )}
       >
         {d.pending ? (
-          <GenerationPlaceholder stage={d.generationStage} startedAt={d.generationStartedAt} count={d.generationCount} completed={d.generationCompleted} failure={d.generationFailure} onRetry={d.onGenerationRetry} />
+          <GenerationPlaceholder stage={d.generationStage} startedAt={d.generationStartedAt} taskId={d.generationTaskId} count={d.generationCount} completed={d.generationCompleted} failure={d.generationFailure} onRetry={d.onGenerationRetry} />
         ) : d.videoUrl && d.category==="media" ? (
           <div className="flex h-full items-center justify-center p-3"><a className="nodrag nowheel nokey rounded-lg bg-current/5 px-3 py-2 text-xs" href={mediaDownloadHref(d.videoUrl,d.label)} download>下载 {d.label}</a></div>
         ) : d.videoUrl ? (
@@ -183,7 +183,7 @@ const ArtworkContent=memo(function ArtworkContent({ data, selected, id: nodeId }
             </div>}
             {d.regenerationFailure&&<div role="alert" className="absolute bottom-2 left-2 z-10 rounded-lg canvas-ui-warning px-2 py-1 text-xs font-medium">重新生成未完成</div>}
             {d.regenerating && <div data-testid="regeneration-progress" className="absolute inset-0 z-10 bg-[var(--canvas-ui-panel-solid)]" style={{ containerType: "size" }}>
-              <GenerationPlaceholder stage={d.generationStage} startedAt={d.generationStartedAt} count={d.generationCount} completed={d.generationCompleted} />
+              <GenerationPlaceholder stage={d.generationStage} startedAt={d.generationStartedAt} taskId={d.generationTaskId} count={d.generationCount} completed={d.generationCompleted} />
             </div>}
             {selected && !d.regenerating && canNodeFeature("cutout") && !d.readOnly && !d.missingAsset && d.onCutout && <button type="button" data-testid="canvas-image-quick-cutout"
               aria-label="去背景，保留主体" title="去背景，保留主体" disabled={d.cutoutBusy || d.cutoutBlocked || d.settings?.locked}

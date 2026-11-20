@@ -111,7 +111,9 @@ export async function runCanvasBlankImage(input:{pend:CanvasPendingNode;prompt:s
   const operationKey=`pend:${pend.id}`,view=ctx.generation,pending=ctx.pending;if(view.busy(operationKey))return false;
   const prompt=input.linked?text||canvasInheritedImagePrompt(inputs[0]?.prompt):canvasBlankImagePrompt(text,texts,inputs);ctx.clearError();
   const size=generationPlaceholderSize(settings.ratio),live=ctx.geometry.position(pend.id,pend),position=generationPositionForTask(live,live,size,[]);
-  pending.set(nodes=>nodes.map(node=>node.id===pend.id?{...node,generationFailure:undefined,onGenerationRetry:undefined,generating:true,generationSubmitted:false,generationStage:'preparing',generationStartedAt:Date.now(),...position,generationSize:size,generationCount:normalizeCanvasCount(settings.count)}:node));
+  // Display identity belongs to this attempt, not the mutable execution-stage clock.
+  const generationTaskId=`task-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+  pending.set(nodes=>nodes.map(node=>node.id===pend.id?{...node,generationFailure:undefined,onGenerationRetry:undefined,generating:true,generationSubmitted:false,generationStage:'preparing',generationStartedAt:Date.now(),generationTaskId,...position,generationSize:size,generationCount:normalizeCanvasCount(settings.count)}:node));
   let previousStage:GenerationStage='preparing';
   const scope=ctx.capture(),task=createCanvasImageTask({scope,
     prepare:()=>prepareCanvasImageTask({kind:'blank',scope,operationKey,position,prompt,...settings,inputs,referenceInputs,textParentId:pend.parentId?.startsWith('text-')&&texts.some(node=>node.id===pend.parentId)?pend.parentId:undefined}),

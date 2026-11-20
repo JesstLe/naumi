@@ -20,6 +20,7 @@ export type CanvasArtNodeData = {
     onGenerationRetry?: () => unknown;
     generationStage?: GenerationStage;
     generationStartedAt?: number;
+    generationTaskId?: string;
     generationCount?: number;
     generationCompleted?: number;
     inChain?: boolean;
@@ -83,6 +84,7 @@ export type CanvasPendingNodeData = {
     onGenerationRetry?: () => unknown;
     generationStage?: GenerationStage;
     generationStartedAt?: number;
+    generationTaskId?: string;
     generationSize?: { width: number; height: number };
     generationCount?: number;
     generationKind?: "image" | "video";
@@ -109,6 +111,7 @@ export type CanvasPendingNode = {
     onGenerationRetry?: () => unknown;
     generationStage?: GenerationStage;
     generationStartedAt?: number;
+    generationTaskId?: string;
     generationSize?: { width: number; height: number };
     generationCount?: number;
     generating?: boolean; // 该空白节点正在文生图/合并生成中

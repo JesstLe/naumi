@@ -53,7 +53,7 @@ export function PendNode({ data, selected }: NodeProps) {
             </Link>
           </div>
         ) : d.generating ? (
-          <GenerationPlaceholder stage={d.generationStage} startedAt={d.generationStartedAt} count={d.generationCount} kind={d.generationKind} />
+          <GenerationPlaceholder stage={d.generationStage} startedAt={d.generationStartedAt} taskId={d.generationTaskId} count={d.generationCount} kind={d.generationKind} />
         ) : d.uploading ? (
           <div className="flex w-full flex-col items-center gap-2.5">
             <Loader2 className="h-5 w-5 animate-spin text-primary" />

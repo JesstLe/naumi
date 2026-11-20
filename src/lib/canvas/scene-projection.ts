@@ -181,7 +181,7 @@ export function projectCanvasScene(input:CanvasSceneInput):{displayNodes:Node[];
     // 每个生成任务都有自己的占位节点。后端超过并发上限时自行排队，画布不再全局锁死。
     for (const task of generationTasks) {
       if (!baseIds.has(task.sourceId)) continue;
-      if(task.replaceNode){if(currentReplacement.get(task.sourceId)!==task.id)continue;const index=baseNodes.findIndex(node=>node.id===task.sourceId);if(index>=0)baseNodes[index]={...baseNodes[index],data:{...baseNodes[index].data,regenerating:!task.failure,regenerationFailure:!!task.failure,generationStage:task.stage,generationStartedAt:task.startedAt,generationCount:task.count,generationCompleted:task.completed}};continue;}
+      if(task.replaceNode){if(currentReplacement.get(task.sourceId)!==task.id)continue;const index=baseNodes.findIndex(node=>node.id===task.sourceId);if(index>=0)baseNodes[index]={...baseNodes[index],data:{...baseNodes[index].data,regenerating:!task.failure,regenerationFailure:!!task.failure,generationStage:task.stage,generationStartedAt:task.startedAt,generationTaskId:task.id,generationCount:task.count,generationCompleted:task.completed}};continue;}
       const pos = taskPositions[task.id] ?? task.position;
       const previewSize = task.previewSize ?? generationPlaceholderSize("1:1");
       baseNodes.push({
@@ -190,7 +190,7 @@ export function projectCanvasScene(input:CanvasSceneInput):{displayNodes:Node[];
           position: pos,
           style: previewSize,
           data: { id: task.id, pending: true, label: task.failure ? generationFailureTitle(task.failure, locale === "en") : task.label, lightCanvas, ...previewSize,
-            generationStage: task.stage, generationStartedAt: task.startedAt,
+            generationStage: task.stage, generationStartedAt: task.startedAt, generationTaskId: task.id,
             generationCount: task.count, generationCompleted: task.completed, generationFailure: task.failure, onGenerationRetry: task.onRetry } satisfies CanvasArtNodeData,
           selectable: !!task.failure,
           draggable: true,
@@ -261,6 +261,7 @@ export function projectCanvasScene(input:CanvasSceneInput):{displayNodes:Node[];
           onGenerationRetry: p.onGenerationRetry,onGenerate:actions.generatePending,
           generationStage: p.generationStage,
           generationStartedAt: p.generationStartedAt,
+          generationTaskId: p.generationTaskId,
           generationSize: p.generationSize,
           generationCount: p.generationCount,
           generationKind: p.taskKind === "video" ? "video" : "image",
