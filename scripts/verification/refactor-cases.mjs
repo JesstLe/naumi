@@ -180,6 +180,8 @@ export const refactorCases=[
  node('canvas-image-model-dom','canvas','scripts/verify-canvas-image-model-dom.mjs','CANVAS_IMAGE_MODEL_DOM=PASS'),
  node('feature-catalog-lifecycle','foundation','scripts/verify-feature-catalog-lifecycle.mjs','FEATURE_CATALOG_LIFECYCLE=PASS'),
  node('canvas-theme-controls','canvas','scripts/verify-canvas-theme-controls.cjs','CANVAS_THEME_CONTROLS=PASS'),
+  {...node('canvas-image-surface','canvas','scripts/verify-canvas-image-surface.cjs','CANVAS_IMAGE_SURFACE=PASS'),clientReact:true},
+  {...ts('media-variants-alpha','generation','scripts/verify-media-variants.ts','PASS bounded thumbnail, preview, original dimensions and invalid image'),pg:false},
  node('canvas-theme-panels','canvas','scripts/verify-canvas-theme-panels.cjs','CANVAS_THEME_PANELS=PASS'),
  node('canvas-theme-matrix','canvas','scripts/verify-canvas-theme-matrix.cjs','CANVAS_THEME_MATRIX=PASS'),
  node('schema-bootstrap-client','foundation','scripts/verify-schema-bootstrap-client.cjs','SCHEMA_BOOTSTRAP_CLIENT=PASS'),

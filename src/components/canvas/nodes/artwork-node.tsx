@@ -122,11 +122,12 @@ const ArtworkContent=memo(function ArtworkContent({ data, selected, id: nodeId }
         {selected&&d.image&&!d.pending&&!d.videoUrl&&!d.missingAsset&&<ImagePixelSize width={pixelSize?.width} height={pixelSize?.height}/>}
       </div>
 
-      {/* 图片卡使用单层边框；选中态为稿定式蓝色描边与外环。 */}
+      {/* Loaded images reveal the canvas through alpha; selection chrome remains independent. */}
       <div
         title={title}
         className={cn(
           "canvas-ui-node-card relative min-h-0 flex-1 overflow-hidden rounded-[10px] border transition-all",
+          d.image && !d.pending && !d.videoUrl && !d.missingAsset && "canvas-ui-image-surface",
           selected
             ? "canvas-ui-selected ring-2 ring-[#315fc8] ring-offset-2 ring-offset-transparent"
             : d.inChain

@@ -603,6 +603,16 @@
 }
 .canvas-ui-node-card:not(.canvas-ui-selected) { border-color: var(--canvas-ui-border) !important; }
 .canvas-ui-node-card.canvas-ui-selected { border-color: #315fc8 !important; }
+/* Image pixels own their background. Do not paint a card behind transparent
+   images, or outline their otherwise invisible rectangular canvas at rest.
+   Text, pending, video and missing-asset cards retain their existing surface. */
+.canvas-ui-node-card.canvas-ui-image-surface {
+  background: transparent !important;
+}
+.canvas-ui-node-card.canvas-ui-image-surface:not(.canvas-ui-selected) {
+  border-color: transparent !important;
+  box-shadow: none;
+}
 .canvas-ui-port {
   border-color: var(--canvas-ui-border-strong) !important;
   background: var(--canvas-ui-panel-solid) !important;
