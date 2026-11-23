@@ -34,8 +34,8 @@ async function main(){
     eq([pricing.isChargelessQuote(usage),pricing.isChargelessQuote(apiCost)],[false,false],"cost-derived pricing never counts as chargeless");
 
     const sync=await import("../src/lib/billing/synchronous-operation"),scope=await import("../src/lib/saas/creation-scope");
-    const run=(email:string,quote:typeof freeQuote,action:()=>Promise<import("../src/lib/billing/synchronous-operation").SynchronousResult>)=>{
-      const operationId=randomUUID(),snapshot=quote===freeQuote?free:paid;
+    const run=(email:string,quote:typeof freeQuote,action:()=>Promise<import("../src/lib/billing/synchronous-operation").SynchronousResult>,existingId?:string)=>{
+      const operationId=existingId||randomUUID(),snapshot=quote===freeQuote?free:paid;
       return scope.withFrozenCreation({actorEmail:email,scopeKind:"personal",tenantId:null},async()=>({operationId,response:await sync.withSynchronousOperation({operationId,email,feature:"canvas.text-generate",path:"/api/canvas/text-generate",
         identity:async()=>({hash:createHash("sha256").update(operationId).digest("hex")}),snapshot:async()=>snapshot,quote:async()=>quote},action)}));
     };
@@ -87,6 +87,35 @@ async function main(){
     const creationId=await writer.startCreation("image:imagegen",jobId,actor,{},{actorEmail:actor,scopeKind:"personal",tenantId:null});
     const page=await creations.listCreations({platform:true},contracts.creationFiltersSchema.parse({user:actor,size:100}));
     eq(page.items.find(item=>item.id===creationId)?.status,"failed","top-level job failure wins over a stale result snapshot");
+
+    // J: a completely received length-limited answer is an explicit text failure,
+    // not a lost supplier receipt. Final failure + public partial commit together.
+    const textOutput=await import("../src/lib/canvas/text-output-server"),continuation=await import("../src/lib/canvas/text-continuation");
+    for(const quote of [freeQuote,paidQuote]){
+      let calls=0;
+      const action=async()=>{calls++;await sync.configuredToolCost();sync.markBillingUpstream("succeeded");sync.recordBillingUsage({prompt_tokens:205,completion_tokens:1800});return {status:422,body:textOutput.incompleteCanvasText("已生成的第一段","tree:original")};};
+      const first=await run(actor,quote,action),id=first.operationId;
+      eq([first.response.status,first.response.body?.terminal,first.response.body?.partialText],[422,true,"已生成的第一段"],"partial has a financially final identity-bound response");
+      eq(await facts_(id),{billing:["settled",0,0,"failed"],creation:"failed"},"known text failure releases the frozen reservation");
+      const replay=await run(actor,quote,action,id);eq([calls,replay.response.body],[1,first.response.body],"same operation returns the original partial without supplier replay");
+      const read=(email:string,project:string,scopeKind:'personal'|'tenant'='personal',tenantId:string|null=null)=>scope.withFrozenCreation({actorEmail:email,scopeKind,tenantId},()=>continuation.readCanvasTextContinuation(email,id,project));
+      eq(await read(actor,"tree:original"),"已生成的第一段","original actor workspace project can read partial");
+      eq(await read(actor,"tree:foreign"),null,"foreign project cannot continue");eq(await read(poor,"tree:original"),null,"foreign account cannot continue");
+      eq(await read(actor,"tree:original","tenant",randomUUID()),null,"foreign workspace cannot continue");
+      const stored=(await db.getPool().query("SELECT result_response FROM app_billing_operations WHERE id=$1",[`tool-${id}`])).rows[0].result_response;
+      eq([stored.receipt,stored.finishReason,stored.textProject],["synchronous-failure-v1","length","tree:original"],"bounded partial and origin are durable in PG");
+    }
+
+    // K: legacy assistant final length receipt commits before the public error event.
+    const streamConfig=structuredClone(paid);streamConfig.config.features["canvas.assistant"]={...streamConfig.config.features["canvas.text-generate"]};
+    const streamQuote=pricing.quote(streamConfig,{...facts,feature:"canvas.assistant"}),streamId=randomUUID();
+    let publicFailure:Record<string,unknown>|null=null;
+    await scope.withFrozenCreation({actorEmail:actor,scopeKind:"personal",tenantId:null},()=>sync.withSynchronousOperation({email:actor,operationId:streamId,feature:"canvas.assistant",path:"/api/canvas/assistant",identity:async()=>({hash:streamId}),snapshot:async()=>streamConfig,quote:async()=>streamQuote},async()=>{
+      await sync.configuredToolCost();sync.markBillingUpstream("succeeded");const incomplete=textOutput.incompleteCanvasText("流式已生成内容");publicFailure=await sync.failSynchronousTextStream(incomplete);return {status:200,body:null,stream:true};
+    }));
+    eq([(publicFailure as any)?.terminal,(publicFailure as any)?.partialText],[true,"流式已生成内容"],"stream publishes a durable terminal partial");
+    const streamOp=(await db.getPool().query("SELECT state,charged_credits,result_response,settlement_result FROM app_billing_operations WHERE id=$1",[`tool-${streamId}`])).rows[0];
+    eq([streamOp.state,streamOp.charged_credits,streamOp.settlement_result.state,streamOp.result_response.partialText],["settled",0,"failed","流式已生成内容"],"stream receipt and financial outcome are durable together");
     console.log(`SYNC_TERMINAL_CONSISTENCY=PASS CHECKS=${checks}`);
   }finally{if(db)await db.getPool().end();await(await import("../src/lib/imagegen/coordination-pool")).closeImageCoordinationPool();await f.cleanup();}
 }

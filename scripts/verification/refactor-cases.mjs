@@ -272,6 +272,7 @@ export const refactorCases=[
  node('native-actions','canvas','scripts/verify-canvas-native-actions.cjs','CANVAS_NATIVE_ACTIONS=PASS'),
  node('local-node-history','canvas','scripts/verify-canvas-node-history.cjs','CANVAS_NODE_HISTORY=PASS'),
  ts('text-failure-pg','canvas','scripts/verify-canvas-text-failure-pg.ts','CANVAS_TEXT_FAILURE_PG=PASS'),
+ {...ts('text-completion-policy','canvas','scripts/verify-canvas-text-completion-policy.ts','CANVAS_TEXT_COMPLETION_POLICY=PASS'),pg:false},
  node('text-tasks','canvas','scripts/verify-canvas-text-tasks.cjs','CANVAS_TEXT_TASKS=PASS'),
  node('image-imports','canvas','scripts/verify-canvas-image-imports.cjs','CANVAS_IMAGE_IMPORTS=PASS'),
  node('task-boundaries','canvas','scripts/verify-canvas-task-boundaries.cjs','CANVAS_TASK_BOUNDARIES=PASS'),

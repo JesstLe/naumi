@@ -20,6 +20,7 @@ import {claimCreation,finishCreation} from "../saas/creation-writer";
 import { TeamError } from "../teams/errors";
 
 type Context = {
+    textOutputFailed?: boolean;
     usageIncomplete?: boolean;
     usage?: import("./types").BillingResult["usage"];
     snapshot?:import("./types").ConfigSnapshot;
@@ -38,6 +39,8 @@ type Context = {
 };
 const storage = new AsyncLocalStorage<Context>(), service = createBillingService();
 export function currentSynchronousBilling() { return storage.getStore(); }
+/** Only a fully received text response can prove unusable output. This does not alter upstream acceptance/cost. */
+export function recordSynchronousTextFailure() { const c=storage.getStore(); if(c && ["canvas.text-generate","canvas.assistant"].includes(c.feature)) c.textOutputFailed=true; }
 /** Only supplier receipts count as actual usage; absence remains unknown. */
 export function recordBillingUsage(raw: unknown, imageInput = false) {
     const context = storage.getStore();
@@ -154,7 +157,7 @@ export async function withSynchronousOperation(input:SynchronousOperation,action
                 if ((response.status>=200&&response.status<300) && !payload?.jobId && context.charge === undefined)
                     await settleSynchronous("工具完成");
                 else if (!(response.status>=200&&response.status<300) && context.charge === undefined) {
-                    const known = context.upstream === "rejected" || context.upstream === "unobserved";
+                    const known = context.textOutputFailed === true || context.upstream === "rejected" || context.upstream === "unobserved";
                     const failureCheckpoint = known ? synchronousFailureCheckpoint(response.status, payload) : undefined;
                     const settled = await withBillingTransaction(getPool(), async tx => {
                         // Failure receipt and final billing outcome commit together.
@@ -284,7 +287,7 @@ export async function failSynchronousBackground(summary: string) {
         await finishCreation(context.creationId, context.email, context.charge !== undefined ? "needs_review" : "failed", { summary });
         return;
     }
-    const known = context.upstream === "rejected" || context.upstream === "unobserved";
+    const known = context.textOutputFailed === true || context.upstream === "rejected" || context.upstream === "unobserved";
     let review = true;
     try {
         const settled = await withBillingTransaction(getPool(), tx => service.settleTx(tx, context.operation!, { state: known ? "failed" : "unknown", items: [] }));
@@ -317,4 +320,18 @@ export async function failSynchronousStream() {
     const settled = await withBillingTransaction(getPool(), tx => service.settleTx(tx, context.operation!, { state: "unknown", items: [] }));
     if (settled.state === "hold" || settled.state === "manual") await finishCreation(context.creationId,context.email,'needs_review',{summary:'流式执行中断，已接受请求不会重新提交'});
     else await finishCreation(context.creationId,context.email,'failed',{summary:'流式执行中断，未交付完整结果，未扣费'});
+}
+
+/** A fully received but unusable text reply is financially final, unlike an interrupted stream. */
+export async function failSynchronousTextStream(body: Record<string, unknown>) {
+    const c=storage.getStore();
+    if(!c?.operation || !c.textOutputFailed || c.feature!=="canvas.assistant")return null;
+    const checkpoint=synchronousFailureCheckpoint(422,body);
+    const settled=await withBillingTransaction(getPool(),async tx=>{
+        await tx.query("UPDATE app_billing_operations SET result_response=$2::jsonb WHERE id=$1 AND email=$3",[c.id,JSON.stringify(checkpoint),c.email]);
+        return service.settleTx(tx,c.operation!,{state:"failed",items:[]});
+    });
+    c.charge=settled.charge;
+    await finishCreation(c.creationId,c.email,"failed",{text:typeof body.partialText==="string"?body.partialText:undefined,summary:"回复未完成，已保留可用文字"});
+    return settledSynchronousFailure({id:c.id,state:settled.state,charged_credits:settled.charge,settlement_result:{state:"failed",items:[]},result_response:checkpoint})?.body || null;
 }

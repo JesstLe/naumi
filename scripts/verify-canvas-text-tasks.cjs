@@ -106,6 +106,79 @@ function setup(c,request){
     f.ports.document=document;f.ports.prepare=admission(f,document);f.ports.historyEdit=(before,after)=>history.push({before,after});f.state.beforeSubmit=async()=>events.push('paid:post');
     const first=f.run();await entered.promise;eq(f.state.posts.length,0);ack.resolve();eq(await first,false);eq(f.task.getSnapshot().hasResult,true);eq(history.length,0);eq(await f.run(),true);eq(await f.run(),true);eq(events,['source:start','source:ack','paid:post']);eq(f.state.posts.length,1);eq(f.state.supplier,1);eq(history.length,1);eq(history[0].before.content,'before');eq(history[0].after.content,'generated answer');
   });
+
+  await test('terminal-partial-preserves-body-and-explicit-apply-without-model-call',async()=>{
+    const f=setup(c);f.state.failureOnce={code:'TEXT_OUTPUT_LIMIT',error:'回复尚未写完',terminal:true,status:'failed',chargedCredits:0,operationId:'CURRENT',partialText:'第一段已生成正文'};
+    eq(await f.run(),false);eq(f.task.getSnapshot().phase,'incomplete');eq(f.state.nodes[0].content,'before');eq(await f.run(),false);eq(f.state.posts.length,1);
+    eq(await f.task.acceptPartial(f.scope,f.ports),true);eq(f.state.nodes[0].content,'第一段已生成正文');eq(f.state.posts.length,1);
+  });
+  await test('partial-cache-refresh-owner-isolation-and-explicit-continuation-new-identity',async()=>{
+    const f=setup(c),tasks=c.createCanvasTextTasks(),request=c.generalTextTask(f.state.nodes[0],'write','Text');
+    f.state.failureOnce={code:'TEXT_OUTPUT_LIMIT',error:'回复尚未写完',terminal:true,status:'failed',chargedCredits:0,operationId:'CURRENT',partialText:'已保留正文'};
+    eq(await tasks.execute(f.scope,request,f.ports),false);eq(tasks.state(f.scope,'text-a').phase,'incomplete');
+    const restored=c.createCanvasTextTasks();eq(restored.state(f.scope,'text-a').partial.text,'已保留正文');eq(restored.state({...f.scope,account:'foreign'},'text-a').phase,'idle');
+    const original=f.state.posts[0].id;eq(await restored.continueWriting(f.scope,'text-a',f.ports),true);eq(f.state.posts.length,2);ok(f.state.posts[1].id!==original);eq(f.state.posts[1].body.continuationOf,original);
+  });
+  await test('unknown-continuation-refresh-retains-new-original-operation-not-another-continuation',async()=>{
+    const f=setup(c),tasks=c.createCanvasTextTasks(),request=c.generalTextTask(f.state.nodes[0],'write','Text');
+    f.state.failureOnce={code:'TEXT_OUTPUT_LIMIT',error:'回复尚未写完',terminal:true,status:'failed',chargedCredits:0,operationId:'CURRENT',partialText:'未完成正文'};
+    await tasks.execute(f.scope,request,f.ports);f.state.lost=true;eq(await tasks.continueWriting(f.scope,'text-a',f.ports),false);
+    const second=f.state.posts[1],restored=c.createCanvasTextTasks();eq(restored.state(f.scope,'text-a').phase,'retry');eq(await restored.resume(f.scope,'text-a',f.ports),true);eq(f.state.posts[2].id,second.id);eq(f.state.posts[2].body,second.body);
+  });
+  await test('partial-apply-save-retry-preserves-known-text-no-regeneration',async()=>{
+    const f=setup(c);f.state.failureOnce={code:'TEXT_OUTPUT_LIMIT',error:'未写完',terminal:true,status:'failed',chargedCredits:0,operationId:'CURRENT',partialText:'保留正文'};
+    await f.run();f.state.saveOk=false;eq(await f.task.acceptPartial(f.scope,f.ports),false);eq(f.task.getSnapshot().hasResult,true);f.state.saveOk=true;eq(await f.run(),true);eq(f.state.posts.length,1);
+  });
+
+  await test('restored-pending-never-overwrites-newer-document-before-receipt-or-on-result',async()=>{
+    const f=setup(c),original=c.generalTextTask(f.state.nodes[0],'old intent','Text');original.operationId='restored-original';
+    f.state.nodes=[{...f.state.nodes[0],title:'new title',content:'new manual body',canvasX:999,sourceIds:['new-source']}];
+    const task=c.createCanvasTextTask(original,{pending:true});f.ports.prepare=async()=>{throw Error('Restored receipt must never save the cached request snapshot')};
+    const gate_=gate(),entered=gate();f.state.beforeReply=()=>{entered.resolve();return gate_.promise};const running=task.run(f.scope,f.ports);await entered.promise;eq(f.state.nodes[0].content,'new manual body');eq(f.state.nodes[0].title,'new title');eq(f.state.nodes[0].canvasX,999);eq(f.state.nodes[0].sourceIds,['new-source']);f.state.nodes[0].content='edited during receipt lookup';gate_.resolve();eq(await running,true);eq(f.state.nodes[0].content,'edited during receipt lookup');eq(f.state.nodes[0].title,'new title');eq(f.state.nodes[0].canvasX,999);
+  });
+
+  await test('restored-pending-keeps-edits-made-before-refresh-even-without-an-inflight-edit',async()=>{
+    const f=setup(c),original=c.generalTextTask(f.state.nodes[0],'old intent','Text');original.operationId='restored-with-new-body';
+    f.state.nodes=[{...f.state.nodes[0],content:'manual body saved after acceptance',title:'new title',canvasX:999}];
+    const task=c.createCanvasTextTask(original,{pending:true});f.ports.prepare=async()=>{throw Error('No cached document save on receipt lookup')};
+    eq(await task.run(f.scope,f.ports),true);eq(f.state.nodes[0].content,'manual body saved after acceptance');eq(f.state.nodes[0].title,'new title');eq(f.state.nodes[0].canvasX,999);
+  });
+  await test('discard-terminal-partial-keeps-body-and-enables-edited-new-intent-no-auto-post',async()=>{
+    const f=setup(c),tasks=c.createCanvasTextTasks(),req=c.generalTextTask(f.state.nodes[0],'old intent','Text');f.state.failureOnce={code:'TEXT_OUTPUT_LIMIT',error:'未写完',terminal:true,status:'failed',chargedCredits:0,operationId:'CURRENT',partialText:'部分内容'};
+    await tasks.execute(f.scope,req,f.ports);eq(await tasks.discardPartial(f.scope,'text-a',f.ports),true);eq(f.state.nodes[0].content,'before');eq(f.state.posts.length,1);eq(c.createCanvasTextTasks().state(f.scope,'text-a').phase,'idle');
+    await tasks.execute(f.scope,c.generalTextTask(f.state.nodes[0],'edited intent','Text'),f.ports);eq(f.state.posts[1].body.prompt,'edited intent');ok(f.state.posts[1].id!==f.state.posts[0].id);
+  });
+  for(const terminal of [true,false])await test('stream-error-intent-release-only-for-proved-terminal-'+terminal,async()=>{
+    const f=setup(c),init={method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({prompt:'stream'})},quote=await c.billing.quote({feature:'canvas.text-generate'});
+    let id;c.fetch=async(_url,r)=>{id=new Headers(r.headers).get('x-naumi-billing-operation-id');const error={terminal,status:'failed',operationId:`tool-${id}`,chargedCredits:0,error:'incomplete'};return new Response(`event: error\ndata: ${JSON.stringify(error)}\n\n`,{headers:{'content-type':'text/event-stream'}});};
+    await (await c.billing.submit('/api/canvas/assistant',init,quote)).text();let keys=0;const storage=c.localStorage;c.localStorage={...storage,removeItem:k=>{keys++;storage.removeItem(k)}};c.fetch=async(_u,r)=>Response.json({code:'OPERATION_PENDING',operationId:`tool-${new Headers(r.headers).get('x-naumi-billing-operation-id')}`},{status:409});
+    // The callback lexical scope sees the same storage object; observe the next supplied ID directly.
+    let next;c.fetch=async(_u,r)=>{next=new Headers(r.headers).get('x-naumi-billing-operation-id');return Response.json({code:'OPERATION_PENDING'},{status:409});};await c.billing.submit('/api/canvas/assistant',init,quote);eq(next===id,!terminal);
+  });
+
+  await test('failed-continuation-retains-earlier-proved-partial',async()=>{
+    const f=setup(c),tasks=c.createCanvasTextTasks(),req=c.generalTextTask(f.state.nodes[0],'write','Text');
+    f.state.failureOnce={code:'TEXT_OUTPUT_LIMIT',error:'未写完',terminal:true,status:'failed',chargedCredits:0,operationId:'CURRENT',partialText:'先前已保留的回复'};await tasks.execute(f.scope,req,f.ports);
+    const original=tasks.state(f.scope,'text-a').partial.operationId;
+    f.state.failureOnce={code:'TEXT_OUTPUT_REFUSED',error:'调整要求后重试',terminal:true,status:'failed',chargedCredits:0,operationId:'CURRENT'};
+    eq(await tasks.continueWriting(f.scope,'text-a',f.ports),false);eq(tasks.state(f.scope,'text-a').phase,'incomplete');eq(tasks.state(f.scope,'text-a').partial.operationId,original);eq(tasks.state(f.scope,'text-a').partial.text,'先前已保留的回复');eq(f.state.posts.length,2);
+  });
+
+  await test('ordinary-unknown-refresh-retains-original-payload-operation-and-later-manual-body',async()=>{
+    const f=setup(c),tasks=c.createCanvasTextTasks(),req=c.generalTextTask(f.state.nodes[0],'original writing intent','Text');f.state.lost=true;
+    eq(await tasks.execute(f.scope,req,f.ports),false);const first=f.state.posts[0];f.state.nodes[0].content='later manual body';f.state.nodes[0].prompt='new draft instruction';
+    const restored=c.createCanvasTextTasks();eq(restored.state(f.scope,'text-a').phase,'retry');eq(await restored.resume(f.scope,'text-a',f.ports),true);eq(f.state.posts[1].id,first.id);eq(f.state.posts[1].body,first.body);eq(f.state.nodes[0].content,'later manual body');eq(f.state.supplier,1);
+  });
+
+  await test('ordinary-first-identity-is-durable-before-paid-post-and-before-any-response',async()=>{
+    const f=setup(c),tasks=c.createCanvasTextTasks(),req=c.generalTextTask(f.state.nodes[0],'original instruction','Text');
+    const originalFetch=c.fetch;let checked=false;
+    c.fetch=async(url,init)=>{
+      const restored=c.createCanvasTextTasks();eq(restored.state(f.scope,'text-a').phase,'retry');eq(restored.retryable(f.scope,'text-a'),true);checked=true;
+      return originalFetch(url,init);
+    };
+    eq(await tasks.execute(f.scope,req,f.ports),true);eq(checked,true);eq(f.state.supplier,1);
+  });
   await test('all-actual-callers-use-task-owner',()=>{ok(fn.generateTextNode.includes('textTasks.run'));ok(fn.reversePromptsForSelection.includes('textTasks.batch'));ok(fn.assistWriteForNodes.includes('textTasks.batch'));ok(!fn.reversePromptsForSelection.includes('privateFetch'));ok(src.includes('submission,isCurrent:scope.viewCurrent'));ok(src.includes('textTasks.retryable(selectedText.id)'));});
  }
  const result={mode:baseline?'BASELINE':'MODIFIED',cases,checks,root,supplier:'fixture',external:0};fs.writeFileSync(path.join(out,result.mode+'_RESULT.json'),JSON.stringify(result,null,2));console.log(`CANVAS_TEXT_TASKS=PASS mode=${result.mode} cases=${cases} checks=${checks} SAVE_RETRY=${baseline?'REGENERATES':'ORIGINAL_TEXT'} UNKNOWN=${baseline?'CLIENT_INTENT_CACHE':'RETAINED_OPERATION'} NAVIGATION=${baseline?'RESULT_DROPPED':'ORIGINAL_DOCUMENT'} EXTERNAL=0`);

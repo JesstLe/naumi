@@ -1,4 +1,5 @@
 "use client";
+import {CANVAS_TEXT_RESULT_LIMIT} from "@/lib/canvas/text-output-policy";
 import {canvasTextContent,CANVAS_TEXT_CONTENT_LIMIT,CANVAS_TEXT_INSTRUCTION_LIMIT} from "@/lib/canvas/text-content";
 import {resolveCanvasTextInstruction} from "@/lib/canvas/text-generation-input";
 import {useEffect,useLayoutEffect,useMemo,useRef,useState,type RefObject,type Dispatch,type SetStateAction} from "react";
@@ -28,7 +29,7 @@ export type CanvasTextComposerProps={
   draft:{prompt:string;onChange:(value:string)=>void};
   content:{onChange:(value:string)=>void;onCommit:(value:string,initial?:string)=>void;onFlush:()=>unknown};
   optimization?:{contextKey:string|null;disabled:boolean};
-  task:{state:CanvasTextTaskState;retryable:boolean;onGenerate:(intent?:"polish")=>unknown};
+  task:{state:CanvasTextTaskState;retryable:boolean;onGenerate:(intent?:"polish")=>unknown;onAcceptPartial?:()=>unknown;onDiscardPartial?:()=>unknown;onContinueWriting?:()=>unknown};
   layout:{dockRef:RefObject<HTMLDivElement|null>;style?:DockPlacement;safeArea:SafeArea;canvasSize:CanvasSize;expanded:boolean;onExpandedChange:Dispatch<SetStateAction<boolean>>};
   focusRevision?:number;onDismiss:()=>void;onReference:(id:string,enabled:boolean)=>unknown;onMenuOpenChange:(open:boolean)=>void;
   assist:{busy:boolean;onPickProduct:()=>void};image:{disabled:boolean;onGenerate:()=>void};
@@ -41,7 +42,12 @@ export function CanvasTextComposer({node:selectedText,members,light:lightCanvas,
   const {prompt:textPrompt,onChange:setTextPrompt}=draft;
   const {dockRef:textComposerDockRef,style:dockStyle,safeArea:overlaySafeArea,canvasSize,expanded:textComposerExpanded,onExpandedChange:setTextComposerExpanded}=layout;
   const assistBusy=assist.busy;
+  const partial=task.state.phase==="incomplete"?task.state.partial:undefined;
+  const canContinue=!!partial&&partial.text.length<CANVAS_TEXT_RESULT_LIMIT;
+  const recoveryLabel=task.state.phase==="rejected"?L("重新生成","Generate again"):task.state.hasResult?L("重试保存","Retry save"):L("查询原任务","Check original task");
   const [mode,setMode]=useState<"content"|"write">("content");
+  const actionLabel=partial?L("继续写作","Continue writing"):task.retryable?recoveryLabel:mode==="content"?L("润色文字","Polish text"):L("生成文字","Generate text");
+
   const bodyEdit=useRef<{initial:string;draft:string;change:typeof content.onChange;commit:typeof content.onCommit}|null>(null);
   const value=mode==="content"?canvasTextContent(selectedText):textPrompt;
   const setValue=(next:string)=>{if(mode==="content"){const session=bodyEdit.current;if(session){session.draft=next;session.change(next);}else content.onChange(next);}else setTextPrompt(next);};
@@ -54,7 +60,7 @@ export function CanvasTextComposer({node:selectedText,members,light:lightCanvas,
   useEffect(() => {
     if (textComposerDockRef.current) textComposerDockRef.current.style.height = "";
   }, [selectedText.id,textComposerDockRef]);
-  useEffect(()=>{if(task.state.phase==="succeeded")setMode("content");},[task.state.phase]);
+  useEffect(()=>{if(task.state.phase==="succeeded")setMode("content");else if(task.state.phase==="incomplete")setMode("write");},[task.state.phase]);
   const selectedTextRefs = useMemo(
     () =>
       (selectedText?.sourceIds ?? [])
@@ -95,6 +101,7 @@ export function CanvasTextComposer({node:selectedText,members,light:lightCanvas,
               >
                 <button
                   type="button"
+                  style={partial&&mode==="write"?{display:"none"}:undefined}
                   title={t("canvas.textAddReference")}
                   aria-label={t("canvas.textAddReference")}
                   aria-expanded={textReferenceMenuOpen}
@@ -110,6 +117,7 @@ export function CanvasTextComposer({node:selectedText,members,light:lightCanvas,
                 </button>
                 <Textarea
                   autoFocus
+                  style={partial&&mode==="write"?{display:"none"}:undefined}
                   ref={textPromptRef}
                   key={mode} value={value} aria-label={mode==="content"?L("文字内容","Text content"):L("AI 写作要求","AI writing instructions")}
                   placeholder={mode==="content"?L("输入文字","Write text"):L("输入写作或修改要求","Describe what to write or change")}
@@ -137,7 +145,7 @@ export function CanvasTextComposer({node:selectedText,members,light:lightCanvas,
                     if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
                       event.preventDefault();
                       if(event.nativeEvent.isComposing)return;
-                      if(mode==="write")void task.onGenerate();else {const session=bodyEdit.current;content.onCommit(event.currentTarget.value,session?.initial);if(session)session.initial=event.currentTarget.value;}
+                      if(mode==="write"){if(partial){if(canContinue)void task.onContinueWriting?.();}else void task.onGenerate();}else {const session=bodyEdit.current;content.onCommit(event.currentTarget.value,session?.initial);if(session)session.initial=event.currentTarget.value;}
                     }
                   }}
                   className={cn(
@@ -148,8 +156,14 @@ export function CanvasTextComposer({node:selectedText,members,light:lightCanvas,
                       : "text-[#e7e9ee] placeholder:text-[#818895]"
                   )}
                 />
-
-
+              {partial && mode==="write" && <section aria-label={L("未完成的回复","Incomplete reply")} className="flex min-h-0 flex-1 flex-col rounded-xl border border-amber-200 bg-amber-50/70 p-3">
+                <div className="mb-2 flex shrink-0 items-center justify-between gap-2">
+                  <span className="flex-1 text-xs font-semibold text-amber-900">{L("未完成的回复","Incomplete reply")}</span>
+                  <button type="button" disabled={optimization?.disabled||task.state.busy} onClick={()=>void task.onAcceptPartial?.()} className="rounded-lg border border-amber-200 bg-white px-2.5 py-1 text-xs font-medium text-amber-900">{L("使用这段文字","Use this text")}</button>
+                  <button type="button" aria-label={L("放弃本次回复","Discard this reply")} title={L("放弃本次回复","Discard this reply")} disabled={optimization?.disabled||task.state.busy} onClick={()=>void task.onDiscardPartial?.()} className="rounded-md p-1 text-amber-700 hover:bg-amber-100"><X className="h-4 w-4"/></button>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap break-words text-sm leading-6 text-slate-700">{partial.text}</div>
+              </section>}
               </div>
               {/* @提及选图:输入 @ 触发,点击=插入 @图片名 并绑引用(等同连线) */}
               {mentionState && selectedText && (() => {
@@ -301,10 +315,11 @@ export function CanvasTextComposer({node:selectedText,members,light:lightCanvas,
                   ))}
                 </div>
               )}
-              {task.state.error && (
+
+              {task.state.error && !partial && (
                 <p className="canvas-ui-error px-12 pb-2 text-xs font-medium">{task.state.error}</p>
               )}
-              <CanvasComposerFooter testId="text-node-dock-footer" controls={<>
+              <CanvasComposerFooter testId="text-node-dock-footer" controls={partial?<TextModelSelect feature="canvas.text-generate" compact dark={!lightCanvas} direction="up" />:<>
                 {storyboard&&<StoryboardPlanButton english={locale==='en'} disabled={storyboard.disabled} onClick={storyboard.onPlan}/>}
                 {mode==="write"&&<TextModelSelect feature="canvas.text-generate" compact dark={!lightCanvas} direction="up" />}
                 <CanvasPromptOptimizer contextKey={optimization?.contextKey??null} prompt={canvasTextContent(selectedText)}
@@ -327,12 +342,12 @@ export function CanvasTextComposer({node:selectedText,members,light:lightCanvas,
                   {t("canvas.genImages")}
                 </button></FeatureVisible>
                  </>} actions={<>
-                <button data-text-primary="true" type="button" onClick={()=>void task.onGenerate(mode==="content"?"polish":undefined)}
-                  disabled={optimization?.disabled||(!resolveCanvasTextInstruction(mode==="write"?textPrompt:"",canvasTextContent(selectedText))&&!task.retryable)||task.state.busy||selectedText.status==="generating"&&task.state.phase==="idle"}
-                  title={task.retryable?L("继续原任务","Resume original task"):mode==="content"?L("润色文字","Polish text"):L("生成文字 · Ctrl/⌘ + Enter","Generate text · Ctrl/⌘ + Enter")}
-                  aria-label={task.retryable?L("继续原任务","Resume original task"):mode==="content"?L("润色文字","Polish text"):L("生成文字","Generate text")}
+                <button data-text-primary="true" type="button" onClick={()=>void (partial?task.onContinueWriting?.():task.onGenerate(mode==="content"?"polish":undefined))}
+                  disabled={optimization?.disabled||!!partial&&!canContinue||(!partial&&!resolveCanvasTextInstruction(mode==="write"?textPrompt:"",canvasTextContent(selectedText))&&!task.retryable)||task.state.busy||selectedText.status==="generating"&&task.state.phase==="idle"}
+                  title={actionLabel}
+                  aria-label={actionLabel}
                   className="canvas-ui-primary flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 text-xs font-semibold disabled:opacity-45">
-                  {task.state.busy?<Loader2 className="h-4 w-4 animate-spin"/>:<ArrowUp aria-hidden="true" className="h-4 w-4"/>}{task.retryable?L("继续原任务","Resume original task"):mode==="content"?L("润色文字","Polish text"):L("生成文字","Generate text")}
+                  {task.state.busy?<Loader2 className="h-4 w-4 animate-spin"/>:<ArrowUp aria-hidden="true" className="h-4 w-4"/>}{actionLabel}
                 </button>
 
                </>}/>

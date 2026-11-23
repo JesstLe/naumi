@@ -19,11 +19,15 @@ import { readManagedObject } from "@/lib/object-storage/managed-read";
 import { toVisionDataUrl } from "@/lib/vision-image";
 import { requestedTextModel } from "@/lib/text-models";
 import {withBillingRequest} from "@/lib/billing/synchronous";
-import {configuredToolCost} from "@/lib/billing/synchronous-operation";
+import {configuredToolCost,recordSynchronousTextFailure} from "@/lib/billing/synchronous-operation";
 import { CANVAS_TEXT_OUTPUT_INSTRUCTION, canvasTextInput, canvasAnswerText, canvasTextFailure, reportCanvasTextFailure } from "@/lib/canvas-text-output";
 import { currentModelExecution } from "@/lib/model-config/context";
 import { CanvasTextContentError, canvasTextGenerationInput, parseCanvasTextContent, resolveCanvasTextInstruction } from "@/lib/canvas/text-generation-input";
 import { CanvasTextReferenceError, canvasTextReferenceContext, splitCanvasTextReferences } from "@/lib/canvas/text-generation-references";
+
+import { canvasTextBudget, incompleteCanvasText } from "@/lib/canvas/text-output-server";
+import { CANVAS_TEXT_RESULT_LIMIT } from "@/lib/canvas/text-output-policy";
+import { readCanvasTextContinuation } from "@/lib/canvas/text-continuation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -112,6 +116,8 @@ async function handleObservedPost(request: Request) {
   if (!rateLimitResult) {
     return NextResponse.json({ error: "操作过于频繁，请稍后再试" }, { status: 429 });
   }
+  let continuationOf: string | undefined;
+  let continuationText = "";
   let prompt = "";
   let content = "";
   let sourceIds: string[] = [];
@@ -121,6 +127,7 @@ async function handleObservedPost(request: Request) {
   let mode: "general" | "reverse" | "assist" = "general";
   try {
     const body = (await request.json()) as {
+      continuationOf?: unknown;
       prompt?: string;
       content?: unknown;
       sourceIds?: unknown;
@@ -128,6 +135,10 @@ async function handleObservedPost(request: Request) {
       productIds?: unknown;
       mode?: unknown;
     };
+    if (body.continuationOf !== undefined) {
+      if(typeof body.continuationOf !== "string" || !/^[a-zA-Z0-9_-]{8,120}$/.test(body.continuationOf)) return NextResponse.json({error:"原回复编号无效"},{status:400});
+      continuationOf=body.continuationOf;
+    }
     prompt = String(body.prompt || "").trim().slice(0, 4000);
     content = parseCanvasTextContent(body.content);
     mode = body.mode === "reverse" || body.mode === "assist" ? body.mode : "general";
@@ -191,6 +202,11 @@ async function handleObservedPost(request: Request) {
   }
 
   try {
+    if(continuationOf){
+      const previous=await readCanvasTextContinuation(email!,continuationOf,projectKey);
+      if(!previous)return NextResponse.json({error:"原回复未完成核验，请先查询原任务",code:"TEXT_CONTINUATION_UNAVAILABLE"},{status:409});
+      continuationText=previous;
+    }
     let textReferences = "";
     if (textSourceIds.length) {
       textReferences = canvasTextReferenceContext({
@@ -264,6 +280,7 @@ async function handleObservedPost(request: Request) {
       userText = `${userText}\n\n以下图片已由用户通过画布连线加入当前节点上下文。请结合图片内容和元数据完成任务。\n\n${referenceMetadata(references)}`;
     }
     if (textReferences) userText = `${userText}\n\n${textReferences}`;
+    if(continuationText) userText += `\n\n以下是同一任务已经写出的正文。请接着写完，只输出后续文字，不要复述、重写或解释：\n${continuationText}`;
     const allImages = [...referenceImages, ...productImages];
     const userContent: Array<
       | { type: "text"; text: string }
@@ -286,13 +303,23 @@ async function handleObservedPost(request: Request) {
         { role: "user", content: allImages.length ? userContent : canvasTextInput(userText) },
       ],
       temperature: 0.75,
-      max_tokens: 1800,
+      ...canvasTextBudget(allImages.length > 0),
       modalities: ["text"],
     });
     const choice = response.choices?.[0];
-    const text = canvasAnswerText(choice?.message?.content).trim();
+    const answer = canvasAnswerText(choice?.message?.content).trim();
+    const text = continuationText && answer ? `${continuationText}\n${answer}` : answer;
     const failure = canvasTextFailure(choice);
-    if (!text || failure.code === "TEXT_OUTPUT_IMAGE" || failure.code === "TEXT_OUTPUT_REFUSED" || failure.code === "TEXT_OUTPUT_LIMIT") {
+    if(failure.code === "TEXT_OUTPUT_IMAGE" || failure.code === "TEXT_OUTPUT_REFUSED"){
+      recordSynchronousTextFailure();reportCanvasTextFailure("text-generate",failure.code);
+      return NextResponse.json(failure,{status:502});
+    }
+    if(failure.code === "TEXT_OUTPUT_LIMIT" || text.length > CANVAS_TEXT_RESULT_LIMIT){
+      reportCanvasTextFailure("text-generate","TEXT_OUTPUT_LIMIT");
+      return NextResponse.json(incompleteCanvasText(text || continuationText,projectKey,text.length > CANVAS_TEXT_RESULT_LIMIT ? "node_limit" : "length"),{status:422});
+    }
+    if (!answer) {
+      recordSynchronousTextFailure();
       reportCanvasTextFailure("text-generate", failure.code);
       return NextResponse.json(failure, { status: 502 });
     }

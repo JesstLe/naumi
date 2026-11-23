@@ -26,7 +26,7 @@ export function canvasTextFailure(choice: unknown): { code: CanvasTextFailure; e
   if (Array.isArray(message.images) && message.images.length || parts.some(p => ["image", "image_url", "output_image"].includes(String(record(p).type)))) {
     return { code: "TEXT_OUTPUT_IMAGE", error: "文字模型返回了图片而非文字，本次没有保存文字结果；请稍后重试" };
   }
-  if (item.finish_reason === "length") return { code: "TEXT_OUTPUT_LIMIT", error: "文字回复未完成，请缩短要求后重试" };
+  if (item.finish_reason === "length") return { code: "TEXT_OUTPUT_LIMIT", error: "回复达到本次输出额度，尚未写完" };
   return { code: "TEXT_OUTPUT_EMPTY", error: "文字模型未返回正文，请稍后重试" };
 }
 

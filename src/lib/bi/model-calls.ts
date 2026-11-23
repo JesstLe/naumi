@@ -1,3 +1,4 @@
+import {textResponseEvidence} from "./text-response-evidence";
 import "server-only";
 import {randomUUID} from "node:crypto";
 import type OpenAI from "openai";
@@ -67,7 +68,7 @@ export async function observeModelCall<T>(
   wireModel: string,
   run: () => PromiseLike<T>,
   execution: ReturnType<typeof modelExecutionTelemetry> | null = modelExecutionTelemetry(currentModelExecution()),
-  usageOptions?: { imageInput: boolean },
+  usageOptions?: { imageInput: boolean; requestedTokens?:number },
 ): Promise<T> {
   markBillingUpstream("started");
   const actor = currentBiContext();
@@ -97,20 +98,25 @@ export async function observeModelCall<T>(
     inputTokens = token(response?.usage?.prompt_tokens);
     outputTokens = token(response?.usage?.completion_tokens);
     if (state === "succeeded" && usageOptions) recordBillingUsage(response?.usage, usageOptions.imageInput);
+    if(state === "succeeded" && usageOptions)console.info("[text-response-evidence]",JSON.stringify({operationId,...textResponseEvidence(wireModel,response,usageOptions.requestedTokens)}));
     markBillingUpstream(state==="succeeded"?"succeeded":state==="rejected"?"rejected":"unknown");
     if (state === "stream-opened") {
       const source = result as AsyncIterable<any>;
       const wrapped = Object.create(result as object);
       wrapped[Symbol.asyncIterator] = async function* () {
-        let usage: ObservedResponse["usage"], model = "", completed = false, broken = false;
+        let usage: ObservedResponse["usage"], model = "", finishReason:string|undefined, completed = false, broken = false;
         try {
           for await (const chunk of source) {
             if (chunk?.usage) usage = chunk.usage;
+            if(chunk?.choices?.[0]?.finish_reason)finishReason=chunk.choices[0].finish_reason;
             if (typeof chunk?.model === "string") model = chunk.model.slice(0, 200);
             yield chunk;
           }
           completed = true;
-          if (usageOptions) recordBillingUsage(usage, usageOptions.imageInput);
+          if (usageOptions) {
+            recordBillingUsage(usage, usageOptions.imageInput);
+            console.info("[text-response-evidence]",JSON.stringify({operationId,...textResponseEvidence(wireModel,{model,usage,choices:[{finish_reason:finishReason}]},usageOptions.requestedTokens)}));
+          }
         } catch (error) { broken = true; throw error; }
         finally {
           if (actor && dbEnabled) try {
@@ -152,7 +158,7 @@ export function observeOpenAI<T extends OpenAI>(client: T): T {
     >;
     const original = object[key].bind(resource);
     object[key] = (...args: unknown[]) => {
-      const body = args[0] as { model?: unknown; messages?: { content?: unknown }[] };
+      const body = args[0] as { max_tokens?:number;max_completion_tokens?:number;model?: unknown; messages?: { content?: unknown }[] };
       const vision = body?.messages?.some(m => Array.isArray(m.content) && m.content.some(part => part?.type === "image_url" || part?.type === "input_image"));
       const scope = isManagedModelClient(client) ? currentModelExecution(key === "create" ? vision ? "vision" : "text" : "image") : null;
       return observeModelCall(
@@ -162,7 +168,7 @@ export function observeOpenAI<T extends OpenAI>(client: T): T {
           return original(...args);
         },
         modelExecutionTelemetry(scope) || null,
-        key === "create" ? { imageInput: !!vision } : undefined,
+        key === "create" ? { imageInput: !!vision, requestedTokens:body.max_completion_tokens??body.max_tokens } : undefined,
       );
     };
   }
