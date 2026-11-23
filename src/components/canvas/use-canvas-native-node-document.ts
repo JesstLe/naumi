@@ -19,6 +19,11 @@ export function useCanvasNativeNodeDocument<K extends CanvasNativeKind>(kind:K,i
   const document=useMemo(()=>owner.current!.bind(scoped,input.email||"",input.readOnly),[scoped,input.email,input.readOnly]);
   const snapshot=useSyncExternalStore(document.subscribe,document.getSnapshot,()=>EMPTY as NativeNodeSnapshot<NativeNodeFor<K>>);
   const latest=useRef(document);latest.current=document;
+  const automaticRead=useRef<{document:typeof document;flight:Promise<void>}|null>(null);
+  const refreshAutomatic=(target:typeof document)=>{
+    if(automaticRead.current?.document===target)return automaticRead.current.flight;
+    const flight=target.refresh().finally(()=>{if(automaticRead.current?.flight===flight)automaticRead.current=null;});automaticRead.current={document:target,flight};return flight;
+  };
   const loadedView=useRef<typeof document|null>(null);
   const revision=currentWorkspaceRevision();
   const pollRef=useRef(input.pollIntervalMs);pollRef.current=input.pollIntervalMs;
@@ -29,8 +34,8 @@ export function useCanvasNativeNodeDocument<K extends CanvasNativeKind>(kind:K,i
     let stopped=false,cancel:(()=>void)|undefined;
     const warn=(event:BeforeUnloadEvent)=>{if(latest.current.getSnapshot().unsavedCount){event.preventDefault();event.returnValue="";}};
     window.addEventListener("beforeunload",warn);
-    const load=async()=>{try{await latest.current.refresh();}catch{/* The document exposes the actual read error. */}if(kind==="video"&&!stopped)cancel=visibleTimeout(load,pollRef.current?.()??6000);};
-    void load();const resume=()=>{if(window.document.visibilityState==="visible")void latest.current.refresh().catch(()=>{});};
+    const load=async()=>{try{await refreshAutomatic(latest.current);}catch{/* The document exposes the actual read error. */}if(kind==="video"&&!stopped)cancel=visibleTimeout(load,pollRef.current?.()??6000);};
+    void load();const resume=()=>{if(window.document.visibilityState==="visible")void refreshAutomatic(latest.current).catch(()=>{});};
     window.addEventListener("focus",resume);window.document.addEventListener("visibilitychange",resume);
     return()=>{stopped=true;deactivate();window.removeEventListener("beforeunload",warn);cancel?.();window.removeEventListener("focus",resume);window.document.removeEventListener("visibilitychange",resume);};
   },[kind,input.scope.account,input.scope.workspace,input.email,input.readOnly,revision]);
@@ -39,7 +44,7 @@ export function useCanvasNativeNodeDocument<K extends CanvasNativeKind>(kind:K,i
   useEffect(()=>{
     if(loadedView.current===document)return;
     loadedView.current=document;
-    void document.refresh().catch(()=>{});
+    void refreshAutomatic(document).catch(()=>{});
   },[document]);
   return {...document,allNodes:snapshot.nodes,nodes:useMemo(()=>snapshot.nodes.filter(node=>!node.deletedAt),[snapshot.nodes]),ready:snapshot.phase==="ready"||snapshot.phase==="error",error:snapshot.error,unsavedCount:snapshot.unsavedCount,saving:snapshot.saving>0};
 }

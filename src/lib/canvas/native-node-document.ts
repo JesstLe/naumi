@@ -1,3 +1,4 @@
+import {saveFailureState,type CanvasSaveItem} from "./save-status";
 import {VideoNodeSaveQueue,VideoNodeClientError} from "./video-node-save-queue";
 import {browserRandomUUID} from "../browser-crypto";
 import {canvasDocumentFetch,type CanvasDocumentScope} from "./document-scope";
@@ -13,7 +14,7 @@ import type {TimelineNodeWrite} from "./timeline-node-schema";
 export type NativeNodeFor<K extends CanvasNativeKind> = CanvasNativeNodeSet[`${K}Nodes`][number];
 type Writes={comfy:ComfyNodeWrite;video:VideoNodeWrite;director:DirectorNodeWrite;character:CharacterNodeWrite;scene:SceneNodeWrite;audio:AudioNodeWrite;timeline:TimelineNodeWrite};
 export type NativeNodePatch<K extends CanvasNativeKind>=Partial<Omit<Writes[K],"id"|"operationId">>;
-export type NativeNodeSnapshot<N>={nodes:N[];phase:"idle"|"loading"|"ready"|"error";error:string;saving:number;unsavedCount:number};
+export type NativeNodeSnapshot<N>={nodes:N[];phase:"idle"|"loading"|"ready"|"error";error:string;saving:number;unsavedCount:number;saveItems?:CanvasSaveItem[]};
 export class NativeNodeClientError extends Error{constructor(message:string,public status:number,public code?:string){super(message);}}
 type ErrorFactory=(message:string,status:number,code?:string)=>NativeNodeClientError;
 const labels={comfy:"工作流",video:"视频节点",director:"导演工程",character:"角色",scene:"场景",audio:"音频",timeline:"多轨"};
@@ -24,9 +25,16 @@ type Attempt={key:string;url:string;method:"POST"|"PATCH";project:string|null;bo
  * billing and history stay in their existing owners. */
 export function createCanvasNativeNodeDocument<K extends CanvasNativeKind>(kind:K,error:ErrorFactory){
   type N=NativeNodeFor<K>;
-  type Bucket={snapshot:NativeNodeSnapshot<N>;listeners:Set<()=>void>;queues:Map<string,Promise<N>>;pending:Map<string,Attempt>;flights:Map<string,{current:()=>boolean;promise:Promise<N>}>;read:number;writes:number;written:Map<string,number>;writable:boolean;writeEpoch:number;video?:{queue:VideoNodeSaveQueue;current:()=>boolean};videoFlights:Set<Promise<NativeNodeFor<"video">>>};
+  type Bucket={snapshot:NativeNodeSnapshot<N>;listeners:Set<()=>void>;queues:Map<string,Promise<N>>;queueProjects:Map<string,string>;pending:Map<string,Attempt>;rejected:Map<string,{attempt:Attempt;error:Error}>;failures:Map<string,Error>;flights:Map<string,{current:()=>boolean;promise:Promise<N>}>;read:number;writes:number;written:Map<string,number>;writable:boolean;writeEpoch:number;video?:{queue:VideoNodeSaveQueue;current:()=>boolean};videoFlights:Set<Promise<NativeNodeFor<"video">>>};
   const buckets=new Map<string,Bucket>(),url=`/api/canvas/${kind}-nodes`,label=labels[kind];
-  const publish=(b:Bucket,patch:Partial<NativeNodeSnapshot<N>>)=>{if(Object.entries(patch).every(([key,value])=>b.snapshot[key as keyof typeof b.snapshot]===value))return;b.snapshot={...b.snapshot,...patch};b.listeners.forEach(fn=>fn());};
+  const publish=(b:Bucket,patch:Partial<NativeNodeSnapshot<N>>)=>{
+    const saveItems:CanvasSaveItem[]=kind==='video'?b.video?.queue.items()||[]:[...new Set([...b.pending.keys(),...b.rejected.keys()])].map(id=>{
+      const attempt=b.pending.get(id)||b.rejected.get(id)!.attempt,input=JSON.parse(attempt.body),failure=b.failures.get(id)||b.rejected.get(id)?.error;
+      return {id,kind,projectKey:input.projectKey||b.snapshot.nodes.find(node=>node.id===id)?.projectKey||'workspace',title:input.title||b.snapshot.nodes.find(node=>node.id===id)?.title||label,
+        state:b.queues.has(id)?'saving':failure?saveFailureState(failure):'pending',message:failure?.message,canDiscard:b.rejected.has(id)&&!b.pending.has(id)&&!b.queues.has(id)};
+    });
+    b.snapshot={...b.snapshot,...patch,saveItems,unsavedCount:kind==='video'?patch.unsavedCount??b.snapshot.unsavedCount:saveItems.length};b.listeners.forEach(fn=>fn());
+  };
   const merge=(b:Bucket,nodes:N[])=>{
     const next=mergeCanvasNativeSnapshots(b.snapshot.nodes,nodes);
     for(const node of nodes)b.written.set(node.id,++b.writes);
@@ -35,7 +43,7 @@ export function createCanvasNativeNodeDocument<K extends CanvasNativeKind>(kind:
   const node=(value:unknown,id?:string):value is N=>!!value&&typeof value==="object"&&typeof (value as N).id==="string"&&typeof (value as N).projectKey==="string"&&Number.isInteger((value as N).revision)&&(!id||(value as N).id===id);
   function bind(scope:CanvasDocumentScope,email:string,readOnly:boolean){
     const key=JSON.stringify([scope.account,scope.workspace,email]);let bucket=buckets.get(key);
-    if(!bucket){bucket={snapshot:{nodes:[],phase:email?"idle":"ready",error:"",saving:0,unsavedCount:0},listeners:new Set(),queues:new Map(),pending:new Map(),flights:new Map(),read:0,writes:0,written:new Map(),writable:false,writeEpoch:0,videoFlights:new Set()};buckets.set(key,bucket);}
+    if(!bucket){bucket={snapshot:{nodes:[],phase:email?"idle":"ready",error:"",saving:0,unsavedCount:0},listeners:new Set(),queues:new Map(),queueProjects:new Map(),pending:new Map(),rejected:new Map(),failures:new Map(),flights:new Map(),read:0,writes:0,written:new Map(),writable:false,writeEpoch:0,videoFlights:new Set()};buckets.set(key,bucket);}
     const state=bucket,writable=!!email&&!readOnly;if(state.writable!==writable){state.writable=writable;state.writeEpoch++;}const writeEpoch=state.writeEpoch;
     const current=()=>scope.documentCurrent();
     const writeCurrent=()=>current()&&state.writable&&writeEpoch===state.writeEpoch;
@@ -92,7 +100,7 @@ export function createCanvasNativeNodeDocument<K extends CanvasNativeKind>(kind:
             const project=!old&&input.expectedRevision===0&&input.projectKey===`tree:${input.id}`?null:input.projectKey||old?.projectKey||scope.project;
             return canvasDocumentFetch({...scope,project,documentCurrent:writeCurrent},String(path),init);
           },
-        });state.video={queue,current:writeCurrent};
+        });state.video={queue,current:writeCurrent};publish(state,{unsavedCount:queue.pendingCount});
       }
       return state.video.queue;
     };
@@ -116,7 +124,10 @@ export function createCanvasNativeNodeDocument<K extends CanvasNativeKind>(kind:
       async function send(attempt:Attempt){
         const data=await request(attempt.url,{method:attempt.method,headers:{"content-type":"application/json"},body:attempt.body},attempt.project);
         if(!node(data?.node,id))throw new Error(`${label}保存结果待核实，请重试原操作`);
-        state.pending.delete(id);merge(state,[data.node]);
+        state.pending.delete(id);state.failures.delete(id);
+        const rejected=state.rejected.get(id);
+        if(rejected){const previous=JSON.parse(rejected.attempt.body),next=JSON.parse(attempt.body);if(Object.keys(previous).filter(key=>!['id','expectedRevision','operationId'].includes(key)).every(key=>Object.hasOwn(next,key)))state.rejected.delete(id);}
+        merge(state,[data.node]);
         if(!current())throw new Error(`${label}已保存，请返回原账号和工作空间同步`);
         return data.node;
       }
@@ -131,20 +142,21 @@ export function createCanvasNativeNodeDocument<K extends CanvasNativeKind>(kind:
         const project=!old&&expectedRevision===0&&input.projectKey===`tree:${id}`?null:input.projectKey||old?.projectKey||scope.project;
         const attempt:Attempt={key:fingerprint,url:old?`${url}/${encodeURIComponent(id)}`:url,method:old?"PATCH":"POST",project,
           body:JSON.stringify({...input,id,expectedRevision,operationId:browserRandomUUID()})};
-        state.pending.set(id,attempt);return send(attempt);
+        state.pending.set(id,attempt);publish(state,{});return send(attempt);
       };
       const queued=(state.queues.get(id)||Promise.resolve()).catch(()=>{}).then(execute).catch(cause=>{
         // Definite rejection retires the intent. Transport/JSON/5xx uncertainty
         // retains its exact body/method/ID before any later write.
-        if(cause instanceof NativeNodeClientError&&cause.status>=400&&cause.status<500){state.pending.delete(id);if(cause.status===409&&current())void refresh().catch(()=>{});}
+        const failure=cause instanceof Error?cause:new Error(`${label}保存失败`);state.failures.set(id,failure);
+        if(cause instanceof NativeNodeClientError&&cause.status>=400&&cause.status<500&&cause.status!==408){const attempt=state.pending.get(id);if(attempt)state.rejected.set(id,{attempt,error:failure});state.pending.delete(id);if(cause.status===409&&current())void refresh().catch(()=>{});}
         throw cause;
       });
       const promise=queued.finally(()=>{
-        if(state.queues.get(id)===promise)state.queues.delete(id);
+        if(state.queues.get(id)===promise){state.queues.delete(id);state.queueProjects.delete(id);}
         if(state.flights.get(fingerprint)?.promise===promise)state.flights.delete(fingerprint);
         publish(state,{saving:Math.max(0,state.snapshot.saving-1)});
       });
-      state.queues.set(id,promise);state.flights.set(fingerprint,{current:writeCurrent,promise});return promise;
+      state.queueProjects.set(id,input.projectKey||state.snapshot.nodes.find(node=>node.id===id)?.projectKey||scope.project||"workspace");state.queues.set(id,promise);state.flights.set(fingerprint,{current:writeCurrent,promise});return promise;
     };
     async function command<T extends {node:N}>(id:string,suffix:string,body:Record<string,unknown>):Promise<T>{
       assertWrite();try{
@@ -153,9 +165,26 @@ export function createCanvasNativeNodeDocument<K extends CanvasNativeKind>(kind:
         merge(state,[data.node]);if(!current())throw new Error(`${label}操作已受理，请返回原账号和工作空间同步`);return data as T;
       }catch(cause){if((cause instanceof NativeNodeClientError||cause instanceof VideoNodeClientError)&&cause.status===409&&current())void refresh().catch(()=>{});throw cause;}
     }
+    const retryPending=async(project?:string|null,id?:string)=>{
+      if(kind==='video')return videoWrites().retryPending(project,id);
+      assertWrite();const entries=[...new Map([...state.rejected].map(([key,value])=>[key,value.attempt] as const).concat([...state.pending])).entries()];
+      const results=await Promise.allSettled(entries.filter(([key,attempt])=>(!id||key===id)&&(project===undefined||(JSON.parse(attempt.body).projectKey||state.snapshot.nodes.find(node=>node.id===key)?.projectKey||'workspace')===(project||'workspace'))).map(async([key,attempt])=>{
+        if(state.queues.has(key))await state.queues.get(key);
+        if(state.pending.get(key)!==attempt&&state.rejected.get(key)?.attempt!==attempt)return;
+        const [,patch]=JSON.parse(attempt.key);state.pending.set(key,attempt);await save(key,patch);
+      }));const failure=results.find((r):r is PromiseRejectedResult=>r.status==='rejected');if(failure)throw failure.reason;
+    };
     const read=async(path:string)=>{const data=await request(path,{cache:"no-store"});if(!current())throw new Error("画布账号或工作空间已切换");return data;};
     return {getSnapshot:()=>state.snapshot,subscribe:(fn:()=>void)=>{state.listeners.add(fn);return()=>{state.listeners.delete(fn);};},refresh,save,command,read,activate,
-      accept:(nodes:N[],isCurrent:()=>boolean)=>{if(current()&&isCurrent())merge(state,nodes);},getNode:(id:string)=>state.snapshot.nodes.find(value=>value.id===id),flush:async(id?:string)=>kind==="video"?videoWrites().flush(id):Promise.all([...state.queues.values()]),retryPending:async()=>kind==="video"?videoWrites().retryPending():Promise.resolve()};
+      accept:(nodes:N[],isCurrent:()=>boolean)=>{if(current()&&isCurrent())merge(state,nodes);},getNode:(id:string)=>state.snapshot.nodes.find(value=>value.id===id),flush:async(id?:string)=>kind==="video"?videoWrites().flush(id):Promise.all([...state.queues.values()]),draft:(id:string)=>kind==='video'?videoWrites().draft(id):state.pending.get(id)?.body||state.rejected.get(id)?.attempt.body,
+      flushProject:async(project:string|null)=>{
+        if(kind==='video')return videoWrites().flushProject(project);
+        const belongs=(id:string)=> (state.queueProjects.get(id)||state.snapshot.nodes.find(node=>node.id===id)?.projectKey||JSON.parse((state.pending.get(id)||state.rejected.get(id)?.attempt)?.body||'{}').projectKey||'workspace')===(project||'workspace');
+        while([...state.queues.keys()].some(belongs))await Promise.all([...state.queues].filter(([id])=>belongs(id)).map(([,promise])=>promise));
+        if([...new Set([...state.pending.keys(),...state.rejected.keys()])].some(belongs))throw new Error(`${label}仍有未保存的修改，请在保存状态中处理`);
+      },
+      discard:(id:string)=>{assertWrite();if(kind==='video')return videoWrites().discard(id);if(state.pending.has(id)||state.queues.has(id))throw new Error('原保存回执尚未核实，请先恢复或复制草稿');state.rejected.delete(id);state.failures.delete(id);publish(state,{});},
+      retryPending};
   }
   return {bind};
 }

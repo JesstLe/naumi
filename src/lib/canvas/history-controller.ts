@@ -24,7 +24,7 @@ type Services = {
   pending: (scope: CanvasHistoryScope, action: CanvasLocalHistoryAction, undo: boolean,checkOnly?:boolean) => void;
   conflict?:(scope:CanvasHistoryScope,value:NonNullable<CanvasHistoryRequestError["conflict"]>)=>void;
   artworkConflict?:(scope:CanvasHistoryScope,value:NonNullable<CanvasHistoryRequestError["artworkConflict"]>,action:CanvasHistoryAction,undo:boolean)=>void;
-  refresh: () => Promise<unknown>; warning: (message: string) => void;
+  refresh: (scope?:CanvasHistoryScope) => Promise<unknown>;refreshSync?:(scope:CanvasHistoryScope)=>Promise<unknown>; warning: (message: string) => void;
 };
 
 /** Owns history identity, retry bodies, commit/refresh ordering and scoped stacks.
@@ -35,6 +35,9 @@ export function createCanvasHistoryController(services: Services) {
   const flights = new WeakMap<CanvasHistoryAction,{undo:boolean;promise:Promise<HistoryCommit>}>();
   const queuedFlights = new WeakMap<CanvasHistoryAction,{undo:boolean;promise:Promise<HistoryCommit>}>();
   const commands = new Map<string,{action:CanvasHistoryAction;scope:CanvasHistoryScope;record?:boolean}>(), queues = new Map<string,Promise<unknown>>();
+  const syncPending=new Map<string,object>();
+  const markSync=(scope:CanvasHistoryScope)=>{syncPending.set(scope.key,{});services.changed();if(scope.viewCurrent())services.warning("修改已保存，显示待刷新");};
+  const retrySync=async(scope:CanvasHistoryScope)=>{const version=syncPending.get(scope.key);if(!version)return;scope.assertView();await (services.refreshSync?.(scope)??services.refresh(scope));scope.assertView();if(syncPending.get(scope.key)===version){syncPending.delete(scope.key);services.changed();}};
   const busy = {current:false};
   const list = (scope: CanvasHistoryScope) => ({undo:undo.filter(a => scopes.get(a) === scope.key),redo:redo.filter(a => scopes.get(a) === scope.key)});
   const push = (scope: CanvasHistoryScope, action: CanvasHistoryAction) => {
@@ -72,13 +75,13 @@ export function createCanvasHistoryController(services: Services) {
         // A scoped document owner can acknowledge its own durable drafts after
         // navigation. UI adapters still guard all current-view React writes.
         try { services.commit(scope,value); }
-        catch { if (scope.viewCurrent()) services.warning("修改已保存，画布显示待同步"); }
+        catch { markSync(scope); }
         return value;
       });
       if (scope.documentCurrent()) {
         if (!value.nativeNodes && value.operations.some(isCanvasNativeOperation)) {
-          try { await services.refresh(); }
-          catch { if (scope.viewCurrent()) services.warning("修改已保存，视频显示待同步"); }
+          try { await services.refresh(scope); }
+          catch { markSync(scope); }
         }
       }
       return value;
@@ -151,5 +154,7 @@ export function createCanvasHistoryController(services: Services) {
     undo=prune(undo);redo=prune(redo);services.changed();
   };
   return {consumePending,discard,list,push,apply,submit,transaction,acknowledge,step,busy,setBusy,
-    retry:(scope:CanvasHistoryScope)=>serialize(scope,async()=>{scope.assertView();await resume(scope);})};
+    syncItems:(scope:CanvasHistoryScope)=>[...syncPending.keys()].flatMap(key=>{let identity;try{identity=JSON.parse(key);}catch{return [];}return identity[0]===scope.account&&identity[1]===scope.workspace?[{id:'display',kind:'history',title:'画布显示',projectKey:identity[2],state:'sync' as const}]:[];}),
+    needsSync:(scope:CanvasHistoryScope)=>syncPending.has(scope.key),retrySync,
+    retry:(scope:CanvasHistoryScope)=>serialize(scope,async()=>{scope.assertView();await resume(scope);await retrySync(scope);})};
 }

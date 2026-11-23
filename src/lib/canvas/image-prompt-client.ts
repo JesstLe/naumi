@@ -1,5 +1,6 @@
 import { browserRandomUUID } from '../browser-crypto';
 import type { ImagePromptDocument } from './image-prompt-schema';
+import {saveFailureState,type CanvasSaveItem} from './save-status';
 
 export type ImagePromptAddress = { projectKey: string; nodeId: string; workspace: string };
 export type ImagePromptReceipt = { document: ImagePromptDocument | null; revision: number; workspace?:string; persisted?:boolean };
@@ -84,6 +85,7 @@ export class ImagePromptClient {
     if (!entry?.receipt) return;
     entry.desired = structuredClone(document);
     this.persist(key,entry);
+    this.notify();
     if (entry.timer) clearTimeout(entry.timer);
     if (entry.error || entry.saving || fingerprint(entry.desired) === fingerprint(entry.receipt.document)) return;
     entry.timer = setTimeout(() => { entry.timer = undefined; void this.flushKey(key).catch(() => {}); }, this.delay);
@@ -91,6 +93,21 @@ export class ImagePromptClient {
   error(key?: string | null) { return key ? this.entries.get(key)?.error?.message ?? null : null; }
   workspace(key?:string|null){return key?this.entries.get(key)?.address.workspace:undefined;}
   persisted(key?:string|null){return key?this.entries.get(key)?.receipt?.persisted!==false:true;}
+  items():CanvasSaveItem[]{return [...this.entries].flatMap(([key,entry])=>{
+    if(!entry.attempt&&(!entry.desired||fingerprint(entry.desired)===fingerprint(entry.receipt?.document)))return [];
+    return [{id:entry.address.nodeId,kind:'prompt',projectKey:entry.address.projectKey,title:'图片提示词',state:entry.saving?'saving':entry.error?saveFailureState(entry.error):'pending',message:entry.error?.message,
+      canDiscard:!!entry.error&&![408,500,502,503,504].includes(Number((entry.error as Error&{status?:number}).status))&&Number((entry.error as Error&{status?:number}).status)>=400&&Number((entry.error as Error&{status?:number}).status)<500&&!entry.saving}];
+  });}
+  draft(address:ImagePromptAddress){return this.find(address)?.[1].desired?.prompt;}
+  private find(address:ImagePromptAddress){return [...this.entries].find(([,entry])=>entry.address.nodeId===address.nodeId&&entry.address.projectKey===address.projectKey&&entry.address.workspace===address.workspace);}
+  discard(address:ImagePromptAddress){
+    this.assertCurrent();const found=this.find(address);if(!found)return;const [key,entry]=found;
+    const status=Number((entry.error as Error&{status?:number}|undefined)?.status);
+    if(entry.saving||!entry.error||status<400||status>=500||!Number.isFinite(status)||[408,500,502,503,504].includes(status))throw new Error('原保存回执尚未核实，请先恢复或复制草稿');
+    const storage=this.storage();storage?.removeItem(this.storageKey(key));if(storage?.getItem(this.storageKey(key)))throw new Error('本机草稿尚未移除，请保留此页面重试');
+    if(entry.timer)clearTimeout(entry.timer);this.entries.delete(key);this.notify();
+  }
+  async retry(address:ImagePromptAddress){const found=this.find(address);if(found)await this.flushKey(found[0]);}
   activate() { this.disposed = false; }
   async flushKey(key: string): Promise<void> {
     this.assertCurrent(); const entry = this.entries.get(key); if (!entry) return;
@@ -118,11 +135,12 @@ export class ImagePromptClient {
       }
     })().catch(error => { entry.error = error instanceof Error ? error : new Error('提示词保存失败'); throw error; })
       .finally(() => { entry.saving = undefined; if (!this.disposed) this.notify(); });
+    this.notify();
     await entry.saving;
   }
-  async flush() {
+  async flush(projectKey?:string,nodeId?:string) {
     // Await all started saves, retaining the first failure instead of hiding it.
-    const results = await Promise.allSettled([...this.entries.keys()].map(key => this.flushKey(key)));
+    const results = await Promise.allSettled([...this.entries].filter(([,entry])=>(!projectKey||entry.address.projectKey===projectKey)&&(!nodeId||entry.address.nodeId===nodeId)).map(([key]) => this.flushKey(key)));
     const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
     if (failure) throw failure.reason;
   }

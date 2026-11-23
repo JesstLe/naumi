@@ -1,7 +1,7 @@
 import {reduceHistoryArtworks,rebaseCanvasArtworkAction,type CanvasHistoryAction} from "./history-model";
 import type {HistoryCommit} from "./history-controller";
 import type {CanvasArtworkConflict} from "./artwork-write";
-export type ArtworkDocumentConflict=CanvasArtworkConflict&{action:CanvasHistoryAction;undo:boolean};
+export type ArtworkDocumentConflict=CanvasArtworkConflict&{action:CanvasHistoryAction;undo:boolean;projectKey?:string};
 export type CanvasArtworkHistoryPort={transaction<T>(scope:CanvasDocumentScope,work:()=>Promise<T>):Promise<T>;applyHistory(scope:CanvasDocumentScope,commit:HistoryCommit):void;conflict(scope:CanvasDocumentScope,value:CanvasArtworkConflict,action:CanvasHistoryAction,undo:boolean):void};
 import type { Artwork } from "../mock-data";
 import { invalidateBrowserData, loadAccountSnapshot } from "../browser-data-cache";
@@ -23,7 +23,7 @@ export function createCanvasArtworkDocument(){
   const get=(scope:CanvasDocumentScope)=>buckets.get(documentKey(scope));
   const history:CanvasArtworkHistoryPort={
     async transaction(scope,work){const b=get(scope);if(!b)return work();const before=b.frame;b.frame=new Map((b.snapshot.nodes||[]).map(n=>[n.id,n]));try{return await work();}finally{b.frame=before;}},
-    conflict(scope,value,action,undo){const b=get(scope);if(!b||!scope.documentCurrent())return;publish(b,{conflicts:{...b.snapshot.conflicts,[value.id]:{...value,action,undo}}});},
+    conflict(scope,value,action,undo){const b=get(scope);if(!b||!scope.documentCurrent())return;publish(b,{conflicts:{...b.snapshot.conflicts,[value.id]:{...value,action,undo,projectKey:scope.project||"workspace"}}});},
     applyHistory(scope,value){const b=get(scope);if(!b||!scope.documentCurrent())return;const live=b.snapshot.nodes,projected=reduceHistoryArtworks(live,value.operations,value.action,value.undo);
       if(!value.artworkNodes){publish(b,{nodes:projected});return;}
       const ids=new Set(value.artworkIds||value.artworkNodes.map(r=>r.node.id)),byId=new Map(value.artworkNodes.map(r=>[r.node.id,r])),nodes=(projected||[]).filter(n=>!ids.has(n.id));

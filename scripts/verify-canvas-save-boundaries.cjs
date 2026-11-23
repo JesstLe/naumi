@@ -14,7 +14,7 @@ const client=path.resolve(process.argv[4]||'src/components/canvas/canvas-client.
 const source=fs.readFileSync(client,'utf8'),ast=ts.createSourceFile(client,source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
 function extract(name){const found=[];function visit(n){if(ts.isFunctionDeclaration(n)&&n.name?.text===name)found.push(n.getText(ast));ts.forEachChild(n,visit);}visit(ast);assert.equal(found.length,1,name);return found[0];}
 const alertStart=source.indexOf('      {(unsavedTextCount>0||videoNodesStore.unsavedCount>0)');
-const alert=alertStart<0?'':source.slice(alertStart,source.indexOf('</div>}',alertStart)+7);
+const alert=require('./verification/canvas-save-browser-binding.cjs').canvasSaveStatusJsx(source,alertStart<0?'':source.slice(alertStart,source.indexOf('</div>}',alertStart)+7));
 const saveBinding=require('./verification/canvas-save-browser-binding.cjs').canvasSaveBrowserBinding(source,alert);
 const evidence={mode,hook,client,checks:[],observations:[],failures:[],tier:'Actual React hook and extracted production caller/alert, headless Chromium, loopback HTTP fixture. No PG or full Canvas/browser acceptance.'};
 let nodes,receipts,requests,failStatus,holds,dropAfter,reads;
@@ -69,13 +69,13 @@ async function main(){
  async function reset(){if(context)await context.close();resetData();context=await browser.newContext();page=await context.newPage();page.on('pageerror',e=>pageErrors.push(e.message));await page.goto(base);await page.waitForFunction(()=>window.store?.ready&&window.store.nodes.length===2);}
  async function settle(fn,arg){return page.evaluate(fn,arg);}
  async function ui(){return page.evaluate(async()=>({unsaved:window.store.unsavedCount??null,error:window.store.error,alert:document.querySelector('[role=alert]')?.textContent||null,nodes:window.store.nodes,flush:await window.store.flush().then(()=>true,()=>false),journal:[...Array(sessionStorage.length)].map((_,i)=>({key:sessionStorage.key(i),value:sessionStorage.getItem(sessionStorage.key(i))}))}));}
- async function check(name,fn){try{await fn();evidence.checks.push(name);console.log('PASS '+name);}catch(e){evidence.failures.push({name,error:e.stack});console.log('FAIL '+name+': '+e.message);}}
+ async function check(name,fn){try{await fn();evidence.checks.push(name);console.log('PASS '+name);}catch(e){evidence.failures.push({name,error:e.stack});console.log('FAIL '+name+': '+e.message+' PAGE_ERRORS='+JSON.stringify(pageErrors));}}
  function observe(name,result){evidence.observations.push({name,...result});console.log('OBSERVATION '+name+' '+JSON.stringify(result));}
  function hold(id){let release;const promise=new Promise(r=>release=r);holds.set(id,{promise,release});return release;}
  try{
   await check('R1 unrelated position ACK prunes conflicted configuration draft',async()=>{
    await reset();remote('vnode-a',{config:{prompt:'remote-newer'}});
-   const rejected=await settle(()=>{const node=window.store.getNode('vnode-a');return window.saveVideoDraft('vnode-a',{title:node.title,inputs:node.inputs,config:{...node.config,prompt:'local-unsaved'},expectedRevision:node.revision}).then(()=>false,e=>e.code);});assert.equal(rejected,'VIDEO_NODE_REVISION_CONFLICT');
+   const rejected=await settle(()=>{const node=window.store.getNode('vnode-a');return window.saveVideoDraft('vnode-a',{title:node.title,inputs:node.inputs,config:{...node.config,prompt:'local-unsaved'},expectedRevision:node.revision}).then(()=>false,e=>e.code||e.message);});assert.equal(rejected,'VIDEO_NODE_REVISION_CONFLICT');
    await page.waitForFunction(()=>window.store.getNode('vnode-a')?.revision===2);
    const before=await ui();await settle(()=>window.patchVideoNode('vnode-a',{x:128,y:64}));const after=await ui();
    await page.reload();await page.waitForFunction(()=>window.store?.ready);const reload=await ui();
@@ -87,7 +87,7 @@ async function main(){
    await reset();remote('vnode-a',{title:'remote'});await settle(()=>window.patchVideoNode('vnode-a',{title:'local'}).catch(()=>{}));await page.waitForFunction(()=>window.store.getNode('vnode-a')?.revision===2);
    failStatus.set('vnode-b',503);await settle(()=>window.patchVideoNode('vnode-b',{title:'recoverable-b'}).catch(()=>{}));failStatus.clear();
    const before=await ui(),start=requests.length;
-   const pendingTip=saveBinding.setup?'仍有修改未保存':'视频节点已更新';
+   const pendingTip=source.includes('<CanvasSaveStatus')?'视频节点已更新':saveBinding.setup?'仍有修改未保存':'视频节点已更新';
    for(let i=0;i<2;i++){await page.evaluate(()=>window.tip='');await page.getByRole('button',{name:'canvas.retrySave'}).click();await page.waitForFunction(message=>window.tip.includes(message),pendingTip);}
    const after=await ui();const result={beforeDirty:before.unsaved,afterDirty:after.unsaved,retryIds:requests.slice(start).map(r=>r.input.id),bServerTitle:nodes.get('vnode-b').title,bDraftPreserved:after.journal.some(x=>x.value.includes('recoverable-b')),flush:after.flush,alert:after.alert};observe('R2',result);
    assert.deepEqual(result.retryIds,fixed?['vnode-a','vnode-b','vnode-a']:['vnode-a','vnode-a']);assert.equal(result.bServerTitle,fixed?'recoverable-b':'seed-vnode-b');assert.equal(result.afterDirty,fixed?1:2);assert.equal(result.bDraftPreserved,!fixed);assert.equal(result.flush,false);

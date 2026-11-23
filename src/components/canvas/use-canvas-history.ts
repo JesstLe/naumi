@@ -24,7 +24,7 @@ type Input = {
   works: Dispatch<SetStateAction<Artwork[] | null>>; textDocument: CanvasTextHistoryPort;
   settings: (update: (current: Record<string,CanvasNodeSettings>) => Record<string,CanvasNodeSettings>, persisted: boolean) => void;
   selectedText: Dispatch<SetStateAction<string | null>>;
-  flush: () => Promise<unknown>; video: (id: string) => CanvasVideoNode | undefined;director?:(id:string)=>CanvasDirectorNode|undefined;character?:(id:string)=>CanvasCharacterNode|undefined;scene?:(id:string)=>CanvasSceneNode|undefined;artwork?:(id:string)=>Artwork|undefined;audio?:(id:string)=>CanvasAudioNode|undefined;timeline?:(id:string)=>CanvasTimelineNode|undefined; refresh: () => Promise<unknown>;
+  flush: () => Promise<unknown>; video: (id: string) => CanvasVideoNode | undefined;director?:(id:string)=>CanvasDirectorNode|undefined;character?:(id:string)=>CanvasCharacterNode|undefined;scene?:(id:string)=>CanvasSceneNode|undefined;artwork?:(id:string)=>Artwork|undefined;audio?:(id:string)=>CanvasAudioNode|undefined;timeline?:(id:string)=>CanvasTimelineNode|undefined; refresh: () => Promise<unknown>;refreshSync?:()=>Promise<unknown>;
   pending: (action:CanvasLocalHistoryAction,undo:boolean,checkOnly?:boolean,scope?:import("@/lib/canvas/document-scope").CanvasDocumentScope)=>void;
   applied: (value: HistoryCommit) => void; warning: (message: string) => void;
 };
@@ -45,7 +45,8 @@ export function useCanvasHistory(input: Input) {
     readOnly: () => latest.current.readOnly,
     validateOperations:operations=>latest.current.validateOperations?.(operations),
     flush: () => latest.current.flush(), transaction: (scope,work) => latest.current.textDocument.transaction(scope,()=>latest.current.artworkDocument?latest.current.artworkDocument.transaction(scope,work):work()),
-    video: id => latest.current.video(id),director:id=>latest.current.director?.(id),character:id=>latest.current.character?.(id),scene:id=>latest.current.scene?.(id),artwork:id=>latest.current.artwork?.(id),audio:id=>latest.current.audio?.(id),timeline:id=>latest.current.timeline?.(id),comfy:id=>latest.current.comfy?.(id), refresh: () => latest.current.refresh(),
+    video: id => latest.current.video(id),director:id=>latest.current.director?.(id),character:id=>latest.current.character?.(id),scene:id=>latest.current.scene?.(id),artwork:id=>latest.current.artwork?.(id),audio:id=>latest.current.audio?.(id),timeline:id=>latest.current.timeline?.(id),comfy:id=>latest.current.comfy?.(id), refresh: scope => {scope?.assertView();return latest.current.refresh();},
+    refreshSync: scope=>{scope.assertView();return latest.current.refreshSync?.()??latest.current.refresh();},
     warning: message => latest.current.warning(message),
     conflict:(scope,value)=>latest.current.textDocument.conflict?.(scope,value),
     artworkConflict:(scope,value,action,undo)=>latest.current.artworkDocument?.conflict(scope,value,action,undo),
@@ -73,5 +74,5 @@ export function useCanvasHistory(input: Input) {
     consumePending:(id:string)=>owner.consumePending(scope,id),
     discard:owner.discard,submit:(target:typeof scope,prepare:()=>CanvasHistoryAction|null,record=true)=>owner.submit(target,prepare,record),undoStack:lists.undo,redoStack:lists.redo,pushUndo,historySaving:owner.busy.current,historyBusyRef:owner.busy,
     setHistorySaving:owner.setBusy,applyHistory:(action: CanvasHistoryAction,undo: boolean,revision?:number) => owner.apply(scope,action,undo,revision),
-    retry:()=>owner.retry(scope),doUndo:() => owner.step(scope,true),doRedo:() => owner.step(scope,false),historyCurrent:scope.viewCurrent};
+    syncItems:()=>owner.syncItems(scope),needsSync:owner.needsSync(scope),retrySync:()=>owner.retrySync(scope),retry:()=>owner.retry(scope),doUndo:() => owner.step(scope,true),doRedo:() => owner.step(scope,false),historyCurrent:scope.viewCurrent};
 }

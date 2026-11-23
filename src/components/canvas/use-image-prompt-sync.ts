@@ -6,12 +6,13 @@ import { authHeader } from '@/lib/supabase';
 
 type Options = {
   owner: string; ownerRevision?:number; address: ImagePromptAddress | null; document: ImagePromptDocument | null;
+  projectKey?:string|null;
   request: (input: string, init?: RequestInit) => Promise<Response>;
   hydrate: (document: ImagePromptDocument) => void | Promise<void>;
 };
 /** Persistence is independent from editor selection. A pending node has no
  * address until the native canvas creates an actual owned artwork. */
-export function useImagePromptSync({ owner, ownerRevision=0, address, document, request, hydrate }: Options) {
+export function useImagePromptSync({ owner, ownerRevision=0, address, document, request, hydrate,projectKey }: Options) {
   const identity = useRef({ owner, ownerRevision, epoch: 0 });
   if (identity.current.owner !== owner||identity.current.ownerRevision!==ownerRevision) identity.current = { owner,ownerRevision, epoch: identity.current.epoch + 1 };
   const epoch = identity.current.epoch;
@@ -52,12 +53,21 @@ export function useImagePromptSync({ owner, ownerRevision=0, address, document, 
     client.edit(key, document);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, serialized, ready, loaded, client]);
+  const itemAddress=(item:{projectKey:string;id:string})=>({projectKey:item.projectKey,nodeId:item.id,workspace:client.workspace(JSON.stringify([owner,item.projectKey,item.id]))||address?.workspace||'personal'});
   return {
+    saveItems:client.items(),getSaveItems:()=>client.items(),
+    draft:(item:{projectKey:string;id:string})=>client.draft(itemAddress(item)),
+    retryItem:async(item:{projectKey:string;id:string})=>client.retry(itemAddress(item)),
+    discard:async(item:{projectKey:string;id:string})=>{
+      client.discard(itemAddress(item));
+      if(latest.current.key===JSON.stringify([owner,item.projectKey,item.id])){setLoaded(null);setRetry(n=>n+1);}
+    },
     ready, persisted:client.persisted(key), workspace:client.workspace(key)||address?.workspace, error: key ? loadError?.key === key ? loadError.message : client.error(key) : null,
-    flush: async () => {
+    flush: async (allProject=false) => {
       if (key && !ready) throw new Error('提示词正在读取，请稍后重试');
       if (key && latest.current.document) client.edit(key, latest.current.document);
-      await client.flush();
+      if(!address&&!allProject)return;
+      await client.flush(projectKey||address?.projectKey||'workspace',allProject?undefined:address?.nodeId);
     },
     retry: () => { setRetry(n => n + 1); if (key && ready) void client.flushKey(key).catch(() => {}); },
     reloadSaved: async () => {

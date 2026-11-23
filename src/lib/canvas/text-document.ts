@@ -1,4 +1,5 @@
 import {CANVAS_TEXT_WRITE_FIELDS} from "./text-write";
+import {saveFailureState,type CanvasSaveItem} from "./save-status";
 import {browserRandomUUID} from "../browser-crypto";
 import { canvasDocumentFetch, type CanvasDocumentScope } from "./document-scope";
 import { reduceHistoryTexts } from "./history-model";
@@ -6,7 +7,7 @@ import type { CanvasHistoryOperation } from "./history-contract";
 import { mergeTextDrafts, normalizeTextNodes, rebaseText, sameText, textCache, textDocumentKey, type CanvasTextNode } from "./text-document-model";
 
 export type TextDocumentConflict={id:string;fields:string[];current:CanvasTextNode|null};
-export type TextDocumentSnapshot = {conflicts:Record<string,TextDocumentConflict>;nodes:CanvasTextNode[];phase:"idle"|"loading"|"ready"|"error";error:string;unsaved:number};
+export type TextDocumentSnapshot = {conflicts:Record<string,TextDocumentConflict>;nodes:CanvasTextNode[];phase:"idle"|"loading"|"ready"|"error";error:string;unsaved:number;saveItems?:CanvasSaveItem[]};
 export const EMPTY_TEXT_DOCUMENT:TextDocumentSnapshot = {conflicts:{},nodes:[],phase:"idle",error:"",unsaved:0};
 export type CanvasTextHistoryPort = {
   transaction<T>(scope:CanvasDocumentScope,work:()=>Promise<T>):Promise<T>;
@@ -20,6 +21,7 @@ type Bucket = {
   drafts:Map<string,CanvasTextNode>;confirmed:Map<string,CanvasTextNode>;scheduled:Map<string,CanvasTextNode>;
   queues:Map<string,Promise<unknown>>;barrier:Promise<unknown>;deleted:Set<string>;removals:Map<string,number>;
   listeners:Set<()=>void>;loadVersion:number;writes:number;written:Map<string,number>;frame?:Map<string,CanvasTextNode>;
+  failures:Map<string,Error>;active:Set<string>;
 };
 type Options = {storage:()=>Pick<Storage,"getItem"|"setItem">|undefined;notice:(scope:CanvasDocumentScope,message:string)=>void};
 const bucketKey=(scope:CanvasDocumentScope)=>JSON.stringify([scope.account,scope.workspace]);
@@ -31,6 +33,16 @@ export function createCanvasTextDocument(options:Options) {
   const notify=(b:Bucket)=>b.listeners.forEach(listener=>listener());
   const publish=(b:Bucket,patch:Partial<TextDocumentSnapshot>={})=>{
     b.snapshot={...b.snapshot,...patch,unsaved:b.drafts.size};
+    const statusNodes=new Map([...b.drafts].map(([id,node])=>[id,node]));
+    for(const [id,attempt]of b.pending)if(!statusNodes.has(id))statusNodes.set(id,attempt.requested);
+    for(const id of Object.keys(b.snapshot.conflicts)){const node=b.snapshot.nodes.find(node=>node.id===id)||b.snapshot.conflicts[id].current;if(node&&!statusNodes.has(id))statusNodes.set(id,node);}
+    b.snapshot.saveItems=Array.from(statusNodes.values(),node=>{
+      const failure=b.failures.get(node.id),conflict=b.snapshot.conflicts[node.id];
+      return {id:node.id,kind:"text",projectKey:node.projectKey,title:node.title||"文字节点",
+        state:conflict?"conflict":b.active.has(node.id)?"saving":failure?saveFailureState(failure):"pending",
+        message:conflict?"另一页面已修改，请选择保留的版本":failure?.message,
+        canDiscard:!!failure&&!conflict&&!b.pending.has(node.id)&&!b.queues.has(node.id)};
+    });
     let cached=false;
     try{const storage=options.storage();if(storage){storage.setItem(b.cacheKey,JSON.stringify({...textCache(b.snapshot.nodes,Array.from(b.drafts.values()),Array.from(b.confirmed.values())),writeBases:Array.from(b.bases.entries()),pendingWrites:Array.from(b.pending.entries())}));cached=true;}}catch{/* Memory drafts survive a browser storage failure. */}
     notify(b);return cached;
@@ -87,7 +99,7 @@ export function createCanvasTextDocument(options:Options) {
   function bind(scope:CanvasDocumentScope,actor:string,owner:string,writable:boolean) {
     const key=bucketKey(scope);let b=buckets.get(key);
     if(!b){b={snapshot:EMPTY_TEXT_DOCUMENT,cacheKey:textDocumentKey(actor,owner,scope.workspace),legacyKey:scope.workspace==="personal"&&actor.toLowerCase()===owner.toLowerCase()?`naumi:canvas-text-nodes:${owner.toLowerCase()}`:null,cacheRead:false,owner,
-      pending:new Map(),bases:new Map(),drafts:new Map(),confirmed:new Map(),scheduled:new Map(),queues:new Map(),barrier:Promise.resolve(),deleted:new Set(),removals:new Map(),listeners:new Set(),loadVersion:0,writes:0,written:new Map()};buckets.set(key,b);}
+      pending:new Map(),bases:new Map(),drafts:new Map(),confirmed:new Map(),scheduled:new Map(),queues:new Map(),barrier:Promise.resolve(),deleted:new Set(),removals:new Map(),listeners:new Set(),loadVersion:0,writes:0,written:new Map(),failures:new Map(),active:new Set()};buckets.set(key,b);}
     const state=b;
     const set=(update:CanvasTextNode[]|((nodes:CanvasTextNode[])=>CanvasTextNode[]))=>{
       if(!scope.documentCurrent())return;
@@ -130,9 +142,9 @@ export function createCanvasTextDocument(options:Options) {
       const post=async(attempt:SaveAttempt)=>{
         const response=await canvasDocumentFetch({...scope,project:node.projectKey},"/api/canvas/text-nodes",{method:"POST",headers:{"content-type":"application/json"},body:attempt.body,signal:AbortSignal.timeout(20_000)});
         const data=await response.json();
-        if(!response.ok){if(response.status>=400&&response.status<500)state.pending.delete(node.id);if(data?.code==="CANVAS_TEXT_CONFLICT")history.conflict?.(scope,{id:node.id,fields:data.fields||[],current:data.current||null});throw new Error(data?.error||"文字保存失败");}
+        if(!response.ok){if(response.status>=400&&response.status<500&&response.status!==408)state.pending.delete(node.id);if(data?.code==="CANVAS_TEXT_CONFLICT")history.conflict?.(scope,{id:node.id,fields:data.fields||[],current:data.current||null});throw Object.assign(new Error(data?.error||"文字保存失败"),{status:response.status,code:data?.code});}
         if(data?.persisted!==false&&(!data?.node||data.node.id!==node.id||data.node.projectKey!==attempt.node.projectKey))throw new Error("文字保存结果待核实，请重试原操作");
-        const saved=(data.node||attempt.node) as CanvasTextNode;state.pending.delete(node.id);state.confirmed.set(node.id,saved);state.bases.set(node.id,saved);written(state,node.id);
+        const saved=(data.node||attempt.node) as CanvasTextNode;state.pending.delete(node.id);state.failures.delete(node.id);state.confirmed.set(node.id,saved);state.bases.set(node.id,saved);written(state,node.id);
         const current=state.snapshot.nodes.find(n=>n.id===node.id);let cached;
         if(current){const rebased=rebaseText(saved,attempt.requested,current);if(sameText(rebased,saved)){state.drafts.delete(node.id);state.bases.delete(node.id);}else state.drafts.set(node.id,rebased);cached=publish(state,{nodes:state.snapshot.nodes.map(n=>n.id===node.id?rebased:n)});}else cached=publish(state);
         if(data.persisted===false&&!cached){state.drafts.set(node.id,current||attempt.node);throw new Error("本机草稿保存失败");}
@@ -141,14 +153,15 @@ export function createCanvasTextDocument(options:Options) {
       const run=async()=>{
         try{
           if(!scope.documentCurrent()||state.deleted.has(node.id)||(state.removals.get(node.id)||0)!==removal||state.snapshot.conflicts[node.id])return null;
+          state.active.add(node.id);publish(state);
           const pending=state.pending.get(node.id);if(pending){const saved=await post(pending);if(sameText(pending.requested,node))return saved;}
           const confirmed=state.confirmed.get(node.id),effective=confirmed?rebaseText(confirmed,before,node):node;
           if(confirmed&&sameText(confirmed,effective)){if(sameText(state.snapshot.nodes.find(n=>n.id===node.id),confirmed)){state.drafts.delete(node.id);state.bases.delete(node.id);publish(state);}return confirmed;}
           const attempt={node:effective,requested:node,body:JSON.stringify({...effective,base:state.bases.has(node.id)?state.bases.get(node.id)!:confirmed??null})};state.pending.set(node.id,attempt);publish(state);return await post(attempt);
-        }catch(error){publish(state);if(scope.documentCurrent())options.notice(scope,"文字保存失败"+(error instanceof Error?`：${error.message}`:""));return null;}
+        }catch(error){state.failures.set(node.id,error instanceof Error?error:new Error("文字保存失败"));publish(state);if(scope.viewCurrent()&&node.projectKey===scope.project)options.notice(scope,"文字保存失败"+(error instanceof Error?`：${error.message}`:""));return null;}
       };
       const pending=(state.queues.get(node.id)||Promise.resolve()).catch(()=>{}).then(()=>gate).then(run);state.queues.set(node.id,pending);
-      return pending.finally(()=>{if(state.queues.get(node.id)===pending){state.queues.delete(node.id);state.scheduled.delete(node.id);}});
+      return pending.finally(()=>{state.active.delete(node.id);if(state.queues.get(node.id)===pending){state.queues.delete(node.id);state.scheduled.delete(node.id);}publish(state);});
     };
     /** Link delivered images into the latest text graph, not a submission-time
      * snapshot. Existing draft/rebase/save queues remain the only write owner. */
@@ -161,7 +174,7 @@ export function createCanvasTextDocument(options:Options) {
     };
     const resolve=async(id:string,choice:"local"|"server")=>{
       if(!scope.documentCurrent()||!writable)return null;const conflict=state.snapshot.conflicts[id],baseline=state.bases.get(id),local=state.snapshot.nodes.find(n=>n.id===id);if(!conflict)return null;
-      const conflicts={...state.snapshot.conflicts};delete conflicts[id];state.pending.delete(id);state.bases.delete(id);state.drafts.delete(id);
+      const conflicts={...state.snapshot.conflicts};delete conflicts[id];state.pending.delete(id);state.failures.delete(id);state.bases.delete(id);state.drafts.delete(id);
       if(conflict.current)state.confirmed.set(id,conflict.current);else state.confirmed.delete(id);
       if(choice==="server"){publish(state,{conflicts,nodes:conflict.current?state.snapshot.nodes.map(n=>n.id===id?conflict.current!:n):state.snapshot.nodes.filter(n=>n.id!==id)});return conflict.current;}
       if(!local){publish(state,{conflicts});return null;}
@@ -181,7 +194,7 @@ export function createCanvasTextDocument(options:Options) {
         const merged=new Map(server.map(n=>[n.id,n]));
         for(const [id,revision] of state.written)if(revision>writes){const latest=state.confirmed.get(id);if(latest)merged.set(id,latest);else merged.delete(id);}
         state.confirmed=merged;
-        for(const [id,draft] of state.drafts)if(sameText(draft,merged.get(id)))state.drafts.delete(id);
+        for(const [id,draft] of state.drafts)if(sameText(draft,merged.get(id))){state.drafts.delete(id);state.failures.delete(id);}
         // A lost save ACK may have reached the server. A confirmed, matching
         // read retires that exact journal entry as well as its draft. Otherwise
         // retry() has no draft to send, yet hasUnsaved() stays true forever.
@@ -197,12 +210,14 @@ export function createCanvasTextDocument(options:Options) {
     };
     return {getSnapshot:()=>state.snapshot,subscribe:(listener:()=>void)=>{state.listeners.add(listener);return()=>{state.listeners.delete(listener);};},set,accept,save,load,attachImageResults,refreshSaved,
       resolve,hasUnsaved:(id:string)=>state.drafts.has(id)||state.pending.has(id)||state.queues.has(id)||state.scheduled.has(id),
-      flush:(ids?:readonly string[])=>Promise.all(ids?ids.map(id=>state.queues.get(id)):Array.from(state.queues.values())),retry:()=>{
+      draft:(id:string)=>state.drafts.get(id)?.content,
+      discard:(id:string)=>{scope.assertView();if(!writable||state.pending.has(id)||state.queues.has(id)||state.snapshot.conflicts[id])throw new Error("原保存回执尚未核实，请先恢复或复制草稿");const saved=state.confirmed.get(id);state.drafts.delete(id);state.bases.delete(id);state.failures.delete(id);publish(state,{nodes:saved?state.snapshot.nodes.map(n=>n.id===id?saved:n):state.snapshot.nodes.filter(n=>n.id!==id)});},
+      flush:(ids?:readonly string[])=>Promise.all(ids?ids.map(id=>state.queues.get(id)):Array.from(state.queues.values())),retry:(project?:string|null,id?:string)=>{
         // Older caches can contain a pending operation without a dirty counter.
         // Recover its original body instead of leaving an invisible dead end.
         const nodes=new Map([...state.pending].map(([id,attempt])=>[id,attempt.requested]));
         for(const [id,draft]of state.drafts)nodes.set(id,draft);
-        return Promise.all(Array.from(nodes.values(),save));
+        return Promise.all(Array.from(nodes.values()).filter(node=>(project===undefined||node.projectKey===(project||"workspace"))&&(!id||node.id===id)).map(save));
       },history};
   }
   return {bind,history};

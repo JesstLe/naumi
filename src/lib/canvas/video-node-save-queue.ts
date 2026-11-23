@@ -1,10 +1,11 @@
 import type {CanvasVideoNode, VideoNodeWrite} from './video-node-schema';
+import {saveFailureState,type CanvasSaveItem} from './save-status';
 import {browserRandomUUID} from '../browser-crypto';
 import {sameVideoSnapshot} from '../video/polling-state';
 
 type Patch = Partial<Omit<VideoNodeWrite, 'id' | 'operationId'>>;
 type Attempt = {body: string; url: string; method: string; revision: number; projectKey?: string};
-type Entry = {journalId: string; patch: Patch; attempt?: Attempt; baseRevision: number; uncertain?: boolean; promise: Promise<CanvasVideoNode>};
+type Entry = {journalId: string; patch: Patch; attempt?: Attempt; baseRevision: number; uncertain?: boolean; error?: Error; promise: Promise<CanvasVideoNode>};
 // The repository replaces each provided top-level field (including config and
 // inputs). A new explicit save supersedes a rejected edit only if it writes all
 // of that edit's fields; a position ACK says nothing about a configuration draft.
@@ -58,6 +59,13 @@ export class VideoNodeSaveQueue {
 
   hasUnconfirmed(id:string){return (this.pending.get(id)||[]).some(entry=>entry.uncertain!==false);}
   get pendingCount() { return [...this.pending.values()].reduce((sum, entries) => sum + entries.length, 0); }
+  items():CanvasSaveItem[]{return [...this.pending].map(([id,entries])=>{
+    const failed=entries.find(entry=>entry.error)||this.failed.get(id),node=this.options.getNode(id);
+    return {id,kind:'video',projectKey:entries[0].patch.projectKey||entries[0].attempt?.projectKey||node?.projectKey||'workspace',title:node?.title||'视频节点',
+      state:this.tails.has(id)?'saving':failed?saveFailureState(failed.error):'pending',message:failed?.error?.message,canDiscard:!this.tails.has(id)&&entries.every(entry=>entry.uncertain===false)};
+  });}
+  discard(id:string){this.assertCurrent();const entries=this.pending.get(id)||[];if(this.tails.has(id)||entries.some(entry=>entry.uncertain!==false))throw new Error('原保存回执尚未核实，请先恢复或复制草稿');for(const entry of entries)this.removePending(id,entry);this.failed.delete(id);this.options.pendingChanged?.(this.pendingCount);}
+  draft(id:string){return JSON.stringify((this.pending.get(id)||[]).map(entry=>entry.patch),null,2);}
   private journal(entry?: Entry) {
     if (this.lifetime.signal.aborted) return;
     this.options.pendingChanged?.(this.pendingCount);
@@ -151,8 +159,8 @@ export class VideoNodeSaveQueue {
       } catch (cause) {
         const error = cause instanceof Error ? cause : new Error(
           cause && typeof cause === 'object' && 'message' in cause && typeof cause.message === 'string' ? cause.message : '视频节点保存失败');
-        entry.uncertain = !(error instanceof VideoNodeClientError) || [408, 500, 502, 503, 504].includes(error.status);
-        this.failed.set(id, entry);
+        entry.uncertain = !(error instanceof VideoNodeClientError) || error.status===408 || error.status>=500;
+        entry.error=error;this.failed.set(id, entry);
         this.journal(entry);
         if (!this.lifetime.signal.aborted && this.options.current()) {
           this.options.changed(error);
@@ -162,7 +170,7 @@ export class VideoNodeSaveQueue {
       }
     });
     this.tails.set(id, entry);
-    void entry.promise.finally(() => { if (this.tails.get(id) === entry) this.tails.delete(id); }).catch(() => {});
+    void entry.promise.finally(() => { if (this.tails.get(id) === entry) this.tails.delete(id);this.options.pendingChanged?.(this.pendingCount); }).catch(() => {});
     return entry.promise;
   }
 
@@ -218,10 +226,16 @@ export class VideoNodeSaveQueue {
     while (this.tails.size) await Promise.all([...this.tails.values()].map(entry => entry.promise));
     if (this.failed.size || this.pending.size) throw new Error('视频节点仍有未保存的修改，请重试');
   }
-  async retryPending() {
+  async flushProject(project:string|null){
+    const belongs=(id:string,entries:Entry[])=> (entries[0]?.patch.projectKey||entries[0]?.attempt?.projectKey||this.options.getNode(id)?.projectKey||'workspace')===(project||'workspace');
+    while([...this.tails].some(([id,entry])=>belongs(id,[entry])))await Promise.all([...this.tails].filter(([id,entry])=>belongs(id,[entry])).map(([,entry])=>entry.promise));
+    if([...this.pending].some(([id,entries])=>belongs(id,entries)))throw new Error('此画布视频节点仍有未保存的修改，请在保存状态中处理');
+  }
+  async retryPending(project?:string|null,nodeId?:string) {
     // Explicit user recovery, not a background retry loop. Preserve original CAS.
     let firstFailure: unknown;
     for (const [id, entries] of [...this.pending]) {
+      if(nodeId&&id!==nodeId||project!==undefined&&(entries[0].patch.projectKey||entries[0].attempt?.projectKey||this.options.getNode(id)?.projectKey||"workspace")!==(project||"workspace"))continue;
       for (const entry of [...entries]) {
         if (!(this.pending.get(id) || []).includes(entry)) continue;
         try { await this.save(id, entry.patch, entry); }
