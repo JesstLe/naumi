@@ -13,8 +13,8 @@ export function createCanvasSaveCommand(){
       if(!scope.viewCurrent())return;
       try{await ports.history();}catch(error){failures.push(error);}
       if(!scope.viewCurrent())return;
-      if(ports.unsaved())throw new Error('仍有修改未保存，请处理冲突或重试；本地内容已保留');
       if(failures.length)throw failures[0];
+      if(ports.unsaved())throw new Error('仍有修改未保存，请在保存状态中查看具体节点');
     };
     const promise=run().finally(()=>{if(flights.get(scope)===promise)flights.delete(scope);});flights.set(scope,promise);return promise;
   }};

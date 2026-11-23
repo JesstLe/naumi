@@ -33,7 +33,7 @@ async function child() {
   const start=clientSource.search(/  (?:async )?function patchVideoNode\(/);assert.ok(start>=0);
   const patchCaller=clientSource.slice(start,clientSource.indexOf('  async function saveVideoDraft(',start));
   const alertStart=clientSource.indexOf('      {(unsavedTextCount>0||videoNodesStore.unsavedCount>0)');
-  const alertJsx=alertStart<0?'':clientSource.slice(alertStart,clientSource.indexOf('</div>}',alertStart)+7);
+  const alertJsx=require('./verification/canvas-save-browser-binding.cjs').canvasSaveStatusJsx(clientSource,alertStart<0?'':clientSource.slice(alertStart,clientSource.indexOf('</div>}',alertStart)+7));
   const saveBinding=require('./verification/canvas-save-browser-binding.cjs').canvasSaveBrowserBinding(clientSource,alertJsx);
   const bundle=await build({stdin:{contents:`import React,{useRef,useSyncExternalStore} from 'react';${saveBinding.imports}import {createCanvasDocumentContext} from './src/lib/canvas/document-scope';import {createCanvasVideoNodeActions} from './src/lib/canvas/video-node-actions';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {useVideoNodes} from ${JSON.stringify(hook.replaceAll('\\','/'))};import {selectWorkspace,currentWorkspaceRevision,WORKSPACE_SELECTION} from './src/lib/saas/workspace-client';window.switchWorkspace=selectWorkspace;
     const stringify=JSON.stringify;window.serialization={calls:0,bytes:0};JSON.stringify=function(...args){const value=stringify.apply(JSON,args);if(typeof value==='string'&&value.includes('x'.repeat(100))) {window.serialization.calls++;window.serialization.bytes+=new TextEncoder().encode(value).length;}return value;};
