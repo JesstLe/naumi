@@ -1,13 +1,14 @@
 import "server-only";
 
 const marker = "synchronous-failure-v1";
-type Failure = { receipt: typeof marker; httpStatus: number; error: string; code?: string };
+type Failure = { receipt: typeof marker; httpStatus: number; error: string; code?: string; partialText?: string; finishReason?: "length"|"node_limit"; textProject?: string };
 
 /** Store only the already-public error, never an arbitrary response body,
  * supplier payload, request data or image bytes. */
 export function synchronousFailureCheckpoint(status: number, body: unknown): Failure {
-  const value = body as { error?: unknown; code?: unknown } | null;
+  const value = body as { error?: unknown; code?: unknown; partialText?: unknown; finishReason?: unknown; textProject?: unknown } | null;
   return {
+    ...(value?.code === "TEXT_OUTPUT_LIMIT" && (value.finishReason === "length" || value.finishReason === "node_limit") ? { finishReason: value.finishReason, ...(typeof value.textProject === "string" && value.textProject.length <= 300 ? { textProject: value.textProject } : {}), ...(typeof value.partialText === "string" && value.partialText.trim() && value.partialText.length <= 20_000 ? { partialText: value.partialText } : {}) } : {}),
     receipt: marker,
     httpStatus: Number.isInteger(status) && status >= 400 && status <= 599 ? status : 500,
     error: typeof value?.error === "string" && value.error.trim() ? value.error.slice(0, 1200) : "工具执行失败，原操作已记录",
@@ -34,6 +35,7 @@ export function settledSynchronousFailure(operation: {
   return {
     httpStatus: valid ? stored.httpStatus! : 409,
     body: {
+      ...(valid && stored.code === "TEXT_OUTPUT_LIMIT" && (stored.finishReason === "length" || stored.finishReason === "node_limit") ? { finishReason: stored.finishReason, ...(typeof stored.partialText === "string" && stored.partialText.length <= 20_000 ? { partialText: stored.partialText } : {}) } : {}),
       ok: false, status: "failed", terminal: true, operationId: operation.id,
       code: valid && typeof stored.code === "string" && /^[A-Z][A-Z0-9_]{0,79}$/.test(stored.code) ? stored.code : "OPERATION_FAILED",
       error: valid ? stored.error : charged === 0 ? "原工具执行失败，未扣积分；历史失败原因未留存，原操作不会重新执行" : "原工具执行失败，历史失败原因未留存；账务以原记录为准",

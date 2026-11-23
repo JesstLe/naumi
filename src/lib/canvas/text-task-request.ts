@@ -4,7 +4,7 @@ import type {Artwork} from "../mock-data";
 import {browserRandomUUID} from "../browser-crypto";
 import {CANVAS_TEXT_DEFAULT_HEIGHT,CANVAS_TEXT_DEFAULT_WIDTH,type CanvasTextNode} from "./text-document-model";
 
-export type CanvasTextPayload={mode?:"general"|"reverse"|"assist";prompt:string;content?:string;projectKey?:string;sourceIds:string[];productIds?:string[]};
+export type CanvasTextPayload={mode?:"general"|"reverse"|"assist";prompt:string;content?:string;projectKey?:string;sourceIds:string[];productIds?:string[];continuationOf?:string};
 export type CanvasTextTaskRequest={node:CanvasTextNode;payload:CanvasTextPayload;created:boolean;productTitle?:string;operationId?:string};
 export function stripTextMentions(content:string){const lines=content.split("\n");let i=0;while(i<lines.length&&lines[i].trim().startsWith("@"))i++;return lines.slice(i).join("\n").trim();}
 export function withTextProduct(content:string,title:string){return `@${title}\n\n${stripTextMentions(content)}`.trim();}

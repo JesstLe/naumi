@@ -34,10 +34,10 @@ async function main() {
     assert.equal(first.status, 200, `image-shaped prompt must return text; actual HTTP=${first.status}`);
     assert.equal((await first.json()).text, "优化后的摄影提示词");
     assert.equal(calls, 1, "exactly one supplier call, no paid fallback");
-    assert.equal(bodies[0].max_tokens, 1800, "existing output limit stays unchanged");
+    assert.equal(bodies[0].max_tokens, 8192, "shared writing budget replaces the legacy short-reply cap");
     for (const [next, code] of [["image", "TEXT_OUTPUT_IMAGE"], ["reasoning", "TEXT_OUTPUT_EMPTY"], ["refused", "TEXT_OUTPUT_REFUSED"], ["empty", "TEXT_OUTPUT_EMPTY"], ["limit", "TEXT_OUTPUT_LIMIT"]]) {
       mode = next; const before: number = calls;
-      const response = await POST(request()); assert.equal(response.status, 502);
+      const response = await POST(request()); assert.equal(response.status, next === "limit" ? 422 : 502);
       const result = await response.json(); assert.equal(result.code, code);
       assert.ok(!JSON.stringify(result).includes("PRIVATE") && !JSON.stringify(result).includes("data:image"));
       assert.equal(calls, before + 1, "failure never automatically resubmits");

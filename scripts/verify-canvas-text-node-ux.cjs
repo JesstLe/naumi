@@ -47,6 +47,7 @@ async function main() {
     content, prompt: '', status: content ? 'completed' : 'idle', sourceIds: [], targetIds: [], productIds: [],
     canvasX: id === rootId ? 120 : 560, canvasY: 110, width: 350, height: 220, createdAt: now, updatedAt: now, ...extra });
   let texts = [nodeRecord(rootId, ''), nodeRecord(otherId, '另一份已保存正文', { prompt: '另一份写作要求' })];
+  const generationIds = [];
   let settings = {}, textMode = 'fail', delayTextSave = false, releaseTextSave, failTextSave = false;
   let generated = '清晨的白鹭停在石桥边，柔和日光照亮水面。';
   const imageModel = { id: 'fixture-image', label: '图片模型', modality: 'image', supportsEdit: true, qualities: ['medium'],
@@ -156,7 +157,8 @@ async function main() {
       textGenerations.push(structuredClone(payload));
       // This scenario exercises an identity-bound settled failure, not a bare
       // TEXT_OUTPUT_LIMIT (which can remain financially UNKNOWN on the server).
-      const operationId = req.headers()['x-naumi-billing-operation-id'];
+      const operationId = req.headers()['x-naumi-billing-operation-id'];generationIds.push(operationId);
+      if(textMode==='partial')return json(route,{error:'回复尚未写完，已保留生成内容',code:'TEXT_OUTPUT_LIMIT',finishReason:'length',partialText:'第一段：清晨的白鹭停在石桥边。',terminal:true,status:'failed',operationId:`tool-${operationId}`,chargedCredits:0},422);
       return textMode === 'fail' ? json(route, { error: '文字回复未完整返回，请稍后重试', code: 'TEXT_OUTPUT_LIMIT',
         terminal: true, status: 'failed', operationId: `tool-${operationId}`, chargedCredits: 0 }, 502)
         : json(route, { text: generated, model: textModel.id });
@@ -172,6 +174,33 @@ async function main() {
 
   try {
     await load(rootId);
+
+    if(args.includes('--completion-only')){
+      await body().fill('原有正文必须保留。');await expect.poll(()=>saved(rootId).content).toBe('原有正文必须保留。');
+      await tab('AI 写作').click();await instruction().fill('写两段完整的画面描述');textMode='partial';
+      await instruction().press('Control+Enter');await expect.poll(()=>textGenerations.length).toBe(1);
+      const partial=dock().getByRole('region',{name:'未完成的回复'});
+      if(args.includes('--expect-old')){
+        await expect(node(rootId).getByRole('alert')).toContainText('回复尚未写完');assert.equal(await partial.count(),0);
+        await screenshot('baseline-missing-partial-preview');console.log('TEXT_COMPLETION_BASELINE=REPRODUCED PARTIAL_LOST=1 EXIT=1');process.exitCode=1;return;
+      }
+      await expect(partial).toContainText('第一段：');assert.equal(saved(rootId).content,'原有正文必须保留。');
+      await tab('正文').click();await body().press('Control+Enter');assert.equal(textGenerations.length,1);check('CONTENT_SHORTCUT_SAVES_WITHOUT_CONTINUATION');await tab('AI 写作').click();
+      await expect(dock().getByRole('button',{name:'继续写作',exact:true})).toBeEnabled();check('PARTIAL_VISIBLE_ORIGINAL_BODY_PRESERVED');await screenshot('partial-desktop');
+      await page.setViewportSize({width:390,height:844});await withinViewport(partial);await withinViewport(dock().getByRole('button',{name:'继续写作',exact:true}));await expect(dock().getByRole('button',{name:'继续写作',exact:true})).toBeInViewport();assert.ok(await dock().getByRole('button',{name:'继续写作',exact:true}).evaluate(el=>{const r=el.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return el===hit||el.contains(hit)}),'Primary action must not be clipped by panel');await screenshot('partial-mobile');check('PARTIAL_MOBILE_LAYOUT');
+      await page.setViewportSize({width:1440,height:1000});await load(rootId);await expect(partial).toContainText('第一段：');assert.equal(textGenerations.length,1);check('PARTIAL_REFRESH_NO_MODEL_SUBMISSION');
+      await dock().getByRole('button',{name:'使用这段文字',exact:true}).click();await expect.poll(()=>saved(rootId).content).toBe('第一段：清晨的白鹭停在石桥边。');assert.equal(textGenerations.length,1);check('EXPLICIT_APPLY_ZERO_MODEL_POST');await screenshot('applied-partial');
+      await tab('AI 写作').click();await instruction().fill('继续写成两段描述');await instruction().press('Control+Enter');await expect(partial).toBeVisible();assert.equal(textGenerations.length,2);
+      const source=generationIds[1];textMode='success';generated='第一段：清晨的白鹭停在石桥边。\n第二段：远处青山倒映在水面。';
+      await dock().getByRole('button',{name:'继续写作',exact:true}).click();await expect.poll(()=>saved(rootId).content).toBe(generated);assert.equal(textGenerations.length,3);assert.equal(textGenerations[2].continuationOf,source);assert.notEqual(generationIds[2],source);check('EXPLICIT_CONTINUATION_NEW_ID_LINKS_ORIGINAL');
+      await screenshot('completed-continuation');
+      await tab('AI 写作').click();await instruction().fill('另写一段');textMode='partial';await instruction().press('Control+Enter');await expect(partial).toBeVisible();
+      const beforeDiscard=textGenerations.length,kept=saved(rootId).content;await dock().getByRole('button',{name:'放弃本次回复',exact:true}).click();await expect(partial).toBeHidden();assert.equal(textGenerations.length,beforeDiscard);assert.equal(saved(rootId).content,kept);check('DISCARD_PARTIAL_PRESERVES_BODY_NO_MODEL_CALL');
+      textMode='success';await instruction().fill('修改后的新要求');await instruction().press('Control+Enter');await expect.poll(()=>textGenerations.length).toBe(beforeDiscard+1);assert.equal(textGenerations.at(-1).prompt,'修改后的新要求');assert.equal(textGenerations.at(-1).continuationOf,undefined);check('EDITED_NEW_INTENT_AFTER_EXPLICIT_DISCARD');
+      assert.deepEqual(errors,[]);assert.deepEqual(external,[]);assertNoImagePurchase();
+      fs.writeFileSync(path.join(out,'COMPLETION.json'),JSON.stringify({...snapshot(),result:'PASS',generationIds},null,2));
+      console.log(`CANVAS_TEXT_COMPLETION_UI=PASS CHECKS=${checks.length} FULL_REACT=YES API_FIXTURE=YES REAL_SUPPLIER_CALLS=0`);return;
+    }
     if(args.includes('--layout-only')){
       await require('./verification/canvas-text-layout-browser.cjs')({page,rootId,node,dock,body,cardBody,tab,instruction,load,saved,check,screenshot,
         generated:value=>{generated=value;textMode='success';}});

@@ -8,6 +8,13 @@ const loaded=new Map(),cache=new Map(),checks=[],calls=[],state={mode:'sse',body
 let origin='';
 const forbidden=name=>()=>{throw Error('Unexpected boundary '+name)};
 const boundaries={
+ 'src/lib/agent/legacy-runtime.ts':{forwardLegacyAgentSession:async()=>null},
+ 'src/lib/agent/canvas.ts':{runCanvasAgent:forbidden('agent runtime')},
+ 'src/lib/agent/canvas-history.ts':{canvasAgentHistory:forbidden('agent history')},
+ 'src/lib/agent/harness.ts':{readHarnessBody:r=>r.json(),harnessErrorResponse:forbidden('harness error'),HarnessError:class extends Error{},AgentHarness:class{registerSecret(){}protectPrompt(){}},PublicOutputBuffer:class{constructor(_h,emit){this.emit=emit}push(s){this.emit(s)}finish(){}},untrustedAgentData:(_k,v)=>v},
+ 'src/lib/agent/harness-network.ts':{assertMediaUrl:()=>{},publicImageBytes:forbidden('publicImageBytes'),readBoundedBytes:forbidden('readBoundedBytes')},
+
+ 'src/lib/canvas/text-continuation.ts':{readCanvasTextContinuation:async(_a,_o,p)=>p==='tree:continue'?state.previousText:null},
  'src/lib/db.ts':{get dbEnabled(){return state.dbEnabled},listCanvasTextNodes:async email=>{state.textReads.push(email);return state.textNodes},listArtworksByIds:async(email,ids)=>{state.imageReads.push({email,ids});return ids.map(id=>({id,title:'Owned reference',prompt:'',image:'data:image/png;base64,Zml4dHVyZQ=='}))}},
  'src/lib/admin-auth.ts':{resolveUserEmail:async()=> 'fixture@local.test'},
  'src/lib/request-auth.ts':{authenticatedEmail:async()=> 'fixture@local.test'},
@@ -18,7 +25,7 @@ const boundaries={
  'src/lib/api-error.ts':{safeError:(_e,f)=>f},
  'src/lib/text-models.ts':{requestedTextModel:()=> 'fixture-text'},
  'src/lib/bi/model-observer.ts':{observeOpenAI:x=>x,withBiRequest:(_r,run)=>run()},
- 'src/lib/billing/synchronous.ts':{withBillingRequest:(_r,_f,run)=>run(),configuredToolCost:async()=>{state.costCalls++;return 0}},
+ 'src/lib/billing/synchronous.ts':{withBillingRequest:(_r,_f,run)=>run(),recordSynchronousTextFailure:()=>{state.outputFailure=true},completeSynchronousStream:async()=>{state.assistantCompleted=(state.assistantCompleted||0)+1},failSynchronousStream:async()=>{state.assistantUnknown=(state.assistantUnknown||0)+1},failSynchronousTextStream:async body=>({...body,terminal:true,status:'failed',operationId:'tool-fixture-assistant',chargedCredits:0}),configuredToolCost:async()=>{state.costCalls++;return 0}},
  'src/lib/model-config/requests.ts':{modelConfigurationEnabled:async()=>state.managed},
  'src/lib/model-config/context.ts':{currentModelExecution:()=>state.scope,currentExecutionBundle:()=>state.scope?{}:null},
  'src/lib/supplier-cost/collect.ts':{supplierCostFetch:x=>x},
@@ -194,7 +201,15 @@ async function main(){
   const clients=load('src/lib/model-config/clients.ts'),openai=clients.modelAwareOpenAI({apiKey:'fixture',baseURL:origin+'/v1'});
   if(!baseline){
    for(const mode of ['content-type','truncated','error','reasoning','image','oversize']){state.mode=mode;before=calls.length;response=await text(request());data=await response.json();assert.equal(response.status,mode==='content-type'?200:502,mode+JSON.stringify(data));assert.equal(calls.length,before+1);assert.ok(!JSON.stringify(data).includes('PRIVATE'));check('ONE_POST_'+mode.toUpperCase());}
-   state.mode='limit';response=await text(request());assert.equal(response.status,502);assert.equal((await response.json()).code,'TEXT_OUTPUT_LIMIT');check('TRUNCATED_TEXT_NOT_SAVED_AS_SUCCESS');
+   state.mode='limit';response=await text(request());assert.equal(response.status,422);data=await response.json();assert.equal(data.code,'TEXT_OUTPUT_LIMIT');assert.ok(data.partialText.includes('自然柔光'));assert.equal(state.outputFailure,true);assert.equal(data.text,undefined);check('TRUNCATED_TEXT_PRESERVED_NOT_SAVED_AS_COMPLETE');
+   state.mode='json';state.previousText='先前的正文';before=calls.length;response=await text(request('text',{projectKey:'tree:continue',continuationOf:'original-operation'}));data=await response.json();assert.equal(response.status,200);assert.ok(data.text.startsWith('先前的正文\n'));assert.ok(JSON.stringify(calls.at(-1).messages).includes('只输出后续文字'));assert.equal(calls.length,before+1);check('EXPLICIT_CONTINUATION_USES_VERIFIED_ORIGINAL_PARTIAL_ONE_POST');
+   before=calls.length;response=await text(request('text',{projectKey:'tree:other',continuationOf:'original-operation'}));assert.equal(response.status,409);assert.equal(calls.length,before);check('UNVERIFIED_CONTINUATION_ZERO_SUPPLIER_POST');
+
+
+   const assistant=load('src/app/api/canvas/assistant/route.ts').POST;
+   const assistantRequest=()=>new Request('http://fixture.local/api/canvas/assistant',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({anchorId:'image-a',messages:[{role:'user',content:'描述画面'}]})});
+   state.mode='sse';state.terminal='length';before=calls.length;response=await assistant(assistantRequest());let events=await response.text();assert.ok(events.includes('event: error'));assert.ok(events.includes('TEXT_OUTPUT_LIMIT'));assert.ok(events.includes('partialText'));assert.ok(!events.includes('event: done'));assert.equal(state.assistantCompleted||0,0);assert.equal(calls.length,before+1);assert.equal(calls.at(-1).max_tokens,8192);check('ASSISTANT_STREAM_LENGTH_IS_TERMINAL_PARTIAL_NOT_DONE');
+   state.terminal='stop';response=await assistant(assistantRequest());events=await response.text();assert.ok(events.includes('event: done'));assert.equal(state.assistantCompleted,1);check('ASSISTANT_NORMAL_STREAM_STILL_COMPLETES');
    state.mode='tools';const tool=await openai.chat.completions.create({model:'fixture',messages:[]});assert.equal(tool.choices[0].message.tool_calls[0].function.arguments,'{"x":1}');assert.equal(tool.usage.total_tokens,23);assert.equal(tool.choices[0].finish_reason,'tool_calls');check('TOOL_CALL_FRAGMENTS_AND_USAGE_PRESERVED');
    state.mode='sse';const stream=await openai.chat.completions.create({model:'fixture',messages:[],stream:true});let streamed='';for await(const part of stream)streamed+=part.choices[0]?.delta?.content||'';assert.equal(streamed,'保留“晚安”和【图1】，自然柔光。');check('REQUESTED_STREAM_STAYS_STREAMING');
    const prepare=load('src/lib/model-config/channel-text-response.ts').prepareChannelText;const prepared=await prepare(Response.json({choices:[{message:{content:[{type:'output_text',text:'可用正文'}]}}]}),async()=>{});assert.equal(prepared.streaming,false);check('CHANNEL_ACCEPTS_STRUCTURED_ANSWER_BLOCKS');

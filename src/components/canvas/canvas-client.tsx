@@ -1,4 +1,5 @@
 "use client";
+import {CANVAS_TEXT_RESULT_LIMIT} from "@/lib/canvas/text-output-policy";
 import {REMOVE_BACKGROUND_PROMPT} from "@/lib/imagegen/background-removal";
 import {CanvasCollaborationActions} from "@/components/collaboration/collaboration-entry";
 import {useCollaboration} from "@/components/collaboration/collaboration-context";
@@ -2226,12 +2227,15 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
   function changeTextInstruction(value:string){if(!selectedTextId||textTasks.state(selectedTextId).busy||textWriteBarrierRef.current||historyBusyRef.current)return;
     textInstructionDrafts.current.set(selectedTextId,value);setTextPrompt(value);textEditing.instruction(selectedTextId,value);
   }
-  async function generateTextNode(options?:{node:CanvasTextNode;prompt:string;silent?:boolean;intent?:"polish"}):Promise<boolean>{
+  async function generateTextNode(options?:{node:CanvasTextNode;prompt:string;silent?:boolean;intent?:"polish"|"accept-partial"|"continue-writing"|"discard-partial"}):Promise<boolean>{
     const target=textNodesRef.current.find(node=>node.id===(options?.node.id??selectedTextId)),prompt=(options?.prompt??textPrompt).trim();
     if(!target||readOnly||!nodeSettingsReady||textWriteBarrierRef.current||historyBusyRef.current||isNodeLocked(target.id)||textTasks.state(target.id).busy)return false;
     if(target.status==="generating"&&textTasks.state(target.id).phase==="idle")return false;
+    if(options?.intent==="discard-partial")return textTasks.discardPartial(target.id);
+    if(options?.intent==="accept-partial")return textTasks.acceptPartial(target.id);
+    if(options?.intent==="continue-writing")return (textTasks.state(target.id).partial?.text.length??Infinity)<CANVAS_TEXT_RESULT_LIMIT?textTasks.continueWriting(target.id):false;
     if(!resolveCanvasTextInstruction(options?.intent==="polish"?"":prompt,canvasTextContent(target))&&!textTasks.retryable(target.id))return false;
-    const ok=textTasks.retryable(target.id)?await textTasks.resume(target.id):await textTasks.run(generalTextTask(target,prompt,t("canvas.textGenerate"),options?.intent));
+    const ok=textTasks.retryable(target.id)?await textTasks.resume(target.id):await textTasks.run(generalTextTask(target,prompt,t("canvas.textGenerate"),options?.intent==="polish"?"polish":undefined));
     return ok;
   }
 
@@ -4139,7 +4143,7 @@ export function CanvasClient({ initialProject, desktopAppearance = false }: { in
           {selectedText && selectedTextBatchNodes.length <= 1 && !readOnly && !propertiesOpen && !isNodeLocked(selectedText.id) && (
             <CanvasTextComposer focusRevision={textComposerFocusRevision} key={`tdock-${canvasOwnerEpochRef.current.revision}-${selectedText.id}`} node={selectedText} members={active?.members??[]} light={lightCanvas} optimization={{contextKey:JSON.stringify([user?.email,targetEmail,activeKey,selectedText.id]),disabled:readOnly||!nodeSettingsReady||isNodeLocked(selectedText.id)}}
               draft={{prompt:textPrompt,onChange:changeTextInstruction}}
-              content={{onChange:value=>changeTextNodeContent(selectedText.id,value),onCommit:(value,initial)=>commitTextNodeContent(selectedText.id,value,initial),onFlush:()=>textAutosave.flush(selectedText.id)}} task={{state:textTasks.state(selectedText.id),retryable:textTasks.retryable(selectedText.id),onGenerate:intent=>generateTextNode(intent?{node:selectedText,prompt:"",intent}:undefined)}}
+              content={{onChange:value=>changeTextNodeContent(selectedText.id,value),onCommit:(value,initial)=>commitTextNodeContent(selectedText.id,value,initial),onFlush:()=>textAutosave.flush(selectedText.id)}} task={{state:textTasks.state(selectedText.id),retryable:textTasks.retryable(selectedText.id),onGenerate:intent=>generateTextNode(intent?{node:selectedText,prompt:"",intent}:undefined),onDiscardPartial:()=>generateTextNode({node:selectedText,prompt:"",intent:"discard-partial"}),onAcceptPartial:()=>generateTextNode({node:selectedText,prompt:"",intent:"accept-partial"}),onContinueWriting:()=>generateTextNode({node:selectedText,prompt:"",intent:"continue-writing"})}}
               layout={{dockRef:textComposerDockRef,style:dockStyle,safeArea:overlaySafeArea,canvasSize,expanded:textComposerExpanded,onExpandedChange:setTextComposerExpanded}}
               onDismiss={()=>setSelectedTextId(null)} onReference={(id,enabled)=>updateTextReference(selectedText.id,id,enabled)} onMenuOpenChange={setTextComposerMenuOpen}
               storyboard={canFeature("agent")&&canFeature("video")?{disabled:!nodeSettingsReady||assistantBusy||assistantUploading||isNodeLocked(selectedText.id)||selectedText.status!=="completed"||!selectedText.content.trim(),onPlan:()=>planTextStoryboard(selectedText)}:undefined}

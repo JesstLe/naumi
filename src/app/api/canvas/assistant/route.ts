@@ -36,6 +36,9 @@ import { assertMediaUrl, publicImageBytes, readBoundedBytes } from "@/lib/agent/
 // 通道与 canvas/text-generate 完全一致(requestedTextModel + AGENT_API_KEY)。
 // ---------------------------------------------------------------------------
 
+import { canvasTextBudget, incompleteCanvasText } from "@/lib/canvas/text-output-server";
+import { failSynchronousTextStream, recordSynchronousTextFailure } from "@/lib/billing/synchronous-operation";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 800;
@@ -236,7 +239,7 @@ async function handleObservedPost(request: Request) {
           ...history.map(turn => turn.role === "user" ? { ...turn, content: canvasTextInput(turn.content) } : turn),
         ],
         temperature: 0.7,
-        max_tokens: 1800,
+        ...canvasTextBudget(true),
         modalities: ["text"],
         stream: true,
       }, { signal: AbortSignal.any([request.signal, AbortSignal.timeout(120_000)]) });
@@ -265,12 +268,14 @@ async function handleObservedPost(request: Request) {
         let text = "";
         const output = new PublicOutputBuffer(harness, delta => { text += delta; send("delta", { text:delta }); });
         let lastChoice: unknown;
+        let finishReason: string | null = null;
         let imageChoice: unknown;
         try {
           for await (const chunk of stream) {
             const choice = chunk.choices?.[0];
             if (choice) {
               lastChoice = choice;
+              if(choice.finish_reason)finishReason=choice.finish_reason;
               const code = canvasTextFailure(choice).code;
               if (code === "TEXT_OUTPUT_IMAGE" || code === "TEXT_OUTPUT_REFUSED") imageChoice = choice;
             }
@@ -278,11 +283,18 @@ async function handleObservedPost(request: Request) {
             if (delta) output.push(delta);
           }
           output.finish();
+          if(finishReason === "length" && !imageChoice){
+            const failure=incompleteCanvasText(text);
+            reportCanvasTextFailure("assistant",failure.code as "TEXT_OUTPUT_LIMIT");
+            const receipt=await failSynchronousTextStream(failure);
+            send("error",receipt || failure);controller.close();return;
+          }
           if (!text.trim() || imageChoice) {
             const failure = canvasTextFailure(imageChoice || lastChoice);
             reportCanvasTextFailure("assistant", failure.code);
-            await failSynchronousStream();
-            send("error", failure);
+            recordSynchronousTextFailure();
+            const receipt=await failSynchronousTextStream(failure);
+            send("error", receipt || failure);
             controller.close();
             return;
           }

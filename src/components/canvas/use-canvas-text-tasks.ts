@@ -12,5 +12,7 @@ export function useCanvasTextTasks(scope:CanvasDocumentScope,ports:Omit<CanvasTe
   const revision=useSyncExternalStore(tasks.subscribe,tasks.revision,()=>0);
   return {revision,state:(id?:string|null)=>tasks.state(scope,id),retryable:(id:string)=>tasks.retryable(scope,id),
     run:(request:CanvasTextTaskRequest)=>tasks.execute(scope,request,ports),resume:(id:string)=>tasks.resume(scope,id,ports),
+    acceptPartial:(id:string)=>tasks.acceptPartial(scope,id,ports),continueWriting:(id:string)=>tasks.continueWriting(scope,id,ports),
+    discardPartial:(id:string)=>tasks.discardPartial(scope,id,ports),
     batch:(mode:"reverse"|"assist",requests:CanvasTextTaskRequest[])=>tasks.batch(scope,mode,requests,ports),busy:(mode:"reverse"|"assist")=>tasks.busy(scope,mode)};
 }

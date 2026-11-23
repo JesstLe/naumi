@@ -176,9 +176,17 @@ export function BillingProvider({ children }: {
             const body = response.body.pipeThrough(new TransformStream<Uint8Array,Uint8Array>({ transform(chunk, controller) {
                 controller.enqueue(chunk); buffer += decoder.decode(chunk,{stream:true});
                 const events=buffer.split("\n\n"); buffer=events.pop()||"";
-                for(const event of events) if(event.split("\n").includes("event: done")) {
-                    const data=event.split("\n").find(line=>line.startsWith("data: "));
-                    try { if(data&&JSON.parse(data.slice(6)).ok===true){ invalidateBrowserData(user?.email); clearIntent(); } } catch {}
+                for(const event of events) {
+                    const lines=event.split("\n"),done=lines.includes("event: done"),failed=lines.includes("event: error");
+                    if(!done&&!failed)continue;
+                    const data=lines.find(line=>line.startsWith("data: "));
+                    try {
+                        if(!data)continue;
+                        const receipt=JSON.parse(data.slice(6));
+                        if((done&&receipt.ok===true)||(failed&&isTerminalBillingFailure(receipt,id))){
+                            invalidateBrowserData(user?.email);clearIntent();
+                        }
+                    } catch { /* An unreadable or unknown stream never releases the original intent. */ }
                 }
             } }));
             return new Response(body,{status:response.status,headers:response.headers});
