@@ -182,6 +182,10 @@ async function main(){
   const {creationFiltersSchema}=await import("../src/lib/saas/creation-contracts");const creations=await import("../src/lib/saas/creations");
   const cf=creationFiltersSchema.parse({user:privateEmail,view:"unified",period:"all"});const page=await creations.listUnifiedCreations({platform:true},cf);
   check(page.pagination.total===0&&page.items.length===0,"unified legacy/canonical keys/totals hidden");
+  const {readOverviewActivity}=await import("../src/lib/saas/overview-activity");
+  const day=new Date(Date.now()+8*3600000).toISOString().slice(0,10),start=day+"T00:00:00+08:00";
+  const platformActivity=await readOverviewActivity(pool,{from:day,to:day,start,end:new Date(Date.parse(start)+86400000).toISOString()});
+  check(platformActivity.creations===1&&platformActivity.failed===0&&platformActivity.trend[0].count===1,"platform overview and trend exclude private personal roots");
   await assert.rejects(creations.creationDetail({platform:true},"privacy-1"),e=>(e as any).status===404);checks++;
   const legacy=await import("../src/lib/saas/legacy-creations");await assert.rejects(legacy.legacyCreationDetail(legacy.legacyCreationId({table:"app_canvas_image_tasks",id:"privacy-1",email:privateEmail})),e=>(e as any).status===404);checks++;
   await assert.rejects(biJobTrace("privacy-1",privateEmail),e=>(e as any).status===404);checks++;
@@ -199,6 +203,19 @@ async function main(){
   check(await authorizedTargetEmail(adminRequest,privateEmail,true)===null,"cross-account admin denied");
   check(await authorizedTargetEmail(adminRequest,normalEmail,true)===normalEmail,"ordinary cross-account admin preserved");
   check(await authorizedTargetEmail(new Request("http://fixture.test/api/account",{headers:{cookie:cookie(privateEmail)}}),privateEmail,true)===privateEmail,"private owner retains own access");
+  const normalCall=(await ledger.list({email:normalEmail})).rows[0],privateCall=(await ledger.list({email:privateEmail})).rows[0];
+  await ledger.enqueue('task:'+normalCall.id,'task',{callId:normalCall.id},'fixture-cost-account');
+  await ledger.enqueue('task:'+privateCall.id,'task',{callId:privateCall.id},'fixture-cost-account');
+  await ledger.enqueue('router:private-fixture','router',{operation:'private-router',context:{userEmail:privateEmail,operationId:'private-router'}},'fixture-cost-account');
+  await pool.query("UPDATE app_supplier_cost_jobs SET state='needs-attention',last_error='fixture-cost-error'");
+  const reconcile=await readSupplierAdmin(ledger,{},'reconcile',new AbortController().signal);
+  check('jobs' in reconcile&&reconcile.jobs.length===1&&reconcile.jobs[0].key==='task:'+normalCall.id,"cost task/router report privacy with ordinary positive control");
+  const actions=await import("../src/app/api/admin/supplier-cost/actions/route");
+  const action=(body:unknown)=>new Request('http://fixture.test/api/admin/supplier-cost/actions',{method:'POST',headers:{cookie:cookie(actor),origin:'http://fixture.test','content-type':'application/json'},body:JSON.stringify(body)});
+  check((await actions.POST(action({action:'retry',key:'task:'+privateCall.id}))).status===404,"private cost retry denied without disclosure");
+  check((await actions.POST(action({action:'retry',key:'task:'+normalCall.id}))).status===200,"ordinary cost retry preserved");
+  check((await actions.POST(action({action:'variable',id:randomUUID(),operation:'privacy-1',amountCnyMicros:'1',label:'fixture',evidence:'fixture cost evidence'}))).status===404,"private variable-cost admin action denied");
+  check((await pool.query("SELECT state FROM app_supplier_cost_jobs WHERE key=$1",['task:'+privateCall.id])).rows[0].state==='needs-attention',"private cost worker outbox remains unchanged");
   const {ensureExecutionAuditSchema}=await import("../src/lib/model-config/execution-audit-schema");await ensureExecutionAuditSchema(pool);
   for(const id of ["privacy-0","privacy-1","privacy-1:nested"]){
    await pool.query("INSERT INTO app_model_execution_stages(id,operation_id,feature,public_model_id,model_version,billing_version,provider_id,wire_model,phase,state,attempt) VALUES(gen_random_uuid(),$1,'image.generate','private-image',1,1,'private-images','wire-private-image','image','response-received',1)",[id]);

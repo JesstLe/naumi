@@ -1,4 +1,5 @@
 import 'server-only';
+import {reportAccountVisibleSql} from '../accounts/creation-policy';
 import type {PoolClient} from 'pg';
 
 export type TenantDateWindow={from:string;to:string;start:string;end:string};
@@ -8,7 +9,7 @@ export type TenantDateWindow={from:string;to:string;start:string;end:string};
 export const overviewActivitySql=`WITH activity AS MATERIALIZED (
   SELECT (accepted_at AT TIME ZONE 'Asia/Shanghai')::date AS day,tenant_id,GROUPING(tenant_id) AS daily,
     count(*) AS creations,count(*) FILTER(WHERE status='needs_review') AS review,count(*) FILTER(WHERE status='failed') AS failed
-  FROM app_creation_records WHERE parent_id IS NULL AND accepted_at>=$3::timestamptz AND accepted_at<$4::timestamptz
+  FROM app_creation_records c WHERE parent_id IS NULL AND accepted_at>=$3::timestamptz AND accepted_at<$4::timestamptz AND ${reportAccountVisibleSql('c.actor_email')}
   GROUP BY GROUPING SETS ((day),(tenant_id))
 ), totals AS (
   SELECT COALESCE(sum(creations),0)::int AS creations,count(tenant_id)::int AS active,

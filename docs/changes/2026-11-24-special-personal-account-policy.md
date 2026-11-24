@@ -34,7 +34,7 @@
 
 ## 已修独立审查发现
 
-首次只读审查发现并逐项落实：/api/config遗漏与重复目录投影；账号事务嵌套借连接；执行阶段及后处理直接入口；管理员跨账号公共helper；供应商活动统计。补充查出冻结隐藏目录不应依赖当前policy，以及父操作查询不能绕过私有子操作。
+首次只读审查发现并逐项落实：/api/config遗漏与重复目录投影；账号事务嵌套借连接；执行阶段及后处理直接入口；管理员跨账号公共helper；供应商活动统计。补充查出冻结隐藏目录不应依赖当前policy，以及父操作查询不能绕过私有子操作。固定版复核又发现平台概览personal活动与成本异常task/router outbox遗漏，均补齐共享SQL和真实PG回归；常规后台retry/variable入口同步守卫，原Worker和真实供应商聚合不变。
 
 ## 验证记录与证据层级
 
@@ -46,7 +46,7 @@
 
 保留的早期失败：首次类型问题及测试夹具无效图片；pending最小夹具未含新增表，补齐schema后原断言不变通过；性能脚本默认对照过时9ae4edff导致差异，改为实际任务基线后通过；SaaS脚本漏SETTINGS_SECRET环境项，补齐独立fixture secret后通过。它们不记为最终PASS或主线原有缺陷。
 
-真实Next/Chromium浏览器检查与最终固定SHA独立复核正在收尾，最终回执及完整命令/exit以VERIFICATION.txt为准。首轮Next夹具缺worker secret、随后缺已配置API占位导致setup重定向，保留失败日志；不将环境失败冒充产品修复。没有生产浏览器或真实TDH能力验收。
+真实Next/Chromium浏览器已通过：专属目录单选、普通账号隔离、后台private用量为空、跨账号详情404；浏览器无生成POST、无pageerror。截图确认先等待真实账号hydrate及作品加载。最终固定SHA复核和完整命令/exit以VERIFICATION.txt为准。首轮Next夹具缺worker secret、随后缺已配置API占位导致setup重定向，保留失败日志；不将环境失败冒充产品修复。没有生产浏览器或真实TDH能力验收。
 
 ## 接口示例（开发契约，不是执行记录）
 
@@ -72,5 +72,7 @@ await manageBiUser(command, authenticatedAdmin);
 4. 先完成支持策略的Web+Worker整站发布及旧槽排空，再启用专属配置/创建账号；新旧版本并存期间不创建特殊账号。生产启用后的回滚下限必须支持该策略，不能回到忽略策略的旧程序使消费暴露或改走默认通道。若直接回滚材料仍为旧程序，应先完成兼容版本的发布轮次再激活账号。
 5. 按原manageBiUser一次性创建个人账号+99999+policy；验证所属、目录、原账本及常规后台不可见。真实收费验收须沿另行明确预算执行。
 6. 本次ROLLBACK.sh只在显式指定的隔离源码副本验证；不回灌数据库/媒体，不删除原审计，不恢复或重放生产任务。
+
+既有provider-activity脚本要求初始无审计表，整组复用同一个fixture库会受前例留表影响；集中runner改为每case独立本机fixture数据库，不删除或放宽原断言。完整源摘要/每case命令/退出码沿用既有refactor-runner留档，scope为受影响模块而非全仓core。
 
 未完成生产项保持NOT TESTED。47暂缓发布决定及103独立线仍保留。

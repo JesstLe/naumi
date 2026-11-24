@@ -12,6 +12,7 @@ import { costWhere } from "./call-filter";
 import {checkReadClientSocket,withOwnedReportClient} from "@/platform/db/owned-read-client";
 import {readSupplierChainSlice} from "./chain-read";
 import type {SupplierChainRead} from "./chain-contract";
+import {reportCostJobSource,reportCostJobVisibleSql} from './report-visibility';
 
 type CostTotals={calls:number;confirmed:number;pending:number;estimated:number;incomplete:number;cny_micros:string|null};
 type CurrencyTotals={currency:string|null;reported_micros:string|null;estimated_micros:string|null;supplier_credits_micros:string|null};
@@ -85,7 +86,7 @@ const accountLabels=async(tx:PoolClient)=>(await tx.query("SELECT id,label FROM 
 const accountSettings=async(tx:PoolClient)=>(await tx.query("SELECT id,provider_id,protocol,label,fx,policy,usage_enabled,last_usage_at,updated_at,credential_ref IS NOT NULL AS query_configured FROM app_supplier_accounts ORDER BY label,id")).rows;
 async function reconciliation(tx:PoolClient) {
   const anomalies=(await tx.query(`SELECT b.* FROM app_supplier_usage_buckets b JOIN (SELECT DISTINCT ON(account_id) id FROM app_supplier_usage_runs ORDER BY account_id,fetched_at DESC) r ON r.id=b.run_id WHERE b.status<>'matched' ORDER BY b.updated_at DESC LIMIT 200`)).rows;
-  const jobs=(await tx.query("SELECT key,kind,state,attempts,due_at,last_error,updated_at FROM app_supplier_cost_jobs WHERE last_error IS NOT NULL OR state='needs-attention' ORDER BY updated_at DESC LIMIT 100")).rows;
+  const jobs=(await tx.query(`SELECT j.key,j.kind,j.state,j.attempts,j.due_at,j.last_error,j.updated_at FROM ${reportCostJobSource} WHERE (j.last_error IS NOT NULL OR j.state='needs-attention') AND ${reportCostJobVisibleSql} ORDER BY j.updated_at DESC LIMIT 100`)).rows;
   return {anomalies,jobs};
 }
 
