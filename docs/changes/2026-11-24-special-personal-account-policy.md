@@ -76,3 +76,7 @@ await manageBiUser(command, authenticatedAdmin);
 既有provider-activity脚本要求初始无审计表，整组复用同一个fixture库会受前例留表影响；集中runner改为每case独立本机fixture数据库，不删除或放宽原断言。完整源摘要/每case命令/退出码沿用既有refactor-runner留档，scope为受影响模块而非全仓core。
 
 未完成生产项保持NOT TESTED。47暂缓发布决定及103独立线仍保留。
+
+## 收尾性能与可选存储兼容
+
+平台活动不能对所有root逐行读取actor而破坏既有时间覆盖索引。最终使用原GROUPING SETS全量聚合减去private账号的同维度聚合，private队列由账号表驱动LATERAL actor/time索引，零组消除；不增加或改写生产索引。24万历史记录压力回归保留原10倍块访问改善断言，实测最近窗口5519→22块、年度17184→253块、空窗2328→3块，全部通过。执行阶段监测在成本表尚未初始化时只使用已存在的账务归属源，不因可选supplier表缺失把正常运行监测全部变为unknown。

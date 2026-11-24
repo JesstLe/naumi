@@ -37,6 +37,7 @@ export async function readProviderActivity(pool: Pool, config: unknown, provider
   try {
     const rows = await readOnly(pool, async sql => {
       if (!(await sql.query("SELECT to_regclass('app_model_execution_stages') AS name")).rows[0].name) return null;
+      const supplierCalls=!!(await sql.query("SELECT to_regclass('app_supplier_calls') AS name")).rows[0].name;
       // A bounded set is complete at or below the cap and discarded above it.
       // No order is observable from either case, so a history-wide sort is unnecessary.
       return (await sql.query<StatsRow>(`WITH bounded AS (
@@ -47,7 +48,7 @@ export async function readProviderActivity(pool: Pool, config: unknown, provider
               WHEN state='submitted' THEN 'processing' ELSE 'unknown' END AS kind,
             created_at >= $5::timestamptz AS recent
           FROM app_model_execution_stages stage
-          WHERE created_at >= $1::timestamptz AND created_at <= $2::timestamptz AND provider_id=ANY($3::text[]) AND ${reportOperationVisibleSql('stage.operation_id',true)}
+          WHERE created_at >= $1::timestamptz AND created_at <= $2::timestamptz AND provider_id=ANY($3::text[]) AND ${reportOperationVisibleSql('stage.operation_id',true,supplierCalls)}
           LIMIT $4
         ), counts AS (
           SELECT provider_id,kind,count(*)::int AS n24,count(*) FILTER (WHERE recent)::int AS n1
