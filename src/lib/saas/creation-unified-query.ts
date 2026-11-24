@@ -1,3 +1,4 @@
+import {reportAccountVisibleSql} from "../accounts/creation-policy";
 import type {CreationFilters} from './creation-contracts';
 
 const imageStatus=`CASE WHEN j.snapshot->>'status' IN ('error','failed','cancelled','canceled') AND COALESCE(j.snapshot#>>'{result,status}','') NOT IN ('succeeded','done','completed','success','partial','failed','error','cancelled','canceled') THEN j.snapshot->>'status' ELSE COALESCE(j.snapshot#>>'{result,status}',j.snapshot->>'status') END`;
@@ -25,7 +26,7 @@ export function legacyCreationCandidates(f:CreationFilters,allowedEmails:readonl
  const qualification=(alias:string,sourceKind:string,content:string)=>{
   if(!filter)return '';
   const {emails,user,query,from,to,kind,tenant}=filter;
-  return `WHERE (${emails}::text[] IS NULL OR ${alias}.email=ANY(${emails})) AND (${user}::text='' OR ${alias}.email=${user})
+  return `WHERE ${reportAccountVisibleSql(`${alias}.email`)} AND (${emails}::text[] IS NULL OR ${alias}.email=ANY(${emails})) AND (${user}::text='' OR ${alias}.email=${user})
   AND (${from}::timestamptz IS NULL OR ${alias}.created_at>=${from}) AND (${to}::timestamptz IS NULL OR ${alias}.created_at<${to}::timestamptz+interval '1 day')
   AND (${query}::text='' OR position(lower(${query}) in lower(COALESCE(${content},'')||' '||${alias}.email))>0)
   AND (${kind}::text='' OR ${sourceKind}=${kind})

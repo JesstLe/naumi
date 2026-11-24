@@ -1,3 +1,4 @@
+import {assertAccountCanJoinEnterprise} from "../accounts/creation-policy-store";
 import {TeamError} from "./errors";
 export {TeamError} from "./errors";
 import {ensureTeamSchema} from "@/lib/teams/schema";
@@ -115,6 +116,7 @@ export async function mutateTeam(actor: Actor, command: z.infer<typeof memberCom
       if (!owner || owner.banned || (await tx.query("SELECT 1 FROM app_account_team_members WHERE email=$1", [command.ownerEmail])).rowCount) throw new TeamError("负责人账号不存在、已停用或已是子账号", 409);
       if (new Date(command.authorizedUntil).getTime() <= Date.now()) throw new TeamError("授权期限须晚于现在", 400);
       if ((await tx.query("SELECT 1 FROM app_account_teams WHERE owner_email=$1 OR id=$2", [command.ownerEmail, command.teamId])).rowCount) throw new TeamError("该负责人已有团队", 409);
+      await assertAccountCanJoinEnterprise(tx,command.ownerEmail);
       await tx.query("INSERT INTO app_account_teams(id,name,owner_email,authorized_until) VALUES($1,$2,$3,$4)", [command.teamId, command.name, command.ownerEmail, command.authorizedUntil]);
       changes = { name: command.name, owner: command.ownerEmail, authorizedUntil: command.authorizedUntil };
     } else if (command.action === "update") {
@@ -131,6 +133,7 @@ export async function mutateTeam(actor: Actor, command: z.infer<typeof memberCom
         if ((await tx.query("SELECT 1 FROM app_team_access_grants WHERE email=$1 AND revoked_at IS NULL", [command.email])).rowCount) throw new TeamError("请先撤销目标账号的团队入口授权", 409);
         if ((await tx.query("SELECT 1 FROM app_account_team_members WHERE email=$1", [command.email])).rowCount) throw new TeamError("账号已有归属，请先移除旧归属", 409);
         validateExpiry(command.expiresAt, team.authorized_until);
+      await assertAccountCanJoinEnterprise(tx,command.email);
         await tx.query("INSERT INTO app_account_team_members(email,team_id) VALUES($1,$2)", [command.email, team.id]);
         await tx.query("UPDATE app_users SET account_expires_at=$2,management_version=management_version+1 WHERE email=$1", [command.email, command.expiresAt]);
         changes = { expiresAt: command.expiresAt };

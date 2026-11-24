@@ -1,3 +1,4 @@
+import {reportAccountReadable} from "@/lib/accounts/report-visibility";
 import { NextResponse } from "next/server";
 import {listAllUsers, adminStats, deleteUser} from "@/lib/accounts/administration";
 import {listLedger, listUserLedger} from "@/lib/billing/legacy-ledger";
@@ -54,6 +55,7 @@ export async function GET(req: Request) {
   const email = params.get("email");
   if (email) {
     const e = email.trim().toLowerCase();
+    if(!await reportAccountReadable(e))return NextResponse.json({error:"用户不存在"},{status:404,headers:{"cache-control":"private, no-store"}});
     const user = await readUserSnapshot(e);
     const artworks = await listArtworks(e);
     const ledger = await listUserLedger(e, 100);

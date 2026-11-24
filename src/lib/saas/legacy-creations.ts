@@ -1,4 +1,5 @@
 import 'server-only';
+import {reportAccountReadable} from '../accounts/report-visibility';
 import type {PoolClient} from 'pg';
 import {getPool} from "@/platform/db/pool";
 import {checkReadClientSocket,withOwnedReportClient} from '@/platform/db/owned-read-client';
@@ -54,6 +55,7 @@ export async function legacyCreationEventProjection(id:string,page:number,withTo
  const ref=parseId(id);if(access&&!access.allowedEmails.includes(ref.email))throw new TeamError('记录不存在或无权访问',404);
  const empty={items:[],...(withTotal?{pagination:{page,size:evidencePageSize,total:0}}:{})};
  const run=async(tx:PoolClient)=>{
+  if(!await reportAccountReadable(ref.email,tx))throw new TeamError("记录不存在或无权访问",404);
   if(access)await assertLegacySourceTenant(tx,ref,access.tenantId);
   const exists=await tx.query(`SELECT 1 FROM ${ref.table} WHERE id=$1 AND email=$2`,[ref.id,ref.email]);
   if(!exists.rowCount)throw new TeamError('记录不存在或无权访问',404);
@@ -92,7 +94,8 @@ export async function legacyCreationChildPage(id:string,page:number,access?:Lega
  return access?run(access.client):platformLegacyRead(run,signal);
 }
 async function ownLegacyRow(tx:PoolClient,ref:Source,access?:LegacyReadScope,projection?:'children'){
- if(access)await assertLegacySourceTenant(tx,ref,access.tenantId);
+ if(!await reportAccountReadable(ref.email,tx))throw new TeamError("记录不存在或无权访问",404);
+  if(access)await assertLegacySourceTenant(tx,ref,access.tenantId);
  const fields=projection==='children'?(ref.table==='app_image_jobs'?"kind,jsonb_build_object('children',snapshot->'children') AS snapshot":'id'):'*';
  const row=(await tx.query(`SELECT ${fields} FROM ${ref.table} WHERE id=$1 AND email=$2`,[ref.id,ref.email])).rows[0];
  if(!row)throw new TeamError('记录不存在或无权访问',404);
@@ -130,6 +133,7 @@ export async function legacyCreationAsset(id:string,assetId:string,access?:Legac
  signal?.throwIfAborted();
  const ref=parseId(id);if(access&&!access.allowedEmails.includes(ref.email))throw new TeamError('记录不存在或无权访问',404);
  const run=async(tx:PoolClient)=>{
+  if(!await reportAccountReadable(ref.email,tx))throw new TeamError("记录不存在或无权访问",404);
   if(access)await assertLegacySourceTenant(tx,ref,access.tenantId);
   if(!assetId.startsWith('legacy-')&&(!access||access.tenantId)){
    const linked=await linkedCreation(tx,ref,access?.tenantId);

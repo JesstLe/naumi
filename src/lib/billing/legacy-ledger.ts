@@ -1,3 +1,4 @@
+import {reportAccountVisibleSql} from "../accounts/creation-policy";
 import "server-only";
 import {getPool} from "@/platform/db/pool";
 import {ensureSchema} from "@/lib/persistence/schema";
@@ -50,7 +51,7 @@ export async function listLedger(limit = 20): Promise<LedgerRow[]> {
   await ensureSchema();
   const { rows } = await getPool().query(
     `SELECT id, email, delta, reason, kind, expires_at, created_at
-       FROM app_ledger ORDER BY created_at DESC LIMIT $1`,
+       FROM app_ledger WHERE ${reportAccountVisibleSql("app_ledger.email")} ORDER BY created_at DESC LIMIT $1`,
     [limit]
   );
   return rows.map(mapLedger);
@@ -105,7 +106,7 @@ export async function listUserLedger(
   await ensureSchema();
   const { rows } = await getPool().query(
     `SELECT id, email, delta, reason, kind, expires_at, created_at
-       FROM app_ledger WHERE email = $1
+       FROM app_ledger WHERE email = $1 AND ${reportAccountVisibleSql("app_ledger.email")}
       ORDER BY created_at DESC LIMIT $2`,
     [emailRaw.toLowerCase(), limit]
   );

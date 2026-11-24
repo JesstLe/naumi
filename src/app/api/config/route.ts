@@ -1,3 +1,5 @@
+import {readAccountCreationPolicy} from "@/lib/accounts/creation-policy-store";
+import {accountImageCatalogSnapshot} from "@/lib/model-config/account-image-catalog";
 import { NextResponse } from "next/server";
 import {creditMeteringEnabled} from "@/lib/billing/runtime";
 import {dbEnabled} from "@/platform/db/pool";
@@ -27,8 +29,10 @@ export async function GET(request: Request) {
   const multiUser = await multiUserEnabled();
   const email = dbEnabled ? await authenticatedEmail(request) : null;
   // Share one snapshot inside this request, never a stale cross-request pointer.
-  const modelSnapshot = await modelConfigurationEnabled() ? await readPublishedModelSnapshot() : undefined;
+  let modelSnapshot = await modelConfigurationEnabled() ? await readPublishedModelSnapshot() : undefined;
+  const grant=email?(await readAccountCreationPolicy(email))?.image:undefined;
   const imageModels = await getImageModelCatalog(email, modelSnapshot);
+  if(modelSnapshot&&grant)modelSnapshot=accountImageCatalogSnapshot(modelSnapshot,grant);
   const managed = modelSnapshot ? await readPublishedModelCatalog("image", undefined, modelSnapshot) : null;
   const featureCatalog = modelSnapshot ? await readPublishedModelCatalog("image", "image.generate", modelSnapshot) : null;
   const defaultModel = featureCatalog?.defaultModelId || managed?.bindings["image.generate"] || managed?.models[0]?.id || (await getOpenAISettings()).model;
@@ -58,5 +62,5 @@ export async function GET(request: Request) {
     // 高档选择;false 时统一按默认档执行(提交前回退,见 src/lib/image-quality.ts)。
     imageQualityCapable: managed ? !!managed.models.find(m => m.id === presentation.defaultModelId)?.qualitySupported : imageQualityCapable(),
     imageQualityExperimental: betaPreviewEnabled,
-  });
+  },{headers:{"cache-control":"private, no-store",Vary:"Cookie, Authorization"}});
 }

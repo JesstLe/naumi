@@ -1,4 +1,11 @@
+import {TeamError} from "../teams/errors";
+import {ModelConfigError} from "../model-config/types";
 import "server-only";
+import {accountCreationPolicySchema} from "../accounts/creation-policy";
+import {writeAccountCreationPolicyTx} from "../accounts/creation-policy-store";
+import {accountImageModel} from "../model-config/account-image-policy";
+import {readPublishedModelSnapshot} from "../model-config/published-repository";
+import {modelTrustedOrigins} from "../model-config/environment";
 import { createHmac } from "node:crypto";
 import { z } from "zod";
 import { getPool } from "@/platform/db/pool";
@@ -20,6 +27,7 @@ const version = { expectedVersion: z.number().int().nonnegative() };
 const password = z.string().min(8).max(128);
 const months = z.number().int().min(1).max(120).optional();
 export const userCommandSchema = z.discriminatedUnion("action", [
+    z.object({...base,...version,action:z.literal("creation-policy"),policy:accountCreationPolicySchema}).strict(),
     z.object({ ...base, ...version, action: z.literal("position"), position: z.enum(USER_POSITIONS) }).strict(),
     z
         .object({
@@ -28,6 +36,7 @@ export const userCommandSchema = z.discriminatedUnion("action", [
         name: z.string().trim().min(1).max(80),
         password,
         initialCredits: z.number().int().min(0).max(1000000),
+        creationPolicy:accountCreationPolicySchema.optional(),
         months,
     })
         .strict(),
@@ -91,6 +100,7 @@ export class ManagementError extends Error {
 export async function manageBiUser(command: UserCommand, actor: string) {
     await ensureBiSchema();
     const runtime = await getBillingRuntime(), snapshot = await runtime.config.current();
+    const creationPolicy=command.action==="creation-policy"?command.policy:command.action==="create"?command.creationPolicy:undefined;
     const fingerprint = createHmac("sha256", settingsSecret())
         .update(JSON.stringify(command))
         .digest("hex");
@@ -106,6 +116,11 @@ export async function manageBiUser(command: UserCommand, actor: string) {
                 throw new ManagementError("该操作编号已用于不同操作");
             await client.query("COMMIT");
             return { ok: true, replayed: true };
+        }
+        if(creationPolicy?.image){
+            const models=await readPublishedModelSnapshot(client,{trustedOrigins:modelTrustedOrigins()});
+            if(!models)throw new ManagementError("模型配置尚未就绪",503);
+            accountImageModel(models.config,creationPolicy.image);
         }
         let user = (await client.query("SELECT email,name,phone,note,role,banned,position,management_version,credits_used FROM app_users WHERE email=$1 FOR UPDATE", [command.email])).rows[0];
         const before = user
@@ -176,9 +191,14 @@ export async function manageBiUser(command: UserCommand, actor: string) {
             ]);
         if (command.action === "reset-password")
             await client.query("UPDATE app_users SET password_hash=$2,auth_revoked_before=now() WHERE email=$1", [command.email, passwordHash]);
+        if(creationPolicy){
+            await writeAccountCreationPolicyTx(client,command.email,creationPolicy,actor);
+            if(creationPolicy.personalOnly)await client.query(`INSERT INTO app_bi_account_profiles(email,account_type,company,updated_by) VALUES($1,'personal','',$2) ON CONFLICT(email) DO UPDATE SET account_type='personal',company='',updated_by=$2,updated_at=now()`,[command.email,actor]);
+        }
         await client.query("UPDATE app_users SET management_version=management_version+1 WHERE email=$1", [command.email]);
         const after = (await client.query("SELECT name,phone,note,role,banned,position,management_version FROM app_users WHERE email=$1", [command.email])).rows[0];
         const changes = {
+            ...(creationPolicy?{creationPolicy}:{}),
             before,
             after,
             ...(delta
@@ -207,7 +227,7 @@ export async function manageBiUser(command: UserCommand, actor: string) {
     }
     catch (error) {
         await client.query("ROLLBACK");
-        if (error instanceof BillingError)
+        if (error instanceof BillingError || error instanceof TeamError || error instanceof ModelConfigError)
             throw new ManagementError(error.message, error.status);
         throw error;
     }

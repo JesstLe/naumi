@@ -1,3 +1,4 @@
+import {assertAccountCanJoinEnterprise} from "../accounts/creation-policy-store";
 import {prepareIdentityEvents,identityAccountEvent} from './identity/events';
 import 'server-only';
 import {createHmac} from 'node:crypto';
@@ -52,6 +53,7 @@ export async function manageEnterpriseMember(actor:TeamActor,command:EnterpriseM
    const member={email:command.email,supervisor_email:command.supervisorEmail,role_id:command.roleId,employment:command.employment,version:0};
    validateHierarchy(s.team.owner_email,[...s.nodes,member],s.roles);
    await tx.query("INSERT INTO app_users(email,name,phone,note,plan,credits_total,credits_used,renews_at,password_hash) VALUES($1,$2,NULLIF($3,''),$4,'starter',0,0,now()+interval '1 month',$5)",[command.email,command.name,command.phone,command.note,passwordHash]);
+      await assertAccountCanJoinEnterprise(tx,command.email);
    await tx.query('INSERT INTO app_enterprise_members(enterprise_id,email,supervisor_email,role_id,employment,membership_expires_at) VALUES($1,$2,$3,$4,$5,$6)',[command.enterpriseId,command.email,command.supervisorEmail,command.roleId,command.employment,command.expiresAt]);
    user={credits_used:0,management_version:0};
   }else{

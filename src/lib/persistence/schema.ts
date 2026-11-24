@@ -1,3 +1,4 @@
+import {applyAccountCreationPolicySchema} from "../accounts/creation-policy-schema";
 import {databaseSchemaReadiness} from "@/platform/db/schema-readiness";
 import "server-only";
 import {getPool} from "@/platform/db/pool";
@@ -589,6 +590,7 @@ export async function ensureSchema(): Promise<void> {
             ON app_user_image_providers (email);
         `);
       }
+      await applyAccountCreationPolicySchema(schemaDb);
       await applyBillingSchema(schemaDb);
     }).then(()=>{markBillingSchemaReady(getPool());}).catch(error => { state.pending = null; throw error; });
   }

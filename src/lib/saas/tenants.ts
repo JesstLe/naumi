@@ -1,3 +1,4 @@
+import {assertAccountCanJoinEnterprise} from "../accounts/creation-policy-store";
 import {ensureTenantSchema} from "@/lib/saas/tenant-schema";
 export {ensureTenantSchema};
 import {withTransaction} from "@/platform/db/transaction";
@@ -155,7 +156,7 @@ export async function createTenant(actor:TeamActor,command:z.infer<typeof create
     const legacy=(await tx.query('SELECT email FROM app_account_team_members WHERE team_id=$1',[tenantId])).rows;
     if(legacy.length)throw new TeamError('既有团队包含成员，请先使用企业初始化流程确认组织关系',409);
     if(existing)await tx.query('UPDATE app_account_teams SET name=$2,authorized_until=$3,enabled=true,version=version+1,updated_at=now() WHERE id=$1',[tenantId,command.name,command.validUntil]);
-    else await tx.query('INSERT INTO app_account_teams(id,name,owner_email,authorized_until) VALUES($1,$2,$3,$4)',[tenantId,command.name,command.ownerEmail,command.validUntil]);
+    else {await assertAccountCanJoinEnterprise(tx,command.ownerEmail);await tx.query('INSERT INTO app_account_teams(id,name,owner_email,authorized_until) VALUES($1,$2,$3,$4)',[tenantId,command.name,command.ownerEmail,command.validUntil]);}
     await tx.query('INSERT INTO app_enterprise_settings(team_id) VALUES($1)',[tenantId]);
     await tx.query(`INSERT INTO app_team_access_grants(email,scope,expires_at,created_by,updated_by) VALUES($1,'owned',$2,$3,$3)
       ON CONFLICT(email) DO UPDATE SET expires_at=excluded.expires_at,enabled=true,revoked_at=NULL,starts_at=now(),version=app_team_access_grants.version+1,updated_by=excluded.updated_by,updated_at=now()`,[command.ownerEmail,command.validUntil,actor.email]);
@@ -222,6 +223,7 @@ export async function mutateTenantMember(actor:TeamActor,id:string,command:z.inf
       const roles=(await tx.query('SELECT id,name,level,manage_members,view_records,version FROM app_enterprise_roles WHERE enterprise_id=$1',[id])).rows;
       const next={email:command.email,supervisor_email:command.supervisorEmail,role_id:command.roleId,employment:command.employment,version:(old?.version??-1)+1};
       validateHierarchy(team.owner_email,[...nodes.filter(n=>n.email!==command.email),next],roles);
+      await assertAccountCanJoinEnterprise(tx,command.email);
       await tx.query(`INSERT INTO app_enterprise_members(enterprise_id,email,supervisor_email,role_id,employment,membership_expires_at)
         VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(enterprise_id,email) DO UPDATE SET supervisor_email=excluded.supervisor_email,
         role_id=excluded.role_id,employment=excluded.employment,membership_expires_at=excluded.membership_expires_at,

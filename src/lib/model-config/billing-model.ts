@@ -1,5 +1,7 @@
 import { FEATURE_BINDINGS, upstreamSupportsFeature } from "./feature-model-policy";
 import "server-only";
+import {currentCreationContext} from "../saas/creation-scope";
+import {readAccountCreationPolicy} from "../accounts/creation-policy-store";
 import { requestedFeatureModel } from "./selection-policy";
 import type { FeatureId } from "../billing/rules/registry";
 import { MODEL_BINDINGS } from "./bindings";
@@ -15,18 +17,20 @@ const billingBinding = (feature: FeatureId) => FEATURE_BINDINGS[feature];
 export async function managedBillingModel(request:Request,feature:FeatureId,selected?:string){
   return managedBillingSelection({textModel:request.headers.get("x-naumi-text-model"),canvas:request.headers.get("x-naumi-canvas")==="1"},feature,selected);
 }
-export async function managedBillingSelection(selection:{textModel?:string|null;canvas?:boolean},feature:FeatureId,selected?:string,models?:ModelSnapshot|null){
+export async function managedBillingSelection(selection:{actor?:string|null;textModel?:string|null;canvas?:boolean},feature:FeatureId,selected?:string,models?:ModelSnapshot|null){
   const binding=billingBinding(feature);
   if(!binding)return null;
+  const accountImage=binding.startsWith("image.")?(currentCreationContext()?.accountImage||(selection.actor?(await readAccountCreationPolicy(selection.actor))?.image:undefined)||undefined):undefined;
+  if(accountImage&&binding.startsWith("image.")&&models===null)throw new ModelConfigError("ACCOUNT_MODEL_UNAVAILABLE","专属生图通道尚未就绪",503);
   if(models===null)return null;
-  if(models===undefined&&!await modelConfigurationEnabled())return null;
+  if(models===undefined&&!await modelConfigurationEnabled()){if(accountImage&&binding.startsWith("image."))throw new ModelConfigError("ACCOUNT_MODEL_UNAVAILABLE","专属生图通道尚未就绪",503);return null;}
   const role=binding.startsWith("vision.")?"vision":MODEL_BINDINGS[binding].modality;
   const scope=currentModelExecution(role);
   const explicit=requestedFeatureModel(feature,selected);
   if(scope&&(!explicit||explicit===scope.frozen.publicModelId)&&(scope.frozen.binding===binding||feature==="canvas.image"&&scope.frozen.binding==="image.generate")&&(!scope.frozen.feature||scope.frozen.feature===feature))return {modelId:scope.frozen.publicModelId,providerId:scope.connection.providerId};
   const snapshot=models??await readManagedModelSnapshot();if(!snapshot)return null;
   const requested=requestedFeatureModel(feature,selected||(role==="text"?selection.textModel?.trim():undefined));
-  const selectedModel=selectFeatureModel(snapshot.config,{feature,binding,requestedModelId:requested,scopeSystem:selection.canvas?"canvas":undefined,allowUnboundCutout:true});
+  const selectedModel=selectFeatureModel(snapshot.config,{accountImage,feature,binding,requestedModelId:requested,scopeSystem:selection.canvas?"canvas":undefined,allowUnboundCutout:true});
   if(!selectedModel)return null;
   const {model,preset}=selectedModel;
   if(preset)return {modelId:model.id,providerId:snapshot.config.upstreamModels.find(u=>u.id===preset.upstreamId)!.providerId};

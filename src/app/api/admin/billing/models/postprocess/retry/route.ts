@@ -6,6 +6,7 @@ import {ensurePostprocessSchema} from "@/lib/media-postprocess-schema";
 
 import { recoverPostprocess } from "@/lib/postprocess-recovery";
 import { randomUUID } from "node:crypto";
+import {reportAccountReadable} from "@/lib/accounts/report-visibility";
 export const runtime="nodejs",dynamic="force-dynamic";
 export async function POST(request:Request) {
   const auth=await biAuthorize(request);if(auth instanceof Response)return auth;
@@ -14,7 +15,7 @@ export async function POST(request:Request) {
     const {id}=z.strictObject({id:z.string().min(1).max(200)}).parse(await request.json()),pool=getPool();
     await ensurePostprocessSchema(pool);
     const row=(await pool.query("SELECT email FROM app_media_postprocess WHERE operation_id=$1",[id])).rows[0];
-    if(!row)return biJson({error:"任务不存在"},404);
+    if(!row||!await reportAccountReadable(row.email))return biJson({error:"任务不存在"},404);
     await pool.query("INSERT INTO app_bi_access_log(id,actor,action,target_email,section) VALUES($1,$2,'postprocess-retry',$3,'billing')",[randomUUID(),auth.actor,row.email]);
     return biJson({ok:true,...await recoverPostprocess(id,row.email)});
   }catch(e){return biJson({error:e instanceof PostprocessPending?e.message:"后处理恢复失败"},e instanceof PostprocessPending?409:400);}

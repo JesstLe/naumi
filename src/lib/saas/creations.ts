@@ -8,6 +8,8 @@ import type {TeamActor} from '@/lib/teams/grants';
 import {ensureCreationSchema} from './creation-schema';
 import {creationRecoveredAsset,creationSourceAssets,creationSourceEvidence} from './creation-source-evidence';
 import {creationLiveStatusSql} from './creation-live-status';
+import {reportAccountVisibleSql} from "../accounts/creation-policy";
+import {reportAccountReadable} from "../accounts/report-visibility";
 import {publicCreationParameters} from './creation-parameters';
 import {creationRequestEvidence} from './creation-request-evidence';
 import {creationStatus,type CreationFilters,type CreationPage,type CreationListPage,type CreationSummary,type CreationDetail,type CreationAsset,type CreationEvent,type CreationEventSlice,type CreationAssetSlice,type CreationChildSlice} from './creation-contracts';
@@ -52,7 +54,7 @@ function creationTitle(kind:string,title?:string|null,message?:string|null){retu
 function summary(row:Record<string,any>):CreationSummary{return {id:row.legacy_table?legacyCreationId({table:row.legacy_table,id:row.source_id,email:row.actor_email}):row.id,title:creationTitle(row.source_kind,row.request_snapshot?.title,row.request_snapshot?.text),actorEmail:row.actor_email,actorName:row.actor_name,tenantId:row.tenant_id,scopeKind:row.scope_kind,sourceKind:row.source_kind,status:creationStatus(row.live_status||row.status),acceptedAt:new Date(row.accepted_at).toISOString(),settledCredits:row.charged===null||row.charged===undefined?null:Number(row.charged),thumbnailAssetId:row.thumbnail_asset_id||null,completeness:row.request_snapshot?.state==='recorded'?'recorded':'not_recorded'};}
 export function sourceLabel(kind:string){return ({'image:imagegen':'图像创作','image:generate':'图片生成','image:suite':'商品套图','image:aplus':'A+ 详情','video':'视频创作','canvas-image':'图片编辑','agent-turn':'智能创作','agent':'智能创作'} as Record<string,string>)[kind]||kind.replace(/^\/api\//,'')||'创作记录';}
 function where(reader:CreationReader,f:CreationFilters,visible:string[]|null){
- const values:unknown[]=[];const conditions=['c.parent_id IS NULL'];const add=(sql:string,v:unknown)=>{values.push(v);conditions.push(sql.replace('?',`$${values.length}`));};
+ const values:unknown[]=[];const conditions=['c.parent_id IS NULL',reportAccountVisibleSql('c.actor_email')];const add=(sql:string,v:unknown)=>{values.push(v);conditions.push(sql.replace('?',`$${values.length}`));};
  const tenant=reader.platform?reader.boundTenantId||f.tenantId:reader.tenantId;if(tenant)add('c.tenant_id=?',tenant);
  if(!reader.platform&&visible)add('c.actor_email=ANY(?::text[])',visible);
  if(f.q)add("COALESCE(c.request_snapshot->>'text','') ILIKE ?",`%${f.q.replace(/[\\%_]/g,'\\$&')}%`);
@@ -176,6 +178,7 @@ async function authorizedRecord(tx:PoolClient,reader:CreationDetailReader,id:str
  const tenant=reader.platform?reader.boundTenantId:reader.tenantId;
  const {rows:[row]}=await tx.query<RecordScope>('SELECT actor_email,tenant_id,scope_kind,source_kind,source_id FROM app_creation_records WHERE id=$1',[id]);
  const missing=()=>new TeamError('记录不存在或无权访问',404);
+ if(row&&!await reportAccountReadable(row.actor_email,tx))throw missing();
  if(!row||(!reader.platform&&visible&&!visible.includes(row.actor_email)))throw missing();
  if(tenant&&row.tenant_id!==tenant.toLowerCase()){
   if(reader.platform||row.tenant_id!==null||row.scope_kind!=='personal'||!reader.historyEmails?.includes(row.actor_email)||!await hasOwnedPersonalSource(tx,row))throw missing();

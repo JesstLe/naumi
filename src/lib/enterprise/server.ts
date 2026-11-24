@@ -1,3 +1,4 @@
+import {assertAccountCanJoinEnterprise} from "../accounts/creation-policy-store";
 import {prepareIdentityEvents,identityAccountEvent} from './identity/events';
 import {administeredSite,siteAdministrators} from './site-administrator';
 import {enterpriseSiteIdentity} from '@/lib/site-control/identity';
@@ -449,6 +450,7 @@ export async function activateEnterprise(actor:TeamActor,teamId:string,directorE
       for(const m of children){if(m.role!=='user'||!m.account_expires_at||permanent.some(x=>x.email===m.email))throw new TeamError('实习生账号或有效期校验失败',409);interns.push({email:m.email,supervisor_email:sub.owner_email})}
     }
     if(new Set(interns.map(m=>m.email)).size!==interns.length)throw new TeamError('实习生组织关系重复',409);
+    for(const email of new Set([root.owner_email,...permanent.map(m=>m.email),...interns.map(m=>m.email)]))await assertAccountCanJoinEnterprise(tx,email);
     await tx.query('INSERT INTO app_enterprise_settings(team_id) VALUES($1)',[teamId]);
     for(const r of roles)await tx.query('INSERT INTO app_enterprise_roles(enterprise_id,id,name,level,manage_members,view_records) VALUES($1,$2,$3,$4,$5,$6)',[teamId,r.id,r.name,r.level,r.manage_members,r.view_records]);
     for(const m of permanent){

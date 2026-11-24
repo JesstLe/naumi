@@ -1,4 +1,5 @@
 import "server-only";
+import {reportAccountVisibleSql} from "../accounts/creation-policy";
 import type { PoolClient } from "pg";
 import { getPool } from "@/platform/db/pool";
 import { checkReadClientSocket, withOwnedReportClient } from "@/platform/db/owned-read-client";
@@ -47,7 +48,7 @@ export async function readUserUsage(tx: ReadClient, query: UsageQuery, scope?: U
     if (has("app_account_team_members")) links.push("SELECT m.email,t.id,t.name,2 FROM app_account_team_members m JOIN app_account_teams t ON t.id=m.team_id");
   }
   const tenancy = links.length ? `SELECT DISTINCT ON(email) email,tenant_id,company FROM (${links.join(" UNION ALL ")}) x ORDER BY email,priority,tenant_id` : "SELECT NULL::text email,NULL::uuid tenant_id,''::text company WHERE false";
-  const filter = (email: string) => `(${email} IS NOT NULL AND ($3::text='' OR ${email}=$3)
+  const filter = (email: string) => `(${email} IS NOT NULL AND ${reportAccountVisibleSql(email)} AND ($3::text='' OR ${email}=$3)
     AND (($4::text='' AND $5::uuid IS NULL) OR ${email} IN (SELECT email FROM matching_accounts)
       OR ($5::uuid IS NULL AND ${email} NOT IN (SELECT email FROM account_directory)
         AND position(lower($4) in lower(${email}||'  '))>0))

@@ -1,3 +1,5 @@
+import {reportAccountReadable,ReportAccountHidden} from "../accounts/report-visibility";
+import {reportAccountVisibleSql} from "../accounts/creation-policy";
 import {ensureBiSchema} from "@/lib/bi/schema";
 export {ensureBiSchema};
 import "server-only";
@@ -57,7 +59,7 @@ const scope = scopeSql();
 // user/profile/team queries. Historical emails absent from the directory still
 // participate with their original empty name/company and unknown account type.
 const accountFilter = (email: string, authorizedEmployees = false, scopeBind = 8) => `
-  (${email} IS NOT NULL AND ($3::text='' OR ${email}=$3)
+  (${email} IS NOT NULL AND ${reportAccountVisibleSql(email)} AND ($3::text='' OR ${email}=$3)
   AND (($4::text='' AND $5::text='') OR ${email} IN (SELECT email FROM matching_accounts)
     OR (${email} NOT IN (SELECT email FROM account_directory) AND $5::text IN ('','unknown')
       AND ($4::text='' OR position(lower($4) in lower(${email}||'  '))>0)))
@@ -498,6 +500,7 @@ export async function updateBiProfile(
 
 /** Return only model/state/operation IDs, never execution cache or credentials. */
 export async function biJobTrace(id: string, email: string) {
+  if(!await reportAccountReadable(email))throw new ReportAccountHidden();
   await ensureBiSchema();
   const result = await getPool().query(
     `SELECT jsonb_object_agg(e.key,jsonb_build_object('model',e.value->>'model','state',e.value->>'state','gateway',e.value->'replayable')) AS attempts
@@ -525,6 +528,7 @@ export async function biConversation(
   page: number,
   signal?: AbortSignal,
 ) {
+  if(!await reportAccountReadable(email))throw new ReportAccountHidden();
   signal?.throwIfAborted();
   await ensureBiSchema();
   const source =

@@ -74,9 +74,9 @@ export function createSupplierLedger(pool: Pool) {
       await assertMutableStagingTask(tx || pool, "app_supplier_cost_jobs", key);
       await (tx || pool).query(`INSERT INTO app_supplier_cost_jobs(key,kind,payload,account_id) VALUES($1,$2,$3::jsonb,$4) ON CONFLICT(key) DO UPDATE SET due_at=LEAST(app_supplier_cost_jobs.due_at,now()),state=CASE WHEN app_supplier_cost_jobs.lease_until>now() THEN app_supplier_cost_jobs.state ELSE 'queued' END,updated_at=now()`, [key,kind,JSON.stringify(payload),accountId||null]);
     },
-    async list(f: CostFilter = {}, tx?:PoolClient, brief=false) {
+    async list(f: CostFilter = {}, tx?:PoolClient, brief=false,ordinaryReport=false) {
       if(!tx)await ensureSupplierSchema(pool);
-      const query=tx??pool,{where,args}=costWhere(f);
+      const query=tx??pool,{where,args}=costWhere(f,"c",ordinaryReport);
       const columns=brief?'id,operation_id,user_email,feature,phase,public_model_id,actual_model,model,account_id,provider_id,state,cost_status,amount_micros,credits_micros,currency,cny_micros,started_at,completed_at,fx->>\'basis\' AS fx_basis':'c.*';
       const total = (await query.query(`SELECT count(*)::int n FROM app_supplier_calls c ${where}`, args)).rows[0].n;
       const offset=(Math.max(1,f.page||1)-1)*50;
