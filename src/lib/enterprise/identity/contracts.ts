@@ -1,14 +1,14 @@
 import {z} from 'zod';
-export const DESIGN_GROUPS=['ecommerce-senior','ecommerce-production','packaging','ui'] as const;
+export const DESIGN_GROUPS=['ecommerce-senior','ecommerce-production','packaging','ui','rendering'] as const;
 export const GROUPS=[...DESIGN_GROUPS,'operations','management'] as const;
 export const TITLES=['system_admin','administrator','design_director','design_supervisor','designer','operations'] as const;
 export const PRODUCT_ROLES=['operations','operations_lead','designer','reviewer','design_admin','director','owner','admin'] as const;
-export const groupLabels:Record<typeof GROUPS[number],string>={'ecommerce-senior':'电商设计-资深','ecommerce-production':'电商设计-美工',packaging:'包装设计',ui:'UI设计',operations:'运营',management:'管理层'};
+export const groupLabels:Record<typeof GROUPS[number],string>={'ecommerce-senior':'电商设计组','ecommerce-production':'美工组',packaging:'包装设计',ui:'UI设计',rendering:'渲染组',operations:'运营',management:'管理层'};
 export const titleLabels:Record<typeof TITLES[number],string>={system_admin:'最高系统管理员',administrator:'管理员',design_director:'设计总监',design_supervisor:'设计主管',designer:'设计师',operations:'运营'};
 const unique=<T,>(values:T[])=>new Set(values).size===values.length;
 export const organizationSchema=z.object({title:z.enum(TITLES),homeGroup:z.enum(GROUPS),
-  managedGroups:z.array(z.enum(DESIGN_GROUPS)).max(4).refine(unique),
-  reviewGroups:z.array(z.enum(DESIGN_GROUPS)).max(4).refine(unique),
+  managedGroups:z.array(z.enum(DESIGN_GROUPS)).max(DESIGN_GROUPS.length).refine(unique),
+  reviewGroups:z.array(z.enum(DESIGN_GROUPS)).max(DESIGN_GROUPS.length).refine(unique),
   canTakeDesignTasks:z.boolean(),grade:z.number().int().min(1).max(10),
   skills:z.array(z.string().trim().min(1).max(50)).max(30).refine(unique),
   dailyCapacity:z.number().min(.25).max(12),

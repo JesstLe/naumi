@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {createHash,randomBytes,randomUUID} from 'node:crypto';
 import type {Pool} from 'pg';
+import type {Organization} from '../src/lib/enterprise/identity/contracts';
 let poolToClose:Pool|undefined;
 async function main(){
  assert.equal(process.env.NAUMI_VERIFY_ISOLATED_DB,'1');
@@ -19,10 +20,10 @@ async function main(){
  await db.setUserRole(admin,'admin');
  process.env.NAUMI_ENTERPRISE_DEPLOYMENT_MODE='dedicated';process.env.NAUMI_ENTERPRISE_SOURCE_INSTANCE_ID='identity-fixture';process.env.NAUMI_ENTERPRISE_ALLOWED_IDS=root;process.env.NAUMI_IDENTITY_AUTHORITY_ENABLED='1';
  const {mutateIdentity,identityConsumer,identityProjection,identityDirectory}=await import('../src/lib/enterprise/identity/service');
- const {organizationSchema}=await import('../src/lib/enterprise/identity/contracts');
+ const {organizationSchema,DESIGN_GROUPS}=await import('../src/lib/enterprise/identity/contracts');
  const a={email:owner,admin:false},b={email:admin,admin:false};
  const before=(await p.query('SELECT email,role,password_hash,credits_total,credits_used FROM app_users ORDER BY email')).rows;
- const org=(title:'system_admin'|'administrator'|'design_supervisor'|'designer'|'operations',homeGroup:'management'|'ui'|'operations'='management')=>({title,homeGroup,managedGroups:[] as ('ui'|'packaging'|'ecommerce-senior'|'ecommerce-production')[],reviewGroups:[] as ('ui'|'packaging'|'ecommerce-senior'|'ecommerce-production')[],canTakeDesignTasks:false,grade:2,skills:['UI设计'],dailyCapacity:6});
+ const org=(title:'system_admin'|'administrator'|'design_supervisor'|'designer'|'operations',homeGroup:Organization['homeGroup']='management')=>({title,homeGroup,managedGroups:[] as Organization['managedGroups'],reviewGroups:[] as Organization['reviewGroups'],canTakeDesignTasks:false,grade:2,skills:['UI设计'],dailyCapacity:6});
  const command=(email:string,organization:ReturnType<typeof org>,expectedVersion=0)=>({id:randomUUID(),enterpriseId:root,email,expectedVersion,reason:'隔离身份管理验收',action:'organization' as const,organization});
  let checks=0;function pass(name:string){checks++;console.log('PASS '+name);}
  const rootResult=await mutateIdentity(a,command(owner,org('system_admin')));assert(rootResult.subjectId);pass('stable_subject_without_rekeying_native_account');
@@ -89,6 +90,20 @@ async function main(){
  const historical=await mutateIdentity(b,designCommand);assert.equal(historical.replayed,true);assert.equal(historical.currentStateMatchesReceipt,false);assert(historical.currentVersion>historical.version);
  await assert.rejects(mutateIdentity(a,{...designCommand,id:randomUUID(),enterpriseId:randomUUID()}),e=>!!e&&typeof e==='object'&&'status'in e&&e.status===404);
  pass('historical_receipt_is_not_current_state_and_deployment_scope_is_404');
+ // Local isolated fixture only: catalog compatibility never grants a real person a skill.
+ const nextVersion=Number((await p.query('SELECT version FROM app_identity_organizations WHERE subject_id=$1',[saved.subjectId])).rows[0].version);
+ const renderDesigner={...org('designer','rendering'),skills:[]};
+ await mutateIdentity(a,command(designer,renderDesigner,nextVersion));
+ snapshot=await identityProjection(consumer);const projected=snapshot.members.find(m=>m.subjectId===saved.subjectId)!;
+ assert.equal(snapshot.schemaVersion,1);assert.equal(projected.organization.homeGroup,'rendering');assert.deepEqual(projected.organization.skills,[]);assert.deepEqual(projected.roles,['designer']);
+ assert.equal(projected.subjectId,saved.subjectId);assert.equal(projected.email,designer);
+ pass('rendering_projection_v1_preserves_subject_grant_and_empty_skills_in_isolated_fixture');
+ const leadVersion=Number((await p.query('SELECT version FROM app_identity_organizations o JOIN app_identity_subjects i USING(subject_id) WHERE i.account_email=$1',[lead])).rows[0].version);
+ const renderManager={...org('design_supervisor','rendering'),managedGroups:[...DESIGN_GROUPS],reviewGroups:[],skills:[]};
+ await mutateIdentity(a,command(lead,renderManager,leadVersion));
+ await assert.rejects(mutateIdentity({email:lead,admin:false},command(designer,renderDesigner,nextVersion+1)),e=>!!e&&typeof e==='object'&&'status'in e&&e.status===403);
+ await assert.rejects(mutateIdentity(a,{...grant,id:randomUUID(),email:lead,expectedVersion:2,roles:['reviewer']}));
+ pass('five_managed_groups_do_not_grant_identity_admin_or_reviewer');
  const after=(await p.query('SELECT email,role,password_hash,credits_total,credits_used FROM app_users ORDER BY email')).rows;assert.deepEqual(after,before);
  pass('native_roles_passwords_wallet_and_original_primary_keys_unchanged');
  console.log(`CENTRAL_IDENTITY_PASS checks=${checks} live_writes=0 provider_calls=0`);

@@ -11,11 +11,10 @@ import { centralAccountCommand } from "../src/lib/enterprise/identity/accounts";
 import { getPool } from "../src/platform/db/pool";
 import {
   organizationSchema,
-  DESIGN_GROUPS,
   type Organization,
   PRODUCT_ROLES,
 } from "../src/lib/enterprise/identity/contracts";
-import { existingRosterIdentityMatches } from "./lib/central-roster-identity";
+import { APPROVED_ROSTER_DESIGN_GROUPS, existingRosterIdentityMatches } from "./lib/central-roster-identity";
 import { loginIdentifierToEmail } from "../src/lib/account-identity";
 const planSchema = z.object({
   enterpriseId: z.string().uuid(),
@@ -143,12 +142,12 @@ async function main() {
     const organization: Organization = organizationSchema.parse({
       title: m.title,
       homeGroup: m.homeGroup,
-      managedGroups: manager ? [...DESIGN_GROUPS] : [],
+      managedGroups: manager ? [...APPROVED_ROSTER_DESIGN_GROUPS] : [],
       reviewGroups:
         current?.organization?.reviewGroups ??
         (manager &&
         e?.roles.includes("reviewer") &&
-        DESIGN_GROUPS.includes(m.homeGroup as (typeof DESIGN_GROUPS)[number])
+        APPROVED_ROSTER_DESIGN_GROUPS.includes(m.homeGroup as (typeof APPROVED_ROSTER_DESIGN_GROUPS)[number])
           ? [m.homeGroup]
           : []),
       canTakeDesignTasks:
