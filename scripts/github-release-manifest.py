@@ -79,30 +79,33 @@ def validate(record, expected=None, flavors=None):
 
 
 def archive_image_ids(path, row):
-    """Bind classic config IDs and containerd manifest IDs without extracting files."""
+    """Bind the exact saved tag's config, platform manifest and nested OCI index."""
     with tarfile.open(path, 'r:gz') as archive:
-        manifests = json.load(archive.extractfile('manifest.json'))
-        matching = [entry for entry in manifests if row['tag'] in (entry.get('RepoTags') or [])]
-        require(len(matching) == 1, 'Offline archive must contain exactly the selected image tag')
-        config_path = matching[0]['Config']
-        require(re.fullmatch(r'(?:blobs/sha256/[0-9a-f]{64}|[0-9a-f]{64}\.json)', config_path), 'Unexpected image configuration path')
-        config_bytes = archive.extractfile(config_path).read()
-        config_id = 'sha256:' + hashlib.sha256(config_bytes).hexdigest()
-        require(config_path.replace('blobs/sha256/', '').replace('.json', '') == config_id[7:], 'Image configuration content digest mismatch')
-        identities = {config_id}
-        try:
-            index = json.load(archive.extractfile('index.json'))
-        except KeyError:
-            index = {'manifests': []}
-        for descriptor in index.get('manifests', []):
-            identity = descriptor.get('digest', '')
-            require(re.fullmatch('sha256:[0-9a-f]{64}', identity), 'Invalid archive manifest digest')
-            body = archive.extractfile('blobs/sha256/' + identity[7:]).read()
-            require('sha256:' + hashlib.sha256(body).hexdigest() == identity, 'Archive manifest content digest mismatch')
-            manifest = json.loads(body)
-            if manifest.get('config', {}).get('digest') == config_id:
-                identities.add(identity)
-        require(row['imageId'] in identities, 'Source image ID does not bind to verified archive config/manifest')
+        matches=[x for x in json.load(archive.extractfile('manifest.json')) if row['tag'] in (x.get('RepoTags') or [])]
+        require(len(matches)==1,'Selected archive tag must be unique')
+        selected=matches[0];config_path=selected['Config'];config_bytes=archive.extractfile(config_path).read()
+        config_id='sha256:'+hashlib.sha256(config_bytes).hexdigest()
+        require(config_path in ['blobs/sha256/'+config_id[7:],config_id[7:]+'.json'],'Config content digest mismatch')
+        config=json.loads(config_bytes);require(config.get('os')=='linux' and config.get('architecture')=='amd64','Wrong platform config')
+        identities={config_id}
+        def visit(desc,depth=0):
+            require(depth<4 and re.fullmatch('sha256:[a-f0-9]{64}',desc.get('digest','')),'Invalid OCI graph')
+            digest=desc['digest'];raw=archive.extractfile('blobs/sha256/'+digest[7:]).read()
+            require('sha256:'+hashlib.sha256(raw).hexdigest()==digest and len(raw)==desc['size'],'OCI descriptor bytes mismatch')
+            node=json.loads(raw)
+            if node.get('config',{}).get('digest')==config_id:
+                require(desc.get('platform') in [None,{'architecture':'amd64','os':'linux'}],'Wrong platform descriptor')
+                require([x['digest'][7:] for x in node['layers']]==[x.split('/')[-1] for x in selected['Layers']],'Selected layer graph mismatch')
+                identities.add(digest);return True
+            if 'manifests' in node:
+                platforms=[x for x in node['manifests'] if x.get('platform')=={'architecture':'amd64','os':'linux'}]
+                require(len(platforms)==1,'Ambiguous Linux amd64 manifest')
+                if visit(platforms[0],depth+1):identities.add(digest);return True
+            return False
+        try:index=json.load(archive.extractfile('index.json'))
+        except KeyError:index={'manifests':[]}
+        for descriptor in index.get('manifests',[]):visit(descriptor)
+        require(row['imageId'] in identities,'Source image ID does not bind to verified archive graph')
         return identities
 
 

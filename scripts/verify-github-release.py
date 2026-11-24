@@ -105,11 +105,11 @@ class ReleaseChecks(unittest.TestCase):
             candidate=record(); row=candidate['images']['ui']
             config=b'{"architecture":"amd64","os":"linux","config":{}}'
             config_id='sha256:'+hashlib.sha256(config).hexdigest();row['imageId']=config_id
-            manifest=json.dumps({'config':{'digest':config_id}}).encode()
+            manifest=json.dumps({'config':{'digest':config_id},'layers':[]}).encode()
             manifest_id='sha256:'+hashlib.sha256(manifest).hexdigest()
             archive_path=pathlib.Path(root)/'package.tar.gz'
-            entries={'manifest.json':json.dumps([{'Config':'blobs/sha256/'+config_id[7:],'RepoTags':[row['tag']]}]).encode(),
-                     'index.json':json.dumps({'manifests':[{'digest':manifest_id}]}).encode(),
+            entries={'manifest.json':json.dumps([{'Config':'blobs/sha256/'+config_id[7:],'RepoTags':[row['tag']],'Layers':[]}]).encode(),
+                     'index.json':json.dumps({'manifests':[{'digest':manifest_id,'size':len(manifest)}]}).encode(),
                      'blobs/sha256/'+config_id[7:]:config,'blobs/sha256/'+manifest_id[7:]:manifest}
             with tarfile.open(archive_path,'w:gz')as archive:
                 for name,body in entries.items():
@@ -117,6 +117,59 @@ class ReleaseChecks(unittest.TestCase):
             self.assertEqual(release.archive_image_ids(archive_path,row),{config_id,manifest_id})
             row['imageId']='sha256:'+'f'*64
             with self.assertRaises(ValueError):release.archive_image_ids(archive_path,row)
+
+
+    def nested_archive(self, root, *, duplicate=False, arm=False, tamper=False, wrong_layers=False):
+        row=record()['images']['ui'];entries={}
+        def blob(value):
+            raw=json.dumps(value,sort_keys=True).encode();digest='sha256:'+hashlib.sha256(raw).hexdigest()
+            entries['blobs/sha256/'+digest[7:]]=raw
+            return {'digest':digest,'size':len(raw)}
+        config=blob({'architecture':'amd64','os':'linux','config':{}})
+        layer='1'*64
+        leaf=blob({'config':config,'layers':[{'digest':'sha256:'+layer}]})
+        leaf['platform']={'architecture':'arm64' if arm else 'amd64','os':'linux'}
+        index=blob({'manifests':[leaf,leaf] if duplicate else [leaf]})
+        row['imageId']=index['digest']
+        entries['manifest.json']=json.dumps([{'Config':'blobs/sha256/'+config['digest'][7:],'RepoTags':[row['tag']],'Layers':['blobs/sha256/'+('2'*64 if wrong_layers else layer)]}]).encode()
+        entries['index.json']=json.dumps({'manifests':[index]}).encode()
+        if tamper:entries['blobs/sha256/'+leaf['digest'][7:]]+=b' '
+        path=pathlib.Path(root)/'nested.tar.gz'
+        with tarfile.open(path,'w:gz') as archive:
+            for name,raw in entries.items():
+                entry=tarfile.TarInfo(name);entry.size=len(raw);archive.addfile(entry,io.BytesIO(raw))
+        return path,row,{config['digest'],leaf['digest'],index['digest']}
+
+    def test_nested_oci_index_config_manifest_all_bind(self):
+        with tempfile.TemporaryDirectory() as root:
+            path,row,expected=self.nested_archive(root)
+            self.assertEqual(release.archive_image_ids(path,row),expected)
+            for identity in expected:
+                row['imageId']=identity
+                self.assertEqual(release.archive_image_ids(path,row),expected)
+
+    def test_nested_oci_index_tamper_rejected(self):
+        with tempfile.TemporaryDirectory() as root:
+            path,row,_=self.nested_archive(root,tamper=True)
+            with self.assertRaises(ValueError):release.archive_image_ids(path,row)
+
+    def test_nested_oci_wrong_layer_set_rejected(self):
+        with tempfile.TemporaryDirectory() as root:
+            path,row,_=self.nested_archive(root,wrong_layers=True)
+            with self.assertRaises(ValueError):release.archive_image_ids(path,row)
+
+    def test_nested_oci_ambiguous_or_wrong_platform_rejected(self):
+        for flags in [{'duplicate':True},{'arm':True}]:
+            with self.subTest(flags=flags),tempfile.TemporaryDirectory() as root:
+                path,row,_=self.nested_archive(root,**flags)
+                with self.assertRaises(ValueError):release.archive_image_ids(path,row)
+
+    def test_nested_oci_wrong_tag_and_foreign_id_rejected(self):
+        with tempfile.TemporaryDirectory() as root:
+            path,row,_=self.nested_archive(root)
+            for key,value in [('tag','foreign:image'),('imageId','sha256:'+'f'*64)]:
+                altered={**row,key:value}
+                with self.subTest(key=key),self.assertRaises(ValueError):release.archive_image_ids(path,altered)
 
     def test_pulled_digest_must_match_even_when_engine_id_format_differs(self):
         candidate=record();row=candidate['images']['ui']
