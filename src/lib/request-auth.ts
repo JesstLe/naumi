@@ -1,4 +1,5 @@
 import "server-only";
+import {reportAccountReadable} from "./accounts/report-visibility";
 import { requireAdmin, resolveUserEmail } from "@/lib/admin-auth";
 
 /** 当前请求的真实登录邮箱。写接口必须使用它，不能信任客户端提交的 email。 */
@@ -21,6 +22,6 @@ export async function authorizedTargetEmail(
   if (!actor) return null;
   const target = (requested ?? "").trim().toLowerCase();
   if (!target || target === actor) return actor;
-  if (allowAdmin && (await requireAdmin(request))) return target;
+  if (allowAdmin && (await requireAdmin(request)) && await reportAccountReadable(target)) return target;
   return null;
 }

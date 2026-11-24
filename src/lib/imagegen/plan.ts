@@ -1,3 +1,5 @@
+import {readAccountCreationPolicy} from "../accounts/creation-policy-store";
+import {accountImageModel} from "../model-config/account-image-policy";
 import {parameterModelIdentity} from "../model-config/public-identity";
 import {assertCanvasRegeneration} from "../canvas/image-version-store";
 import {resolveImageResolution,resolutionFallbackMessage,resolutionFacts,upstreamAcceptsResolution} from "../model-config/resolution-fallback";
@@ -66,11 +68,12 @@ export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{m
  const services=getModelExecutionServices();
  const [models,billing]=await Promise.all([versions?services.models.byVersion(versions.modelVersion):services.models.current(),versions?services.billing.byVersion(versions.billingVersion):services.billing.current()]);
  const feature=request.entry==="canvas"?"canvas.image":"image.generate";
- let id=request.modelId||featureDefaultModel(models.config,feature,"image.generate");
+ const accountImage=(await readAccountCreationPolicy(owner))?.image||undefined;
+ let id=accountImageModel(models.config,accountImage,request.modelId)||featureDefaultModel(models.config,feature,"image.generate");
  id=routeImageModel(id||"",request.parameters.ratio||"1:1",models.config.publicModels.filter(m=>m.enabled&&m.modality==="image"));
  if(!id)throw new ImagegenPlanError("没有可用的生图模型，请管理员配置", "IMAGEGEN_NO_MODEL", 409);
- if(!models.config.publicModels.some(m=>m.id===id&&m.enabled&&m.visible&&m.modality==="image"))throw new ImagegenPlanError("所选模型未开放，请刷新模型列表", "IMAGEGEN_MODEL_UNAVAILABLE", 409);
- id=selectFeatureModel(models.config,{feature,binding:request.inputs.length?"image.edit":"image.generate",requestedModelId:id,requireVisible:true})!.model.id;
+ if(!models.config.publicModels.some(m=>m.id===id&&m.enabled&&(m.visible||accountImage?.modelId===m.id)&&m.modality==="image"))throw new ImagegenPlanError("所选模型未开放，请刷新模型列表", "IMAGEGEN_MODEL_UNAVAILABLE", 409);
+ id=selectFeatureModel(models.config,{accountImage,feature,binding:request.inputs.length?"image.edit":"image.generate",requestedModelId:id,requireVisible:true})!.model.id;
  const requestedQuality=request.parameters.quality||"medium";
  const qualityChoice=selectImageQuality(models.config,feature,id,requestedQuality);
  if(qualityChoice.reason){request.parameters.quality=qualityChoice.quality;intent.requirements=intent.requirements.map(r=>r.name==="quality"?{...r,value:qualityChoice.quality}:r);}
@@ -101,7 +104,7 @@ export async function planImagegen(raw:ImagegenRequest,owner:string,versions?:{m
   const stageInputFacts=facts(requirements);
   const binding=stageInputFacts.needsEdit?"image.edit":"image.generate";
   const requestedModelId=modelId;
-  const preparedImage=prepareImageOperation({path:"/api/generate-image",binding,feature:featureId,featureModel:requestedModelId,references:stageInputFacts.references,allowResolutionFallback:!request.parameters.width&&!request.parameters.height&&!versions,
+  const preparedImage=prepareImageOperation({accountImage,path:"/api/generate-image",binding,feature:featureId,featureModel:requestedModelId,references:stageInputFacts.references,allowResolutionFallback:!request.parameters.width&&!request.parameters.height&&!versions,
    body:{model:requestedModelId,prompt:request.prompt,origin:featureId==="canvas.image"?"canvas":"",quality:request.parameters.quality||"medium",resolution:request.parameters.resolution||"1K",ratio:request.parameters.ratio||"1:1",needsMask:stageInputFacts.needsMask,...(request.parameters.width?{targetWidth:request.parameters.width,targetHeight:request.parameters.height}:{})},
    advanced:{intent:requirements},resolvedFrame:{ratio:request.parameters.ratio,preserveModelIdentity:true}},models,billing);
   preparedImage.facts.quantity=request.variants;

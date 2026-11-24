@@ -1,3 +1,4 @@
+import {reportAccountVisibleSql} from "../accounts/creation-policy";
 import "server-only";
 import type {PoolClient} from "pg";
 import {getPool} from "@/platform/db/pool";
@@ -69,10 +70,10 @@ export async function listAllArtworks(
 /** Count and fields belong to the caller's snapshot; deep pages sort only keys. */
 export async function listAllArtworksTx(tx: PoolClient, limit: number, offset: number) {
   const lim=Math.min(Math.max(Math.trunc(limit)||24,1),100),off=Math.max(Math.trunc(offset)||0,0);
-  const {rows:[count]}=await tx.query<{n:number}>('SELECT count(*)::int AS n FROM app_artworks');
+  const {rows:[count]}=await tx.query<{n:number}>(`SELECT count(*)::int AS n FROM app_artworks WHERE ${reportAccountVisibleSql("app_artworks.email")}`);
   if(off>=count.n)return {artworks:[],total:count.n};
   const {rows}=await tx.query(`WITH page_keys AS MATERIALIZED (
-    SELECT id,created_at FROM app_artworks ORDER BY created_at DESC,id DESC LIMIT $1 OFFSET $2
+    SELECT id,created_at FROM app_artworks WHERE ${reportAccountVisibleSql("app_artworks.email")} ORDER BY created_at DESC,id DESC LIMIT $1 OFFSET $2
   )
   SELECT item.* FROM page_keys
   CROSS JOIN LATERAL (
@@ -86,7 +87,7 @@ export async function listAllArtworksTx(tx: PoolClient, limit: number, offset: n
 export async function getArtworkById(id: string): Promise<AdminArtwork | null> {
   await ensureSchema();
   const { rows } = await getPool().query(
-    `SELECT ${ADMIN_ARTWORK_COLS} FROM app_artworks WHERE id = $1`,
+    `SELECT ${ADMIN_ARTWORK_COLS} FROM app_artworks WHERE id = $1 AND ${reportAccountVisibleSql("app_artworks.email")}`,
     [id]
   );
   return rows[0] ? rowToAdminArtwork(rows[0]) : null;
@@ -97,12 +98,12 @@ export async function deleteArtwork(id: string): Promise<boolean> {
   await ensureSchema();
   // Get the image_url before deleting (need it for R2 cleanup).
   const got = await getPool().query(
-    `SELECT image_url FROM app_artworks WHERE id = $1`,
+    `SELECT image_url FROM app_artworks WHERE id = $1 AND ${reportAccountVisibleSql("app_artworks.email")}`,
     [id]
   );
   const imageUrl = (got.rows[0]?.image_url as string | undefined) || "";
 
-  const r = await getPool().query(`DELETE FROM app_artworks WHERE id = $1`, [
+  const r = await getPool().query(`DELETE FROM app_artworks WHERE id = $1 AND ${reportAccountVisibleSql("app_artworks.email")}`, [
     id,
   ]);
   if ((r.rowCount ?? 0) === 0) return false;

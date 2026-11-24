@@ -1,3 +1,4 @@
+import {reportAccountReadable} from "../accounts/report-visibility";
 import 'server-only';
 import type {PoolClient} from 'pg';
 import {getPool} from '@/platform/db/pool';
@@ -30,6 +31,7 @@ export async function resolveArtworkPreview(id:string,slot:ArtworkPreviewSlot,in
      FROM app_artworks a ${ARTWORK_INPUT_JOINS} WHERE a.id=$1`,[id]);
   if(!row)throw new ArtworkPreviewNotAvailable('作品不存在',404);
   const email=String(row.email);
+  if(!await reportAccountReadable(email,tx))throw new ArtworkPreviewNotAvailable("作品不存在",404);
   if(slot==='result')return {email,url:String(row.image_url)};
   const input=artworkInputs(row).inputs[index];
   if(!input)throw new ArtworkPreviewNotAvailable('原图记录不存在',404);

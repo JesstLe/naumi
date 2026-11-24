@@ -1,3 +1,5 @@
+import {accountImageModel} from "./account-image-policy";
+import type {AccountImageGrant} from "../accounts/creation-policy";
 import {canonicalPublicModelId} from "./public-identity";
 import {resolveImageResolution,resolutionFacts} from "./resolution-fallback";
 import {selectImageQuality} from "./image-quality-selection";
@@ -17,14 +19,14 @@ import type {Intent} from "../imagegen/types";
 import type {PreparedImageOperation} from "./prepared-image-contract";
 export type {PreparedImageOperation} from "./prepared-image-contract";
 
-export type ImagePreparationInput={path:string;body:Record<string,any>;references:number;featureModel?:string|null;quality?:string|null;quote?:BillingQuote;feature?:string;binding:ModelBinding;accepted?:boolean;allowResolutionFallback?:boolean;resolvedFrame?:{ratio?:string;preserveModelIdentity?:boolean};advanced?:{intent:Intent;requestedParameters?:ImageParameters;eligibleUpstreamIds?:string[]}};
+export type ImagePreparationInput={accountImage?:AccountImageGrant;path:string;body:Record<string,any>;references:number;featureModel?:string|null;quality?:string|null;quote?:BillingQuote;feature?:string;binding:ModelBinding;accepted?:boolean;allowResolutionFallback?:boolean;resolvedFrame?:{ratio?:string;preserveModelIdentity?:boolean};advanced?:{intent:Intent;requestedParameters?:ImageParameters;eligibleUpstreamIds?:string[]}};
 function imageRatio(width:number,height:number){const gcd=(a:number,b:number):number=>b?gcd(b,a%b):a;const g=gcd(Math.round(width),Math.round(height));return `${Math.round(width)/g}:${Math.round(height)/g}`;}
 
 /** The authoritative parameter preparation used at preview or by legacy unprepared requests. */
 export function prepareImageOperation(input:ImagePreparationInput,snapshot:ModelSnapshot,billing:ConfigSnapshot):PreparedImageOperation{
     const parsed={body:input.body,references:input.references},mainFeature=input.feature,purpose={image:input.binding},quotedImage=input.quote,accepted=input.accepted;
     const selected = String(parsed.body.model || parsed.body.modelId || "").trim();
-    const explicit = input.featureModel || selected || "";
+    const explicit = accountImageModel(snapshot.config,input.accountImage,input.featureModel||selected||undefined)||"";
     const explicitModelId = requestedFeatureModel(mainFeature, explicit.startsWith("byok:") ? undefined : explicit || undefined);
     const featureDefault = featureDefaultModel(snapshot.config,mainFeature,purpose.image);
     const configuredModelId = canonicalPublicModelId(snapshot.config.publicModels, quotedImage?.facts.modelId || explicitModelId || featureDefault || snapshot.config.bindings[purpose.image]);
@@ -47,7 +49,7 @@ export function prepareImageOperation(input:ImagePreparationInput,snapshot:Model
       (!input.featureModel || canonicalPublicModelId(snapshot.config.publicModels,input.featureModel) === configuredModelId) &&
       configuredModelId === canonicalPublicModelId(snapshot.config.publicModels,featureDefault);
     const requestedModelId = requestedFeatureModel(mainFeature, quotedDefault ? undefined : (quotedImage || explicitModelId || routedModelId !== configuredModelId) ? routedModelId : undefined);
-    const selection=selectFeatureModel(snapshot.config,{feature:mainFeature,binding:purpose.image!,requestedModelId,scopeSystem:parsed.body.origin==="canvas"?"canvas":undefined})!;
+    const selection=selectFeatureModel(snapshot.config,{accountImage:input.accountImage,feature:mainFeature,binding:purpose.image!,requestedModelId,scopeSystem:parsed.body.origin==="canvas"?"canvas":undefined})!;
     const {preset,option,model}=selection;
     if (option?.parameters?.inputTypes && ((parsed.references > 0 && !option.parameters.inputTypes.includes("image")) || (parsed.body.needsMask && !option.parameters.inputTypes.includes("mask")))) throw new ModelConfigError("MODEL_INCOMPATIBLE", "本功能模型未开放该输入类型", 400);
 

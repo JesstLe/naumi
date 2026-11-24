@@ -1,3 +1,4 @@
+import {reportAccountVisibleSql} from "./creation-policy";
 import "server-only";
 import {getPool} from "@/platform/db/pool";
 import {ensureSchema} from "@/lib/persistence/schema";
@@ -30,7 +31,7 @@ export async function listAllUsers(emails?: readonly string[]): Promise<AdminUse
          FROM app_artworks WHERE ($1::text[] IS NULL OR email=ANY($1)) GROUP BY email) a ON a.email=u.email
        LEFT JOIN (SELECT email,-sum(delta) AS consumed7d FROM app_ledger
          WHERE ($1::text[] IS NULL OR email=ANY($1)) AND kind='consume' AND delta<0 AND reason<>'管理员调整积分' AND created_at>now()-interval '7 days' GROUP BY email) l ON l.email=u.email
-      WHERE ($1::text[] IS NULL OR u.email=ANY($1))
+      WHERE ${reportAccountVisibleSql("u.email")} AND ($1::text[] IS NULL OR u.email=ANY($1))
       ORDER BY artworks7d DESC, u.joined_at ASC`,
     [emails ?? null]
   );
@@ -60,10 +61,10 @@ export async function adminStats(): Promise<{
     `SELECT count(*)::int AS users,
             COALESCE(sum(credits_total - credits_used),0)::int AS remaining,
             COALESCE(sum(credits_used),0)::int AS used
-       FROM app_users`
+       FROM app_users WHERE ${reportAccountVisibleSql("app_users.email")}`
   );
   const b = await getPool().query(
-    `SELECT count(*)::int AS artworks FROM app_artworks`
+    `SELECT count(*)::int AS artworks FROM app_artworks WHERE ${reportAccountVisibleSql("app_artworks.email")}`
   );
   return {
     users: a.rows[0].users,
@@ -96,7 +97,7 @@ export async function adminUsageSummary(daysRaw = 30, pagination?: {page: number
   await ensureSchema();
   const rangeDays = Math.min(365, Math.max(1, Math.trunc(Number(daysRaw) || 30)));
   const pool = getPool();
-  const usageWhere = `l.kind = 'consume' AND l.delta < 0
+  const usageWhere = `${reportAccountVisibleSql("l.email")} AND l.kind = 'consume' AND l.delta < 0
     AND l.reason <> '管理员调整积分'
     AND l.created_at >= now() - ($1::text || ' days')::interval`;
   const [users, daily] = await Promise.all([
@@ -108,6 +109,7 @@ export async function adminUsageSummary(daysRaw = 30, pagination?: {page: number
               (u.credits_total - u.credits_used)::int AS balance
          FROM app_users u
          LEFT JOIN app_ledger l ON l.email = u.email AND ${usageWhere}
+        WHERE ${reportAccountVisibleSql("u.email")}
         GROUP BY u.email, u.name, u.role, u.credits_total, u.credits_used)
         SELECT count(*)::int AS total,COALESCE(sum(credits),0)::float8 AS credits,
           COALESCE(sum(operations),0)::float8 AS operations,count(*) FILTER(WHERE operations>0)::int AS active_users,

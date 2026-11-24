@@ -1,3 +1,4 @@
+import {assertAccountCanJoinEnterprise} from "../../accounts/creation-policy-store";
 import "server-only";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -209,6 +210,7 @@ export async function centralAccountCommand(
         "INSERT INTO app_users(email,name,plan,credits_total,credits_used,renews_at,banned,password_hash) VALUES($1,$2,'starter',0,0,now()+interval '1 month',true,NULL)",
         [email, c.name],
       );
+      await assertAccountCanJoinEnterprise(tx,email);
       await tx.query(
         "INSERT INTO app_enterprise_members(enterprise_id,email,supervisor_email,employment) VALUES($1,$2,$3,'permanent')",
         [c.enterpriseId, email, s.team.owner_email],

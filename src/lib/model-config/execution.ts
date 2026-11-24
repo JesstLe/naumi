@@ -4,6 +4,7 @@ import {compileImageParameterPlan,imagePlanSelection,configuredImageCapabilities
 import {resolveImageResolution, resolutionFacts, upstreamAcceptsResolution} from "./resolution-fallback";
 import { applicationAPIMartImages } from "./apimart-image-policy";
 import "server-only";
+import {currentCreationContext} from "../saas/creation-scope";
 import { frontendModelSelection } from "./frontend-selection";
 import {missingImagegenCapabilities,publishedImagegenCapabilities} from "../imagegen/capabilities";
 import { requestedFeatureModel } from "./selection-policy";
@@ -128,7 +129,7 @@ export function createModelExecutor(deps: Dependencies) {
       // Prepared images are server-owned. An already prepared configured default
       // must not become a new user selection (internal cutout models stay hidden).
       const preparedDefault=prepared&&prepared.modelId===featureDefaultModel(config,input.feature,input.binding as ModelBinding);
-      const selection=selectFeatureModel(config,{feature:input.feature,binding:input.binding,requestedModelId:preparedDefault?undefined:input.requestedModelId,scopeSystem:input.scopeSystem})!;
+      const selection=selectFeatureModel(config,{accountImage:currentCreationContext()?.accountImage,feature:input.feature,binding:input.binding,requestedModelId:preparedDefault?undefined:input.requestedModelId,scopeSystem:input.scopeSystem})!;
       const {model,option}=selection;
       if(prepared&&model.id!==prepared.modelId)throw new ModelConfigError("EXECUTION_MISMATCH","准备模型与执行用途不一致",503);
       let imageUpstreamIds = input.imageUpstreamIds === undefined ? undefined : imageUpstreamIdsSchema.parse(input.imageUpstreamIds);

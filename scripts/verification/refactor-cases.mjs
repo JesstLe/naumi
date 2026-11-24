@@ -4,6 +4,7 @@ import path from "node:path";
 const ts=(id,group,file,expect,args=[])=>({id,group,file,args,expect,pg:true,tsx:true});
 const node=(id,group,file,expect,args=[])=>({id,group,file,args,expect,pg:false,tsx:false});
 export const refactorCases=[
+ ts('special-personal-account','account-creation-policy','scripts/verify-special-account.ts','SPECIAL_ACCOUNT=PASS'),
  {...ts('native-edit-intent','unified-image-edit','scripts/verify-imagegen-intent.ts','PASS imagegen intent'),pg:false},
  {...ts('native-edit-contract','unified-image-edit','scripts/verify-imagegen-contract.ts','PASS imagegen contract'),pg:false},
  {...ts('native-edit-capabilities','unified-image-edit','scripts/verify-imagegen-capabilities.ts','PASS imagegen capabilities'),pg:false},

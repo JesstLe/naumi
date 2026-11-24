@@ -1,3 +1,5 @@
+import {reportAccountVisibleSql} from "../accounts/creation-policy";
+import {ReportAccountHidden} from "../accounts/report-visibility";
 import "server-only";
 import { randomUUID } from "node:crypto";
 import type { createSupplierLedger } from "./repository";
@@ -10,6 +12,7 @@ import { costWhere } from "./call-filter";
 import {checkReadClientSocket,withOwnedReportClient} from "@/platform/db/owned-read-client";
 import {readSupplierChainSlice} from "./chain-read";
 import type {SupplierChainRead} from "./chain-contract";
+import {reportCostJobSource,reportCostJobVisibleSql} from './report-visibility';
 
 type CostTotals={calls:number;confirmed:number;pending:number;estimated:number;incomplete:number;cny_micros:string|null};
 type CurrencyTotals={currency:string|null;reported_micros:string|null;estimated_micros:string|null;supplier_credits_micros:string|null};
@@ -18,7 +21,7 @@ const incomplete=(alias:string)=>`(${alias}.cny_micros IS NULL OR ${alias}.cost_
 export async function costsSummary(ledger: ReturnType<typeof createSupplierLedger>, f: CostFilter, tx?:PoolClient) {
   if(!tx)await ensureSupplierSchema(ledger.pool);
   const query=tx??ledger.pool;
-  const { where, args } = costWhere(f);
+  const { where, args } = costWhere(f,"c",true);
   // Filter calls once for counts and currencies. The qualifying operations are
   // ranked by their last call across the whole chain, even outside the filter.
   // Only the latest 500 chains need a full rollup; amounts stay decimal strings.
@@ -43,7 +46,7 @@ export async function costsSummary(ledger: ReturnType<typeof createSupplierLedge
       SELECT n.operation_id,n.started_at,full_chain.* FROM newest n CROSS JOIN LATERAL (
         SELECT min(c.user_email) AS user_email,min(c.feature) AS feature,count(*)::int AS calls,
           sum(c.cny_micros)::text AS cny_micros,count(*) FILTER(WHERE ${incomplete("c")})::int AS incomplete
-        FROM app_supplier_calls c WHERE c.operation_id=n.operation_id
+        FROM app_supplier_calls c WHERE c.operation_id=n.operation_id AND ${reportAccountVisibleSql("c.user_email")}
       ) full_chain
     )
     SELECT
@@ -83,7 +86,7 @@ const accountLabels=async(tx:PoolClient)=>(await tx.query("SELECT id,label FROM 
 const accountSettings=async(tx:PoolClient)=>(await tx.query("SELECT id,provider_id,protocol,label,fx,policy,usage_enabled,last_usage_at,updated_at,credential_ref IS NOT NULL AS query_configured FROM app_supplier_accounts ORDER BY label,id")).rows;
 async function reconciliation(tx:PoolClient) {
   const anomalies=(await tx.query(`SELECT b.* FROM app_supplier_usage_buckets b JOIN (SELECT DISTINCT ON(account_id) id FROM app_supplier_usage_runs ORDER BY account_id,fetched_at DESC) r ON r.id=b.run_id WHERE b.status<>'matched' ORDER BY b.updated_at DESC LIMIT 200`)).rows;
-  const jobs=(await tx.query("SELECT key,kind,state,attempts,due_at,last_error,updated_at FROM app_supplier_cost_jobs WHERE last_error IS NOT NULL OR state='needs-attention' ORDER BY updated_at DESC LIMIT 100")).rows;
+  const jobs=(await tx.query(`SELECT j.key,j.kind,j.state,j.attempts,j.due_at,j.last_error,j.updated_at FROM ${reportCostJobSource} WHERE (j.last_error IS NOT NULL OR j.state='needs-attention') AND ${reportCostJobVisibleSql} ORDER BY j.updated_at DESC LIMIT 100`)).rows;
   return {anomalies,jobs};
 }
 
@@ -101,17 +104,22 @@ function withSupplierCostRead<T>(pool:Pool,signal:AbortSignal,read:(tx:PoolClien
 export async function readSupplierAdmin(ledger:ReturnType<typeof createSupplierLedger>,f:CostFilter,view:SupplierAdminView|undefined,signal:AbortSignal) {
   return withSupplierCostRead(ledger.pool,signal,async tx=>{
       switch(view){
-        case 'calls':return {...await ledger.list(f,tx,true),accounts:await accountLabels(tx)};
+        case 'calls':return {...await ledger.list(f,tx,true,true),accounts:await accountLabels(tx)};
         case 'stats':return {stats:await costsSummary(ledger,f,tx),accounts:await accountLabels(tx)};
         case 'reconcile':return {...await reconciliation(tx),accounts:await accountLabels(tx)};
         case 'accounts':return {accounts:await accountSettings(tx)};
-        default:return {...await ledger.list(f,tx),stats:await costsSummary(ledger,f,tx),accounts:await accountSettings(tx),...await reconciliation(tx)};
+        default:return {...await ledger.list(f,tx,false,true),stats:await costsSummary(ledger,f,tx),accounts:await accountSettings(tx),...await reconciliation(tx)};
       }
   });
 }
 
 export function readSupplierAdminChain(ledger:ReturnType<typeof createSupplierLedger>,operation:string,signal:AbortSignal,input?:SupplierChainRead){
-  return withSupplierCostRead(ledger.pool,signal,async tx=>input?await readSupplierChainSlice(tx,operation,input):await ledger.chain(operation,tx));
+  return withSupplierCostRead(ledger.pool,signal,async tx=>{
+    if(!input)return ledger.chain(operation,tx,true);
+    const hidden=await tx.query(`SELECT 1 FROM app_supplier_calls c WHERE c.operation_id=$1 AND NOT (${reportAccountVisibleSql('c.user_email')}) UNION ALL SELECT 1 FROM app_billing_operations o WHERE o.id=$1 AND NOT (${reportAccountVisibleSql('o.email')}) LIMIT 1`,[operation]);
+    if(hidden.rowCount)throw new ReportAccountHidden();
+    return readSupplierChainSlice(tx,operation,input);
+  });
 }
 export async function updateAccount(ledger: ReturnType<typeof createSupplierLedger>, input: { id:string; fx:FxSnapshot|null; policy:unknown; usageEnabled:boolean }, actor:string) {
   const fx=input.fx==null?null:fxSchema.parse(input.fx),policy=policySchema.parse(input.policy);

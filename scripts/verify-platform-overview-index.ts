@@ -114,6 +114,7 @@ async function main(){
   assert.equal(await ensurePlatformOverviewIndex(f.pool),definition);
   await f.pool.query('VACUUM ANALYZE app_creation_records');
   const after=[];for(const w of scopes)after.push(await explain(w));
+  console.log('PLATFORM_OVERVIEW_INDEX_AFTER='+JSON.stringify(after));
   assert.deepEqual(await Promise.all(scopes.map(w=>readOverviewActivity(f.pool,w))),expected);
   assert.ok(after[0].scans.includes('app_creation_root_accepted_time'));
   assert.ok(after[0].blocks*10<before[0].blocks);

@@ -1,4 +1,5 @@
 import "server-only";
+import {ReportAccountHidden} from "../accounts/report-visibility";
 import { NextResponse } from "next/server";
 import { requireAdmin, resolveUserEmail } from "@/lib/admin-auth";
 import { dbEnabled } from "@/platform/db/pool";
@@ -17,6 +18,7 @@ export function biJson(data: unknown, status = 200) {
   return NextResponse.json(data, { status, headers: BI_PRIVATE_HEADERS });
 }
 export function biReadFailure(error: unknown, signal: AbortSignal, fallback: string) {
+  if(error instanceof ReportAccountHidden)return biJson({error:error.message},404);
   if (signal.aborted) return biJson({ error: "查询已取消" }, 499);
   if (error instanceof ReportReadBusy) {
     const response = biJson({ error: error.message }, 503);

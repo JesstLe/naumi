@@ -6,6 +6,7 @@ import {reconcileTaskBilling} from "@/lib/application/billing-task-recovery";
 import { resultSchema } from "@/lib/billing/validation";
 import {readBillingReviewOperation,readBillingReviewOperations} from '@/lib/billing/review-read';
 import {withBillingAdminRead} from '@/lib/billing/admin-read';
+import {reportOperationVisibleSql} from '@/lib/accounts/creation-policy';
 export const runtime = "nodejs", dynamic = "force-dynamic";
 export async function GET(request: Request) { const auth = await billingAuthorize(request); if (auth instanceof Response)
     return auth; try {
@@ -24,6 +25,7 @@ const command = z.object({ id: z.uuid(), operationId: z.string().min(1).max(200)
 export async function POST(request: Request) { const auth = await billingAuthorize(request, true); if (auth instanceof Response)
     return auth; try {
     const input=command.parse(await request.json());
+    if(!(await getPool().query(`SELECT ${reportOperationVisibleSql('$1')} AS visible`,[input.operationId])).rows[0].visible)return billingJson({error:'操作不存在'},404);
     const result=await reconcileTaskBilling({...input,actor:auth.actor});
     return billingJson(result);
 }

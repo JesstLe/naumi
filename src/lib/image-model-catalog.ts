@@ -1,3 +1,6 @@
+import {readAccountCreationPolicy} from "./accounts/creation-policy-store";
+import {accountImageCatalogSnapshot} from "./model-config/account-image-catalog";
+import {ModelConfigError} from "./model-config/types";
 import { currentModelExecution } from "./model-config/context";
 import { modelConfigurationEnabled } from "./model-config/availability";
 import {publicModelCatalog} from "./model-config/public-catalog";
@@ -19,8 +22,10 @@ export function getNewApiImageSettings() {
 
 export async function getImageModelCatalog(email?: string | null, supplied?: ModelSnapshot): Promise<ImageModelDescriptor[]> {
   const scope = currentModelExecution("image");
-  if (!supplied && !scope && !await modelConfigurationEnabled()) return getLegacyImageModelCatalog(email);
-  const snapshot = supplied || await readPublishedModelSnapshot(scope?.frozen.modelVersion);
+  const grant=!scope&&email?(await readAccountCreationPolicy(email))?.image:undefined;
+  if (!supplied && !scope && !await modelConfigurationEnabled()){if(grant)throw new ModelConfigError("ACCOUNT_MODEL_UNAVAILABLE","专属生图通道尚未就绪",503);return getLegacyImageModelCatalog(email);}
+  const original = supplied || await readPublishedModelSnapshot(scope?.frozen.modelVersion);
+  const snapshot=grant?accountImageCatalogSnapshot(original,grant):original;
   const managed: ImageModelDescriptor[] = publicModelCatalog(snapshot, "image", scope?.frozen.feature === "canvas.image" ? "canvas.image" : undefined).models.map(m => {
     const model = snapshot.config.publicModels.find(p => p.id === m.id)!;
     const upstream = model.target.type === "upstream" ? snapshot.config.upstreamModels.find(u => u.id === model.target.id) : undefined;
@@ -29,6 +34,12 @@ export async function getImageModelCatalog(email?: string | null, supplied?: Mod
     // legacy execution. Its immutable scope retains the original edit flag.
     return { ...m, ...(scope&&m.id===scope.frozen.publicModelId?{supportsEdit:scope.capabilities.edit}:{}), provider: !model.supplierRouting && protocol === "new-api-flow" ? "new-api-flow" : "openai-images" };
   });
+  // A trusted frozen execution can own a hidden identity. Its runtime descriptor
+  // is not a public catalogue grant and must survive later account-policy changes.
+  if(scope&&!supplied&&!managed.some(m=>m.id===scope.frozen.publicModelId)){
+    const bound=snapshot.config.publicModels.find(m=>m.id===scope.frozen.publicModelId&&m.modality==="image");
+    if(bound)managed.push({id:bound.id,label:bound.label,supportsEdit:scope.capabilities.edit,provider:scope.connection.protocol==="new-api-flow"?"new-api-flow":"openai-images",qualities:scope.capabilities.qualities,nativeResolutions:scope.capabilities.nativeResolutions});
+  }
   // New account-owned endpoints are retired. Existing BYOK tasks restore their
   // encrypted provider snapshot; do not resurrect them in the managed catalog.
   return managed;
@@ -36,6 +47,7 @@ export async function getImageModelCatalog(email?: string | null, supplied?: Mod
 
 export async function getUserDefaultImageModel(email?: string | null) {
   if (!email) return null;
+  const grant=(await readAccountCreationPolicy(email))?.image;if(grant)return grant.modelId;
   const provider = await getUserImageProvider(email);
   if (
     !provider ||

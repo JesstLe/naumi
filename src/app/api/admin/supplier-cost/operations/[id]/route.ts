@@ -1,3 +1,4 @@
+import {ReportAccountHidden} from "@/lib/accounts/report-visibility";
 import { billingAuthorize, billingJson } from "@/lib/billing/access";
 import { createSupplierLedger } from "@/lib/supplier-cost/repository";
 import { getPool } from "@/platform/db/pool";
@@ -20,7 +21,8 @@ export async function GET(request:Request,{params}:{params:Promise<{id:string}>}
   try{
     const value=await readSupplierAdminChain(createSupplierLedger(getPool()),(await params).id,request.signal,read?.data);
     return value===null?billingJson({error:"调用不存在"},404):billingJson(value);
-  }catch{
+  }catch(error){
+    if(error instanceof ReportAccountHidden)return billingJson({error:"调用不存在"},404);
     if(request.signal.aborted)return billingJson({error:"查询已取消"},499);
     return billingJson({error:"暂时无法读取调用链，请稍后重试"},503);
   }
