@@ -14,6 +14,6 @@ export function reportOperationVisibleSql(operationColumn:string,includeChildren
   const matches=(id:string)=>`(${operationColumn}=${id} OR left(${operationColumn},length(${id})+1)=${id}||':'${includeChildren?` OR left(${id},length(${operationColumn})+1)=${operationColumn}||':'`:''})`;
   return `(NOT EXISTS(SELECT 1 FROM app_account_creation_policies report_policy JOIN app_billing_operations report_op ON report_op.email=report_policy.email
     WHERE report_policy.policy->>'reportVisibility'='private' AND ${matches('report_op.id')})
-    ${includeSupplierCalls?`AND NOT EXISTS(SELECT 1 FROM app_account_creation_policies report_policy JOIN app_supplier_calls report_call ON report_call.user_email=report_policy.email
+    ${includeSupplierCalls?`AND NOT EXISTS(SELECT 1 FROM app_supplier_calls report_call JOIN app_account_creation_policies report_policy ON report_call.user_email=report_policy.email
     WHERE report_policy.policy->>'reportVisibility'='private' AND ${matches('report_call.operation_id')})`:''})`;
 }

@@ -1,8 +1,17 @@
 import 'server-only';
+import {reportOperationVisibleSql} from '../accounts/creation-policy';
+import {ReportAccountHidden} from '../accounts/report-visibility';
 import type {Pool} from 'pg';
 import {SUPPLIER_CHAIN_PAGE_SIZE,type SupplierChainRead} from './chain-contract';
 
-export async function readSupplierChainBilling(sql:Pick<Pool,'query'>,operation:string){
+export async function readSupplierChainBilling(sql:Pick<Pool,'query'>,operation:string,ordinaryReport=false){
+  if(ordinaryReport){
+    const row=(await sql.query(`SELECT o.id,o.quote->'imagePreset'->>'factorBps' AS factor_bps,o.charged_credits,o.state,o.settlement_result,
+      ${reportOperationVisibleSql('$1',true)} AS report_visible FROM (SELECT 1) owner LEFT JOIN app_billing_operations o ON o.id=$1`,[operation])).rows[0];
+    if(!row.report_visible)throw new ReportAccountHidden();
+    if(!row.id)return undefined;
+    const {id,report_visible,...billing}=row;void id;void report_visible;return billing;
+  }
   return (await sql.query("SELECT quote->'imagePreset'->>'factorBps' AS factor_bps,charged_credits,state,settlement_result FROM app_billing_operations WHERE id=$1",[operation])).rows[0];
 }
 

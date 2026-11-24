@@ -91,13 +91,14 @@ export function createSupplierLedger(pool: Pool) {
         [...args,offset])).rows;
       return { rows, total };
     },
-    async chain(operation: string,tx?:PoolClient) {
+    async chain(operation: string,tx?:PoolClient,ordinaryReport=false) {
       if(!tx)await ensureSupplierSchema(pool);
       const sql=tx??pool;
+      const authorizedBilling=ordinaryReport?await readSupplierChainBilling(sql,operation,true):undefined;
       const rows = (await sql.query("SELECT * FROM app_supplier_calls WHERE operation_id=$1 ORDER BY started_at,id", [operation])).rows;
       const adjustments = (await sql.query("SELECT a.* FROM app_supplier_cost_adjustments a JOIN app_supplier_calls c ON c.id=a.call_id WHERE c.operation_id=$1 ORDER BY a.created_at", [operation])).rows;
       const outputs=(await sql.query("SELECT o.* FROM app_supplier_call_outputs o JOIN app_supplier_calls c ON c.id=o.call_id WHERE c.operation_id=$1 ORDER BY o.call_id,o.output_index",[operation])).rows;
-      const billing=await readSupplierChainBilling(sql,operation);
+      const billing=ordinaryReport?authorizedBilling:await readSupplierChainBilling(sql,operation);
       const feeReviews=(await sql.query("SELECT * FROM app_billing_api_cost_reviews WHERE operation_id=$1 ORDER BY created_at",[operation])).rows;
       return { rows, adjustments,outputs,billing,feeReviews };
     },

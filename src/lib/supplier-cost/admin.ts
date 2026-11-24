@@ -115,9 +115,10 @@ export async function readSupplierAdmin(ledger:ReturnType<typeof createSupplierL
 
 export function readSupplierAdminChain(ledger:ReturnType<typeof createSupplierLedger>,operation:string,signal:AbortSignal,input?:SupplierChainRead){
   return withSupplierCostRead(ledger.pool,signal,async tx=>{
+    if(!input)return ledger.chain(operation,tx,true);
     const hidden=await tx.query(`SELECT 1 FROM app_supplier_calls c WHERE c.operation_id=$1 AND NOT (${reportAccountVisibleSql('c.user_email')}) UNION ALL SELECT 1 FROM app_billing_operations o WHERE o.id=$1 AND NOT (${reportAccountVisibleSql('o.email')}) LIMIT 1`,[operation]);
     if(hidden.rowCount)throw new ReportAccountHidden();
-    return input?await readSupplierChainSlice(tx,operation,input):await ledger.chain(operation,tx);
+    return readSupplierChainSlice(tx,operation,input);
   });
 }
 export async function updateAccount(ledger: ReturnType<typeof createSupplierLedger>, input: { id:string; fx:FxSnapshot|null; policy:unknown; usageEnabled:boolean }, actor:string) {

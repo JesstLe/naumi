@@ -80,3 +80,5 @@ await manageBiUser(command, authenticatedAdmin);
 ## 收尾性能与可选存储兼容
 
 平台活动不能对所有root逐行读取actor而破坏既有时间覆盖索引。最终使用原GROUPING SETS全量聚合减去private账号的同维度聚合，private队列由账号表驱动LATERAL actor/time索引，零组消除；不增加或改写生产索引。24万历史记录压力回归保留原10倍块访问改善断言，实测最近窗口5519→22块、年度17184→253块、空窗2328→3块，全部通过。执行阶段监测在成本表尚未初始化时只使用已存在的账务归属源，不因可选supplier表缺失把正常运行监测全部变为unknown。
+
+供应商全链详情的隐藏判定合并到原账务读取，常规入口使用ordinaryReport标记，raw owner默认不变；仍为原5次SELECT/单只读事务，不新增一次连接往返。原Supplier Admin Read并发阻塞、断网释放及一致快照断言全部保留并通过。
