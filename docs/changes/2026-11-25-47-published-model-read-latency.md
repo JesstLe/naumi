@@ -65,3 +65,17 @@
 - 独立审查最终xmin版本 PASS；审查者独立重跑默认17/340和真实PG17，未发现支持发布路径的阻断。
 - 用户已明确仅对本次卡顿修复授权47发布。正在与原中央候选负责人协调；此授权不解除另一发布的UNKNOWN或旧任务排空门禁。
 - 当前仍为已测代码、待整合/固定Linux镜像/生产门禁阶段，不写作上线完成。
+
+
+## 固定制品与发布协调结果
+
+- 应用修复已普通 merge/push main：`4e01a562ef73ef8c2e9607192aabef5e6528a163`，远端读回一致。此后的本记录补充是纯文档，不改变已测应用源码。
+- 固定 Linux production Dockerfile 构建 exit0：Next编译/内置类型、100静态页、Worker2539输入、identity及standalone包检查通过。build `1795577919`。
+- 本机 Docker containerd Image ID `sha256:f9158aabb191845fdaec5e2ff2010d1d30d81c7496e4110ddadf537d3862e0a0`；linux平台manifest `sha256:7fe4853d6ea524410598ed9f7be849c2dbd126d0fa693c8cdf187ad86c2f240d`；内部config `sha256:a83d16e419426ad236c18a7e889c3797c0440a3a2af0985f7585dda8a230ca8a`。嵌套OCI身份不混用。
+- save tar 327845888字节，SHA256 `1db821eb07eb0b0327c62a8700872a033f2372461063480bf474ae268cabc41f`；未上传或导入47。
+- 实际新旧 standalone 容器顺序连接同一隔离PG与同份脱敏配置，固定1.5CPU/2GiB、各96个目录GET/8并发：旧6541 p50/p95=407.265/516.580ms，新4e01=43.931/60.834ms，目录响应完整相等。相对6541实际src运行差异仅本读取模块及公开说明。两个容器均已停止删除、隔离schema已删、fixture环境文件已删；不是生产流量、全站容量或长期压测。
+- 副本回滚恢复3个原文件、移除3个新文件；原40次完整读取行为已复测恢复。产品工作区和修改版zip保持修复，未回滚数据库/媒体/生产任务。
+- 正式runner绑定4e01 clean源码，两个选定case均PASS。runner整体exit2/PARTIAL因completeCore=false（非全仓core组），不把局部组当全仓通过；单独全仓tsc exit0。
+- 原中央owner于03:40Z回告：其候选Worker已被resume、实际参与处理，原Worker tick UNKNOWN仍未闭合，监督service为HOLD。所有生产对象和三锁保持原归属；本线程没有窗口授权，不新起第二候选。
+- 修复本地/main/固定制品完成；**47上线仍待原owner闭合UNKNOWN并证明现候选与Worker排空后衔接**，本记录不宣称线上卡顿消失。固定source/image/差异与实测已回告owner。
+- 本机D盘构建前10.35GiB、完成及本地HTTP后7.66GiB；未删除他人文件或无筛选prune。后续构建前需先处理磁盘储备，不在本次卡顿修复中扩大清理范围。
