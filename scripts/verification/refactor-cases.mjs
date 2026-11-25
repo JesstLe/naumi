@@ -4,6 +4,8 @@ import path from "node:path";
 const ts=(id,group,file,expect,args=[])=>({id,group,file,args,expect,pg:true,tsx:true});
 const node=(id,group,file,expect,args=[])=>({id,group,file,args,expect,pg:false,tsx:false});
 export const refactorCases=[
+ {...ts('published-model-read-cache','published-model-read-cache','scripts/verify-published-model-read-cache.ts','PUBLISHED_MODEL_READ_CACHE=PASS'),pg:false},
+ ts('published-model-read-cache-pg','published-model-read-cache','scripts/verify-published-model-read-cache-pg.ts','PUBLISHED_MODEL_READ_CACHE_PG=PASS'),
  ts('special-personal-account','account-creation-policy','scripts/verify-special-account.ts','SPECIAL_ACCOUNT=PASS'),
  {...ts('native-edit-intent','unified-image-edit','scripts/verify-imagegen-intent.ts','PASS imagegen intent'),pg:false},
  {...ts('native-edit-contract','unified-image-edit','scripts/verify-imagegen-contract.ts','PASS imagegen contract'),pg:false},
