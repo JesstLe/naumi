@@ -79,3 +79,20 @@
 - 原中央owner于03:40Z回告：其候选Worker已被resume、实际参与处理，原Worker tick UNKNOWN仍未闭合，监督service为HOLD。所有生产对象和三锁保持原归属；本线程没有窗口授权，不新起第二候选。
 - 修复本地/main/固定制品完成；**47上线仍待原owner闭合UNKNOWN并证明现候选与Worker排空后衔接**，本记录不宣称线上卡顿消失。固定source/image/差异与实测已回告owner。
 - 本机D盘构建前10.35GiB、完成及本地HTTP后7.66GiB；未删除他人文件或无筛选prune。后续构建前需先处理磁盘储备，不在本次卡顿修复中扩大清理范围。
+
+
+## 2026-11-25 13:16 CST 实际上线回执
+
+用户再次要求立即上线后，原中央owner明确交接串行执行权。本线程使用新session217183全程持三部署锁与lifecycle，不重放旧inbox。原6541候选按真实boot的HTTP、scanner、media和PG归属全部排空后优雅停止/restart=no；旧7ae持续服务，随后复用唯一临时槽创建本轮固定Web/Worker。
+
+- `release47-api-latency-20261125-r1` 于 **05:12:28Z / 13:12:28 CST** 平滑切流；公网实际source `4e01a562ef73ef8c2e9607192aabef5e6528a163`、build `1795577919`、Web/Worker同image `sha256:f9158aabb191845fdaec5e2ff2010d1d30d81c7496e4110ddadf537d3862e0a0`。
+- 新Web `fca8658ac672dfe6ac38d1a6c553835de20b99e3dfe1cd52d6e8d58095dc9577`；新Worker `85901337c02fd52371f5a46caa103ce885048867372b2deb0e1bf9d6bb513c60` 已完成实际tick、unresolved0、paused=false。
+- 真实认证session、projects、canvas、admin、models、config、health/db及公开说明均200，目录响应与旧版相等；匿名管理/Agent工具访问仍拒绝。
+- 303次跨切流公网GET全部200，0错；8181项静态联合资源及旧alias保留，不强刷画布。
+- 原8类账务/任务/供应商不可变身份和执行绑定核验保持；模型v158与billing摘要不变，32项供应商/存储/identity/concurrency环境保持。无收费测试提交、旧任务重放或DB恢复。
+- Desktop R2与cloud被动include逐字节保留，完整新Nginx SHA `4d09e121a39d508f847a9170c26a4eedd325cf5823b07b431fc2c88043acf777`。
+- 新备份969882082字节，SHA `350c8f093117732c0af689195f7991ac2f6545bac8f6b2e5012c16ee33182300`，完整重开/list通过。
+- 主session05:15:49.149Z退锁；真实systemd05:15:49–51及05:16:12–14 success/exit0，timer active/enabled。再次持锁postflight/CAS验证后退出，canonical **2914**，新pair五项readiness全true，规范manifest摘要重绑通过。
+- **修复已接真实公网流量，onlineAcceptance=VERIFIED；整轮phase仍SWITCHED_CLEANUP_PENDING。** 原faf00ffb已受理v1 tick的UNKNOWN和旧7ae pair保留，未将它改为not_accepted或完成，未无证据退役旧槽。监督已绑定健康新pair，旧债务在current中显式retained，并已交回原owner按新baseline维护。
+- 远端真实证据：`/opt/naumi-staging/evidence/release47-api-latency-20261125-r1/PUBLICATION_RECEIPT.json` 及 `postflight/SUPERVISOR_POSTFLIGHT.json`。本机回读在 `output/47-api-latency-20261125/publish/`。
+- 早期空间预算、空文件投递和字段输出错误均保留原失败记录。首次投递竞争只执行空文件，无业务动作；发送器改为完整临时文件原子rename后执行。新import逐descriptor/layer/config/rootfs验证通过，没有跳过身份验证。
