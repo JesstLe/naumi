@@ -1,5 +1,19 @@
 [
   {
+    "version": "1795577919",
+    "title": {
+      "zh": "创作体验优化",
+      "en": "Creation experience improvements"
+    },
+    "improvements": [
+      {
+        "zh": "优化创作页面的响应速度，减少操作等待。",
+        "en": "Improved creation page responsiveness to reduce waiting."
+      }
+    ],
+    "fixes": []
+  },
+  {
     "version": "1795151944",
     "title": {
       "zh": "画布图层与图片编辑",
