@@ -77,7 +77,11 @@ async function main(){
   {key:'good',content_type:'image/png',bytes:bytes.length,sha256:sha(bytes)}];
  const query=async(q,v)=>{queries.push({q,v});return {rows:q.includes('RETURNING a.key')?rows.map(r=>({...r,claim_until:'2026-10-27T00:00:00Z'})):[]};};
  const pool={connect:async()=>({query,release(){}}),query};
- const storageFixture={privateMedia:true,storageDriver:'s3',readPendingStoredObject:async k=>({bytes:k==='good'?bytes:Buffer.from('damaged'),size:k==='good'?bytes.length:7}),readManagedObject:async()=>{throw Error('unexpected remote read');},mirrorStoredObject:async(b,_t,k)=>{uploads.push({k,hash:sha(b)});return {remoteReady:true};}};
+ const mirrored=new Map();
+ const storageFixture={privateMedia:true,storageDriver:'s3',
+  readPendingStoredObject:async k=>({bytes:k==='good'?bytes:Buffer.from('damaged'),size:k==='good'?bytes.length:7}),
+  fetchStoredObject:async k=>mirrored.has(k)?new Response(mirrored.get(k)):new Response(null,{status:404}),
+  mirrorStoredObject:async(b,_t,k)=>{mirrored.set(k,b);uploads.push({k,hash:sha(b)});return {remoteReady:true};}};
  const media=load('src/lib/media-assets.ts',{'@/lib/release-runtime/background-activity':{withBackgroundActivity:async(_k,_id,_m,f)=>f(),bindBackgroundClaim:async()=>{}},
   '@/platform/db/pool':{dbEnabled:true,getPool:()=>pool},'@/lib/persistence/schema':{ensureSchema:async()=>{}},'@/lib/media-assets-schema':{ensureMediaSchema:async()=>{}},'@/lib/bi/context':{currentBiContext:()=>null},'./media-variants':{},
   './storage':storageFixture,'./object-storage/runtime':storageFixture,'./object-storage/managed-read':storageFixture});

@@ -186,11 +186,12 @@ class Gates(unittest.TestCase):
                                       image=image, commit='b'*40, memory_mib=2048, cpu=0.5,
                                       release_secret='s'*40, state_dir=state_name, build_version='1792674911',
                                       reviewed_video_reference_origin='https://47.105.59.142',
-                                      reviewed_remote_first_nas_delivery=True)
+                                      reviewed_remote_first_nas_delivery=True, reviewed_nas_backfill_cutoff='2030-01-01T00:00:00.123456Z')
             self.assertFalse(result['running'])
             self.assertEqual(candidate_env['VIDEO_REFERENCE_PUBLIC_BASE_URL'], 'https://47.105.59.142')
             self.assertEqual(candidate_env['EXISTING_SETTING'], 'preserved')
             self.assertEqual(candidate_env['NAUMI_NAS_DEFER_UPLOAD'], '0')
+            self.assertEqual(candidate_env['NAUMI_NAS_BACKFILL_CUTOFF_UTC'], '2030-01-01T00:00:00.123456Z')
             self.assertEqual(source, before, 'Existing slot configuration must remain untouched')
             self.assertEqual(len(calls), 1, 'Only candidate create is requested; no restart or update')
             tx.save.assert_any_call('reviewed-video-reference-origin-naumi47-new-video-origin.json',

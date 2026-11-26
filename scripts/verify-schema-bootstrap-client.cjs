@@ -14,7 +14,9 @@ async function exercise(connectionString,legacy){
  // Preserve the actual application-schema owner, pool-keyed readiness and
  // session-key migration. Only the pool/DB boundary is instrumented below.
  const readiness=owner.includes('/persistence/')?fs.readFileSync(path.join(source,'src/platform/db/schema-readiness.ts'),'utf8').replace(/^import[^\n]*\n/gm,'')+'\n'+extracted(owner,'ensureAgentSessionKeyTx'):'let schemaReady=null;';
- const code=extracted('src/lib/schema-initialization.ts','withSchemaInitialization')+'\n'+extracted('src/lib/billing/schema.ts','applyBillingSchema')+'\n'+readiness+'\n'+extracted(owner,'ensureSchema')+'\nexports.run=ensureSchema;';const js=ts.transpileModule(code,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;
+ const policyFile='src/lib/accounts/creation-policy-schema.ts';
+ const policySchema=fs.existsSync(path.join(source,policyFile))?extracted(policyFile,'applyAccountCreationPolicySchema'):'';
+ const code=extracted('src/lib/schema-initialization.ts','withSchemaInitialization')+'\n'+extracted('src/lib/billing/schema.ts','applyBillingSchema')+'\n'+readiness+'\n'+policySchema+'\n'+extracted(owner,'ensureSchema')+'\nexports.run=ensureSchema;';const js=ts.transpileModule(code,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;
  const context={exports:{},process:{env:{}},getPool:()=>facade,markBillingSchemaReady:p=>{assert.equal(p,facade);ready++;}};vm.runInNewContext(js,context);
  try{
   if(baseline){await assert.rejects(context.exports.run(),e=>/timeout|connection/i.test(e.message));assert.equal(poolQueries,1);assert.equal(ready,0);assert(trace.some(x=>x.sql==='ROLLBACK'));assert.equal(releases,1);checks+=4;}

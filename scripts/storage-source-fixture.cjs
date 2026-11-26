@@ -8,7 +8,7 @@ function loadStorageSource(file,dependencies={}){
  function load(filename){if(overrides.has(filename))return overrides.get(filename);if(cache.has(filename))return cache.get(filename).exports;
   const loaded={exports:{}};cache.set(filename,loaded);const source=fs.readFileSync(filename,'utf8'),compiled=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;
   const localRequire=spec=>{if(spec==='server-only')return {};const target=resolve(filename,spec);if(overrides.has(target))return overrides.get(target);return target.endsWith('.ts')?load(target):require(spec);};
-  vm.runInNewContext(compiled,{module:loaded,exports:loaded.exports,require:localRequire,Buffer,Response,Request,Headers,AbortSignal,URL,process,console,fetch,setTimeout,clearTimeout},{filename});return loaded.exports;
+  vm.runInNewContext(compiled,{module:loaded,exports:loaded.exports,require:localRequire,Buffer,Response,Request,Headers,AbortController,AbortSignal,URL,process,console,fetch,setTimeout,clearTimeout},{filename});return loaded.exports;
  }
  return load(entry);
 }

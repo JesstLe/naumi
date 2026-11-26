@@ -169,7 +169,7 @@ class HostTransaction:
                   before_create=None, runtime_recovery=None, reviewed_prior_state_dir=None,
                   reviewed_nas_credentials_sha256=None, reviewed_video_reference_origin=None,
                   reviewed_combined_media=None, reviewed_memory_environment=None, reviewed_deferred_nas_delivery=False,
-                  application_task_execution=None, reviewed_remote_first_nas_delivery=False):
+                  application_task_execution=None, reviewed_remote_first_nas_delivery=False, reviewed_nas_backfill_cutoff=None):
         require(re.fullmatch('[A-Za-z0-9][A-Za-z0-9_.-]{0,95}', name), 'INVALID_NEW_SLOT_NAME')
         require(type(port) is int and 1024 <= port <= 65535, 'INVALID_LOOPBACK_PORT')
         require(re.fullmatch('sha256:[a-f0-9]{64}', image) and re.fullmatch('[a-f0-9]{40}', commit), 'FIXED_IMAGE_REQUIRED')
@@ -211,6 +211,16 @@ class HostTransaction:
             require(self.target == TARGET and env.get('STORAGE_DRIVER') == 's3' and env.get('MEDIA_PRIVATE') == '1' and
                     env.get('MEDIA_REMOTE_ACCESS') == 'proxy', 'REVIEWED_PRIVATE_NAS_DELIVERY_REQUIRED')
             env['NAUMI_NAS_DEFER_UPLOAD'] = '0' if reviewed_remote_first_nas_delivery else '1'
+        if reviewed_nas_backfill_cutoff is not None:
+            require(reviewed_remote_first_nas_delivery, 'BACKFILL_CUTOFF_REQUIRES_REVIEWED_NAS')
+            if reviewed_nas_backfill_cutoff == '':
+                env.pop('NAUMI_NAS_BACKFILL_CUTOFF_UTC', None)
+            else:
+                require(isinstance(reviewed_nas_backfill_cutoff, str) and
+                        re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z', reviewed_nas_backfill_cutoff),
+                        'INVALID_NAS_BACKFILL_CUTOFF')
+                datetime.datetime.fromisoformat(reviewed_nas_backfill_cutoff.replace('Z', '+00:00'))
+                env['NAUMI_NAS_BACKFILL_CUTOFF_UTC'] = reviewed_nas_backfill_cutoff
         if reviewed_video_reference_origin is not None:
             require(self.target == TARGET and reviewed_video_reference_origin == 'https://47.105.59.142',
                     'EXACT_REVIEWED_VIDEO_REFERENCE_ORIGIN_REQUIRED')

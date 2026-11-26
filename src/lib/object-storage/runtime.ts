@@ -95,7 +95,7 @@ async function tryWriteLocalMedia(bytes: Uint8Array, contentType: string, key: s
 
 export async function mirrorStoredObject(bytes:Uint8Array,contentType:string,key:string){
   if(storageDriver==='local')return {remoteReady:false};
-  await backend.put(safeKey(key),bytes,contentType,'private, max-age=300');
+  await backend.put(safeKey(key),bytes,contentType,'private, max-age=300',{ifAbsent:true});
   return {remoteReady:true};
 }
 

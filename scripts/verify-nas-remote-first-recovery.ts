@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
-import {mkdtemp,readFile,rm,stat} from 'node:fs/promises';
+import {mkdtemp,readFile,rm,stat,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {createHash,randomUUID} from 'node:crypto';
@@ -24,6 +24,7 @@ async function main(){
     if(req.method==='PUT'){
       const chunks:Buffer[]=[];for await(const chunk of req)chunks.push(chunk);
       await pausePut?.(key);
+      if(req.headers['if-none-match']==='*' && objects.has(key)){res.writeHead(412).end();return;}
       if(!unavailable){objects.set(key,Buffer.concat(chunks));writes.set(key,(writes.get(key)||0)+1);}
       res.writeHead(unavailable?503:200).end();return;
     }
@@ -137,6 +138,47 @@ async function main(){
     assert.equal((await assets.getMediaAsset(corruptKey))?.remote_ready,false);
     assert.equal(writes.get(corruptKey)??0,0);
     assert.deepEqual(objects.get(corruptKey),conflictingBytes);
+    await writeFile(path.join(dir,corruptKey),original);
+    async function retryOne(key:string){
+      await db.getPool().query("UPDATE app_media_assets SET retry_after=now()-interval '1 hour' WHERE key=$1",[key]);
+      assert.equal(await assets.recoverMediaMirrors(1),1);
+    }
+    await retryOne(corruptKey);
+    assert.equal((await assets.getMediaAsset(corruptKey))?.remote_ready,false,'must preserve an existing conflicting NAS object even when the local copy is valid');
+    assert.deepEqual(objects.get(corruptKey),conflictingBytes);
+    assert.equal(writes.get(corruptKey)??0,0);
+    objects.set(corruptKey,original);
+    await retryOne(corruptKey);
+    assert.equal((await assets.getMediaAsset(corruptKey))?.remote_ready,true);
+    assert.equal(writes.get(corruptKey)??0,0,'identical remote bytes must not be uploaded again');
+    const racedKey='nas-first/create-race.bin';
+    await assets.registerMediaAsset(racedKey,original,'application/octet-stream',false,owner,false);
+    await writeFile(path.join(dir,racedKey),original);
+    pausePut=async key=>{if(key===racedKey)objects.set(key,conflictingBytes);};
+    try{await retryOne(racedKey);}finally{pausePut=undefined;}
+    assert.deepEqual(objects.get(racedKey),conflictingBytes);
+    assert.equal((await assets.getMediaAsset(racedKey))?.remote_ready,false);
+    const badAckKey='nas-first/wrong-bytes-after-put.bin';
+    await assets.registerMediaAsset(badAckKey,original,'application/octet-stream',false,owner,false);
+    await writeFile(path.join(dir,badAckKey),original);
+    pauseGet=async key=>{if(key===badAckKey && writes.get(key))objects.set(key,conflictingBytes);};
+    try{await retryOne(badAckKey);}finally{pauseGet=undefined;}
+    assert.equal(writes.get(badAckKey),1);
+    assert.equal((await assets.getMediaAsset(badAckKey))?.remote_ready,false);
+    assert.deepEqual(await readFile(path.join(dir,badAckKey)),original);
+    const cutoff='2030-01-01T00:00:00.123456Z';
+    const boundaryKeys=['before','at','after'].map(label=>'nas-first/cutoff-'+label+'.bin');
+    for (const [i,key] of boundaryKeys.entries()) {
+      objects.set(key,original);
+      await assets.registerMediaAsset(key,original,'application/octet-stream',false,owner,false);
+      await db.getPool().query("UPDATE app_media_assets SET created_at=$2::timestamptz+$3::integer*interval '1 microsecond',retry_after='2000-01-01' WHERE key=$1",[key,cutoff,i-1]);
+    }
+    process.env.NAUMI_NAS_BACKFILL_CUTOFF_UTC=cutoff;
+    try{
+      assert.equal(await assets.recoverMediaMirrors(3),1);
+      const rows=(await db.getPool().query("SELECT remote_ready,retry_after='2000-01-01'::timestamptz AS untouched FROM app_media_assets WHERE key=ANY($1) ORDER BY created_at",[boundaryKeys])).rows;
+      assert.deepEqual(rows,[{remote_ready:false,untouched:true},{remote_ready:false,untouched:true},{remote_ready:true,untouched:false}]);
+    }finally{delete process.env.NAUMI_NAS_BACKFILL_CUTOFF_UTC;}
     console.log('MIRROR_MISSING_SOURCE_PASS NEXT_ROW_VERIFIED=1 REMOTE_REWRITES=0 CORRUPT_RETAINED=1');
     const missing='nas-first/missing-previews.png',input=await sharp({create:{width:1920,height:1080,channels:3,background:'teal'}}).png().toBuffer();
     objects.set(missing,input);await assets.registerMediaAsset(missing,input,'image/png',true,owner,false);
