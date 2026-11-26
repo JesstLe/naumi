@@ -65,6 +65,26 @@ async function main(){
     for(const k of firstKeys){const a=await assets.getMediaAsset(k);assert.ok(a?.remote_ready);const bytes=objects.get(k);assert.ok(bytes);assert.equal(hash(bytes),a.sha256);await absent(k);}
     assert.equal((await request(first,other)).status,404);
     assert.deepEqual(Buffer.from(await (await request(first,owner)).arrayBuffer()),original);
+    // A middleware-owned response clone must not hold a private media GET
+    // open after the NAS reports a missing object.
+    const originalFetch=globalThis.fetch;
+    let missingClone:Response|undefined;
+    objects.delete(first);
+    globalThis.fetch=async(input,init)=>{
+      const upstream=await originalFetch(input,init);
+      if(upstream.status===404 && upstream.url.endsWith(first))missingClone=upstream.clone();
+      return upstream;
+    };
+    const missingRead=request(first,owner);
+    try{
+      assert.equal((await within(missingRead,'MEDIA_GET_STALLED_ON_CLONED_404')).status,404);
+      assert.ok(missingClone);
+    }finally{
+      globalThis.fetch=originalFetch;
+      objects.set(first,original);
+      await missingClone?.arrayBuffer().catch(()=>{});
+      await missingRead.catch(()=>{});
+    }
     unavailable=true;
     await storage.uploadImage(fallback,'image/png',second,undefined,owner);
     const fallbackKeys=await keySet(second);assert.equal(fallbackKeys.length,3);

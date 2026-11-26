@@ -77,9 +77,15 @@ export async function serveMedia(request:Request,segs:string[],options:{skipMirr
   }
   if (!verifiedMirror && storageDriver !== "local" && (!privateMedia || remoteReadable && (remoteMediaAccess === "proxy" || /\.(m3u8|mpd)$/i.test(rel)))) {
     try {
-      const upstream = await fetchStoredObject(rel, request.headers.get("range") || "",request.signal);
-      if (privateMedia && upstream.status === 404) { await upstream.body?.cancel().catch(()=>{});remoteMissing=true;throw new Error("remote missing; try mirror"); }
-      if (privateMedia && !upstream.ok && upstream.status !== 416) { await upstream.body?.cancel().catch(()=>{});throw new Error("remote unavailable; try mirror"); }
+      const remoteRead = new AbortController();
+      const upstream = await fetchStoredObject(rel, request.headers.get("range") || "", AbortSignal.any([request.signal, remoteRead.signal]));
+      if (privateMedia && !upstream.ok && upstream.status !== 416) {
+        remoteMissing = upstream.status === 404;
+        // Terminate the NAS request even when middleware retains a cloned body.
+        remoteRead.abort();
+        void upstream.body?.cancel().catch(() => {});
+        throw new Error("remote object unavailable; try mirror");
+      }
       const headers = new Headers();
       for (const name of [
         "accept-ranges",
