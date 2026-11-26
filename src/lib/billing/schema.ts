@@ -28,6 +28,7 @@ export async function applyBillingSchema(client:PoolClient){await client.query(`
    ledger_id text NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now()
   );
   CREATE INDEX IF NOT EXISTS app_billing_operations_email_idx ON app_billing_operations(email,created_at DESC);
+  CREATE INDEX IF NOT EXISTS app_billing_reserved_review_idx ON app_billing_operations(updated_at,id) WHERE state='reserved';
   ALTER TABLE app_billing_operations ADD COLUMN IF NOT EXISTS result_response jsonb;
   ALTER TABLE app_billing_operations ADD COLUMN IF NOT EXISTS settlement_result jsonb;
   CREATE TABLE IF NOT EXISTS app_billing_intents(id text PRIMARY KEY,email text NOT NULL,path text NOT NULL,request_fingerprint text NOT NULL,response jsonb,response_status integer,created_at timestamptz NOT NULL DEFAULT now());

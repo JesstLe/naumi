@@ -17,7 +17,10 @@ export const remoteMediaAccess = config.accessMode;
 const privateNasProxy=config.driver==='s3'&&config.privateMedia&&config.accessMode==='proxy';
 export const deferredNasDelivery=process.env.NAUMI_NAS_DEFER_UPLOAD==='1'&&privateNasProxy;
 const NAS_DISK_RESERVE=4*1024**3;
-let inFlightNasFallbackBytes=0;
+// Switch to NAS before consuming the outage buffer. Outage buffering
+// may use the space between this watermark and the hard reserve.
+const NAS_LOCAL_FIRST_HEADROOM = 6 * 1024 ** 3;
+let pendingLocalBytes = 0;
 
 export const MEDIA_DIR = path.resolve(config.mediaDir);
 export const hasVerifiedStoredMirror=createStoredMirrorVerifier(MEDIA_DIR,deferredNasDelivery);
@@ -56,40 +59,37 @@ export async function writeStoredObject(bytes: Uint8Array, contentType: string, 
     await local.put(normalized, bytes, contentType, "private, max-age=300");
     return { remoteReady: false };
   }
-  // Opt-in NAS delivery: acknowledge durable local bytes, not a remote upload.
-  // Catalog remote_ready=false is the existing retry queue. A slow tunnel is
-  // no longer part of the paid generation's response time. Keep disk reserve;
-  // large video objects and low-space writes retain the remote-first contract.
-  if(deferredNasDelivery && bytes.byteLength<=64*1024*1024){
-    await mkdir(MEDIA_DIR,{recursive:true});
-    const space=await statfs(MEDIA_DIR);
-    if(space.bavail*space.bsize>NAS_DISK_RESERVE+bytes.byteLength){
-      await local.put(normalized,bytes,contentType,'private, max-age=300');
-      return {remoteReady:false};
-    }
+  if (deferredNasDelivery && bytes.byteLength <= 64 * 1024 ** 2 &&
+      await tryWriteLocalMedia(bytes, contentType, normalized, NAS_LOCAL_FIRST_HEADROOM)) {
+    return { remoteReady: false };
   }
   try {
     await backend.put(normalized, bytes, contentType, "private, max-age=300");
     return { remoteReady: true };
   } catch {
-    // Under remote-first, disk writes are strictly a failure fallback. Count
-    // overlapping fallback writes in this process before admitting more data.
-    const protectReserve=privateNasProxy&&!deferredNasDelivery;
-    if(protectReserve)inFlightNasFallbackBytes+=bytes.byteLength;
-    try {
-      if(protectReserve){
-        await mkdir(MEDIA_DIR,{recursive:true});
-        const space=await statfs(MEDIA_DIR);
-        if(space.bavail*space.bsize<=NAS_DISK_RESERVE+inFlightNasFallbackBytes)
-          throw new Error("媒体暂时无法保存：NAS 不可用且本地空间不足");
+    if (privateNasProxy) {
+      if (!await tryWriteLocalMedia(bytes, contentType, normalized, NAS_DISK_RESERVE)) {
+        throw new Error("媒体暂时无法保存：NAS 不可用且本地空间不足");
       }
+    } else {
       await local.put(normalized, bytes, contentType, "private, max-age=300").catch(() => {
         throw new Error("对象写入失败");
       });
-    } finally {
-      if(protectReserve)inFlightNasFallbackBytes-=bytes.byteLength;
     }
     return { remoteReady: false };
+  }
+}
+
+async function tryWriteLocalMedia(bytes: Uint8Array, contentType: string, key: string, reserve: number) {
+  pendingLocalBytes += bytes.byteLength;
+  try {
+    await mkdir(MEDIA_DIR, {recursive: true});
+    const space = await statfs(MEDIA_DIR);
+    if (space.bavail * space.bsize <= reserve + pendingLocalBytes) return false;
+    await local.put(key, bytes, contentType, "private, max-age=300");
+    return true;
+  } finally {
+    pendingLocalBytes -= bytes.byteLength;
   }
 }
 

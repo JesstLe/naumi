@@ -25,7 +25,7 @@ async function main(){
     NAUMI_VERIFY_ISOLATED_DB:'1',DATABASE_URL:'postgresql://fixture@127.0.0.1:1/unused',
     STORAGE_DRIVER:'s3',S3_ENDPOINT:`http://127.0.0.1:${port}`,S3_BUCKET:'fixture',S3_REGION:'garage',
     S3_ACCESS_KEY_ID:'fixture',S3_SECRET_ACCESS_KEY:'fixture-only-secret',S3_FORCE_PATH_STYLE:'true',
-    MEDIA_DIR:dir,MEDIA_PRIVATE:'1',MEDIA_REMOTE_ACCESS:'proxy',NAUMI_NAS_DEFER_UPLOAD:'0',
+    MEDIA_DIR:dir,MEDIA_PRIVATE:'1',MEDIA_REMOTE_ACCESS:'proxy',NAUMI_NAS_DEFER_UPLOAD:process.argv.includes('--deferred')?'1':'0',
   });
   const capacity=createMediaCapacityFixture(dir,8*1024**3);
   try {
@@ -33,14 +33,21 @@ async function main(){
     const bytes=Buffer.from('NAS remote-first exact bytes');
     const absent=(key:string)=>assert.rejects(stat(path.join(dir,key)),{code:'ENOENT'});
     // The healthy remote path is still usable with no local buffer capacity.
-    capacity.setAvailableBytes(0);
+    const deferred = process.argv.includes('--deferred');
+    if (deferred) {
+      const saved = await storage.writeStoredObject(bytes,'image/png','admitted.png');
+      assert.equal(saved.remoteReady,false);
+      assert.deepEqual(await readFile(path.join(dir,'admitted.png')),bytes);
+      assert.equal(puts,0);
+    }
+    capacity.setAvailableBytes(deferred ? 5*1024**3 : 0);
     assert.deepEqual(await storage.writeStoredObject(bytes,'image/png','remote.png'),{remoteReady:true});
     assert.equal(puts,1);
     const response=await storage.fetchStoredObject('remote.png');
     assert.equal(response.status,200);assert.deepEqual(Buffer.from(await response.arrayBuffer()),bytes);
-    await absent('remote.png');assert.equal(capacity.observations().length,0);
+    await absent('remote.png');if (!deferred) assert.equal(capacity.observations().length,0);
     // A successful fallback is durable and never claimed as remotely stored.
-    outage=true;capacity.setAvailableBytes(8*1024**3);
+    outage=true;capacity.setAvailableBytes(5*1024**3);
     assert.deepEqual(await storage.writeStoredObject(bytes,'image/png','fallback.png'),{remoteReady:false});
     assert.equal(puts,2);assert.deepEqual(await readFile(path.join(dir,'fallback.png')),bytes);
     assert.equal(objects.has('/fixture/fallback.png'),false);
