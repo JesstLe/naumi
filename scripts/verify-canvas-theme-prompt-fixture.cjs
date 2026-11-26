@@ -123,7 +123,7 @@ function consumer(root, client, key, address, document, loaded) {
   const flushProperty = hookReturn?.expression.properties.find(property => property.name?.getText(hook) === 'flush');
   assert(readyDeclaration?.initializer && ts.isPropertyAssignment(flushProperty), 'actual hook ready/flush expressions');
   const promptSync = evaluate('const ready=' + readyDeclaration.initializer.getText(hook) + ';return {ready,flush:' + transpile('const value=' + flushProperty.initializer.getText(hook) + ';', hookFile).replace(/^const value\s*=\s*/, '').replace(/;\s*$/, '') + '};',
-    { key, loaded: loaded ? { key, client } : null, client, latest: { current: { document } } }, hookFile);
+    { key, address, projectKey: address.projectKey, loaded: loaded ? { key, client } : null, client, latest: { current: { key, document } } }, hookFile);
   const canvasFile = 'src/components/canvas/canvas-client.tsx', canvas = parse(root, canvasFile);
   const selectedFunction = all(canvas, node => ts.isFunctionDeclaration(node) && node.name?.text === 'generateSelectedImage')[0];
   const flushFunction = all(canvas, node => ts.isFunctionDeclaration(node) && node.name?.text === 'flushImagePrompts')[0];

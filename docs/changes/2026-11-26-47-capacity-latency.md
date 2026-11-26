@@ -34,3 +34,5 @@ ON public.app_billing_operations(updated_at, id) WHERE state='reserved';
 候选发布回归中，canvas-extra 在完整收到错误类型的上游响应后仍要求 hold。根据 2845fa22 的业务合同，已知无效文字应保存失败回执、释放预留，再次提交原操作只读回原失败；流式连接意外中断仍需要 hold。在真实隔离 PG 和 mock 供应商上验证普通文本和 SSE 两种入口的财务状态、HTTP 状态、错误码、操作号与供应商调用次数；保留断流未知与收款恢复原断言。修改仅涉及发布测试。
 
 线上只读核验发现旧 Worker 2026-11-24 的原 tick 仍为 unknown，完成时间与结果都为空。时间相近的视频扫描虽已结束，但 work_key 与原 tick 不同，也没有父 ID 关联，因此不能为整轮业务补写完成或作为停止旧槽的凭据。
+
+发布核心回归的画布主题测试单独复现了另一个阻塞。真实 hook 的 flush 开始读取 address 和 projectKey，测试提取了函数却没有传入这两个闭包变量，报告中出现 address is not defined，后续保存和 CAS 检查连带失败。补齐测试调用上下文及当前 key 后，原有断言全部通过，实际 consumer 进入创建端口一次。没有调整生产画布或放宽保存门禁。
