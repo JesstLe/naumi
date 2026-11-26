@@ -88,8 +88,24 @@ async function main() {
         for(const feature of ["canvas.text-generate","canvas.assistant"] as const){
             const id=randomUUID(),before=calls,response=await routes[feature].POST(request(feature,id,true,"general"));
             const payload=await response.text();assert.ok(payload.includes("TEXT_OUTPUT_IMAGE"));assert.ok(!payload.includes("data:image"));
-            assert.equal(calls,before+1);assert.deepEqual((await db.getPool().query("SELECT state,charged_credits,reserved_credits FROM app_billing_operations WHERE id=$1",[`tool-${id}`])).rows[0],{state:"hold",charged_credits:0,reserved_credits:3});
-            assert.equal((await routes[feature].POST(request(feature,id,true,"general"))).status,409);assert.equal(calls,before+1,"Unknown output must never be submitted again with the same ID");
+            assert.equal(calls,before+1);
+            const operationId = `tool-${id}`;
+            const {rows:[operation]} = await db.getPool().query(
+                "SELECT state, charged_credits, reserved_credits, settlement_result, result_response FROM app_billing_operations WHERE id=$1",
+                [operationId]
+            );
+            assert.deepEqual([operation.state,operation.charged_credits,operation.reserved_credits,operation.settlement_result.state],
+                ["settled",0,0,"failed"],"A fully received image cannot fulfill a text request");
+            assert.equal(operation.result_response.code,"TEXT_OUTPUT_IMAGE");
+            const retry=await routes[feature].POST(request(feature,id,true,"general"));
+            assert.equal(operation.result_response.httpStatus,feature==="canvas.assistant"?422:502);
+            assert.equal(retry.status,operation.result_response.httpStatus);
+            const receipt=await retry.json();
+            assert.equal(receipt.operationId,operationId);
+            assert.equal(receipt.code,"TEXT_OUTPUT_IMAGE");
+            assert.equal(receipt.terminal,true);
+            assert.equal(receipt.chargedCredits,0);
+            assert.equal(calls,before+1,"Reading the original terminal receipt makes no supplier call");
         }
         mode="success";
         await configure(0,false);

@@ -30,3 +30,7 @@ ON public.app_billing_operations(updated_at, id) WHERE state='reserved';
 补传器在本地缺源时直接向规范 NAS 地址做全量流式读取，仅 HTTP 200、长度及 SHA 完全一致才允许通过原租约提交。已有正确的远端对象可直接确认；404、部分内容、摘要冲突都保留待处理状态。提前结束时主动终止本次传输；响应分支释放独立于队列进度。已上传副本的本地回收共用这一读取验证。
 
 验证入口为 scripts/verify-nas-remote-first-recovery.ts 与 scripts/verify-media-mirror-eviction.ts，均以本机独立 PostgreSQL 16 运行，退出码 0。后续对象成功提交，原远端写入次数为零，等长错内容保持未确认；既有本地回收 44 项通过。47 线上仍为 4e01a562，上一轮 SWITCHED_CLEANUP_PENDING。生产收尾需核对旧任务后验收原生队列，不以隔离修复或独立补传回执代替。
+
+候选发布回归中，canvas-extra 在完整收到错误类型的上游响应后仍要求 hold。根据 2845fa22 的业务合同，已知无效文字应保存失败回执、释放预留，再次提交原操作只读回原失败；流式连接意外中断仍需要 hold。在真实隔离 PG 和 mock 供应商上验证普通文本和 SSE 两种入口的财务状态、HTTP 状态、错误码、操作号与供应商调用次数；保留断流未知与收款恢复原断言。修改仅涉及发布测试。
+
+线上只读核验发现旧 Worker 2026-11-24 的原 tick 仍为 unknown，完成时间与结果都为空。时间相近的视频扫描虽已结束，但 work_key 与原 tick 不同，也没有父 ID 关联，因此不能为整轮业务补写完成或作为停止旧槽的凭据。
