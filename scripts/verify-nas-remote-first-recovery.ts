@@ -29,7 +29,7 @@ async function main(){
     }
     if(req.method==='GET'){remoteGets++;await pauseGet?.(key);}
     const bytes=objects.get(key);res.writeHead(bytes?200:404);
-    res.end(req.method==='GET'?bytes:undefined);
+    res.end(req.method==='GET'?(bytes??'NoSuchKey'):undefined);
   });
   await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));
   Object.assign(process.env,{PGOPTIONS:`-c search_path=${schema}`,MEDIA_DIR:dir,MEDIA_PRIVATE:'1',
@@ -80,6 +80,44 @@ async function main(){
     const evicted=await evictVerifiedLocalMirrors({retentionHours:0,readbacks:10});assert.equal(evicted.evicted,3);
     for(const k of fallbackKeys)await absent(k);
     const before=remoteGets;assert.deepEqual(Buffer.from(await (await request(second,owner)).arrayBuffer()),fallback);assert.ok(remoteGets>before);
+    // A response may have an unread clone. Its cancellation promise cannot
+    // decide when a missing object yields the mirror lane to the next row.
+    const absentKey='canvas-stitches/missing.png',storedKey='image-job-results/already-remote.bin';
+    await assets.registerMediaAsset(absentKey,original,'image/png',false,owner,false);
+    await assets.registerMediaAsset(storedKey,original,'application/octet-stream',false,owner,false);
+    objects.set(storedKey,original);
+    await db.getPool().query(`UPDATE app_media_assets SET retry_after=now()-interval '1 hour'
+      WHERE key=ANY($1::text[])`,[[absentKey,storedKey]]);
+    const realFetch=globalThis.fetch;
+    let retained:Response|undefined;
+    globalThis.fetch=async(input,init)=>{
+      const response=await realFetch(input,init);
+      if(response.status===404 && response.url.endsWith(absentKey)) retained=response.clone();
+      return response;
+    };
+    const scan=assets.recoverMediaMirrors(2);
+    try {
+      assert.equal(await within(scan,'MISSING_OBJECT_STALLED_NEXT_CLAIM'),2);
+      assert.ok(retained);
+      assert.equal((await assets.getMediaAsset(absentKey))?.remote_ready,false);
+      assert.equal((await assets.getMediaAsset(storedKey))?.remote_ready,true);
+      assert.equal(writes.get(storedKey)??0,0,'a verified remote original should require no PUT');
+    } finally {
+      globalThis.fetch=realFetch;
+      await retained?.arrayBuffer().catch(()=>{});
+      await scan.catch(()=>{});
+    }
+    const corruptKey='nas-first/remote-conflict.bin';
+    await assets.registerMediaAsset(corruptKey,original,'application/octet-stream',false,owner,false);
+    const conflictingBytes=Buffer.from(original);
+    conflictingBytes[0]^=1;
+    objects.set(corruptKey,conflictingBytes);
+    await db.getPool().query("UPDATE app_media_assets SET retry_after=now() WHERE key=$1",[corruptKey]);
+    assert.equal(await assets.recoverMediaMirrors(1),1);
+    assert.equal((await assets.getMediaAsset(corruptKey))?.remote_ready,false);
+    assert.equal(writes.get(corruptKey)??0,0);
+    assert.deepEqual(objects.get(corruptKey),conflictingBytes);
+    console.log('MIRROR_MISSING_SOURCE_PASS NEXT_ROW_VERIFIED=1 REMOTE_REWRITES=0 CORRUPT_RETAINED=1');
     const missing='nas-first/missing-previews.png',input=await sharp({create:{width:1920,height:1080,channels:3,background:'teal'}}).png().toBuffer();
     objects.set(missing,input);await assets.registerMediaAsset(missing,input,'image/png',true,owner,false);
     assert.deepEqual(await keySet(missing),[missing]);assert.equal(db.getPool().options.max,1);

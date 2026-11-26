@@ -3,7 +3,7 @@ import {createHash,randomUUID} from "node:crypto";
 import {dbEnabled,getPool} from "@/platform/db/pool";
 import {ensureMediaSchema} from "../media-assets-schema";
 import {withBackgroundActivity,bindBackgroundClaim} from "../release-runtime/background-activity";
-import {readManagedObject,readManagedObjectInternal} from "../object-storage/managed-read";
+import {matchesRemoteMedia} from "./verified-remote";
 import {readPendingStoredObject,mirrorStoredObject,privateMedia,storageDriver} from "../object-storage/runtime";
 import {evictVerifiedLocalMirrors} from "./mirror-eviction";
 
@@ -31,18 +31,19 @@ async function recoverMediaMirrorsLocal(limit=MIRROR_PASS_LIMIT) {
       let ready=false;
       try {
         let saved;
-        try {saved=await readPendingStoredObject(row.key,250*1024*1024);}
-        catch(error) {
+        try {
+          saved=await readPendingStoredObject(row.key,250*1024*1024);
+        } catch(error) {
           if((error as NodeJS.ErrnoException)?.code!=='ENOENT')throw error;
-          // Legacy catalog imports can reference an existing remote original.
-          if(row.key.startsWith("image-job-results/")){
-            const {bytes}=await readManagedObjectInternal(`/media/${row.key}`,64*1024*1024);
-            saved={bytes,size:bytes.length,contentType:row.content_type};
-          }else saved=await readManagedObject(`/media/${row.key}`,250*1024*1024);
+          // An imported or evicted original can already be present on the NAS.
+          // Only a complete content match may promote its exact claim below.
+          ready=await matchesRemoteMedia(row.key,row.sha256,Number(row.bytes));
         }
-        if(saved.size!==Number(row.bytes)||createHash('sha256').update(saved.bytes).digest('hex')!==row.sha256)
-          throw new Error('待补传素材校验失败');
-        ready=(await mirrorStoredObject(saved.bytes,row.content_type,row.key)).remoteReady;
+        if(saved) {
+          if(saved.size!==Number(row.bytes)||createHash('sha256').update(saved.bytes).digest('hex')!==row.sha256)
+            throw new Error('待补传素材校验失败');
+          ready=(await mirrorStoredObject(saved.bytes,row.content_type,row.key)).remoteReady;
+        }
       } catch {console.warn('MEDIA_MIRROR_RETRY_DEFERRED');}
       // One missing/corrupt object must not continuously starve the queue.
       await getPool().query(`UPDATE app_media_assets SET remote_ready=$2,retry_after=now()+interval '5 minutes'

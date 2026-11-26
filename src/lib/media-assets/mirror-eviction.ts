@@ -3,9 +3,10 @@ import {createHash} from "node:crypto";
 import {createReadStream} from "node:fs";
 import {lstat,unlink} from "node:fs/promises";
 import path from "node:path";
+import {matchesRemoteMedia} from "./verified-remote";
 import {dbEnabled,getPool} from "@/platform/db/pool";
 import {ensureMediaSchema} from "../media-assets-schema";
-import {MEDIA_DIR,fetchStoredObject,privateMedia,safeKey,storageDriver} from "../object-storage/runtime";
+import {MEDIA_DIR,privateMedia,safeKey,storageDriver} from "../object-storage/runtime";
 
 /** Hours a NAS-acknowledged object keeps its local copy. Unset → 12, "off" → never evict.
  * 47 measured ~1.2 GiB/hour of new media at peak, so 48h would fill the disk. */
@@ -22,17 +23,6 @@ type Claimed={key:string;sha256:string;bytes:string|number;claim:string};
 type Outcome="evicted"|"absent"|"deferred"|"mismatch"|"remote-unconfirmed";
 
 async function sha256File(file:string){const hash=createHash("sha256");for await(const chunk of createReadStream(file))hash.update(chunk);return hash.digest("hex");}
-
-/** Byte-for-byte NAS readback. Only a full 200 body with the catalog digest counts. */
-async function remoteMatches(key:string,sha256:string,bytes:number){
-  const response=await fetchStoredObject(key);
-  if(!response.ok||!response.body){await response.body?.cancel().catch(()=>{});return false;}
-  const hash=createHash("sha256");let size=0;
-  const reader=response.body.getReader();
-  try{for(;;){const next=await reader.read();if(next.done)break;size+=next.value.byteLength;if(size>bytes)return false;hash.update(next.value);}}
-  finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
-  return size===bytes&&hash.digest("hex")===sha256;
-}
 
 /** Removes local copies of objects the NAS already holds. Never deletes catalog
  * rows, NAS objects, directories or a file whose bytes differ from the catalog.
@@ -81,7 +71,7 @@ async function evictOne(row:Claimed,root:string,takeReadback:()=>boolean):Promis
   // Readback budget bounds NAS traffic per scan; unclaimed rows return next scan.
   if(!takeReadback())return "deferred";
   if(await sha256File(file)!==row.sha256)return "mismatch";
-  if(!await remoteMatches(row.key,row.sha256,bytes))return "remote-unconfirmed";
+  if(!await matchesRemoteMedia(row.key,row.sha256,bytes))return "remote-unconfirmed";
   const after=await lstat(file);
   if(after.ino!==before.ino||after.size!==before.size||after.mtimeMs!==before.mtimeMs||after.ctimeMs!==before.ctimeMs)return "mismatch";
   try{await unlink(file);}catch(error){if((error as NodeJS.ErrnoException).code==="ENOENT")return "absent";throw error;}
