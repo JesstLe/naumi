@@ -36,3 +36,9 @@ ON public.app_billing_operations(updated_at, id) WHERE state='reserved';
 线上只读核验发现旧 Worker 2026-11-24 的原 tick 仍为 unknown，完成时间与结果都为空。时间相近的视频扫描虽已结束，但 work_key 与原 tick 不同，也没有父 ID 关联，因此不能为整轮业务补写完成或作为停止旧槽的凭据。
 
 发布核心回归的画布主题测试单独复现了另一个阻塞。真实 hook 的 flush 开始读取 address 和 projectKey，测试提取了函数却没有传入这两个闭包变量，报告中出现 address is not defined，后续保存和 CAS 检查连带失败。补齐测试调用上下文及当前 key 后，原有断言全部通过，实际 consumer 进入创建端口一次。没有调整生产画布或放宽保存门禁。
+
+## 账务恢复扫描的实测
+
+采样发现按供应商成本恢复结算和按画布恢复标记查找原操作都在读取整份账务历史。两条查询当时均无匹配行，真实 SELECT 的 EXPLAIN ANALYZE 分别为 460.681 ms 和 61.972 ms。持 47 四锁时执行两条 CREATE INDEX CONCURRENTLY，只索引符合既有谓词的数据，原查询的过滤、排序、历史隔离和结算事务继续沿用。两条索引均有效，现场各占 8 KiB。同一查询改走索引后为 0.230 ms 和 0.131 ms。对应证据在本轮服务器目录 cost-canvas-before.txt 和 cost-canvas-after.txt。回退分别用 DROP INDEX CONCURRENTLY public.app_billing_cost_recovery_idx 和 DROP INDEX CONCURRENTLY public.app_billing_canvas_recovery_idx。独立 PostgreSQL 16 新库建表、真实画布计费接口和重试回归均通过。
+
+15 分钟窗口内画布图片任务 P95 1.201→0.811 秒（736→570 个成功请求），视频任务 0.900→0.977 秒（959→872），参考工作台素材列表 1.017→1.051 秒（1140→505）。三个接口样本均无 5xx。两个窗口请求分布不同，结果不宜外推为全站统一提速。该窗口早于本节两个新索引；不将它作为此次新索引的因果证明。

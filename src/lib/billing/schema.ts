@@ -31,6 +31,11 @@ export async function applyBillingSchema(client:PoolClient){await client.query(`
   CREATE INDEX IF NOT EXISTS app_billing_reserved_review_idx ON app_billing_operations(updated_at,id) WHERE state='reserved';
   ALTER TABLE app_billing_operations ADD COLUMN IF NOT EXISTS result_response jsonb;
   ALTER TABLE app_billing_operations ADD COLUMN IF NOT EXISTS settlement_result jsonb;
+  CREATE INDEX IF NOT EXISTS app_billing_cost_recovery_idx ON app_billing_operations(updated_at,id)
+    WHERE quote->'tariff'->'pricing'->>'mode'='api-cost-plus'
+      AND state IN ('manual','hold','settled') AND settlement_result IS NOT NULL;
+  CREATE INDEX IF NOT EXISTS app_billing_canvas_recovery_idx ON app_billing_operations(updated_at,id)
+    WHERE result_response->>'canvasRecoveryPending'='true';
   CREATE TABLE IF NOT EXISTS app_billing_intents(id text PRIMARY KEY,email text NOT NULL,path text NOT NULL,request_fingerprint text NOT NULL,response jsonb,response_status integer,created_at timestamptz NOT NULL DEFAULT now());
   CREATE TABLE IF NOT EXISTS app_billing_reconciliations(
    id text PRIMARY KEY,operation_id text NOT NULL,email text NOT NULL,actor text NOT NULL,
