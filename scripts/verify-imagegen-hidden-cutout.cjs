@@ -16,6 +16,7 @@ async function main() {
     'src/lib/text-models.ts': 'export function selectedTextModel(){throw Error("Unexpected text fallback")}',
     'src/lib/image-model-legacy-catalog.ts': 'export function isNewApiFlowImageModel(){return false}',
     'src/platform/db/pool.ts': 'export const dbEnabled=true; export function getPool(){throw Error("Unexpected database access")}',
+    'src/lib/accounts/creation-policy-store.ts': 'export async function readAccountCreationPolicy(owner){if(owner!=="fixture@example.test")throw Error("Unexpected policy owner");return null}',
     'src/lib/payments/history.ts': 'export async function totalPaidCents(){return 0}',
     'src/lib/user-image-provider.ts': 'export async function getUserImageProvider(){return null}; export const upstreamUserImageModel=x=>x',
     'src/lib/settings.ts': 'export async function getOpenAISettings(){return {model:"image-a"}};export async function getCutoutSettings(){throw Error("Unexpected legacy fallback")}',
