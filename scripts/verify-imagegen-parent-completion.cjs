@@ -305,6 +305,7 @@ function fixture({runtime = true} = {}) {
       '@/lib/staging-history': {assertMutableStagingTask: async () => {}, excludeImportedHistory: () => '', isImportedHistory: async () => false},
     },
     'src/lib/saas/creation-scope.ts': {
+      '../accounts/creation-policy': () => load('src/lib/accounts/creation-policy.ts'),
       '@/platform/db/pool': db, '@/lib/enterprise/server': {enterpriseCreationRead: fail('enterprise-read')},
       '@/lib/teams/server': {TeamError}, './creation-schema': {ensureCreationSchema: async () => {}},
       '@/lib/settings-secret': {settingsSecret: fail('settings-secret')},
