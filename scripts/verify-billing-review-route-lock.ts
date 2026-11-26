@@ -21,6 +21,10 @@ async function main(){
  let owner:PoolClient|undefined,waiting:Promise<Response|null>|undefined,server:Server|undefined;
  let guardId:string|undefined,guardSchemaCreated=false,guardTableCreated=false;
  try{
+  // The production persistence bootstrap installs the supplier ledger used by
+  // the operation visibility check before the admin route accepts traffic.
+  const {ensureSupplierSchema}=await import('../src/lib/supplier-cost/schema');
+  await ensureSupplierSchema(f.pool);
   const {signSession}=await import('../src/lib/admin-auth'),{GET,POST}=await import('../src/app/api/admin/billing/operations/route');
   const {GET:pending}=await import('../src/app/api/admin/billing/pending/route');
   const {exposeAbandonedBillingOperations}=await import('../src/lib/billing/review-state');
