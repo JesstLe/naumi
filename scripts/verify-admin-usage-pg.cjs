@@ -16,7 +16,7 @@ function load(relative, mocks = {}) {
   const localRequire = name => {
     if (name === 'server-only') return {};
     if (Object.hasOwn(mocks, name)) return mocks[name];
-    if (name.startsWith('./')) return load(path.relative(root, path.resolve(path.dirname(filename), name + '.ts')), mocks);
+    if (name.startsWith('./') || name.startsWith('../')) return load(path.relative(root, path.resolve(path.dirname(filename), name + '.ts')), mocks);
     if (name === '@/lib/db' || name === '@/platform/db/pool') return { getPool() { throw new Error('Only explicit test client is allowed'); } };
     if (name === '@/platform/db/owned-read-client') return load('src/platform/db/owned-read-client.ts');
     if (name === './repository' || name === './schema') return { ensureBiSchema() { throw new Error('Test SQL schema is explicit'); } };
@@ -49,6 +49,7 @@ async function main() {
       CREATE TABLE app_bi_model_calls(id text PRIMARY KEY,email text,created_at timestamptz,input_tokens integer,output_tokens integer);
       CREATE TABLE app_creation_records(id text PRIMARY KEY,actor_email text,source_kind text,source_id text,parent_id text);
       CREATE INDEX creation_source ON app_creation_records(actor_email,source_kind,source_id);`);
+    await load('src/lib/accounts/creation-policy-schema.ts').applyAccountCreationPolicySchema(tx);
     const { parseUsageQuery } = load('src/lib/bi/usage-contracts.ts');
     const { readUserUsage } = load('src/lib/bi/usage-repository.ts', { './schema': { ensureBiSchema: async () => {} } });
     const query = extra => parseUsageQuery(new URLSearchParams({ from: '2026-10-28', to: '2026-10-29', ...extra }));

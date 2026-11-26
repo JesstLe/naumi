@@ -361,6 +361,8 @@ async function main() {
       CREATE TABLE app_video_tasks(id text PRIMARY KEY,email text,parameters jsonb,status text);
       CREATE TABLE app_canvas_image_tasks(id text PRIMARY KEY,email text,parameters jsonb,result_artwork_id text);
       CREATE TABLE app_billing_api_cost_reviews(operation_id text,status text,refund_credits int);`);
+    const policySchema='src/lib/accounts/creation-policy-schema.ts';
+    if(fs.existsSync(path.join(source,policySchema)))await load(policySchema).applyAccountCreationPolicySchema(control);
     await load('src/lib/saas/creation-schema.ts').ensureCreationSchema();
     const reader = load('src/lib/saas/creations.ts');
     const fixed = mode === 'modified';
